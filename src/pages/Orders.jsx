@@ -35,7 +35,7 @@ function calcOrderTotalWithExtras(order) {
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch(`${API_URL}/apidrinks`)
+    fetch(`${API_URL}/api/drinks`)
       .then((res) => res.json())
       .then((data) => {
         setDrinks(data);
@@ -53,7 +53,7 @@ function calcOrderTotalWithExtras(order) {
     }
     setSaving(true);
     try {
-      await fetch(`${API_URL}/apidrinks`, {
+      await fetch(`${API_URL}/api/drinks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name })
@@ -61,7 +61,7 @@ function calcOrderTotalWithExtras(order) {
       setInput("");
       setError("");
       // Refresh list
-      const res = await fetch(`${API_URL}/apidrinks`);
+      const res = await fetch(`${API_URL}/api/drinks`);
       setDrinks(await res.json());
       if (fetchDrinks) fetchDrinks();
     } catch {
@@ -77,7 +77,7 @@ function calcOrderTotalWithExtras(order) {
       await fetch(`/api/drinks/${id}`, { method: "DELETE" });
       setError("");
       // Refresh list
-      const res = await fetch(`${API_URL}/apidrinks`);
+      const res = await fetch(`${API_URL}/api/drinks`);
       setDrinks(await res.json());
       if (fetchDrinks) fetchDrinks();
     } catch {
@@ -253,7 +253,7 @@ setSplitPayments([{ method: editingPaymentOrder.payment_method || "Cash", amount
 
 
 useEffect(() => {
-  fetch(`${API_URL}/apisettings/integrations`)
+  fetch(`${API_URL}/api/settings/integrations`)
     .then(res => res.json())
     .then(data => setAutoConfirmOrders(!!data.auto_confirm_orders))
     .catch(() => setAutoConfirmOrders(false));
@@ -315,7 +315,7 @@ useEffect(() => {
 const fetchOrders = async () => {
   setLoading(true);
   try {
-    const res = await fetch(`${API_URL}/apiorders`);
+    const res = await fetch(`${API_URL}/api/orders`);
     const data = await res.json();
     const phoneOrders = data.filter(
       (o) => (o.order_type === "phone" || o.order_type === "packet") && o.status !== "closed"
@@ -405,7 +405,7 @@ const fetchOrders = async () => {
   }
 }
 useEffect(() => {
-  fetch(`${API_URL}/apikitchen/compile-settings`)
+  fetch(`${API_URL}/api/kitchen/compile-settings`)
     .then(res => res.json())
     .then(data => setExcludedKitchenIds(data.excludedItems || []))
     .catch(() => setExcludedKitchenIds([]));
@@ -481,7 +481,7 @@ const allNonDrinksDelivered = nonDrinkItems.every(
 
 const fetchDrinks = async () => {
   try {
-    const res = await fetch(`${API_URL}/apidrinks`);
+    const res = await fetch(`${API_URL}/api/drinks`);
     const data = await res.json();
     setDrinksList(data.map(d => d.name));
   } catch {
@@ -1547,7 +1547,7 @@ onClick={async () => {
     if (p.method && p.amount > 0) cleanedSplits[p.method] = Number(p.amount);
   });
 
-  await fetch(`${API_URL}/apiorders/receipt-methods`, {
+  await fetch(`${API_URL}/api/orders/receipt-methods`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
