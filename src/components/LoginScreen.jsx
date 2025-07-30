@@ -6,6 +6,8 @@ import SubscriptionTab from "./settings-tabs/SubscriptionTab";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
+const API_URL = import.meta.env.VITE_API_URL || "";
+
 export default function LoginScreen() {
   const { t } = useTranslation();
   const [showSubscription, setShowSubscription] = useState(false);
@@ -17,7 +19,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const API_URL = import.meta.env.VITE_API_URL || "";
+
   const handleLogin = async () => {
   // ... form logic ...
   try {
