@@ -44,7 +44,6 @@ if (response.data.user) {
     setCurrentUser(staffObj);
   }
   toast.success(t("Welcome back!"));
-  window.location.href = "/dashboard";
 }
  else {
       toast.error(response.data.error || t("Login failed"));
