@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 const currencyOptions = ["₺ TRY", "€ EUR", "$ USD", "£ GBP"];
 const languageOptions = [
   { label: "English", code: "en" },
@@ -16,7 +16,7 @@ export default function LocalizationTab() {
   const [currency, setCurrency] = useState("₺ TRY");
 
   useEffect(() => {
-  fetch("/api/settings/localization")
+  fetch(`${API_URL}/api/settings/localization`)
     .then((res) => res.json())
     .then((data) => {
       if (data.language) {
@@ -35,7 +35,7 @@ export default function LocalizationTab() {
   const handleSave = () => {
   const selectedLang = languageOptions.find(opt => opt.label === language)?.code || "en";
 
-  fetch("/api/settings/localization", {
+  fetch(`${API_URL}/api/settings/localization`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ language: selectedLang, currency }),

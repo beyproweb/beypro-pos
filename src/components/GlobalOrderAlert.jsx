@@ -7,7 +7,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 import { useSetting } from "../components/hooks/useSetting";
 import { toast } from "react-toastify";
 import socket from "../utils/socket"; // ✅ Use shared socket!
@@ -192,7 +192,7 @@ export default function GlobalOrderAlert() {
 
   // Load layout from backend if needed
   useEffect(() => {
-    fetch(`/api/printer-settings/1`)
+    fetch(`${API_URL}/api/printer-settings/1`)
       .then(res => res.json())
       .then(data => {
         if (data.layout) setLayout(data.layout);
@@ -250,7 +250,7 @@ export default function GlobalOrderAlert() {
     let active = true;
     const fetchSettings = async () => {
       try {
-        const res = await fetch(`/api/settings/notifications`);
+        const res = await fetch(`${API_URL}/api/settings/notifications`);
         const json = await res.json();
         if (!active) return;
 
@@ -463,7 +463,7 @@ const onConfirmed = async ({ orderId }) => {
   const autoPrintPacket = localStorage.getItem("autoPrintPacket") === "true";
 
   try {
-    const res = await fetch(`/api/orders/${orderId}`);
+    const res = await fetch(`${API_URL}/api/orders/${orderId}`);
     if (!res.ok) throw new Error("Could not fetch order");
     const order = await res.json();
 

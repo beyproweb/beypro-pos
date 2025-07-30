@@ -23,7 +23,7 @@ import { CalendarIcon, Download, Bell, DollarSign, PieChart, Plus, Minus } from 
 import { Card, CardContent } from "../components/ui/card";
 import { toast } from "react-toastify";
 import { useHasPermission } from "../components/hooks/useHasPermission";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 export default function Reports() {
   const { t } = useTranslation();
    const hasDashboardAccess = useHasPermission("dashboard");
@@ -81,7 +81,7 @@ useEffect(() => {
   const from = customStart || new Date().toISOString().slice(0, 10);
   const to = customEnd || new Date().toISOString().slice(0, 10);
 
-  fetch(`/api/reports/cash-register-events?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/cash-register-events?from=${from}&to=${to}`)
     .then(res => res.json())
     .then(setRegisterEvents)
     .catch((err) => {
@@ -122,7 +122,7 @@ const fetchCategoryTrends = async (range) => {
     to = customTrendTo;
   }
 
-  const res = await fetch(`/api/reports/category-trends?from=${from}&to=${to}`);
+  const res = await fetch(`${API_URL}/api/reports/category-trends?from=${from}&to=${to}`);
   const data = await res.json();
   setCategoryTrends(data);
 };
@@ -147,7 +147,7 @@ useEffect(() => {
 
   setExpenseRangeLabel(`${formatDate(from)} - ${formatDate(to)}`);
 
-  fetch(`/api/reports/expenses?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/expenses?from=${from}&to=${to}`)
     .then(res => res.json())
     .then(setExpensesData)
     .catch((err) => {
@@ -199,7 +199,7 @@ useEffect(() => {
 
   console.log("🚀 Calling /reports/cash-register-history", { from, to });
 
-  fetch(`/api/reports/cash-register-history?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/cash-register-history?from=${from}&to=${to}`)
     .then(res => res.json())
     .then((data) => {
       console.log("✅ Fetched cash register history:", data);
@@ -227,7 +227,7 @@ useEffect(() => {
   console.log("📦 Fetching order history from", from, "to", to);
 
   // 🧾 Fetch closed orders
-  fetch(`/api/reports/history?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/history?from=${from}&to=${to}`)
     .then(async (res) => {
       if (!res.ok) throw new Error("Failed to fetch order history");
       const orders = await res.json();
@@ -237,9 +237,9 @@ useEffect(() => {
     .then(async (orders) => {
       const enriched = await Promise.all(
         orders.map(async (order) => {
-          const items = await fetch(`/api/orders/${order.id}/items`).then(r => r.json());
+          const items = await fetch(`${API_URL}/api/orders/${order.id}/items`).then(r => r.json());
 
-          const suborders = await fetch(`/api/orders/${order.id}/suborders`).then(r => r.json());
+          const suborders = await fetch(`${API_URL}/api/orders/${order.id}/suborders`).then(r => r.json());
 
           const receiptIds = [
             ...new Set([
@@ -251,7 +251,7 @@ useEffect(() => {
           let receiptMethods = [];
           for (const receiptId of receiptIds) {
             try {
-              const r = await fetch(`/api/reports/receipt-methods/${receiptId}`);
+              const r = await fetch(`${API_URL}/api/reports/receipt-methods/${receiptId}`);
               const methods = await r.json();
               receiptMethods.push(...methods);
             } catch (err) {
@@ -275,7 +275,7 @@ useEffect(() => {
     });
 
   // 📦 Fetch order items
-  fetch(`/api/reports/order-items?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/order-items?from=${from}&to=${to}`)
     .then(res => {
       console.log("📦 Fetching order items from", from, "to", to);
       if (!res.ok) throw new Error("Failed to fetch");
@@ -319,7 +319,7 @@ useEffect(() => {
   }
 
   // 🟢 Load detailed category sales
-  fetch(`/api/reports/sales-by-category-detailed?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/sales-by-category-detailed?from=${from}&to=${to}`)
     .then((r) => r.json())
     .then(setCategoryDetails)
     .catch((err) => {
@@ -328,7 +328,7 @@ useEffect(() => {
 
 
   // 🟢 Load category trends
-  fetch(`/api/reports/category-trends?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/category-trends?from=${from}&to=${to}`)
     .then((r) => r.json())
     .then((data) => {
       console.log("📊 Category Trends:", data);
@@ -443,7 +443,7 @@ useEffect(() => {
     to = customEnd;
   }
 
-  fetch(`/api/reports/sales-by-payment-method?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/sales-by-payment-method?from=${from}&to=${to}`)
     .then(r => r.json())
     .then((data) => {
       setPaymentData(data);
@@ -451,7 +451,7 @@ useEffect(() => {
       setTotalPayments(total);
     });
 
-  fetch(`/api/reports/sales-by-category?from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/sales-by-category?from=${from}&to=${to}`)
     .then(r => r.json())
     .then(setProductSalesData);
 
@@ -487,7 +487,7 @@ useEffect(() => {
   setPlFrom(from);
   setPlTo(to);
 
-  fetch(`/api/reports/profit-loss?timeframe=${timeframe}&from=${from}&to=${to}`)
+  fetch(`${API_URL}/api/reports/profit-loss?timeframe=${timeframe}&from=${from}&to=${to}`)
     .then(r => r.json())
     .then((data) => {
       console.log("📊 Profit/Loss API response:", data);
@@ -525,7 +525,7 @@ useEffect(() => {
   setSalesFrom(from);
   setSalesTo(to);
 
-  fetch(`/api/reports/sales-trends?type=${salesViewType}`)
+  fetch(`${API_URL}/api/reports/sales-trends?type=${salesViewType}`)
     .then(r => r.json())
     .then(setSalesTrendsData);
 }, [salesViewType]);
@@ -539,11 +539,11 @@ useEffect(() => {
 
       if (!openTime) return;
 
-      fetch(`/api/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`)
+      fetch(`${API_URL}/api/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`)
         .then(res => res.json())
         .then(data => {
           const sales = parseFloat(data.cash_total || 0);
-          fetch(`/api/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`)
+          fetch(`${API_URL}/api/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`)
             .then(res => res.json())
             .then(expenseData => {
               const totalCashExpense = parseFloat(expenseData?.[0]?.total_expense || 0);

@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 export default function Stock() {
     const { t } = useTranslation(); // ✅ Enable translations
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 const [selectedSupplier, setSelectedSupplier] = useState("__all__");
   const [searchTerm, setSearchTerm] = useState("");
   const { groupedData, fetchStock, loading, handleAddToCart, setGroupedData } = useStock();
@@ -111,7 +111,7 @@ console.log("PATCH RESPONSE:", json);
   const handleDeleteStock = async (item) => {
   if (!window.confirm(`🗑 Are you sure you want to delete "${item.name}" (${item.unit}) from stock?`)) return;
   try {
-    await fetch(`/api/stock/${item.stock_id || item.id}`, { method: 'DELETE' });
+    await fetch(`${API_URL}/api/stock/${item.stock_id || item.id}`, { method: 'DELETE' });
     toast.success(`Deleted "${item.name}" (${item.unit}) from stock.`);
     fetchStock(); // Refresh list
   } catch (err) {
@@ -129,7 +129,7 @@ console.log("PATCH RESPONSE:", json);
 
   if (!item || !item.stock_id) return;
 
-   await fetch(`/api/stock/${item.stock_id}`, {
+   await fetch(`${API_URL}/api/stock/${item.stock_id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import socket from "../utils/socket"; // adjust path as needed!
 
 import { useHasPermission } from "../components/hooks/useHasPermission";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 export default function Kitchen() {
   const [orders, setOrders] = useState([]);
   const [selectedIds, setSelectedIds] = useState(() => {
@@ -45,7 +45,7 @@ products.forEach(p => {
 
 // Fetch all 3 on mount
 useEffect(() => {
-  fetch("/api/kitchen/compile-settings")
+  fetch(`${API_URL}/api/kitchen/compile-settings`)
     .then(res => res.json())
     .then(data => {
       setExcludedIngredients(data.excludedIngredients || []);
@@ -59,7 +59,7 @@ useEffect(() => {
     });
 }, []);
 useEffect(() => {
-  fetch("/api/kitchen/compile-settings")
+  fetch(`${API_URL}/api/kitchen/compile-settings`)
     .then(res => res.json())
     .then(data => {
       setExcludedIngredients(data.excludedIngredients || []);
@@ -89,7 +89,7 @@ useEffect(() => {
       // If finished, reset to total and pause
       if (newSeconds === 0) {
         // Update DB with reset and paused state
-        fetch("/api/kitchen-timers", {
+        fetch(`${API_URL}/api/kitchen-timers`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -103,7 +103,7 @@ useEffect(() => {
         return { ...timer, secondsLeft: timer.total, running: false };
       } else {
         // Usual tick-down logic
-        fetch("/api/kitchen-timers", {
+        fetch(`${API_URL}/api/kitchen-timers`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -129,7 +129,7 @@ useEffect(() => {
 
 useEffect(() => {
   if (showTimerModal) {
-    fetch("/api/kitchen-timers")
+    fetch(`${API_URL}/api/kitchen-timers`)
       .then(res => res.json())
       .then(timers => setTimers(timers.map(timer => ({
         ...timer,
@@ -164,7 +164,7 @@ useEffect(() => {
 }, []);
 
 const updateTimerInDB = async (timer) => {
-  await fetch("/api/kitchen-timers", {
+  await fetch(`${API_URL}/api/kitchen-timers`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -180,7 +180,7 @@ const updateTimerInDB = async (timer) => {
   // Always use full URL for backend fetches!
   const fetchKitchenOrders = async () => {
     try {
-      const res = await fetch("/api/kitchen-orders");
+      const res = await fetch(`${API_URL}/api/kitchen-orders`);
       const data = await res.json();
       const filtered = data.filter((item) => {
   // Keep showing if:
@@ -212,7 +212,7 @@ const updateTimerInDB = async (timer) => {
 
   // Fetch all products at mount (always use full URL)
   useEffect(() => {
-    fetch("/api/products")
+    fetch(`${API_URL}/api/products`)
       .then(res => res.json())
       .then(setProducts)
       .catch(() => setProducts([]));
@@ -263,7 +263,7 @@ const updateTimerInDB = async (timer) => {
 
       if (idsToUpdate.length === 0) return;
 
-      await fetch("/api/order-items/kitchen-status", {
+      await fetch(`${API_URL}/api/order-items/kitchen-status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: idsToUpdate, status }),
@@ -730,7 +730,7 @@ return (
               className="px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold hover:brightness-110 transition"
               onClick={async () => {
                 if (!newTimerName || newTimerSeconds < 1) return;
-                const res = await fetch("/api/kitchen-timers", {
+                const res = await fetch(`${API_URL}/api/kitchen-timers`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -787,7 +787,7 @@ return (
                     title={t("Pause")}
                     onClick={async () => {
                       setTimers(timers => timers.map(t => t.id === timer.id ? { ...t, running: false } : t));
-                      await fetch("/api/kitchen-timers", {
+                      await fetch(`${API_URL}/api/kitchen-timers`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -808,7 +808,7 @@ return (
                     title={t("Resume")}
                     onClick={async () => {
                       setTimers(timers => timers.map(t => t.id === timer.id ? { ...t, running: true } : t));
-                      await fetch("/api/kitchen-timers", {
+                      await fetch(`${API_URL}/api/kitchen-timers`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -890,7 +890,7 @@ return (
                       updated = prev.includes(ingredient)
                         ? prev.filter(ing => ing !== ingredient)
                         : [...prev, ingredient];
-                      fetch("/api/kitchen/compile-settings", {
+                      fetch(`${API_URL}/api/kitchen/compile-settings`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -934,7 +934,7 @@ return (
                       const updated = allChecked
                         ? prev.filter(id => !catProducts.includes(id))
                         : Array.from(new Set([...prev, ...catProducts]));
-                      fetch("/api/kitchen/compile-settings", {
+                      fetch(`${API_URL}/api/kitchen/compile-settings`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -966,7 +966,7 @@ return (
                           const updated = prev.includes(product.id)
                             ? prev.filter(id => id !== product.id)
                             : [...prev, product.id];
-                          fetch("/api/kitchen/compile-settings", {
+                          fetch(`${API_URL}/api/kitchen/compile-settings`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({

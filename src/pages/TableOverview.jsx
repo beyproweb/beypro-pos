@@ -12,7 +12,7 @@ import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import OrderHistory from "../components/OrderHistory";
 const TOTAL_TABLES = 20;
-
+ const API_URL = import.meta.env.VITE_API_URL || "";
 const isDelayed = (order) => {
   if (!order || order.status !== "confirmed" || !order.created_at) return false;
   const created = new Date(order.created_at);
@@ -93,7 +93,7 @@ const [entryReason, setEntryReason] = useState("");
   const { t } = useTranslation();
   const [registerEntries, setRegisterEntries] = useState(0);
   const [showRegisterLog, setShowRegisterLog] = useState(false);
-  const API_URL = import.meta.env.VITE_API_URL || "";
+ 
   const [todayRegisterEvents, setTodayRegisterEvents] = useState([]);
 const [todayExpenses, setTodayExpenses] = useState([]);
 useEffect(() => {

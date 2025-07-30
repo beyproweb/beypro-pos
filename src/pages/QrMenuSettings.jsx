@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { toast } from "react-toastify";
 import QRCode from "react-qr-code";
 import { QrCode, Eye, EyeOff, Search } from "lucide-react"; // Modern icons
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 export default function QrMenuSettings() {
   const [qrUrl, setQrUrl] = useState("");
   const [products, setProducts] = useState([]);
@@ -11,8 +11,8 @@ export default function QrMenuSettings() {
   const qrRef = useRef();
 
   useEffect(() => {
-    fetch("/api/products").then(r => r.json()).then(setProducts);
-    fetch("/api/settings/qr-menu-disabled")
+    fetch(`${API_URL}/api/products`).then(r => r.json()).then(setProducts);
+    fetch(`${API_URL}/api/settings/qr-menu-disabled`)
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) setDisabledIds(data);
@@ -32,7 +32,7 @@ export default function QrMenuSettings() {
       ? safeIds.filter(id => id !== productId)
       : [...safeIds, productId];
     setDisabledIds(updated);
-    fetch("/api/settings/qr-menu-disabled", {
+    fetch(`${API_URL}/api/settings/qr-menu-disabled`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ disabled: updated }),

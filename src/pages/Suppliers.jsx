@@ -15,6 +15,7 @@ import {
   TRANSACTIONS_API,
 } from "../utils/api";
 import socket from "../utils/socket";
+const API_URL = import.meta.env.VITE_API_URL || "";
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
@@ -194,7 +195,7 @@ const openSupplierCart = async (supplierId) => {
     if (repeatDays?.length > 0) payload.repeat_days = repeatDays;
     if (typeof autoOrder === "boolean") payload.auto_confirm = autoOrder;
 
-    const res = await fetch(`/api/supplier-carts/${cartId}/confirm`, {
+    const res = await fetch(`${API_URL}/api/supplier-carts/${cartId}/confirm`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

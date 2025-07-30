@@ -1,11 +1,11 @@
 import { useEffect } from "react";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 // ✅ Load settings with DEEP fallback
 export const useSetting = (section, setState, defaults = {}) => {
   useEffect(() => {
     let mounted = true;
 
-    fetch(`/api/settings/${section}`)
+    fetch(`${API_URL}/api/settings/${section}`)
       .then((res) => {
         if (!res.ok) throw new Error(`Status ${res.status}`);
         return res.json();
@@ -42,7 +42,7 @@ export const useSetting = (section, setState, defaults = {}) => {
 // ✅ Save setting (unchanged)
 export const saveSetting = async (section, data) => {
   try {
-    const res = await fetch(`/api/settings/${section}`, {
+    const res = await fetch(`${API_URL}/api/settings/${section}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

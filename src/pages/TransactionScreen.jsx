@@ -11,7 +11,7 @@ import { useOutletContext } from "react-router-dom";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import MoveTableModal from "../components/MoveTableModal";
 import MergeTableModal from "../components/MergeTableModal";
-
+ const API_URL = import.meta.env.VITE_API_URL || "";
 const paymentMethods = ["Cash", "Credit Card", "Sodexo", "Multinet"];
 const categoryIcons = {
   Meat: "🍔",
@@ -79,7 +79,7 @@ const [showMoveTableModal, setShowMoveTableModal] = useState(false);
 // 1. Add drinksList state at the top
 const [drinksList, setDrinksList] = useState([]);
 useEffect(() => {
-  fetch(`/api/drinks`)
+  (`${API_URL}/api/drinks`)
     .then(res => res.json())
     .then(data => setDrinksList(data.map(d => d.name)))
     .catch(() => setDrinksList([]));
@@ -156,7 +156,7 @@ useEffect(() => {
 }, [orderId, order, tableId, t, navigate, setHeader]);
 
 useEffect(() => {
-  fetch(`/api/category-images`)
+  (`${API_URL}/api/category-images`)
     .then(res => res.json())
     .then(data => {
       const dict = {};
@@ -220,7 +220,7 @@ useEffect(() => {
 }, [products]);
 
 useEffect(() => {
-  fetch(`/api/kitchen/compile-settings`)
+  (`${API_URL}/api/kitchen/compile-settings`)
     .then(res => res.json())
     .then(data => {
       setExcludedItems(data.excludedItems || []);
@@ -304,7 +304,7 @@ const enhancedItems = cartItems.map((i) => ({
 }));
 
   // 👉 Insert order with all items (once)
-await fetch(`/api/orders/sub-orders`, {
+await (`${API_URL}/api/orders/sub-orders`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -323,7 +323,7 @@ Object.entries(splits).forEach(([method, amt]) => {
   const val = parseFloat(amt);
   if (val > 0) cleanedSplits[method] = val;
 });
-await fetch(`/api/orders/receipt-methods`, {
+await (`${API_URL}/api/orders/receipt-methods`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -353,12 +353,12 @@ setShowPaymentModal(false);
 
 
 
-  const res = await fetch(`/api/orders/${order.id}/items`);
+  const res = await (`${API_URL}/api/orders/${order.id}/items`);
   const allItems = await res.json();
   const isFullyPaid = allItems.every((item) => item.paid_at);
 
   if (isFullyPaid) {
-   await fetch(`/api/orders/${order.id}/status`, {
+   await (`${API_URL}/api/orders/${order.id}/status`, {
   method: "PUT",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -518,7 +518,7 @@ useEffect(() => {
 useEffect(() => {
   return () => {
     if (order?.id && cartItems.length === 0) {
-      fetch(`/api/orders/${order.id}/reset-if-empty`, { method: "PATCH" });
+      (`${API_URL}/api/orders/${order.id}/reset-if-empty`, { method: "PATCH" });
     }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -590,14 +590,14 @@ ingredients: Array.isArray(item.ingredients)
   const createOrFetchTableOrder = async (tableId) => {
     try {
       let newOrder;
-      const res = await fetch(`/api/orders?table_number=${tableId}`);
+      const res = await (`${API_URL}/api/orders?table_number=${tableId}`);
       if (!res.ok) throw new Error("Failed to fetch order");
       const data = await res.json();
 
       if (data.length > 0) {
         newOrder = data[0];
       } else {
-        const createRes = await fetch(`/api/orders`, {
+        const createRes = await (`${API_URL}/api/orders`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ table_number: tableId, total: 0, order_type: "table" }),
@@ -608,7 +608,7 @@ ingredients: Array.isArray(item.ingredients)
       }
 
       // 🔄 Fetch items to verify real status
-      const itemsRes = await fetch(`/api/orders/${newOrder.id}/items`);
+      const itemsRes = await (`${API_URL}/api/orders/${newOrder.id}/items`);
       const items = await itemsRes.json();
 
       const parsedItems = items.map(item => {
@@ -665,7 +665,7 @@ ingredients: Array.isArray(item.ingredients)
 
   const fetchOrderItems = async (orderId) => {
   try {
-    const response = await fetch(`/api/orders/${orderId}/items`);
+    const response = await (`${API_URL}/api/orders/${orderId}/items`);
 const items = await response.json();
 if (!Array.isArray(items)) {
   console.error("❌ Expected items to be an array but got:", items);
@@ -713,7 +713,7 @@ if (!Array.isArray(items)) {
 
 const updateOrderStatus = async (newStatus, total = null, payment_method = null) => {
   try {
-    const res = await fetch(`/api/orders/${order.id}/status`, {
+    const res = await (`${API_URL}/api/orders/${order.id}/status`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: newStatus, total, payment_method }), // <-- ensure total
@@ -809,7 +809,7 @@ const handleMultifunction = async () => {
     const unconfirmedItems = safeCartItems.filter(i => !i.confirmed);
 
     if (unconfirmedItems.length > 0) {
-      await fetch(`/api/orders/order-items`, {  
+      await (`${API_URL}/api/orders/order-items`, {  
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -868,7 +868,7 @@ if ((order.status === "paid" || allPaid) && safeCartItems.length > 0) {
     return;
   }
 
-  await fetch(`/api/orders/${order.id}/close`, { method: "POST" });
+  await (`${API_URL}/api/orders/${order.id}/close`, { method: "POST" });
 
 
   if (order.order_type === "phone" || orderId) {
@@ -891,7 +891,7 @@ if ((order.status === "paid" || allPaid) && safeCartItems.length > 0) {
 
 const refreshReceiptAfterPayment = async () => {
   try {
-    const res = await fetch(`/api/orders/${order.id}/items`);
+    const res = await (`${API_URL}/api/orders/${order.id}/items`);
     if (!res.ok) throw new Error("Failed to refresh receipt");
     const data = await res.json();
 
@@ -975,7 +975,7 @@ if (discountValue > 0) {
       confirmed: true
     }));
 
-    await fetch(`/api/orders/sub-orders`, {
+    await (`${API_URL}/api/orders/sub-orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -992,7 +992,7 @@ Object.entries(splits).forEach(([method, amt]) => {
   const val = parseFloat(amt);
   if (val > 0) cleanedSplits[method] = val;
 });
-await fetch(`/api/orders/receipt-methods`, {
+await (`${API_URL}/api/orders/receipt-methods`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -1021,7 +1021,7 @@ await fetch(`/api/orders/receipt-methods`, {
     await refreshReceiptAfterPayment();
 
     // Now check if fully paid etc
-    const itemsRes2 = await fetch(`/api/orders/${order.id}/items`);
+    const itemsRes2 = await (`${API_URL}/api/orders/${order.id}/items`);
     const allItems2 = await itemsRes2.json();
     const isFullyPaid2 = allItems2.every(item => item.paid_at);
     if (isFullyPaid2) {
@@ -1140,7 +1140,7 @@ const clearUnconfirmedCartItems = () => {
   const fetchSubOrders = async () => {
     if (!order?.id) return;
     try {
-      const res = await fetch(`/api/orders/${order.id}/suborders`);
+      const res = await (`${API_URL}/api/orders/${order.id}/suborders`);
       const data = await res.json();
       setSubOrders(data);
     } catch (e) {
@@ -1183,7 +1183,7 @@ function ReceiptGroup({ receiptId, items, groupIdx }) {
   useEffect(() => {
     const fetchMethods = async () => {
       try {
-        const res = await fetch(`/api/reports/receipt-methods/${receiptId}`);
+        const res = await (`${API_URL}/api/reports/receipt-methods/${receiptId}`);
         const methods = await res.json();
 
         if (!methods.length) {
@@ -1799,7 +1799,7 @@ return (
   t={t}
   onConfirm={async (newTable) => {
     if (!order?.id) return;
-    const res = await fetch(`/api/orders/${order.id}/move-table`, {
+    const res = await (`${API_URL}/api/orders/${order.id}/move-table`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ new_table_number: newTable }),
@@ -1822,7 +1822,7 @@ return (
   t={t}
   onConfirm={async (destTable) => {
     if (!order?.id) return;
-    const res = await fetch(`/api/orders/${order.id}/merge-table`, {
+    const res = await (`${API_URL}/api/orders/${order.id}/merge-table`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ target_table_number: destTable }),

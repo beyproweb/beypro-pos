@@ -7,7 +7,7 @@ import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import i18n from "i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 
 export default function Task() {
@@ -240,11 +240,11 @@ const speakAndRestart = (text, lang = "en-US") => {
 
   // Initial load
   useEffect(() => {
-    axios.get('/api/tasks')
+    axios.get(`${API_URL}/api/tasks`)
       .then(res => setTasks(res.data))
       .catch(() => toast.error('Error fetching tasks'))
       .finally(() => setLoading(false));
-    axios.get('/api/staff')
+    axios.get(`${API_URL}/api/staff`)
       .then(res => setStaffList(res.data))
       .catch(() => toast.error('Error fetching staff'));
   }, []);
@@ -380,7 +380,7 @@ const startVoiceRecognition = () => {
 
   try {
     const isoDue = new Date(manualDueAt).toISOString();
-    await axios.post('/api/tasks', {
+    await axios.post(`${API_URL}/api/tasks`, {
       title: manualTitle,
       description: manualDescription,
       assigned_to_name: staffList.find(s => s.id === +manualAssignedTo)?.name,

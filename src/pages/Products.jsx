@@ -426,7 +426,7 @@ return (
     const groupId = group.id; // Make sure group.id exists!
     if (itemId && groupId) {
       try {
-        await fetch(`/api/extras-groups/${groupId}/items/${itemId}`, {
+        await (`${API_URL}/api/extras-groups/${groupId}/items/${itemId}`, {
           method: "DELETE",
         });
       } catch (err) {
@@ -466,7 +466,7 @@ return (
   const groupId = group.id;
   if (groupId) {
     try {
-      await fetch(`/api/extras-groups/${groupId}`, { method: "DELETE" });
+      await (`${API_URL}/api/extras-groups/${groupId}`, { method: "DELETE" });
     } catch (err) {
       alert("❌ Failed to delete group from server!");
       return;

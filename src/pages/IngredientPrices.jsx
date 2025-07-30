@@ -3,14 +3,14 @@ import { ArrowUp, ArrowDown, Info } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Card } from "../components/ui/card";
 import { Tooltip } from "react-tooltip";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 export default function IngredientPrices() {
   const { t } = useTranslation();
   const [ingredients, setIngredients] = useState([]);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    fetch("/api/ingredient-prices")
+    fetch(`${API_URL}/api/ingredient-prices`)
       .then(res => res.json())
       .then(data => {
         console.log("🥒 Ingredient Prices Response:", data);

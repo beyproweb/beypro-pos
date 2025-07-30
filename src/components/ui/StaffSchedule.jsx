@@ -129,7 +129,7 @@ const handleClearWeek = async () => {
 
     // Loop through each schedule and send a delete request
     for (const schedule of schedulesToClear) {
-      await axios.delete(`/api/staff/schedule/${schedule.id}`);
+      await axios.delete(`${API_URL}/api/staff/schedule/${schedule.id}`);
     }
 
     // Refresh the schedule list
@@ -145,7 +145,7 @@ const handleClearWeek = async () => {
   // Fetch staff list
   const fetchStaff = async () => {
   try {
-    const response = await axios.get(`/api/staff`);
+    const response = await axios.get(`${API_URL}/api/staff`);
     const staffData = response.data.map((staff) => ({
       ...staff,
       email: staff.email || '',
@@ -165,7 +165,7 @@ const handleClearWeek = async () => {
   // Fetch staff schedules
   const fetchStaffSchedules = async () => {
   try {
-    const response = await axios.get(`/api/staff/schedule`);
+    const response = await axios.get(`${API_URL}/api/staff/schedule`);
     setStaffSchedules(
       response.data.map((schedule) => ({
         ...schedule,
@@ -343,7 +343,7 @@ const handleSaveShift = async () => {
           d => !pickedDays.map(p => p.toLowerCase()).includes(d.toLowerCase())
         );
 
-        await axios.put(`/api/staff/schedule/${selectedShift.id}`, {
+        await axios.put(`${API_URL}/api/staff/schedule/${selectedShift.id}`, {
           shift_start: selectedShift.shift_start,
           shift_end:   selectedShift.shift_end,
           status:      selectedShift.status || 'Scheduled',
@@ -369,7 +369,7 @@ const handleSaveShift = async () => {
 
         const payload = makePayload(day, exactDate);
 
-        const res = await axios.post(`/api/staff/schedule`, payload);
+        const res = await axios.post(`${API_URL}/api/staff/schedule`, payload);
         setStaffSchedules(prev => [...prev, res.data.schedule]);
       }
 
@@ -385,7 +385,7 @@ const handleSaveShift = async () => {
 
         const payload = makePayload(day, exactDate);
 
-        const res = await axios.post(`/api/staff/schedule`, payload);
+        const res = await axios.post(`${API_URL}/api/staff/schedule`, payload);
         setStaffSchedules(prev => [...prev, res.data.schedule]);
       }
 
@@ -455,7 +455,7 @@ const handleSaveShift = async () => {
       toast.success('Shift day updated successfully');
     } else {
       // Delete the entire shift if only one day exists
-      await axios.delete(`/api/staff/schedule/${schedule.id}`);
+      await axios.delete(`${API_URL}/api/staff/schedule/${schedule.id}`);
       setStaffSchedules((prev) =>
         prev.filter((sched) => sched.id !== schedule.id)
       );
@@ -497,7 +497,7 @@ const handleSaveShift = async () => {
       );
       toast.success('Shift day removed successfully');
     } else {
-      await axios.delete(`/api/staff/schedule/${shiftId}`);
+      await axios.delete(`${API_URL}/api/staff/schedule/${shiftId}`);
       setStaffSchedules((prev) =>
         prev.filter((sched) => sched.id !== shiftId)
       );
@@ -730,7 +730,7 @@ const handleCopyOrPasteWeek = async () => {
                 salary: copiedShift.salary || 0,
               };
 
-              await axios.post(`/api/staff/schedule`, payload);
+              await axios.post(`${API_URL}/api/staff/schedule`, payload);
             }
           }
         }
@@ -765,7 +765,7 @@ const handleCopyOrPasteWeek = async () => {
     salary: staff.salary,
   };
   try {
-    const response = await axios.post(`/api/staff/schedule`, payload);
+    const response = await axios.post(`${API_URL}/api/staff/schedule`, payload);
     setStaffSchedules((prev) => [...prev, response.data.schedule]);
     toast.success(`Shift pasted for ${staff.name}`);
     setCopiedShift(null);
@@ -820,7 +820,7 @@ const handleCopyOrPasteWeek = async () => {
 
   const handleDeleteShiftById = async (shiftId) => {
     try {
-      await axios.delete(`/api/staff/schedule/${shiftId}`);
+      await axios.delete(`${API_URL}/api/staff/schedule/${shiftId}`);
       setStaffSchedules((prev) => prev.filter((sched) => sched.id !== shiftId));
       toast.success('Shift deleted');
     } catch (err) {

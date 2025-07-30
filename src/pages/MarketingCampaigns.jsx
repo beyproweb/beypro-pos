@@ -19,7 +19,7 @@ useEffect(() => {
   fetchCustomerCount().then(count =>
     setStats(s => ({ ...s, totalCustomers: count }))
   );
-  fetch('/api/campaigns/stats/last')
+  fetch(`${API_URL}/api/campaigns/stats/last`)
     .then(res => res.json())
     .then(data => {
       setStats(s => ({

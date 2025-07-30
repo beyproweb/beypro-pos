@@ -8,7 +8,7 @@ import Modal from 'react-modal';
 import { Toaster, toast } from 'react-hot-toast';
 import { Plus, Save } from 'lucide-react';
 import { useTranslation } from "react-i18next";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 Modal.setAppElement('#root');
 
 // Helper for ₺ currency formatting
