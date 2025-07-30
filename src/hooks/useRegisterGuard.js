@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 export function useRegisterGuard() {
   const [registerState, setRegisterState] = useState("loading");
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch("/api/reports/cash-register-status")
+    fetch(`${API_URL}/api/reports/cash-register-status`)
       .then(res => res.json())
       .then(data => {
         setRegisterState(data.status);

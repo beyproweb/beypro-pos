@@ -3,7 +3,7 @@ import { saveSetting } from "../hooks/useSetting";
 import { useAppearance } from "../../context/AppearanceContext";
 import { useAuth } from "../../context/AuthContext";
 import React, { useEffect } from "react";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 // Theme options
 const themes = [
   { key: "light", label: "Light", icon: "🌞" },
@@ -31,11 +31,11 @@ const accentColors = Object.keys(accentPreviewMap).map((value) => ({
 }));
 // Helper
 async function fetchUserAppearance(userId) {
-  const res = await fetch(`/api/user-settings/${userId}/appearance`);
+  const res = await fetch(`${API_URL}/api/user-settings/${userId}/appearance`);
   return res.json();
 }
 async function saveUserAppearance(userId, appearance) {
-  await fetch(`/api/user-settings/${userId}/appearance`, {
+  await fetch(`${API_URL}/api/user-settings/${userId}/appearance`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(appearance),

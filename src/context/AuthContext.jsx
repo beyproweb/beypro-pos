@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useSetting } from "../components/hooks/useSetting";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 export const AuthContext = createContext();
 
 export function useAuth() {
@@ -37,7 +37,7 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    fetch(`/api/me?email=${encodeURIComponent(email)}`)
+    fetch(`${API_URL}/api/me?email=${encodeURIComponent(email)}`)
       .then(res => res.json())
       .then(res => {
         const user = res.user || res.staff;

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from "react";
 
 const StockContext = createContext();
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 export const useStock = () => useContext(StockContext);
 
 export const StockProvider = ({ children }) => {
@@ -16,7 +16,7 @@ export const StockProvider = ({ children }) => {
     if (!item.stock_id || !item.supplier_id) return;
 
     // ✅ Live check
-    const res = await fetch(`/api/stock/${item.stock_id}`);
+    const res = await fetch(`${API_URL}/api/stock/${item.stock_id}`);
     const { stock } = await res.json();
     if (!stock) return;
 
@@ -28,7 +28,7 @@ export const StockProvider = ({ children }) => {
     }
 
     // 🔁 cart setup
-    const checkRes = await fetch(`/api/supplier-carts/items?supplier_id=${item.supplier_id}`);
+    const checkRes = await fetch(`${API_URL}/api/supplier-carts/items?supplier_id=${item.supplier_id}`);
     const cartData = await checkRes.json();
     const cartId = cartData.cart_id;
 
@@ -37,7 +37,7 @@ export const StockProvider = ({ children }) => {
     );
 
     if (existing) {
-      await fetch(`/api/supplier-cart-items/${existing.id}`, {
+      await fetch(`${API_URL}/api/supplier-cart-items/${existing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ quantity: parseFloat(existing.quantity) + parseFloat(item.reorder_quantity) }),
@@ -93,7 +93,7 @@ supplierCartMap[sid] = cartData.items;
       if (!item.supplier_id || !item.reorder_quantity) continue;
 
       try {
-        const stockRes = await fetch(`/api/stock/${item.id}`);
+        const stockRes = await fetch(`${API_URL}/api/stock/${item.id}`);
         const { stock } = await stockRes.json();
         if (!stock) continue;
 
@@ -137,7 +137,7 @@ supplierCartMap[sid] = cartData.items;
             supplier_id: item.supplier_id,
           });
 
-          await fetch(`/api/stock/${item.id}/flag-auto-added`, {
+          await fetch(`${API_URL}/api/stock/${item.id}/flag-auto-added`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ last_auto_add_at: new Date().toISOString() }),
