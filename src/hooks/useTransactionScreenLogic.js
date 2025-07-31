@@ -65,7 +65,7 @@ export default function useTransactionScreenLogic() {
 
   // Effects
   useEffect(() => {
-    fetch("/api/category-images")
+    fetch(`${API_URL}/api/category-images`)
       .then(res => res.json())
       .then(data => {
         const dict = {};
@@ -77,7 +77,7 @@ export default function useTransactionScreenLogic() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/kitchen/compile-settings")
+    fetch(`${API_URL}/api/kitchen/compile-settings`)
       .then(res => res.json())
       .then(data => {
         setExcludedItems(data.excludedItems || []);
@@ -97,7 +97,7 @@ export default function useTransactionScreenLogic() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/extras-groups")
+    fetch(`${API_URL}/api/extras-groups`)
       .then(res => res.json())
       .then(data => {
         setExtrasGroups(data.map(g => ({
@@ -201,7 +201,7 @@ export default function useTransactionScreenLogic() {
         if (data.length > 0) {
           newOrder = data[0];
         } else {
-          const createRes = await fetch("/api/orders", {
+          const createRes = await fetch(`${API_URL}/api/orders`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ table_number: tableId, total: 0 }),

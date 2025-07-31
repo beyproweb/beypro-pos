@@ -464,7 +464,7 @@ useEffect(() => {
   const handleQrSubmitOrder = async () => {
     if (!table || cart.length === 0) return;
     // 1. Try to find an open order for this table (status not closed)
-    const orderRes = await (`${API_URL}/api/orders?table_number=${table}`);
+    const orderRes = await fetch(`${API_URL}/api/orders?table_number=${table}`);
     const orders = await orderRes.json();
     let order = orders[0];
     let orderId;
@@ -513,7 +513,7 @@ useEffect(() => {
         }),
       });
       // Optionally, update status to confirmed
-      await (`${API_URL}/api/orders/${orderId}/status`, {
+      await fetch(`${API_URL}/api/orders/${orderId}/status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "confirmed" }),
