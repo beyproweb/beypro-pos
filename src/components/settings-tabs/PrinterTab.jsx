@@ -2,6 +2,7 @@ import React, { useState,useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import socket from "../../utils/socket";
 console.log("🔌 [AUTO-PRINT] socket:", socket);
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 const SHOP_ID = 1;
 const previewOrder = {
@@ -57,7 +58,7 @@ const [autoPrintPacket, setAutoPrintPacket] = useState(
 async function handleOrderConfirmed(orderId) {
   // Fetch the full order data
   try {
-    const res = await fetch(`/api/orders/${orderId}`);
+    const res = await fetch(`${API_URL}/api/orders/${orderId}`);
     if (!res.ok) throw new Error("Could not fetch order");
     const order = await res.json();
     // Print the order
@@ -124,7 +125,7 @@ function handlePrintTest() {
 
 useEffect(() => {
   setLoading(true);
-  fetch(`/api/printer-settings/${SHOP_ID}`)
+  fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`)
     .then(res => {
       if (!res.ok) throw new Error("Not found");
       return res.json();
@@ -499,7 +500,7 @@ useEffect(() => {
     setError("");
     setSuccess(false);
     try {
-      const res = await fetch(`/api/printer-settings/${SHOP_ID}`, {
+      const res = await fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`, {
         method: "PUT", // Use PUT for update, POST for first-time creation
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ layout }),

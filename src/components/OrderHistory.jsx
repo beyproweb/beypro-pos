@@ -38,7 +38,7 @@ const fetchClosedOrders = async () => {
   if (toDate) query.append("to", toDate);
 
   try {
-    const res = await fetch(`/api/reports/history?${query.toString()}`);
+    const res = await fetch(`${API_URL}/api/reports/history?${query.toString()}`);
     const data = await res.json();
 
     const enriched = await Promise.all(
@@ -55,7 +55,7 @@ const fetchClosedOrders = async () => {
         // ALWAYS fetch all splits for every order with a receipt_id
         let receiptMethods = [];
         if (order.receipt_id) {
-          const methodsRes = await fetch(`/api/reports/receipt-methods/${order.receipt_id}`);
+          const methodsRes = await fetch(`${API_URL}/api/reports/receipt-methods/${order.receipt_id}`);
           if (methodsRes.ok) {
             receiptMethods = await methodsRes.json();
           }

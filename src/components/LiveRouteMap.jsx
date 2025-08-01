@@ -58,7 +58,7 @@ useEffect(() => {
     });
 
     try {
-      const res = await fetch(`/api/google-directions?${params.toString()}`);
+      const res = await fetch(`${API_URL}/api/google-directions?${params.toString()}`);
       const data = await res.json();
       if (data.routes && data.routes[0] && data.routes[0].overview_polyline) {
         const points = polyline.decode(data.routes[0].overview_polyline.points);
@@ -81,7 +81,7 @@ useEffect(() => {
     let isMounted = true;
     async function fetchLocation() {
       try {
-        const res = await fetch(`/api/drivers/location/${driverId}`);
+        const res = await fetch(`${API_URL}/api/drivers/location/${driverId}`);
         if (!res.ok) throw new Error("Not found");
         const data = await res.json();
         if (isMounted) setDriverPos({ lat: data.lat, lng: data.lng });
@@ -116,7 +116,7 @@ useEffect(() => {
       ...(waypoints ? { waypoints } : {})
     });
 
-    fetch(`/api/google-directions?${params.toString()}`)
+    fetch(`${API_URL}/api/google-directions?${params.toString()}`)
       .then(res => res.json())
       .then(data => {
         console.log("Google Directions API data:", data);

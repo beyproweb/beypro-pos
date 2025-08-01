@@ -5,6 +5,7 @@ import Modal from 'react-modal';
 import { Toaster, toast } from 'react-hot-toast';
 import { Plus, Save, Download } from 'lucide-react';
 import { useTranslation } from "react-i18next";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 
 
@@ -234,7 +235,7 @@ const Payroll = () => {
 
   // Fetch staff on mount
   useEffect(() => {
-    axios.get(`/api/staff`).then(res => setStaffList(res.data));
+    axios.get(`${API_URL}/api/staff`).then(res => setStaffList(res.data));
   }, []);
 
   // Handle staff selection + fetch their payroll
@@ -243,8 +244,8 @@ const Payroll = () => {
     if (!staffId) { setStaffHistory({}); return; }
     try {
       const [payroll, payments] = await Promise.all([
-        axios.get(`/api/staff/${staffId}/payroll?startDate=${startDate}&endDate=${endDate}`),
-        axios.get(`/api/staff/${staffId}/payments`)
+        axios.get(`${API_URL}/api/staff/${staffId}/payroll?startDate=${startDate}&endDate=${endDate}`),
+        axios.get(`${API_URL}/api/staff/${staffId}/payments`)
       ]);
       setStaffHistory({
         ...payroll.data.payroll,
@@ -287,7 +288,7 @@ const Payroll = () => {
     const amt = parseFloat(paymentAmount);
     if (!amt && !autoPaymentEnabled) return toast.error('Enter amount or enable auto');
     try {
-      await axios.post(`/api/staff/${selectedStaff}/payments`, {
+      await axios.post(`${API_URL}/api/staff/${selectedStaff}/payments`, {
         amount: amt,
         date: new Date().toISOString().slice(0,10),
         note,

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { AppearanceContext } from "../context/AppearanceContext";
 import axios from "axios";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 const DEFAULT_APPEARANCE = {
   theme: "system",
@@ -23,7 +24,7 @@ export default function AppearanceProvider({ children }) {
     }
     setLoaded(false); // reset loaded when user changes
     axios
-      .get(`/api/user-settings/${currentUser.id}/appearance`)
+      .get(`${API_URL}/api/user-settings/${currentUser.id}/appearance`)
       .then((res) => {
         setAppearance({ ...DEFAULT_APPEARANCE, ...res.data });
         setLoaded(true);

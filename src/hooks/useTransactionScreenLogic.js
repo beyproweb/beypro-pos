@@ -111,8 +111,8 @@ export default function useTransactionScreenLogic() {
 
   useEffect(() => {
     let url = window.location.hostname === "localhost"
-      ? "/api/products"
-      : `${window.location.origin}/api/products`;
+      ? "${API_URL}/api/products"
+      : `${window.location.origin}${API_URL}/api/products`;
     fetch(url)
       .then(res => res.json())
       .then(data => {
@@ -195,7 +195,7 @@ export default function useTransactionScreenLogic() {
     const createOrFetchTableOrder = async (tableId) => {
       try {
         let newOrder;
-        const res = await fetch(`/api/orders?table_number=${tableId}`);
+        const res = await fetch(`${API_URL}/api/orders?table_number=${tableId}`);
         if (!res.ok) throw new Error("Failed to fetch order");
         const data = await res.json();
 

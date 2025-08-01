@@ -280,7 +280,7 @@ const handleRecognition = async (event) => {
 
   setIsProcessingVoice(true);
   try {
-    const res = await axios.post("/api/voice-command", {
+    const res = await axios.post(`${API_URL}/api/voice-command`, {
       message: text,
       created_by: 425425,
     }, {
@@ -311,7 +311,7 @@ const handleRecognition = async (event) => {
     };
 
     try {
-      const r = await axios.post("/api/tasks", taskPayload);
+      const r = await axios.post(`${API_URL}/api/tasks`, taskPayload);
       setTasks(t => [r.data, ...t]);
       speak(getSpeechText("saved", currentLang), null, langVoiceCode);
     } catch (e) {
@@ -404,7 +404,7 @@ const startVoiceRecognition = () => {
 
   const handleStartTask = async (id) => {
     try {
-      const r = await axios.patch(`/api/tasks/${id}/start`);
+      const r = await axios.patch(`${API_URL}/api/tasks/${id}/start`);
       toast.success("Task started!");
       setTasks(p => p.map(t => t.id === id ? r.data : t));
     } catch {
@@ -413,7 +413,7 @@ const startVoiceRecognition = () => {
   };
   const handleCompleteTask = async (id) => {
     try {
-      const r = await axios.patch(`/api/tasks/${id}/complete`);
+      const r = await axios.patch(`${API_URL}/api/tasks/${id}/complete`);
       toast.success("Task completed!");
       setTasks(p => p.map(t => t.id === id ? r.data : t));
     } catch {
@@ -427,7 +427,7 @@ const startVoiceRecognition = () => {
 
   const clearTasks = async () => {
   try {
-    const res = await axios.delete("/api/tasks/clear-completed");
+    const res = await axios.delete(`${API_URL}/api/tasks/clear-completed`);
     const count = res.data.count || 0;
 
     setTasks(prev =>
@@ -464,7 +464,7 @@ const startVoiceRecognition = () => {
       return;
     }
 
-    const res = await axios.put(`/api/tasks/${taskId}`, payload);
+    const res = await axios.put(`${API_URL}/api/tasks/${taskId}`, payload);
     const updatedTask = res.data;
 
     const updated = tasks.map((t) =>

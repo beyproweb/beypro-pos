@@ -5,6 +5,7 @@ import RecipeModal from '../modals/RecipeModal';
 import StockConfirmModal from '../modals/StockConfirmModal';
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 export default function Production() {
   const [recipes, setRecipes] = useState([]);
@@ -17,7 +18,7 @@ export default function Production() {
   const [lockedProduce, setLockedProduce] = useState({});
     const { t, i18n } = useTranslation();
   useEffect(() => {
-    fetch('/api/production/recipes')
+    fetch('${API_URL}/api/production/recipes')
       .then((res) => res.json())
       .then((data) => {
         setRecipes(data);
@@ -27,7 +28,7 @@ export default function Production() {
 
         // fetch history for each product
         data.forEach((recipe) => {
-          fetch(`/api/production/production-log/history?product=${recipe.name}&limit=5`)
+          fetch(`${API_URL}/api/production/production-log/history?product=${recipe.name}&limit=5`)
             .then((res) => res.json())
             .then((history) => {
               setHistoryMap((prev) => ({ ...prev, [recipe.name]: history }));
@@ -36,7 +37,7 @@ export default function Production() {
         });
 
         data.forEach((recipe) => {
-  fetch(`/api/production/production-log/unstocked?product=${recipe.name}&limit=1`)
+  fetch(`${API_URL}/api/production/production-log/unstocked?product=${recipe.name}&limit=1`)
     .then((res) => res.json())
     .then((unstockedLogs) => {
       if (unstockedLogs.length > 0) {
@@ -57,7 +58,7 @@ export default function Production() {
   };
 
 const fetchProductHistory = (productName) => {
-  fetch(`/api/production/production-log/history?product=${productName}&limit=5`)
+  fetch(`${API_URL}/api/production/production-log/history?product=${productName}&limit=5`)
     .then((res) => res.json())
     .then((history) => {
       setHistoryMap((prev) => ({ ...prev, [productName]: history }));
@@ -86,7 +87,7 @@ const fetchProductHistory = (productName) => {
 
   setLoadingMap((prev) => ({ ...prev, [product.name]: 'producing' }));
 
-  const res = await fetch('/api/production/production-log', {
+  const res = await fetch('${API_URL}/api/production/production-log', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -115,7 +116,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit }) => {
   console.log("📤 Sending final stock payload:", payload);
 
   try {
-    const res = await fetch('/api/stock', {
+    const res = await fetch('${API_URL}/api/stock', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -143,7 +144,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit }) => {
 
   const handleAddOrUpdateRecipe = async (recipe) => {
     const method = editRecipe ? 'PUT' : 'POST';
-    const endpoint = editRecipe ? `/api/production/recipes/${editRecipe.id}` : '/api/production/recipes';
+    const endpoint = editRecipe ? `${API_URL}/api/production/recipes/${editRecipe.id}` : '${API_URL}/api/production/recipes';
 
     const res = await fetch(endpoint, {
       method,
@@ -152,7 +153,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit }) => {
     });
 
     if (res.ok) {
-      const updated = await fetch('/api/production/recipes').then(res => res.json());
+      const updated = await fetch('${API_URL}/api/production/recipes').then(res => res.json());
       setRecipes(updated);
       const q = {};
       updated.forEach((r) => (q[r.name] = 1));
@@ -164,7 +165,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit }) => {
   const handleDeleteRecipe = async (recipeName) => {
     const recipe = recipes.find(r => r.name === recipeName);
     if (!recipe) return;
-    const res = await fetch(`/api/production/recipes/${recipe.id}`, { method: 'DELETE' });
+    const res = await fetch(`${API_URL}/api/production/recipes/${recipe.id}`, { method: 'DELETE' });
 
     if (res.ok) {
       setRecipes((prev) => prev.filter((r) => r.name !== recipeName));

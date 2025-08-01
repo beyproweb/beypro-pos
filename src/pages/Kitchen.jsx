@@ -828,7 +828,7 @@ return (
                   className="text-red-500 hover:text-red-700 px-1"
                   title="Delete"
                   onClick={async () => {
-                    await fetch(`/api/kitchen-timers/${timer.id}`, { method: "DELETE" });
+                    await fetch(`${API_URL}/api/kitchen-timers/${timer.id}`, { method: "DELETE" });
                     setTimers(timers => timers.filter(t => t.id !== timer.id));
                   }}
                 >

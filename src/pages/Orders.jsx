@@ -397,7 +397,7 @@ const fetchOrders = async () => {
 
   async function fetchDrivers() {
   try {
-    const res = await fetch('/api/staff/drivers');
+    const res = await fetch('${API_URL}/api/staff/drivers');
     const data = await res.json();
     setDrivers(data);
   } catch {

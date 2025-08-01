@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 export default function MoveTableModal({ open, onClose, onConfirm, currentTable, t }) {
   const [tables, setTables] = useState([]);
@@ -8,7 +9,7 @@ export default function MoveTableModal({ open, onClose, onConfirm, currentTable,
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch("/api/orders")
+    fetch("${API_URL}/api/orders")
       .then(res => res.json())
       .then(data => {
         // Mark all tables 1-20, with info on whether occupied

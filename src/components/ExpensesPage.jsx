@@ -3,6 +3,7 @@ import { PlusCircle, X } from "lucide-react";
 import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 const allowedMethods = ["Cash", "Credit Card", "Bank Transfer", "Not Paid"];
 
@@ -49,7 +50,7 @@ export default function ExpensesPage() {
       params.set("to", customRange.to);
     }
 
-    const res = await fetch(`/api/expenses?${params.toString()}`);
+    const res = await fetch(`${API_URL}/api/expenses?${params.toString()}`);
     const data = await res.json();
     setExpenses(data);
   } catch (err) {
@@ -59,7 +60,7 @@ export default function ExpensesPage() {
 
  const fetchExpenseTypes = async () => {
   try {
-    const res = await fetch("/api/expenses/types");
+    const res = await fetch(`${API_URL}/api/expenses/types`);
     const data = await res.json();
     setExpenseTypes(data);
   } catch (err) {
@@ -95,7 +96,7 @@ useEffect(() => {
   };
 
   try {
-    const res = await fetch("/api/expenses", {
+    const res = await fetch(`${API_URL}/api/expenses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

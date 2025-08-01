@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 export default function LogFilesTab() {
   const { t } = useTranslation();
@@ -27,7 +28,7 @@ export default function LogFilesTab() {
   if (dateFilter.from) params.append("from", dateFilter.from);
   if (dateFilter.to) params.append("to", dateFilter.to);
 
-  const url = `/api/settings/logs/${selectedLog}?${params.toString()}`;
+  const url = `${API_URL}/api/settings/logs/${selectedLog}?${params.toString()}`;
 
   console.log("Fetching logs from:", url);
 

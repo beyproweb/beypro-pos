@@ -89,7 +89,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
     }
     try {
       // Save customer
-     const res = await fetch("/api/customers", {
+     const res = await fetch(`${API_URL}/api/customers`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ name: form.name, phone: form.phone, birthday: form.birthday || null, email: form.email || null })
@@ -172,7 +172,7 @@ const res = await fetch(`${API_URL}customers/${id}`, {
         total: 0,
       };
 
-      const res2 = await fetch("/api/orders", {
+      const res2 = await fetch(`${API_URL}/api/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)

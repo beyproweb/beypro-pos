@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+const API_URL = import.meta.env.VITE_API_URL || "";
+
 export default function SupplierScheduledCart({ supplier, openSupplierCart }) {
   const [cartInfo, setCartInfo] = useState(null);
   const [history, setHistory] = useState([]);
@@ -10,8 +12,8 @@ export default function SupplierScheduledCart({ supplier, openSupplierCart }) {
     setLoading(true);
     try {
       const [scheduledRes, historyRes] = await Promise.all([
-        fetch(`/api/supplier-carts/scheduled?supplier_id=${supplier.id}`),
-        fetch(`/api/supplier-carts/history?supplier_id=${supplier.id}`)
+        fetch(`${API_URL}/api/supplier-carts/scheduled?supplier_id=${supplier.id}`),
+        fetch(`${API_URL}/api/supplier-carts/history?supplier_id=${supplier.id}`)
       ]);
 
       const scheduledData = scheduledRes.ok ? await scheduledRes.json() : null;
@@ -49,7 +51,7 @@ export default function SupplierScheduledCart({ supplier, openSupplierCart }) {
     if (!cartInfo?.cart_id) return;
     try {
       const res = await fetch(
-        `/api/supplier-carts/${cartInfo.cart_id}/confirm`,
+        `${API_URL}/api/supplier-carts/${cartInfo.cart_id}/confirm`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
