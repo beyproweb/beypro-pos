@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from "react-i18next";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 // For fetch fallback and badge style
 const BADGE_STYLE = "ml-2 px-2 py-1 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 text-sm font-bold";
@@ -15,7 +16,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
 
   // Fetch latest ingredient prices for live costing
   useEffect(() => {
-    fetch('/api/ingredient-prices')
+    fetch(`${API_URL}/api/ingredient-prices`)
       .then(res => res.json())
       .then(data => setIngredientPrices(Array.isArray(data) ? data : []))
       .catch(() => setIngredientPrices([]));

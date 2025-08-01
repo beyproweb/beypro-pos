@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import { useTranslation } from "react-i18next";
 import { useSwipeable } from "react-swipeable";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 // Business constants
 const paymentMethods = ["Cash", "Credit Card", "Sodexo", "Multinet"];
@@ -145,11 +146,11 @@ export default function useTransactionScreenLogic() {
   useEffect(() => {
     const fetchPhoneOrder = async (orderId) => {
       try {
-        const res = await fetch(`/api/orders/${orderId}`);
+        const res = await fetch(`${API_URL}/api/${orderId}`);
         if (!res.ok) throw new Error("Failed to fetch phone order");
         const newOrder = await res.json();
 
-        const itemsRes = await fetch(`/api/orders/${newOrder.id}/items`);
+        const itemsRes = await fetch(`${API_URL}/api/${newOrder.id}/items`);
         const items = await itemsRes.json();
 
         const parsedItems = items.map(item => ({
@@ -210,7 +211,7 @@ export default function useTransactionScreenLogic() {
           newOrder = await createRes.json();
         }
 
-        const itemsRes = await fetch(`/api/orders/${newOrder.id}/items`);
+        const itemsRes = await fetch(`${API_URL}/api/${newOrder.id}/items`);
         const items = await itemsRes.json();
 
         const parsedItems = items.map(item => ({

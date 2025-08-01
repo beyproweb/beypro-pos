@@ -318,83 +318,84 @@ export default function GlobalOrderAlert() {
 
   // 🔁 Polling checks
   const pollingChecks = useMemo(() => [
-    {
-      key: "order_preparing",
-      endpoint: "/api/order-items/preparing",
-      extractIds: (data) => data,  // since data is already an array of IDs
-    },
-    {
-      key: "order_ready",
-      endpoint: "/api/kitchen-orders",
-      extractIds: (data) =>
-        data.filter((i) => i.kitchen_status === "ready").map((i) => i.item_id),
-    },
-    {
-      key: "order_delivered",
-      endpoint: "/api/orders",
-      extractIds: (data) =>
-        data.filter((o) => o.status === "delivered").map((o) => o.id),
-    },
-    {
-      key: "payment_made",
-      endpoint: "/api/orders",
-      extractIds: (data) =>
-        data.filter((o) => o.is_paid).map((o) => o.id),
-    },
-    {
-      key: "stock_low",
-      endpoint: "/api/stock",
-      extractIds: (data) => {
-        const criticalNow = [];
-        data.forEach((item) => {
-          const prevQty = previousStockQty.current[item.id];
-          if (item.qty <= item.critical_qty) {
-            if (prevQty === undefined || prevQty > item.critical_qty) {
-              criticalNow.push(item.id);
-            }
+  {
+    key: "order_preparing",
+    endpoint: `${API_URL}/api/order-items/preparing`,
+    extractIds: (data) => data,
+  },
+  {
+    key: "order_ready",
+    endpoint: `${API_URL}/api/kitchen-orders`,
+    extractIds: (data) =>
+      data.filter((i) => i.kitchen_status === "ready").map((i) => i.item_id),
+  },
+  {
+    key: "order_delivered",
+    endpoint: `${API_URL}/api/orders`,
+    extractIds: (data) =>
+      data.filter((o) => o.status === "delivered").map((o) => o.id),
+  },
+  {
+    key: "payment_made",
+    endpoint: `${API_URL}/api/orders`,
+    extractIds: (data) =>
+      data.filter((o) => o.is_paid).map((o) => o.id),
+  },
+  {
+    key: "stock_low",
+    endpoint: `${API_URL}/api/stock`,
+    extractIds: (data) => {
+      const criticalNow = [];
+      data.forEach((item) => {
+        const prevQty = previousStockQty.current[item.id];
+        if (item.qty <= item.critical_qty) {
+          if (prevQty === undefined || prevQty > item.critical_qty) {
+            criticalNow.push(item.id);
           }
-          previousStockQty.current[item.id] = item.qty;
-        });
-        return criticalNow;
-      },
+        }
+        previousStockQty.current[item.id] = item.qty;
+      });
+      return criticalNow;
     },
-    {
-      key: "stock_restocked",
-      endpoint: "/api/stock",
-      extractIds: (data) => {
-        const restocked = [];
-        data.forEach((item) => {
-          const prevQty = previousStockQty.current[item.id] || 0;
-          if (item.qty > prevQty) {
-            restocked.push(item.id);
-          }
-          previousStockQty.current[item.id] = item.qty;
-        });
-        return restocked;
-      },
+  },
+  {
+    key: "stock_restocked",
+    endpoint: `${API_URL}/api/stock`,
+    extractIds: (data) => {
+      const restocked = [];
+      data.forEach((item) => {
+        const prevQty = previousStockQty.current[item.id] || 0;
+        if (item.qty > prevQty) {
+          restocked.push(item.id);
+        }
+        previousStockQty.current[item.id] = item.qty;
+      });
+      return restocked;
     },
-    {
-      key: "order_delayed",
-      endpoint: "/api/orders",
-      extractIds: (data) => {
-        const now = Date.now();
-        return data
-          .filter(
-            (o) =>
-              o.expected_time &&
-              new Date(o.expected_time).getTime() < now &&
-              !["delivered", "closed"].includes(o.status)
-          )
-          .map((o) => o.id);
-      },
+  },
+  {
+    key: "order_delayed",
+    endpoint: `${API_URL}/api/orders`,
+    extractIds: (data) => {
+      const now = Date.now();
+      return data
+        .filter(
+          (o) =>
+            o.expected_time &&
+            new Date(o.expected_time).getTime() < now &&
+            !["delivered", "closed"].includes(o.status)
+        )
+        .map((o) => o.id);
     },
-    {
-      key: "driver_arrived",
-      endpoint: "/api/orders",
-      extractIds: (data) =>
-        data.filter((o) => o.driver_status === "delivered").map((o) => o.id),
-    },
-  ], []);
+  },
+  {
+    key: "driver_arrived",
+    endpoint: `${API_URL}/api/orders`,
+    extractIds: (data) =>
+      data.filter((o) => o.driver_status === "delivered").map((o) => o.id),
+  },
+], [API_URL]);
+
 
   // 🧠 Polling runner
   const pollAll = useCallback(async () => {
