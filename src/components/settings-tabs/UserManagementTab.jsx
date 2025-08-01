@@ -5,7 +5,7 @@ import { toast } from "react-toastify";
 import { useSetting, saveSetting } from "../hooks/useSetting";
 import RolePermissionModal from "../settings-tabs/RolePermissionModal";
 import ConfirmModal from "../ui/ConfirmModal";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 export default function UserManagementTab() {
   const { t } = useTranslation();
  const [editingRole, setEditingRole] = useState(null);
@@ -102,7 +102,7 @@ const handleCreateRole = async () => {
 
   // Optionally assign to staff
   if (selectedStaffId) {
-    await axios.put(`/api/staff/${selectedStaffId}/role`, { role });
+    await axios.put(`${API_URL}/api/staff/${selectedStaffId}/role`, { role });
     toast.success(`👤 Assigned ${role} to staff ID ${selectedStaffId}`);
     fetchStaff();
   }
@@ -115,7 +115,7 @@ const handleCreateRole = async () => {
 
   const fetchStaff = async () => {
     try {
-      const response = await axios.get(`/api/staff`);
+      const response = await axios.get(`${API_URL}/api/staff`);
       setStaffList(response.data);
     } catch (err) {
       console.error("Error fetching staff:", err);
@@ -142,7 +142,7 @@ const handleCreateRole = async () => {
     }
 
     try {
-      await axios.post(`/api/staff`, {
+      await axios.post(`${API_URL}/api/staff`, {
         id: parseInt(id),
         name,
         email,
@@ -183,7 +183,7 @@ const handleCreateRole = async () => {
   if (!confirmDelete) return;
 
   try {
-    await axios.delete(`/api/staff/${selectedStaffId}`);
+    await axios.delete(`${API_URL}/api/staff/${selectedStaffId}`);
     toast.success("🗑️ Staff deleted");
     fetchStaff();
     setSelectedStaffId("");
@@ -270,7 +270,7 @@ const handleCreateRole = async () => {
           <button
             disabled={!selectedStaffId || !copyFromRole}
             onClick={async () => {
-              await axios.put(`/api/staff/${selectedStaffId}/role`, { role: copyFromRole });
+              await axios.put(`${API_URL}/api/staff/${selectedStaffId}/role`, { role: copyFromRole });
               toast.success(`✅ Assigned ${copyFromRole} to staff ID ${selectedStaffId}`);
               fetchStaff();
               setSelectedStaffId("");
@@ -387,7 +387,7 @@ const handleCreateRole = async () => {
                 <button
                   onClick={async () => {
                     try {
-                      await axios.put(`/api/staff/${staff.id}`, editedStaff);
+                      await axios.put(`${API_URL}/api/staff/${staff.id}`, editedStaff);
                       toast.success("✅ Staff updated");
                       fetchStaff();
                       setEditingStaffId(null);
@@ -560,7 +560,7 @@ const handleCreateRole = async () => {
       onCancel={() => setShowConfirm(false)}
       onConfirm={async () => {
         try {
-          await axios.delete(`/api/staff/${selectedStaffId}`);
+          await axios.delete(`${API_URL}/api/staff/${selectedStaffId}`);
           toast.success("🗑️ Staff deleted");
           fetchStaff();
           setSelectedStaffId("");

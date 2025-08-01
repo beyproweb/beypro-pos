@@ -230,7 +230,7 @@ useEffect(() => {
   if (showPaymentModal && editingPaymentOrder) {
     const fetchSplit = async () => {
       if (editingPaymentOrder.receipt_id) {
-        const res = await fetch(`/api/orders/receipt-methods/${editingPaymentOrder.receipt_id}`);
+        const res = await fetch(`${API_URL}/receipt-methods/${editingPaymentOrder.receipt_id}`);
         const split = await res.json();
         if (Array.isArray(split) && split.length) {
           setSplitPayments(
@@ -264,7 +264,7 @@ async function fetchDriverReport() {
   setReportLoading(true);
   setDriverReport(null);
   try {
-    const res = await fetch(`/api/orders/driver-report?driver_id=${selectedDriverId}&date=${reportDate}`);
+    const res = await fetch(`${API_URL}/driver-report?driver_id=${selectedDriverId}&date=${reportDate}`);
     setDriverReport(await res.json());
   } catch (err) {
     setDriverReport({ error: "Failed to load driver report" });
@@ -323,7 +323,7 @@ const fetchOrders = async () => {
 
     const withKitchenStatus = [];
     for (const order of phoneOrders) {
-      const itemsRes = await fetch(`/api/orders/${order.id}/items`);
+      const itemsRes = await fetch(`${API_URL}/${order.id}/items`);
       const items = await itemsRes.json();
       if (items.length > 0) {
         let overallKitchenStatus = "preparing";
@@ -379,7 +379,7 @@ const fetchOrders = async () => {
   const savePaymentMethod = async (order) => {
     setUpdating((prev) => ({ ...prev, [order.id]: true }));
     try {
-      await fetch(`/api/orders/${order.id}`, {
+      await fetch(`${API_URL}/${order.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -434,7 +434,7 @@ const allNonDrinksDelivered = nonDrinkItems.every(
 
   // Pick up: allow as soon as all non-drink items are delivered
   if (!order.driver_status && allNonDrinksDelivered) {
-    await fetch(`/api/orders/${order.id}/driver-status`, {
+    await fetch(`${API_URL}/${order.id}/driver-status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ driver_status: "on_road" }),
@@ -444,7 +444,7 @@ const allNonDrinksDelivered = nonDrinkItems.every(
 
   // Deliver: allow if all non-drink items are delivered
 } else if (order.driver_status === "on_road" && allNonDrinksDelivered) {
-  await fetch(`/api/orders/${order.id}/driver-status`, {
+  await fetch(`${API_URL}/${order.id}/driver-status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ driver_status: "delivered" }),
@@ -1021,7 +1021,7 @@ return (
       const { order: updated } = await res.json();
 
       // Fetch items for this order
-      const itemsRes = await fetch(`/api/orders/${order.id}/items`);
+      const itemsRes = await fetch(`${API_URL}/${order.id}/items`);
       const items = await itemsRes.json();
 
       setOrders(prev =>
@@ -1064,7 +1064,7 @@ return (
     className="px-4 py-2 rounded-xl bg-fuchsia-600 text-white font-bold shadow hover:bg-fuchsia-700 transition"
     onClick={async () => {
   // Fetch latest items (including extras) for this order!
-  const itemsRes = await fetch(`/api/orders/${order.id}/items`);
+  const itemsRes = await fetch(`${API_URL}/${order.id}/items`);
   const items = await itemsRes.json();
   setEditingPaymentOrder({ ...order, items }); // set with freshest items+extras!
   setShowPaymentModal(true);
@@ -1273,7 +1273,7 @@ return (
           onChange={async e => {
             const driverId = e.target.value;
             setEditingDriver(prev => ({ ...prev, [order.id]: driverId }));
-            await fetch(`/api/orders/${order.id}`, {
+            await fetch(`${API_URL}/${order.id}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1345,7 +1345,7 @@ return (
           : o
       )
     );
-    await fetch(`/api/orders/${order.id}/driver-status`, {
+    await fetch(`${API_URL}/${order.id}/driver-status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ driver_status: "on_road" }),
@@ -1370,7 +1370,7 @@ return (
           : o
       )
     );
-    await fetch(`/api/orders/${order.id}/driver-status`, {
+    await fetch(`${API_URL}/${order.id}/driver-status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ driver_status: "delivered" }),
@@ -1393,7 +1393,7 @@ return (
           : o
       )
     );
-    await fetch(`/api/orders/${order.id}/close`, { method: "POST" });
+    await fetch(`${API_URL}/${order.id}/close`, { method: "POST" });
     // Optionally: await fetchOrders();
   }}
 >
@@ -1557,7 +1557,7 @@ onClick={async () => {
     }),
   });
 
-  await fetch(`/api/orders/${editingPaymentOrder.id}`, {
+  await fetch(`${API_URL}/${editingPaymentOrder.id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
