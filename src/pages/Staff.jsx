@@ -60,7 +60,7 @@ const Staff = () => {
     let isMounted = true;
     const fetchStaff = async () => {
       try {
-        const response = await axios.get(`/api/staff`);
+        const response = await axios.get(`${API_URL}/api/staff`);
         if (isMounted) setStaffList(response.data);
       } catch (err) {
         console.error('Error fetching staff:', err);
@@ -76,8 +76,8 @@ const Staff = () => {
     if (!staffId) { setStaffHistory({}); return; }
     try {
       const [payroll, payments] = await Promise.all([
-        axios.get(`/api/staff/${staffId}/payroll`),
-        axios.get(`/api/staff/${staffId}/payments`)
+        axios.get(`${API_URL}/api/staff/${staffId}/payroll`),
+        axios.get(`${API_URL}/api/staff/${staffId}/payments`)
       ]);
       setStaffHistory({
         ...payroll.data.payroll,
@@ -94,7 +94,7 @@ const Staff = () => {
       return;
     }
     try {
-      await axios.post(`/api/staff`, {
+      await axios.post(`${API_URL}/api/staff`, {
         id,
         name,
         role,
@@ -112,7 +112,7 @@ const Staff = () => {
       setName(''); setRole(''); setPhone(''); setId(''); setAddress('');
       setSalary(''); setEmail(''); setPaymentType('daily'); setSalaryModel('fixed'); setHourlyRate('');
       setShowAddStaff(false);
-      const res = await axios.get(`/api/staff`);
+      const res = await axios.get(`${API_URL}/api/staff`);
       setStaffList(res.data);
     } catch (err) {
       toast.error('Please enter a valid numeric ID');
@@ -123,7 +123,7 @@ const Staff = () => {
     try {
       const period = shiftDetails.period || 'week';
       const recipients = sendToEveryone ? staffList.map((staff) => staff.id) : selectedRecipients;
-      await axios.post(`/api/staff/send-schedule`, { period, recipients });
+      await axios.post(`${API_URL}/api/staff/send-schedule`, { period, recipients });
       toast.success('Shift schedule sent successfully');
       setIsSendShiftModalOpen(false);
     } catch (err) {
@@ -136,7 +136,7 @@ const Staff = () => {
     const amt = parseFloat(paymentAmount);
     if (!amt && !autoPaymentEnabled) return toast.error('Enter amount or enable auto');
     try {
-      await axios.post(`/api/staff/${selectedStaffForPayment}/payments`, {
+      await axios.post(`${API_URL}/api/staff/${selectedStaffForPayment}/payments`, {
         amount: amt,
         date: new Date().toISOString().slice(0,10),
         note,

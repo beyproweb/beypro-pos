@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 const PAYMENT_OPTIONS = [
   "Cash", "Credit Card", "Sodexo", "Multinet"
@@ -42,7 +43,7 @@ const fetchClosedOrders = async () => {
 
     const enriched = await Promise.all(
       data.map(async (order) => {
-        const itemRes = await fetch(`/api/orders/${order.id}/items`);
+        const itemRes = await fetch(`${API_URL}/${order.id}/items`);
         const itemsRaw = await itemRes.json();
         const items = itemsRaw.map(item => ({
           ...item,
@@ -385,7 +386,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 methodsObj[pm.payment_method] = Number(pm.amount);
               }
             });
-            await fetch(`/api/orders/receipt-methods`, {
+            await fetch(`${API_URL}/receipt-methods`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -531,7 +532,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                   methodsObj[pm.payment_method] = Number(pm.amount);
                 }
               });
-              await fetch(`/api/orders/receipt-methods`, {
+              await fetch(`${API_URL}/receipt-methods`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -578,7 +579,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
           <button
             className="px-2 py-1 bg-blue-500 text-white rounded text-base"
             onClick={async () => {
-              await fetch(`/api/orders/${order.id}`, {
+              await fetch(`${API_URL}/${order.id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ payment_method: paymentMethodDraft[order.id] }),

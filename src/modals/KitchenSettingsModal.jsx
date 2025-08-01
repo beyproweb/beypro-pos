@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-
+const API_URL = import.meta.env.VITE_API_URL || "";
 // Accept all your existing state and handlers as props!
 export default function KitchenSettingsModal({
   allIngredients,
@@ -51,7 +51,7 @@ export default function KitchenSettingsModal({
                         updated = prev.includes(ingredient)
                           ? prev.filter(ing => ing !== ingredient)
                           : [...prev, ingredient];
-                        fetch("/api/kitchen/compile-settings", {
+                        fetch(`${API_URL}/api/kitchen/compile-settings`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
@@ -95,7 +95,7 @@ export default function KitchenSettingsModal({
                         const updated = allChecked
                           ? prev.filter(id => !catProducts.includes(id))
                           : Array.from(new Set([...prev, ...catProducts]));
-                        fetch("/api/kitchen/compile-settings", {
+                        fetch(`${API_URL}/api/kitchen/compile-settings`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
@@ -127,7 +127,7 @@ export default function KitchenSettingsModal({
                             const updated = prev.includes(product.id)
                               ? prev.filter(id => id !== product.id)
                               : [...prev, product.id];
-                            fetch("/api/kitchen/compile-settings", {
+                            fetch(`${API_URL}/api/kitchen/compile-settings`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify({

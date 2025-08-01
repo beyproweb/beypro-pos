@@ -4,6 +4,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import axios from 'axios';
 import { Toaster, toast } from 'react-hot-toast';
 import { useTranslation } from "react-i18next";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 // Global scanner instance
 let html5QrcodeScannerInstance = null;
@@ -26,7 +27,7 @@ const StaffCheckIn = () => {
   const containerRef = useRef(null);
   const [selectedStaffProfile, setSelectedStaffProfile] = useState(null);
   const [filter, setFilter] = useState('day'); // 'day', 'week', 'month'
-
+ 
   // ----- Effects -----
   useEffect(() => {
     fetchStaff();
@@ -115,7 +116,7 @@ const stopScanner = () => {
 
     console.log("Sending payload:", payload);
 
-    const { data } = await axios.post(`/api/staff/checkin`, payload);
+    const { data } = await axios.post(`${API_URL}/api/staff/checkin`, payload);
 
     if (data.alreadyCheckedIn) {
       toast.error('Already checked in, please check out first!');
@@ -162,7 +163,7 @@ const stopScanner = () => {
 const deleteStaff = async (staffId) => {
     if (!window.confirm('Are you sure you want to delete this staff member?')) return;
     try {
-      await axios.delete(`/api/staff/${staffId}`);
+      await axios.delete(`${API_URL}/api/staff/${staffId}`);
       toast.success('Staff member deleted successfully');
       fetchStaff();
       setSelectedStaffProfile(null);
@@ -179,7 +180,7 @@ const handleStaffDeletion = () => {
   // ----- Data Fetching -----
   const fetchStaff = async () => {
   try {
-    const response = await axios.get(`/api/staff`);
+    const response = await axios.get(`${API_URL}/api/staff`);
     setStaffList(response.data);
   } catch (err) {
     console.error('Error fetching staff:', err);
@@ -191,7 +192,7 @@ const handleStaffDeletion = () => {
 // Fetch active staff (checked-in or checked out within 12 hours)
 const fetchActiveStaff = async () => {
   try {
-    const response = await axios.get(`/api/staff/attendance`);
+    const response = await axios.get(`${API_URL}/api/staff/attendance`);
     const now = new Date();
     const activeStaff = response.data.filter((record) => {
       const isArchived = record.status === 'archived';
@@ -213,7 +214,7 @@ const fetchActiveStaff = async () => {
 
   const fetchAttendance = async () => {
     try {
-      const response = await axios.get(`/api/staff/attendance`);
+      const response = await axios.get(`${API_URL}/api/staff/attendance`);
       setAttendanceList(response.data);
     } catch (err) {
       console.error('Error fetching attendance:', err);
@@ -228,7 +229,7 @@ const fetchActiveStaff = async () => {
       return;
     }
     try {
-      const response = await axios.post(`/api/staff`, { name, role, phone });
+      const response = await axios.post(`${API_URL}/api/staff`, { name, role, phone });
       setMessage(response.data.message);
       fetchStaff();
       setName('');
@@ -284,7 +285,7 @@ const fetchActiveStaff = async () => {
   // Fetch individual staff profile
 const fetchStaffProfile = async (staffId, timePeriod) => {
     try {
-      const response = await axios.get(`/api/staff/profile/${staffId}?period=${timePeriod}`);
+      const response = await axios.get(`${API_URL}/api/staff/profile/${staffId}?period=${timePeriod}`);
       setSelectedStaffProfile(response.data);
     } catch (err) {
       console.error('Error fetching staff profile:', err);
@@ -397,7 +398,7 @@ const handleFilterChange = (period) => {
 
             const clearStaff = async () => {
               try {
-                await axios.put(`/api/staff/attendance/archive/${record.id}`);
+                await axios.put(`${API_URL}/api/staff/attendance/archive/${record.id}`);
                 setAttendanceList(attendanceList.filter((item) => item.id !== record.id));
                 toast.success(`${record.name} ${t('archived from the list.')}`);
               } catch (err) {

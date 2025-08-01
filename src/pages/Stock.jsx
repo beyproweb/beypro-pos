@@ -24,7 +24,7 @@ const [selectedSupplier, setSelectedSupplier] = useState("__all__");
     // Fetch stock and prices on mount
     useEffect(() => {
       fetchStock();
-      fetch("/api/ingredient-prices")
+      fetch(`${API_URL}/api/ingredient-prices`)
         .then(res => res.json())
         .then(setIngredientPrices)
         .catch(() => setIngredientPrices([]));
@@ -86,7 +86,7 @@ const handleCriticalChange = async (index, value) => {
 
   if (!item || !item.stock_id) return;
 
-await fetch(`http://localhost:5000/api/stock/${item.stock_id}`, {
+await fetch(`${API_URL}/api/stock/${item.stock_id}`, {
   method: "PATCH",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({

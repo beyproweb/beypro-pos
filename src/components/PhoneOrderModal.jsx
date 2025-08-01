@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { MapPin, User, Plus, Pencil, Trash2, Gift } from "lucide-react";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 const paymentMethods = ["Cash", "Credit Card", "Multinet", "Sodexo"];
 
@@ -30,7 +31,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
     setSearch(val);
     if (val.length < 2) return setMatches([]);
     setLoading(true);
-    const res = await fetch(`/api/customers?search=${encodeURIComponent(val)}`);
+    const res = await fetch(`${API_URL}customers?search=${encodeURIComponent(val)}`);
     const data = await res.json();
     setMatches(data);
     setLoading(false);
@@ -39,7 +40,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   // ---- Address CRUD ----
   const fetchAddresses = async (customerId) => {
     if (!customerId) return setAddresses([]);
-    const res = await fetch(`/api/customers/${customerId}/addresses`);
+    const res = await fetch(`${API_URL}customers/${customerId}/addresses`);
     const data = await res.json();
     setAddresses(data || []);
     // Auto-select default if exists
@@ -48,7 +49,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   };
   const handleAddAddress = async () => {
     if (!addrForm.address) return alert("Address required!");
-    const res = await fetch(`/api/customers/${selected.id}/addresses`, {
+    const res = await fetch(`${API_URL}customers/${selected.id}/addresses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(addrForm)
@@ -61,7 +62,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   };
   const handleEditAddress = async (id) => {
     if (!addrForm.address) return;
-    const res = await fetch(`/api/customer-addresses/${id}`, {
+    const res = await fetch(`${API_URL}customer-addresses/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(addrForm)
@@ -74,7 +75,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   };
   const handleDeleteAddress = async (id) => {
     if (!window.confirm("Delete this address?")) return;
-    const res = await fetch(`/api/customer-addresses/${id}`, { method: "DELETE" });
+    const res = await fetch(`${API_URL}customer-addresses/${id}`, { method: "DELETE" });
     if (res.ok) {
       await fetchAddresses(selected.id);
     }
@@ -103,7 +104,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
 
       // If address field is filled, save as first address
       if (form.address && customer?.id) {
-        await fetch(`/api/customers/${customer.id}/addresses`, {
+        await fetch(`${API_URL}customers/${customer.id}/addresses`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -126,7 +127,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
 
   // ---- Edit Customer ----
   const handleEditCustomer = async (id) => {
-const res = await fetch(`/api/customers/${id}`, {
+const res = await fetch(`${API_URL}customers/${id}`, {
   method: "PATCH",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(editForm)

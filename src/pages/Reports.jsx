@@ -455,7 +455,7 @@ useEffect(() => {
     .then(r => r.json())
     .then(setProductSalesData);
 
-  fetch("/api/reports/cash-register-trends")
+  fetch(`${API_URL}/api/reports/cash-register-trends`)
     .then(r => r.json())
     .then(setCashRegisterData);
 
@@ -531,7 +531,7 @@ useEffect(() => {
 }, [salesViewType]);
 
 useEffect(() => {
-  fetch("/api/reports/cash-register-status")
+  fetch(`${API_URL}/api/reports/cash-register-status`)
     .then(res => res.json())
     .then((statusData) => {
       const openTime = statusData.last_open_at;
@@ -559,7 +559,7 @@ setCashAvailable(openingCash + sales - totalCashExpense);
 useEffect(() => {
 
 
-  fetch("/api/reports/summary").then(r => r.json()).then(d => {
+  fetch(`${API_URL}/api/reports/summary`).then(r => r.json()).then(d => {
     const extraExpenses = expensesData.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const fullExpenses = d.expenses_today + extraExpenses;
 

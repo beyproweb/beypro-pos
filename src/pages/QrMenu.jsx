@@ -398,7 +398,7 @@ export default function QrMenu() {
 useEffect(() => {
   if (!window.socket) return;
   function refetchTables() {
-    fetch("/api/orders")
+    fetch(`${API_URL}/api/orders`)
       .then((res) => res.json())
       .then((orders) => {
         const occupied = orders
@@ -414,7 +414,7 @@ useEffect(() => {
   // Fetch all required data
   useEffect(() => {
     // Products
-    fetch("/api/products")
+    fetch(`${API_URL}/api/products`)
       .then((res) => res.json())
       .then((data) => {
         setProducts(data);
@@ -424,7 +424,7 @@ useEffect(() => {
       });
 
     // Category Images
-    fetch("/api/category-images")
+    fetch(`${API_URL}/api/category-images`)
       .then((res) => res.json())
       .then((rows) => {
         const dict = {};
@@ -435,7 +435,7 @@ useEffect(() => {
       });
 
     // Extras Groups
-    fetch("/api/extras-groups")
+    fetch(`${API_URL}/api/extras-groups`)
       .then((res) => res.json())
       .then((data) => setExtrasGroups(data));
   }, []);
@@ -444,7 +444,7 @@ useEffect(() => {
   useEffect(() => {
     async function fetchOccupiedTables() {
       try {
-        const res = await fetch("/api/orders");
+        const res = await fetch(`${API_URL}/api/orders`);
         const orders = await res.json();
         const occupied = orders
           .filter(order =>
@@ -471,7 +471,7 @@ useEffect(() => {
 
     if (!order) {
       // 2. If not exists, create order
-      const createRes = await fetch("/api/orders", {
+      const createRes = await fetch(`${API_URL}/api/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -495,7 +495,7 @@ useEffect(() => {
     } else {
       orderId = order.id;
       // 3. Add new items to open order
-      await fetch("/api/orders/order-items", {
+      await fetch(`${API_URL}/api/orders/order-items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

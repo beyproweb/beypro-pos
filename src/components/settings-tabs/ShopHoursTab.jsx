@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -10,7 +11,7 @@ export default function ShopHoursTab() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/settings/shop-hours/all")
+    fetch(`${API_URL}/api/settings/shop-hours/all`)
       .then((res) => res.json())
       .then((data) => {
         const hoursMap = {};
@@ -40,7 +41,7 @@ export default function ShopHoursTab() {
   };
 
   const handleSave = () => {
-    fetch("/api/settings/shop-hours/all", {
+    fetch(`${API_URL}/api/settings/shop-hours/all`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hours: shopHours }),

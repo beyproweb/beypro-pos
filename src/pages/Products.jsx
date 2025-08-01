@@ -42,7 +42,7 @@ const { t } = useTranslation();
 const [productCosts, setProductCosts] = useState({});
 // In Products.jsx
 useEffect(() => {
-  fetch('/api/products/costs')
+  fetch(`${API_URL}/api/products/costs`)
     .then(res => res.json())
     .then(setProductCosts)
     .catch(() => setProductCosts({}));

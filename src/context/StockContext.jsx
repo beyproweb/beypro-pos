@@ -44,13 +44,13 @@ export const StockProvider = ({ children }) => {
       });
       console.log("🔁 Updated cart item:", item.name);
     } else {
-      const newCart = cartId || (await (await fetch("/api/supplier-carts", {
+      const newCart = cartId || (await (await fetch(`${API_URL}/api/supplier-carts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ supplier_id: item.supplier_id }),
       })).json()).cart?.id;
 
-      await fetch("/api/supplier-cart-items", {
+      await fetch(`${API_URL}/api/supplier-cart-items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -74,7 +74,7 @@ export const StockProvider = ({ children }) => {
   try {
     setLoading(true);
 
-    const res = await fetch("/api/stock");
+    const res = await fetch(`${API_URL}/api/stock`);
     const data = await res.json();
     setStock(data);
 
@@ -153,7 +153,7 @@ supplierCartMap[sid] = cartData.items;
     }
 
     // 💡 Regroup for UI
-    const refreshRes = await fetch("/api/stock");
+    const refreshRes = await fetch(`${API_URL}/api/stock`);
     const refreshed = await refreshRes.json();
 
     const grouped = Object.values(
