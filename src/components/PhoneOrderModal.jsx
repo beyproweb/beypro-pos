@@ -40,7 +40,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   // ---- Address CRUD ----
   const fetchAddresses = async (customerId) => {
     if (!customerId) return setAddresses([]);
-    const res = await fetch(`${API_URL}/customers/${customerId}/addresses`);
+    const res = await fetch(`${API_URL}/api/customers/${customerId}/addresses`);
     const data = await res.json();
     setAddresses(data || []);
     // Auto-select default if exists
@@ -49,7 +49,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   };
   const handleAddAddress = async () => {
     if (!addrForm.address) return alert("Address required!");
-    const res = await fetch(`${API_URL}/customers/${selected.id}/addresses`, {
+    const res = await fetch(`${API_URL}/api/customers/${selected.id}/addresses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(addrForm)
