@@ -323,7 +323,7 @@ const handleCreateRole = async () => {
     const formData = new FormData();
     formData.append("image", file);
     try {
-      const res = await axios.post("/api/upload", formData);
+      const res = await axios.post(`${API_URL}/api/upload`, formData);
       setEditedStaff((prev) => ({ ...prev, avatar: res.data.url })); // ✅ correct
     } catch (err) {
       toast.error("❌ Image upload failed");
@@ -529,7 +529,7 @@ const handleCreateRole = async () => {
     const formData = new FormData();
     formData.append("image", file);
     try {
-      const res = await axios.post("/api/upload", formData);
+      const res = await axios.post(`${API_URL}/api/upload`, formData);
       setNewUser((prev) => ({ ...prev, avatar: res.data.url }));
     } catch (err) {
       toast.error("❌ Image upload failed");

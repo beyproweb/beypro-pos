@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Card } from "../components/ui/card";
 import { CalendarIcon } from "lucide-react";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 export default function CashRegisterHistory() {
   const { t } = useTranslation();

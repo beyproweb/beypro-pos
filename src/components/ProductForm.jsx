@@ -88,7 +88,7 @@ function normalizeExtras(arr = []) {
 
 useEffect(() => {
   if (product.category) {
-    fetch(`/api/category-images?category=${encodeURIComponent(product.category.trim())}`)
+    fetch(`${API_URL}/api/category-images?category=${encodeURIComponent(product.category.trim())}`)
       .then(res => res.json())
       .then(data => {
         console.log("Category image fetch result:", data); // <-- ADD THIS
@@ -381,14 +381,14 @@ const handleSubmit = async (e) => {
     const fd = new FormData();
     fd.append("image", file);
     fd.append("category", product.category.trim()); // do NOT lower for upload
-    const res = await fetch("/api/category-images", {
+    const res = await fetch("${API_URL}/api/category-images", {
       method: "POST",
       body: fd,
     });
     if (!res.ok) return alert("Upload failed");
     alert("Category image uploaded!");
     // Refetch preview image
-    fetch(`/api/category-images?category=${encodeURIComponent(product.category.trim())}`)
+    fetch(`${API_URL}/api/category-images?category=${encodeURIComponent(product.category.trim())}`)
       .then(res => res.json())
       .then(data => {
         if (data.length > 0 && data[0].image) {
@@ -600,7 +600,7 @@ const handleSubmit = async (e) => {
             onClick={async () => {
   if (window.confirm(t("Are you sure you want to delete this product?"))) {
     try {
-      const res = await fetch(`/api/products/${initialData.id}`, {
+      const res = await fetch(`${API_URL}/api/products/${initialData.id}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete product");

@@ -1017,7 +1017,7 @@ return (
       if (!res.ok) {
         const err = await res.json();
         return alert(`Confirm failed: ${err.error}`);
-      }
+      } 
       const { order: updated } = await res.json();
 
       // Fetch items for this order

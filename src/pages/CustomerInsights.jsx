@@ -12,7 +12,7 @@ export default function CustomerInsights() {
   const [birthdayCustomers, setBirthdayCustomers] = useState([]);
 
 useEffect(() => {
-  fetch("/api/customers/birthdays")
+  fetch(`${API_URL}/api/customers/birthdays`)
     .then(res => res.json())
     .then(setBirthdayCustomers)
     .catch(console.error);
