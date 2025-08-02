@@ -82,7 +82,7 @@ const fetchProducts = async () => {
     if (window.location.hostname === "localhost") {
       url = PRODUCTS_API;
     } else {
-      url = `${window.location.origin}/api/products`;
+      url = `${window.location.origin}${API_URL}/api/products`;
     }
     console.log("📦 Fetching products from:", url);
     const response = await fetch(url);

@@ -74,7 +74,7 @@ function calcOrderTotalWithExtras(order) {
   const removeDrink = async (id) => {
     setSaving(true);
     try {
-      await fetch(`/api/drinks/${id}`, { method: "DELETE" });
+      await fetch(`${API_URL}/api/drinks/${id}`, { method: "DELETE" });
       setError("");
       // Refresh list
       const res = await fetch(`${API_URL}/api/drinks`);
@@ -1013,7 +1013,7 @@ return (
   && order.status !== "closed" && (
   <button
     onClick={async () => {
-      const res = await fetch(`http://localhost:5000/api/orders/${order.id}/confirm-online`, { method: "POST" });
+      const res = await fetch(`${API_URL}/api/orders/${order.id}/confirm-online`, { method: "POST" });
       if (!res.ok) {
         const err = await res.json();
         return alert(`Confirm failed: ${err.error}`);
