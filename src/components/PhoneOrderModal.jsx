@@ -31,7 +31,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
     setSearch(val);
     if (val.length < 2) return setMatches([]);
     setLoading(true);
-    const res = await fetch(`${API_URL}/customers?search=${encodeURIComponent(val)}`);
+    const res = await fetch(`${API_URL}/api/customers?search=${encodeURIComponent(val)}`);
     const data = await res.json();
     setMatches(data);
     setLoading(false);
