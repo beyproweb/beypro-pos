@@ -83,7 +83,7 @@ export default function App() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const res = await fetch("/api/settings/notifications");
+        const res = await fetch(`${API_URL}/api/settings/notifications`);
         window.notificationSettings = await res.json();
       } catch (err) {
         console.warn("⚠️ Failed to load notification settings", err);

@@ -79,7 +79,7 @@ const [showMoveTableModal, setShowMoveTableModal] = useState(false);
 // 1. Add drinksList state at the top
 const [drinksList, setDrinksList] = useState([]);
 useEffect(() => {
-  (`${API_URL}/api/drinks`)
+  fetch(`${API_URL}/api/drinks`)
     .then(res => res.json())
     .then(data => setDrinksList(data.map(d => d.name)))
     .catch(() => setDrinksList([]));
@@ -156,7 +156,7 @@ useEffect(() => {
 }, [orderId, order, tableId, t, navigate, setHeader]);
 
 useEffect(() => {
-  (`${API_URL}/api/category-images`)
+  fetch(`${API_URL}/api/category-images`)
     .then(res => res.json())
     .then(data => {
       const dict = {};
@@ -220,7 +220,7 @@ useEffect(() => {
 }, [products]);
 
 useEffect(() => {
-  (`${API_URL}/api/kitchen/compile-settings`)
+  fetch(`${API_URL}/api/kitchen/compile-settings`)
     .then(res => res.json())
     .then(data => {
       setExcludedItems(data.excludedItems || []);
@@ -256,7 +256,7 @@ useEffect(() => {
 useEffect(() => {
   const fetchExtrasGroups = async () => {
     try {
-      const res = await fetch("/api/extras-groups");
+      const res = await fetch(`${API_URL}/api/extras-groups`);
       const data = await res.json();
       setExtrasGroups(
   data.map(g => ({
@@ -497,7 +497,7 @@ function allItemsDelivered(items) {
 useEffect(() => {
   const fetchProducts = async () => {
     try {
-      const res = await fetch("/api/products"); // ✅ use relative path
+      const res = await fetch(`${API_URL}/api/products`); // ✅ use relative path
       const data = await res.json();
 
       console.log("Fetched products in TransactionScreen:", data);  // Debug
@@ -518,7 +518,7 @@ useEffect(() => {
 useEffect(() => {
   return () => {
     if (order?.id && cartItems.length === 0) {
-      (`${API_URL}/api/orders/${order.id}/reset-if-empty`, { method: "PATCH" });
+     fetch(`${API_URL}/api/orders/${order.id}/reset-if-empty`, { method: "PATCH" });
     }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
