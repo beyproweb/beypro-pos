@@ -42,6 +42,7 @@ import MaintenanceTracker from "./pages/MaintenanceTracker";
 
 
 import QrMenuSettings from "./pages/QrMenuSettings";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 const isAuthenticated = () => !!localStorage.getItem("beyproUser");
 

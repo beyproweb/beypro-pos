@@ -78,15 +78,10 @@ useEffect(() => { console.log("🧮 Product Costs Fetched:", productCosts); }, [
 
 const fetchProducts = async () => {
   try {
-    let url;
-    if (window.location.hostname === "localhost") {
-      url = PRODUCTS_API;
-    } else {
-      url = `${window.location.origin}${API_URL}/api/products`;
-    }
+    // Always use the API_URL, never prefix with window.location.origin
+    const url = `${API_URL}/api/products`;
     console.log("📦 Fetching products from:", url);
     const response = await fetch(url);
-
     if (!response.ok) throw new Error("Failed to fetch products");
     const data = await response.json();
     setProducts(data);
@@ -94,6 +89,7 @@ const fetchProducts = async () => {
     console.error("Error fetching products:", error);
   }
 };
+
 
 
 useEffect(() => {
