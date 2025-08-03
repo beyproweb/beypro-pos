@@ -18,7 +18,7 @@ export default function Production() {
   const [lockedProduce, setLockedProduce] = useState({});
     const { t, i18n } = useTranslation();
   useEffect(() => {
-    fetch('${API_URL}/api/production/recipes')
+    fetch(`${API_URL}/api/production/recipes`)
       .then((res) => res.json())
       .then((data) => {
         setRecipes(data);
