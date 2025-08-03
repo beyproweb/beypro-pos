@@ -386,7 +386,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 methodsObj[pm.payment_method] = Number(pm.amount);
               }
             });
-            await fetch(`${API_URL}/receipt-methods`, {
+            await fetch(`${API_URL}/api/orders/receipt-methods`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -532,7 +532,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                   methodsObj[pm.payment_method] = Number(pm.amount);
                 }
               });
-              await fetch(`${API_URL}/receipt-methods`, {
+              await fetch(`${API_URL}/api/orders/receipt-methods`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
