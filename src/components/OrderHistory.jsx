@@ -579,7 +579,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
           <button
             className="px-2 py-1 bg-blue-500 text-white rounded text-base"
             onClick={async () => {
-              await fetch(`${API_URL}/${order.id}`, {
+              await fetch(`${API_URL}/api/orders/${order.id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ payment_method: paymentMethodDraft[order.id] }),
