@@ -43,7 +43,7 @@ const fetchClosedOrders = async () => {
 
     const enriched = await Promise.all(
       data.map(async (order) => {
-        const itemRes = await fetch(`${API_URL}/${order.id}/items`);
+        const itemRes = await fetch(`${API_URL}/api/orders/${order.id}/items`);
         const itemsRaw = await itemRes.json();
         const items = itemsRaw.map(item => ({
           ...item,
