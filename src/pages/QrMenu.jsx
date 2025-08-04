@@ -130,7 +130,7 @@ function QrProductGrid({ products, onProductClick }) {
           <img
             src={
               product.image
-                ? `${window.location.origin.replace(':5173', ':5000')}/uploads/${product.image}`
+                ? `${API_URL}/uploads/${product.image}`
                 : "https://via.placeholder.com/100?text=🍽️"
             }
             alt={product.name}
@@ -271,7 +271,7 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
           <img
             src={
               product.image
-                ? `${window.location.origin.replace(':5173', ':5000')}/uploads/${product.image}`
+                ? `${API_URL}/uploads/${product.image}`
                 : "https://via.placeholder.com/120?text=🍽️"
             }
             alt={product.name}
