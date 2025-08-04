@@ -40,7 +40,6 @@ import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 
-
 import QrMenuSettings from "./pages/QrMenuSettings";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -111,11 +110,16 @@ export default function App() {
       <AppearanceProvider>
         <div className="flex h-screen">
           <Routes>
+            {/* PUBLIC: QR Menu */}
+            <Route path="/qr-menu" element={<QrMenu />} />
+
+            {/* PUBLIC: Login */}
             <Route
               path="/login"
               element={isAuthenticated() ? <Navigate to="/" /> : <LoginScreenWrapper />}
             />
 
+            {/* PROTECTED: All POS routes */}
             <Route
               path="/"
               element={
@@ -141,14 +145,13 @@ export default function App() {
               <Route index element={<Navigate to="/dashboard" />} />
               <Route path="dashboard" element={<ProtectedRoute permission="dashboard"><Dashboard /></ProtectedRoute>} />
               <Route
-  path="customer-insights"
-  element={<ProtectedRoute permission="dashboard"><CustomerInsights /></ProtectedRoute>}
-/>
-<Route
-  path="marketing-campaigns"
-  element={<ProtectedRoute permission="dashboard"><MarketingCampaigns /></ProtectedRoute>}
-/>
-
+                path="customer-insights"
+                element={<ProtectedRoute permission="dashboard"><CustomerInsights /></ProtectedRoute>}
+              />
+              <Route
+                path="marketing-campaigns"
+                element={<ProtectedRoute permission="dashboard"><MarketingCampaigns /></ProtectedRoute>}
+              />
               <Route path="orders" element={<Navigate to="/tables?tab=packet" replace />} />
               <Route path="products" element={<ProtectedRoute permission="products"><Products /></ProtectedRoute>} />
               <Route path="kitchen" element={<ProtectedRoute permission="kitchen"><Kitchen /></ProtectedRoute>} />
@@ -170,16 +173,16 @@ export default function App() {
               <Route path="/ingredient-prices" element={<ProtectedRoute permission="ingredient-prices"><IngredientPrices /></ProtectedRoute>} />
               <Route path="cash-register-history" element={<ProtectedRoute permission="cash-register-history"><CashRegisterHistory /></ProtectedRoute>} />
               <Route path="integrations" element={<ProtectedRoute permission="integrations"><IntegrationsPage /></ProtectedRoute>} />
-              <Route path="/qr-menu" element={<QrMenu />} />
-              <Route
-  path="qr-menu-settings"
-  element={<ProtectedRoute permission="settings"><QrMenuSettings /></ProtectedRoute>}
-/>
-<Route
-  path="maintenance"
-  element={<ProtectedRoute permission="dashboard"><MaintenanceTracker /></ProtectedRoute>}
-/>
 
+              {/* QR menu settings (still protected) */}
+              <Route
+                path="qr-menu-settings"
+                element={<ProtectedRoute permission="settings"><QrMenuSettings /></ProtectedRoute>}
+              />
+              <Route
+                path="maintenance"
+                element={<ProtectedRoute permission="dashboard"><MaintenanceTracker /></ProtectedRoute>}
+              />
               <Route path="unauthorized" element={<div className="p-10 text-red-600 text-xl">❌ Access Denied</div>} />
             </Route>
           </Routes>
