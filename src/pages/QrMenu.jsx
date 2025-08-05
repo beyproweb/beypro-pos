@@ -89,7 +89,7 @@ function QrCategoryGrid({ categories, images, activeCategory, setActiveCategory 
               <img
                 src={
                   images[cat.trim().toLowerCase()]
-                    ? `${API_URL}/uploads/${product.image}`
+                    ? `${API_URL}/uploads/${images[cat.trim().toLowerCase()]}`
                     : ""
                 }
                 alt={cat}

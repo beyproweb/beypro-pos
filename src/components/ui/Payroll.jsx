@@ -323,12 +323,6 @@ const Payroll = () => {
       {/* Top Bar */}
 <div className="w-full px-8 py-8 flex flex-col md:flex-row gap-6 items-center justify-between bg-transparent">
         <div className="flex items-center gap-4 w-full md:w-auto">
-          <button
-            onClick={()=>setIsModalOpen(true)}
-            className="flex items-center gap-2 h-[52px] min-w-[172px] px-5 rounded-xl bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 transition text-white font-bold text-base shadow"
-          >
-            <Plus size={22}/> {t('Add Payment')}
-          </button>
           <select className="p-4 rounded-lg border border-gray-300 bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 text-base"
             value={selectedStaff || ''}
             onChange={e => fetchStaffHistory(Number(e.target.value))}
