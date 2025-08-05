@@ -87,14 +87,17 @@ function QrCategoryGrid({ categories, images, activeCategory, setActiveCategory 
           >
             {images[cat.trim().toLowerCase()] ? (
               <img
-                src={
-                  images[cat.trim().toLowerCase()]
-                    ? `${API_URL}/uploads/${images[cat.trim().toLowerCase()]}`
-                    : ""
-                }
-                alt={cat}
-                className="w-12 h-12 rounded-xl mb-1 object-cover border shadow"
-              />
+  src={
+    images[cat.trim().toLowerCase()]
+      ? /^https?:\/\//.test(images[cat.trim().toLowerCase()])
+        ? images[cat.trim().toLowerCase()]
+        : `${API_URL}/uploads/${images[cat.trim().toLowerCase()]}`
+      : ""
+  }
+  alt={cat}
+  className="w-12 h-12 rounded-xl mb-1 object-cover border shadow"
+/>
+
             ) : (
               <span className="text-3xl mb-1">{getCategoryIcon(cat)}</span>
             )}
@@ -127,15 +130,18 @@ function QrProductGrid({ products, onProductClick }) {
           onClick={() => onProductClick(product)}
           className="bg-white/90 dark:bg-zinc-900 rounded-2xl border-2 border-blue-100/40 dark:border-zinc-800/40 shadow-md hover:shadow-2xl transition hover:scale-105 flex flex-col items-center p-3 cursor-pointer group"
         >
-          <img
-            src={
-              product.image
-                ? `${API_URL}/uploads/${product.image}`
-                : "https://via.placeholder.com/100?text=🍽️"
-            }
-            alt={product.name}
-            className="w-20 h-20 object-cover rounded-xl mb-2 border shadow"
-          />
+         <img
+  src={
+    product.image
+      ? /^https?:\/\//.test(product.image)
+        ? product.image
+        : `${API_URL}/uploads/${product.image}`
+      : "https://via.placeholder.com/100?text=🍽️"
+  }
+  alt={product.name}
+  className="w-20 h-20 object-cover rounded-xl mb-2 border shadow"
+/>
+
           <div className="font-bold text-blue-900 dark:text-blue-200 text-xs text-center truncate w-full">
             {product.name}
           </div>
@@ -268,15 +274,18 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
         >×</button>
         {/* Image */}
         <div className="w-full flex items-center justify-center pt-6 pb-3">
-          <img
-            src={
-              product.image
-                ? `${API_URL}/uploads/${product.image}`
-                : "https://via.placeholder.com/120?text=🍽️"
-            }
-            alt={product.name}
-            className="w-28 h-28 object-cover rounded-2xl border shadow"
-          />
+         <img
+  src={
+    product.image
+      ? /^https?:\/\//.test(product.image)
+        ? product.image
+        : `${API_URL}/uploads/${product.image}`
+      : "https://via.placeholder.com/120?text=🍽️"
+  }
+  alt={product.name}
+  className="w-28 h-28 object-cover rounded-2xl border shadow"
+/>
+
         </div>
         {/* Title & Price */}
         <div className="px-5 pb-2">
