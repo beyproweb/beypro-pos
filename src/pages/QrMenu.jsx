@@ -1,25 +1,57 @@
 import React, { useState, useEffect } from "react";
+
+// Edit this to match your deployment
 const API_URL = import.meta.env.VITE_API_URL || "";
-// --- 1. QR Header ---
-function QrHeader({ table }) {
+
+const PAYMENT_OPTIONS = [
+  { label: "Cash", value: "cash", icon: "💵" },
+  { label: "Credit Card", value: "card", icon: "💳" },
+  { label: "Online Payment", value: "online", icon: "🌐" }
+];
+
+function QrHeader({ orderType, table }) {
   return (
-    <header className="w-full sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/70 backdrop-blur-lg border-b border-blue-100 dark:border-zinc-800 shadow-xl flex items-center px-5 py-2">
-      <div className="flex-1 flex items-center gap-3">
-        <span className="text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent">
-          Beypro
-        </span>
-        <span className="text-lg font-bold text-blue-700 dark:text-blue-200 ml-4">
-          {table ? `Table ${table}` : ""}
-        </span>
-      </div>
+    <header className="w-full sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/70 backdrop-blur-lg border-b border-blue-100 dark:border-zinc-800 shadow-xl flex items-center px-6 py-3">
+      <span className="text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent tracking-tight drop-shadow">
+        Hurrybey
+      </span>
+      <span className="ml-5 text-lg font-bold text-blue-700 dark:text-blue-200">
+        {orderType === "table" ? (table ? `Table ${table}` : "") : "Online Order"}
+      </span>
     </header>
   );
 }
 
-// --- 2. Table Selection Modal ---
+// 1. First choice modal: Table or Online Order
+function OrderTypeSelect({ onSelect }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 max-w-md w-full text-center">
+        <h2 className="text-3xl font-extrabold mb-5 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
+          How would you like to order?
+        </h2>
+        <div className="flex flex-col gap-4">
+          <button
+            className="py-4 rounded-2xl font-bold text-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl hover:scale-105 transition"
+            onClick={() => onSelect("table")}
+          >
+            🍽️ Order at Table
+          </button>
+          <button
+            className="py-4 rounded-2xl font-bold text-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-xl hover:scale-105 transition"
+            onClick={() => onSelect("online")}
+          >
+            🏠 Order for Delivery
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 2. Table select modal (if table)
 function TableSelectModal({ onSelectTable, tableCount = 20, occupiedTables = [] }) {
   const [selected, setSelected] = useState(null);
-
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
       <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center">
@@ -68,17 +100,87 @@ function TableSelectModal({ onSelectTable, tableCount = 20, occupiedTables = [] 
   );
 }
 
-// --- 3. Category Grid ---
-function QrCategoryGrid({ categories, images, activeCategory, setActiveCategory }) {
+// 3. Online order info form
+function OnlineOrderForm({ onSubmit, submitting }) {
+  const [form, setForm] = useState({
+    name: "", phone: "", address: ""
+  });
+  const [touched, setTouched] = useState({});
+  const [error, setError] = useState("");
+  const validate = () =>
+    form.name.trim() && /^5\d{9}$/.test(form.phone.trim()) && form.address.trim();
+
   return (
-    <aside className="md:w-[280px] w-full md:sticky top-16 bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-200 dark:from-blue-950 dark:via-blue-900 dark:to-indigo-950 rounded-3xl p-3 m-5 shadow-2xl h-fit">
-      <div className="grid grid-cols-3 md:grid-cols-1 gap-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center">
+        <h2 className="text-2xl font-extrabold mb-4 bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
+          Delivery Info
+        </h2>
+        <form
+          onSubmit={e => {
+            e.preventDefault();
+            if (!validate()) {
+              setTouched({ name: true, phone: true, address: true });
+              setError("Please fill out all fields correctly.");
+              return;
+            }
+            setError("");
+            onSubmit(form);
+          }}
+          className="flex flex-col gap-4 text-left"
+        >
+          <input
+            className="rounded-xl px-4 py-3 border border-blue-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow"
+            placeholder="Full Name"
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            onBlur={() => setTouched(t => ({ ...t, name: true }))}
+            required
+          />
+          <input
+            className={`rounded-xl px-4 py-3 border ${touched.phone && !/^5\d{9}$/.test(form.phone.trim()) ? "border-red-500" : "border-blue-200"} dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow`}
+            placeholder="Phone (5XXXXXXXXX)"
+            value={form.phone}
+            onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/[^\d]/g, "").slice(0, 10) }))}
+            onBlur={() => setTouched(t => ({ ...t, phone: true }))}
+            required
+            inputMode="numeric"
+            maxLength={10}
+          />
+          <textarea
+            className="rounded-xl px-4 py-3 border border-blue-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow"
+            placeholder="Address"
+            rows={3}
+            value={form.address}
+            onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+            onBlur={() => setTouched(t => ({ ...t, address: true }))}
+            required
+          />
+          {error && <div className="text-red-500 font-bold">{error}</div>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-3 mt-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg hover:scale-105 transition"
+          >
+            {submitting ? "Sending..." : "Continue to Menu"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// 4. Category Sidebar
+function CategorySidebar({ categories, images, activeCategory, setActiveCategory }) {
+  return (
+    <aside className="md:w-[220px] w-full md:sticky top-20 bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-200 dark:from-blue-950 dark:via-blue-900 dark:to-indigo-950 rounded-3xl p-2 m-4 shadow-2xl h-fit">
+      <div className="flex md:flex-col gap-2">
         {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}
             className={`
-              flex flex-col items-center justify-center rounded-2xl py-4
+              flex flex-col items-center justify-center rounded-2xl py-3
               shadow transition
               ${activeCategory === cat
                 ? "bg-gradient-to-r from-fuchsia-400 via-blue-400 to-indigo-400 text-white scale-105 ring-2 ring-fuchsia-300"
@@ -87,19 +189,16 @@ function QrCategoryGrid({ categories, images, activeCategory, setActiveCategory 
           >
             {images[cat.trim().toLowerCase()] ? (
               <img
-  src={
-    images[cat.trim().toLowerCase()]
-      ? /^https?:\/\//.test(images[cat.trim().toLowerCase()])
-        ? images[cat.trim().toLowerCase()]
-        : `${API_URL}/uploads/${images[cat.trim().toLowerCase()]}`
-      : ""
-  }
-  alt={cat}
-  className="w-12 h-12 rounded-xl mb-1 object-cover border shadow"
-/>
-
+                src={
+                  /^https?:\/\//.test(images[cat.trim().toLowerCase()])
+                    ? images[cat.trim().toLowerCase()]
+                    : `${API_URL}/uploads/${images[cat.trim().toLowerCase()]}`
+                }
+                alt={cat}
+                className="w-10 h-10 rounded-xl mb-1 object-cover border shadow"
+              />
             ) : (
-              <span className="text-3xl mb-1">{getCategoryIcon(cat)}</span>
+              <span className="text-2xl mb-1">🍽️</span>
             )}
             <span className="font-bold text-xs text-center">{cat}</span>
           </button>
@@ -108,17 +207,11 @@ function QrCategoryGrid({ categories, images, activeCategory, setActiveCategory 
     </aside>
   );
 }
-function getCategoryIcon(category) {
-  const icons = {
-    Meat: "🍔", Pizza: "🍕", Drinks: "🥤", Salad: "🥗", Dessert: "🍰", Breakfast: "🍳", Chicken: "🍗", default: "🍽️"
-  };
-  return icons[category] || icons.default;
-}
 
-// --- 4. Product Grid ---
-function QrProductGrid({ products, onProductClick }) {
+// 5. Product Grid
+function ProductGrid({ products, onProductClick }) {
   return (
-    <main className="flex-1 py-6 px-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+    <main className="flex-1 py-5 px-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
       {products.length === 0 && (
         <div className="col-span-full text-center text-gray-400 font-bold text-xl py-8">
           No products in this category.
@@ -130,18 +223,17 @@ function QrProductGrid({ products, onProductClick }) {
           onClick={() => onProductClick(product)}
           className="bg-white/90 dark:bg-zinc-900 rounded-2xl border-2 border-blue-100/40 dark:border-zinc-800/40 shadow-md hover:shadow-2xl transition hover:scale-105 flex flex-col items-center p-3 cursor-pointer group"
         >
-         <img
-  src={
-    product.image
-      ? /^https?:\/\//.test(product.image)
-        ? product.image
-        : `${API_URL}/uploads/${product.image}`
-      : "https://via.placeholder.com/100?text=🍽️"
-  }
-  alt={product.name}
-  className="w-20 h-20 object-cover rounded-xl mb-2 border shadow"
-/>
-
+          <img
+            src={
+              product.image
+                ? /^https?:\/\//.test(product.image)
+                  ? product.image
+                  : `${API_URL}/uploads/${product.image}`
+                : "https://via.placeholder.com/100?text=🍽️"
+            }
+            alt={product.name}
+            className="w-20 h-20 object-cover rounded-xl mb-2 border shadow"
+          />
           <div className="font-bold text-blue-900 dark:text-blue-200 text-xs text-center truncate w-full">
             {product.name}
           </div>
@@ -154,13 +246,13 @@ function QrProductGrid({ products, onProductClick }) {
   );
 }
 
-// --- 5. Cart Drawer/Sidebar ---
-function QrCartDrawer({ cart, setCart, table, onSubmitOrder }) {
+// 6. Cart Drawer/Sidebar with payment for online order
+function CartDrawer({ cart, setCart, onSubmitOrder, orderType, onPaymentChange, paymentMethod, submitting }) {
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   return (
-    <aside className="md:w-[340px] w-full fixed md:static right-0 bottom-0 bg-white/95 dark:bg-zinc-900/95 rounded-t-2xl md:rounded-3xl shadow-2xl p-5 flex flex-col z-40">
+    <aside className="md:w-[320px] w-full fixed md:static right-0 bottom-0 bg-white/95 dark:bg-zinc-900/95 rounded-t-2xl md:rounded-3xl shadow-2xl p-5 flex flex-col z-40">
       <h3 className="text-lg font-bold text-blue-800 dark:text-blue-200 mb-4">
-        🛒 Your Order {table ? `(Table ${table})` : ""}
+        🛒 Your Order
       </h3>
       <div className="flex-1 overflow-y-auto max-h-[60vh]">
         {cart.length === 0 ? (
@@ -182,11 +274,34 @@ function QrCartDrawer({ cart, setCart, table, onSubmitOrder }) {
             <span>Total:</span>
             <span className="text-indigo-700 text-xl">₺{total.toFixed(2)}</span>
           </div>
+          {orderType === "online" && (
+            <div className="flex flex-col gap-2 my-2">
+              <label className="font-bold text-blue-900">Payment:</label>
+              <div className="flex gap-2">
+                {PAYMENT_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onPaymentChange(opt.value)}
+                    className={`
+                      px-3 py-2 rounded-lg font-medium text-sm border shadow
+                      ${paymentMethod === opt.value
+                        ? "bg-gradient-to-r from-fuchsia-400 to-indigo-500 text-white"
+                        : "bg-gray-100 dark:bg-zinc-800 text-blue-700 dark:text-blue-100"}
+                    `}
+                  >
+                    <span className="mr-1">{opt.icon}</span>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <button
             className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
             onClick={onSubmitOrder}
+            disabled={submitting}
           >
-            Submit Order
+            {submitting ? "Sending..." : "Submit Order"}
           </button>
           <button
             className="w-full mt-2 py-2 rounded-lg font-medium text-sm text-gray-700 bg-gray-100 hover:bg-red-50 transition"
@@ -200,20 +315,11 @@ function QrCartDrawer({ cart, setCart, table, onSubmitOrder }) {
   );
 }
 
-// --- 6. Add to Cart Modal (2-column extras as before) ---
+// 7. Add to Cart Modal (EXTRAS + note)
 function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [note, setNote] = useState("");
-
-  const extrasGroupNames = product?.selectedExtrasGroup || [];
-  const availableGroups = Array.isArray(extrasGroupNames)
-    ? extrasGroupNames.map(name =>
-        extrasGroups.find(g =>
-          (g.groupName || g.group_name)?.toLowerCase() === name.toLowerCase()
-        )
-      ).filter(Boolean)
-    : [];
 
   useEffect(() => {
     setQuantity(1);
@@ -221,16 +327,21 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
     setNote("");
   }, [product, open]);
 
-  const validExtras = selectedExtras.filter(ex => ex.quantity > 0);
-  const extrasTotal = validExtras.reduce(
-    (sum, ex) => sum + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
+  if (!open || !product) return null;
+
+  const basePrice = parseFloat(product.price) || 0;
+  const extrasTotal = selectedExtras.reduce(
+    (sum, ex) => sum + (parseFloat(ex.price || 0) * (ex.quantity || 1)),
     0
   );
-  const basePrice = product ? parseFloat(product.price) || 0 : 0;
-  const perItemTotal = basePrice + extrasTotal;
-  const fullTotal = perItemTotal * quantity;
+  const fullTotal = (basePrice + extrasTotal) * quantity;
 
-  const handleToggleExtra = (group, item, add) => {
+  // Find extras group by product category, fallback to none
+  const availableGroups = extrasGroups.filter(g =>
+    (product.selectedExtrasGroup || []).includes(g.groupName)
+  );
+
+  function handleToggleExtra(group, item, add) {
     setSelectedExtras(prev => {
       const idx = prev.findIndex(
         ex => ex.group === group.groupName && ex.name === item.name
@@ -246,7 +357,7 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
           {
             group: group.groupName,
             name: item.name,
-            price: parseFloat(item.price || item.extraPrice || 0),
+            price: parseFloat(item.price || 0),
             quantity: 1,
           },
         ];
@@ -260,47 +371,40 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
         return prev;
       }
     });
-  };
-
-  if (!open || !product) return null;
+  }
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-2 py-6">
       <div className="relative w-full max-w-[420px] sm:max-h-[95vh] bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl flex flex-col overflow-y-auto">
-        {/* Close Button */}
         <button
           className="absolute right-3 top-3 z-20 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full w-10 h-10 flex items-center justify-center text-2xl text-gray-400 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 shadow transition"
           onClick={onClose}
         >×</button>
-        {/* Image */}
         <div className="w-full flex items-center justify-center pt-6 pb-3">
-         <img
-  src={
-    product.image
-      ? /^https?:\/\//.test(product.image)
-        ? product.image
-        : `${API_URL}/uploads/${product.image}`
-      : "https://via.placeholder.com/120?text=🍽️"
-  }
-  alt={product.name}
-  className="w-28 h-28 object-cover rounded-2xl border shadow"
-/>
-
+          <img
+            src={
+              product.image
+                ? /^https?:\/\//.test(product.image)
+                  ? product.image
+                  : `${API_URL}/uploads/${product.image}`
+                : "https://via.placeholder.com/120?text=🍽️"
+            }
+            alt={product.name}
+            className="w-28 h-28 object-cover rounded-2xl border shadow"
+          />
         </div>
-        {/* Title & Price */}
         <div className="px-5 pb-2">
           <div className="font-extrabold text-xl text-blue-800 dark:text-blue-200 text-center mb-1">{product.name}</div>
           <div className="text-base text-indigo-800 dark:text-indigo-300 text-center mb-2">
             ₺{parseFloat(product.price).toFixed(2)}
           </div>
         </div>
-        {/* Extras */}
         {availableGroups.length > 0 && (
           <div className="px-5 mb-3 space-y-3">
             {availableGroups.map(group => (
-              <div key={group.groupName || group.group_name}>
+              <div key={group.groupName}>
                 <div className="font-semibold text-blue-700 dark:text-blue-300 mb-1 text-sm">
-                  {group.groupName || group.group_name}
+                  {group.groupName}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {(Array.isArray(group.items) ? group.items : []).map(item => {
@@ -312,10 +416,8 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
                         key={item.name}
                         className="flex flex-col items-center justify-center bg-blue-50 dark:bg-zinc-800 border border-blue-100 dark:border-zinc-700 rounded-xl px-2 py-2 min-h-[82px] shadow"
                       >
-                        {/* Name and price */}
                         <span className="font-medium truncate text-center">{item.name}</span>
-                        <span className="text-xs text-indigo-700 font-bold text-center">₺{parseFloat(item.price || item.extraPrice || 0)}</span>
-                        {/* Increments row */}
+                        <span className="text-xs text-indigo-700 font-bold text-center">₺{parseFloat(item.price || 0)}</span>
                         <div className="flex items-center justify-center gap-2 mt-2">
                           <button
                             className="w-7 h-7 flex items-center justify-center rounded-full bg-indigo-200 hover:bg-indigo-400 text-base font-bold"
@@ -338,7 +440,6 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
             ))}
           </div>
         )}
-        {/* Note Input */}
         <div className="px-5 pb-2">
           <textarea
             className="w-full rounded-xl border border-blue-100 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-2 shadow-inner text-sm resize-none"
@@ -348,7 +449,6 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
             rows={2}
           />
         </div>
-        {/* Quantity & Total */}
         <div className="w-full bg-gradient-to-t from-blue-50 via-white/90 to-white dark:from-blue-900 dark:via-zinc-900/90 dark:to-zinc-900 sticky bottom-0 z-10 px-5 py-4 flex flex-col gap-2 border-t border-blue-100 dark:border-zinc-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -369,16 +469,13 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
           <button
             className="w-full py-3 mt-2 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg hover:scale-105 transition"
             onClick={() => {
-              const extrasPart = validExtras.map(ex => `${ex.group}:${ex.name}:${ex.quantity}`).join(",");
-              const unique_id = extrasPart.length > 0
-                ? `${product.id}-${btoa(extrasPart)}`
-                : `${product.id}-NO_EXTRAS`;
+              const unique_id = product.id + "-" + btoa(JSON.stringify(selectedExtras) + note);
               onAddToCart({
                 id: product.id,
                 name: product.name,
-                price: perItemTotal,
+                price: basePrice + extrasTotal,
                 quantity,
-                extras: validExtras,
+                extras: selectedExtras.filter(e => e.quantity > 0),
                 note,
                 unique_id,
               });
@@ -392,181 +489,217 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
   );
 }
 
-// --- 7. MAIN PAGE ---
-export default function QrMenu() {
+// 8. Order Status/Confirmation
+function OrderStatusModal({ open, status, orderId, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center">
+        <h2 className="text-2xl font-extrabold mb-5 bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
+          {status === "success"
+            ? "✅ Order Sent!"
+            : status === "pending"
+            ? "⏳ Sending Order..."
+            : "❌ Order Failed"}
+        </h2>
+        <div className="text-lg text-blue-900 dark:text-blue-100 mb-6">
+          {status === "success"
+            ? "Thank you! Your order has been received."
+            : status === "pending"
+            ? "Please wait..."
+            : "Something went wrong. Please try again."}
+        </div>
+        {orderId && (
+          <div className="mb-4 font-mono text-sm text-gray-500">
+            Order ID: {orderId}
+          </div>
+        )}
+        <button
+          className="py-3 px-6 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
+          onClick={onClose}
+        >
+          {status === "success" ? "Order Another" : "Close"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Main QR Page
+export default function QRMenuModern() {
+  const [orderType, setOrderType] = useState(null); // "table" | "online"
   const [table, setTable] = useState(null);
+  const [customerInfo, setCustomerInfo] = useState(null); // {name, phone, address}
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [categoryImages, setCategoryImages] = useState({});
   const [extrasGroups, setExtrasGroups] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(() => {
+    try {
+      const saved = localStorage.getItem("qr_cart");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [occupiedTables, setOccupiedTables] = useState([]);
-useEffect(() => {
-  if (!window.socket) return;
-  function refetchTables() {
-    fetch(`${API_URL}/api/orders`)
-      .then((res) => res.json())
-      .then((orders) => {
-        const occupied = orders
-          .filter(order => order.table_number && order.status !== "closed")
-          .map(order => Number(order.table_number));
-        setOccupiedTables(occupied);
-      });
-  }
-  window.socket.on("orders_updated", refetchTables);
-  return () => window.socket.off("orders_updated", refetchTables);
-}, []);
+  const [showStatus, setShowStatus] = useState(false);
+  const [orderStatus, setOrderStatus] = useState("pending");
+  const [orderId, setOrderId] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_OPTIONS[0].value);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Fetch all required data
+  // Save cart to localStorage
   useEffect(() => {
-    // Products
+    localStorage.setItem("qr_cart", JSON.stringify(cart));
+  }, [cart]);
+
+  // Fetch initial data
+  useEffect(() => {
     fetch(`${API_URL}/api/products`)
-      .then((res) => res.json())
-      .then((data) => {
+      .then(res => res.json())
+      .then(data => {
         setProducts(data);
         const cats = [...new Set(data.map((p) => p.category))].filter(Boolean);
         setCategories(cats);
         setActiveCategory(cats[0] || "");
       });
-
-    // Category Images
     fetch(`${API_URL}/api/category-images`)
-      .then((res) => res.json())
-      .then((rows) => {
+      .then(res => res.json())
+      .then(rows => {
         const dict = {};
         rows.forEach(({ category, image }) => {
           dict[category.trim().toLowerCase()] = image;
         });
         setCategoryImages(dict);
       });
-
-    // Extras Groups
     fetch(`${API_URL}/api/extras-groups`)
-      .then((res) => res.json())
-      .then((data) => setExtrasGroups(data));
-  }, []);
-
-  // Fetch occupied tables: any table with a non-closed order is considered occupied
-  useEffect(() => {
-    async function fetchOccupiedTables() {
-      try {
-        const res = await fetch(`${API_URL}/api/orders`);
-        const orders = await res.json();
+      .then(res => res.json())
+      .then(data => setExtrasGroups(data));
+    // Get occupied tables
+    fetch(`${API_URL}/api/orders`)
+      .then(res => res.json())
+      .then(orders => {
         const occupied = orders
-          .filter(order =>
-            order.table_number &&
-            order.status !== "closed"
-          )
+          .filter(order => order.table_number && order.status !== "closed")
           .map(order => Number(order.table_number));
         setOccupiedTables(occupied);
-      } catch (err) {
-        setOccupiedTables([]);
-      }
-    }
-    fetchOccupiedTables();
+      });
   }, []);
 
-  // Order submission logic
-  const handleQrSubmitOrder = async () => {
-    if (!table || cart.length === 0) return;
-    // 1. Try to find an open order for this table (status not closed)
-    const orderRes = await fetch(`${API_URL}/api/orders?table_number=${table}`);
-    const orders = await orderRes.json();
-    let order = orders[0];
-    let orderId;
+  // Table or Online selection logic
+  if (!orderType)
+    return <OrderTypeSelect onSelect={setOrderType} />;
+  if (orderType === "table" && !table)
+    return <TableSelectModal onSelectTable={setTable} occupiedTables={occupiedTables} />;
+  if (orderType === "online" && !customerInfo)
+    return <OnlineOrderForm onSubmit={info => setCustomerInfo(info)} submitting={submitting} />;
 
-    if (!order) {
-      // 2. If not exists, create order
-      const createRes = await fetch(`${API_URL}/api/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          table_number: table,
-          total: cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
-          items: cart.map(i => ({
-            product_id: i.id,
-            quantity: i.quantity,
-            price: i.price,
-            ingredients: i.ingredients || [],
-            extras: i.extras || [],
-            unique_id: i.unique_id,
-            note: i.note || "",
-            confirmed: true, // All QR orders are auto-confirmed
-          })),
-          order_type: "table",
-        }),
-      });
-      order = await createRes.json();
-      orderId = order.id;
-    } else {
-      orderId = order.id;
-      // 3. Add new items to open order
-      await fetch(`${API_URL}/api/orders/order-items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order_id: orderId,
-          items: cart.map(i => ({
-            product_id: i.id,
-            quantity: i.quantity,
-            price: i.price,
-            ingredients: i.ingredients || [],
-            extras: i.extras || [],
-            unique_id: i.unique_id,
-            note: i.note || "",
-            confirmed: true,
-          })),
-        }),
-      });
-      // Optionally, update status to confirmed
-      await fetch(`${API_URL}/api/orders/${orderId}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "confirmed" }),
-      });
+  // Submit order to backend
+  async function handleSubmitOrder() {
+    if (cart.length === 0) return;
+    setSubmitting(true);
+    setShowStatus(true);
+    setOrderStatus("pending");
+    try {
+      // Table order
+      if (orderType === "table") {
+        const orderRes = await fetch(`${API_URL}/api/orders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            table_number: table,
+            total: cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
+            items: cart.map(i => ({
+              product_id: i.id,
+              quantity: i.quantity,
+              price: i.price,
+              ingredients: i.ingredients || [],
+              extras: i.extras || [],
+              unique_id: i.unique_id,
+              note: i.note || "",
+              confirmed: true,
+            })),
+            order_type: "table",
+          }),
+        });
+        const order = await orderRes.json();
+        setOrderId(order.id);
+        setOrderStatus(orderRes.ok ? "success" : "fail");
+      } else {
+        // Online order
+        const orderRes = await fetch(`${API_URL}/api/orders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            total: cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
+            items: cart.map(i => ({
+              product_id: i.id,
+              quantity: i.quantity,
+              price: i.price,
+              ingredients: i.ingredients || [],
+              extras: i.extras || [],
+              unique_id: i.unique_id,
+              note: i.note || "",
+              confirmed: true,
+            })),
+            order_type: "phone", // or "packet" if that's your logic
+            customer_name: customerInfo.name,
+            customer_phone: customerInfo.phone,
+            customer_address: customerInfo.address,
+            payment_method: paymentMethod,
+          }),
+        });
+        const order = await orderRes.json();
+        setOrderId(order.id);
+        setOrderStatus(orderRes.ok ? "success" : "fail");
+      }
+      setCart([]);
+      localStorage.removeItem("qr_cart");
+    } catch (e) {
+      setOrderStatus("fail");
+    } finally {
+      setSubmitting(false);
     }
+  }
 
-    // 4. Clear QR cart
+  // Reset order process
+  function handleReset() {
+    setOrderStatus("pending");
+    setShowStatus(false);
+    setOrderId(null);
     setCart([]);
-    alert("✅ Order sent! Your server has been notified.");
-  };
-
-  // If no table, show modal first
-  if (!table) {
-    return (
-      <TableSelectModal
-        onSelectTable={setTable}
-        tableCount={20}
-        occupiedTables={occupiedTables}
-      />
-    );
+    localStorage.removeItem("qr_cart");
+    if (orderType === "table") setTable(null);
+    else setCustomerInfo(null);
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950 dark:to-indigo-900 flex flex-col">
-      <QrHeader table={table} />
+      <QrHeader orderType={orderType} table={table} />
       <div className="flex-1 flex flex-col md:flex-row">
-        <QrCategoryGrid
+        <CategorySidebar
           categories={categories}
           images={categoryImages}
           activeCategory={activeCategory}
           setActiveCategory={setActiveCategory}
         />
-        <QrProductGrid
+        <ProductGrid
           products={products.filter((p) => p.category === activeCategory)}
           onProductClick={(product) => {
             setSelectedProduct(product);
             setShowAddModal(true);
           }}
         />
-        <QrCartDrawer
+        <CartDrawer
           cart={cart}
           setCart={setCart}
-          table={table}
-          onSubmitOrder={handleQrSubmitOrder}
+          orderType={orderType}
+          onSubmitOrder={handleSubmitOrder}
+          paymentMethod={paymentMethod}
+          onPaymentChange={setPaymentMethod}
+          submitting={submitting}
         />
       </div>
       <AddToCartModal
@@ -576,7 +709,6 @@ useEffect(() => {
         onClose={() => setShowAddModal(false)}
         onAddToCart={(item) => {
           setCart((prev) => {
-            // If same unique_id, increment
             const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
             if (idx !== -1) {
               const copy = [...prev];
@@ -587,6 +719,12 @@ useEffect(() => {
           });
           setShowAddModal(false);
         }}
+      />
+      <OrderStatusModal
+        open={showStatus}
+        status={orderStatus}
+        orderId={orderId}
+        onClose={handleReset}
       />
     </div>
   );
