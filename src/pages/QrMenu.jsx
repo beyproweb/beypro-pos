@@ -1,89 +1,90 @@
 import React, { useState, useEffect } from "react";
 
-// Edit this to match your deployment
+// Change to match your backend
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-const PAYMENT_OPTIONS = [
-  { label: "Cash", value: "cash", icon: "💵" },
-  { label: "Credit Card", value: "card", icon: "💳" },
-  { label: "Online Payment", value: "online", icon: "🌐" }
+// Supported languages for the QR
+const LANGS = [
+  { code: "en", label: "🇺🇸 English" },
+  { code: "tr", label: "🇹🇷 Türkçe" },
+  { code: "de", label: "🇩🇪 Deutsch" },
+  { code: "fr", label: "🇫🇷 Français" },
 ];
 
-function QrHeader({ orderType, table }) {
+// --- HEADER ---
+function QrHeader({ orderType, table, lang, setLang }) {
   return (
-    <header className="w-full sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/70 backdrop-blur-lg border-b border-blue-100 dark:border-zinc-800 shadow-xl flex items-center px-6 py-3">
+    <header className="w-full sticky top-0 z-50 flex items-center justify-between bg-white/80 dark:bg-zinc-900/80 backdrop-blur-lg border-b border-blue-100 dark:border-zinc-800 shadow-lg px-4 py-3">
       <span className="text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent tracking-tight drop-shadow">
         Hurrybey
       </span>
-      <span className="ml-5 text-lg font-bold text-blue-700 dark:text-blue-200">
-        {orderType === "table" ? (table ? `Table ${table}` : "") : "Online Order"}
+      <span className="ml-3 text-lg font-bold text-blue-700 dark:text-blue-200 flex-1">
+        {orderType === "table"
+          ? (table ? `Table ${table}` : "")
+          : "Online Order"}
       </span>
+      <div>
+        <select
+          value={lang}
+          onChange={e => setLang(e.target.value)}
+          className="rounded-xl px-2 py-1 bg-white border text-sm font-semibold"
+        >
+          {LANGS.map(l => (
+            <option key={l.code} value={l.code}>{l.label}</option>
+          ))}
+        </select>
+      </div>
     </header>
   );
 }
 
-// 1. First choice modal: Table or Online Order
+// --- ORDER TYPE MODAL ---
 function OrderTypeSelect({ onSelect }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 max-w-md w-full text-center">
-        <h2 className="text-3xl font-extrabold mb-5 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
-          How would you like to order?
-        </h2>
-        <div className="flex flex-col gap-4">
-          <button
-            className="py-4 rounded-2xl font-bold text-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl hover:scale-105 transition"
-            onClick={() => onSelect("table")}
-          >
-            🍽️ Order at Table
-          </button>
-          <button
-            className="py-4 rounded-2xl font-bold text-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-xl hover:scale-105 transition"
-            onClick={() => onSelect("online")}
-          >
-            🏠 Order for Delivery
-          </button>
-        </div>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-[340px] text-center">
+        <h2 className="text-2xl font-extrabold mb-6 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">Order Type</h2>
+        <button
+          className="py-4 w-full mb-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl hover:scale-105 transition"
+          onClick={() => onSelect("table")}
+        >
+          🍽️ Table Order
+        </button>
+        <button
+          className="py-4 w-full rounded-2xl font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-xl hover:scale-105 transition"
+          onClick={() => onSelect("online")}
+        >
+          🏠 Delivery
+        </button>
       </div>
     </div>
   );
 }
 
-// 2. Table select modal (if table)
+// --- TABLE SELECT MODAL ---
 function TableSelectModal({ onSelectTable, tableCount = 20, occupiedTables = [] }) {
   const [selected, setSelected] = useState(null);
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center">
-        <h2 className="text-2xl font-extrabold mb-6 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
-          Please select your table
-        </h2>
-        <div className="grid grid-cols-4 gap-4 justify-center mb-6">
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
+      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center">
+        <h2 className="text-xl font-bold mb-5 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">Choose Table</h2>
+        <div className="grid grid-cols-4 gap-2 mb-6">
           {[...Array(tableCount)].map((_, i) => {
-            const tableNum = i + 1;
-            const isOccupied = occupiedTables.includes(tableNum);
+            const num = i + 1;
+            const occ = occupiedTables.includes(num);
             return (
               <button
                 key={i}
-                onClick={() => !isOccupied && setSelected(tableNum)}
-                className={`
-                  rounded-2xl font-bold py-3 text-lg shadow
-                  transition-all relative
-                  ${isOccupied
-                    ? "bg-gray-300 text-gray-500 opacity-60 cursor-not-allowed"
-                    : selected === tableNum
-                    ? "bg-gradient-to-r from-blue-400 via-fuchsia-400 to-indigo-400 text-white scale-110"
-                    : "bg-gray-100 dark:bg-zinc-800 text-blue-700 dark:text-blue-100 hover:scale-105"}
-                `}
-                disabled={isOccupied}
-                title={isOccupied ? "Occupied" : `Table ${tableNum}`}
+                disabled={occ}
+                className={`rounded-xl font-bold py-3 text-lg transition relative ${occ
+                  ? "bg-gray-300 text-gray-400 cursor-not-allowed"
+                  : selected === num
+                    ? "bg-gradient-to-r from-blue-400 via-fuchsia-400 to-indigo-400 text-white scale-105"
+                    : "bg-gray-100 text-blue-700 hover:scale-105"}`}
+                onClick={() => setSelected(num)}
               >
-                {tableNum}
-                {isOccupied && (
-                  <span className="absolute text-[10px] left-1/2 -translate-x-1/2 bottom-1 text-red-700 font-semibold bg-white/80 rounded px-1 pointer-events-none">
-                    Occupied
-                  </span>
-                )}
+                {num}
+                {occ && <span className="absolute left-1/2 -translate-x-1/2 text-[10px] bottom-1 text-red-600">Occupied</span>}
               </button>
             );
           })}
@@ -91,232 +92,89 @@ function TableSelectModal({ onSelectTable, tableCount = 20, occupiedTables = [] 
         <button
           disabled={!selected}
           className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg text-lg disabled:opacity-60"
-          onClick={() => selected && onSelectTable(selected)}
+          onClick={() => onSelectTable(selected)}
         >
-          Start
+          Start Order
         </button>
       </div>
     </div>
   );
 }
 
-// 3. Online order info form
+// --- ONLINE ORDER FORM ---
 function OnlineOrderForm({ onSubmit, submitting }) {
-  const [form, setForm] = useState({
-    name: "", phone: "", address: ""
-  });
+  const [form, setForm] = useState({ name: "", phone: "", address: "" });
   const [touched, setTouched] = useState({});
-  const [error, setError] = useState("");
-  const validate = () =>
-    form.name.trim() && /^5\d{9}$/.test(form.phone.trim()) && form.address.trim();
+  const validate = () => form.name && /^5\d{9}$/.test(form.phone) && form.address;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center">
-        <h2 className="text-2xl font-extrabold mb-4 bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
-          Delivery Info
-        </h2>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center">
+        <h2 className="text-xl font-bold mb-4 bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">Delivery Info</h2>
         <form
           onSubmit={e => {
             e.preventDefault();
             if (!validate()) {
               setTouched({ name: true, phone: true, address: true });
-              setError("Please fill out all fields correctly.");
               return;
             }
-            setError("");
             onSubmit(form);
           }}
-          className="flex flex-col gap-4 text-left"
+          className="flex flex-col gap-3"
         >
-          <input
-            className="rounded-xl px-4 py-3 border border-blue-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow"
-            placeholder="Full Name"
-            value={form.name}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            onBlur={() => setTouched(t => ({ ...t, name: true }))}
-            required
-          />
-          <input
-            className={`rounded-xl px-4 py-3 border ${touched.phone && !/^5\d{9}$/.test(form.phone.trim()) ? "border-red-500" : "border-blue-200"} dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow`}
-            placeholder="Phone (5XXXXXXXXX)"
-            value={form.phone}
-            onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/[^\d]/g, "").slice(0, 10) }))}
-            onBlur={() => setTouched(t => ({ ...t, phone: true }))}
-            required
-            inputMode="numeric"
-            maxLength={10}
-          />
-          <textarea
-            className="rounded-xl px-4 py-3 border border-blue-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow"
-            placeholder="Address"
-            rows={3}
-            value={form.address}
-            onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-            onBlur={() => setTouched(t => ({ ...t, address: true }))}
-            required
-          />
-          {error && <div className="text-red-500 font-bold">{error}</div>}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full py-3 mt-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg hover:scale-105 transition"
-          >
-            {submitting ? "Sending..." : "Continue to Menu"}
-          </button>
+          <input className="rounded-xl px-4 py-3 border" placeholder="Full Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          <input className={`rounded-xl px-4 py-3 border ${touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""}`} placeholder="Phone (5XXXXXXXXX)" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/[^\d]/g, "").slice(0, 10) }))} maxLength={10} />
+          <textarea className="rounded-xl px-4 py-3 border" placeholder="Address" rows={3} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+          <button type="submit" disabled={submitting} className="w-full py-3 mt-2 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg">{submitting ? "Sending..." : "Continue"}</button>
         </form>
       </div>
     </div>
   );
 }
 
-// 4. Category Sidebar
-function CategorySidebar({ categories, images, activeCategory, setActiveCategory }) {
+// --- CATEGORIES BOTTOM BAR (scrollable on mobile) ---
+function CategoryBar({ categories, activeCategory, setActiveCategory }) {
   return (
-    <aside className="md:w-[220px] w-full md:sticky top-20 bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-200 dark:from-blue-950 dark:via-blue-900 dark:to-indigo-950 rounded-3xl p-2 m-4 shadow-2xl h-fit">
-      <div className="flex md:flex-col gap-2">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className={`
-              flex flex-col items-center justify-center rounded-2xl py-3
-              shadow transition
-              ${activeCategory === cat
-                ? "bg-gradient-to-r from-fuchsia-400 via-blue-400 to-indigo-400 text-white scale-105 ring-2 ring-fuchsia-300"
-                : "bg-white/60 dark:bg-blue-900/30 text-blue-700 dark:text-blue-100 hover:scale-105"}
-            `}
-          >
-            {images[cat.trim().toLowerCase()] ? (
-              <img
-                src={
-                  /^https?:\/\//.test(images[cat.trim().toLowerCase()])
-                    ? images[cat.trim().toLowerCase()]
-                    : `${API_URL}/uploads/${images[cat.trim().toLowerCase()]}`
-                }
-                alt={cat}
-                className="w-10 h-10 rounded-xl mb-1 object-cover border shadow"
-              />
-            ) : (
-              <span className="text-2xl mb-1">🍽️</span>
-            )}
-            <span className="font-bold text-xs text-center">{cat}</span>
-          </button>
-        ))}
-      </div>
-    </aside>
+    <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 z-50 flex overflow-x-auto gap-2 py-2 px-1 shadow-inner md:static md:bg-transparent md:shadow-none md:p-0">
+      {categories.map(cat => (
+        <button
+          key={cat}
+          className={`flex-1 px-4 py-2 rounded-2xl font-bold transition text-xs ${activeCategory === cat
+            ? "bg-gradient-to-r from-fuchsia-400 via-blue-400 to-indigo-400 text-white scale-105 ring-2 ring-fuchsia-300"
+            : "bg-gray-100 text-blue-700 hover:scale-105"}`}
+          onClick={() => setActiveCategory(cat)}
+        >{cat}</button>
+      ))}
+    </nav>
   );
 }
 
-// 5. Product Grid
+// --- PRODUCT GRID ---
 function ProductGrid({ products, onProductClick }) {
   return (
-    <main className="flex-1 py-5 px-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+    <main className="flex-1 pt-3 pb-28 px-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {products.length === 0 && (
-        <div className="col-span-full text-center text-gray-400 font-bold text-xl py-8">
-          No products in this category.
+        <div className="col-span-full text-center text-gray-400 font-bold text-lg py-8">
+          No products.
         </div>
       )}
-      {products.map((product) => (
+      {products.map(product => (
         <div
           key={product.id}
           onClick={() => onProductClick(product)}
-          className="bg-white/90 dark:bg-zinc-900 rounded-2xl border-2 border-blue-100/40 dark:border-zinc-800/40 shadow-md hover:shadow-2xl transition hover:scale-105 flex flex-col items-center p-3 cursor-pointer group"
+          className="bg-white dark:bg-zinc-900 rounded-2xl border border-blue-100 shadow hover:shadow-2xl transition hover:scale-105 flex flex-col items-center p-2 cursor-pointer"
         >
-          <img
-            src={
-              product.image
-                ? /^https?:\/\//.test(product.image)
-                  ? product.image
-                  : `${API_URL}/uploads/${product.image}`
-                : "https://via.placeholder.com/100?text=🍽️"
-            }
-            alt={product.name}
-            className="w-20 h-20 object-cover rounded-xl mb-2 border shadow"
-          />
-          <div className="font-bold text-blue-900 dark:text-blue-200 text-xs text-center truncate w-full">
-            {product.name}
-          </div>
-          <div className="mt-1 text-indigo-700 dark:text-indigo-300 font-extrabold text-lg text-center w-full">
-            ₺{parseFloat(product.price).toFixed(2)}
-          </div>
+          <img src={product.image ? (/^https?:\/\//.test(product.image) ? product.image : `${API_URL}/uploads/${product.image}`) : "https://via.placeholder.com/100?text=🍽️"} alt={product.name} className="w-16 h-16 object-cover rounded-xl mb-1 border shadow" />
+          <div className="font-bold text-blue-900 dark:text-blue-200 text-xs text-center truncate w-full">{product.name}</div>
+          <div className="mt-1 text-indigo-700 dark:text-indigo-300 font-extrabold text-lg text-center w-full">₺{parseFloat(product.price).toFixed(2)}</div>
         </div>
       ))}
     </main>
   );
 }
 
-// 6. Cart Drawer/Sidebar with payment for online order
-function CartDrawer({ cart, setCart, onSubmitOrder, orderType, onPaymentChange, paymentMethod, submitting }) {
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  return (
-    <aside className="md:w-[320px] w-full fixed md:static right-0 bottom-0 bg-white/95 dark:bg-zinc-900/95 rounded-t-2xl md:rounded-3xl shadow-2xl p-5 flex flex-col z-40">
-      <h3 className="text-lg font-bold text-blue-800 dark:text-blue-200 mb-4">
-        🛒 Your Order
-      </h3>
-      <div className="flex-1 overflow-y-auto max-h-[60vh]">
-        {cart.length === 0 ? (
-          <div className="text-gray-400 text-center py-8">Cart is empty.</div>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {cart.map((item, i) => (
-              <li key={i} className="flex items-center justify-between border-b border-blue-100 pb-2">
-                <span className="font-bold">{item.name} <span className="text-xs text-gray-500">x{item.quantity}</span></span>
-                <span className="font-bold text-indigo-700">₺{(item.price * item.quantity).toFixed(2)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      {cart.length > 0 && (
-        <div className="mt-4">
-          <div className="flex justify-between text-base font-bold">
-            <span>Total:</span>
-            <span className="text-indigo-700 text-xl">₺{total.toFixed(2)}</span>
-          </div>
-          {orderType === "online" && (
-            <div className="flex flex-col gap-2 my-2">
-              <label className="font-bold text-blue-900">Payment:</label>
-              <div className="flex gap-2">
-                {PAYMENT_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => onPaymentChange(opt.value)}
-                    className={`
-                      px-3 py-2 rounded-lg font-medium text-sm border shadow
-                      ${paymentMethod === opt.value
-                        ? "bg-gradient-to-r from-fuchsia-400 to-indigo-500 text-white"
-                        : "bg-gray-100 dark:bg-zinc-800 text-blue-700 dark:text-blue-100"}
-                    `}
-                  >
-                    <span className="mr-1">{opt.icon}</span>
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <button
-            className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
-            onClick={onSubmitOrder}
-            disabled={submitting}
-          >
-            {submitting ? "Sending..." : "Submit Order"}
-          </button>
-          <button
-            className="w-full mt-2 py-2 rounded-lg font-medium text-sm text-gray-700 bg-gray-100 hover:bg-red-50 transition"
-            onClick={() => setCart([])}
-          >
-            Clear Cart
-          </button>
-        </div>
-      )}
-    </aside>
-  );
-}
-
-// 7. Add to Cart Modal (EXTRAS + note)
-function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
+// --- ADD TO CART MODAL (with extras logic from TransactionScreen) ---
+function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [note, setNote] = useState("");
@@ -330,16 +188,9 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
   if (!open || !product) return null;
 
   const basePrice = parseFloat(product.price) || 0;
-  const extrasTotal = selectedExtras.reduce(
-    (sum, ex) => sum + (parseFloat(ex.price || 0) * (ex.quantity || 1)),
-    0
-  );
+  const availableGroups = extrasGroups.filter(g => (product.selectedExtrasGroup || []).includes(g.groupName));
+  const extrasTotal = selectedExtras.reduce((sum, ex) => sum + (parseFloat(ex.price || 0) * (ex.quantity || 1)), 0);
   const fullTotal = (basePrice + extrasTotal) * quantity;
-
-  // Find extras group by product category, fallback to none
-  const availableGroups = extrasGroups.filter(g =>
-    (product.selectedExtrasGroup || []).includes(g.groupName)
-  );
 
   function handleToggleExtra(group, item, add) {
     setSelectedExtras(prev => {
@@ -352,15 +203,7 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
           copy[idx].quantity += 1;
           return copy;
         }
-        return [
-          ...prev,
-          {
-            group: group.groupName,
-            name: item.name,
-            price: parseFloat(item.price || 0),
-            quantity: 1,
-          },
-        ];
+        return [...prev, { group: group.groupName, name: item.name, price: parseFloat(item.price || 0), quantity: 1 }];
       } else {
         if (idx !== -1) {
           const copy = [...prev];
@@ -374,63 +217,30 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-2 py-6">
-      <div className="relative w-full max-w-[420px] sm:max-h-[95vh] bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl flex flex-col overflow-y-auto">
-        <button
-          className="absolute right-3 top-3 z-20 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full w-10 h-10 flex items-center justify-center text-2xl text-gray-400 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 shadow transition"
-          onClick={onClose}
-        >×</button>
-        <div className="w-full flex items-center justify-center pt-6 pb-3">
-          <img
-            src={
-              product.image
-                ? /^https?:\/\//.test(product.image)
-                  ? product.image
-                  : `${API_URL}/uploads/${product.image}`
-                : "https://via.placeholder.com/120?text=🍽️"
-            }
-            alt={product.name}
-            className="w-28 h-28 object-cover rounded-2xl border shadow"
-          />
-        </div>
-        <div className="px-5 pb-2">
-          <div className="font-extrabold text-xl text-blue-800 dark:text-blue-200 text-center mb-1">{product.name}</div>
-          <div className="text-base text-indigo-800 dark:text-indigo-300 text-center mb-2">
-            ₺{parseFloat(product.price).toFixed(2)}
-          </div>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-2 py-7 bg-black/40">
+      <div className="relative w-full max-w-[380px] sm:max-h-[98vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-y-auto">
+        <button className="absolute right-3 top-3 z-20 bg-white border rounded-full w-9 h-9 flex items-center justify-center text-2xl text-gray-400 hover:text-red-400 hover:bg-red-50 shadow transition" onClick={onClose}>×</button>
+        <div className="flex flex-col items-center p-5">
+          <img src={product.image ? (/^https?:\/\//.test(product.image) ? product.image : `${API_URL}/uploads/${product.image}`) : "https://via.placeholder.com/120?text=🍽️"} alt={product.name} className="w-24 h-24 object-cover rounded-2xl border shadow" />
+          <div className="font-extrabold text-lg text-blue-800 text-center mt-2 mb-1">{product.name}</div>
+          <div className="text-base text-indigo-800 text-center mb-2">₺{basePrice.toFixed(2)}</div>
         </div>
         {availableGroups.length > 0 && (
-          <div className="px-5 mb-3 space-y-3">
+          <div className="px-5 mb-3">
             {availableGroups.map(group => (
-              <div key={group.groupName}>
-                <div className="font-semibold text-blue-700 dark:text-blue-300 mb-1 text-sm">
-                  {group.groupName}
-                </div>
+              <div key={group.groupName} className="mb-2">
+                <div className="font-semibold text-blue-700 mb-1 text-sm">{group.groupName}</div>
                 <div className="grid grid-cols-2 gap-2">
-                  {(Array.isArray(group.items) ? group.items : []).map(item => {
-                    const sel = selectedExtras.find(
-                      ex => ex.group === group.groupName && ex.name === item.name
-                    );
+                  {(group.items || []).map(item => {
+                    const sel = selectedExtras.find(ex => ex.group === group.groupName && ex.name === item.name);
                     return (
-                      <div
-                        key={item.name}
-                        className="flex flex-col items-center justify-center bg-blue-50 dark:bg-zinc-800 border border-blue-100 dark:border-zinc-700 rounded-xl px-2 py-2 min-h-[82px] shadow"
-                      >
-                        <span className="font-medium truncate text-center">{item.name}</span>
-                        <span className="text-xs text-indigo-700 font-bold text-center">₺{parseFloat(item.price || 0)}</span>
+                      <div key={item.name} className="flex flex-col items-center bg-blue-50 border border-blue-100 rounded-xl px-2 py-2 min-h-[78px] shadow">
+                        <span className="font-medium truncate">{item.name}</span>
+                        <span className="text-xs text-indigo-700 font-bold">₺{parseFloat(item.price || 0)}</span>
                         <div className="flex items-center justify-center gap-2 mt-2">
-                          <button
-                            className="w-7 h-7 flex items-center justify-center rounded-full bg-indigo-200 hover:bg-indigo-400 text-base font-bold"
-                            onClick={() => handleToggleExtra(group, item, false)}
-                            disabled={!sel || sel.quantity === 0}
-                            style={{ lineHeight: "1" }}
-                          >–</button>
+                          <button className="w-7 h-7 rounded-full bg-indigo-200 text-base font-bold" onClick={() => handleToggleExtra(group, item, false)} disabled={!sel || sel.quantity === 0}>–</button>
                           <span className="w-5 text-center font-bold text-blue-800">{sel?.quantity || 0}</span>
-                          <button
-                            className="w-7 h-7 flex items-center justify-center rounded-full bg-indigo-200 hover:bg-indigo-400 text-base font-bold"
-                            onClick={() => handleToggleExtra(group, item, true)}
-                            style={{ lineHeight: "1" }}
-                          >+</button>
+                          <button className="w-7 h-7 rounded-full bg-indigo-200 text-base font-bold" onClick={() => handleToggleExtra(group, item, true)}>+</button>
                         </div>
                       </div>
                     );
@@ -440,74 +250,142 @@ function AddToCartModal({ open, product, onClose, onAddToCart, extrasGroups }) {
             ))}
           </div>
         )}
-        <div className="px-5 pb-2">
-          <textarea
-            className="w-full rounded-xl border border-blue-100 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-2 shadow-inner text-sm resize-none"
-            placeholder="Add a note (optional)..."
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            rows={2}
-          />
+        <div className="px-5 mb-2">
+          <textarea className="w-full rounded-xl border p-2 text-sm" placeholder="Add a note (optional)..." value={note} onChange={e => setNote(e.target.value)} rows={2} />
         </div>
-        <div className="w-full bg-gradient-to-t from-blue-50 via-white/90 to-white dark:from-blue-900 dark:via-zinc-900/90 dark:to-zinc-900 sticky bottom-0 z-10 px-5 py-4 flex flex-col gap-2 border-t border-blue-100 dark:border-zinc-800">
+        <div className="w-full bg-gradient-to-t from-blue-50 via-white to-white sticky bottom-0 px-5 py-4 flex flex-col gap-2 border-t border-blue-100">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <button
-                className="w-8 h-8 rounded-full bg-gray-200 hover:bg-indigo-200 text-xl font-bold"
-                onClick={() => setQuantity(q => Math.max(q - 1, 1))}
-              >–</button>
+              <button className="w-8 h-8 rounded-full bg-gray-200 text-xl font-bold" onClick={() => setQuantity(q => Math.max(q - 1, 1))}>–</button>
               <span className="text-xl font-extrabold min-w-[40px] text-center">{quantity}</span>
-              <button
-                className="w-8 h-8 rounded-full bg-gray-200 hover:bg-green-200 text-xl font-bold"
-                onClick={() => setQuantity(q => q + 1)}
-              >+</button>
+              <button className="w-8 h-8 rounded-full bg-gray-200 text-xl font-bold" onClick={() => setQuantity(q => q + 1)}>+</button>
             </div>
-            <div className="text-lg font-extrabold text-indigo-700 dark:text-indigo-200">
-              Total: ₺{fullTotal.toFixed(2)}
-            </div>
+            <div className="text-lg font-extrabold text-indigo-700">₺{fullTotal.toFixed(2)}</div>
           </div>
-          <button
-            className="w-full py-3 mt-2 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg hover:scale-105 transition"
-            onClick={() => {
-              const unique_id = product.id + "-" + btoa(JSON.stringify(selectedExtras) + note);
-              onAddToCart({
-                id: product.id,
-                name: product.name,
-                price: basePrice + extrasTotal,
-                quantity,
-                extras: selectedExtras.filter(e => e.quantity > 0),
-                note,
-                unique_id,
-              });
-            }}
-          >
-            Add to Cart
-          </button>
+          <button className="w-full py-3 mt-2 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg hover:scale-105" onClick={() => {
+            const unique_id = product.id + "-" + btoa(JSON.stringify(selectedExtras) + note);
+            onAddToCart({
+              id: product.id,
+              name: product.name,
+              price: basePrice + extrasTotal,
+              quantity,
+              extras: selectedExtras.filter(e => e.quantity > 0),
+              note,
+              unique_id,
+            });
+          }}>Add to Cart</button>
         </div>
       </div>
     </div>
   );
 }
 
-// 8. Order Status/Confirmation
+// --- CART DRAWER (slide up on mobile, sidebar on desktop) ---
+function CartDrawer({ cart, setCart, onSubmitOrder, orderType, paymentMethod, setPaymentMethod, submitting }) {
+  const [show, setShow] = useState(false);
+  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  useEffect(() => {
+    setShow(cart.length > 0);
+  }, [cart.length]);
+
+  function removeItem(idx) {
+    setCart(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <>
+      {/* Button floating for mobile */}
+      {!show && cart.length > 0 && (
+        <button className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-7 rounded-3xl shadow-xl z-50" onClick={() => setShow(true)}>
+          🛒 View Cart ({cart.length})
+        </button>
+      )}
+      {/* Drawer */}
+      {show && (
+        <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/30">
+          <div className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl shadow-2xl p-5 flex flex-col">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-lg font-bold text-blue-800">🛒 Your Order</span>
+              <button className="text-2xl text-gray-400 hover:text-red-500" onClick={() => setShow(false)}>×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto max-h-[48vh]">
+              {cart.length === 0 ? (
+                <div className="text-gray-400 text-center py-8">Cart is empty.</div>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {cart.map((item, i) => (
+                    <li key={i} className="flex items-center justify-between border-b border-blue-100 pb-2">
+                      <div>
+                        <span className="font-bold">{item.name} <span className="text-xs text-gray-500">x{item.quantity}</span></span>
+                        {item.extras && item.extras.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.extras.map((ex, j) => (
+                              <span key={j} className="inline-block px-2 py-0.5 bg-indigo-100 text-xs rounded-full">{ex.name} ×{ex.quantity || 1}</span>
+                            ))}
+                          </div>
+                        )}
+                        {item.note && <div className="text-xs text-yellow-700">{item.note}</div>}
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="font-bold text-indigo-700">₺{(item.price * item.quantity).toFixed(2)}</span>
+                        <button className="text-xs text-red-400 hover:text-red-700 mt-1" onClick={() => removeItem(i)}>Remove</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {cart.length > 0 && (
+              <>
+                <div className="flex justify-between text-base font-bold mt-5 mb-3">
+                  <span>Total:</span>
+                  <span className="text-indigo-700 text-xl">₺{total.toFixed(2)}</span>
+                </div>
+                {orderType === "online" && (
+                  <div className="flex flex-col gap-2 mb-2">
+                    <label className="font-bold text-blue-900">Payment:</label>
+                    <select className="rounded-xl px-2 py-1 border" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                      <option value="cash">💵 Cash</option>
+                      <option value="card">💳 Credit Card</option>
+                      <option value="online">🌐 Online Payment</option>
+                    </select>
+                  </div>
+                )}
+                <button className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition" onClick={onSubmitOrder} disabled={submitting}>
+                  {submitting ? "Sending..." : "Submit Order"}
+                </button>
+                <button className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition" onClick={() => setCart([])}>
+                  Clear Cart
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// --- ORDER STATUS MODAL ---
 function OrderStatusModal({ open, status, orderId, onClose }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-xs w-full text-center">
         <h2 className="text-2xl font-extrabold mb-5 bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
           {status === "success"
             ? "✅ Order Sent!"
             : status === "pending"
-            ? "⏳ Sending Order..."
-            : "❌ Order Failed"}
+              ? "⏳ Sending Order..."
+              : "❌ Order Failed"}
         </h2>
-        <div className="text-lg text-blue-900 dark:text-blue-100 mb-6">
+        <div className="text-lg text-blue-900 mb-6">
           {status === "success"
             ? "Thank you! Your order has been received."
             : status === "pending"
-            ? "Please wait..."
-            : "Something went wrong. Please try again."}
+              ? "Please wait..."
+              : "Something went wrong. Please try again."}
         </div>
         {orderId && (
           <div className="mb-4 font-mono text-sm text-gray-500">
@@ -525,14 +403,13 @@ function OrderStatusModal({ open, status, orderId, onClose }) {
   );
 }
 
-// Main QR Page
-export default function QRMenuModern() {
-  const [orderType, setOrderType] = useState(null); // "table" | "online"
+// === MAIN QR MENU PAGE ===
+export default function QrMenu() {
+  const [orderType, setOrderType] = useState(null);
   const [table, setTable] = useState(null);
-  const [customerInfo, setCustomerInfo] = useState(null); // {name, phone, address}
+  const [customerInfo, setCustomerInfo] = useState(null);
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
-  const [categoryImages, setCategoryImages] = useState({});
   const [extrasGroups, setExtrasGroups] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
   const [cart, setCart] = useState(() => {
@@ -547,8 +424,9 @@ export default function QRMenuModern() {
   const [showStatus, setShowStatus] = useState(false);
   const [orderStatus, setOrderStatus] = useState("pending");
   const [orderId, setOrderId] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_OPTIONS[0].value);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
   const [submitting, setSubmitting] = useState(false);
+  const [lang, setLang] = useState(LANGS[0].code);
 
   // Save cart to localStorage
   useEffect(() => {
@@ -565,15 +443,6 @@ export default function QRMenuModern() {
         setCategories(cats);
         setActiveCategory(cats[0] || "");
       });
-    fetch(`${API_URL}/api/category-images`)
-      .then(res => res.json())
-      .then(rows => {
-        const dict = {};
-        rows.forEach(({ category, image }) => {
-          dict[category.trim().toLowerCase()] = image;
-        });
-        setCategoryImages(dict);
-      });
     fetch(`${API_URL}/api/extras-groups`)
       .then(res => res.json())
       .then(data => setExtrasGroups(data));
@@ -588,7 +457,7 @@ export default function QRMenuModern() {
       });
   }, []);
 
-  // Table or Online selection logic
+  // Order flow
   if (!orderType)
     return <OrderTypeSelect onSelect={setOrderType} />;
   if (orderType === "table" && !table)
@@ -596,7 +465,7 @@ export default function QRMenuModern() {
   if (orderType === "online" && !customerInfo)
     return <OnlineOrderForm onSubmit={info => setCustomerInfo(info)} submitting={submitting} />;
 
-  // Submit order to backend
+  // --- SUBMIT ORDER ---
   async function handleSubmitOrder() {
     if (cart.length === 0) return;
     setSubmitting(true);
@@ -628,7 +497,7 @@ export default function QRMenuModern() {
         setOrderId(order.id);
         setOrderStatus(orderRes.ok ? "success" : "fail");
       } else {
-        // Online order
+        // Online order (address-based triggers driver logic)
         const orderRes = await fetch(`${API_URL}/api/orders`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -644,7 +513,7 @@ export default function QRMenuModern() {
               note: i.note || "",
               confirmed: true,
             })),
-            order_type: "phone", // or "packet" if that's your logic
+            order_type: "packet",
             customer_name: customerInfo.name,
             customer_phone: customerInfo.phone,
             customer_address: customerInfo.address,
@@ -664,7 +533,7 @@ export default function QRMenuModern() {
     }
   }
 
-  // Reset order process
+  // Reset for another order
   function handleReset() {
     setOrderStatus("pending");
     setShowStatus(false);
@@ -676,40 +545,35 @@ export default function QRMenuModern() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950 dark:to-indigo-900 flex flex-col">
-      <QrHeader orderType={orderType} table={table} />
-      <div className="flex-1 flex flex-col md:flex-row">
-        <CategorySidebar
-          categories={categories}
-          images={categoryImages}
-          activeCategory={activeCategory}
-          setActiveCategory={setActiveCategory}
-        />
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
+      <QrHeader orderType={orderType} table={table} lang={lang} setLang={setLang} />
+      <div className="flex-1 flex flex-col">
         <ProductGrid
           products={products.filter((p) => p.category === activeCategory)}
-          onProductClick={(product) => {
+          onProductClick={product => {
             setSelectedProduct(product);
             setShowAddModal(true);
           }}
         />
-        <CartDrawer
-          cart={cart}
-          setCart={setCart}
-          orderType={orderType}
-          onSubmitOrder={handleSubmitOrder}
-          paymentMethod={paymentMethod}
-          onPaymentChange={setPaymentMethod}
-          submitting={submitting}
-        />
       </div>
+      <CategoryBar categories={categories} activeCategory={activeCategory} setActiveCategory={setActiveCategory} />
+      <CartDrawer
+        cart={cart}
+        setCart={setCart}
+        orderType={orderType}
+        onSubmitOrder={handleSubmitOrder}
+        paymentMethod={paymentMethod}
+        setPaymentMethod={setPaymentMethod}
+        submitting={submitting}
+      />
       <AddToCartModal
         open={showAddModal}
         product={selectedProduct}
         extrasGroups={extrasGroups}
         onClose={() => setShowAddModal(false)}
-        onAddToCart={(item) => {
-          setCart((prev) => {
-            const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
+        onAddToCart={item => {
+          setCart(prev => {
+            const idx = prev.findIndex(x => x.unique_id === item.unique_id);
             if (idx !== -1) {
               const copy = [...prev];
               copy[idx].quantity += item.quantity;
