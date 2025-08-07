@@ -39,11 +39,13 @@ function QrHeader({ orderType, table, lang, setLang }) {
 }
 
 // --- ORDER TYPE MODAL ---
-function OrderTypeSelect({ onSelect }) {
+function OrderTypeSelect({ onSelect, lang, setLang }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-[340px] text-center">
-        <h2 className="text-2xl font-extrabold mb-6 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">Order Type</h2>
+      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-[340px] text-center flex flex-col items-center">
+        <h2 className="text-2xl font-extrabold mb-6 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
+          Order Type
+        </h2>
         <button
           className="py-4 w-full mb-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl hover:scale-105 transition"
           onClick={() => onSelect("table")}
@@ -56,10 +58,24 @@ function OrderTypeSelect({ onSelect }) {
         >
           🏠 Delivery
         </button>
+        {/* Language Switcher */}
+        <div className="w-full mt-8 flex flex-col items-center">
+          <label className="text-sm font-bold mb-1 text-blue-600">🌐 Language</label>
+          <select
+            value={lang}
+            onChange={e => setLang(e.target.value)}
+            className="rounded-xl px-4 py-2 bg-white border border-blue-200 text-base font-semibold shadow"
+          >
+            {LANGS.map(l => (
+              <option key={l.code} value={l.code}>{l.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
 }
+
 
 // --- TABLE SELECT MODAL ---
 function TableSelectModal({ onSelectTable, tableCount = 20, occupiedTables = [] }) {
@@ -221,7 +237,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
 
   return (
     <div className="fixed inset-0 z-[99] flex items-center justify-center bg-white/70 backdrop-blur-[2.5px]">
-      <div className="relative w-full max-w-md h-full sm:h-[90vh] bg-gradient-to-br from-blue-50 via-fuchsia-50 to-indigo-100 rounded-none sm:rounded-3xl shadow-xl flex flex-col overflow-hidden border-2 border-blue-100">
+      <div className="relative w-full max-w-md h-full sm:h-[90vh] bg-gradient-to-br from-blue-50 via-white to-indigo-100 rounded-none sm:rounded-3xl shadow-xl flex flex-col overflow-hidden border-2 border-blue-100">
         {/* Close button */}
         <button
           className="absolute right-4 top-4 z-20 bg-white border-2 border-blue-100 rounded-full w-11 h-11 flex items-center justify-center text-2xl text-gray-400 hover:text-red-400 hover:bg-red-50 shadow transition"
@@ -253,7 +269,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
                           className="flex flex-col items-center bg-gradient-to-t from-blue-100 via-white to-fuchsia-100 border border-blue-100 rounded-xl px-2 py-2 min-h-[80px] shadow hover:shadow-lg transition-all"
                         >
                           <span className="font-semibold truncate text-blue-900">{item.name}</span>
-                          <span className="text-xs text-indigo-700 font-bold mb-1">₺{parseFloat(item.price || 0)}</span>
+                          <span className="text-xs text-indigo-700 font-bold mb-1">
+  ₺{Number(item.price ?? 0).toFixed(2)}
+</span>
                           <div className="flex items-center justify-center gap-2 mt-1">
                             <button
                               className="w-8 h-8 rounded-full bg-pink-100 text-xl font-bold text-fuchsia-600 shadow hover:bg-pink-200"
@@ -503,7 +521,7 @@ export default function QrMenu() {
 
   // Order flow
   if (!orderType)
-    return <OrderTypeSelect onSelect={setOrderType} />;
+  return <OrderTypeSelect onSelect={setOrderType} lang={lang} setLang={setLang} />;
   if (orderType === "table" && !table)
     return <TableSelectModal onSelectTable={setTable} occupiedTables={occupiedTables} />;
   if (orderType === "online" && !customerInfo)
