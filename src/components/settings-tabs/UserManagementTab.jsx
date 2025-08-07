@@ -296,10 +296,11 @@ const handleCreateRole = async () => {
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
   <img
-    src={staff.avatar || 'https://via.placeholder.com/40'}
-    alt={staff.name}
-    className="w-10 h-10 rounded-full border border-gray-300 dark:border-gray-600 shadow-sm"
-  />
+  src={staff.avatar || '/default-avatar.png'}
+  alt={staff.name}
+  className="w-10 h-10 rounded-full border border-gray-300 dark:border-gray-600 shadow-sm"
+/>
+
   <div>
     <p className="font-semibold text-gray-900 dark:text-white">{staff.name}</p>
     <p className="text-sm text-gray-600 dark:text-gray-400">{staff.email}</p>
