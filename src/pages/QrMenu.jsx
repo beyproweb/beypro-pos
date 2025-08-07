@@ -450,15 +450,15 @@ function OrderStatusModal({ open, status, orderId, onClose }) {
               ? "Please wait..."
               : "Something went wrong. Please try again."}
         </div>
-        {orderId && showStatus && (
-<OrderStatusScreen
-  orderId={orderId}
-  table={table}
-  onOrderAnother={handleOrderAnother}
-  onAllDelivered={handleAllDelivered}
-  t={t} // optional!
-/>
-)}
+        {orderId && open && (
+          <OrderStatusScreen
+            orderId={orderId}
+            table={null} // or pass table if needed
+            onOrderAnother={onClose}
+            onAllDelivered={onClose}
+            // t={t} // pass t if you have a translation function
+          />
+        )}
         <button
           className="py-3 px-6 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
           onClick={onClose}
