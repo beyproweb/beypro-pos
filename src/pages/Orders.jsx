@@ -395,15 +395,16 @@ const fetchOrders = async () => {
     setUpdating((prev) => ({ ...prev, [order.id]: false }));
   };
 
-  async function fetchDrivers() {
+ async function fetchDrivers() {
   try {
-    const res = await fetch('${API_URL}/api/staff/drivers');
+    const res = await fetch(`${API_URL}/api/staff/drivers`);
     const data = await res.json();
     setDrivers(data);
   } catch {
     setDrivers([]);
   }
 }
+
 useEffect(() => {
   fetch(`${API_URL}/api/kitchen/compile-settings`)
     .then(res => res.json())
