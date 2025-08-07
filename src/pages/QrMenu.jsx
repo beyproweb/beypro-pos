@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import OrderStatusScreen from "./components/OrderStatusScreen";
+import OrderStatusScreen from "../components/OrderStatusScreen";
 
 // Change to match your backend
 const API_URL = import.meta.env.VITE_API_URL || "";
