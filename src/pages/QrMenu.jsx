@@ -152,7 +152,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory }) {
 // --- PRODUCT GRID ---
 function ProductGrid({ products, onProductClick }) {
   return (
-    <main className="flex-1 pt-3 pb-28 px-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+    <main className="w-full max-w-full pt-3 pb-28 px-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 overflow-hidden">
       {products.length === 0 && (
         <div className="col-span-full text-center text-gray-400 font-bold text-lg py-8">
           No products.
@@ -545,18 +545,25 @@ export default function QrMenu() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
       <QrHeader orderType={orderType} table={table} lang={lang} setLang={setLang} />
       <div className="flex-1 flex flex-col">
-        <ProductGrid
-          products={products.filter((p) => p.category === activeCategory)}
-          onProductClick={product => {
-            setSelectedProduct(product);
-            setShowAddModal(true);
-          }}
-        />
-      </div>
-      <CategoryBar categories={categories} activeCategory={activeCategory} setActiveCategory={setActiveCategory} />
+       <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
+  <ProductGrid
+    products={products.filter((p) => p.category === activeCategory)}
+    onProductClick={product => {
+      setSelectedProduct(product);
+      setShowAddModal(true);
+    }}
+  />
+</div>
+
+<CategoryBar
+  categories={categories}
+  activeCategory={activeCategory}
+  setActiveCategory={setActiveCategory}
+/>
+
       <CartDrawer
         cart={cart}
         setCart={setCart}
