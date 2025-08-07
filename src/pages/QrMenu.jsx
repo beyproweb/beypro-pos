@@ -547,8 +547,7 @@ export default function QrMenu() {
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
       <QrHeader orderType={orderType} table={table} lang={lang} setLang={setLang} />
-      <div className="flex-1 flex flex-col">
-       <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
+<div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
   <ProductGrid
     products={products.filter((p) => p.category === activeCategory)}
     onProductClick={product => {
