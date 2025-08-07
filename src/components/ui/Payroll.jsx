@@ -23,6 +23,11 @@ function calcDueHistory(totalSalaryDue, payments = []) {
   return out.reverse();
 }
 
+const getAvatar = (url) => {
+  if (!url) return 'https://res.cloudinary.com/<your_cloud>/image/upload/v1234567890/default-avatar.png';
+  if (url.startsWith('http')) return url;
+  return 'https://res.cloudinary.com/<your_cloud>/image/upload/v1234567890/default-avatar.png';
+};
 const StaffCard = ({ staff, staffHistory, onExport }) => {
   const { t } = useTranslation();
   const history = staffHistory || {};
@@ -33,7 +38,7 @@ const StaffCard = ({ staff, staffHistory, onExport }) => {
     <div className="w-full rounded-3xl shadow-2xl p-0 mb-18 overflow-hidden bg-gradient-to-tr from-blue-100 via-blue-50 to-white dark:from-blue-950 dark:via-slate-900 dark:to-purple-950">
       {/* Header */}
       <div className="flex flex-col md:flex-row gap-4 items-center p-8 bg-gradient-to-br from-blue-200 via-blue-100 to-blue-50 dark:from-blue-900 dark:via-purple-900 dark:to-slate-900">
-        <img src={staff.avatar || '/default-avatar.png'} alt="" className="w-20 h-20 rounded-full border-4 border-white shadow-lg"/>
+       <img src={getAvatar(staff.avatar)} alt="" className="w-20 h-20 rounded-full border-4 border-white shadow-lg"/>
         <div>
           <div className="flex gap-3 items-center">
             <h2 className="text-3xl font-extrabold text-blue-900 dark:text-white tracking-tight">{staff.name}</h2>
