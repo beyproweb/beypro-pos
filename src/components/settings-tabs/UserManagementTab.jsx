@@ -132,6 +132,13 @@ const handleCreateRole = async () => {
     toast.success("✅ Role settings saved!");
   };
 
+  useEffect(() => {
+  axios.get(`${API_URL}/api/staff`).then(res => {
+    setStaffList(res.data);
+    console.log("Staff List:", res.data); // <--- See what's in avatar field!
+  });
+}, []);
+
   const handleAddUser = async () => {
    const { id, name, role, phone, address, email, pin, salary, avatar } = newUser;
 
