@@ -264,7 +264,7 @@ async function fetchDriverReport() {
   setReportLoading(true);
   setDriverReport(null);
   try {
-    const res = await fetch(`${API_URL}/driver-report?driver_id=${selectedDriverId}&date=${reportDate}`);
+    const res = await fetch(`${API_URL}/api/orders/driver-report?driver_id=${selectedDriverId}&date=${reportDate}`);
     setDriverReport(await res.json());
   } catch (err) {
     setDriverReport({ error: "Failed to load driver report" });
