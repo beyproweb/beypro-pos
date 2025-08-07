@@ -112,15 +112,15 @@ const handleCreateRole = async () => {
   setCopyFromRole("");
   setSelectedStaffId("");
 };
-const DEFAULT_AVATAR = 'https://res.cloudinary.com/beypro/image/upload/v1234567890/default-avatar.png'; // <-- put your real cloud name + default avatar
+const DEFAULT_AVATAR = 'https://res.cloudinary.com/dwbswo7lw/image/upload/v1234567890/default-avatar.png';
 
 const getAvatar = (url) => {
-  // If empty, null, or a local path, use default
   if (!url) return DEFAULT_AVATAR;
   if (url.startsWith('http://localhost') || url.startsWith('/uploads/')) return DEFAULT_AVATAR;
-  if (url.startsWith('http')) return url; // Accept only full http(s) url (cloudinary)
+  if (url.startsWith('http')) return url;
   return DEFAULT_AVATAR;
 };
+
 
 
 
