@@ -572,10 +572,8 @@ const payload = {
 
 
 
-    const response = await axios.put(
-      `${BASE_URL}/api/staff/${selectedStaffProfile.id}`,
-      payload
-    );
+    const response = await axios.put(`${API_URL}/api/staff/${selectedStaffProfile.id}`, payload);
+
 
     const updatedStaff = response.data.staff;
 
