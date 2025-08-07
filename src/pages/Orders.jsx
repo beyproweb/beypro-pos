@@ -323,8 +323,7 @@ const fetchOrders = async () => {
 
     const withKitchenStatus = [];
     for (const order of phoneOrders) {
-      const itemsRes = await fetch(`${API_URL}/${order.id}/items`);
-      const items = await itemsRes.json();
+      const itemsRes = await fetch(`${API_URL}/api/orders/${order.id}/items`);      const items = await itemsRes.json();
       if (items.length > 0) {
         let overallKitchenStatus = "preparing";
         if (items.every(i => i.kitchen_status === "delivered")) overallKitchenStatus = "delivered";
@@ -1022,8 +1021,7 @@ return (
       const { order: updated } = await res.json();
 
       // Fetch items for this order
-      const itemsRes = await fetch(`${API_URL}/${order.id}/items`);
-      const items = await itemsRes.json();
+      const itemsRes = await fetch(`${API_URL}/api/orders/${order.id}/items`);      const items = await itemsRes.json();
 
       setOrders(prev =>
         prev.map(o =>
@@ -1065,8 +1063,7 @@ return (
     className="px-4 py-2 rounded-xl bg-fuchsia-600 text-white font-bold shadow hover:bg-fuchsia-700 transition"
     onClick={async () => {
   // Fetch latest items (including extras) for this order!
-  const itemsRes = await fetch(`${API_URL}/${order.id}/items`);
-  const items = await itemsRes.json();
+  const itemsRes = await fetch(`${API_URL}/api/orders/${order.id}/items`);  const items = await itemsRes.json();
   setEditingPaymentOrder({ ...order, items }); // set with freshest items+extras!
   setShowPaymentModal(true);
 }}
@@ -1274,7 +1271,7 @@ return (
           onChange={async e => {
             const driverId = e.target.value;
             setEditingDriver(prev => ({ ...prev, [order.id]: driverId }));
-            await fetch(`${API_URL}/${order.id}`, {
+            await fetch(`${API_URL}/api/orders/${order.id}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
