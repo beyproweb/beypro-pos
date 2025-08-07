@@ -327,7 +327,7 @@ const getAvatar = (url) => {
                 onClick={() => setEditingStaffId(staff.id)}
                 className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
               >
-             <input
+            <input
   type="file"
   accept="image/*"
   onChange={async (e) => {
@@ -337,13 +337,18 @@ const getAvatar = (url) => {
     formData.append("file", file);
     try {
       const res = await axios.post(`${API_URL}/api/upload`, formData);
-      setEditedStaff((prev) => ({ ...prev, avatar: res.data.url })); // ✅ correct
+      // Set avatar in both editedStaff (form state) and staffList (UI)
+      setEditedStaff((prev) => ({ ...prev, avatar: res.data.url }));
+      setStaffList((list) => list.map(
+        s => s.id === editingStaffId ? { ...s, avatar: res.data.url } : s
+      ));
     } catch (err) {
       toast.error("❌ Image upload failed");
     }
   }}
   className="p-2 border dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
 />
+
 
 
 
