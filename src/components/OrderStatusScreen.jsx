@@ -2,39 +2,17 @@ import React, { useState, useEffect, useRef } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-type OrderItem = {
-  unique_id?: string;
-  product_id?: string | number;
-  name: string;
-  quantity: number;
-  kitchen_status?: string;
-};
-
-type Order = {
-  id: number | string;
-  created_at: string;
-  items?: OrderItem[];
-};
-
-type Props = {
-  orderId: number | string | null;
-  table?: string | number;
-  onOrderAnother: () => void;
-  onAllDelivered: () => void;
-  t?: (str: string) => string; // translation function (optional)
-};
-
-let socket: any;
-
-export function useSocketIO(onOrderUpdate: () => void, orderId: number | string | null) {
+// --- SOCKET.IO HOOK ---
+let socket;
+export function useSocketIO(onOrderUpdate, orderId) {
   useEffect(() => {
     if (!orderId) return;
-    if (!socket && typeof window !== "undefined" && (window as any).io) {
-      socket = (window as any).io(API_URL, { transports: ["websocket"] });
+    if (!socket && typeof window !== "undefined" && window.io) {
+      socket = window.io(API_URL, { transports: ["websocket"] });
     }
     if (!socket) return;
 
-    const updateHandler = (data: any) => {
+    const updateHandler = (data) => {
       if (Array.isArray(data?.orderIds) && data.orderIds.includes(orderId)) {
         onOrderUpdate && onOrderUpdate();
       }
@@ -53,25 +31,27 @@ export function useSocketIO(onOrderUpdate: () => void, orderId: number | string 
   }, [onOrderUpdate, orderId]);
 }
 
-const OrderStatusScreen: React.FC<Props> = ({
+// --- MAIN COMPONENT ---
+const OrderStatusScreen = ({
   orderId,
   table,
   onOrderAnother,
   onAllDelivered,
   t = (str) => str, // default passthrough
 }) => {
-  const [order, setOrder] = useState<Order | null>(null);
-  const [items, setItems] = useState<OrderItem[]>([]);
+  const [order, setOrder] = useState(null);
+  const [items, setItems] = useState([]);
   const [timer, setTimer] = useState("00:00");
-  const intervalRef = useRef<number | null>(null);
+  const intervalRef = useRef(null);
 
+  // Fetch order + items
   const fetchOrder = async () => {
     if (!orderId) return;
     const orderRes = await fetch(`${API_URL}/api/orders/${orderId}`);
-    const orderData: Order = await orderRes.json();
+    const orderData = await orderRes.json();
     setOrder(orderData);
 
-    let orderItems: OrderItem[] = [];
+    let orderItems = [];
     if (orderData.items) orderItems = orderData.items;
     else {
       const itemsRes = await fetch(`${API_URL}/api/orders/${orderId}/items`);
