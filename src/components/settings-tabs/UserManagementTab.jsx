@@ -112,11 +112,15 @@ const handleCreateRole = async () => {
   setCopyFromRole("");
   setSelectedStaffId("");
 };
+const DEFAULT_AVATAR = 'https://res.cloudinary.com/beypro/image/upload/v1234567890/default-avatar.png';
+
 const getAvatar = (url) => {
-  if (!url) return 'https://res.cloudinary.com/<your_cloud>/image/upload/v1234567890/default-avatar.png';
+  if (!url) return DEFAULT_AVATAR;
   if (url.startsWith('http')) return url;
-  return 'https://res.cloudinary.com/<your_cloud>/image/upload/v1234567890/default-avatar.png';
+  // Fallback: never allow any non-Cloudinary local paths in production!
+  return DEFAULT_AVATAR;
 };
+
 
   const fetchStaff = async () => {
     try {
