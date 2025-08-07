@@ -220,48 +220,49 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50">
-      {/* Fullscreen modal with scrollable content */}
-      <div className="relative w-full max-w-md h-full sm:h-[90vh] bg-white dark:bg-zinc-900 rounded-none sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[99] flex items-center justify-center bg-white/70 backdrop-blur-[2.5px]">
+      <div className="relative w-full max-w-md h-full sm:h-[90vh] bg-gradient-to-br from-blue-50 via-fuchsia-50 to-indigo-100 rounded-none sm:rounded-3xl shadow-xl flex flex-col overflow-hidden border-2 border-blue-100">
         {/* Close button */}
         <button
-          className="absolute right-4 top-4 z-20 bg-white dark:bg-zinc-900 border rounded-full w-10 h-10 flex items-center justify-center text-2xl text-gray-400 hover:text-red-400 hover:bg-red-50 shadow transition"
+          className="absolute right-4 top-4 z-20 bg-white border-2 border-blue-100 rounded-full w-11 h-11 flex items-center justify-center text-2xl text-gray-400 hover:text-red-400 hover:bg-red-50 shadow transition"
           onClick={onClose}
         >×</button>
-        
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto pt-7 px-5 pb-32">
+        <div className="flex-1 overflow-y-auto pt-8 px-5 pb-32">
           <div className="flex flex-col items-center mb-3">
             <img
               src={product.image ? (/^https?:\/\//.test(product.image) ? product.image : `${API_URL}/uploads/${product.image}`) : "https://via.placeholder.com/120?text=🍽️"}
               alt={product.name}
-              className="w-24 h-24 object-cover rounded-2xl border shadow"
+              className="w-24 h-24 object-cover rounded-2xl border-4 border-fuchsia-200 shadow"
             />
-            <div className="font-extrabold text-xl text-blue-800 dark:text-blue-200 text-center mt-2 mb-1">{product.name}</div>
-            <div className="text-base text-indigo-800 dark:text-indigo-300 text-center mb-2">₺{basePrice.toFixed(2)}</div>
+            <div className="font-extrabold text-2xl text-blue-700 text-center mt-2 mb-1">{product.name}</div>
+            <div className="text-lg text-indigo-700 text-center mb-2 font-bold">₺{basePrice.toFixed(2)}</div>
           </div>
           {/* Extras section */}
           {availableGroups.length > 0 && (
             <div className="mb-3">
               {availableGroups.map(group => (
-                <div key={group.groupName} className="mb-2">
-                  <div className="font-semibold text-blue-700 mb-1 text-sm">{group.groupName}</div>
+                <div key={group.groupName} className="mb-3">
+                  <div className="font-bold text-fuchsia-600 mb-1 text-base">{group.groupName}</div>
                   <div className="grid grid-cols-2 gap-2">
                     {(group.items || []).map(item => {
                       const sel = selectedExtras.find(ex => ex.group === group.groupName && ex.name === item.name);
                       return (
-                        <div key={item.name} className="flex flex-col items-center bg-blue-50 dark:bg-blue-900/40 border border-blue-100 dark:border-zinc-700 rounded-xl px-2 py-2 min-h-[78px] shadow">
-                          <span className="font-medium truncate">{item.name}</span>
-                          <span className="text-xs text-indigo-700 dark:text-indigo-200 font-bold">₺{parseFloat(item.price || 0)}</span>
-                          <div className="flex items-center justify-center gap-2 mt-2">
+                        <div
+                          key={item.name}
+                          className="flex flex-col items-center bg-gradient-to-t from-blue-100 via-white to-fuchsia-100 border border-blue-100 rounded-xl px-2 py-2 min-h-[80px] shadow hover:shadow-lg transition-all"
+                        >
+                          <span className="font-semibold truncate text-blue-900">{item.name}</span>
+                          <span className="text-xs text-indigo-700 font-bold mb-1">₺{parseFloat(item.price || 0)}</span>
+                          <div className="flex items-center justify-center gap-2 mt-1">
                             <button
-                              className="w-7 h-7 rounded-full bg-indigo-200 dark:bg-indigo-700 text-base font-bold"
+                              className="w-8 h-8 rounded-full bg-pink-100 text-xl font-bold text-fuchsia-600 shadow hover:bg-pink-200"
                               onClick={() => handleToggleExtra(group, item, false)}
                               disabled={!sel || sel.quantity === 0}
                             >–</button>
-                            <span className="w-5 text-center font-bold text-blue-800 dark:text-blue-100">{sel?.quantity || 0}</span>
+                            <span className="w-5 text-center font-bold text-blue-800">{sel?.quantity || 0}</span>
                             <button
-                              className="w-7 h-7 rounded-full bg-indigo-200 dark:bg-indigo-700 text-base font-bold"
+                              className="w-8 h-8 rounded-full bg-green-100 text-xl font-bold text-green-700 shadow hover:bg-green-200"
                               onClick={() => handleToggleExtra(group, item, true)}
                             >+</button>
                           </div>
@@ -276,7 +277,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
           {/* Note */}
           <div className="mb-2">
             <textarea
-              className="w-full rounded-xl border p-2 text-sm dark:bg-zinc-800 dark:border-zinc-600"
+              className="w-full rounded-xl border-2 border-fuchsia-200 p-2 text-sm bg-pink-50 placeholder-fuchsia-400"
               placeholder="Add a note (optional)..."
               value={note}
               onChange={e => setNote(e.target.value)}
@@ -285,23 +286,23 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
           </div>
         </div>
         {/* Sticky footer */}
-        <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-blue-50 dark:from-zinc-900 via-white/80 dark:via-zinc-900/80 to-white/90 dark:to-zinc-900/90 border-t border-blue-100 dark:border-zinc-700 px-5 py-4 flex flex-col gap-2">
+        <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-blue-100 via-fuchsia-50 to-white border-t-2 border-blue-100 px-5 py-4 flex flex-col gap-2 drop-shadow-2xl">
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
-                className="w-9 h-9 rounded-full bg-gray-200 dark:bg-zinc-800 text-xl font-bold"
+                className="w-10 h-10 rounded-full bg-indigo-100 text-2xl font-bold text-indigo-700 shadow hover:bg-indigo-200"
                 onClick={() => setQuantity(q => Math.max(q - 1, 1))}
               >–</button>
               <span className="text-2xl font-extrabold min-w-[40px] text-center">{quantity}</span>
               <button
-                className="w-9 h-9 rounded-full bg-gray-200 dark:bg-zinc-800 text-xl font-bold"
+                className="w-10 h-10 rounded-full bg-indigo-100 text-2xl font-bold text-indigo-700 shadow hover:bg-indigo-200"
                 onClick={() => setQuantity(q => q + 1)}
               >+</button>
             </div>
-            <div className="text-xl font-extrabold text-indigo-700 dark:text-indigo-200">₺{fullTotal.toFixed(2)}</div>
+            <div className="text-2xl font-extrabold text-fuchsia-700">₺{fullTotal.toFixed(2)}</div>
           </div>
           <button
-            className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg hover:scale-105"
+            className="w-full py-3 mt-1 rounded-2xl font-bold text-white text-lg shadow-xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
             onClick={() => {
               const unique_id = product.id + "-" + btoa(JSON.stringify(selectedExtras) + note);
               onAddToCart({
@@ -320,6 +321,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
     </div>
   );
 }
+
 
 
 // --- CART DRAWER (slide up on mobile, sidebar on desktop) ---
