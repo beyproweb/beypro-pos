@@ -434,8 +434,7 @@ const allNonDrinksDelivered = nonDrinkItems.every(
 
   // Pick up: allow as soon as all non-drink items are delivered
   if (!order.driver_status && allNonDrinksDelivered) {
-    await fetch(`${API_URL}/${order.id}/driver-status`, {
-      method: "PATCH",
+    await fetch(`${API_URL}/api/orders/${order.id}/driver-status`, {      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ driver_status: "on_road" }),
     });
@@ -444,8 +443,7 @@ const allNonDrinksDelivered = nonDrinkItems.every(
 
   // Deliver: allow if all non-drink items are delivered
 } else if (order.driver_status === "on_road" && allNonDrinksDelivered) {
-  await fetch(`${API_URL}/${order.id}/driver-status`, {
-    method: "PATCH",
+  await fetch(`${API_URL}/api/orders/${order.id}/driver-status`, {    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ driver_status: "delivered" }),
   });
@@ -1267,48 +1265,60 @@ return (
       </span>
       <div className="relative">
         <select
-          value={order.driver_id || ""}
-          onChange={async e => {
-            const driverId = e.target.value;
-            setEditingDriver(prev => ({ ...prev, [order.id]: driverId }));
-            await fetch(`${API_URL}/api/orders/${order.id}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                driver_id: driverId,
-                total: order.total,
-                payment_method: order.payment_method,
-              }),
-            });
-            setHighlightedOrderId(order.id);
-            setTimeout(() => setHighlightedOrderId(null), 1200);
-            if (!propOrders) await fetchOrders();
-          }}
-          className={`
-            peer appearance-none px-4 pr-10 py-2 w-[140px]
-            bg-gradient-to-r from-cyan-200 to-blue-200 dark:from-cyan-900 dark:to-blue-900
-            border-2 border-blue-400 dark:border-blue-700 rounded-2xl font-extrabold font-mono text-blue-800 dark:text-blue-100 text-xl shadow
-            focus:ring-2 focus:ring-blue-400 focus:border-blue-500
-            disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:opacity-60
-            transition-all
-          `}
-          disabled={isDelivered}
-          style={{
-            minWidth: 110,
-            height: 44,
-            fontSize: "1.17rem",
-            letterSpacing: 1.1,
-            outline: "none",
-            fontFamily: "Inter, 'Segoe UI', Arial, sans-serif",
-          }}
-        >
-          <option value="">Unassigned</option>
-          {drivers.map(d => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+  value={order.driver_id || ""}
+  onChange={async e => {
+    const driverId = e.target.value;
+    setEditingDriver(prev => ({ ...prev, [order.id]: driverId }));
+
+    await fetch(`${API_URL}/api/orders/${order.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        driver_id: driverId,
+        total: order.total,
+        payment_method: order.payment_method,
+      }),
+    });
+
+    // Optimistically update local UI immediately
+    setOrders(prev =>
+      prev.map(o =>
+        o.id === order.id
+          ? { ...o, driver_id: driverId }
+          : o
+      )
+    );
+
+    setHighlightedOrderId(order.id);
+    setTimeout(() => setHighlightedOrderId(null), 1200);
+    if (!propOrders) await fetchOrders();
+  }}
+  className={`
+    peer appearance-none px-4 pr-10 py-2 w-[140px]
+    bg-gradient-to-r from-cyan-200 to-blue-200 dark:from-cyan-900 dark:to-blue-900
+    border-2 border-blue-400 dark:border-blue-700 rounded-2xl font-extrabold font-mono text-blue-800 dark:text-blue-100 text-xl shadow
+    focus:ring-2 focus:ring-blue-400 focus:border-blue-500
+    disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:opacity-60
+    transition-all
+  `}
+  disabled={isDelivered}
+  style={{
+    minWidth: 110,
+    height: 44,
+    fontSize: "1.17rem",
+    letterSpacing: 1.1,
+    outline: "none",
+    fontFamily: "Inter, 'Segoe UI', Arial, sans-serif",
+  }}
+>
+  <option value="">Unassigned</option>
+  {drivers.map(d => (
+    <option key={d.id} value={d.id}>
+      {d.name}
+    </option>
+  ))}
+</select>
+
         <span className="pointer-events-none absolute right-4 top-1/2 transform -translate-y-1/2 text-blue-400 dark:text-blue-200 text-xl">
           ▼
         </span>
@@ -1343,8 +1353,7 @@ return (
           : o
       )
     );
-    await fetch(`${API_URL}/${order.id}/driver-status`, {
-      method: "PATCH",
+    await fetch(`${API_URL}/api/orders/${order.id}/driver-status`, {      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ driver_status: "on_road" }),
     });
@@ -1368,8 +1377,7 @@ return (
           : o
       )
     );
-    await fetch(`${API_URL}/${order.id}/driver-status`, {
-      method: "PATCH",
+    await fetch(`${API_URL}/api/orders/${order.id}/driver-status`, {      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ driver_status: "delivered" }),
     });
@@ -1391,7 +1399,7 @@ return (
           : o
       )
     );
-    await fetch(`${API_URL}/${order.id}/close`, { method: "POST" });
+    await fetch(`${API_URL}/api/orders/${order.id}/close`, { method: "POST" });
     // Optionally: await fetchOrders();
   }}
 >
