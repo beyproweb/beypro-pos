@@ -321,7 +321,7 @@ const handleCreateRole = async () => {
     const file = e.target.files[0];
     if (!file) return;
     const formData = new FormData();
-    formData.append("image", file);
+    formData.append("file", file);
     try {
       const res = await axios.post(`${API_URL}/api/upload`, formData);
       setEditedStaff((prev) => ({ ...prev, avatar: res.data.url })); // ✅ correct
@@ -527,7 +527,7 @@ const handleCreateRole = async () => {
     const file = e.target.files[0];
     if (!file) return;
     const formData = new FormData();
-    formData.append("image", file);
+    formData.append("file", file);
     try {
       const res = await axios.post(`${API_URL}/api/upload`, formData);
       setNewUser((prev) => ({ ...prev, avatar: res.data.url }));
