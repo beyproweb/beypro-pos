@@ -23,12 +23,13 @@ function calcDueHistory(totalSalaryDue, payments = []) {
   return out.reverse();
 }
 
-const DEFAULT_AVATAR = 'https://res.cloudinary.com/beypro/image/upload/v1234567890/default-avatar.png';
+const DEFAULT_AVATAR = 'https://res.cloudinary.com/beypro/image/upload/v1234567890/default-avatar.png'; // <-- put your real cloud name + default avatar
 
 const getAvatar = (url) => {
+  // If empty, null, or a local path, use default
   if (!url) return DEFAULT_AVATAR;
-  if (url.startsWith('http')) return url;
-  // Fallback: never allow any non-Cloudinary local paths in production!
+  if (url.startsWith('http://localhost') || url.startsWith('/uploads/')) return DEFAULT_AVATAR;
+  if (url.startsWith('http')) return url; // Accept only full http(s) url (cloudinary)
   return DEFAULT_AVATAR;
 };
 
