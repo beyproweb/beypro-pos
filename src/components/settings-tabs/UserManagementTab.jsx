@@ -112,7 +112,7 @@ const handleCreateRole = async () => {
   setCopyFromRole("");
   setSelectedStaffId("");
 };
-const DEFAULT_AVATAR = 'https://res.cloudinary.com/dwbswo7lw/image/upload/v1234567890/default-avatar.png';
+const DEFAULT_AVATAR = 'https://www.pngkey.com/png/full/115-1150152_default-profile-picture-avatar-png-green.png';
 
 const getAvatar = (url) => {
   if (!url) return DEFAULT_AVATAR;
