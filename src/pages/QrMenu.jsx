@@ -188,7 +188,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
   if (!open || !product) return null;
 
   const basePrice = parseFloat(product.price) || 0;
-  const availableGroups = extrasGroups.filter(g => (product.selectedExtrasGroup || []).includes(g.groupName));
+  const availableGroups = extrasGroups; // Show ALL extras groups
   const extrasTotal = selectedExtras.reduce((sum, ex) => sum + (parseFloat(ex.price || 0) * (ex.quantity || 1)), 0);
   const fullTotal = (basePrice + extrasTotal) * quantity;
 
