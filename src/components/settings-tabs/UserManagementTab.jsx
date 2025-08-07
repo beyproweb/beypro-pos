@@ -112,6 +112,11 @@ const handleCreateRole = async () => {
   setCopyFromRole("");
   setSelectedStaffId("");
 };
+const getAvatar = (url) => {
+  if (!url) return 'https://res.cloudinary.com/<your_cloud>/image/upload/v1234567890/default-avatar.png';
+  if (url.startsWith('http')) return url;
+  return 'https://res.cloudinary.com/<your_cloud>/image/upload/v1234567890/default-avatar.png';
+};
 
   const fetchStaff = async () => {
     try {
@@ -132,12 +137,7 @@ const handleCreateRole = async () => {
     toast.success("✅ Role settings saved!");
   };
 
-  useEffect(() => {
-  axios.get(`${API_URL}/api/staff`).then(res => {
-    setStaffList(res.data);
-    console.log("Staff List:", res.data); // <--- See what's in avatar field!
-  });
-}, []);
+
 
   const handleAddUser = async () => {
    const { id, name, role, phone, address, email, pin, salary, avatar } = newUser;
@@ -302,8 +302,7 @@ const handleCreateRole = async () => {
         <div key={staff.id} className="bg-gray-50 dark:bg-gray-800 border dark:border-gray-600 rounded-xl p-4 mb-4 shadow-sm hover:shadow-md transition">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-  <img
-  src={staff.avatar || '/default-avatar.png'}
+  <img src={getAvatar(staff.avatar)}
   alt={staff.name}
   className="w-10 h-10 rounded-full border border-gray-300 dark:border-gray-600 shadow-sm"
 />
