@@ -1,29 +1,21 @@
 import React, { useState, useEffect, useRef } from "react";
-
+import { io } from "socket.io-client";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 // --- SOCKET.IO HOOK ---
 let socket;
 export function useSocketIO(onOrderUpdate, orderId) {
-  useEffect(() => {
+ useEffect(() => {
     if (!orderId) return;
-    if (!socket && typeof window !== "undefined" && window.io) {
-      socket = window.io(API_URL, { transports: ["websocket"] });
-    }
-    if (!socket) return;
+    if (!socket) socket = io(API_URL, { transports: ["websocket"] });
 
     const updateHandler = (data) => {
-      if (Array.isArray(data?.orderIds) && data.orderIds.includes(orderId)) {
-        onOrderUpdate && onOrderUpdate();
-      }
-      if (data?.orderId && data.orderId === orderId) {
-        onOrderUpdate && onOrderUpdate();
-      }
+      if (Array.isArray(data?.orderIds) && data.orderIds.includes(orderId)) onOrderUpdate?.();
+      if (data?.orderId === orderId) onOrderUpdate?.();
     };
 
     socket.on("orders_updated", onOrderUpdate);
     socket.on("order_ready", updateHandler);
-
     return () => {
       socket.off("orders_updated", onOrderUpdate);
       socket.off("order_ready", updateHandler);
