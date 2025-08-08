@@ -204,6 +204,21 @@ const categoryIcons = {
   default: "🍽️",
 };
 
+const [categoryImages, setCategoryImages] = useState({});
+
+useEffect(() => {
+  fetch(`${API_URL}/api/category-images`)
+    .then(res => res.json())
+    .then(data => {
+      const dict = {};
+      data.forEach(({ category, image }) => {
+        dict[category.trim().toLowerCase()] = `/uploads/${image}`;
+      });
+      setCategoryImages(dict);
+    })
+    .catch(() => setCategoryImages({}));
+}, []);
+
 // Replace your CategoryBar component in QrMenu.jsx with this:
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   return (
@@ -969,10 +984,12 @@ export default function QrMenu() {
       </div>
 
       <CategoryBar
-        categories={categories}
-        activeCategory={activeCategory}
-        setActiveCategory={setActiveCategory}
-      />
+  categories={categories}
+  activeCategory={activeCategory}
+  setActiveCategory={setActiveCategory}
+  categoryImages={categoryImages}
+/>
+
 
       <CartDrawer
         cart={cart}
