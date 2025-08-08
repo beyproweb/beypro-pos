@@ -192,25 +192,59 @@ function OnlineOrderForm({ onSubmit, submitting }) {
 }
 
 /* ====================== CATEGORY BAR ====================== */
-function CategoryBar({ categories, activeCategory, setActiveCategory }) {
+// Place this near top of QrMenu.jsx with other constants
+const categoryIcons = {
+  Meat: "🍔",
+  Pizza: "🍕",
+  Drinks: "🥤",
+  Salad: "🥗",
+  Dessert: "🍰",
+  Breakfast: "🍳",
+  Chicken: "🍗",
+  default: "🍽️",
+};
+
+// Replace your CategoryBar component in QrMenu.jsx with this:
+function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 z-50 flex overflow-x-auto gap-2 py-2 px-1 shadow-inner md:static md:bg-transparent md:shadow-none md:p-0">
-      {categories.map((cat) => (
-        <button
-          key={cat}
-          className={`flex-1 px-4 py-2 rounded-2xl font-bold transition text-xs ${
-            activeCategory === cat
-              ? "bg-gradient-to-r from-fuchsia-400 via-blue-400 to-indigo-400 text-white scale-105 ring-2 ring-fuchsia-300"
-              : "bg-gray-100 text-blue-700 hover:scale-105"
-          }`}
-          onClick={() => setActiveCategory(cat)}
-        >
-          {cat}
-        </button>
-      ))}
+    <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 z-50 px-3 py-2">
+      <div className="grid grid-cols-5 gap-2">
+        {categories.map((cat) => {
+          const imgSrc = categoryImages[cat.trim().toLowerCase()];
+          return (
+            <button
+              key={cat}
+              className={`flex flex-col items-center justify-center aspect-square rounded-2xl border-2 shadow-sm overflow-hidden transition ${
+                activeCategory === cat
+                  ? "ring-2 ring-fuchsia-400 scale-105 border-fuchsia-300"
+                  : "border-blue-200 hover:scale-105"
+              }`}
+              onClick={() => setActiveCategory(cat)}
+            >
+              {imgSrc ? (
+                <img
+                  src={
+                    /^https?:\/\//.test(imgSrc)
+                      ? imgSrc
+                      : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
+                  }
+                  alt={cat}
+                  className="w-10 h-10 object-cover rounded-xl border shadow"
+                />
+              ) : (
+                <span className="text-2xl">{categoryIcons[cat] || categoryIcons.default}</span>
+              )}
+              <span className="mt-1 text-[11px] font-bold text-center leading-tight break-words">
+                {cat}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }
+
 
 /* ====================== PRODUCT GRID ====================== */
 function ProductGrid({ products, onProductClick }) {
