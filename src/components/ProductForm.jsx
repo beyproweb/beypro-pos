@@ -381,7 +381,7 @@ const handleSubmit = async (e) => {
     const fd = new FormData();
     fd.append("image", file);
     fd.append("category", product.category.trim()); // do NOT lower for upload
-    const res = await fetch("${API_URL}/api/category-images", {
+const res = await fetch(`${API_URL}/api/category-images`, {
       method: "POST",
       body: fd,
     });
