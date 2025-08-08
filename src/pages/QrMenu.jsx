@@ -1,6 +1,7 @@
 // src/pages/QrMenu.jsx
 import React, { useState, useEffect } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
+import { createPortal } from "react-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
