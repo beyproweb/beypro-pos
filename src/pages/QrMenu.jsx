@@ -204,20 +204,7 @@ const categoryIcons = {
   default: "🍽️",
 };
 
-const [categoryImages, setCategoryImages] = useState({});
 
-useEffect(() => {
-  fetch(`${API_URL}/api/category-images`)
-    .then(res => res.json())
-    .then(data => {
-      const dict = {};
-      data.forEach(({ category, image }) => {
-        dict[category.trim().toLowerCase()] = `/uploads/${image}`;
-      });
-      setCategoryImages(dict);
-    })
-    .catch(() => setCategoryImages({}));
-}, []);
 
 // Replace your CategoryBar component in QrMenu.jsx with this:
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
@@ -827,7 +814,20 @@ export default function QrMenu() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [submitting, setSubmitting] = useState(false);
   const [lang, setLang] = useState(LANGS[0].code);
+  const [categoryImages, setCategoryImages] = useState({});
 
+useEffect(() => {
+  fetch(`${API_URL}/api/category-images`)
+    .then(res => res.json())
+    .then(data => {
+      const dict = {};
+      data.forEach(({ category, image }) => {
+        dict[category.trim().toLowerCase()] = `/uploads/${image}`;
+      });
+      setCategoryImages(dict);
+    })
+    .catch(() => setCategoryImages({}));
+}, []);
   // Save cart to localStorage
   useEffect(() => {
     localStorage.setItem("qr_cart", JSON.stringify(cart));
