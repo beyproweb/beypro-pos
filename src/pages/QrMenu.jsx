@@ -255,36 +255,51 @@ function ProductGrid({ products, onProductClick }) {
  *  - Right: items with price, +/–, per-extra total
  *  - Totals use (ex.price || ex.extraPrice) * quantity
  */
-function AddToCartModal({
-  open,
-  product,
-  extrasGroups,
-  onClose,
-  onAddToCart,
-}) {
+function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   const [note, setNote] = useState("");
 
+  // 🔒 Prevent body scrolling when modal is open (mobile stacking fix)
   useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev || "";
+    };
+  }, [open]);
+
+  // Reset state on open/product change
+  useEffect(() => {
+    if (!open) return;
     setQuantity(1);
     setSelectedExtras([]);
     setNote("");
     setActiveGroupIdx(0);
-  }, [product, open]);
+  }, [open, product]);
 
   if (!open || !product) return null;
 
   const basePrice = parseFloat(product.price) || 0;
 
-  // Normalize groups like in POS
+  // Normalize groups
   const normalizedGroups = (extrasGroups || []).map((g) => ({
     groupName: g.groupName || g.group_name,
-    items: typeof g.items === "string" ? safeParse(g.items) : g.items || [],
+    items: Array.isArray(g.items)
+      ? g.items
+      : (() => {
+          try {
+            const parsed = JSON.parse(g.items || "[]");
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })(),
   }));
 
-  // If product has selectedExtrasGroup array, filter to those only
+  // Respect product‑scoped group allowlist if present
   const productGroupNames = Array.isArray(product?.selectedExtrasGroup)
     ? product.selectedExtrasGroup
     : [];
@@ -293,26 +308,23 @@ function AddToCartModal({
       ? normalizedGroups.filter((g) => productGroupNames.includes(g.groupName))
       : normalizedGroups;
 
-  function priceOf(ex) {
-    return parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-  }
+  const priceOf = (exOrItem) =>
+    parseFloat(
+      (exOrItem?.price ?? exOrItem?.extraPrice ?? 0)
+    ) || 0;
 
-  const extrasTotalPerUnit = selectedExtras.reduce(
+  const extrasPerUnit = selectedExtras.reduce(
     (sum, ex) => sum + priceOf(ex) * (ex.quantity || 1),
     0
   );
-  const lineTotal = (basePrice + extrasTotalPerUnit) * quantity;
+  const lineTotal = (basePrice + extrasPerUnit) * quantity;
 
-  function safeParse(str) {
-    try {
-      const x = JSON.parse(str);
-      return Array.isArray(x) ? x : [];
-    } catch {
-      return [];
-    }
-  }
+  // helpers
+  const qtyOf = (groupName, itemName) =>
+    selectedExtras.find((ex) => ex.group === groupName && ex.name === itemName)
+      ?.quantity || 0;
 
-  function incExtra(group, item) {
+  const incExtra = (group, item) => {
     setSelectedExtras((prev) => {
       const idx = prev.findIndex(
         (ex) => ex.group === group.groupName && ex.name === item.name
@@ -327,14 +339,14 @@ function AddToCartModal({
         {
           group: group.groupName,
           name: item.name,
-          price: parseFloat(item.price ?? item.extraPrice ?? 0) || 0,
+          price: priceOf(item),
           quantity: 1,
         },
       ];
     });
-  }
+  };
 
-  function decExtra(group, item) {
+  const decExtra = (group, item) => {
     setSelectedExtras((prev) => {
       const idx = prev.findIndex(
         (ex) => ex.group === group.groupName && ex.name === item.name
@@ -345,28 +357,44 @@ function AddToCartModal({
       if (copy[idx].quantity === 0) copy.splice(idx, 1);
       return copy;
     });
-  }
+  };
 
-  function qtyOf(groupName, itemName) {
-    const found = selectedExtras.find(
-      (ex) => ex.group === groupName && ex.name === itemName
-    );
-    return found?.quantity || 0;
-  }
+  // close on backdrop click
+  const handleBackdrop = (e) => {
+    if (e.target.dataset.backdrop === "true") onClose?.();
+  };
 
-  return (
-    <div className="fixed inset-0 z-[99] flex items-center justify-center bg-white/70 backdrop-blur-[2.5px]">
-      <div className="relative w-full max-w-4xl h-full sm:h-[90vh] bg-white rounded-none sm:rounded-3xl shadow-xl flex flex-col overflow-hidden border-2 border-blue-100">
-        {/* Close button */}
+  const modal = (
+    <div
+      data-backdrop="true"
+      onMouseDown={handleBackdrop}
+      className="fixed inset-0 z-[999] flex items-stretch sm:items-center justify-center bg-black/45"
+    >
+      <div
+        // Stop propagation so content clicks don't close modal
+        onMouseDown={(e) => e.stopPropagation()}
+        className="
+          relative
+          w-full h-full
+          sm:h-[90vh] sm:max-w-4xl
+          bg-white
+          sm:rounded-3xl
+          shadow-2xl
+          flex flex-col
+          overflow-hidden
+        "
+      >
+        {/* Close */}
         <button
-          className="absolute right-4 top-4 z-20 bg-white border-2 border-blue-100 rounded-full w-11 h-11 flex items-center justify-center text-2xl text-gray-400 hover:text-red-400 hover:bg-red-50 shadow transition"
+          className="absolute right-3 top-3 z-20 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
           onClick={onClose}
+          aria-label="Close"
         >
           ×
         </button>
 
         {/* Header */}
-        <div className="flex items-center gap-4 px-5 pt-6 pb-3 border-b border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50">
           <img
             src={
               product.image
@@ -376,24 +404,28 @@ function AddToCartModal({
                 : "https://via.placeholder.com/120?text=🍽️"
             }
             alt={product.name}
-            className="w-16 h-16 object-cover rounded-2xl border-4 border-fuchsia-200 shadow"
+            className="w-14 h-14 sm:w-16 sm:h-16 object-cover rounded-xl border-4 border-fuchsia-200 shadow"
           />
           <div className="flex flex-col">
-            <div className="font-extrabold text-2xl text-blue-700">{product.name}</div>
-            <div className="text-lg text-indigo-700 font-bold">₺{basePrice.toFixed(2)}</div>
+            <div className="font-extrabold text-xl sm:text-2xl text-blue-700">
+              {product.name}
+            </div>
+            <div className="text-base sm:text-lg text-indigo-700 font-bold">
+              ₺{basePrice.toFixed(2)}
+            </div>
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <button
-              className="w-10 h-10 rounded-full bg-indigo-100 text-2xl font-bold text-indigo-700 shadow hover:bg-indigo-200"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-indigo-100 text-2xl font-bold text-indigo-700 shadow hover:bg-indigo-200"
               onClick={() => setQuantity((q) => Math.max(q - 1, 1))}
             >
               –
             </button>
-            <span className="text-2xl font-extrabold min-w-[40px] text-center">
+            <span className="text-xl sm:text-2xl font-extrabold min-w-[36px] text-center">
               {quantity}
             </span>
             <button
-              className="w-10 h-10 rounded-full bg-indigo-100 text-2xl font-bold text-indigo-700 shadow hover:bg-indigo-200"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-indigo-100 text-2xl font-bold text-indigo-700 shadow hover:bg-indigo-200"
               onClick={() => setQuantity((q) => q + 1)}
             >
               +
@@ -401,50 +433,52 @@ function AddToCartModal({
           </div>
         </div>
 
-        {/* Body: Left rail (groups) + Right pane (items) */}
-        <div className="flex-1 min-h-0 flex">
-          {/* Left: Groups */}
-          <aside className="w-48 border-r border-blue-100 bg-white/70 p-3 overflow-y-auto">
-            <div className="text-xs font-bold text-blue-600 mb-2 px-2">Extras Groups</div>
-            <ul className="space-y-2">
-              {availableGroups.map((g, idx) => (
-                <li key={g.groupName}>
+        {/* Body: rail + items (mobile = stacked vertically) */}
+        <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
+          {/* Groups rail */}
+          <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r border-blue-100 bg-white/80 p-3 overflow-x-auto sm:overflow-y-auto">
+            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">
+              Extras Groups
+            </div>
+            <div className="flex sm:block gap-2 sm:gap-0">
+              {availableGroups.length ? (
+                availableGroups.map((g, idx) => (
                   <button
+                    key={g.groupName}
                     onClick={() => setActiveGroupIdx(idx)}
-                    className={`w-full text-left px-3 py-2 rounded-xl font-semibold transition ${
+                    className={`px-3 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
                       activeGroupIdx === idx
                         ? "bg-gradient-to-r from-fuchsia-400 via-blue-400 to-indigo-400 text-white"
                         : "bg-gray-100 text-blue-800 hover:bg-gray-200"
-                    }`}
+                    } ${idx !== 0 ? "sm:mt-2" : ""}`}
                   >
                     {g.groupName}
                   </button>
-                </li>
-              ))}
-              {availableGroups.length === 0 && (
-                <li className="text-sm text-gray-400 px-2">No extras</li>
+                ))
+              ) : (
+                <div className="text-sm text-gray-400 px-2 py-1">No extras</div>
               )}
-            </ul>
+            </div>
           </aside>
 
-          {/* Right: Items of active group */}
-          <section className="flex-1 p-4 overflow-y-auto">
+          {/* Items grid */}
+          <section className="flex-1 p-3 sm:p-4 overflow-y-auto">
             {availableGroups[activeGroupIdx] ? (
               <>
-                <div className="font-bold text-fuchsia-600 mb-3 text-base">
+                <div className="font-bold text-fuchsia-600 mb-2 text-base">
                   {availableGroups[activeGroupIdx].groupName}
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
                   {(availableGroups[activeGroupIdx].items || []).map((item) => {
-                    const qty = qtyOf(
+                    const unit = priceOf(item);
+                    const q = qtyOf(
                       availableGroups[activeGroupIdx].groupName,
                       item.name
                     );
-                    const unit = parseFloat(item.price ?? item.extraPrice ?? 0) || 0;
                     return (
                       <div
                         key={item.name}
-                        className="flex flex-col items-center bg-gradient-to-t from-blue-100 via-white to-fuchsia-100 border border-blue-100 rounded-xl px-2 py-2 min-h-[96px] shadow hover:shadow-lg transition-all"
+                        className="flex flex-col items-center bg-gradient-to-t from-blue-100 via-white to-fuchsia-100 border border-blue-100 rounded-xl px-2 py-2 min-h-[92px] shadow hover:shadow-lg transition-all"
                       >
                         <span className="font-semibold truncate text-blue-900">
                           {item.name}
@@ -454,14 +488,14 @@ function AddToCartModal({
                         </span>
                         <div className="flex items-center justify-center gap-2 mt-1">
                           <button
-                            className="w-8 h-8 rounded-full bg-pink-100 text-xl font-bold text-fuchsia-600 shadow hover:bg-pink-200"
+                            className="w-8 h-8 rounded-full bg-pink-100 text-xl font-bold text-fuchsia-600 shadow hover:bg-pink-200 disabled:opacity-40"
                             onClick={() => decExtra(availableGroups[activeGroupIdx], item)}
-                            disabled={!qty}
+                            disabled={!q}
                           >
                             –
                           </button>
                           <span className="w-5 text-center font-bold text-blue-800">
-                            {qty}
+                            {q}
                           </span>
                           <button
                             className="w-8 h-8 rounded-full bg-green-100 text-xl font-bold text-green-700 shadow hover:bg-green-200"
@@ -480,10 +514,10 @@ function AddToCartModal({
             )}
 
             {/* Note */}
-            <div className="mt-4">
+            <div className="mt-3 sm:mt-4">
               <textarea
                 className="w-full rounded-xl border-2 border-fuchsia-200 p-2 text-sm bg-pink-50 placeholder-fuchsia-400"
-                placeholder="Add a note (optional)..."
+                placeholder="Add a note (optional)…"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={2}
@@ -492,23 +526,22 @@ function AddToCartModal({
           </section>
         </div>
 
-        {/* Footer */}
-        <div className="border-t-2 border-blue-100 px-5 py-4 flex items-center justify-between bg-gradient-to-t from-blue-100 via-fuchsia-50 to-white">
-          <div className="text-xl sm:text-2xl font-extrabold text-fuchsia-700">
+        {/* Footer (sticky) */}
+        <div className="border-t-2 border-blue-100 px-4 sm:px-5 py-3 sm:py-4 flex items-center justify-between bg-gradient-to-t from-blue-100 via-fuchsia-50 to-white">
+          <div className="text-lg sm:text-xl font-extrabold text-fuchsia-700">
             Total: ₺{lineTotal.toFixed(2)}
           </div>
           <button
-            className="py-3 px-5 rounded-2xl font-bold text-white text-lg shadow-xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
+            className="py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl font-bold text-white text-base sm:text-lg shadow-xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
             onClick={() => {
-              const perUnitPrice = basePrice + extrasTotalPerUnit;
               const unique_id =
                 product.id +
                 "-" +
-                btoa(JSON.stringify(selectedExtras) + (note || "")); // stable per combo
+                btoa(JSON.stringify(selectedExtras) + (note || ""));
               onAddToCart({
                 id: product.id,
                 name: product.name,
-                price: perUnitPrice, // base + extras per unit
+                price: basePrice + extrasPerUnit, // per-unit price incl. extras
                 quantity,
                 extras: selectedExtras.filter((e) => e.quantity > 0),
                 note,
@@ -522,7 +555,11 @@ function AddToCartModal({
       </div>
     </div>
   );
+
+  // Use portal to guarantee it's on top of everything (prevents “over stacking”)
+  return createPortal(modal, document.body);
 }
+
 
 /* ====================== CART DRAWER ====================== */
 function CartDrawer({
