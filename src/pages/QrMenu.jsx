@@ -207,41 +207,51 @@ const categoryIcons = {
 
 
 // Replace your CategoryBar component in QrMenu.jsx with this:
+// --- Replace your CategoryBar with this ---
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 z-50 px-3 py-2">
-      <div className="grid grid-cols-5 gap-2">
-        {categories.map((cat) => {
-          const imgSrc = categoryImages[cat.trim().toLowerCase()];
-          return (
-            <button
-              key={cat}
-              className={`flex flex-col items-center justify-center aspect-square rounded-2xl border-2 shadow-sm overflow-hidden transition ${
-                activeCategory === cat
-                  ? "ring-2 ring-fuchsia-400 scale-105 border-fuchsia-300"
-                  : "border-blue-200 hover:scale-105"
-              }`}
-              onClick={() => setActiveCategory(cat)}
-            >
-              {imgSrc ? (
-                <img
-                  src={
-                    /^https?:\/\//.test(imgSrc)
-                      ? imgSrc
-                      : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
-                  }
-                  alt={cat}
-                  className="w-10 h-10 object-cover rounded-xl border shadow"
-                />
-              ) : (
-                <span className="text-2xl">{categoryIcons[cat] || categoryIcons.default}</span>
-              )}
-              <span className="mt-1 text-[11px] font-bold text-center leading-tight break-words">
-                {cat}
-              </span>
-            </button>
-          );
-        })}
+    <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 dark:border-zinc-800 z-50">
+      <div className="px-3 py-2">
+        <div className="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory">
+          {categories.map((cat) => {
+            const imgSrc = categoryImages[cat.trim().toLowerCase()];
+            const isActive = activeCategory === cat;
+            return (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={[
+                  "flex-none w-20 h-20 rounded-2xl border-2 shadow-sm overflow-hidden transition snap-start",
+                  isActive
+                    ? "ring-2 ring-fuchsia-400 scale-[1.03] border-fuchsia-300"
+                    : "border-blue-200 hover:scale-[1.02]",
+                ].join(" ")}
+                aria-pressed={isActive}
+                title={cat}
+              >
+                <div className="flex h-full flex-col items-center justify-center p-1">
+                  {imgSrc ? (
+                    <img
+                      src={
+                        /^https?:\/\//.test(imgSrc)
+                          ? imgSrc
+                          : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
+                      }
+                      alt={cat}
+                      className="w-10 h-10 object-cover rounded-xl border shadow"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="text-2xl">🍽️</span>
+                  )}
+                  <span className="mt-1 text-[11px] font-bold text-center leading-tight line-clamp-2">
+                    {cat}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );
