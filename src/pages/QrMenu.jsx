@@ -14,31 +14,29 @@ const LANGS = [
 ];
 
 /* ====================== HEADER ====================== */
-function QrHeader({ orderType, table, lang, setLang }) {
+function QrHeader({ orderType, table, onClose }) {
   return (
-    <header className="w-full sticky top-0 z-50 flex items-center justify-between bg-white/80 dark:bg-zinc-900/80 backdrop-blur-lg border-b border-blue-100 dark:border-zinc-800 shadow-lg px-4 py-3">
+    <header className="w-full sticky top-0 z-50 flex items-center gap-3 bg-white/90 backdrop-blur border-b border-blue-100 shadow-lg px-4 py-3">
       <span className="text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent tracking-tight drop-shadow">
         Hurrybey
       </span>
-      <span className="ml-3 text-lg font-bold text-blue-700 dark:text-blue-200 flex-1">
-        {orderType === "table" ? (table ? `Table ${table}` : "") : "Online Order"}
+
+      <span className="ml-1 text-lg font-bold text-blue-700 flex-1">
+        {orderType === "table" ? (table ? `Table ${table}` : "Table Order") : "Online Order"}
       </span>
-      <div>
-        <select
-          value={lang}
-          onChange={(e) => setLang(e.target.value)}
-          className="rounded-xl px-2 py-1 bg-white border text-sm font-semibold"
-        >
-          {LANGS.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.label}
-            </option>
-          ))}
-        </select>
-      </div>
+
+      {/* Close → back to Order Type selection */}
+      <button
+        onClick={onClose}
+        aria-label="Close"
+        className="bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
+      >
+        ×
+      </button>
     </header>
   );
 }
+
 
 /* ====================== ORDER TYPE MODAL ====================== */
 function OrderTypeSelect({ onSelect, lang, setLang }) {
@@ -984,12 +982,14 @@ if (orderType === "online" && !customerInfo)
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
-      <QrHeader
-        orderType={orderType}
-        table={table}
-        lang={lang}
-        setLang={setLang}
-      />
+<QrHeader
+  orderType={orderType}
+  table={table}
+  onClose={() => {
+    // navigate to Order Type selection
+    setOrderType(null);
+  }}
+/>
 
       <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
         <ProductGrid
