@@ -5,6 +5,51 @@ import { createPortal } from "react-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
+/* ====================== SMALL HELPERS ====================== */
+function detectBrand(num) {
+  const n = (num || "").replace(/\s+/g, "");
+  if (/^4\d{6,}$/.test(n)) return "Visa";
+  if (/^(5[1-5]\d{4,}|2[2-7]\d{4,})$/.test(n)) return "Mastercard";
+  if (/^3[47]\d{5,}$/.test(n)) return "Amex";
+  return "Card";
+}
+function luhnValid(num) {
+  const n = (num || "").replace(/\D/g, "");
+  let sum = 0, dbl = false;
+  for (let i = n.length - 1; i >= 0; i--) {
+    let d = +n[i];
+    if (dbl) { d *= 2; if (d > 9) d -= 9; }
+    sum += d; dbl = !dbl;
+  }
+  return n.length >= 12 && sum % 10 === 0;
+}
+function parseExpiry(exp) {
+  const s = (exp || "").replace(/[^\d]/g, "").slice(0, 4);
+  const mm = s.slice(0, 2), yy = s.slice(2, 4);
+  return { mm, yy };
+}
+function expiryValid(exp) {
+  const { mm, yy } = parseExpiry(exp);
+  if (mm.length !== 2 || yy.length !== 2) return false;
+  const m = +mm;
+  if (m < 1 || m > 12) return false;
+  const now = new Date();
+  const yFull = 2000 + +yy;
+  const end = new Date(yFull, m, 0, 23, 59, 59);
+  return end >= new Date(now.getFullYear(), now.getMonth(), 1);
+}
+function makeToken() {
+  return (crypto?.randomUUID?.() ?? ("tok_" + Math.random().toString(36).slice(2)));
+}
+function formatCardNumber(v) {
+  return v.replace(/\D/g, "").slice(0, 19).replace(/(\d{4})(?=\d)/g, "$1 ");
+}
+function formatExpiry(v) {
+  const s = v.replace(/[^\d]/g, "").slice(0, 4);
+  if (s.length <= 2) return s;
+  return s.slice(0, 2) + "/" + s.slice(2);
+}
+
 /* ====================== TRANSLATIONS ====================== */
 const DICT = {
   en: {
@@ -40,11 +85,9 @@ const DICT = {
     "Order Sent!": "Order Sent!",
     "Sending Order...": "Sending Order...",
     "Order Failed": "Order Failed",
-    "Thank you! Your order has been received.":
-      "Thank you! Your order has been received.",
+    "Thank you! Your order has been received.": "Thank you! Your order has been received.",
     "Please wait...": "Please wait...",
-    "Something went wrong. Please try again.":
-      "Something went wrong. Please try again.",
+    "Something went wrong. Please try again.": "Something went wrong. Please try again.",
     Close: "Close",
     "Order Another": "Order Another",
     Table: "Table",
@@ -58,6 +101,15 @@ const DICT = {
     Delivered: "Delivered",
     Time: "Time",
     "Items Ordered": "Items Ordered",
+    "Select Payment Method": "Select Payment Method",
+    "Name on Card": "Name on Card",
+    "Card Number": "Card Number",
+    "Expiry (MM/YY)": "Expiry (MM/YY)",
+    CVC: "CVC",
+    "Save card for next time": "Save card for next time",
+    "Use saved card": "Use saved card",
+    "Use a new card": "Use a new card",
+    "Saved card": "Saved card",
   },
   tr: {
     "Order Type": "Sipariş Türü",
@@ -92,11 +144,9 @@ const DICT = {
     "Order Sent!": "Sipariş Gönderildi!",
     "Sending Order...": "Sipariş Gönderiliyor...",
     "Order Failed": "Sipariş Başarısız",
-    "Thank you! Your order has been received.":
-      "Teşekkürler! Siparişiniz alındı.",
+    "Thank you! Your order has been received.": "Teşekkürler! Siparişiniz alındı.",
     "Please wait...": "Lütfen bekleyin...",
-    "Something went wrong. Please try again.":
-      "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
+    "Something went wrong. Please try again.": "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
     Close: "Kapat",
     "Order Another": "Yeni Sipariş Ver",
     Table: "Masa",
@@ -110,114 +160,22 @@ const DICT = {
     Delivered: "Teslim Edildi",
     Time: "Süre",
     "Items Ordered": "Sipariş Edilenler",
+    "Select Payment Method": "Ödeme yöntemi seçin",
+    "Name on Card": "Kart Üzerindeki İsim",
+    "Card Number": "Kart Numarası",
+    "Expiry (MM/YY)": "Son Kullanım (AA/YY)",
+    CVC: "CVC",
+    "Save card for next time": "Kartı sonraki için kaydet",
+    "Use saved card": "Kayıtlı kartı kullan",
+    "Use a new card": "Yeni kart kullan",
+    "Saved card": "Kayıtlı kart",
   },
-  de: {
-    "Order Type": "Bestellart",
-    "Table Order": "Tischbestellung",
-    Delivery: "Lieferung",
-    Language: "Sprache",
-    "Choose Table": "Tisch wählen",
-    Occupied: "Belegt",
-    "Start Order": "Bestellung starten",
-    "Delivery Info": "Lieferinformationen",
-    "Full Name": "Vollständiger Name",
-    "Phone (5XXXXXXXXX)": "Telefon (5XXXXXXXXX)",
-    Address: "Adresse",
-    Continue: "Weiter",
-    "No products.": "Keine Produkte.",
-    "Extras Groups": "Extras-Gruppen",
-    "Select a group": "Gruppe auswählen",
-    Quantity: "Menge",
-    "Add a note (optional)…": "Notiz hinzufügen (optional)…",
-    Total: "Summe",
-    "Add to Cart": "In den Warenkorb",
-    "View Cart": "Warenkorb anzeigen",
-    "Your Order": "Ihre Bestellung",
-    "Cart is empty.": "Warenkorb ist leer.",
-    "Payment:": "Zahlung:",
-    Cash: "Bar",
-    "Credit Card": "Kreditkarte",
-    "Online Payment": "Online-Zahlung",
-    "Submit Order": "Bestellung senden",
-    "Clear Cart": "Warenkorb leeren",
-    Remove: "Entfernen",
-    "Order Sent!": "Bestellung gesendet!",
-    "Sending Order...": "Bestellung wird gesendet...",
-    "Order Failed": "Bestellung fehlgeschlagen",
-    "Thank you! Your order has been received.":
-      "Danke! Ihre Bestellung ist eingegangen.",
-    "Please wait...": "Bitte warten...",
-    "Something went wrong. Please try again.":
-      "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
-    Close: "Schließen",
-    "Order Another": "Weitere Bestellung",
-    Table: "Tisch",
-    "Table Order (short)": "Tisch",
-    "Online Order": "Lieferung",
-    "Ready for Pickup": "Abholbereit",
-    Price: "Preis",
-    Extras: "Extras",
-    Note: "Notiz",
-    Preparing: "In Vorbereitung",
-    Delivered: "Geliefert",
-    Time: "Zeit",
-    "Items Ordered": "Bestellte Artikel",
-  },
-  fr: {
-    "Order Type": "Type de commande",
-    "Table Order": "Commande à table",
-    Delivery: "Livraison",
-    Language: "Langue",
-    "Choose Table": "Choisir une table",
-    Occupied: "Occupée",
-    "Start Order": "Commencer",
-    "Delivery Info": "Infos de livraison",
-    "Full Name": "Nom complet",
-    "Phone (5XXXXXXXXX)": "Téléphone (5XXXXXXXXX)",
-    Address: "Adresse",
-    Continue: "Continuer",
-    "No products.": "Aucun produit.",
-    "Extras Groups": "Groupes d'extras",
-    "Select a group": "Choisir un groupe",
-    Quantity: "Quantité",
-    "Add a note (optional)…": "Ajouter une note (optionnel)…",
-    Total: "Total",
-    "Add to Cart": "Ajouter au panier",
-    "View Cart": "Voir le panier",
-    "Your Order": "Votre commande",
-    "Cart is empty.": "Le panier est vide.",
-    "Payment:": "Paiement :",
-    Cash: "Espèces",
-    "Credit Card": "Carte bancaire",
-    "Online Payment": "Paiement en ligne",
-    "Submit Order": "Envoyer la commande",
-    "Clear Cart": "Vider le panier",
-    Remove: "Retirer",
-    "Order Sent!": "Commande envoyée !",
-    "Sending Order...": "Envoi de la commande...",
-    "Order Failed": "Échec de la commande",
-    "Thank you! Your order has been received.":
-      "Merci ! Votre commande a été reçue.",
-    "Please wait...": "Veuillez patienter...",
-    "Something went wrong. Please try again.":
-      "Un problème est survenu. Veuillez réessayer.",
-    Close: "Fermer",
-    "Order Another": "Commander encore",
-    Table: "Table",
-    "Table Order (short)": "Table",
-    "Online Order": "Livraison",
-    "Ready for Pickup": "Prête à être retirée",
-    Price: "Prix",
-    Extras: "Extras",
-    Note: "Note",
-    Preparing: "Préparation",
-    Delivered: "Livrée",
-    Time: "Durée",
-    "Items Ordered": "Articles commandés",
-  },
+  de: {}, // new keys fall back to en
+  fr: {}, // new keys fall back to en
 };
 function makeT(lang) {
-  return (key) => DICT[lang]?.[key] ?? DICT.en[key] ?? key;
+  const base = DICT.en;
+  return (key) => (DICT[lang]?.[key] ?? base[key] ?? key);
 }
 
 /* ====================== SUPPORTED LANGS ====================== */
@@ -235,7 +193,6 @@ function QrHeader({ orderType, table, onClose, t }) {
       <span className="text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent tracking-tight drop-shadow">
         Hurrybey
       </span>
-
       <span className="ml-1 text-lg font-bold text-blue-700 flex-1">
         {orderType === "table"
           ? table
@@ -243,8 +200,6 @@ function QrHeader({ orderType, table, onClose, t }) {
             : t("Table Order (short)")
           : t("Online Order")}
       </span>
-
-      {/* Close → back to Order Type selection */}
       <button
         onClick={onClose}
         aria-label={t("Close")}
@@ -276,7 +231,6 @@ function OrderTypeSelect({ onSelect, lang, setLang, t }) {
         >
           🏠 {t("Delivery")}
         </button>
-        {/* Language Switcher */}
         <div className="w-full mt-8 flex flex-col items-center">
           <label className="text-sm font-bold mb-1 text-blue-600">🌐 {t("Language")}</label>
           <select
@@ -285,9 +239,7 @@ function OrderTypeSelect({ onSelect, lang, setLang, t }) {
             className="rounded-xl px-4 py-2 bg-white border border-blue-200 text-base font-semibold shadow"
           >
             {LANGS.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.label}
-              </option>
+              <option key={l.code} value={l.code}>{l.label}</option>
             ))}
           </select>
         </div>
@@ -302,7 +254,6 @@ function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTab
   return (
     <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
       <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center relative">
-        {/* Close */}
         <button
           className="absolute right-3 top-3 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
           onClick={onClose}
@@ -354,26 +305,74 @@ function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTab
   );
 }
 
-/* ====================== ONLINE ORDER FORM ====================== */
+/* ====================== ONLINE ORDER FORM (with card fields) ====================== */
 function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
   const [form, setForm] = useState({
     name: "",
     phone: "",
     address: "",
-    payment_method: "", // ⬅️ required
+    payment_method: "",           // cash | card | online
   });
   const [touched, setTouched] = useState({});
+  const [useSaved, setUseSaved] = useState(true);
+  const [savedCard, setSavedCard] = useState(null);
 
-  const validate = () =>
+  // new card states
+  const [cardName, setCardName] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvc, setCardCvc] = useState("");
+  const [saveCard, setSaveCard] = useState(true);
+
+  // load saved card by phone
+  useEffect(() => {
+    const phoneOk = /^5\d{9}$/.test(form.phone);
+    if (!phoneOk) { setSavedCard(null); return; }
+    try {
+      const store = JSON.parse(localStorage.getItem("qr_saved_cards") || "{}");
+      const arr = Array.isArray(store[form.phone]) ? store[form.phone] : [];
+      setSavedCard(arr[0] || null); // one primary
+      setUseSaved(!!arr[0]);
+    } catch {
+      setSavedCard(null);
+    }
+  }, [form.phone]);
+
+  const validBase =
     form.name &&
     /^5\d{9}$/.test(form.phone) &&
     form.address &&
-    !!form.payment_method; // ⬅️ must pick one
+    !!form.payment_method;
+
+  const validCard =
+    (form.payment_method !== "card") ||
+    (useSaved && !!savedCard) ||
+    (
+      cardName.trim().length >= 2 &&
+      luhnValid(cardNumber) &&
+      expiryValid(cardExpiry) &&
+      ((detectBrand(cardNumber) === "Amex") ? /^[0-9]{4}$/.test(cardCvc) : /^[0-9]{3}$/.test(cardCvc))
+    );
+
+  const validate = () => validBase && validCard;
+
+  function persistCardIfRequested(meta) {
+    if (!saveCard) return;
+    try {
+      const store = JSON.parse(localStorage.getItem("qr_saved_cards") || "{}");
+      const list = Array.isArray(store[form.phone]) ? store[form.phone] : [];
+      // avoid dup by token/last4
+      if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) {
+        list.unshift(meta);
+      }
+      store[form.phone] = list.slice(0, 3); // keep up to 3
+      localStorage.setItem("qr_saved_cards", JSON.stringify(store));
+    } catch {}
+  }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center relative">
-        {/* Close */}
+      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[360px] text-center relative">
         <button
           className="absolute right-3 top-3 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
           onClick={onClose}
@@ -395,10 +394,33 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
                 phone: true,
                 address: true,
                 payment_method: true,
+                card: true,
               });
               return;
             }
-            onSubmit(form); // includes payment_method
+
+            // attach payment_meta when card
+            let payment_meta = undefined;
+            if (form.payment_method === "card") {
+              if (useSaved && savedCard) {
+                payment_meta = { ...savedCard, saved: true };
+              } else {
+                const brand = detectBrand(cardNumber);
+                const token = makeToken();
+                const { mm, yy } = parseExpiry(cardExpiry);
+                const meta = {
+                  token,
+                  brand,
+                  last4: cardNumber.replace(/\D/g, "").slice(-4),
+                  expMonth: mm,
+                  expYear: "20" + yy,
+                };
+                payment_meta = meta;
+                persistCardIfRequested(meta);
+              }
+            }
+
+            onSubmit({ ...form, payment_meta });
           }}
           className="flex flex-col gap-3 text-left"
         >
@@ -440,9 +462,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
                 touched.payment_method && !form.payment_method ? "border-red-500" : ""
               }`}
               value={form.payment_method}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, payment_method: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
             >
               <option value="">{t("Select Payment Method")}</option>
               <option value="cash">💵 {t("Cash")}</option>
@@ -451,10 +471,89 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
             </select>
           </div>
 
+          {/* Card block */}
+          {form.payment_method === "card" && (
+            <div className="mt-2 p-3 rounded-2xl border-2 border-fuchsia-200 bg-pink-50/50">
+              {savedCard ? (
+                <div className="mb-2">
+                  <div className="text-xs font-bold text-fuchsia-700 mb-1">{t("Saved card")}:</div>
+                  <div className="text-sm font-semibold text-fuchsia-800">
+                    {savedCard.brand} •••• {savedCard.last4}  ({savedCard.expMonth}/{String(savedCard.expYear).slice(-2)})
+                  </div>
+
+                  <div className="mt-2 flex gap-2 items-center">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        checked={useSaved}
+                        onChange={() => setUseSaved(true)}
+                      />
+                      {t("Use saved card")}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        checked={!useSaved}
+                        onChange={() => setUseSaved(false)}
+                      />
+                      {t("Use a new card")}
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+
+              {!useSaved && (
+                <div className="grid grid-cols-1 gap-2">
+                  <input
+                    className={`rounded-xl px-4 py-3 border ${touched.card && !cardName ? "border-red-500" : ""}`}
+                    placeholder={t("Name on Card")}
+                    value={cardName}
+                    onChange={(e) => setCardName(e.target.value)}
+                    autoComplete="cc-name"
+                  />
+                  <input
+                    className={`rounded-xl px-4 py-3 border ${touched.card && !luhnValid(cardNumber) ? "border-red-500" : ""}`}
+                    placeholder={t("Card Number")}
+                    value={cardNumber}
+                    onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
+                    inputMode="numeric"
+                    autoComplete="cc-number"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      className={`flex-1 rounded-xl px-4 py-3 border ${touched.card && !expiryValid(cardExpiry) ? "border-red-500" : ""}`}
+                      placeholder={t("Expiry (MM/YY)")}
+                      value={cardExpiry}
+                      onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
+                      inputMode="numeric"
+                      autoComplete="cc-exp"
+                    />
+                    <input
+                      className={`w-24 rounded-xl px-4 py-3 border ${touched.card && !/^\d{3,4}$/.test(cardCvc) ? "border-red-500" : ""}`}
+                      placeholder={t("CVC")}
+                      value={cardCvc}
+                      onChange={(e) => setCardCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      inputMode="numeric"
+                      autoComplete="cc-csc"
+                    />
+                  </div>
+                  <label className="mt-1 flex items-center gap-2 text-sm text-fuchsia-800">
+                    <input
+                      type="checkbox"
+                      checked={saveCard}
+                      onChange={(e) => setSaveCard(e.target.checked)}
+                    />
+                    {t("Save card for next time")}
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 mt-2 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg disabled:opacity-70"
+            className="w-full py-3 mt-3 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg disabled:opacity-70"
           >
             {submitting ? t("Please wait...") : t("Continue")}
           </button>
@@ -463,7 +562,6 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
     </div>
   );
 }
-
 
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
@@ -717,8 +815,8 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
                   {(availableGroups[activeGroupIdx].items || []).map((item) => {
-                    const unit = priceOf(item);
-                    const q = qtyOf(availableGroups[activeGroupIdx].groupName, item.name);
+                    const unit = parseFloat(item?.price ?? item?.extraPrice ?? 0) || 0;
+                    const q = selectedExtras.find((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name)?.quantity || 0;
                     return (
                       <div
                         key={item.name}
@@ -731,14 +829,33 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
                         <div className="mt-2 flex items-center justify-center gap-2">
                           <button
                             className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
-                            onClick={() => decExtra(availableGroups[activeGroupIdx], item)}
+                            onClick={() => {
+                              setSelectedExtras((prev) => {
+                                const idx = prev.findIndex((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name);
+                                if (idx === -1) return prev;
+                                const copy = [...prev];
+                                copy[idx].quantity = Math.max(0, (copy[idx].quantity || 0) - 1);
+                                if (copy[idx].quantity === 0) copy.splice(idx, 1);
+                                return copy;
+                              });
+                            }}
                           >
                             –
                           </button>
                           <span className="min-w-[28px] text-center text-base font-extrabold">{q}</span>
                           <button
                             className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
-                            onClick={() => incExtra(availableGroups[activeGroupIdx], item)}
+                            onClick={() => {
+                              setSelectedExtras((prev) => {
+                                const idx = prev.findIndex((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name);
+                                if (idx === -1) {
+                                  return [...prev, { group: availableGroups[activeGroupIdx].groupName, name: item.name, price: unit, quantity: 1 }];
+                                }
+                                const copy = [...prev];
+                                copy[idx].quantity = (copy[idx].quantity || 0) + 1;
+                                return copy;
+                              });
+                            }}
                           >
                             +
                           </button>
@@ -798,7 +915,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
                 id: product.id,
                 name: product.name,
                 image: product.image,
-                price: basePrice + extrasPerUnit, // include extras per unit in line price
+                price: basePrice + selectedExtras.reduce((s, ex) => s + (ex.price || 0) * (ex.quantity || 1), 0),
                 quantity,
                 extras: selectedExtras.filter((e) => e.quantity > 0),
                 note,
@@ -1009,9 +1126,7 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
 export default function QrMenu() {
   // persist language
   const [lang, setLang] = useState(() => localStorage.getItem("qr_lang") || "en");
-  useEffect(() => {
-    localStorage.setItem("qr_lang", lang);
-  }, [lang]);
+  useEffect(() => { localStorage.setItem("qr_lang", lang); }, [lang]);
   const t = useMemo(() => makeT(lang), [lang]);
 
   const [orderType, setOrderType] = useState(null);
@@ -1022,12 +1137,7 @@ export default function QrMenu() {
   const [extrasGroups, setExtrasGroups] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
   const [cart, setCart] = useState(() => {
-    try {
-      const saved = localStorage.getItem("qr_cart");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem("qr_cart") || "[]"); } catch { return []; }
   });
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1097,20 +1207,11 @@ export default function QrMenu() {
         setOccupiedTables(occupied);
       });
 
-    function tryJSON(v) {
-      try {
-        const p = JSON.parse(v);
-        return Array.isArray(p) ? p : [];
-      } catch {
-        return [];
-      }
-    }
+    function tryJSON(v) { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
   }, []);
 
   if (!orderType)
-    return (
-      <OrderTypeSelect onSelect={setOrderType} lang={lang} setLang={setLang} t={t} />
-    );
+    return <OrderTypeSelect onSelect={setOrderType} lang={lang} setLang={setLang} t={t} />;
 
   if (orderType === "table" && !table)
     return (
@@ -1123,18 +1224,17 @@ export default function QrMenu() {
     );
 
   if (orderType === "online" && !customerInfo)
-  return (
-    <OnlineOrderForm
-      onSubmit={(info) => {
-        setCustomerInfo(info);
-        setPaymentMethod(info.payment_method); // ⬅️ keep global in sync
-      }}
-      submitting={submitting}
-      onClose={() => setOrderType(null)}
-      t={t}
-    />
-  );
-
+    return (
+      <OnlineOrderForm
+        onSubmit={(info) => {
+          setCustomerInfo(info);
+          setPaymentMethod(info.payment_method);     // keep global in sync
+        }}
+        submitting={submitting}
+        onClose={() => setOrderType(null)}
+        t={t}
+      />
+    );
 
   async function handleSubmitOrder() {
     if (cart.length === 0) return;
@@ -1147,7 +1247,7 @@ export default function QrMenu() {
         items: cart.map((i) => ({
           product_id: i.id,
           quantity: i.quantity,
-          price: i.price, // already base+extras per unit
+          price: i.price,
           ingredients: i.ingredients || [],
           extras: i.extras || [],
           unique_id: i.unique_id,
@@ -1177,7 +1277,8 @@ export default function QrMenu() {
             customer_name: customerInfo.name,
             customer_phone: customerInfo.phone,
             customer_address: customerInfo.address,
-            payment_method: paymentMethod,
+            payment_method: paymentMethod,                         // "card" | "cash" | "online"
+            payment_meta: customerInfo.payment_meta || undefined,  // brand/last4/token (optional)
           }),
         });
       }
@@ -1209,9 +1310,7 @@ export default function QrMenu() {
       <QrHeader
         orderType={orderType}
         table={table}
-        onClose={() => {
-          setOrderType(null);
-        }}
+        onClose={() => { setOrderType(null); }}
         t={t}
       />
 
