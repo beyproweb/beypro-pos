@@ -37,7 +37,7 @@ const parseMaybeJSON = (v) => {
 const normItem = (it) => ({
   id: it.id || it.item_id || it.unique_id || `${it.product_id || Math.random()}`,
   name: it.name || it.product_name || it.item_name || "Item",
-  price: Number(it.price || 0),                 // 👈 per-unit price
+  price: Number(it.price || 0),
   quantity: Number(it.quantity || 1),
   kitchen_status: it.kitchen_status || "new",
   note: it.note || "",
@@ -47,9 +47,8 @@ const normItem = (it) => ({
 /* ---------- MAIN COMPONENT ---------- */
 const OrderStatusScreen = ({
   orderId,
-  table,                       // optional; we’ll fallback to order.table_number
+  table,                // optional; fallback to order.table_number
   onOrderAnother,
-  onAllDelivered,
   t = (str) => str,
 }) => {
   const [order, setOrder] = useState(null);
@@ -57,7 +56,6 @@ const OrderStatusScreen = ({
   const [timer, setTimer] = useState("00:00");
   const intervalRef = useRef(null);
 
-  // Fetch order + items (robust to HTML/404)
   const fetchOrder = async () => {
     if (!orderId) return;
     try {
@@ -109,14 +107,8 @@ const OrderStatusScreen = ({
   const ready = items.filter(i => i.kitchen_status === "ready");
   const delivered = items.filter(i => i.kitchen_status === "delivered");
 
-  // All delivered? Trigger exit after short delay
-  useEffect(() => {
-    if (items.length > 0 && items.every(i => i.kitchen_status === "delivered")) {
-      setTimeout(onAllDelivered, 1500);
-    }
-  }, [items, onAllDelivered]);
+  // ❌ Removed: auto-close when all delivered
 
-  // ✅ Show table number from prop OR from fetched order header
   const tableNo = table ?? order?.table_number ?? null;
 
   return (
@@ -132,7 +124,7 @@ const OrderStatusScreen = ({
           <span>⏱️ {t("Time")}: <span className="font-mono">{timer}</span></span>
         </div>
 
-        {/* 🛍️ Items Ordered */}
+        {/* Items */}
         {items.length > 0 && (
           <div className="w-full mb-4">
             <div className="font-bold text-indigo-700 mb-2">🛍️ {t("Items Ordered")}</div>
@@ -140,21 +132,15 @@ const OrderStatusScreen = ({
               {items.map((item) => {
                 const lineTotal = (item.price || 0) * (item.quantity || 1);
                 return (
-                  <li
-                    key={item.id}
-                    className="flex flex-col bg-white border border-blue-100 rounded-xl p-3 shadow-sm"
-                  >
+                  <li key={item.id} className="flex flex-col bg-white border border-blue-100 rounded-xl p-3 shadow-sm">
                     <div className="flex justify-between items-center font-bold text-blue-900">
                       <span>{item.name}</span>
                       <span className="text-xs">x{item.quantity}</span>
                     </div>
-
-                    {/* Price row */}
                     <div className="mt-1 text-sm flex justify-between text-indigo-700 font-semibold">
                       <span>{t("Price")}: ₺{(item.price || 0).toFixed(2)}</span>
                       <span>{t("Total")}: ₺{lineTotal.toFixed(2)}</span>
                     </div>
-
                     {item.extras?.length > 0 && (
                       <div className="mt-1 text-xs text-gray-500">
                         {t("Extras")}: {item.extras.map(ex => `${ex.name} ×${ex.quantity || 1}`).join(", ")}

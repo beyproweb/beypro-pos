@@ -296,6 +296,7 @@ function ProductGrid({ products, onProductClick }) {
   );
 }
 
+
 /* ====================== ADD-TO-CART MODAL (REDESIGNED) ====================== */
 /** Redesigned like TransactionScreen ExtrasModal:
  *  - Left: group/category rail
@@ -760,7 +761,7 @@ function CartDrawer({
 }
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, table, onClose }) {
+function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClose }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40">
@@ -784,14 +785,13 @@ function OrderStatusModal({ open, status, orderId, table, onClose }) {
           <OrderStatusScreen
             orderId={orderId}
             table={table}
-            onOrderAnother={onClose}
-            onAllDelivered={onClose}
+            onOrderAnother={onOrderAnother}
           />
         )}
 
         <button
           className="py-3 px-6 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
-          onClick={onClose}
+          onClick={status === "success" ? onOrderAnother : onClose}
         >
           {status === "success" ? "Order Another" : "Close"}
         </button>
@@ -799,6 +799,7 @@ function OrderStatusModal({ open, status, orderId, table, onClose }) {
     </div>
   );
 }
+
 
 
 /* ====================== MAIN QR MENU ====================== */
@@ -828,6 +829,24 @@ export default function QrMenu() {
   const [submitting, setSubmitting] = useState(false);
   const [lang, setLang] = useState(LANGS[0].code);
   const [categoryImages, setCategoryImages] = useState({});
+  
+  // inside export default function QrMenu() { ... }
+
+function handleOrderAnother() {
+  // close status UI
+  setShowStatus(false);
+  setOrderStatus("pending");
+  setOrderId(null);
+
+  // clear cart and locals
+  setCart([]);
+  localStorage.removeItem("qr_cart");
+
+  // go to ORDER TYPE selection (not cart)
+  setOrderType(null);     // 👈 this sends user to OrderTypeSelect
+  setTable(null);
+  setCustomerInfo(null);
+}
 
 useEffect(() => {
   fetch(`${API_URL}/api/category-images`)
@@ -1034,13 +1053,15 @@ useEffect(() => {
         }}
       />
 
-     <OrderStatusModal
+<OrderStatusModal
   open={showStatus}
   status={orderStatus}
   orderId={orderId}
   table={orderType === "table" ? table : null}
+  onOrderAnother={handleOrderAnother}
   onClose={handleReset}
 />
+
 
     </div>
   );
