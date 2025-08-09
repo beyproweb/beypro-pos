@@ -1,11 +1,226 @@
 // src/pages/QrMenu.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-// Supported languages for the QR
+/* ====================== TRANSLATIONS ====================== */
+const DICT = {
+  en: {
+    "Order Type": "Order Type",
+    "Table Order": "Table Order",
+    Delivery: "Delivery",
+    Language: "Language",
+    "Choose Table": "Choose Table",
+    Occupied: "Occupied",
+    "Start Order": "Start Order",
+    "Delivery Info": "Delivery Info",
+    "Full Name": "Full Name",
+    "Phone (5XXXXXXXXX)": "Phone (5XXXXXXXXX)",
+    Address: "Address",
+    Continue: "Continue",
+    "No products.": "No products.",
+    "Extras Groups": "Extras Groups",
+    "Select a group": "Select a group",
+    Quantity: "Quantity",
+    "Add a note (optional)…": "Add a note (optional)…",
+    Total: "Total",
+    "Add to Cart": "Add to Cart",
+    "View Cart": "View Cart",
+    "Your Order": "Your Order",
+    "Cart is empty.": "Cart is empty.",
+    "Payment:": "Payment:",
+    Cash: "Cash",
+    "Credit Card": "Credit Card",
+    "Online Payment": "Online Payment",
+    "Submit Order": "Submit Order",
+    "Clear Cart": "Clear Cart",
+    Remove: "Remove",
+    "Order Sent!": "Order Sent!",
+    "Sending Order...": "Sending Order...",
+    "Order Failed": "Order Failed",
+    "Thank you! Your order has been received.":
+      "Thank you! Your order has been received.",
+    "Please wait...": "Please wait...",
+    "Something went wrong. Please try again.":
+      "Something went wrong. Please try again.",
+    Close: "Close",
+    "Order Another": "Order Another",
+    Table: "Table",
+    "Table Order (short)": "Table Order",
+    "Online Order": "Online Order",
+    "Ready for Pickup": "Ready for Pickup",
+    Price: "Price",
+    Extras: "Extras",
+    Note: "Note",
+    Preparing: "Preparing",
+    Delivered: "Delivered",
+    Time: "Time",
+    "Items Ordered": "Items Ordered",
+  },
+  tr: {
+    "Order Type": "Sipariş Türü",
+    "Table Order": "Masa Siparişi",
+    Delivery: "Paket",
+    Language: "Dil",
+    "Choose Table": "Masa Seçin",
+    Occupied: "Dolu",
+    "Start Order": "Siparişi Başlat",
+    "Delivery Info": "Teslimat Bilgileri",
+    "Full Name": "Ad Soyad",
+    "Phone (5XXXXXXXXX)": "Telefon (5XXXXXXXXX)",
+    Address: "Adres",
+    Continue: "Devam",
+    "No products.": "Ürün yok.",
+    "Extras Groups": "Ekstra Grupları",
+    "Select a group": "Bir grup seçin",
+    Quantity: "Adet",
+    "Add a note (optional)…": "Not ekleyin (opsiyonel)…",
+    Total: "Toplam",
+    "Add to Cart": "Sepete Ekle",
+    "View Cart": "Sepeti Gör",
+    "Your Order": "Siparişiniz",
+    "Cart is empty.": "Sepet boş.",
+    "Payment:": "Ödeme:",
+    Cash: "Nakit",
+    "Credit Card": "Kredi Kartı",
+    "Online Payment": "Online Ödeme",
+    "Submit Order": "Siparişi Gönder",
+    "Clear Cart": "Sepeti Temizle",
+    Remove: "Kaldır",
+    "Order Sent!": "Sipariş Gönderildi!",
+    "Sending Order...": "Sipariş Gönderiliyor...",
+    "Order Failed": "Sipariş Başarısız",
+    "Thank you! Your order has been received.":
+      "Teşekkürler! Siparişiniz alındı.",
+    "Please wait...": "Lütfen bekleyin...",
+    "Something went wrong. Please try again.":
+      "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
+    Close: "Kapat",
+    "Order Another": "Yeni Sipariş Ver",
+    Table: "Masa",
+    "Table Order (short)": "Masa",
+    "Online Order": "Paket",
+    "Ready for Pickup": "Teslime Hazır",
+    Price: "Fiyat",
+    Extras: "Ekstralar",
+    Note: "Not",
+    Preparing: "Hazırlanıyor",
+    Delivered: "Teslim Edildi",
+    Time: "Süre",
+    "Items Ordered": "Sipariş Edilenler",
+  },
+  de: {
+    "Order Type": "Bestellart",
+    "Table Order": "Tischbestellung",
+    Delivery: "Lieferung",
+    Language: "Sprache",
+    "Choose Table": "Tisch wählen",
+    Occupied: "Belegt",
+    "Start Order": "Bestellung starten",
+    "Delivery Info": "Lieferinformationen",
+    "Full Name": "Vollständiger Name",
+    "Phone (5XXXXXXXXX)": "Telefon (5XXXXXXXXX)",
+    Address: "Adresse",
+    Continue: "Weiter",
+    "No products.": "Keine Produkte.",
+    "Extras Groups": "Extras-Gruppen",
+    "Select a group": "Gruppe auswählen",
+    Quantity: "Menge",
+    "Add a note (optional)…": "Notiz hinzufügen (optional)…",
+    Total: "Summe",
+    "Add to Cart": "In den Warenkorb",
+    "View Cart": "Warenkorb anzeigen",
+    "Your Order": "Ihre Bestellung",
+    "Cart is empty.": "Warenkorb ist leer.",
+    "Payment:": "Zahlung:",
+    Cash: "Bar",
+    "Credit Card": "Kreditkarte",
+    "Online Payment": "Online-Zahlung",
+    "Submit Order": "Bestellung senden",
+    "Clear Cart": "Warenkorb leeren",
+    Remove: "Entfernen",
+    "Order Sent!": "Bestellung gesendet!",
+    "Sending Order...": "Bestellung wird gesendet...",
+    "Order Failed": "Bestellung fehlgeschlagen",
+    "Thank you! Your order has been received.":
+      "Danke! Ihre Bestellung ist eingegangen.",
+    "Please wait...": "Bitte warten...",
+    "Something went wrong. Please try again.":
+      "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
+    Close: "Schließen",
+    "Order Another": "Weitere Bestellung",
+    Table: "Tisch",
+    "Table Order (short)": "Tisch",
+    "Online Order": "Lieferung",
+    "Ready for Pickup": "Abholbereit",
+    Price: "Preis",
+    Extras: "Extras",
+    Note: "Notiz",
+    Preparing: "In Vorbereitung",
+    Delivered: "Geliefert",
+    Time: "Zeit",
+    "Items Ordered": "Bestellte Artikel",
+  },
+  fr: {
+    "Order Type": "Type de commande",
+    "Table Order": "Commande à table",
+    Delivery: "Livraison",
+    Language: "Langue",
+    "Choose Table": "Choisir une table",
+    Occupied: "Occupée",
+    "Start Order": "Commencer",
+    "Delivery Info": "Infos de livraison",
+    "Full Name": "Nom complet",
+    "Phone (5XXXXXXXXX)": "Téléphone (5XXXXXXXXX)",
+    Address: "Adresse",
+    Continue: "Continuer",
+    "No products.": "Aucun produit.",
+    "Extras Groups": "Groupes d'extras",
+    "Select a group": "Choisir un groupe",
+    Quantity: "Quantité",
+    "Add a note (optional)…": "Ajouter une note (optionnel)…",
+    Total: "Total",
+    "Add to Cart": "Ajouter au panier",
+    "View Cart": "Voir le panier",
+    "Your Order": "Votre commande",
+    "Cart is empty.": "Le panier est vide.",
+    "Payment:": "Paiement :",
+    Cash: "Espèces",
+    "Credit Card": "Carte bancaire",
+    "Online Payment": "Paiement en ligne",
+    "Submit Order": "Envoyer la commande",
+    "Clear Cart": "Vider le panier",
+    Remove: "Retirer",
+    "Order Sent!": "Commande envoyée !",
+    "Sending Order...": "Envoi de la commande...",
+    "Order Failed": "Échec de la commande",
+    "Thank you! Your order has been received.":
+      "Merci ! Votre commande a été reçue.",
+    "Please wait...": "Veuillez patienter...",
+    "Something went wrong. Please try again.":
+      "Un problème est survenu. Veuillez réessayer.",
+    Close: "Fermer",
+    "Order Another": "Commander encore",
+    Table: "Table",
+    "Table Order (short)": "Table",
+    "Online Order": "Livraison",
+    "Ready for Pickup": "Prête à être retirée",
+    Price: "Prix",
+    Extras: "Extras",
+    Note: "Note",
+    Preparing: "Préparation",
+    Delivered: "Livrée",
+    Time: "Durée",
+    "Items Ordered": "Articles commandés",
+  },
+};
+function makeT(lang) {
+  return (key) => DICT[lang]?.[key] ?? DICT.en[key] ?? key;
+}
+
+/* ====================== SUPPORTED LANGS ====================== */
 const LANGS = [
   { code: "en", label: "🇺🇸 English" },
   { code: "tr", label: "🇹🇷 Türkçe" },
@@ -14,7 +229,7 @@ const LANGS = [
 ];
 
 /* ====================== HEADER ====================== */
-function QrHeader({ orderType, table, onClose }) {
+function QrHeader({ orderType, table, onClose, t }) {
   return (
     <header className="w-full sticky top-0 z-50 flex items-center gap-3 bg-white/90 backdrop-blur border-b border-blue-100 shadow-lg px-4 py-3">
       <span className="text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent tracking-tight drop-shadow">
@@ -22,13 +237,17 @@ function QrHeader({ orderType, table, onClose }) {
       </span>
 
       <span className="ml-1 text-lg font-bold text-blue-700 flex-1">
-        {orderType === "table" ? (table ? `Table ${table}` : "Table Order") : "Online Order"}
+        {orderType === "table"
+          ? table
+            ? `${t("Table")} ${table}`
+            : t("Table Order (short)")
+          : t("Online Order")}
       </span>
 
       {/* Close → back to Order Type selection */}
       <button
         onClick={onClose}
-        aria-label="Close"
+        aria-label={t("Close")}
         className="bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
       >
         ×
@@ -37,30 +256,29 @@ function QrHeader({ orderType, table, onClose }) {
   );
 }
 
-
 /* ====================== ORDER TYPE MODAL ====================== */
-function OrderTypeSelect({ onSelect, lang, setLang }) {
+function OrderTypeSelect({ onSelect, lang, setLang, t }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-[340px] text-center flex flex-col items-center">
         <h2 className="text-2xl font-extrabold mb-6 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
-          Order Type
+          {t("Order Type")}
         </h2>
         <button
           className="py-4 w-full mb-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl hover:scale-105 transition"
           onClick={() => onSelect("table")}
         >
-          🍽️ Table Order
+          🍽️ {t("Table Order")}
         </button>
         <button
           className="py-4 w-full rounded-2xl font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-xl hover:scale-105 transition"
           onClick={() => onSelect("online")}
         >
-          🏠 Delivery
+          🏠 {t("Delivery")}
         </button>
         {/* Language Switcher */}
         <div className="w-full mt-8 flex flex-col items-center">
-          <label className="text-sm font-bold mb-1 text-blue-600">🌐 Language</label>
+          <label className="text-sm font-bold mb-1 text-blue-600">🌐 {t("Language")}</label>
           <select
             value={lang}
             onChange={(e) => setLang(e.target.value)}
@@ -79,7 +297,7 @@ function OrderTypeSelect({ onSelect, lang, setLang }) {
 }
 
 /* ====================== TABLE SELECT ====================== */
-function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTables = [] }) {
+function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTables = [], t }) {
   const [selected, setSelected] = useState(null);
   return (
     <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
@@ -88,13 +306,13 @@ function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTab
         <button
           className="absolute right-3 top-3 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t("Close")}
         >
           ×
         </button>
 
         <h2 className="text-xl font-bold mb-5 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
-          Choose Table
+          {t("Choose Table")}
         </h2>
         <div className="grid grid-cols-4 gap-2 mb-6">
           {[...Array(tableCount)].map((_, i) => {
@@ -112,11 +330,12 @@ function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTab
                     : "bg-gray-100 text-blue-700 hover:scale-105"
                 }`}
                 onClick={() => setSelected(num)}
+                title={occ ? t("Occupied") : undefined}
               >
                 {num}
                 {occ && (
                   <span className="absolute left-1/2 -translate-x-1/2 text-[10px] bottom-1 text-red-600">
-                    Occupied
+                    {t("Occupied")}
                   </span>
                 )}
               </button>
@@ -128,16 +347,15 @@ function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTab
           className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg text-lg disabled:opacity-60"
           onClick={() => onSelectTable(selected)}
         >
-          Start Order
+          {t("Start Order")}
         </button>
       </div>
     </div>
   );
 }
 
-
 /* ====================== ONLINE ORDER FORM ====================== */
-function OnlineOrderForm({ onSubmit, submitting, onClose }) {
+function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
   const [form, setForm] = useState({ name: "", phone: "", address: "" });
   const [touched, setTouched] = useState({});
   const validate = () => form.name && /^5\d{9}$/.test(form.phone) && form.address;
@@ -149,13 +367,13 @@ function OnlineOrderForm({ onSubmit, submitting, onClose }) {
         <button
           className="absolute right-3 top-3 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t("Close")}
         >
           ×
         </button>
 
         <h2 className="text-xl font-bold mb-4 bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
-          Delivery Info
+          {t("Delivery Info")}
         </h2>
         <form
           onSubmit={(e) => {
@@ -170,13 +388,15 @@ function OnlineOrderForm({ onSubmit, submitting, onClose }) {
         >
           <input
             className="rounded-xl px-4 py-3 border"
-            placeholder="Full Name"
+            placeholder={t("Full Name")}
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
           <input
-            className={`rounded-xl px-4 py-3 border ${touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""}`}
-            placeholder="Phone (5XXXXXXXXX)"
+            className={`rounded-xl px-4 py-3 border ${
+              touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""
+            }`}
+            placeholder={t("Phone (5XXXXXXXXX)")}
             value={form.phone}
             onChange={(e) =>
               setForm((f) => ({
@@ -188,7 +408,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose }) {
           />
           <textarea
             className="rounded-xl px-4 py-3 border"
-            placeholder="Address"
+            placeholder={t("Address")}
             rows={3}
             value={form.address}
             onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
@@ -198,7 +418,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose }) {
             disabled={submitting}
             className="w-full py-3 mt-2 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg"
           >
-            {submitting ? "Sending..." : "Continue"}
+            {submitting ? t("Please wait...") : t("Continue")}
           </button>
         </form>
       </div>
@@ -206,24 +426,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose }) {
   );
 }
 
-
 /* ====================== CATEGORY BAR ====================== */
-// Place this near top of QrMenu.jsx with other constants
-const categoryIcons = {
-  Meat: "🍔",
-  Pizza: "🍕",
-  Drinks: "🥤",
-  Salad: "🥗",
-  Dessert: "🍰",
-  Breakfast: "🍳",
-  Chicken: "🍗",
-  default: "🍽️",
-};
-
-
-
-// Replace your CategoryBar component in QrMenu.jsx with this:
-// --- Replace your CategoryBar with this ---
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   return (
     <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 dark:border-zinc-800 z-50">
@@ -273,14 +476,13 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
   );
 }
 
-
 /* ====================== PRODUCT GRID ====================== */
-function ProductGrid({ products, onProductClick }) {
+function ProductGrid({ products, onProductClick, t }) {
   return (
     <main className="w-full max-w-full pt-3 pb-28 px-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 overflow-hidden">
       {products.length === 0 && (
         <div className="col-span-full text-center text-gray-400 font-bold text-lg py-8">
-          No products.
+          {t("No products.")}
         </div>
       )}
       {products.map((product) => (
@@ -312,21 +514,13 @@ function ProductGrid({ products, onProductClick }) {
   );
 }
 
-
-/* ====================== ADD-TO-CART MODAL (REDESIGNED) ====================== */
-/** Redesigned like TransactionScreen ExtrasModal:
- *  - Left: group/category rail
- *  - Right: items with price, +/–, per-extra total
- *  - Totals use (ex.price || ex.extraPrice) * quantity
- */
 /* ====================== ADD TO CART (Addons) MODAL ====================== */
-function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
+function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   const [note, setNote] = useState("");
 
-  // 🔒 Lock body scroll when open
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -334,7 +528,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
     return () => (document.body.style.overflow = prev || "");
   }, [open]);
 
-  // Reset modal state when product changes / opens
   useEffect(() => {
     if (!open || !product) return;
     setQuantity(1);
@@ -347,7 +540,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
 
   const basePrice = parseFloat(product.price) || 0;
 
-  // Normalize extras groups
   const normalizedGroups = (extrasGroups || []).map((g) => ({
     groupName: g.groupName || g.group_name,
     items: Array.isArray(g.items)
@@ -362,7 +554,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
         })(),
   }));
 
-  // Filter to only groups the product uses (if provided)
   const productGroupNames = Array.isArray(product?.selectedExtrasGroup)
     ? product.selectedExtrasGroup
     : [];
@@ -380,7 +571,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
   );
   const lineTotal = (basePrice + extrasPerUnit) * quantity;
 
-  // Helpers
   const qtyOf = (groupName, itemName) =>
     selectedExtras.find((ex) => ex.group === groupName && ex.name === itemName)?.quantity || 0;
 
@@ -428,12 +618,12 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
         <button
           className="absolute right-3 top-3 z-20 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t("Close")}
         >
           ×
         </button>
 
-        {/* Header (no quantity here anymore) */}
+        {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b-2 border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50">
           <img
             src={
@@ -460,7 +650,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
         <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
           {/* Groups rail */}
           <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r-2 border-blue-100 bg-white/80 p-3 overflow-x-auto sm:overflow-y-auto">
-            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">Extras Groups</div>
+            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">{t("Extras Groups")}</div>
             <div className="flex sm:block gap-2 sm:gap-0">
               {availableGroups.map((g, idx) => (
                 <button
@@ -480,7 +670,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
 
           {/* Items + Quantity + Note */}
           <section className="flex-1 p-4 sm:p-5 overflow-y-auto">
-            {/* Items in active group */}
+            {/* Items */}
             {availableGroups.length > 0 ? (
               <>
                 <div className="font-bold text-fuchsia-600 mb-2 text-base">
@@ -520,12 +710,12 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
                 </div>
               </>
             ) : (
-              <div className="text-gray-400">Select a group</div>
+              <div className="text-gray-400">{t("Select a group")}</div>
             )}
 
-            {/* NEW: Quantity (moved here, above note) */}
+            {/* Quantity */}
             <div className="mt-5 sm:mt-6">
-              <div className="text-sm font-bold text-blue-700 mb-2">Quantity</div>
+              <div className="text-sm font-bold text-blue-700 mb-2">{t("Quantity")}</div>
               <div className="flex items-center justify-center gap-3">
                 <button
                   className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
@@ -547,7 +737,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
             <div className="mt-4 sm:mt-5">
               <textarea
                 className="w-full rounded-xl border-2 border-fuchsia-200 p-3 text-sm bg-pink-50 placeholder-fuchsia-400"
-                placeholder="Add a note (optional)…"
+                placeholder={t("Add a note (optional)…")}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={2}
@@ -559,7 +749,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
         {/* Footer */}
         <div className="border-t-2 border-blue-100 px-4 sm:px-5 py-3 sm:py-4 flex items-center justify-between bg-gradient-to-t from-blue-100 via-fuchsia-50 to-white">
           <div className="text-lg sm:text-xl font-extrabold text-fuchsia-700">
-            Total: ₺{lineTotal.toFixed(2)}
+            {t("Total")}: ₺{lineTotal.toFixed(2)}
           </div>
           <button
             className="py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
@@ -569,7 +759,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
                 id: product.id,
                 name: product.name,
                 image: product.image,
-                price: basePrice,
+                price: basePrice + extrasPerUnit, // include extras per unit in line price
                 quantity,
                 extras: selectedExtras.filter((e) => e.quantity > 0),
                 note,
@@ -577,7 +767,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
               });
             }}
           >
-            Add to Cart
+            {t("Add to Cart")}
           </button>
         </div>
       </div>
@@ -585,8 +775,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
     document.body
   );
 }
-
-
 
 /* ====================== CART DRAWER ====================== */
 function CartDrawer({
@@ -597,11 +785,9 @@ function CartDrawer({
   paymentMethod,
   setPaymentMethod,
   submitting,
+  t,
 }) {
   const [show, setShow] = useState(false);
-
-  // Recompute total from current cart items:
-  // (price already includes extras per unit)
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   useEffect(() => {
@@ -614,31 +800,30 @@ function CartDrawer({
 
   return (
     <>
-      {/* Button floating for mobile */}
       {!show && cart.length > 0 && (
         <button
           className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-7 rounded-3xl shadow-xl z-50"
           onClick={() => setShow(true)}
         >
-          🛒 View Cart ({cart.length})
+          🛒 {t("View Cart")} ({cart.length})
         </button>
       )}
-      {/* Drawer */}
       {show && (
         <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/30">
           <div className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl shadow-2xl p-5 flex flex-col">
             <div className="flex justify-between items-center mb-3">
-              <span className="text-lg font-bold text-blue-800">🛒 Your Order</span>
+              <span className="text-lg font-bold text-blue-800">🛒 {t("Your Order")}</span>
               <button
                 className="text-2xl text-gray-400 hover:text-red-500"
                 onClick={() => setShow(false)}
+                aria-label={t("Close")}
               >
                 ×
               </button>
             </div>
             <div className="flex-1 overflow-y-auto max-h-[48vh]">
               {cart.length === 0 ? (
-                <div className="text-gray-400 text-center py-8">Cart is empty.</div>
+                <div className="text-gray-400 text-center py-8">{t("Cart is empty.")}</div>
               ) : (
                 <ul className="flex flex-col gap-3">
                   {cart.map((item, i) => (
@@ -652,13 +837,10 @@ function CartDrawer({
                           <span className="text-xs text-gray-500">x{item.quantity}</span>
                         </span>
 
-                        {/* Extras chips with price per extra */}
                         {item.extras && item.extras.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {item.extras.map((ex, j) => {
-                              const unit = parseFloat(
-                                ex.price ?? ex.extraPrice ?? 0
-                              );
+                              const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0);
                               const line = unit * (ex.quantity || 1);
                               return (
                                 <span
@@ -676,12 +858,11 @@ function CartDrawer({
 
                         {item.note && (
                           <div className="text-xs text-yellow-700 mt-1">
-                            📝 {item.note}
+                            📝 {t("Note")}: {item.note}
                           </div>
                         )}
                       </div>
                       <div className="flex flex-col items-end shrink-0">
-                        {/* item.price already includes (base + extras per unit) */}
                         <span className="font-bold text-indigo-700">
                           ₺{(item.price * item.quantity).toFixed(2)}
                         </span>
@@ -689,7 +870,7 @@ function CartDrawer({
                           className="text-xs text-red-400 hover:text-red-700 mt-1"
                           onClick={() => removeItem(i)}
                         >
-                          Remove
+                          {t("Remove")}
                         </button>
                       </div>
                     </li>
@@ -700,20 +881,20 @@ function CartDrawer({
             {cart.length > 0 && (
               <>
                 <div className="flex justify-between text-base font-bold mt-5 mb-3">
-                  <span>Total:</span>
+                  <span>{t("Total")}:</span>
                   <span className="text-indigo-700 text-xl">₺{total.toFixed(2)}</span>
                 </div>
                 {orderType === "online" && (
                   <div className="flex flex-col gap-2 mb-2">
-                    <label className="font-bold text-blue-900">Payment:</label>
+                    <label className="font-bold text-blue-900">{t("Payment:")}</label>
                     <select
                       className="rounded-xl px-2 py-1 border"
                       value={paymentMethod}
                       onChange={(e) => setPaymentMethod(e.target.value)}
                     >
-                      <option value="cash">💵 Cash</option>
-                      <option value="card">💳 Credit Card</option>
-                      <option value="online">🌐 Online Payment</option>
+                      <option value="cash">💵 {t("Cash")}</option>
+                      <option value="card">💳 {t("Credit Card")}</option>
+                      <option value="online">🌐 {t("Online Payment")}</option>
                     </select>
                   </div>
                 )}
@@ -722,13 +903,13 @@ function CartDrawer({
                   onClick={onSubmitOrder}
                   disabled={submitting}
                 >
-                  {submitting ? "Sending..." : "Submit Order"}
+                  {submitting ? t("Please wait...") : t("Submit Order")}
                 </button>
                 <button
                   className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
                   onClick={() => setCart([])}
                 >
-                  Clear Cart
+                  {t("Clear Cart")}
                 </button>
               </>
             )}
@@ -740,31 +921,37 @@ function CartDrawer({
 }
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClose }) {
+function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClose, t }) {
   if (!open) return null;
+
+  const title =
+    status === "success"
+      ? t("Order Sent!")
+      : status === "pending"
+      ? t("Sending Order...")
+      : t("Order Failed");
+
+  const message =
+    status === "success"
+      ? t("Thank you! Your order has been received.")
+      : status === "pending"
+      ? t("Please wait...")
+      : t("Something went wrong. Please try again.");
+
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-xs w-full text-center">
         <h2 className="text-2xl font-extrabold mb-5 bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
-          {status === "success"
-            ? "✅ Order Sent!"
-            : status === "pending"
-            ? "⏳ Sending Order..."
-            : "❌ Order Failed"}
+          {title}
         </h2>
-        <div className="text-lg text-blue-900 mb-6">
-          {status === "success"
-            ? "Thank you! Your order has been received."
-            : status === "pending"
-            ? "Please wait..."
-            : "Something went wrong. Please try again."}
-        </div>
+        <div className="text-lg text-blue-900 mb-6">{message}</div>
 
         {orderId && open && (
           <OrderStatusScreen
             orderId={orderId}
             table={table}
             onOrderAnother={onOrderAnother}
+            t={t}
           />
         )}
 
@@ -772,17 +959,22 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
           className="py-3 px-6 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
           onClick={status === "success" ? onOrderAnother : onClose}
         >
-          {status === "success" ? "Order Another" : "Close"}
+          {status === "success" ? t("Order Another") : t("Close")}
         </button>
       </div>
     </div>
   );
 }
 
-
-
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
+  // persist language
+  const [lang, setLang] = useState(() => localStorage.getItem("qr_lang") || "en");
+  useEffect(() => {
+    localStorage.setItem("qr_lang", lang);
+  }, [lang]);
+  const t = useMemo(() => makeT(lang), [lang]);
+
   const [orderType, setOrderType] = useState(null);
   const [table, setTable] = useState(null);
   const [customerInfo, setCustomerInfo] = useState(null);
@@ -806,45 +998,36 @@ export default function QrMenu() {
   const [orderId, setOrderId] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [submitting, setSubmitting] = useState(false);
-  const [lang, setLang] = useState(LANGS[0].code);
   const [categoryImages, setCategoryImages] = useState({});
-  
-  // inside export default function QrMenu() { ... }
 
-function handleOrderAnother() {
-  // close status UI
-  setShowStatus(false);
-  setOrderStatus("pending");
-  setOrderId(null);
+  function handleOrderAnother() {
+    setShowStatus(false);
+    setOrderStatus("pending");
+    setOrderId(null);
+    setCart([]);
+    localStorage.removeItem("qr_cart");
+    setOrderType(null);
+    setTable(null);
+    setCustomerInfo(null);
+  }
 
-  // clear cart and locals
-  setCart([]);
-  localStorage.removeItem("qr_cart");
+  useEffect(() => {
+    fetch(`${API_URL}/api/category-images`)
+      .then((res) => res.json())
+      .then((data) => {
+        const dict = {};
+        data.forEach(({ category, image }) => {
+          dict[category.trim().toLowerCase()] = `/uploads/${image}`;
+        });
+        setCategoryImages(dict);
+      })
+      .catch(() => setCategoryImages({}));
+  }, []);
 
-  // go to ORDER TYPE selection (not cart)
-  setOrderType(null);     // 👈 this sends user to OrderTypeSelect
-  setTable(null);
-  setCustomerInfo(null);
-}
-
-useEffect(() => {
-  fetch(`${API_URL}/api/category-images`)
-    .then(res => res.json())
-    .then(data => {
-      const dict = {};
-      data.forEach(({ category, image }) => {
-        dict[category.trim().toLowerCase()] = `/uploads/${image}`;
-      });
-      setCategoryImages(dict);
-    })
-    .catch(() => setCategoryImages({}));
-}, []);
-  // Save cart to localStorage
   useEffect(() => {
     localStorage.setItem("qr_cart", JSON.stringify(cart));
   }, [cart]);
 
-  // Fetch initial data
   useEffect(() => {
     fetch(`${API_URL}/api/products`)
       .then((res) => res.json())
@@ -866,7 +1049,6 @@ useEffect(() => {
         )
       );
 
-    // Get occupied tables
     fetch(`${API_URL}/api/orders`)
       .then((res) => res.json())
       .then((orders) => {
@@ -886,32 +1068,31 @@ useEffect(() => {
     }
   }, []);
 
-  // Flow screens
-if (!orderType)
-  return (
-    <OrderTypeSelect onSelect={setOrderType} lang={lang} setLang={setLang} />
-  );
+  if (!orderType)
+    return (
+      <OrderTypeSelect onSelect={setOrderType} lang={lang} setLang={setLang} t={t} />
+    );
 
-if (orderType === "table" && !table)
-  return (
-    <TableSelectModal
-      onSelectTable={setTable}
-      occupiedTables={occupiedTables}
-      onClose={() => setOrderType(null)}     // 👈 back to Order Type
-    />
-  );
+  if (orderType === "table" && !table)
+    return (
+      <TableSelectModal
+        onSelectTable={setTable}
+        occupiedTables={occupiedTables}
+        onClose={() => setOrderType(null)}
+        t={t}
+      />
+    );
 
-if (orderType === "online" && !customerInfo)
-  return (
-    <OnlineOrderForm
-      onSubmit={(info) => setCustomerInfo(info)}
-      submitting={submitting}
-      onClose={() => setOrderType(null)}     // 👈 back to Order Type
-    />
-  );
+  if (orderType === "online" && !customerInfo)
+    return (
+      <OnlineOrderForm
+        onSubmit={(info) => setCustomerInfo(info)}
+        submitting={submitting}
+        onClose={() => setOrderType(null)}
+        t={t}
+      />
+    );
 
-
-  /* -------- SUBMIT ORDER -------- */
   async function handleSubmitOrder() {
     if (cart.length === 0) return;
     setSubmitting(true);
@@ -923,7 +1104,7 @@ if (orderType === "online" && !customerInfo)
         items: cart.map((i) => ({
           product_id: i.id,
           quantity: i.quantity,
-          price: i.price, // per-unit price (base + extras)
+          price: i.price, // already base+extras per unit
           ingredients: i.ingredients || [],
           extras: i.extras || [],
           unique_id: i.unique_id,
@@ -963,7 +1144,7 @@ if (orderType === "online" && !customerInfo)
       setOrderStatus(orderRes.ok ? "success" : "fail");
       setCart([]);
       localStorage.removeItem("qr_cart");
-    } catch (e) {
+    } catch {
       setOrderStatus("fail");
     } finally {
       setSubmitting(false);
@@ -982,14 +1163,14 @@ if (orderType === "online" && !customerInfo)
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
-<QrHeader
-  orderType={orderType}
-  table={table}
-  onClose={() => {
-    // navigate to Order Type selection
-    setOrderType(null);
-  }}
-/>
+      <QrHeader
+        orderType={orderType}
+        table={table}
+        onClose={() => {
+          setOrderType(null);
+        }}
+        t={t}
+      />
 
       <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
         <ProductGrid
@@ -998,16 +1179,16 @@ if (orderType === "online" && !customerInfo)
             setSelectedProduct(product);
             setShowAddModal(true);
           }}
+          t={t}
         />
       </div>
 
       <CategoryBar
-  categories={categories}
-  activeCategory={activeCategory}
-  setActiveCategory={setActiveCategory}
-  categoryImages={categoryImages}
-/>
-
+        categories={categories}
+        activeCategory={activeCategory}
+        setActiveCategory={setActiveCategory}
+        categoryImages={categoryImages}
+      />
 
       <CartDrawer
         cart={cart}
@@ -1017,6 +1198,7 @@ if (orderType === "online" && !customerInfo)
         paymentMethod={paymentMethod}
         setPaymentMethod={setPaymentMethod}
         submitting={submitting}
+        t={t}
       />
 
       <AddToCartModal
@@ -1026,7 +1208,6 @@ if (orderType === "online" && !customerInfo)
         onClose={() => setShowAddModal(false)}
         onAddToCart={(item) => {
           setCart((prev) => {
-            // If same unique combo exists, stack quantity
             const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
             if (idx !== -1) {
               const copy = [...prev];
@@ -1037,18 +1218,18 @@ if (orderType === "online" && !customerInfo)
           });
           setShowAddModal(false);
         }}
+        t={t}
       />
 
-<OrderStatusModal
-  open={showStatus}
-  status={orderStatus}
-  orderId={orderId}
-  table={orderType === "table" ? table : null}
-  onOrderAnother={handleOrderAnother}
-  onClose={handleReset}
-/>
-
-
+      <OrderStatusModal
+        open={showStatus}
+        status={orderStatus}
+        orderId={orderId}
+        table={orderType === "table" ? table : null}
+        onOrderAnother={handleOrderAnother}
+        onClose={handleReset}
+        t={t}
+      />
     </div>
   );
 }
