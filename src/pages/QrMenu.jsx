@@ -311,10 +311,12 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
     name: "",
     phone: "",
     address: "",
-    payment_method: "",           // cash | card | online
+    payment_method: "", // cash | card | online
   });
   const [touched, setTouched] = useState({});
-  const [useSaved, setUseSaved] = useState(true);
+
+  // ⬇️ start: saved card handling
+  const [useSaved, setUseSaved] = useState(false);     // default to NEW CARD
   const [savedCard, setSavedCard] = useState(null);
 
   // new card states
@@ -324,19 +326,25 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
   const [cardCvc, setCardCvc] = useState("");
   const [saveCard, setSaveCard] = useState(true);
 
-  // load saved card by phone
+  // Load saved card when phone looks valid; otherwise ensure we show new card inputs
   useEffect(() => {
     const phoneOk = /^5\d{9}$/.test(form.phone);
-    if (!phoneOk) { setSavedCard(null); return; }
+    if (!phoneOk) {
+      setSavedCard(null);
+      setUseSaved(false); // 🔧 force new card UI if phone not valid / no saved card
+      return;
+    }
     try {
       const store = JSON.parse(localStorage.getItem("qr_saved_cards") || "{}");
       const arr = Array.isArray(store[form.phone]) ? store[form.phone] : [];
-      setSavedCard(arr[0] || null); // one primary
-      setUseSaved(!!arr[0]);
+      setSavedCard(arr[0] || null);
+      setUseSaved(!!arr[0]); // default to saved only if one exists
     } catch {
       setSavedCard(null);
+      setUseSaved(false);
     }
   }, [form.phone]);
+  // ⬆️ end: saved card handling
 
   const validBase =
     form.name &&
@@ -361,14 +369,13 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
     try {
       const store = JSON.parse(localStorage.getItem("qr_saved_cards") || "{}");
       const list = Array.isArray(store[form.phone]) ? store[form.phone] : [];
-      // avoid dup by token/last4
-      if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) {
-        list.unshift(meta);
-      }
-      store[form.phone] = list.slice(0, 3); // keep up to 3
+      if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) list.unshift(meta);
+      store[form.phone] = list.slice(0, 3);
       localStorage.setItem("qr_saved_cards", JSON.stringify(store));
     } catch {}
   }
+
+  const showNewCard = !savedCard || !useSaved; // 🔧 central flag
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
@@ -389,20 +396,12 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
           onSubmit={(e) => {
             e.preventDefault();
             if (!validate()) {
-              setTouched({
-                name: true,
-                phone: true,
-                address: true,
-                payment_method: true,
-                card: true,
-              });
+              setTouched({ name: true, phone: true, address: true, payment_method: true, card: true });
               return;
             }
-
-            // attach payment_meta when card
             let payment_meta = undefined;
             if (form.payment_method === "card") {
-              if (useSaved && savedCard) {
+              if (!showNewCard && savedCard) {
                 payment_meta = { ...savedCard, saved: true };
               } else {
                 const brand = detectBrand(cardNumber);
@@ -419,7 +418,6 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
                 persistCardIfRequested(meta);
               }
             }
-
             onSubmit({ ...form, payment_meta });
           }}
           className="flex flex-col gap-3 text-left"
@@ -432,16 +430,11 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
           />
 
           <input
-            className={`rounded-xl px-4 py-3 border ${
-              touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""
-            }`}
+            className={`rounded-xl px-4 py-3 border ${touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""}`}
             placeholder={t("Phone (5XXXXXXXXX)")}
             value={form.phone}
             onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                phone: e.target.value.replace(/[^\d]/g, "").slice(0, 10),
-              }))
+              setForm((f) => ({ ...f, phone: e.target.value.replace(/[^\d]/g, "").slice(0, 10) }))
             }
             maxLength={10}
           />
@@ -458,9 +451,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
           <div className="flex flex-col gap-1">
             <label className="text-sm font-bold text-blue-900">{t("Payment:")}</label>
             <select
-              className={`rounded-xl px-4 py-3 border ${
-                touched.payment_method && !form.payment_method ? "border-red-500" : ""
-              }`}
+              className={`rounded-xl px-4 py-3 border ${touched.payment_method && !form.payment_method ? "border-red-500" : ""}`}
               value={form.payment_method}
               onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
             >
@@ -474,35 +465,28 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
           {/* Card block */}
           {form.payment_method === "card" && (
             <div className="mt-2 p-3 rounded-2xl border-2 border-fuchsia-200 bg-pink-50/50">
-              {savedCard ? (
+              {savedCard && (
                 <div className="mb-2">
                   <div className="text-xs font-bold text-fuchsia-700 mb-1">{t("Saved card")}:</div>
                   <div className="text-sm font-semibold text-fuchsia-800">
-                    {savedCard.brand} •••• {savedCard.last4}  ({savedCard.expMonth}/{String(savedCard.expYear).slice(-2)})
+                    {savedCard.brand} •••• {savedCard.last4} ({savedCard.expMonth}/{String(savedCard.expYear).slice(-2)})
                   </div>
 
                   <div className="mt-2 flex gap-2 items-center">
                     <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        checked={useSaved}
-                        onChange={() => setUseSaved(true)}
-                      />
+                      <input type="radio" checked={useSaved} onChange={() => setUseSaved(true)} />
                       {t("Use saved card")}
                     </label>
                     <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        checked={!useSaved}
-                        onChange={() => setUseSaved(false)}
-                      />
+                      <input type="radio" checked={!useSaved} onChange={() => setUseSaved(false)} />
                       {t("Use a new card")}
                     </label>
                   </div>
                 </div>
-              ) : null}
+              )}
 
-              {!useSaved && (
+              {/* Always show new-card inputs when there's no saved card OR user chose new */}
+              {showNewCard && (
                 <div className="grid grid-cols-1 gap-2">
                   <input
                     className={`rounded-xl px-4 py-3 border ${touched.card && !cardName ? "border-red-500" : ""}`}
@@ -538,11 +522,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
                     />
                   </div>
                   <label className="mt-1 flex items-center gap-2 text-sm text-fuchsia-800">
-                    <input
-                      type="checkbox"
-                      checked={saveCard}
-                      onChange={(e) => setSaveCard(e.target.checked)}
-                    />
+                    <input type="checkbox" checked={saveCard} onChange={(e) => setSaveCard(e.target.checked)} />
                     {t("Save card for next time")}
                   </label>
                 </div>
@@ -562,6 +542,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
     </div>
   );
 }
+
 
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
