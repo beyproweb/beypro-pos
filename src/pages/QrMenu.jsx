@@ -346,6 +346,32 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
   }, [form.phone]);
   // ⬆️ end: saved card handling
 
+  // Auto-prefill name + default address when phone is valid
+useEffect(() => {
+  const phoneOk = /^5\d{9}$/.test(form.phone);
+  if (!phoneOk) return;
+
+  (async () => {
+    try {
+      // exact match + addresses in one call
+      const res = await fetch(`${API_URL}/api/customers/by-phone/${form.phone}`);
+      const match = await res.json();
+      if (!match) return;
+
+      if (match.name && !form.name) {
+        setForm(f => ({ ...f, name: match.name }));
+      }
+
+      const addrs = Array.isArray(match.addresses) ? match.addresses : [];
+      const def = addrs.find(a => a.is_default) || addrs[0];
+      if (def && !form.address) {
+        setForm(f => ({ ...f, address: def.address }));
+      }
+    } catch {}
+  })();
+}, [form.phone]);
+
+
   const validBase =
     form.name &&
     /^5\d{9}$/.test(form.phone) &&
@@ -503,9 +529,9 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
                     inputMode="numeric"
                     autoComplete="cc-number"
                   />
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 w-full">
                     <input
-                      className={`flex-1 rounded-xl px-4 py-3 border ${touched.card && !expiryValid(cardExpiry) ? "border-red-500" : ""}`}
+                      className={`flex-1 min-w-0 rounded-xl px-4 py-3 border ${touched.card && !expiryValid(cardExpiry) ? "border-red-500" : ""}`}
                       placeholder={t("Expiry (MM/YY)")}
                       value={cardExpiry}
                       onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
@@ -513,7 +539,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
                       autoComplete="cc-exp"
                     />
                     <input
-                      className={`w-24 rounded-xl px-4 py-3 border ${touched.card && !/^\d{3,4}$/.test(cardCvc) ? "border-red-500" : ""}`}
+                      className={`w-20 shrink-0 rounded-xl px-4 py-3 border ${touched.card && !/^\d{3,4}$/.test(cardCvc) ? "border-red-500" : ""}`}
                       placeholder={t("CVC")}
                       value={cardCvc}
                       onChange={(e) => setCardCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
@@ -1237,6 +1263,43 @@ export default function QrMenu() {
         })),
       };
 
+      // --- ensure customer + default address saved ---
+let customerId = null;
+
+// 1) Try to find exact phone match
+const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
+const candidates = await searchRes.json();
+const exact = (Array.isArray(candidates) ? candidates : []).find(
+  c => (c.phone || "").replace(/\D/g, "") === customerInfo.phone
+);
+
+// 2) Create if not found
+if (exact) {
+  customerId = exact.id;
+} else {
+  const createRes = await fetch(`${API_URL}/api/customers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: customerInfo.name,
+      phone: customerInfo.phone,
+      email: null,
+      birthday: null
+    })
+  });
+  const created = await createRes.json();
+  customerId = created?.id;
+}
+
+// 3) Save / refresh default address
+if (customerId && customerInfo.address) {
+  await fetch(`${API_URL}/api/customers/${customerId}/addresses`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label: "Home", address: customerInfo.address, is_default: true })
+  });
+}
+
       let orderRes;
       if (orderType === "table") {
         orderRes = await fetch(`${API_URL}/api/orders`, {
@@ -1285,6 +1348,8 @@ export default function QrMenu() {
     if (orderType === "table") setTable(null);
     else setCustomerInfo(null);
   }
+
+  
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
