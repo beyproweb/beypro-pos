@@ -325,6 +325,25 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvc, setCardCvc] = useState("");
   const [saveCard, setSaveCard] = useState(true);
+  // delivery info local save flags
+const [saving, setSaving] = useState(false);
+const [savedOnce, setSavedOnce] = useState(false);
+
+// Prefill from local device storage on first open
+useEffect(() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem("qr_delivery_info") || "null");
+    if (saved && typeof saved === "object") {
+      setForm((f) => ({
+        ...f,
+        name: saved.name || f.name,
+        phone: saved.phone || f.phone,
+        address: saved.address || f.address,
+      }));
+    }
+  } catch {}
+}, []);
+
 
   // Load saved card when phone looks valid; otherwise ensure we show new card inputs
   useEffect(() => {
@@ -345,6 +364,70 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
     }
   }, [form.phone]);
   // ⬆️ end: saved card handling
+
+  async function saveDelivery() {
+  // basic form completeness for save
+  const name = (form.name || "").trim();
+  const phone = (form.phone || "").trim();
+  const address = (form.address || "").trim();
+
+  if (!name || !/^5\d{9}$/.test(phone) || !address) return;
+
+  setSaving(true);
+  try {
+    // 1) Save locally so it's there on next open
+    localStorage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
+
+    // 2) Try to sync with backend (best-effort)
+    try {
+      // find existing customer
+      let res = await fetch(`${API_URL}/api/customers/by-phone/${phone}`);
+      let customer = await res.json();
+
+      // create if not exists
+      if (!customer) {
+        const cr = await fetch(`${API_URL}/api/customers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, phone }),
+        });
+        customer = await cr.json();
+      }
+
+      // ensure default address
+      if (customer && (customer.id || customer.customer_id || customer.ID)) {
+        const cid = customer.id ?? customer.customer_id ?? customer.ID;
+
+        const existing = Array.isArray(customer.addresses)
+          ? customer.addresses.find((a) => (a.address || "").trim() === address)
+          : null;
+
+        if (existing) {
+          if (!existing.is_default) {
+            await fetch(`${API_URL}/api/customer-addresses/${existing.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ is_default: true }),
+            });
+          }
+        } else {
+          await fetch(`${API_URL}/api/customers/${cid}/addresses`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ label: "Default", address, is_default: true }),
+          });
+        }
+      }
+    } catch {
+      // Backend sync is best-effort; local save is enough for UX
+    }
+
+    setSavedOnce(true);
+  } finally {
+    setSaving(false);
+  }
+}
+
 
   // Auto-prefill name + default address when phone is valid
 useEffect(() => {
@@ -555,6 +638,17 @@ useEffect(() => {
               )}
             </div>
           )}
+
+          {/* Save details for next time */}
+<button
+  type="button"
+  onClick={saveDelivery}
+  disabled={saving || !form.name || !/^5\d{9}$/.test(form.phone) || !form.address}
+  className="w-full py-2 mt-2 rounded-2xl font-semibold text-blue-700 bg-white border border-blue-200 shadow-sm disabled:opacity-50"
+>
+  {saving ? t("Saving...") : (savedOnce ? `✅ ${t("Saved")}` : t("Save for next time"))}
+</button>
+
 
           <button
             type="submit"
@@ -1155,7 +1249,7 @@ export default function QrMenu() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
-
+  
   function handleOrderAnother() {
     setShowStatus(false);
     setOrderStatus("pending");
