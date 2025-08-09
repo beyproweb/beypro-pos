@@ -81,11 +81,20 @@ function OrderTypeSelect({ onSelect, lang, setLang }) {
 }
 
 /* ====================== TABLE SELECT ====================== */
-function TableSelectModal({ onSelectTable, tableCount = 20, occupiedTables = [] }) {
+function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTables = [] }) {
   const [selected, setSelected] = useState(null);
   return (
     <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
-      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center">
+      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center relative">
+        {/* Close */}
+        <button
+          className="absolute right-3 top-3 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          ×
+        </button>
+
         <h2 className="text-xl font-bold mb-5 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
           Choose Table
         </h2>
@@ -128,15 +137,25 @@ function TableSelectModal({ onSelectTable, tableCount = 20, occupiedTables = [] 
   );
 }
 
+
 /* ====================== ONLINE ORDER FORM ====================== */
-function OnlineOrderForm({ onSubmit, submitting }) {
+function OnlineOrderForm({ onSubmit, submitting, onClose }) {
   const [form, setForm] = useState({ name: "", phone: "", address: "" });
   const [touched, setTouched] = useState({});
   const validate = () => form.name && /^5\d{9}$/.test(form.phone) && form.address;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center">
+      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center relative">
+        {/* Close */}
+        <button
+          className="absolute right-3 top-3 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          ×
+        </button>
+
         <h2 className="text-xl font-bold mb-4 bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
           Delivery Info
         </h2>
@@ -158,9 +177,7 @@ function OnlineOrderForm({ onSubmit, submitting }) {
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
           <input
-            className={`rounded-xl px-4 py-3 border ${
-              touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""
-            }`}
+            className={`rounded-xl px-4 py-3 border ${touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""}`}
             placeholder="Phone (5XXXXXXXXX)"
             value={form.phone}
             onChange={(e) =>
@@ -190,6 +207,7 @@ function OnlineOrderForm({ onSubmit, submitting }) {
     </div>
   );
 }
+
 
 /* ====================== CATEGORY BAR ====================== */
 // Place this near top of QrMenu.jsx with other constants
@@ -303,25 +321,24 @@ function ProductGrid({ products, onProductClick }) {
  *  - Right: items with price, +/–, per-extra total
  *  - Totals use (ex.price || ex.extraPrice) * quantity
  */
+/* ====================== ADD TO CART (Addons) MODAL ====================== */
 function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   const [note, setNote] = useState("");
 
-  // 🔒 Prevent body scrolling when modal is open (mobile stacking fix)
+  // 🔒 Lock body scroll when open
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev || "";
-    };
+    return () => (document.body.style.overflow = prev || "");
   }, [open]);
 
-  // Reset state on open/product change
+  // Reset modal state when product changes / opens
   useEffect(() => {
-    if (!open) return;
+    if (!open || !product) return;
     setQuantity(1);
     setSelectedExtras([]);
     setNote("");
@@ -332,7 +349,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
 
   const basePrice = parseFloat(product.price) || 0;
 
-  // Normalize groups
+  // Normalize extras groups
   const normalizedGroups = (extrasGroups || []).map((g) => ({
     groupName: g.groupName || g.group_name,
     items: Array.isArray(g.items)
@@ -347,7 +364,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
         })(),
   }));
 
-  // Respect product‑scoped group allowlist if present
+  // Filter to only groups the product uses (if provided)
   const productGroupNames = Array.isArray(product?.selectedExtrasGroup)
     ? product.selectedExtrasGroup
     : [];
@@ -357,9 +374,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
       : normalizedGroups;
 
   const priceOf = (exOrItem) =>
-    parseFloat(
-      (exOrItem?.price ?? exOrItem?.extraPrice ?? 0)
-    ) || 0;
+    parseFloat(exOrItem?.price ?? exOrItem?.extraPrice ?? 0) || 0;
 
   const extrasPerUnit = selectedExtras.reduce(
     (sum, ex) => sum + priceOf(ex) * (ex.quantity || 1),
@@ -367,38 +382,28 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
   );
   const lineTotal = (basePrice + extrasPerUnit) * quantity;
 
-  // helpers
+  // Helpers
   const qtyOf = (groupName, itemName) =>
-    selectedExtras.find((ex) => ex.group === groupName && ex.name === itemName)
-      ?.quantity || 0;
+    selectedExtras.find((ex) => ex.group === groupName && ex.name === itemName)?.quantity || 0;
 
   const incExtra = (group, item) => {
     setSelectedExtras((prev) => {
-      const idx = prev.findIndex(
-        (ex) => ex.group === group.groupName && ex.name === item.name
-      );
-      if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx].quantity += 1;
-        return copy;
+      const idx = prev.findIndex((ex) => ex.group === group.groupName && ex.name === item.name);
+      if (idx === -1) {
+        return [
+          ...prev,
+          { group: group.groupName, name: item.name, price: priceOf(item), quantity: 1 },
+        ];
       }
-      return [
-        ...prev,
-        {
-          group: group.groupName,
-          name: item.name,
-          price: priceOf(item),
-          quantity: 1,
-        },
-      ];
+      const copy = [...prev];
+      copy[idx].quantity = (copy[idx].quantity || 0) + 1;
+      return copy;
     });
   };
 
   const decExtra = (group, item) => {
     setSelectedExtras((prev) => {
-      const idx = prev.findIndex(
-        (ex) => ex.group === group.groupName && ex.name === item.name
-      );
+      const idx = prev.findIndex((ex) => ex.group === group.groupName && ex.name === item.name);
       if (idx === -1) return prev;
       const copy = [...prev];
       copy[idx].quantity = Math.max(0, (copy[idx].quantity || 0) - 1);
@@ -407,30 +412,19 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
     });
   };
 
-  // close on backdrop click
   const handleBackdrop = (e) => {
     if (e.target.dataset.backdrop === "true") onClose?.();
   };
 
-  const modal = (
+  return createPortal(
     <div
       data-backdrop="true"
       onMouseDown={handleBackdrop}
       className="fixed inset-0 z-[999] flex items-stretch sm:items-center justify-center bg-black/45"
     >
       <div
-        // Stop propagation so content clicks don't close modal
         onMouseDown={(e) => e.stopPropagation()}
-        className="
-          relative
-          w-full h-full
-          sm:h-[90vh] sm:max-w-4xl
-          bg-white
-          sm:rounded-3xl
-          shadow-2xl
-          flex flex-col
-          overflow-hidden
-        "
+        className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:w-[720px] md:w-[860px] bg-white sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden"
       >
         {/* Close */}
         <button
@@ -441,8 +435,8 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
           ×
         </button>
 
-        {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+        {/* Header (no quantity here anymore) */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b-2 border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50">
           <img
             src={
               product.image
@@ -462,56 +456,34 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
               ₺{basePrice.toFixed(2)}
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <button
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-indigo-100 text-2xl font-bold text-indigo-700 shadow hover:bg-indigo-200"
-              onClick={() => setQuantity((q) => Math.max(q - 1, 1))}
-            >
-              –
-            </button>
-            <span className="text-xl sm:text-2xl font-extrabold min-w-[36px] text-center">
-              {quantity}
-            </span>
-            <button
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-indigo-100 text-2xl font-bold text-indigo-700 shadow hover:bg-indigo-200"
-              onClick={() => setQuantity((q) => q + 1)}
-            >
-              +
-            </button>
-          </div>
         </div>
 
-        {/* Body: rail + items (mobile = stacked vertically) */}
+        {/* Body */}
         <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
           {/* Groups rail */}
-          <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r border-blue-100 bg-white/80 p-3 overflow-x-auto sm:overflow-y-auto">
-            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">
-              Extras Groups
-            </div>
+          <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r-2 border-blue-100 bg-white/80 p-3 overflow-x-auto sm:overflow-y-auto">
+            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">Extras Groups</div>
             <div className="flex sm:block gap-2 sm:gap-0">
-              {availableGroups.length ? (
-                availableGroups.map((g, idx) => (
-                  <button
-                    key={g.groupName}
-                    onClick={() => setActiveGroupIdx(idx)}
-                    className={`px-3 py-2 rounded-xl font-semibold whitespace-nowrap transition ${
-                      activeGroupIdx === idx
-                        ? "bg-gradient-to-r from-fuchsia-400 via-blue-400 to-indigo-400 text-white"
-                        : "bg-gray-100 text-blue-800 hover:bg-gray-200"
-                    } ${idx !== 0 ? "sm:mt-2" : ""}`}
-                  >
-                    {g.groupName}
-                  </button>
-                ))
-              ) : (
-                <div className="text-sm text-gray-400 px-2 py-1">No extras</div>
-              )}
+              {availableGroups.map((g, idx) => (
+                <button
+                  key={g.groupName}
+                  onClick={() => setActiveGroupIdx(idx)}
+                  className={`px-3 py-2 rounded-xl text-sm font-bold mb-2 border transition ${
+                    activeGroupIdx === idx
+                      ? "bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-white border-transparent"
+                      : "bg-white border-blue-200 text-blue-700 hover:bg-blue-50"
+                  }`}
+                >
+                  {g.groupName}
+                </button>
+              ))}
             </div>
           </aside>
 
-          {/* Items grid */}
-          <section className="flex-1 p-3 sm:p-4 overflow-y-auto">
-            {availableGroups[activeGroupIdx] ? (
+          {/* Items + Quantity + Note */}
+          <section className="flex-1 p-4 sm:p-5 overflow-y-auto">
+            {/* Items in active group */}
+            {availableGroups.length > 0 ? (
               <>
                 <div className="font-bold text-fuchsia-600 mb-2 text-base">
                   {availableGroups[activeGroupIdx].groupName}
@@ -519,34 +491,26 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
                   {(availableGroups[activeGroupIdx].items || []).map((item) => {
                     const unit = priceOf(item);
-                    const q = qtyOf(
-                      availableGroups[activeGroupIdx].groupName,
-                      item.name
-                    );
+                    const q = qtyOf(availableGroups[activeGroupIdx].groupName, item.name);
                     return (
                       <div
                         key={item.name}
-                        className="flex flex-col items-center bg-gradient-to-t from-blue-100 via-white to-fuchsia-100 border border-blue-100 rounded-xl px-2 py-2 min-h-[92px] shadow hover:shadow-lg transition-all"
+                        className="flex flex-col items-center bg-white/80 border border-blue-100 rounded-xl px-2 py-2 min-h-[92px] shadow-sm"
                       >
-                        <span className="font-semibold truncate text-blue-900">
+                        <div className="text-center text-sm font-bold text-blue-900 leading-tight line-clamp-2">
                           {item.name}
-                        </span>
-                        <span className="text-xs text-indigo-700 font-bold mb-1">
-                          ₺{unit.toFixed(2)}
-                        </span>
-                        <div className="flex items-center justify-center gap-2 mt-1">
+                        </div>
+                        <div className="text-[12px] text-indigo-700 font-semibold">₺{unit.toFixed(2)}</div>
+                        <div className="mt-2 flex items-center justify-center gap-2">
                           <button
-                            className="w-8 h-8 rounded-full bg-pink-100 text-xl font-bold text-fuchsia-600 shadow hover:bg-pink-200 disabled:opacity-40"
+                            className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
                             onClick={() => decExtra(availableGroups[activeGroupIdx], item)}
-                            disabled={!q}
                           >
                             –
                           </button>
-                          <span className="w-5 text-center font-bold text-blue-800">
-                            {q}
-                          </span>
+                          <span className="min-w-[28px] text-center text-base font-extrabold">{q}</span>
                           <button
-                            className="w-8 h-8 rounded-full bg-green-100 text-xl font-bold text-green-700 shadow hover:bg-green-200"
+                            className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
                             onClick={() => incExtra(availableGroups[activeGroupIdx], item)}
                           >
                             +
@@ -561,10 +525,30 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
               <div className="text-gray-400">Select a group</div>
             )}
 
+            {/* NEW: Quantity (moved here, above note) */}
+            <div className="mt-5 sm:mt-6">
+              <div className="text-sm font-bold text-blue-700 mb-2">Quantity</div>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                >
+                  –
+                </button>
+                <span className="w-12 text-center text-2xl font-extrabold">{quantity}</span>
+                <button
+                  className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
+                  onClick={() => setQuantity((q) => q + 1)}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
             {/* Note */}
-            <div className="mt-3 sm:mt-4">
+            <div className="mt-4 sm:mt-5">
               <textarea
-                className="w-full rounded-xl border-2 border-fuchsia-200 p-2 text-sm bg-pink-50 placeholder-fuchsia-400"
+                className="w-full rounded-xl border-2 border-fuchsia-200 p-3 text-sm bg-pink-50 placeholder-fuchsia-400"
                 placeholder="Add a note (optional)…"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -574,22 +558,20 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
           </section>
         </div>
 
-        {/* Footer (sticky) */}
+        {/* Footer */}
         <div className="border-t-2 border-blue-100 px-4 sm:px-5 py-3 sm:py-4 flex items-center justify-between bg-gradient-to-t from-blue-100 via-fuchsia-50 to-white">
           <div className="text-lg sm:text-xl font-extrabold text-fuchsia-700">
             Total: ₺{lineTotal.toFixed(2)}
           </div>
           <button
-            className="py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl font-bold text-white text-base sm:text-lg shadow-xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
+            className="py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
             onClick={() => {
-              const unique_id =
-                product.id +
-                "-" +
-                btoa(JSON.stringify(selectedExtras) + (note || ""));
+              const unique_id = product.id + "-" + btoa(JSON.stringify(selectedExtras) + (note || ""));
               onAddToCart({
                 id: product.id,
                 name: product.name,
-                price: basePrice + extrasPerUnit, // per-unit price incl. extras
+                image: product.image,
+                price: basePrice,
                 quantity,
                 extras: selectedExtras.filter((e) => e.quantity > 0),
                 note,
@@ -601,12 +583,11 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
-
-  // Use portal to guarantee it's on top of everything (prevents “over stacking”)
-  return createPortal(modal, document.body);
 }
+
 
 
 /* ====================== CART DRAWER ====================== */
@@ -908,24 +889,29 @@ useEffect(() => {
   }, []);
 
   // Flow screens
-  if (!orderType)
-    return (
-      <OrderTypeSelect onSelect={setOrderType} lang={lang} setLang={setLang} />
-    );
-  if (orderType === "table" && !table)
-    return (
-      <TableSelectModal
-        onSelectTable={setTable}
-        occupiedTables={occupiedTables}
-      />
-    );
-  if (orderType === "online" && !customerInfo)
-    return (
-      <OnlineOrderForm
-        onSubmit={(info) => setCustomerInfo(info)}
-        submitting={submitting}
-      />
-    );
+if (!orderType)
+  return (
+    <OrderTypeSelect onSelect={setOrderType} lang={lang} setLang={setLang} />
+  );
+
+if (orderType === "table" && !table)
+  return (
+    <TableSelectModal
+      onSelectTable={setTable}
+      occupiedTables={occupiedTables}
+      onClose={() => setOrderType(null)}     // 👈 back to Order Type
+    />
+  );
+
+if (orderType === "online" && !customerInfo)
+  return (
+    <OnlineOrderForm
+      onSubmit={(info) => setCustomerInfo(info)}
+      submitting={submitting}
+      onClose={() => setOrderType(null)}     // 👈 back to Order Type
+    />
+  );
+
 
   /* -------- SUBMIT ORDER -------- */
   async function handleSubmitOrder() {
