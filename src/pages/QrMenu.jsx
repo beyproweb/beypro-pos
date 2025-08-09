@@ -356,9 +356,19 @@ function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTab
 
 /* ====================== ONLINE ORDER FORM ====================== */
 function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
-  const [form, setForm] = useState({ name: "", phone: "", address: "" });
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    address: "",
+    payment_method: "", // ⬅️ required
+  });
   const [touched, setTouched] = useState({});
-  const validate = () => form.name && /^5\d{9}$/.test(form.phone) && form.address;
+
+  const validate = () =>
+    form.name &&
+    /^5\d{9}$/.test(form.phone) &&
+    form.address &&
+    !!form.payment_method; // ⬅️ must pick one
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
@@ -375,16 +385,22 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
         <h2 className="text-xl font-bold mb-4 bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
           {t("Delivery Info")}
         </h2>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
             if (!validate()) {
-              setTouched({ name: true, phone: true, address: true });
+              setTouched({
+                name: true,
+                phone: true,
+                address: true,
+                payment_method: true,
+              });
               return;
             }
-            onSubmit(form);
+            onSubmit(form); // includes payment_method
           }}
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-3 text-left"
         >
           <input
             className="rounded-xl px-4 py-3 border"
@@ -392,6 +408,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
+
           <input
             className={`rounded-xl px-4 py-3 border ${
               touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""
@@ -406,6 +423,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
             }
             maxLength={10}
           />
+
           <textarea
             className="rounded-xl px-4 py-3 border"
             placeholder={t("Address")}
@@ -413,10 +431,30 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
             value={form.address}
             onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
           />
+
+          {/* Required Payment Method */}
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-bold text-blue-900">{t("Payment:")}</label>
+            <select
+              className={`rounded-xl px-4 py-3 border ${
+                touched.payment_method && !form.payment_method ? "border-red-500" : ""
+              }`}
+              value={form.payment_method}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, payment_method: e.target.value }))
+              }
+            >
+              <option value="">{t("Select Payment Method")}</option>
+              <option value="cash">💵 {t("Cash")}</option>
+              <option value="card">💳 {t("Credit Card")}</option>
+              <option value="online">🌐 {t("Online Payment")}</option>
+            </select>
+          </div>
+
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 mt-2 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg"
+            className="w-full py-3 mt-2 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg disabled:opacity-70"
           >
             {submitting ? t("Please wait...") : t("Continue")}
           </button>
@@ -425,6 +463,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
     </div>
   );
 }
+
 
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
@@ -1084,14 +1123,18 @@ export default function QrMenu() {
     );
 
   if (orderType === "online" && !customerInfo)
-    return (
-      <OnlineOrderForm
-        onSubmit={(info) => setCustomerInfo(info)}
-        submitting={submitting}
-        onClose={() => setOrderType(null)}
-        t={t}
-      />
-    );
+  return (
+    <OnlineOrderForm
+      onSubmit={(info) => {
+        setCustomerInfo(info);
+        setPaymentMethod(info.payment_method); // ⬅️ keep global in sync
+      }}
+      submitting={submitting}
+      onClose={() => setOrderType(null)}
+      t={t}
+    />
+  );
+
 
   async function handleSubmitOrder() {
     if (cart.length === 0) return;
