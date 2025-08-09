@@ -760,7 +760,7 @@ function CartDrawer({
 }
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, onClose }) {
+function OrderStatusModal({ open, status, orderId, table, onClose }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40">
@@ -779,14 +779,16 @@ function OrderStatusModal({ open, status, orderId, onClose }) {
             ? "Please wait..."
             : "Something went wrong. Please try again."}
         </div>
+
         {orderId && open && (
           <OrderStatusScreen
             orderId={orderId}
-            table={null}
+            table={table}
             onOrderAnother={onClose}
             onAllDelivered={onClose}
           />
         )}
+
         <button
           className="py-3 px-6 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
           onClick={onClose}
@@ -797,6 +799,7 @@ function OrderStatusModal({ open, status, orderId, onClose }) {
     </div>
   );
 }
+
 
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
@@ -1031,12 +1034,14 @@ useEffect(() => {
         }}
       />
 
-      <OrderStatusModal
-        open={showStatus}
-        status={orderStatus}
-        orderId={orderId}
-        onClose={handleReset}
-      />
+     <OrderStatusModal
+  open={showStatus}
+  status={orderStatus}
+  orderId={orderId}
+  table={orderType === "table" ? table : null}
+  onClose={handleReset}
+/>
+
     </div>
   );
 }
