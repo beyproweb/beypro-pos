@@ -328,7 +328,7 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
   // delivery info local save flags
 const [saving, setSaving] = useState(false);
 const [savedOnce, setSavedOnce] = useState(false);
-const [lastError, setLastError] = useState(null);
+
 
 
 // Prefill from local device storage on first open
@@ -346,35 +346,9 @@ useEffect(() => {
   } catch {}
 }, []);
 
-// Small fetch helper that throws with server message
-async function postJSON(url, body) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let msg = "";
-    try { msg = (await res.json())?.message || (await res.text()); } catch {}
-    throw new Error(msg || `Request failed: ${res.status}`);
-  }
-  try { return await res.json(); } catch { return null; }
-}
 
-// Build order payload safely (omit null/undefined fields)
-function buildOrderPayload({ orderType, table, items, total, customerId }) {
-  const payload = {
-    type: orderType,         // "table" or "online"
-    items,                   // array
-    total: Number(total) || 0,
-  };
-  if (orderType === "table") {
-    payload.table_number = Number(table);
-  } else if (customerId) {
-    payload.customer_id = customerId;
-  }
-  return payload;
-}
+
+
 
   // Load saved card when phone looks valid; otherwise ensure we show new card inputs
   useEffect(() => {
@@ -1285,7 +1259,7 @@ export default function QrMenu() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
-  
+  const [lastError, setLastError] = useState(null);
 function handleOrderAnother() {
   // If the backend already closed the order, start fresh
   if (["closed", "completed", "paid", "delivered", "canceled"].includes((orderStatus || "").toLowerCase())) {
@@ -1491,9 +1465,40 @@ localStorage.setItem("qr_orderType", "table");
   }, 0);
 }
 
+// ---- helpers ----
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let msg = "";
+    try { msg = (await res.json())?.message || (await res.text()); } catch {}
+    throw new Error(msg || `Request failed: ${res.status}`);
+  }
+  try { return await res.json(); } catch { return null; }
+}
+
+function buildOrderPayload({ orderType, table, items, total, customerId }) {
+  const payload = {
+    type: orderType,               // "table" | "online"
+    items,
+    total: Number(total) || 0,
+  };
+  if (orderType === "table") {
+    payload.table_number = Number(table);
+  }
+  if (orderType === "online" && customerId) {
+    payload.customer_id = customerId;
+  }
+  return payload;
+}
 
 async function handleSubmitOrder() {
   try {
+    setLastError(null);
+
     if (!Array.isArray(cart) || cart.length === 0) {
       throw new Error("Cart is empty.");
     }
@@ -1501,45 +1506,43 @@ async function handleSubmitOrder() {
       throw new Error("Please select a table.");
     }
 
-    const total = calcOrderTotalWithExtras(cart); // keep your total logic
+    const total = calcOrderTotalWithExtras(cart); // keep your existing total logic
 
-    // TABLE: APPEND SUB‑ORDER if we already have orderId
+    // ---- TABLE SUB-ORDER: append to existing order ----
     if (orderType === "table" && orderId) {
-      const appendBody = {
+      await postJSON(`${API_URL}/api/orders/sub-orders`, {
         order_id: orderId,
         items: cart,
         total: Number(total) || 0,
-        payment_method: "Table", // or whatever you expect server-side
-      };
-
-      await postJSON(`${API_URL}/api/orders/sub-orders`, appendBody);
+        payment_method: "Table",
+      });
 
       // success: keep same order, clear cart, show status
       setCart([]);
       setOrderStatus("success");
       setShowStatus(true);
 
-      // persist session so refresh re-opens status
       localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
       localStorage.setItem("qr_show_status", "1");
 
-      // make sure status screen sees the full order (old + new items)
+      // (optional) refresh full order so status shows all items
       try {
         const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
-        setActiveOrder?.(full); // if you have this; otherwise OrderStatusScreen fetches itself
+        setActiveOrder?.(full); // if you have this state; otherwise the screen fetches itself
       } catch {}
+
       return;
     }
 
-    // ONLINE: ensure customer only for online
+    // ---- ONLINE: ensure customer only for online ----
     let customerId = null;
     if (orderType === "online" && customerInfo?.phone) {
-      // your existing ensure-customer logic here, but wrap in try/catch:
       try {
         const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
         const candidates = await searchRes.json();
+        const norm = (s) => (s || "").replace(/\D/g, "");
         const exact = (Array.isArray(candidates) ? candidates : []).find(
-          c => (c.phone || "").replace(/\D/g, "") === (customerInfo.phone || "").replace(/\D/g, "")
+          (c) => norm(c.phone) === norm(customerInfo.phone)
         );
         if (exact) {
           customerId = exact.id;
@@ -1561,20 +1564,15 @@ async function handleSubmitOrder() {
         }
       } catch (e) {
         console.error("ensure-customer failed:", e);
-        // Don’t block table flow; only matters for online
+        // don't block order creation for online if address save fails
       }
     }
 
-    // CREATE NEW ORDER (table OR online)
-    const createBody = buildOrderPayload({
-      orderType,
-      table,
-      items: cart,
-      total,
-      customerId,
-    });
-
-    const created = await postJSON(`${API_URL}/api/orders`, createBody);
+    // ---- CREATE NEW ORDER (table OR online) ----
+    const created = await postJSON(
+      `${API_URL}/api/orders`,
+      buildOrderPayload({ orderType, table, items: cart, total, customerId })
+    );
 
     const newId = created?.id;
     if (!newId) throw new Error("Server did not return order id.");
@@ -1591,12 +1589,12 @@ async function handleSubmitOrder() {
     localStorage.setItem("qr_show_status", "1");
   } catch (e) {
     console.error("Order submit failed:", e);
-    // Show the REAL message instead of a generic toast
     setOrderStatus("fail");
     setShowStatus(true);
-    setLastError?.(e.message || "Order failed"); // if you render errors in the status screen
+    setLastError(e.message || "Order failed");
   }
 }
+
 
 
 
