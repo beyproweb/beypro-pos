@@ -1206,8 +1206,13 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
         {orderId && open && (
           <OrderStatusScreen
             orderId={orderId}
+            onFinished={() => {
+    // backend says order is closed/paid/completed -> go back to start
+    resetToTypePicker();
+  }}
             table={table}
             onOrderAnother={onOrderAnother}
+            
             t={t}
           />
         )}
@@ -1251,28 +1256,46 @@ export default function QrMenu() {
   const [categoryImages, setCategoryImages] = useState({});
   
 function handleOrderAnother() {
-  // close status, keep SAME orderId for table to append sub-orders
+  // If the backend already closed the order, start fresh
+  if (["closed", "completed", "paid", "delivered", "canceled"].includes((orderStatus || "").toLowerCase())) {
+    resetToTypePicker();
+    return;
+  }
+
+  // Otherwise (still open table), keep same orderId for sub-orders
   setShowStatus(false);
   setOrderStatus("pending");
-
-  // clear only the cart; do NOT clear orderId if table
   setCart([]);
   localStorage.removeItem("qr_cart");
 
   if (orderType === "table") {
-    // keep table and active order; do not touch qr_active_order
-    localStorage.setItem("qr_show_status", "0"); // don't auto-open until next submit
-    return;
+    localStorage.setItem("qr_show_status", "0");
+  } else {
+    setOrderId(null);
+    setOrderType(null);
+    setCustomerInfo(null);
+    localStorage.setItem("qr_show_status", "0");
+    localStorage.removeItem("qr_active_order");
   }
-
-  // for online, reset to chooser flow
-  setOrderId(null);
-  setOrderType(null);
-  setCustomerInfo(null);
-  localStorage.setItem("qr_show_status", "0");
-  localStorage.removeItem("qr_active_order");
 }
 
+function resetToTypePicker() {
+  // clear all session keys
+  localStorage.removeItem("qr_active_order");
+  localStorage.removeItem("qr_cart");
+  localStorage.removeItem("qr_table");
+  localStorage.removeItem("qr_orderType");
+  localStorage.setItem("qr_show_status", "0");
+
+  // reset UI state
+  setShowStatus(false);
+  setOrderStatus("pending");
+  setOrderId(null);
+  setCart([]);
+  setCustomerInfo(null);
+  setTable(null);
+  setOrderType(null);
+}
 
 
   // Restore last context on refresh (order status, order type, table)
@@ -1452,20 +1475,27 @@ async function handleSubmitOrder() {
       }
 
       // success: keep SAME orderId, clear cart, show status
-      setCart([]);
-      setShowStatus(true);
-      setOrderStatus("success");
+ setCart([]);
+setShowStatus(true);
+setOrderStatus("success");
 
-      // persist active order + status
-      localStorage.setItem(
-        "qr_active_order",
-        JSON.stringify({ orderId, orderType, table })
-      );
-      localStorage.setItem("qr_show_status", "1");
-
+// persist session
+localStorage.setItem(
+  "qr_active_order",
+  JSON.stringify({ orderId, orderType, table })
+);
+localStorage.setItem("qr_show_status", "1");
       // (optional) refetch order details for status screen if you show merged items
       // await fetchOrder(orderId);
-
+      // IMPORTANT: refetch full order so status screen shows ALL items
+try {
+  const fullRes = await fetch(`${API_URL}/api/orders/${orderId}`);
+  const full = await fullRes.json();
+  // if your status screen reads from a shared state, set it here:
+  setActiveOrder?.(full);   // <-- if you have such state; otherwise the screen will fetch itself
+} catch (_) {
+  // ignore; OrderStatusScreen should still fetch by id
+}
       return;
     }
 

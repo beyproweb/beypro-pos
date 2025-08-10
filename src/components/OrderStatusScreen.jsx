@@ -55,6 +55,14 @@ const OrderStatusScreen = ({
   const [items, setItems] = useState([]);
   const [timer, setTimer] = useState("00:00");
   const intervalRef = useRef(null);
+  const FINISHED_STATES = ["closed", "completed", "paid", "delivered", "canceled"];
+
+useEffect(() => {
+  if (!order) return;
+  if (FINISHED_STATES.includes((order.status || "").toLowerCase())) {
+    onFinished?.(); // tell parent (QrMenu) to reset to type picker
+  }
+}, [order?.status]);
 
   const fetchOrder = async () => {
     if (!orderId) return;
