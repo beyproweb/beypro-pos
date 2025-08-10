@@ -1358,41 +1358,45 @@ export default function QrMenu() {
       };
 
       // --- ensure customer + default address saved ---
+// --- ensure customer + default address saved (ONLINE ONLY) ---
 let customerId = null;
 
-// 1) Try to find exact phone match
-const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
-const candidates = await searchRes.json();
-const exact = (Array.isArray(candidates) ? candidates : []).find(
-  c => (c.phone || "").replace(/\D/g, "") === customerInfo.phone
-);
+if (orderType === "online") {
+  // 1) Try to find exact phone match
+  const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
+  const candidates = await searchRes.json();
+  const exact = (Array.isArray(candidates) ? candidates : []).find(
+    c => (c.phone || "").replace(/\D/g, "") === customerInfo.phone
+  );
 
-// 2) Create if not found
-if (exact) {
-  customerId = exact.id;
-} else {
-  const createRes = await fetch(`${API_URL}/api/customers`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: customerInfo.name,
-      phone: customerInfo.phone,
-      email: null,
-      birthday: null
-    })
-  });
-  const created = await createRes.json();
-  customerId = created?.id;
+  // 2) Create if not found
+  if (exact) {
+    customerId = exact.id;
+  } else {
+    const createRes = await fetch(`${API_URL}/api/customers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: customerInfo.name,
+        phone: customerInfo.phone,
+        email: null,
+        birthday: null
+      })
+    });
+    const created = await createRes.json();
+    customerId = created?.id;
+  }
+
+  // 3) Save / refresh default address
+  if (customerId && customerInfo.address) {
+    await fetch(`${API_URL}/api/customers/${customerId}/addresses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "Home", address: customerInfo.address, is_default: true })
+    });
+  }
 }
 
-// 3) Save / refresh default address
-if (customerId && customerInfo.address) {
-  await fetch(`${API_URL}/api/customers/${customerId}/addresses`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label: "Home", address: customerInfo.address, is_default: true })
-  });
-}
 
       let orderRes;
       if (orderType === "table") {
