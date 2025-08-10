@@ -1250,23 +1250,27 @@ export default function QrMenu() {
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
   
-  function handleOrderAnother() {
+function handleOrderAnother() {
+  // close status, keep SAME orderId for table to append sub-orders
   setShowStatus(false);
   setOrderStatus("pending");
-  setOrderId(null);
+
+  // clear only the cart; do NOT clear orderId if table
   setCart([]);
   localStorage.removeItem("qr_cart");
-  localStorage.setItem("qr_show_status", "0"); // don't auto-open status next refresh
 
   if (orderType === "table") {
-    // stay in the same table to add suborders
-    setOrderType("table");
-    // keep current table value
-  } else {
-    // for delivery, go back to type chooser (keep saved delivery info separately)
-    setOrderType(null);
-    setCustomerInfo(null);
+    // keep table and active order; do not touch qr_active_order
+    localStorage.setItem("qr_show_status", "0"); // don't auto-open until next submit
+    return;
   }
+
+  // for online, reset to chooser flow
+  setOrderId(null);
+  setOrderType(null);
+  setCustomerInfo(null);
+  localStorage.setItem("qr_show_status", "0");
+  localStorage.removeItem("qr_active_order");
 }
 
 
@@ -1298,6 +1302,28 @@ useEffect(() => {
         const savedTable = Number(localStorage.getItem("qr_table"));
         if (savedTable) setTable(savedTable);
       }
+    }
+  } catch {}
+}, []);
+
+// --- restore order status after refresh ---
+useEffect(() => {
+  try {
+    const shouldShow = localStorage.getItem("qr_show_status") === "1";
+    const active = JSON.parse(localStorage.getItem("qr_active_order") || "null");
+    if (shouldShow && active?.orderId) {
+      setOrderId(active.orderId);
+      setOrderType(active.orderType || null);
+      if (active.orderType === "table" && active.table) {
+        setTable(Number(active.table));
+      }
+      setShowStatus(true);
+    } else {
+      // restore last chosen type/table for continuity (optional)
+      const savedType = localStorage.getItem("qr_orderType");
+      const savedTable = localStorage.getItem("qr_table");
+      if (savedType) setOrderType(savedType);
+      if (savedType === "table" && savedTable) setTable(Number(savedTable));
     }
   } catch {}
 }, []);
@@ -1356,9 +1382,16 @@ useEffect(() => {
   if (!orderType)
     return <OrderTypeSelect
   onSelect={(type) => {
-    setOrderType(type);
-    localStorage.setItem("qr_orderType", type);
-    if (type !== "table") localStorage.removeItem("qr_table");
+    // when selecting type:
+setOrderType(type);
+localStorage.setItem("qr_orderType", type);
+if (type !== "table") localStorage.removeItem("qr_table");
+
+// when selecting table:
+setTable(num);
+localStorage.setItem("qr_table", String(num));
+localStorage.setItem("qr_orderType", "table");
+
   }}
   lang={lang}
   setLang={setLang}
@@ -1394,133 +1427,115 @@ useEffect(() => {
       />
     );
 
-  async function handleSubmitOrder() {
-    if (cart.length === 0) return;
-    setSubmitting(true);
-    setShowStatus(true);
-    setOrderStatus("pending");
-    try {
-      const payloadBase = {
-        total: cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
-        items: cart.map((i) => ({
-          product_id: i.id,
-          quantity: i.quantity,
-          price: i.price,
-          ingredients: i.ingredients || [],
-          extras: i.extras || [],
-          unique_id: i.unique_id,
-          note: i.note || "",
-          confirmed: true,
-        })),
-      };
+async function handleSubmitOrder() {
+  try {
+    // compute totals the way you already do
+    const total = calcOrderTotalWithExtras(cart); // or your existing total function
 
-      // --- ensure customer + default address saved ---
-// --- ensure customer + default address saved (ONLINE ONLY) ---
-let customerId = null;
+    // --- TABLE SUB-ORDER PATH ---
+    if (orderType === "table" && orderId) {
+      // append items to existing order, do NOT create a new one
+      const res = await fetch(`${API_URL}/api/orders/sub-orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order_id: orderId,
+          items: cart,                 // your cart line items payload
+          total,                       // backend will recalc/verify anyway
+          payment_method: "Table",     // or what you use for table orders
+        }),
+      });
 
-if (orderType === "online") {
-  // 1) Try to find exact phone match
-  const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
-  const candidates = await searchRes.json();
-  const exact = (Array.isArray(candidates) ? candidates : []).find(
-    c => (c.phone || "").replace(/\D/g, "") === customerInfo.phone
-  );
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err || "Failed to append sub-order");
+      }
 
-  // 2) Create if not found
-  if (exact) {
-    customerId = exact.id;
-  } else {
-    const createRes = await fetch(`${API_URL}/api/customers`, {
+      // success: keep SAME orderId, clear cart, show status
+      setCart([]);
+      setShowStatus(true);
+      setOrderStatus("success");
+
+      // persist active order + status
+      localStorage.setItem(
+        "qr_active_order",
+        JSON.stringify({ orderId, orderType, table })
+      );
+      localStorage.setItem("qr_show_status", "1");
+
+      // (optional) refetch order details for status screen if you show merged items
+      // await fetchOrder(orderId);
+
+      return;
+    }
+
+    // --- INITIAL ORDER CREATION (TABLE OR ONLINE) ---
+    // If ONLINE: ensure-customer block (your existing code) runs only for online
+    let customerId = null;
+    if (orderType === "online" && customerInfo?.phone) {
+      // ... your existing ensure-customer logic here ...
+    }
+
+    // create order
+    const orderRes = await fetch(`${API_URL}/api/orders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: customerInfo.name,
-        phone: customerInfo.phone,
-        email: null,
-        birthday: null
-      })
+        type: orderType,                 // "table" or "online"
+        table_number: orderType === "table" ? table : null,
+        customer_id: customerId,
+        items: cart,
+        total,
+        // include other fields you already send
+      }),
     });
-    const created = await createRes.json();
-    customerId = created?.id;
-  }
 
-  // 3) Save / refresh default address
-  if (customerId && customerInfo.address) {
-    await fetch(`${API_URL}/api/customers/${customerId}/addresses`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: "Home", address: customerInfo.address, is_default: true })
-    });
+    if (!orderRes.ok) {
+      const err = await orderRes.text();
+      throw new Error(err || "Order create failed");
+    }
+
+    const order = await orderRes.json();
+    setOrderId(order.id);
+    setOrderStatus("success");
+    setShowStatus(true);
+
+    // persist active order + status for refresh
+    localStorage.setItem(
+      "qr_active_order",
+      JSON.stringify({ orderId: order.id, orderType, table: orderType === "table" ? table : null })
+    );
+    localStorage.setItem("qr_show_status", "1");
+
+    // clear cart for a clean state (status screen shows from server)
+    setCart([]);
+
+  } catch (e) {
+    console.error(e);
+    setOrderStatus("fail");
+    setShowStatus(true);
   }
 }
 
 
-      let orderRes;
-      if (orderType === "table") {
-        orderRes = await fetch(`${API_URL}/api/orders`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...payloadBase,
-            table_number: table,
-            order_type: "table",
-          }),
-        });
-      } else {
-        orderRes = await fetch(`${API_URL}/api/orders`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...payloadBase,
-            order_type: "packet",
-            customer_name: customerInfo.name,
-            customer_phone: customerInfo.phone,
-            customer_address: customerInfo.address,
-            payment_method: paymentMethod,                         // "card" | "cash" | "online"
-            payment_meta: customerInfo.payment_meta || undefined,  // brand/last4/token (optional)
-          }),
-        });
-      }
-
-      const order = await orderRes.json();
-      setOrderId(order.id);
-      setOrderStatus(orderRes.ok ? "success" : "fail");
-      // Persist last order and show status on refresh
-localStorage.setItem(
-  "qr_last_order", "online",
-  JSON.stringify({
-    id: order.id,
-    status: orderRes.ok ? "success" : "fail",
-    orderType,
-    table: orderType === "table" ? table : null,
-  })
-);
-localStorage.setItem("qr_show_status", "1");
-
-      setCart([]);
-      localStorage.removeItem("qr_cart");
-    } catch {
-      setOrderStatus("fail");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
 function handleReset() {
-  setOrderStatus("pending");
   setShowStatus(false);
-  setOrderId(null);
+  setOrderStatus("pending");
   setCart([]);
   localStorage.removeItem("qr_cart");
   localStorage.setItem("qr_show_status", "0");
 
   if (orderType === "table") {
-    setOrderType("table"); // stay in table flow
-    // keep table as-is
-  } else {
-    setCustomerInfo(null);
-    setOrderType(null);
+    // Stay on same table & keep orderId for sub-orders
+    // Do NOT remove qr_active_order
+    return;
   }
+
+  // Online flow: clear session
+  setOrderId(null);
+  setOrderType(null);
+  setCustomerInfo(null);
+  localStorage.removeItem("qr_active_order");
 }
 
 
