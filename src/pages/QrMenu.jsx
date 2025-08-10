@@ -1251,15 +1251,57 @@ export default function QrMenu() {
   const [categoryImages, setCategoryImages] = useState({});
   
   function handleOrderAnother() {
-    setShowStatus(false);
-    setOrderStatus("pending");
-    setOrderId(null);
-    setCart([]);
-    localStorage.removeItem("qr_cart");
+  setShowStatus(false);
+  setOrderStatus("pending");
+  setOrderId(null);
+  setCart([]);
+  localStorage.removeItem("qr_cart");
+  localStorage.setItem("qr_show_status", "0"); // don't auto-open status next refresh
+
+  if (orderType === "table") {
+    // stay in the same table to add suborders
+    setOrderType("table");
+    // keep current table value
+  } else {
+    // for delivery, go back to type chooser (keep saved delivery info separately)
     setOrderType(null);
-    setTable(null);
     setCustomerInfo(null);
   }
+}
+
+
+
+  // Restore last context on refresh (order status, order type, table)
+useEffect(() => {
+  try {
+    const show = localStorage.getItem("qr_show_status") === "1";
+    const last = JSON.parse(localStorage.getItem("qr_last_order") || "null");
+
+    if (show && last) {
+      if (last.orderType === "table" && last.table) {
+        setOrderType("table");
+        setTable(Number(last.table));
+      } else if (last.orderType === "online") {
+        setOrderType("online");
+      }
+      setOrderId(last.id || null);
+      setOrderStatus(last.status || "pending");
+      setShowStatus(true);
+      return; // don't override with defaults below
+    }
+
+    // No status to show—restore last chosen order type/table for continuity
+    const savedType = localStorage.getItem("qr_orderType");
+    if (savedType) {
+      setOrderType(savedType);
+      if (savedType === "table") {
+        const savedTable = Number(localStorage.getItem("qr_table"));
+        if (savedTable) setTable(savedTable);
+      }
+    }
+  } catch {}
+}, []);
+
 
   useEffect(() => {
     fetch(`${API_URL}/api/category-images`)
@@ -1312,16 +1354,31 @@ export default function QrMenu() {
   }, []);
 
   if (!orderType)
-    return <OrderTypeSelect onSelect={setOrderType} lang={lang} setLang={setLang} t={t} />;
+    return <OrderTypeSelect
+  onSelect={(type) => {
+    setOrderType(type);
+    localStorage.setItem("qr_orderType", type);
+    if (type !== "table") localStorage.removeItem("qr_table");
+  }}
+  lang={lang}
+  setLang={setLang}
+  t={t}
+/>
+;
 
   if (orderType === "table" && !table)
     return (
-      <TableSelectModal
-        onSelectTable={setTable}
-        occupiedTables={occupiedTables}
-        onClose={() => setOrderType(null)}
-        t={t}
-      />
+     <TableSelectModal
+  onSelectTable={(num) => {
+    setTable(num);
+    localStorage.setItem("qr_table", String(num));
+    localStorage.setItem("qr_orderType", "table");
+  }}
+  occupiedTables={occupiedTables}
+  onClose={() => setOrderType(null)}
+  t={t}
+/>
+
     );
 
   if (orderType === "online" && !customerInfo)
@@ -1428,6 +1485,18 @@ if (orderType === "online") {
       const order = await orderRes.json();
       setOrderId(order.id);
       setOrderStatus(orderRes.ok ? "success" : "fail");
+      // Persist last order and show status on refresh
+localStorage.setItem(
+  "qr_last_order", "online",
+  JSON.stringify({
+    id: order.id,
+    status: orderRes.ok ? "success" : "fail",
+    orderType,
+    table: orderType === "table" ? table : null,
+  })
+);
+localStorage.setItem("qr_show_status", "1");
+
       setCart([]);
       localStorage.removeItem("qr_cart");
     } catch {
@@ -1437,15 +1506,23 @@ if (orderType === "online") {
     }
   }
 
-  function handleReset() {
-    setOrderStatus("pending");
-    setShowStatus(false);
-    setOrderId(null);
-    setCart([]);
-    localStorage.removeItem("qr_cart");
-    if (orderType === "table") setTable(null);
-    else setCustomerInfo(null);
+function handleReset() {
+  setOrderStatus("pending");
+  setShowStatus(false);
+  setOrderId(null);
+  setCart([]);
+  localStorage.removeItem("qr_cart");
+  localStorage.setItem("qr_show_status", "0");
+
+  if (orderType === "table") {
+    setOrderType("table"); // stay in table flow
+    // keep table as-is
+  } else {
+    setCustomerInfo(null);
+    setOrderType(null);
   }
+}
+
 
   
 
