@@ -223,6 +223,14 @@ function calcOrderDiscount(order) {
   }, 0);
 }
 
+function calcOrderBaseTotal(order) {
+  if (!order?.items) return 0;
+  return order.items.reduce((sum, item) => {
+    const qty = Number(item?.quantity) || 1;
+    const base = (Number(item?.price) || 0) * qty;
+    return sum + base; // extras excluded
+  }, 0);
+}
 
 useEffect(() => {
   if (showPaymentModal && editingPaymentOrder) {
@@ -879,9 +887,9 @@ return (
 
 
 {orders.map((order, i) => {
-  const totalWithExtras = calcOrderTotalWithExtras(order);
-  const totalDiscount = calcOrderDiscount(order);
-  const discountedTotal = totalWithExtras - totalDiscount;
+  const baseTotal = calcOrderBaseTotal(order);
+const totalDiscount = calcOrderDiscount(order);
+const discountedTotal = baseTotal - totalDiscount; // shown on the card
       const isDelivered = order.driver_status === "delivered";
       const isPicked = order.driver_status === "on_road";
       const isReady = order.kitchen_status === "ready";
