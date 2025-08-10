@@ -1675,15 +1675,17 @@ function handleReset() {
         t={t}
       />
 
-      <OrderStatusModal
-        open={showStatus}
-        status={orderStatus}
-        orderId={orderId}
-        table={orderType === "table" ? table : null}
-        onOrderAnother={handleOrderAnother}
-        onClose={handleReset}
-        t={t}
-      />
+  <OrderStatusModal
+  open={showStatus}
+  status={orderStatus}
+  orderId={orderId}
+  table={orderType === "table" ? table : null}
+  onOrderAnother={handleOrderAnother}
+  onClose={handleReset}
+  onFinished={resetToTypePicker}   // ✅ pass it down
+  t={t}
+/>
+
     </div>
   );
 }
