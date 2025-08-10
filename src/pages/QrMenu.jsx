@@ -1210,16 +1210,13 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
 
         {orderId && open && (
           <OrderStatusScreen
-            orderId={orderId}
-            onFinished={() => {
-    // backend says order is closed/paid/completed -> go back to start
-    resetToTypePicker();
-  }}
-            table={table}
-            onOrderAnother={onOrderAnother}
-            
-            t={t}
-          />
+  orderId={orderId}
+  table={table}
+  onOrderAnother={onOrderAnother}
+  onFinished={resetToTypePicker}  // 🔹 ensure QR resets when order is closed
+  t={t}
+/>
+
         )}
 
         <button
@@ -1260,6 +1257,8 @@ export default function QrMenu() {
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
+  const [activeOrder, setActiveOrder] = useState(null);
+
 function handleOrderAnother() {
   // If the backend already closed the order, start fresh
   if (["closed", "completed", "paid", "delivered", "canceled"].includes((orderStatus || "").toLowerCase())) {
@@ -1406,39 +1405,36 @@ useEffect(() => {
 
     function tryJSON(v) { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
   }, []);
+if (!orderType)
+  return (
+    <OrderTypeSelect
+      onSelect={(type) => {
+        setOrderType(type);
+        localStorage.setItem("qr_orderType", type);
+        if (type !== "table") {
+          localStorage.removeItem("qr_table");
+        }
+      }}
+      lang={lang}
+      setLang={setLang}
+      t={t}
+    />
+  );
 
-  if (!orderType)
-    return <OrderTypeSelect
-  onSelect={(type) => {
-    // when selecting type:
-setOrderType(type);
-localStorage.setItem("qr_orderType", type);
-if (type !== "table") localStorage.removeItem("qr_table");
-
-// when selecting table:
-setTable(num);
-localStorage.setItem("qr_table", String(num));
-localStorage.setItem("qr_orderType", "table");
-
-  }}
-  lang={lang}
-  setLang={setLang}
-  t={t}
-/>
-;
 
   if (orderType === "table" && !table)
     return (
-     <TableSelectModal
-  onSelectTable={(num) => {
-    setTable(num);
-    localStorage.setItem("qr_table", String(num));
+<TableSelectModal
+  onSelectTable={(n) => {
+    setTable(n);
+    localStorage.setItem("qr_table", String(n));
     localStorage.setItem("qr_orderType", "table");
   }}
   occupiedTables={occupiedTables}
   onClose={() => setOrderType(null)}
   t={t}
 />
+
 
     );
 
