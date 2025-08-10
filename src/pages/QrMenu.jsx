@@ -1187,48 +1187,54 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
   if (!open) return null;
 
   const title =
-    status === "success"
-      ? t("Order Sent!")
-      : status === "pending"
-      ? t("Sending Order...")
-      : t("Order Failed");
+    status === "success" ? t("Order Sent!")
+    : status === "pending" ? t("Sending Order...")
+    : t("Order Failed");
 
   const message =
-    status === "success"
-      ? t("Thank you! Your order has been received.")
-      : status === "pending"
-      ? t("Please wait...")
-      : t("Something went wrong. Please try again.");
+    status === "success" ? t("Thank you! Your order has been received.")
+    : status === "pending" ? t("Please wait...")
+    : t("Something went wrong. Please try again.");
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-xs w-full text-center">
-        <h2 className="text-2xl font-extrabold mb-5 bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
-          {title}
-        </h2>
-        <div className="text-lg text-blue-900 mb-6">{message}</div>
+      {/* Modal container: fixed height with scrollable middle */}
+      <div className="bg-white rounded-3xl shadow-2xl w-[92vw] max-w-md max-h-[88vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 pt-6">
+          <h2 className="text-2xl font-extrabold mb-3 bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
+            {title}
+          </h2>
+          <div className="text-lg text-blue-900">{message}</div>
+        </div>
 
-        {orderId && open && (
-          <OrderStatusScreen
-  orderId={orderId}
-  table={table}
-  onOrderAnother={onOrderAnother}
-  onFinished={onFinished}  // 🔹 ensure QR resets when order is closed
-  t={t}
-/>
+        {/* Scrollable content */}
+        <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
+          {orderId && open && (
+            <OrderStatusScreen
+              orderId={orderId}
+              table={table}
+              onOrderAnother={onOrderAnother}
+              onFinished={onFinished}  // keeps QR flow reset when order closes
+              t={t}
+            />
+          )}
+        </div>
 
-        )}
-
-        <button
-          className="py-3 px-6 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
-          onClick={status === "success" ? onOrderAnother : onClose}
-        >
-          {status === "success" ? t("Order Another") : t("Close")}
-        </button>
+        {/* Footer */}
+        <div className="p-4 border-t bg-white">
+          <button
+            className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
+            onClick={status === "success" ? onOrderAnother : onClose}
+          >
+            {status === "success" ? t("Order Another") : t("Close")}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
 
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
