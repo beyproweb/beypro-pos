@@ -1510,7 +1510,7 @@ async function handleSubmitOrder() {
         order_id: orderId,
         items: cart,
         total: Number(total) || 0,
-        payment_method: "Table",
+        payment_method: null,
       });
 
       // success: keep same order, clear cart, show status
