@@ -328,6 +328,8 @@ function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
   // delivery info local save flags
 const [saving, setSaving] = useState(false);
 const [savedOnce, setSavedOnce] = useState(false);
+const [lastError, setLastError] = useState(null);
+
 
 // Prefill from local device storage on first open
 useEffect(() => {
@@ -1478,6 +1480,17 @@ localStorage.setItem("qr_orderType", "table");
         t={t}
       />
     );
+
+    function calcOrderTotalWithExtras(cart) {
+  return cart.reduce((sum, item) => {
+    const extrasTotal = (item.extras || []).reduce(
+      (extraSum, ex) => extraSum + (parseFloat(ex.price) || 0) * (ex.quantity || 1),
+      0
+    );
+    return sum + (parseFloat(item.price) + extrasTotal) * (item.quantity || 1);
+  }, 0);
+}
+
 
 async function handleSubmitOrder() {
   try {
