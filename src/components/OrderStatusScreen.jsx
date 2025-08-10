@@ -222,6 +222,6 @@ return (
   </div>
 );
 
-
+};
 
 export default OrderStatusScreen;
