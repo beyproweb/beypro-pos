@@ -212,19 +212,17 @@ function calcOrderTotalWithExtras(order) {
 function calcOrderDiscount(order) {
   if (!order?.items) return 0;
   return order.items.reduce((sum, item) => {
-    const base = (parseFloat(item.price) || 0) * item.quantity;
-    const extras = (item.extras || []).reduce(
-      (s, ex) => s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
-      0
-    ) * item.quantity;
-    if (!item.discount_value || item.discount_value <= 0) return sum;
-    if (item.discount_type === "percent")
-      return sum + ((base + extras) * (item.discount_value / 100));
-    if (item.discount_type === "fixed")
-      return sum + parseFloat(item.discount_value);
+    const qty = Number(item?.quantity) || 1;
+    const base = (Number(item?.price) || 0) * qty; // extras excluded
+    const dv = Number(item?.discount_value) || 0;
+    const dt = item?.discount_type;
+    if (dv <= 0) return sum;
+    if (dt === "percent") return sum + base * (dv / 100);
+    if (dt === "fixed") return sum + dv;
     return sum;
   }, 0);
 }
+
 
 useEffect(() => {
   if (showPaymentModal && editingPaymentOrder) {
@@ -240,8 +238,12 @@ useEffect(() => {
         }
       }
       // Always use calcOrderTotalWithExtras!
-      const totalWithExtras = calcOrderTotalWithExtras(editingPaymentOrder);
-setSplitPayments([{ method: editingPaymentOrder.payment_method || "Cash", amount: totalWithExtras }]);
+const totalWithExtras = calcOrderTotalWithExtras(editingPaymentOrder);
+const discounted = totalWithExtras - calcOrderDiscount(editingPaymentOrder);
+setSplitPayments([
+  { method: editingPaymentOrder.payment_method || "Cash", amount: discounted },
+]);
+
 
     };
 
@@ -1421,7 +1423,9 @@ if (!propOrders) await fetchOrders();
   </div>
 {showPaymentModal && editingPaymentOrder && (
   (() => {
-    const grandTotal = calcOrderTotalWithExtras(editingPaymentOrder);
+const grandTotal =
+  calcOrderTotalWithExtras(editingPaymentOrder) -
+  calcOrderDiscount(editingPaymentOrder);
 
     return (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 transition-all duration-300">
