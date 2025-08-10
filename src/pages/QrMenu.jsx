@@ -1504,31 +1504,46 @@ async function handleSubmitOrder() {
 
     const total = calcOrderTotalWithExtras(cart); // keep your existing total logic
 
-    // ---- TABLE SUB-ORDER: append to existing order ----
-    if (orderType === "table" && orderId) {
-      await postJSON(`${API_URL}/api/orders/sub-orders`, {
-        order_id: orderId,
-        items: cart,
-        total: Number(total) || 0,
-        payment_method: null,
-      });
+  
+    // ---- TABLE SUB-ORDER: append to existing order (UNPAID) ----
+if (orderType === "table" && orderId) {
+  const itemsPayload = cart.map((i) => ({
+    product_id: i.id,
+    quantity: i.quantity,
+    price: parseFloat(i.price) || 0,
+    ingredients: i.ingredients ?? [],
+    extras: i.extras ?? [],
+    unique_id: i.unique_id,
+    note: i.note || null,
+    confirmed: true,        // send to kitchen right away
+    payment_method: null,   // NOT paid yet
+    receipt_id: null,
+    // kitchen_status: 'new', // optional; backend already sets when confirmed && not paid
+  }));
 
-      // success: keep same order, clear cart, show status
-      setCart([]);
-      setOrderStatus("success");
-      setShowStatus(true);
+  await postJSON(`${API_URL}/api/orders/order-items`, {
+    order_id: orderId,
+    receipt_id: null,
+    items: itemsPayload,
+  });
 
-      localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
-      localStorage.setItem("qr_show_status", "1");
+  // success: keep same order, clear cart, show status
+  setCart([]);
+  setOrderStatus("success");
+  setShowStatus(true);
 
-      // (optional) refresh full order so status shows all items
-      try {
-        const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
-        setActiveOrder?.(full); // if you have this state; otherwise the screen fetches itself
-      } catch {}
+  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
+  localStorage.setItem("qr_show_status", "1");
 
-      return;
-    }
+  // (optional) refresh full order so status shows all items
+  try {
+    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
+    setActiveOrder?.(full);
+  } catch {}
+
+  return;
+}
+
 
     // ---- ONLINE: ensure customer only for online ----
     let customerId = null;
