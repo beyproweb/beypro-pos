@@ -133,107 +133,95 @@ useEffect(() => {
 
   const tableNo = table ?? order?.table_number ?? null;
 
-  return (
-    <div className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center px-3 py-8">
-      <div className="w-full max-w-md bg-gradient-to-br from-blue-50 via-indigo-50 to-pink-50 rounded-3xl shadow-2xl p-5 flex flex-col items-center">
-        <div className="mb-2 text-lg font-bold text-blue-700">
-          {tableNo ? (<>🍽️ {t("Table")} {tableNo}</>) : (<>{t("Your Order")}</>)}
-        </div>
-        <div className="text-2xl font-extrabold text-fuchsia-700 mb-1">
-          {t("Order in Progress")}
-        </div>
-        <div className="mb-4 text-base text-indigo-800 font-semibold">
-          <span>⏱️ {t("Time")}: <span className="font-mono">{timer}</span></span>
+return (
+  <div className="p-4 max-h-[80vh] overflow-hidden flex flex-col">
+    <h2 className="text-xl font-semibold mb-2">{t("Order Status")}</h2>
+
+    {loading && <div>{t("Loading order...")}</div>}
+    {error && <div className="text-red-600">{error}</div>}
+
+    {!loading && !error && order && (
+      <>
+        {/* Header row */}
+        <div className="mb-2 flex gap-4 text-sm shrink-0">
+          <span>
+            {t("Order ID")}: <strong>#{orderId}</strong>
+          </span>
+          {order.table_number != null && (
+            <span>
+              {t("Table")}: <strong>{order.table_number}</strong>
+            </span>
+          )}
+          <span>
+            {t("Status")}:{" "}
+            <strong className="capitalize">
+              {String(order.status || "pending")}
+            </strong>
+          </span>
         </div>
 
-        {/* Items */}
-        {items.length > 0 && (
-          <div className="w-full mb-4">
-            <div className="font-bold text-indigo-700 mb-2">🛍️ {t("Items Ordered")}</div>
-            <ul className="flex flex-col gap-2">
-              {items.map((item) => {
-                const lineTotal = (item.price || 0) * (item.quantity || 1);
-                return (
-                  <li key={item.id} className="flex flex-col bg-white border border-blue-100 rounded-xl p-3 shadow-sm">
-                    <div className="flex justify-between items-center font-bold text-blue-900">
-                      <span>{item.name}</span>
-                      <span className="text-xs">x{item.quantity}</span>
+        {/* Items box: header fixed, list scrolls */}
+        <div className="border rounded-lg overflow-hidden flex flex-col min-h-0">
+          <div className="px-3 py-2 font-medium bg-gray-50 shrink-0">
+            {t("Items")}
+          </div>
+
+          <div className="flex-1 overflow-y-auto max-h-[50vh]">
+            <ul className="divide-y">
+              {items.map((it, idx) => (
+                <li className="px-3 py-2 flex justify-between" key={idx}>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">
+                      {it.name ?? it.order_item_name ?? it.product_name ?? t("Item")}
                     </div>
-                    <div className="mt-1 text-sm flex justify-between text-indigo-700 font-semibold">
-                      <span>{t("Price")}: ₺{(item.price || 0).toFixed(2)}</span>
-                      <span>{t("Total")}: ₺{lineTotal.toFixed(2)}</span>
-                    </div>
-                    {item.extras?.length > 0 && (
-                      <div className="mt-1 text-xs text-gray-500">
-                        {t("Extras")}: {item.extras.map(ex => `${ex.name} ×${ex.quantity || 1}`).join(", ")}
+
+                    {Array.isArray(it.extras) && it.extras.length > 0 && (
+                      <div className="text-xs text-gray-600">
+                        {(it.extras || [])
+                          .map((ex) => ex.name ?? ex.label)
+                          .filter(Boolean)
+                          .join(", ")}
                       </div>
                     )}
-                    {item.note && (
-                      <div className="mt-1 text-xs text-yellow-700 italic">
-                        {t("Note")}: {item.note}
+
+                    {it.quantity != null && (
+                      <div className="text-xs text-gray-600">
+                        {t("Qty")}: {it.quantity}
                       </div>
                     )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+                  </div>
 
-        {/* Preparing */}
-        {preparing.length > 0 && (
-          <div className="w-full mb-3">
-            <div className="font-bold text-yellow-700 mb-2">{t("Preparing")}</div>
-            <ul className="flex flex-col gap-2">
-              {preparing.map((item) => (
-                <li key={item.id} className="flex justify-between items-center bg-yellow-50 rounded-xl px-3 py-2 text-yellow-900 font-bold text-base shadow-sm">
-                  <span>{item.name}</span>
-                  <span className="text-xs">x{item.quantity}</span>
+                  <div className="ml-3 shrink-0">
+                    {Number(it.total ?? it.price ?? 0).toFixed(2)}
+                  </div>
                 </li>
               ))}
-            </ul>
-          </div>
-        )}
 
-        {/* Ready */}
-        {ready.length > 0 && (
-          <div className="w-full mb-3">
-            <div className="font-bold text-blue-700 mb-2">{t("Ready for Pickup")}</div>
-            <ul className="flex flex-col gap-2">
-              {ready.map((item) => (
-                <li key={item.id} className="flex justify-between items-center bg-blue-50 rounded-xl px-3 py-2 text-blue-900 font-bold text-base shadow-sm animate-pulse">
-                  <span>{item.name}</span>
-                  <span className="text-xs">x{item.quantity}</span>
+              {items.length === 0 && (
+                <li className="px-3 py-4 text-sm text-gray-500">
+                  {t("No items yet.")}
                 </li>
-              ))}
+              )}
             </ul>
           </div>
-        )}
+        </div>
 
-        {/* Delivered */}
-        {delivered.length > 0 && (
-          <div className="w-full mb-3">
-            <div className="font-bold text-green-700 mb-2">{t("Delivered")}</div>
-            <ul className="flex flex-col gap-2">
-              {delivered.map((item) => (
-                <li key={item.id} className="flex justify-between items-center bg-green-50 rounded-xl px-3 py-2 text-green-900 font-bold text-base shadow-sm line-through">
-                  <span>{item.name}</span>
-                  <span className="text-xs">x{item.quantity}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {/* Footer: total + hint (fixed) */}
+        <div className="mt-3 flex justify-between text-base shrink-0">
+          <span className="font-medium">{t("Total")}</span>
+          <span className="font-semibold">
+            {Number(total || 0).toFixed(2)}
+          </span>
+        </div>
 
-        <button
-          className="w-full mt-6 py-3 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-white text-lg font-bold shadow-lg hover:scale-105 transition"
-          onClick={onOrderAnother}
-        >
-          {t("Order Another")}
-        </button>
-      </div>
-    </div>
-  );
-};
+        <div className="mt-4 text-xs text-gray-500 shrink-0">
+          {t("This screen updates automatically.")}
+        </div>
+      </>
+    )}
+  </div>
+);
+
+
 
 export default OrderStatusScreen;
