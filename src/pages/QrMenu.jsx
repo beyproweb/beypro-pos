@@ -1183,7 +1183,7 @@ function CartDrawer({
 }
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClose, t }) {
+function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClose, onFinished, t }) {
   if (!open) return null;
 
   const title =
@@ -1213,7 +1213,7 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
   orderId={orderId}
   table={table}
   onOrderAnother={onOrderAnother}
-  onFinished={resetToTypePicker}  // 🔹 ensure QR resets when order is closed
+  onFinished={onFinished}  // 🔹 ensure QR resets when order is closed
   t={t}
 />
 
