@@ -26,21 +26,13 @@ export function useSocketIO(onOrderUpdate, orderId) {
 /* ---------- HELPERS ---------- */
 async function safeJSON(res) {
   const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(text.slice(0, 200));
-  }
+  try { return JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
 }
 const toArray = (val) => (Array.isArray(val) ? val : []);
 const parseMaybeJSON = (v) => {
   if (!v) return [];
   if (Array.isArray(v)) return v;
-  try {
-    return JSON.parse(v);
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(v); } catch { return []; }
 };
 const normItem = (it) => ({
   id: it.id || it.item_id || it.unique_id || `${it.product_id || Math.random()}`,
@@ -55,7 +47,7 @@ const normItem = (it) => ({
 /* ---------- MAIN COMPONENT ---------- */
 const OrderStatusScreen = ({
   orderId,
-  table, // optional; fallback to order.table_number
+  table,                // optional; fallback to order.table_number
   onOrderAnother,
   t = (str) => str,
 }) => {
@@ -65,27 +57,35 @@ const OrderStatusScreen = ({
   const intervalRef = useRef(null);
   const FINISHED_STATES = ["closed", "completed", "paid", "delivered", "canceled"];
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+useEffect(() => {
+  if (!order) return;
+  if (FINISHED_STATES.includes((order.status || "").toLowerCase())) {
+    onFinished?.(); // tell parent (QrMenu) to reset to type picker
+  }
+}, [order?.status]);
 
-  useEffect(() => {
-    if (!order) return;
-    if (FINISHED_STATES.includes((order.status || "").toLowerCase())) {
-      onFinished?.(); // tell parent (QrMenu) to reset to type picker
-    }
-  }, [order?.status]);
+useEffect(() => {
+  let abort = false;
+  async function load() {
+    const res = await fetch(`${API_URL}/api/orders/${orderId}`);
+    const data = await res.json();
+    if (!abort) setOrder(data); // data.items should include first + sub-orders
+  }
+  load();
+
+  // optional: poll every X sec
+  const iv = setInterval(load, 4000);
+  return () => { abort = true; clearInterval(iv); };
+}, [orderId]);
 
   const fetchOrder = async () => {
     if (!orderId) return;
-    setLoading(true);
-    setError(null);
     try {
       const orderRes = await fetch(`${API_URL}/api/orders/${orderId}`);
       if (!orderRes.ok) throw new Error(`Order ${orderId} not found`);
       const orderData = await safeJSON(orderRes);
       setOrder(orderData);
-    } catch (err) {
-      setError(err.message || "Failed to load order");
+    } catch {
       setOrder(null);
     }
 
@@ -95,27 +95,10 @@ const OrderStatusScreen = ({
       const raw = await safeJSON(itemsRes);
       const normalized = toArray(raw).map(normItem);
       setItems(normalized);
-    } catch (err) {
-      setError(err.message || "Failed to load order items");
+    } catch {
       setItems([]);
-    } finally {
-      setLoading(false);
     }
   };
-
-  // initial load & polling
-  useEffect(() => {
-    let abort = false;
-    fetchOrder();
-    const iv = setInterval(() => {
-      if (!abort) fetchOrder();
-    }, 4000);
-    return () => {
-      abort = true;
-      clearInterval(iv);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId]);
 
   // Live timer since order created
   useEffect(() => {
@@ -136,105 +119,119 @@ const OrderStatusScreen = ({
   // Socket.io for live updates
   useSocketIO(fetchOrder, orderId);
 
+  useEffect(() => {
+    fetchOrder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
+
   // Group items by status
-  const preparing = items.filter(
-    (i) => i.kitchen_status === "preparing" || i.kitchen_status === "new"
-  );
-  const ready = items.filter((i) => i.kitchen_status === "ready");
-  const delivered = items.filter((i) => i.kitchen_status === "delivered");
+  const preparing = items.filter(i => i.kitchen_status === "preparing" || i.kitchen_status === "new");
+  const ready = items.filter(i => i.kitchen_status === "ready");
+  const delivered = items.filter(i => i.kitchen_status === "delivered");
+
+  // ❌ Removed: auto-close when all delivered
 
   const tableNo = table ?? order?.table_number ?? null;
-  const total = order?.total;
 
   return (
-    <div className="p-4 max-h-[80vh] overflow-hidden flex flex-col">
-      <h2 className="text-xl font-semibold mb-2">{t("Order Status")}</h2>
+    <div className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center px-3 py-8">
+      <div className="w-full max-w-md bg-gradient-to-br from-blue-50 via-indigo-50 to-pink-50 rounded-3xl shadow-2xl p-5 flex flex-col items-center">
+        <div className="mb-2 text-lg font-bold text-blue-700">
+          {tableNo ? (<>🍽️ {t("Table")} {tableNo}</>) : (<>{t("Your Order")}</>)}
+        </div>
+        <div className="text-2xl font-extrabold text-fuchsia-700 mb-1">
+          {t("Order in Progress")}
+        </div>
+        <div className="mb-4 text-base text-indigo-800 font-semibold">
+          <span>⏱️ {t("Time")}: <span className="font-mono">{timer}</span></span>
+        </div>
 
-      {loading && <div>{t("Loading order...")}</div>}
-      {error && <div className="text-red-600">{error}</div>}
-
-      {!loading && !error && order && (
-        <>
-          {/* Header row */}
-          <div className="mb-2 flex gap-4 text-sm shrink-0">
-            <span>
-              {t("Order ID")}: <strong>#{orderId}</strong>
-            </span>
-            {order.table_number != null && (
-              <span>
-                {t("Table")}: <strong>{order.table_number}</strong>
-              </span>
-            )}
-            <span>
-              {t("Status")}:{" "}
-              <strong className="capitalize">
-                {String(order.status || "pending")}
-              </strong>
-            </span>
-          </div>
-
-          {/* Items box: header fixed, list scrolls */}
-          <div className="border rounded-lg overflow-hidden flex flex-col min-h-0">
-            <div className="px-3 py-2 font-medium bg-gray-50 shrink-0">
-              {t("Items")}
-            </div>
-
-            <div className="flex-1 overflow-y-auto max-h-[50vh]">
-              <ul className="divide-y">
-                {items.map((it, idx) => (
-                  <li className="px-3 py-2 flex justify-between" key={idx}>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">
-                        {it.name ??
-                          it.order_item_name ??
-                          it.product_name ??
-                          t("Item")}
+        {/* Items */}
+        {items.length > 0 && (
+          <div className="w-full mb-4">
+            <div className="font-bold text-indigo-700 mb-2">🛍️ {t("Items Ordered")}</div>
+            <ul className="flex flex-col gap-2">
+              {items.map((item) => {
+                const lineTotal = (item.price || 0) * (item.quantity || 1);
+                return (
+                  <li key={item.id} className="flex flex-col bg-white border border-blue-100 rounded-xl p-3 shadow-sm">
+                    <div className="flex justify-between items-center font-bold text-blue-900">
+                      <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
+                      <span className="text-xs">x{item.quantity}</span>
+                    </div>
+                    <div className="mt-1 text-sm flex justify-between text-indigo-700 font-semibold">
+                      <span>{t("Price")}: ₺{(item.price || 0).toFixed(2)}</span>
+                      <span>{t("Total")}: ₺{lineTotal.toFixed(2)}</span>
+                    </div>
+                    {item.extras?.length > 0 && (
+                      <div className="mt-1 text-xs text-gray-500">
+                        {t("Extras")}: {item.extras.map(ex => `${ex.name} ×${ex.quantity || 1}`).join(", ")}
                       </div>
-
-                      {Array.isArray(it.extras) && it.extras.length > 0 && (
-                        <div className="text-xs text-gray-600">
-                          {(it.extras || [])
-                            .map((ex) => ex.name ?? ex.label)
-                            .filter(Boolean)
-                            .join(", ")}
-                        </div>
-                      )}
-
-                      {it.quantity != null && (
-                        <div className="text-xs text-gray-600">
-                          {t("Qty")}: {it.quantity}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="ml-3 shrink-0">
-                      {Number(it.total ?? it.price ?? 0).toFixed(2)}
-                    </div>
+                    )}
+                    {item.note && (
+                      <div className="mt-1 text-xs text-yellow-700 italic">
+                        {t("Note")}: {item.note}
+                      </div>
+                    )}
                   </li>
-                ))}
-
-                {items.length === 0 && (
-                  <li className="px-3 py-4 text-sm text-gray-500">
-                    {t("No items yet.")}
-                  </li>
-                )}
-              </ul>
-            </div>
+                );
+              })}
+            </ul>
           </div>
+        )}
 
-          {/* Footer: total + hint (fixed) */}
-          <div className="mt-3 flex justify-between text-base shrink-0">
-            <span className="font-medium">{t("Total")}</span>
-            <span className="font-semibold">
-              {Number(total || 0).toFixed(2)}
-            </span>
+        {/* Preparing */}
+        {preparing.length > 0 && (
+          <div className="w-full mb-3">
+            <div className="font-bold text-yellow-700 mb-2">{t("Preparing")}</div>
+            <ul className="flex flex-col gap-2">
+              {preparing.map((item) => (
+                <li key={item.id} className="flex justify-between items-center bg-yellow-50 rounded-xl px-3 py-2 text-yellow-900 font-bold text-base shadow-sm">
+                  <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
+                  <span className="text-xs">x{item.quantity}</span>
+                </li>
+              ))}
+            </ul>
           </div>
+        )}
 
-          <div className="mt-4 text-xs text-gray-500 shrink-0">
-            {t("This screen updates automatically.")}
+        {/* Ready */}
+        {ready.length > 0 && (
+          <div className="w-full mb-3">
+            <div className="font-bold text-blue-700 mb-2">{t("Ready for Pickup")}</div>
+            <ul className="flex flex-col gap-2">
+              {ready.map((item) => (
+                <li key={item.id} className="flex justify-between items-center bg-blue-50 rounded-xl px-3 py-2 text-blue-900 font-bold text-base shadow-sm animate-pulse">
+                  <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
+                  <span className="text-xs">x{item.quantity}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-        </>
-      )}
+        )}
+
+        {/* Delivered */}
+        {delivered.length > 0 && (
+          <div className="w-full mb-3">
+            <div className="font-bold text-green-700 mb-2">{t("Delivered")}</div>
+            <ul className="flex flex-col gap-2">
+              {delivered.map((item) => (
+                <li key={item.id} className="flex justify-between items-center bg-green-50 rounded-xl px-3 py-2 text-green-900 font-bold text-base shadow-sm line-through">
+                  <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
+                  <span className="text-xs">x{item.quantity}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <button
+          className="w-full mt-6 py-3 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-white text-lg font-bold shadow-lg hover:scale-105 transition"
+          onClick={onOrderAnother}
+        >
+          {t("Order Another")}
+        </button>
+      </div>
     </div>
   );
 };
