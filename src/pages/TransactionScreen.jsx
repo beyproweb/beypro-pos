@@ -318,11 +318,20 @@ await fetch(`${API_URL}/api/orders/sub-orders`, {
 
 
 // Before calling fetch(`${API_URL}/api/orders/receipt-methods", ...)
-const cleanedSplits = {};
-Object.entries(splits).forEach(([method, amt]) => {
-  const val = parseFloat(amt);
-  if (val > 0) cleanedSplits[method] = val;
-});
+const total = cartItems
+   .filter(i => ids.includes(i.unique_id))
+   .reduce((sum, i) => sum + i.price * i.quantity, 0);
+ // (apply your discount here if needed, same as you display to the user)
+
+ await fetch(`${API_URL}/api/orders/receipt-methods`, {
+   method: "POST",
+   headers: { "Content-Type": "application/json" },
+   body: JSON.stringify({
+     order_id: order.id,
+     receipt_id: receiptId,
+     methods: { [method]: total }   // 👈 send the actual method+amount
+   }),
+ });
 await fetch(`${API_URL}/api/orders/receipt-methods`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -1183,7 +1192,7 @@ function ReceiptGroup({ receiptId, items, groupIdx }) {
   useEffect(() => {
     const fetchMethods = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/reports/receipt-methods/${receiptId}`);
+        const res = await fetch(`${API_URL}/api/orders/receipt-methods/${receiptId}`);
         const methods = await res.json();
 
         if (!methods.length) {
