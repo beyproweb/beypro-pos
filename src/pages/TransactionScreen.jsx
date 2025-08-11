@@ -558,7 +558,7 @@ ingredients: Array.isArray(item.ingredients)
 
           extras,
           unique_id: item.unique_id || `${item.product_id}-${JSON.stringify(extras)}`,
-          confirmed: item.confirmed ?? false,
+          confirmed: item.confirmed ?? true,
           paid: !!item.paid_at,
           payment_method: item.payment_method ?? "Unknown",
           receipt_id: item.receipt_id || "❌ NO RECEIPT",
@@ -689,7 +689,7 @@ if (!Array.isArray(items)) {
         extras,
         unique_id: item.unique_id,
         // ⚠️ keep confirmed if you need it elsewhere, but…
-        confirmed: item.confirmed ?? false,
+        confirmed: item.confirmed ?? true,
         // ✅ paid_at drives the split now:
         paid:      !!item.paid_at,
         payment_method: item.payment_method ?? "Unknown",
