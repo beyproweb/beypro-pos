@@ -134,106 +134,107 @@ useEffect(() => {
   const tableNo = table ?? order?.table_number ?? null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center px-3 py-8">
-      <div className="w-full max-w-md bg-gradient-to-br from-blue-50 via-indigo-50 to-pink-50 rounded-3xl shadow-2xl p-5 flex flex-col items-center">
-        <div className="mb-2 text-lg font-bold text-blue-700">
-          {tableNo ? (<>🍽️ {t("Table")} {tableNo}</>) : (<>{t("Your Order")}</>)}
-        </div>
-        <div className="text-2xl font-extrabold text-fuchsia-700 mb-1">
-          {t("Order in Progress")}
-        </div>
-        <div className="mb-4 text-base text-indigo-800 font-semibold">
-          <span>⏱️ {t("Time")}: <span className="font-mono">{timer}</span></span>
-        </div>
-
-        {/* Items */}
-        {items.length > 0 && (
-          <div className="w-full mb-4">
-            <div className="font-bold text-indigo-700 mb-2">🛍️ {t("Items Ordered")}</div>
-            <ul className="flex flex-col gap-2">
-              {items.map((item) => {
-                const lineTotal = (item.price || 0) * (item.quantity || 1);
-                return (
-                  <li key={item.id} className="flex flex-col bg-white border border-blue-100 rounded-xl p-3 shadow-sm">
-                    <div className="flex justify-between items-center font-bold text-blue-900">
-                      <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                      <span className="text-xs">x{item.quantity}</span>
-                    </div>
-                    <div className="mt-1 text-sm flex justify-between text-indigo-700 font-semibold">
-                      <span>{t("Price")}: ₺{(item.price || 0).toFixed(2)}</span>
-                      <span>{t("Total")}: ₺{lineTotal.toFixed(2)}</span>
-                    </div>
-                    {item.extras?.length > 0 && (
-                      <div className="mt-1 text-xs text-gray-500">
-                        {t("Extras")}: {item.extras.map(ex => `${ex.name} ×${ex.quantity || 1}`).join(", ")}
-                      </div>
-                    )}
-                    {item.note && (
-                      <div className="mt-1 text-xs text-yellow-700 italic">
-                        {t("Note")}: {item.note}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-
-        {/* Preparing */}
-        {preparing.length > 0 && (
-          <div className="w-full mb-3">
-            <div className="font-bold text-yellow-700 mb-2">{t("Preparing")}</div>
-            <ul className="flex flex-col gap-2">
-              {preparing.map((item) => (
-                <li key={item.id} className="flex justify-between items-center bg-yellow-50 rounded-xl px-3 py-2 text-yellow-900 font-bold text-base shadow-sm">
-                  <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                  <span className="text-xs">x{item.quantity}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Ready */}
-        {ready.length > 0 && (
-          <div className="w-full mb-3">
-            <div className="font-bold text-blue-700 mb-2">{t("Ready for Pickup")}</div>
-            <ul className="flex flex-col gap-2">
-              {ready.map((item) => (
-                <li key={item.id} className="flex justify-between items-center bg-blue-50 rounded-xl px-3 py-2 text-blue-900 font-bold text-base shadow-sm animate-pulse">
-                  <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                  <span className="text-xs">x{item.quantity}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Delivered */}
-        {delivered.length > 0 && (
-          <div className="w-full mb-3">
-            <div className="font-bold text-green-700 mb-2">{t("Delivered")}</div>
-            <ul className="flex flex-col gap-2">
-              {delivered.map((item) => (
-                <li key={item.id} className="flex justify-between items-center bg-green-50 rounded-xl px-3 py-2 text-green-900 font-bold text-base shadow-sm line-through">
-                  <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                  <span className="text-xs">x{item.quantity}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <button
-          className="w-full mt-6 py-3 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-white text-lg font-bold shadow-lg hover:scale-105 transition"
-          onClick={onOrderAnother}
-        >
-          {t("Order Another")}
-        </button>
+  <div className="fixed inset-0 z-[100] bg-white flex flex-col px-3 py-8 overflow-y-auto">
+    <div className="w-full max-w-md mx-auto bg-gradient-to-br from-blue-50 via-indigo-50 to-pink-50 rounded-3xl shadow-2xl p-5 flex flex-col items-center">
+      <div className="mb-2 text-lg font-bold text-blue-700">
+        {tableNo ? (<>🍽️ {t("Table")} {tableNo}</>) : (<>{t("Your Order")}</>)}
       </div>
+      <div className="text-2xl font-extrabold text-fuchsia-700 mb-1">
+        {t("Order in Progress")}
+      </div>
+      <div className="mb-4 text-base text-indigo-800 font-semibold">
+        <span>⏱️ {t("Time")}: <span className="font-mono">{timer}</span></span>
+      </div>
+
+      {/* Items */}
+      {items.length > 0 && (
+        <div className="w-full mb-4">
+          <div className="font-bold text-indigo-700 mb-2">🛍️ {t("Items Ordered")}</div>
+          <ul className="flex flex-col gap-2">
+            {items.map((item) => {
+              const lineTotal = (item.price || 0) * (item.quantity || 1);
+              return (
+                <li key={item.id} className="flex flex-col bg-white border border-blue-100 rounded-xl p-3 shadow-sm">
+                  <div className="flex justify-between items-center font-bold text-blue-900">
+                    <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
+                    <span className="text-xs">x{item.quantity}</span>
+                  </div>
+                  <div className="mt-1 text-sm flex justify-between text-indigo-700 font-semibold">
+                    <span>{t("Price")}: ₺{(item.price || 0).toFixed(2)}</span>
+                    <span>{t("Total")}: ₺{lineTotal.toFixed(2)}</span>
+                  </div>
+                  {item.extras?.length > 0 && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      {t("Extras")}: {item.extras.map(ex => `${ex.name} ×${ex.quantity || 1}`).join(", ")}
+                    </div>
+                  )}
+                  {item.note && (
+                    <div className="mt-1 text-xs text-yellow-700 italic">
+                      {t("Note")}: {item.note}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Preparing */}
+      {preparing.length > 0 && (
+        <div className="w-full mb-3">
+          <div className="font-bold text-yellow-700 mb-2">{t("Preparing")}</div>
+          <ul className="flex flex-col gap-2">
+            {preparing.map((item) => (
+              <li key={item.id} className="flex justify-between items-center bg-yellow-50 rounded-xl px-3 py-2 text-yellow-900 font-bold text-base shadow-sm">
+                <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
+                <span className="text-xs">x{item.quantity}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Ready */}
+      {ready.length > 0 && (
+        <div className="w-full mb-3">
+          <div className="font-bold text-blue-700 mb-2">{t("Ready for Pickup")}</div>
+          <ul className="flex flex-col gap-2">
+            {ready.map((item) => (
+              <li key={item.id} className="flex justify-between items-center bg-blue-50 rounded-xl px-3 py-2 text-blue-900 font-bold text-base shadow-sm animate-pulse">
+                <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
+                <span className="text-xs">x{item.quantity}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Delivered */}
+      {delivered.length > 0 && (
+        <div className="w-full mb-3">
+          <div className="font-bold text-green-700 mb-2">{t("Delivered")}</div>
+          <ul className="flex flex-col gap-2">
+            {delivered.map((item) => (
+              <li key={item.id} className="flex justify-between items-center bg-green-50 rounded-xl px-3 py-2 text-green-900 font-bold text-base shadow-sm line-through">
+                <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
+                <span className="text-xs">x{item.quantity}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <button
+        className="w-full mt-6 py-3 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-white text-lg font-bold shadow-lg hover:scale-105 transition"
+        onClick={onOrderAnother}
+      >
+        {t("Order Another")}
+      </button>
     </div>
-  );
+  </div>
+);
+
 };
 
 export default OrderStatusScreen;
