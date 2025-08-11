@@ -689,7 +689,7 @@ if (!Array.isArray(items)) {
         extras,
         unique_id: item.unique_id,
         // ⚠️ keep confirmed if you need it elsewhere, but…
-        confirmed: item.confirmed ?? true,
+        confirmed: item.confirmed ?? false,
         // ✅ paid_at drives the split now:
         paid:      !!item.paid_at,
         payment_method: item.payment_method ?? "Unknown",
