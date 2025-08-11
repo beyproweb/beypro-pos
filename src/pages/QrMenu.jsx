@@ -1482,20 +1482,34 @@ async function postJSON(url, body) {
   try { return await res.json(); } catch { return null; }
 }
 
-function buildOrderPayload({ orderType, table, items, total, customerId }) {
-  const payload = {
-    type: orderType,               // "table" | "online"
-    items,
+function buildOrderPayload({ orderType, table, items, total, customer }) {
+  const itemsPayload = items.map(i => ({
+    product_id: i.id,
+    quantity: i.quantity,
+    price: parseFloat(i.price) || 0,
+    ingredients: i.ingredients ?? [],
+    extras: i.extras ?? [],
+    unique_id: i.unique_id,
+    note: i.note || null,
+    confirmed: true,
+    kitchen_status: 'new',      // <-- ensures it hits the kitchen
+    payment_method: null,
+    receipt_id: null,
+  }));
+
+  return {
+    table_number: orderType === "table" ? Number(table) : null,
+    order_type: orderType === "online" ? "packet" : "table", // or keep "online" if you prefer; kitchen doesn't care
     total: Number(total) || 0,
+    items: itemsPayload,
+    // Nice-to-have fields for online orders:
+    customer_name: customer?.name || null,
+    customer_phone: customer?.phone || null,
+    customer_address: customer?.address || null,
+    payment_method: null,
   };
-  if (orderType === "table") {
-    payload.table_number = Number(table);
-  }
-  if (orderType === "online" && customerId) {
-    payload.customer_id = customerId;
-  }
-  return payload;
 }
+
 
 async function handleSubmitOrder() {
   try {
@@ -1587,9 +1601,16 @@ if (orderType === "table" && orderId) {
 
     // ---- CREATE NEW ORDER (table OR online) ----
     const created = await postJSON(
-      `${API_URL}/api/orders`,
-      buildOrderPayload({ orderType, table, items: cart, total, customerId })
-    );
+  `${API_URL}/api/orders`,
+  buildOrderPayload({
+    orderType,
+    table,
+    items: cart,
+    total,
+    customer: orderType === "online" ? customerInfo : null,
+  })
+);
+
 
     const newId = created?.id;
     if (!newId) throw new Error("Server did not return order id.");
