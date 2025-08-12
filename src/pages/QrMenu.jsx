@@ -1294,8 +1294,14 @@ function handleOrderAnother() {
     setOrderId(null);
     setOrderType(null);
     setCustomerInfo(null);
-    localStorage.setItem("qr_show_status", "0");
     localStorage.removeItem("qr_active_order");
+localStorage.removeItem("qr_active_order_id");
+localStorage.removeItem("qr_cart");
+localStorage.removeItem("qr_table");
+localStorage.removeItem("qr_orderType");  // your camelCase key
+localStorage.removeItem("qr_order_type"); // defensive: underscore variant
+localStorage.setItem("qr_show_status", "0");
+
   }
 }
 
