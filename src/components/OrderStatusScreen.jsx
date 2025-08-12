@@ -60,13 +60,11 @@ const OrderStatusScreen = ({
   const intervalRef = useRef(null);
   const FINISHED_STATES = ["closed", "completed", "paid", "delivered", "canceled"];
     // --- NAV + auto-close wiring ---
-  const navigate = useNavigate();
-  const orderId = localStorage.getItem("qr_active_order_id");
-
-  // send user back to order type picker
-  const resetToTypePicker = () => {
-    navigate("/qr/order-type", { replace: true }); // adjust route if yours differs
-  };
+  const navigate = useNavigate(); // keep if you want to route to /qr/order-type
+  useOrderAutoClose(
+    orderId || localStorage.getItem("qr_active_order_id"),
+    resetToTypePicker
+  );
 
   // listen for "order_closed" and reset when it happens
   useOrderAutoClose(orderId, resetToTypePicker);
