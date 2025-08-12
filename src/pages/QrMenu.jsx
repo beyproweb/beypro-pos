@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
-
+import { useNavigate } from "react-router-dom";
+import useOrderAutoClose from "@/hooks/useOrderAutoClose";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 /* ====================== SMALL HELPERS ====================== */
@@ -1339,6 +1340,16 @@ useEffect(() => {
   } catch {}
 }, []);
 
+
+const QrMenu = () => {
+  const navigate = useNavigate();
+  const orderId = localStorage.getItem("qr_active_order_id");
+
+  const goToTypePicker = () => {
+    navigate("/qr/order-type", { replace: true }); // adjust to your route
+  };
+
+  useOrderAutoClose(orderId, goToTypePicker);
 // --- restore order status after refresh ---
 useEffect(() => {
   try {

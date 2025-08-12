@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 const API_URL = import.meta.env.VITE_API_URL || "";
+import { useNavigate } from "react-router-dom";
+import useOrderAutoClose from "@/hooks/useOrderAutoClose";
 
 /* ---------- SOCKET.IO HOOK ---------- */
 let socket;
@@ -22,7 +24,15 @@ export function useSocketIO(onOrderUpdate, orderId) {
     };
   }, [onOrderUpdate, orderId]);
 }
+const QrMenu = () => {
+  const navigate = useNavigate();
+  const orderId = localStorage.getItem("qr_active_order_id");
 
+  const goToTypePicker = () => {
+    navigate("/qr/order-type", { replace: true }); // adjust to your route
+  };
+
+  useOrderAutoClose(orderId, goToTypePicker);
 /* ---------- HELPERS ---------- */
 async function safeJSON(res) {
   const text = await res.text();
@@ -49,6 +59,7 @@ const OrderStatusScreen = ({
   orderId,
   table,                // optional; fallback to order.table_number
   onOrderAnother,
+  onFinished, 
   t = (str) => str,
 }) => {
   const [order, setOrder] = useState(null);
