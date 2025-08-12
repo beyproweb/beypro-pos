@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 const API_URL = import.meta.env.VITE_API_URL || "";
 import { useNavigate } from "react-router-dom";
-import useOrderAutoClose from "@/hooks/useOrderAutoClose";
+import useOrderAutoClose from "../hooks/useOrderAutoClose";
 
 /* ---------- SOCKET.IO HOOK ---------- */
 let socket;
@@ -59,6 +59,17 @@ const OrderStatusScreen = ({
   const [timer, setTimer] = useState("00:00");
   const intervalRef = useRef(null);
   const FINISHED_STATES = ["closed", "completed", "paid", "delivered", "canceled"];
+    // --- NAV + auto-close wiring ---
+  const navigate = useNavigate();
+  const orderId = localStorage.getItem("qr_active_order_id");
+
+  // send user back to order type picker
+  const resetToTypePicker = () => {
+    navigate("/qr/order-type", { replace: true }); // adjust route if yours differs
+  };
+
+  // listen for "order_closed" and reset when it happens
+  useOrderAutoClose(orderId, resetToTypePicker);
 
 useEffect(() => {
   if (!order) return;

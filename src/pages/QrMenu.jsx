@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import useOrderAutoClose from "@/hooks/useOrderAutoClose";
+import useOrderAutoClose from "../hooks/useOrderAutoClose";
+
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 /* ====================== SMALL HELPERS ====================== */
@@ -1265,6 +1266,14 @@ export default function QrMenu() {
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
+    // --- Auto-close wiring ---
+  const navigate = useNavigate(); // keep if you want to route to /qr/order-type
+  useOrderAutoClose(
+    orderId || localStorage.getItem("qr_active_order_id"),
+    resetToTypePicker
+  );
+
+  
 
 function handleOrderAnother() {
   // If the backend already closed the order, start fresh
@@ -1341,8 +1350,7 @@ useEffect(() => {
 }, []);
 
 
-  useOrderAutoClose(orderId, goToTypePicker);
-// --- restore order status after refresh ---
+
 useEffect(() => {
   try {
     const shouldShow = localStorage.getItem("qr_show_status") === "1";
