@@ -61,13 +61,17 @@ const OrderStatusScreen = ({
   const FINISHED_STATES = ["closed", "completed", "paid", "delivered", "canceled"];
     // --- NAV + auto-close wiring ---
   const navigate = useNavigate(); // keep if you want to route to /qr/order-type
-  useOrderAutoClose(
-    orderId || localStorage.getItem("qr_active_order_id"),
-    resetToTypePicker
-  );
+useOrderAutoClose(
+  orderId || localStorage.getItem("qr_active_order_id"),
+  () => {
+    localStorage.removeItem("qr_active_order_id");
+    localStorage.removeItem("qr_table");
+    localStorage.removeItem("qr_order_type");
+    localStorage.removeItem("qr_cart");
+    onFinished?.();
+  }
+);
 
-  // listen for "order_closed" and reset when it happens
-  useOrderAutoClose(orderId, resetToTypePicker);
 
 useEffect(() => {
   if (!order) return;
