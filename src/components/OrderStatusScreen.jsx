@@ -24,15 +24,7 @@ export function useSocketIO(onOrderUpdate, orderId) {
     };
   }, [onOrderUpdate, orderId]);
 }
-const QrMenu = () => {
-  const navigate = useNavigate();
-  const orderId = localStorage.getItem("qr_active_order_id");
 
-  const goToTypePicker = () => {
-    navigate("/qr/order-type", { replace: true }); // adjust to your route
-  };
-
-  useOrderAutoClose(orderId, goToTypePicker);
 /* ---------- HELPERS ---------- */
 async function safeJSON(res) {
   const text = await res.text();

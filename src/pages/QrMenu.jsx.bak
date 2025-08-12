@@ -1341,6 +1341,14 @@ useEffect(() => {
 }, []);
 
 
+const QrMenu = () => {
+  const navigate = useNavigate();
+  const orderId = localStorage.getItem("qr_active_order_id");
+
+  const goToTypePicker = () => {
+    navigate("/qr/order-type", { replace: true }); // adjust to your route
+  };
+
   useOrderAutoClose(orderId, goToTypePicker);
 // --- restore order status after refresh ---
 useEffect(() => {
