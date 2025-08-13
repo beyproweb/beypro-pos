@@ -1182,6 +1182,13 @@ function CartDrawer({
                   </div>
                 )}
                 <button
+                  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
+                  onClick={onSubmitOrder}
+                  disabled={submitting}
+                >
+                  {submitting ? t("Please wait...") : t("Submit Order")}
+                </button>
+                <button
   className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
   onClick={() => {
     setCart([]);
