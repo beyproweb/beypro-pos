@@ -1345,7 +1345,6 @@ function resetToTypePicker() {
   setOrderType(null);
 }
 
-
 // Bootstrap on refresh: restore by saved order id, else by saved table
 useEffect(() => {
   (async () => {
@@ -1362,7 +1361,7 @@ useEffect(() => {
             setOrderId(order.id);
             setOrderStatus("success");
             setShowStatus(true);
-            return;
+            return; // <- open status immediately on refresh
           }
         }
         // bad/missing/closed -> clear and fall through
@@ -1371,7 +1370,7 @@ useEffect(() => {
         localStorage.removeItem("qr_show_status");
       }
 
-      // Fallback: if a table is saved, see if there is an open order on it
+      // Fallback: see if a saved table has an open order
       const savedTable = Number(
         localStorage.getItem("qr_table") ||
         localStorage.getItem("qr_selected_table") ||
@@ -1399,7 +1398,7 @@ useEffect(() => {
         }
       }
 
-      // Nothing to restore -> show type picker
+      // Nothing to restore
       setOrderType(null);
       setTable(null);
       setShowStatus(false);
@@ -1410,9 +1409,6 @@ useEffect(() => {
     }
   })();
 }, []);
-
-
-
 
   useEffect(() => {
     fetch(`${API_URL}/api/category-images`)
@@ -1464,6 +1460,7 @@ useEffect(() => {
     function tryJSON(v) { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
   }, []);
   // === Always-mounted Order Status (portal) ===
+// === Always-mounted Order Status (portal) ===
 const statusPortal = showStatus
   ? createPortal(
       <OrderStatusModal
@@ -1480,6 +1477,7 @@ const statusPortal = showStatus
     )
   : null;
 
+// --- Order type select (show modal here too if needed) ---
 if (!orderType)
   return (
     <>
@@ -1496,11 +1494,8 @@ if (!orderType)
     </>
   );
 
-
-
-
+// --- Table select (let THIS device re-open its own occupied table) ---
 if (orderType === "table" && !table) {
-  // Let this device re-open its own table freely (support both keys just in case)
   const myTable = Number(
     localStorage.getItem("qr_table") ||
     localStorage.getItem("qr_selected_table") ||
@@ -1521,6 +1516,7 @@ if (orderType === "table" && !table) {
             if (res.ok) {
               const raw = await res.json();
               const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+              // backend often excludes closed already; be defensive
               const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || list[0] || null;
 
               if (openOrder) {
@@ -1536,14 +1532,14 @@ if (orderType === "table" && !table) {
                 localStorage.setItem("qr_orderType", "table");
                 localStorage.setItem("qr_table", String(n));
                 localStorage.setItem("qr_show_status", "1");
-                return;
+                return; // <- IMPORTANT: stop here so status opens
               }
             }
-          } catch (_) {
-            // fall through to new selection
+          } catch {
+            // fall through
           }
 
-          // No open order -> proceed like a fresh selection (new order flow)
+          // No open order -> proceed like a fresh selection
           setTable(n);
           localStorage.setItem("qr_table", String(n));
           localStorage.setItem("qr_orderType", "table");
@@ -1556,25 +1552,6 @@ if (orderType === "table" && !table) {
     </>
   );
 }
-
-
-
-
-if (orderType === "online" && !customerInfo)
-  return (
-    <>
-      <OnlineOrderForm
-        onSubmit={(info) => {
-          setCustomerInfo(info);
-          setPaymentMethod(info.payment_method);
-        }}
-        submitting={submitting}
-        onClose={() => setOrderType(null)}
-        t={t}
-      />
-      {statusPortal}
-    </>
-  );
 
 
     function calcOrderTotalWithExtras(cart) {
@@ -1645,7 +1622,45 @@ async function handleSubmitOrder() {
     const total = calcOrderTotalWithExtras(cart); // keep your existing total logic
 
   
-    // ---- TABLE SUB-ORDER: append to existing order (UNPAID) ----
+   // ---- TABLE SUB-ORDER: append to existing order (UNPAID) ----
+if (orderType === "table" && orderId) {
+  const itemsPayload = cart.map((i) => ({
+    product_id: i.id,
+    quantity: i.quantity,
+    price: parseFloat(i.price) || 0,
+    ingredients: i.ingredients ?? [],
+    extras: i.extras ?? [],
+    unique_id: i.unique_id,
+    note: i.note || null,
+    confirmed: true,        // send to kitchen right away
+    payment_method: null,   // NOT paid yet
+    receipt_id: null,
+  }));
+
+  await postJSON(`${API_URL}/api/orders/order-items`, {
+    order_id: orderId,
+    receipt_id: null,
+    items: itemsPayload,
+  });
+
+  // success: keep same order, clear cart, show status
+  setCart([]);
+  setOrderStatus("success");
+  setShowStatus(true);
+
+  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
+  localStorage.setItem("qr_show_status", "1");
+  localStorage.setItem("qr_active_order_id", String(orderId)); // <-- persist
+  if (table) localStorage.setItem("qr_table", String(table));   // <-- persist
+
+  try {
+    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
+    setActiveOrder?.(full);
+  } catch {}
+
+  return;
+}
+
 if (orderType === "table" && orderId) {
   const itemsPayload = cart.map((i) => ({
     product_id: i.id,

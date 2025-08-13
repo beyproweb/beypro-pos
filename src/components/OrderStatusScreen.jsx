@@ -67,18 +67,17 @@ useOrderAutoClose(
     try {
       localStorage.removeItem("qr_active_order_id");
       localStorage.removeItem("qr_table");
-      localStorage.removeItem("qr_orderType"); // camelCase key used by QrMenu
+      localStorage.removeItem("qr_orderType");
       localStorage.removeItem("qr_cart");
     } catch {}
     onFinished?.(); // let QrMenu reset to type picker
   }
 );
 
-
 useEffect(() => {
   if (!order) return;
   if (FINISHED_STATES.includes((order.status || "").toLowerCase())) {
-    onFinished?.(); // tell parent (QrMenu) to reset to type picker
+    onFinished?.();
   }
 }, [order?.status]);
 
