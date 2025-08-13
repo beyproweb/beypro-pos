@@ -1332,38 +1332,63 @@ export default function QrMenu() {
   }
 }
 
-function handleOrderAnother() {
-  // If the order is finished/closed, go back to type picker (fresh session)
-  if (["closed", "completed", "paid", "delivered", "canceled", "cancelled"].includes(
-        (orderStatus || "").toLowerCase()
-      )) {
-    resetToTypePicker();
-    return;
+async function handleOrderAnother() {
+  try {
+    // Hide status modal and prep for a new sub-order
+    setShowStatus(false);
+    setOrderStatus("pending");
+
+    // 1) Resolve active order + type robustly
+    let id =
+      orderId ||
+      Number(localStorage.getItem("qr_active_order_id")) ||
+      null;
+
+    let type =
+      orderType ||
+      localStorage.getItem("qr_orderType") ||
+      (table ? "table" : null);
+
+    // 2) If missing id but we know the table, fetch the open order by table
+    if (!id && (type === "table" || table)) {
+      const tNo = table || Number(localStorage.getItem("qr_table")) || null;
+      if (tNo) {
+        try {
+          const q = await fetch(`${API_URL}/api/orders?table_number=${tNo}`);
+          if (q.ok) {
+            const list = await q.json();
+            const open = Array.isArray(list)
+              ? list.find(o => (o.status || "").toLowerCase() !== "closed")
+              : null;
+            if (open) {
+              id = open.id;
+              type = "table";
+              setOrderId(id);
+              setOrderType("table");
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // 3) If we have a table order, rehydrate the cart from server (excludes delivered items)
+    if (type === "table" && id) {
+      await rehydrateCartFromOrder(id);
+      localStorage.setItem("qr_active_order_id", String(id));
+      localStorage.setItem("qr_orderType", "table");
+      if (table) localStorage.setItem("qr_table", String(table));
+      return;
+    }
+
+    // 4) No valid table order found → do NOT kick user to Order Type.
+    // Just keep them on the same screen (optional: show status)
+    setShowStatus(true);
+    setOrderStatus("success");
+  } catch (e) {
+    console.error("handleOrderAnother failed:", e);
   }
-
-  // Keep the same order/table; just reopen the cart prefilled from current order items
-  setShowStatus(false);
-  setOrderStatus("pending");
-
-  if (orderType === "table" && orderId) {
-    rehydrateCartFromOrder(orderId);
-    // make sure the “status portal” doesn’t pop back up
-    localStorage.setItem("qr_show_status", "0");
-    // keep context for the session
-    localStorage.setItem("qr_active_order_id", String(orderId));
-    if (table) localStorage.setItem("qr_table", String(table));
-    return;
-  }
-
-  // Online flow: start a new order but preload with last cart (if wanted),
-  // here we’ll just start fresh
-  setOrderId(null);
-  setOrderType(null);
-  setCustomerInfo(null);
-  localStorage.removeItem("qr_active_order");
-  localStorage.removeItem("qr_active_order_id");
-  localStorage.setItem("qr_show_status", "0");
 }
+
 
 
 function resetToTypePicker() {
