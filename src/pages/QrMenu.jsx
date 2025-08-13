@@ -1230,17 +1230,18 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
         </div>
 
         {/* Scrollable content */}
-        <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
-          {orderId && open && (
-            <OrderStatusScreen
-              orderId={orderId}
-              table={table}
-              onOrderAnother={onOrderAnother}
-              onFinished={onFinished}  // keeps QR flow reset when order closes
-              t={t}
-            />
-          )}
-        </div>
+       <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
+  {orderId ? (
+    <OrderStatusScreen
+      orderId={orderId}
+      table={table}
+      onOrderAnother={onOrderAnother}
+      onFinished={onFinished}
+      t={t}
+    />
+  ) : null}
+</div>
+
 
         {/* Footer */}
         <div className="p-4 border-t bg-white">
@@ -1465,44 +1466,53 @@ if (!orderType)
 
 
 if (orderType === "table" && !table) {
-  // 🧠 Let the current device re-open its own table freely
-  const myTable = Number(localStorage.getItem("qr_table") || "0") || null;
+  // Let this device re-open its own table freely (support both keys just in case)
+  const myTable = Number(
+    localStorage.getItem("qr_table") ||
+    localStorage.getItem("qr_selected_table") ||
+    "0"
+  ) || null;
+
   const filteredOccupied = myTable
-    ? occupiedTables.filter((n) => n !== myTable) // don't mark my own table as occupied
+    ? occupiedTables.filter((n) => n !== myTable)
     : occupiedTables;
 
   return (
     <TableSelectModal
       onSelectTable={async (n) => {
-        // If that table is currently occupied, try to open the existing order directly
+        // Try to jump straight to an existing open order on this table
         try {
           const res = await fetch(`${API_URL}/api/orders?table_number=${n}`);
-          const arr = await res.json();
-          const open = Array.isArray(arr) ? arr.find(o => o.status !== "closed") : null;
+          if (res.ok) {
+            const raw = await res.json();
+            const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+            // backend already filters out closed when table_number is passed, but be defensive:
+            const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || list[0] || null;
 
-          if (open) {
-            // 🔓 Existing order at this table -> jump to status screen
-            setOrderType("table");
-            setTable(n);
-            setOrderId(open.id);
-            setActiveOrder(open);
-            setShowStatus(true);
-            setOrderStatus("success");
+            if (openOrder) {
+              setOrderType("table");
+              setTable(n);
+              setOrderId(openOrder.id);
+              setActiveOrder(openOrder);
+              setShowStatus(true);
+              setOrderStatus("success");
 
-            // persist for refresh
-            localStorage.setItem(
-              "qr_active_order",
-              JSON.stringify({ orderId: open.id, orderType: "table", table: n })
-            );
-            localStorage.setItem("qr_active_order_id", String(open.id));
-            localStorage.setItem("qr_orderType", "table");
-            localStorage.setItem("qr_table", String(n));
-            localStorage.setItem("qr_show_status", "1");
-            return;
+              localStorage.setItem(
+                "qr_active_order",
+                JSON.stringify({ orderId: openOrder.id, orderType: "table", table: n })
+              );
+              localStorage.setItem("qr_active_order_id", String(openOrder.id));
+              localStorage.setItem("qr_orderType", "table");
+              localStorage.setItem("qr_table", String(n));
+              localStorage.setItem("qr_show_status", "1");
+              return;
+            }
           }
-        } catch { /* ignore and fall through to start a new order */ }
+        } catch (_) {
+          // swallow and fall through to new table selection
+        }
 
-        // Not occupied (or no open order returned) -> proceed like normal selection
+        // No open order -> proceed like a fresh selection (new order flow)
         setTable(n);
         localStorage.setItem("qr_table", String(n));
         localStorage.setItem("qr_orderType", "table");
@@ -1513,6 +1523,7 @@ if (orderType === "table" && !table) {
     />
   );
 }
+
 
 
   if (orderType === "online" && !customerInfo)
