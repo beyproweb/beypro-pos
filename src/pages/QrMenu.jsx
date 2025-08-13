@@ -1464,21 +1464,56 @@ if (!orderType)
 
 
 
-  if (orderType === "table" && !table)
-    return (
-<TableSelectModal
-  onSelectTable={(n) => {
-    // Do NOT persist yet. Only set state.
-    setTable(n);
-  }}
-  occupiedTables={occupiedTables}
-  onClose={() => setOrderType(null)}
-  t={t}
-/>
+if (orderType === "table" && !table) {
+  // 🧠 Let the current device re-open its own table freely
+  const myTable = Number(localStorage.getItem("qr_table") || "0") || null;
+  const filteredOccupied = myTable
+    ? occupiedTables.filter((n) => n !== myTable) // don't mark my own table as occupied
+    : occupiedTables;
 
+  return (
+    <TableSelectModal
+      onSelectTable={async (n) => {
+        // If that table is currently occupied, try to open the existing order directly
+        try {
+          const res = await fetch(`${API_URL}/api/orders?table_number=${n}`);
+          const arr = await res.json();
+          const open = Array.isArray(arr) ? arr.find(o => o.status !== "closed") : null;
 
+          if (open) {
+            // 🔓 Existing order at this table -> jump to status screen
+            setOrderType("table");
+            setTable(n);
+            setOrderId(open.id);
+            setActiveOrder(open);
+            setShowStatus(true);
+            setOrderStatus("success");
 
-    );
+            // persist for refresh
+            localStorage.setItem(
+              "qr_active_order",
+              JSON.stringify({ orderId: open.id, orderType: "table", table: n })
+            );
+            localStorage.setItem("qr_active_order_id", String(open.id));
+            localStorage.setItem("qr_orderType", "table");
+            localStorage.setItem("qr_table", String(n));
+            localStorage.setItem("qr_show_status", "1");
+            return;
+          }
+        } catch { /* ignore and fall through to start a new order */ }
+
+        // Not occupied (or no open order returned) -> proceed like normal selection
+        setTable(n);
+        localStorage.setItem("qr_table", String(n));
+        localStorage.setItem("qr_orderType", "table");
+      }}
+      occupiedTables={filteredOccupied}
+      onClose={() => setOrderType(null)}
+      t={t}
+    />
+  );
+}
+
 
   if (orderType === "online" && !customerInfo)
     return (
