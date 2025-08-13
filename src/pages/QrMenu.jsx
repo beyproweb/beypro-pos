@@ -7,6 +7,25 @@ import useOrderAutoClose from "../hooks/useOrderAutoClose";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
+// --- TABLE PERSISTENCE HELPERS ---
+const TABLE_KEY = "qr_selected_table";
+
+function saveSelectedTable(tableNo) {
+  if (tableNo !== undefined && tableNo !== null && `${tableNo}`.trim() !== "") {
+    localStorage.setItem(TABLE_KEY, String(tableNo));
+  }
+}
+
+function getSavedTable() {
+  const v = localStorage.getItem(TABLE_KEY);
+  return v && v !== "null" ? v : "";
+}
+
+function clearSavedTable() {
+  // call this only when order is COMPLETED/CLOSED – NOT when user backs out
+  localStorage.removeItem(TABLE_KEY);
+}
+
 /* ====================== SMALL HELPERS ====================== */
 function detectBrand(num) {
   const n = (num || "").replace(/\s+/g, "");
@@ -1308,9 +1327,11 @@ localStorage.setItem("qr_show_status", "0");
 function resetToTypePicker() {
   // clear all session keys
   localStorage.removeItem("qr_active_order");
+  localStorage.removeItem("qr_active_order_id");
   localStorage.removeItem("qr_cart");
   localStorage.removeItem("qr_table");
   localStorage.removeItem("qr_orderType");
+  localStorage.removeItem("qr_order_type");
   localStorage.setItem("qr_show_status", "0");
 
   // reset UI state
@@ -1324,59 +1345,59 @@ function resetToTypePicker() {
 }
 
 
-  // Restore last context on refresh (order status, order type, table)
+// Bootstrap on refresh: only restore if there is an active order id
 useEffect(() => {
-  try {
-    const show = localStorage.getItem("qr_show_status") === "1";
-    const last = JSON.parse(localStorage.getItem("qr_last_order") || "null");
-
-    if (show && last) {
-      if (last.orderType === "table" && last.table) {
-        setOrderType("table");
-        setTable(Number(last.table));
-      } else if (last.orderType === "online") {
-        setOrderType("online");
+  (async () => {
+    try {
+      const activeId = localStorage.getItem("qr_active_order_id");
+      if (!activeId) {
+        // No active order persisted: force the picker
+        setOrderType(null);
+        setTable(null);
+        setShowStatus(false);
+        return;
       }
-      setOrderId(last.id || null);
-      setOrderStatus(last.status || "pending");
+
+      const res = await fetch(`${API_URL}/api/orders/${activeId}`);
+      if (!res.ok) {
+        // Bad id: clear and force picker
+        localStorage.removeItem("qr_active_order");
+        localStorage.removeItem("qr_active_order_id");
+        localStorage.removeItem("qr_show_status");
+        setOrderType(null);
+        setTable(null);
+        setShowStatus(false);
+        return;
+      }
+
+      const order = await res.json();
+      if (!order || order.status === "closed") {
+        // Closed or missing: clear and force picker
+        localStorage.removeItem("qr_active_order");
+        localStorage.removeItem("qr_active_order_id");
+        localStorage.removeItem("qr_show_status");
+        setOrderType(null);
+        setTable(null);
+        setShowStatus(false);
+        return;
+      }
+
+      // Active order exists -> jump to its status screen
+      const type = (order.order_type === "table") ? "table" : "online";
+      setOrderType(type);
+      setTable(type === "table" ? Number(order.table_number) || null : null);
+      setOrderId(order.id);
+      setOrderStatus("success");
       setShowStatus(true);
-      return; // don't override with defaults below
+    } catch {
+      // On any error, show picker
+      setOrderType(null);
+      setTable(null);
+      setShowStatus(false);
     }
-
-    // No status to show—restore last chosen order type/table for continuity
-    const savedType = localStorage.getItem("qr_orderType");
-    if (savedType) {
-      setOrderType(savedType);
-      if (savedType === "table") {
-        const savedTable = Number(localStorage.getItem("qr_table"));
-        if (savedTable) setTable(savedTable);
-      }
-    }
-  } catch {}
+  })();
 }, []);
 
-
-
-useEffect(() => {
-  try {
-    const shouldShow = localStorage.getItem("qr_show_status") === "1";
-    const active = JSON.parse(localStorage.getItem("qr_active_order") || "null");
-    if (shouldShow && active?.orderId) {
-      setOrderId(active.orderId);
-      setOrderType(active.orderType || null);
-      if (active.orderType === "table" && active.table) {
-        setTable(Number(active.table));
-      }
-      setShowStatus(true);
-    } else {
-      // restore last chosen type/table for continuity (optional)
-      const savedType = localStorage.getItem("qr_orderType");
-      const savedTable = localStorage.getItem("qr_table");
-      if (savedType) setOrderType(savedType);
-      if (savedType === "table" && savedTable) setTable(Number(savedTable));
-    }
-  } catch {}
-}, []);
 
 
   useEffect(() => {
@@ -1432,11 +1453,8 @@ if (!orderType)
   return (
     <OrderTypeSelect
       onSelect={(type) => {
+        // Do NOT persist yet. Only set state.
         setOrderType(type);
-        localStorage.setItem("qr_orderType", type);
-        if (type !== "table") {
-          localStorage.removeItem("qr_table");
-        }
       }}
       lang={lang}
       setLang={setLang}
@@ -1445,18 +1463,19 @@ if (!orderType)
   );
 
 
+
   if (orderType === "table" && !table)
     return (
 <TableSelectModal
   onSelectTable={(n) => {
+    // Do NOT persist yet. Only set state.
     setTable(n);
-    localStorage.setItem("qr_table", String(n));
-    localStorage.setItem("qr_orderType", "table");
   }}
   occupiedTables={occupiedTables}
   onClose={() => setOrderType(null)}
   t={t}
 />
+
 
 
     );
@@ -1558,7 +1577,7 @@ if (orderType === "table" && orderId) {
     // kitchen_status: 'new', // optional; backend already sets when confirmed && not paid
   }));
 
-  await postJSON(`${API_URL}/api/orders/order-items`, {
+await postJSON(`${API_URL}/api/orders/order-items`, {
     order_id: orderId,
     receipt_id: null,
     items: itemsPayload,
@@ -1571,8 +1590,10 @@ if (orderType === "table" && orderId) {
 
   localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
   localStorage.setItem("qr_show_status", "1");
+  localStorage.setItem("qr_active_order_id", String(orderId)); // <-- ADD
+  if (table) localStorage.setItem("qr_table", String(table));   // <-- ADD (only after order exists)
 
-  // (optional) refresh full order so status shows all items
+  // (optional) refresh full order...
   try {
     const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
     setActiveOrder?.(full);
@@ -1617,31 +1638,29 @@ if (orderType === "table" && orderId) {
     }
 
     // ---- CREATE NEW ORDER (table OR online) ----
-    const created = await postJSON(
+const created = await postJSON(
   `${API_URL}/api/orders`,
-  buildOrderPayload({
-    orderType,
-    table,
-    items: cart,
-    total,
-    customer: orderType === "online" ? customerInfo : null,
-  })
+  buildOrderPayload({ orderType, table, items: cart, total, customer: orderType === "online" ? customerInfo : null })
 );
 
+const newId = created?.id;
+if (!newId) throw new Error("Server did not return order id.");
 
-    const newId = created?.id;
-    if (!newId) throw new Error("Server did not return order id.");
+setOrderId(newId);
+setOrderStatus("success");
+setShowStatus(true);
+setCart([]);
 
-    setOrderId(newId);
-    setOrderStatus("success");
-    setShowStatus(true);
-    setCart([]);
+localStorage.setItem(
+  "qr_active_order",
+  JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null })
+);
+localStorage.setItem("qr_active_order_id", String(newId)); // <-- ADD
+if (orderType === "table" && table) {
+  localStorage.setItem("qr_table", String(table));         // <-- ADD (only now safe to persist)
+}
+localStorage.setItem("qr_show_status", "1");
 
-    localStorage.setItem(
-      "qr_active_order",
-      JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null })
-    );
-    localStorage.setItem("qr_show_status", "1");
   } catch (e) {
     console.error("Order submit failed:", e);
     setOrderStatus("fail");
