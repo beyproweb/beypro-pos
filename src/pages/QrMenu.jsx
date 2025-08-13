@@ -1463,18 +1463,39 @@ useEffect(() => {
 
     function tryJSON(v) { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
   }, []);
+  // === Always-mounted Order Status (portal) ===
+const statusPortal = showStatus
+  ? createPortal(
+      <OrderStatusModal
+        open={showStatus}
+        status={orderStatus}
+        orderId={orderId}
+        table={orderType === "table" ? table : null}
+        onOrderAnother={handleOrderAnother}
+        onClose={handleReset}
+        onFinished={resetToTypePicker}
+        t={t}
+      />,
+      document.body
+    )
+  : null;
+
 if (!orderType)
   return (
-    <OrderTypeSelect
-      onSelect={(type) => {
-        // Do NOT persist yet. Only set state.
-        setOrderType(type);
-      }}
-      lang={lang}
-      setLang={setLang}
-      t={t}
-    />
+    <>
+      <OrderTypeSelect
+        onSelect={(type) => {
+          // Do NOT persist yet. Only set state.
+          setOrderType(type);
+        }}
+        lang={lang}
+        setLang={setLang}
+        t={t}
+      />
+      {statusPortal}
+    </>
   );
+
 
 
 
@@ -1491,66 +1512,70 @@ if (orderType === "table" && !table) {
     : occupiedTables;
 
   return (
-    <TableSelectModal
-      onSelectTable={async (n) => {
-        // Try to jump straight to an existing open order on this table
-        try {
-          const res = await fetch(`${API_URL}/api/orders?table_number=${n}`);
-          if (res.ok) {
-            const raw = await res.json();
-            const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
-            // backend already filters out closed when table_number is passed, but be defensive:
-            const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || list[0] || null;
+    <>
+      <TableSelectModal
+        onSelectTable={async (n) => {
+          // Try to jump straight to an existing open order on this table
+          try {
+            const res = await fetch(`${API_URL}/api/orders?table_number=${n}`);
+            if (res.ok) {
+              const raw = await res.json();
+              const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+              const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || list[0] || null;
 
-            if (openOrder) {
-              setOrderType("table");
-              setTable(n);
-              setOrderId(openOrder.id);
-              setActiveOrder(openOrder);
-              setShowStatus(true);
-              setOrderStatus("success");
+              if (openOrder) {
+                setOrderType("table");
+                setTable(n);
+                setOrderId(openOrder.id);
+                setActiveOrder(openOrder);
+                setShowStatus(true);
+                setOrderStatus("success");
 
-              localStorage.setItem(
-                "qr_active_order",
-                JSON.stringify({ orderId: openOrder.id, orderType: "table", table: n })
-              );
-              localStorage.setItem("qr_active_order_id", String(openOrder.id));
-              localStorage.setItem("qr_orderType", "table");
-              localStorage.setItem("qr_table", String(n));
-              localStorage.setItem("qr_show_status", "1");
-              return;
+                localStorage.setItem("qr_active_order", JSON.stringify({ orderId: openOrder.id, orderType: "table", table: n }));
+                localStorage.setItem("qr_active_order_id", String(openOrder.id));
+                localStorage.setItem("qr_orderType", "table");
+                localStorage.setItem("qr_table", String(n));
+                localStorage.setItem("qr_show_status", "1");
+                return;
+              }
             }
+          } catch (_) {
+            // fall through to new selection
           }
-        } catch (_) {
-          // swallow and fall through to new table selection
-        }
 
-        // No open order -> proceed like a fresh selection (new order flow)
-        setTable(n);
-        localStorage.setItem("qr_table", String(n));
-        localStorage.setItem("qr_orderType", "table");
-      }}
-      occupiedTables={filteredOccupied}
-      onClose={() => setOrderType(null)}
-      t={t}
-    />
+          // No open order -> proceed like a fresh selection (new order flow)
+          setTable(n);
+          localStorage.setItem("qr_table", String(n));
+          localStorage.setItem("qr_orderType", "table");
+        }}
+        occupiedTables={filteredOccupied}
+        onClose={() => setOrderType(null)}
+        t={t}
+      />
+      {statusPortal}
+    </>
   );
 }
 
 
 
-  if (orderType === "online" && !customerInfo)
-    return (
+
+if (orderType === "online" && !customerInfo)
+  return (
+    <>
       <OnlineOrderForm
         onSubmit={(info) => {
           setCustomerInfo(info);
-          setPaymentMethod(info.payment_method);     // keep global in sync
+          setPaymentMethod(info.payment_method);
         }}
         submitting={submitting}
         onClose={() => setOrderType(null)}
         t={t}
       />
-    );
+      {statusPortal}
+    </>
+  );
+
 
     function calcOrderTotalWithExtras(cart) {
   return cart.reduce((sum, item) => {
@@ -1812,16 +1837,7 @@ function handleReset() {
         t={t}
       />
 
-  <OrderStatusModal
-    open={showStatus}
-    status={orderStatus}
-    orderId={orderId}
-    table={orderType === "table" ? table : null}
-    onOrderAnother={handleOrderAnother}
-    onClose={handleReset}
-    onFinished={resetToTypePicker}
-    t={t}
-  />
+
 
 </div>
 );
