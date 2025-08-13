@@ -1182,12 +1182,15 @@ function CartDrawer({
                   </div>
                 )}
                 <button
-                  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
-                  onClick={onSubmitOrder}
-                  disabled={submitting}
-                >
-                  {submitting ? t("Please wait...") : t("Submit Order")}
-                </button>
+  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
+  onClick={() => {
+    setCart([]);
+    localStorage.removeItem("qr_cart");
+  }}
+>
+  {t("Order Another")}
+</button>
+
                 <button
                   className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
                   onClick={() => setCart([])}
