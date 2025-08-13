@@ -1068,6 +1068,7 @@ function CartDrawer({
   paymentMethod,
   setPaymentMethod,
   submitting,
+  onOrderAnother, 
   t,
 }) {
   const [show, setShow] = useState(false);
@@ -1303,37 +1304,69 @@ export default function QrMenu() {
     resetToTypePicker
   );
 
-  
+  async function rehydrateCartFromOrder(orderId) {
+  try {
+    const res = await fetch(`${API_URL}/api/orders/${orderId}/items`);
+    if (!res.ok) throw new Error("Failed to load order items");
+    const raw = await res.json();
+
+    const toCartItem = (it) => ({
+      id: it.product_id,
+      name: it.order_item_name || it.product_name || it.name || "Item",
+      price: Number(it.price || 0),
+      quantity: Number(it.quantity || 1),
+      extras: typeof it.extras === "string" ? JSON.parse(it.extras) : (it.extras || []),
+      note: it.note || "",
+      // keep unique per line so cart merging works nicely
+      unique_id: it.unique_id || `${it.product_id}-${Math.random().toString(36).slice(2)}`,
+      image: null,
+    });
+
+    // optional: skip already delivered items
+    const items = (Array.isArray(raw) ? raw : [])
+      .filter(i => (i.kitchen_status || "new") !== "delivered")
+      .map(toCartItem);
+
+    setCart(items);
+    // localStorage sync happens via your existing useEffect([cart])
+  } catch (e) {
+    console.error("rehydrateCartFromOrder failed:", e);
+  }
+}
 
 function handleOrderAnother() {
-  // If the backend already closed the order, start fresh
-  if (["closed", "completed", "paid", "delivered", "canceled"].includes((orderStatus || "").toLowerCase())) {
+  // If the order is finished/closed, go back to type picker (fresh session)
+  if (["closed", "completed", "paid", "delivered", "canceled", "cancelled"].includes(
+        (orderStatus || "").toLowerCase()
+      )) {
     resetToTypePicker();
     return;
   }
 
-  // Otherwise (still open table), keep same orderId for sub-orders
+  // Keep the same order/table; just reopen the cart prefilled from current order items
   setShowStatus(false);
   setOrderStatus("pending");
-  setCart([]);
-  localStorage.removeItem("qr_cart");
 
-  if (orderType === "table") {
+  if (orderType === "table" && orderId) {
+    rehydrateCartFromOrder(orderId);
+    // make sure the “status portal” doesn’t pop back up
     localStorage.setItem("qr_show_status", "0");
-  } else {
-    setOrderId(null);
-    setOrderType(null);
-    setCustomerInfo(null);
-    localStorage.removeItem("qr_active_order");
-localStorage.removeItem("qr_active_order_id");
-localStorage.removeItem("qr_cart");
-localStorage.removeItem("qr_table");
-localStorage.removeItem("qr_orderType");  // your camelCase key
-localStorage.removeItem("qr_order_type"); // defensive: underscore variant
-localStorage.setItem("qr_show_status", "0");
-
+    // keep context for the session
+    localStorage.setItem("qr_active_order_id", String(orderId));
+    if (table) localStorage.setItem("qr_table", String(table));
+    return;
   }
+
+  // Online flow: start a new order but preload with last cart (if wanted),
+  // here we’ll just start fresh
+  setOrderId(null);
+  setOrderType(null);
+  setCustomerInfo(null);
+  localStorage.removeItem("qr_active_order");
+  localStorage.removeItem("qr_active_order_id");
+  localStorage.setItem("qr_show_status", "0");
 }
+
 
 function resetToTypePicker() {
   // clear all session keys
@@ -1831,16 +1864,17 @@ function handleReset() {
         categoryImages={categoryImages}
       />
 
-      <CartDrawer
-        cart={cart}
-        setCart={setCart}
-        orderType={orderType}
-        onSubmitOrder={handleSubmitOrder}
-        paymentMethod={paymentMethod}
-        setPaymentMethod={setPaymentMethod}
-        submitting={submitting}
-        t={t}
-      />
+<CartDrawer
+  cart={cart}
+  setCart={setCart}
+  orderType={orderType}
+  onSubmitOrder={handleSubmitOrder}
+  paymentMethod={paymentMethod}
+  setPaymentMethod={setPaymentMethod}
+  submitting={submitting}
+  t={t}
+  onOrderAnother={handleOrderAnother}
+/>
 
       <AddToCartModal
         open={showAddModal}
