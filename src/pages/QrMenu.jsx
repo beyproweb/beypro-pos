@@ -1346,58 +1346,71 @@ function resetToTypePicker() {
 }
 
 
-// Bootstrap on refresh: only restore if there is an active order id
+// Bootstrap on refresh: restore by saved order id, else by saved table
 useEffect(() => {
   (async () => {
     try {
       const activeId = localStorage.getItem("qr_active_order_id");
-      if (!activeId) {
-        // No active order persisted: force the picker
-        setOrderType(null);
-        setTable(null);
-        setShowStatus(false);
-        return;
-      }
-
-      const res = await fetch(`${API_URL}/api/orders/${activeId}`);
-      if (!res.ok) {
-        // Bad id: clear and force picker
+      if (activeId) {
+        const res = await fetch(`${API_URL}/api/orders/${activeId}`);
+        if (res.ok) {
+          const order = await res.json();
+          if (order && order.status !== "closed") {
+            const type = order.order_type === "table" ? "table" : "online";
+            setOrderType(type);
+            setTable(type === "table" ? Number(order.table_number) || null : null);
+            setOrderId(order.id);
+            setOrderStatus("success");
+            setShowStatus(true);
+            return;
+          }
+        }
+        // bad/missing/closed -> clear and fall through
         localStorage.removeItem("qr_active_order");
         localStorage.removeItem("qr_active_order_id");
         localStorage.removeItem("qr_show_status");
-        setOrderType(null);
-        setTable(null);
-        setShowStatus(false);
-        return;
       }
 
-      const order = await res.json();
-      if (!order || order.status === "closed") {
-        // Closed or missing: clear and force picker
-        localStorage.removeItem("qr_active_order");
-        localStorage.removeItem("qr_active_order_id");
-        localStorage.removeItem("qr_show_status");
-        setOrderType(null);
-        setTable(null);
-        setShowStatus(false);
-        return;
+      // Fallback: if a table is saved, see if there is an open order on it
+      const savedTable = Number(
+        localStorage.getItem("qr_table") ||
+        localStorage.getItem("qr_selected_table") ||
+        "0"
+      ) || null;
+
+      if (savedTable) {
+        const q = await fetch(`${API_URL}/api/orders?table_number=${savedTable}`);
+        if (q.ok) {
+          const raw = await q.json();
+          const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+          const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
+          if (openOrder) {
+            setOrderType("table");
+            setTable(savedTable);
+            setOrderId(openOrder.id);
+            setOrderStatus("success");
+            setShowStatus(true);
+
+            localStorage.setItem("qr_active_order_id", String(openOrder.id));
+            localStorage.setItem("qr_orderType", "table");
+            localStorage.setItem("qr_show_status", "1");
+            return;
+          }
+        }
       }
 
-      // Active order exists -> jump to its status screen
-      const type = (order.order_type === "table") ? "table" : "online";
-      setOrderType(type);
-      setTable(type === "table" ? Number(order.table_number) || null : null);
-      setOrderId(order.id);
-      setOrderStatus("success");
-      setShowStatus(true);
+      // Nothing to restore -> show type picker
+      setOrderType(null);
+      setTable(null);
+      setShowStatus(false);
     } catch {
-      // On any error, show picker
       setOrderType(null);
       setTable(null);
       setShowStatus(false);
     }
   })();
 }, []);
+
 
 
 
