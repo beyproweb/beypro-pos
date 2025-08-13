@@ -1315,9 +1315,9 @@ export default function QrMenu() {
       quantity: Number(it.quantity || 1),
       extras: typeof it.extras === "string" ? JSON.parse(it.extras) : (it.extras || []),
       note: it.note || "",
-      // keep unique per line so cart merging works nicely
-      unique_id: it.unique_id || `${it.product_id}-${Math.random().toString(36).slice(2)}`,
-      image: null,
+       // IMPORTANT: new unique_id so backend treats them as new items
+ unique_id: `${it.product_id ?? it.external_product_id ?? "x"}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`,
+  image: null,
     });
 
     // optional: skip already delivered items
