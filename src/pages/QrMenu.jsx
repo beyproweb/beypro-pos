@@ -1934,7 +1934,7 @@ function handleReset() {
 
   
 
- return (
+return (
   <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
     <QrHeader
       orderType={orderType}
@@ -1954,74 +1954,76 @@ function handleReset() {
       />
     </div>
 
-      <CategoryBar
-        categories={categories}
-        activeCategory={activeCategory}
-        setActiveCategory={setActiveCategory}
-        categoryImages={categoryImages}
-      />
+    <CategoryBar
+      categories={categories}
+      activeCategory={activeCategory}
+      setActiveCategory={setActiveCategory}
+      categoryImages={categoryImages}
+    />
 
-      <CartDrawer
-        cart={cart}
-        setCart={setCart}
-        orderType={orderType}
-        onSubmitOrder={handleSubmitOrder}
-        paymentMethod={paymentMethod}
-        setPaymentMethod={setPaymentMethod}
+    <CartDrawer
+      cart={cart}
+      setCart={setCart}
+      orderType={orderType}
+      onSubmitOrder={handleSubmitOrder}
+      paymentMethod={paymentMethod}
+      setPaymentMethod={setPaymentMethod}
+      submitting={submitting}
+      t={t}
+      onOrderAnother={handleOrderAnother}
+    />
+
+    <AddToCartModal
+      open={showAddModal}
+      product={selectedProduct}
+      extrasGroups={extrasGroups}
+      onClose={() => setShowAddModal(false)}
+      onAddToCart={(item) => {
+        setCart((prev) => {
+          const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
+          if (idx !== -1) {
+            const copy = [...prev];
+            copy[idx].quantity += item.quantity;
+            return copy;
+          }
+          return [...prev, item];
+        });
+        setShowAddModal(false);
+      }}
+      t={t}
+    />
+
+    {/* 🔑 Show Order Status after submit */}
+    {statusPortal}
+
+    {/* ✅ Delivery form stays inside the return */}
+    {orderType === "online" && showDeliveryForm && (
+      <OnlineOrderForm
         submitting={submitting}
         t={t}
-        onOrderAnother={handleOrderAnother}
-      />
-
-      <AddToCartModal
-        open={showAddModal}
-        product={selectedProduct}
-        extrasGroups={extrasGroups}
-        onClose={() => setShowAddModal(false)}
-        onAddToCart={(item) => {
-          setCart((prev) => {
-            const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
-            if (idx !== -1) {
-              const copy = [...prev];
-              copy[idx].quantity += item.quantity;
-              return copy;
-            }
-            return [...prev, item];
-          });
-          setShowAddModal(false);
+        onClose={() => {
+          // if they close without continuing, go back to Order Type
+          setShowDeliveryForm(false);
+          setOrderType(null);
         }}
-        t={t}
+        onSubmit={(form) => {
+          // we ALWAYS show this screen first; saved details will be prefilled here
+          setCustomerInfo({
+            name: form.name,
+            phone: form.phone,
+            address: form.address,
+            payment_method: form.payment_method, // optional to use in submission
+          });
+          setShowDeliveryForm(false);
+        }}
       />
+    )}
+  </div>
+);
 
-      {/* 🔑 Show Order Status after submit */}
-      {statusPortal}
-    </div>
-  );
 }
 
 
-{orderType === "online" && showDeliveryForm && (
-  <OnlineOrderForm
-    submitting={submitting}
-    t={t}
-    onClose={() => {
-      // if they close without continuing, go back to Order Type
-      setShowDeliveryForm(false);
-      setOrderType(null);
-    }}
-    onSubmit={(form) => {
-      // we ALWAYS show this screen first; saved details will be prefilled here
-      setCustomerInfo({
-        name: form.name,
-        phone: form.phone,
-        address: form.address,
-        payment_method: form.payment_method, // you can keep/ignore this in submission
-      });
-      setShowDeliveryForm(false);
-      // optional: keep the local save behavior already inside OnlineOrderForm
-    }}
-  />
-)}
 
 
 
