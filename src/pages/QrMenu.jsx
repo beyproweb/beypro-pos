@@ -10,6 +10,7 @@ const API_URL = import.meta.env.VITE_API_URL || "";
 // --- TABLE PERSISTENCE HELPERS ---
 const TABLE_KEY = "qr_selected_table";
 
+
 function saveSelectedTable(tableNo) {
   if (tableNo !== undefined && tableNo !== null && `${tableNo}`.trim() !== "") {
     localStorage.setItem(TABLE_KEY, String(tableNo));
@@ -368,6 +369,27 @@ useEffect(() => {
 }, []);
 
 
+// -- clear saved table ONLY when no items in cart and no active order
+function resetTableIfEmptyCart() {
+  const count = Array.isArray(cart) ? cart.length : 0;
+  const hasActive = !!(orderId || localStorage.getItem("qr_active_order_id"));
+  if (count === 0 && !hasActive) {
+    try {
+      localStorage.removeItem("qr_table");
+      localStorage.removeItem("qr_selected_table");
+      localStorage.removeItem("qr_orderType");
+    } catch {}
+    // let any listeners react instantly (if you add one later)
+    window.dispatchEvent(new Event("qr:table-reset"));
+  }
+}
+
+// when user taps the header “×”
+function handleCloseOrderPage() {
+  resetTableIfEmptyCart();
+  setTable(null);          // clear current selection in state
+  setOrderType(null);      // go back to Order Type modal
+}
 
 
 
@@ -1866,12 +1888,13 @@ function handleReset() {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
-      <QrHeader
-        orderType={orderType}
-        table={table}
-        onClose={() => { setOrderType(null); }}
-        t={t}
-      />
+     <QrHeader
+  orderType={orderType}
+  table={table}
+  onClose={handleCloseOrderPage}
+  t={t}
+/>
+
 
       <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
         <ProductGrid
