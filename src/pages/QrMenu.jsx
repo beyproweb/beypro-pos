@@ -1183,20 +1183,19 @@ function CartDrawer({
                   </div>
                 )}
                 <button
-                  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
-                  onClick={onSubmitOrder}
-                  disabled={submitting}
-                >
-                  {submitting ? t("Please wait...") : t("Submit Order")}
-                </button>
-                <button
+    className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
+    onClick={onSubmitOrder}
+    disabled={submitting}
+  >
+    {submitting ? t("Please wait...") : t("Submit Order")}
+  </button>
+
+ <button
    className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
    onClick={() => onOrderAnother?.()}
->
-  {t("Order Another")}
-</button>
-
-
+ >
+   {t("Order Another")}
+ </button>
                 <button
                   className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
                   onClick={() => setCart([])}
@@ -1302,92 +1301,8 @@ export default function QrMenu() {
     resetToTypePicker
   );
 
-  async function rehydrateCartFromOrder(orderId) {
-  try {
-    const res = await fetch(`${API_URL}/api/orders/${orderId}/items`);
-    if (!res.ok) throw new Error("Failed to load order items");
-    const raw = await res.json();
 
-    const toCartItem = (it) => ({
-      id: it.product_id,
-      name: it.order_item_name || it.product_name || it.name || "Item",
-      price: Number(it.price || 0),
-      quantity: Number(it.quantity || 1),
-      extras: typeof it.extras === "string" ? JSON.parse(it.extras) : (it.extras || []),
-      note: it.note || "",
-       // IMPORTANT: new unique_id so backend treats them as new items
- unique_id: `${it.product_id ?? it.external_product_id ?? "x"}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`,
-  image: null,
-    });
 
-    // optional: skip already delivered items
-    const items = (Array.isArray(raw) ? raw : [])
-      .filter(i => (i.kitchen_status || "new") !== "delivered")
-      .map(toCartItem);
-
-    setCart(items);
-    // localStorage sync happens via your existing useEffect([cart])
-  } catch (e) {
-    console.error("rehydrateCartFromOrder failed:", e);
-  }
-}
-
-async function handleOrderAnother() {
-  try {
-    // Hide status modal and prep for a new sub-order
-    setShowStatus(false);
-    setOrderStatus("pending");
-
-    // 1) Resolve active order + type robustly
-    let id =
-      orderId ||
-      Number(localStorage.getItem("qr_active_order_id")) ||
-      null;
-
-    let type =
-      orderType ||
-      localStorage.getItem("qr_orderType") ||
-      (table ? "table" : null);
-
-    // 2) If missing id but we know the table, fetch the open order by table
-    if (!id && (type === "table" || table)) {
-      const tNo = table || Number(localStorage.getItem("qr_table")) || null;
-      if (tNo) {
-        try {
-          const q = await fetch(`${API_URL}/api/orders?table_number=${tNo}`);
-          if (q.ok) {
-            const list = await q.json();
-            const open = Array.isArray(list)
-              ? list.find(o => (o.status || "").toLowerCase() !== "closed")
-              : null;
-            if (open) {
-              id = open.id;
-              type = "table";
-              setOrderId(id);
-              setOrderType("table");
-            }
-          }
-        } catch {}
-      }
-    }
-
-    // 3) If we have a table order, rehydrate the cart from server (excludes delivered items)
-    if (type === "table" && id) {
-      await rehydrateCartFromOrder(id);
-      localStorage.setItem("qr_active_order_id", String(id));
-      localStorage.setItem("qr_orderType", "table");
-      if (table) localStorage.setItem("qr_table", String(table));
-      return;
-    }
-
-    // 4) No valid table order found → do NOT kick user to Order Type.
-    // Just keep them on the same screen (optional: show status)
-    setShowStatus(true);
-    setOrderStatus("success");
-  } catch (e) {
-    console.error("handleOrderAnother failed:", e);
-  }
-}
 
 
 
@@ -1525,7 +1440,7 @@ useEffect(() => {
 
     function tryJSON(v) { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
   }, []);
-  // === Always-mounted Order Status (portal) ===
+
 // === Always-mounted Order Status (portal) ===
 const statusPortal = showStatus
   ? createPortal(
@@ -1618,6 +1533,91 @@ if (orderType === "table" && !table) {
     </>
   );
 }
+
+
+// ---- Rehydrate cart from current order (generate NEW unique_id for each line) ----
+async function rehydrateCartFromOrder(orderId) {
+  try {
+    const res = await fetch(`${API_URL}/api/orders/${orderId}/items`);
+    if (!res.ok) throw new Error("Failed to load order items");
+    const raw = await res.json();
+
+    const now36 = Date.now().toString(36);
+    const items = (Array.isArray(raw) ? raw : [])
+      // skip delivered lines; keep new/preparing/ready
+      .filter(i => (i.kitchen_status || "new") !== "delivered")
+      .map((it) => ({
+        id: it.product_id ?? it.external_product_id,
+        name: it.order_item_name || it.product_name || it.name || "Item",
+        price: Number(it.price || 0),
+        quantity: Number(it.quantity || 1),
+        extras: typeof it.extras === "string" ? JSON.parse(it.extras) : (it.extras || []),
+        note: it.note || "",
+        image: null,
+        // IMPORTANT: force a brand-new uid so backend treats as NEW lines
+        unique_id: `${(it.product_id ?? it.external_product_id ?? "x")}-${now36}-${Math.random().toString(36).slice(2,8)}`,
+      }));
+
+    setCart(items); // drawer auto-opens due to effect in CartDrawer
+    // localStorage sync happens via useEffect([cart])
+  } catch (e) {
+    console.error("rehydrateCartFromOrder failed:", e);
+  }
+}
+
+// ---- Order Another: stay on same order/table, prefill cart ----
+async function handleOrderAnother() {
+  try {
+    // close status overlay if it’s open
+    setShowStatus(false);
+    setOrderStatus("pending");
+
+    // Try to resolve an active order id/type
+    let id = orderId || Number(localStorage.getItem("qr_active_order_id")) || null;
+    let type = orderType || localStorage.getItem("qr_orderType") || (table ? "table" : null);
+
+    // If we know the table but not the id, fetch the open order for that table
+    if (!id && (type === "table" || table)) {
+      const tNo = table || Number(localStorage.getItem("qr_table")) || null;
+      if (tNo) {
+        try {
+          const q = await fetch(`${API_URL}/api/orders?table_number=${tNo}`);
+          if (q.ok) {
+            const list = await q.json();
+            const open = Array.isArray(list)
+              ? list.find(o => (o.status || "").toLowerCase() !== "closed")
+              : null;
+            if (open) {
+              id = open.id;
+              type = "table";
+              setOrderId(id);
+              setOrderType("table");
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // Table flow: rehydrate into cart and keep context
+    if (type === "table" && id) {
+      await rehydrateCartFromOrder(id);
+      localStorage.setItem("qr_active_order_id", String(id));
+      localStorage.setItem("qr_orderType", "table");
+      if (table) localStorage.setItem("qr_table", String(table));
+      localStorage.setItem("qr_show_status", "0");
+      return;
+    }
+
+    // Online flow (no type/id): don’t kick to order type; just keep them here
+    setShowStatus(true);
+    setOrderStatus("success");
+  } catch (e) {
+    console.error("handleOrderAnother failed:", e);
+  }
+}
+
+
+
 
 
     function calcOrderTotalWithExtras(cart) {
@@ -1886,7 +1886,6 @@ function handleReset() {
         setActiveCategory={setActiveCategory}
         categoryImages={categoryImages}
       />
-
 <CartDrawer
   cart={cart}
   setCart={setCart}
@@ -1896,8 +1895,9 @@ function handleReset() {
   setPaymentMethod={setPaymentMethod}
   submitting={submitting}
   t={t}
-  onOrderAnother={handleOrderAnother}
+  onOrderAnother={handleOrderAnother}   // ← ADD THIS
 />
+
 
       <AddToCartModal
         open={showAddModal}
