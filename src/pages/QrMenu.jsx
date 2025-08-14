@@ -1191,11 +1191,15 @@ function CartDrawer({
   </button>
 
  <button
-   className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
-   onClick={() => onOrderAnother?.()}
- >
-   {t("Order Another")}
- </button>
+  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
+  onClick={() => { 
+    setShow(false);          // 👈 close the cart drawer
+    onOrderAnother?.();      // 👈 your existing logic (rehydrate / keep table context)
+  }}
+>
+  {t("Order Another")}
+</button>
+
                 <button
                   className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
                   onClick={() => setCart([])}
