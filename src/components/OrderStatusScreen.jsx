@@ -84,16 +84,31 @@ useEffect(() => {
 useEffect(() => {
   let abort = false;
   async function load() {
-    const res = await fetch(`${API_URL}/api/orders/${orderId}`);
-    const data = await res.json();
-    if (!abort) setOrder(data); // data.items should include first + sub-orders
+    try {
+      const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) {
+        if (res.status === 404 && !abort) {
+          // Order no longer exists
+          setOrder(null);
+          onFinished?.();
+        }
+        return;
+      }
+      const data = await safeJSON(res);
+      if (!abort) setOrder(data);
+    } catch (err) {
+      console.error("Order fetch failed:", err.message);
+    }
   }
   load();
 
-  // optional: poll every X sec
+  // Poll every 4 sec
   const iv = setInterval(load, 4000);
   return () => { abort = true; clearInterval(iv); };
 }, [orderId]);
+
 
   const fetchOrder = async () => {
     if (!orderId) return;
