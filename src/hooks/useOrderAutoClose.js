@@ -30,25 +30,47 @@ export default function useOrderAutoClose(orderId, onResetToTypePicker) {
     return () => socket.off("order_closed", handleClosed);
   }, [onResetToTypePicker]);
 
-  // --- Fallback polling (if socket is blocked) ---
-  useEffect(() => {
-    if (!orderId) return;
-    const timer = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/orders/${orderId}`);
-        if (!res.ok) return;
-        const order = await res.json();
-        const status = (order?.status || "").toLowerCase();
-        if (["closed", "completed", "paid", "delivered", "canceled", "cancelled"].includes(status)) {
+// --- Fallback polling (if socket is blocked) ---
+useEffect(() => {
+  if (!orderId) return;
+
+  const timer = setInterval(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
+        headers: { Accept: "application/json" },
+      });
+
+      // If order is gone (404) or any non-OK, don't try to parse JSON
+      if (!res.ok) {
+        if (res.status === 404) {
+          try {
+            localStorage.removeItem("qr_active_order_id");
+            localStorage.removeItem("qr_table");
+            localStorage.removeItem("qr_orderType"); // <- camelCase
+            localStorage.removeItem("qr_cart");
+          } catch {}
+          onResetToTypePicker?.();
+        }
+        return;
+      }
+
+      const order = await res.json();
+      const status = (order?.status || "").toLowerCase();
+      if (["closed", "completed", "paid", "delivered", "canceled", "cancelled"].includes(status)) {
+        try {
           localStorage.removeItem("qr_active_order_id");
           localStorage.removeItem("qr_table");
           localStorage.removeItem("qr_orderType"); // <- camelCase
           localStorage.removeItem("qr_cart");
-          onResetToTypePicker?.();
-        }
-      } catch {}
-    }, 10000);
+        } catch {}
+        onResetToTypePicker?.();
+      }
+    } catch {
+      // network/HTML error → ignore one tick; next poll will retry
+    }
+  }, 10000);
 
-    return () => clearInterval(timer);
-  }, [orderId, onResetToTypePicker]);
+  return () => clearInterval(timer);
+}, [orderId, onResetToTypePicker]);
+
 }
