@@ -369,27 +369,6 @@ useEffect(() => {
 }, []);
 
 
-// -- clear saved table ONLY when no items in cart and no active order
-function resetTableIfEmptyCart() {
-  const count = Array.isArray(cart) ? cart.length : 0;
-  const hasActive = !!(orderId || localStorage.getItem("qr_active_order_id"));
-  if (count === 0 && !hasActive) {
-    try {
-      localStorage.removeItem("qr_table");
-      localStorage.removeItem("qr_selected_table");
-      localStorage.removeItem("qr_orderType");
-    } catch {}
-    // let any listeners react instantly (if you add one later)
-    window.dispatchEvent(new Event("qr:table-reset"));
-  }
-}
-
-// when user taps the header “×”
-function handleCloseOrderPage() {
-  resetTableIfEmptyCart();
-  setTable(null);          // clear current selection in state
-  setOrderType(null);      // go back to Order Type modal
-}
 
 
 
@@ -1329,6 +1308,27 @@ export default function QrMenu() {
 
 
 
+// -- clear saved table ONLY when no items in cart and no active order
+function resetTableIfEmptyCart() {
+  const count = Array.isArray(cart) ? cart.length : 0;
+  const hasActive = !!(orderId || localStorage.getItem("qr_active_order_id"));
+  if (count === 0 && !hasActive) {
+    try {
+      localStorage.removeItem("qr_table");
+      localStorage.removeItem("qr_selected_table");
+      localStorage.removeItem("qr_orderType");
+    } catch {}
+    // let any listeners react instantly (if you add one later)
+    window.dispatchEvent(new Event("qr:table-reset"));
+  }
+}
+
+// when user taps the header “×”
+function handleCloseOrderPage() {
+  resetTableIfEmptyCart();
+  setTable(null);          // clear current selection in state
+  setOrderType(null);      // go back to Order Type modal
+}
 
 
 
