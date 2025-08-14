@@ -1,7 +1,7 @@
 // src/pages/OrderStatusScreen.jsx
 import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getActiveQrOrderId, clearActiveQrOrderId } from "@/utils/qrActiveOrder";
+import { getActiveQrOrderId, clearActiveQrOrderId } from "../hooks/qrActiveOrder";
 
 const POLL_MS = 3000;
 
