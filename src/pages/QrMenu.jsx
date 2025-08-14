@@ -4,7 +4,7 @@ import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import useOrderAutoClose from "../hooks/useOrderAutoClose";
-import { setActiveQrOrderId, getActiveQrOrderId, clearActiveQrOrderId } from "@/utils/qrActiveOrder";
+import { setActiveQrOrderId, getActiveQrOrderId } from "../utils/qrActiveOrder";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
