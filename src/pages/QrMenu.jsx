@@ -865,22 +865,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
     });
   };
 
-  // === Always-mounted Order Status (portal) ===
-const statusPortal = showStatus
-  ? createPortal(
-      <OrderStatusModal
-        open={showStatus}
-        status={orderStatus}
-        orderId={orderId}
-        table={orderType === "table" ? table : null}
-        onOrderAnother={handleOrderAnother}
-        onClose={handleReset}
-        onFinished={resetToTypePicker}
-        t={t}
-      />,
-      document.body
-    )
-  : null;
+
 
 
   const handleBackdrop = (e) => {
