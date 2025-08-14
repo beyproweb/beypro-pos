@@ -1,272 +1,157 @@
-import React, { useState, useEffect, useRef } from "react";
-import { io } from "socket.io-client";
-const API_URL = import.meta.env.VITE_API_URL || "";
-import { useNavigate } from "react-router-dom";
-import useOrderAutoClose from "../hooks/useOrderAutoClose";
+// src/pages/OrderStatusScreen.jsx
+import React from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { getActiveQrOrderId, clearActiveQrOrderId } from "@/utils/qrActiveOrder";
 
-/* ---------- SOCKET.IO HOOK ---------- */
-let socket;
-export function useSocketIO(onOrderUpdate, orderId) {
-  useEffect(() => {
+const POLL_MS = 3000;
+
+export default function OrderStatusScreen() {
+  const navigate = useNavigate();
+  const params = useParams();
+  const paramId = params?.orderId;
+  const [order, setOrder] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+
+  const orderId = paramId || getActiveQrOrderId();
+
+  // If we somehow have no id, go to order type picker
+  React.useEffect(() => {
+    if (!orderId) {
+      navigate("/qr/order-type", { replace: true });
+    }
+  }, [orderId, navigate]);
+
+  const fetchOnce = React.useCallback(async () => {
     if (!orderId) return;
-    if (!socket) socket = io(API_URL, { transports: ["websocket"] });
-
-    const updateHandler = (data) => {
-      if (Array.isArray(data?.orderIds) && data.orderIds.includes(orderId)) onOrderUpdate?.();
-      if (data?.orderId === orderId) onOrderUpdate?.();
-    };
-
-    socket.on("orders_updated", onOrderUpdate);
-    socket.on("order_ready", updateHandler);
-    return () => {
-      socket.off("orders_updated", onOrderUpdate);
-      socket.off("order_ready", updateHandler);
-    };
-  }, [onOrderUpdate, orderId]);
-}
-
-/* ---------- HELPERS ---------- */
-async function safeJSON(res) {
-  const text = await res.text();
-  try { return JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
-}
-const toArray = (val) => (Array.isArray(val) ? val : []);
-const parseMaybeJSON = (v) => {
-  if (!v) return [];
-  if (Array.isArray(v)) return v;
-  try { return JSON.parse(v); } catch { return []; }
-};
-const normItem = (it) => ({
-  id: it.id || it.item_id || it.unique_id || `${it.product_id || Math.random()}`,
-  name: it.name || it.product_name || it.item_name || "Item",
-  price: Number(it.price || 0),
-  quantity: Number(it.quantity || 1),
-  kitchen_status: it.kitchen_status || "new",
-  note: it.note || "",
-  extras: parseMaybeJSON(it.extras),
-});
-
-/* ---------- MAIN COMPONENT ---------- */
-const OrderStatusScreen = ({
-  orderId,
-  table,                // optional; fallback to order.table_number
-  onOrderAnother,
-  onFinished, 
-  t = (str) => str,
-}) => {
-  const [order, setOrder] = useState(null);
-  const [items, setItems] = useState([]);
-  const [timer, setTimer] = useState("00:00");
-  const intervalRef = useRef(null);
-  const FINISHED_STATES = ["closed", "completed", "paid", "delivered", "canceled"];
-    // --- NAV + auto-close wiring ---
-  const navigate = useNavigate(); // keep if you want to route to /qr/order-type
-useOrderAutoClose(
-  orderId || localStorage.getItem("qr_active_order_id"),
-  () => {
     try {
-      localStorage.removeItem("qr_active_order_id");
-      localStorage.removeItem("qr_table");
-      localStorage.removeItem("qr_orderType");
-      localStorage.removeItem("qr_cart");
-    } catch {}
-    onFinished?.(); // let QrMenu reset to type picker
-  }
-);
-
-useEffect(() => {
-  if (!order) return;
-  if (FINISHED_STATES.includes((order.status || "").toLowerCase())) {
-    onFinished?.();
-  }
-}, [order?.status]);
-
-useEffect(() => {
-  let abort = false;
-  async function load() {
-    try {
-      const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) {
-        if (res.status === 404 && !abort) {
-          // Order no longer exists
-          setOrder(null);
-          onFinished?.();
-        }
+      const res = await fetch(`${import.meta.env.VITE_API_BASE}/api/orders/${orderId}`);
+      if (res.status === 404) {
+        // Order not found (closed or never existed) → reset and go to type picker
+        clearActiveQrOrderId();
+        navigate("/qr/order-type", { replace: true });
         return;
       }
-      const data = await safeJSON(res);
-      if (!abort) setOrder(data);
-    } catch (err) {
-      console.error("Order fetch failed:", err.message);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Fetch failed: ${res.status} ${text}`);
+      }
+      const data = await res.json();
+      setOrder(data);
+      setLoading(false);
+
+      const status = (data?.status || "").toLowerCase();
+
+      // If your backend uses different names, adjust here:
+      const isClosed = ["closed", "completed", "cancelled"].includes(status);
+
+      if (isClosed) {
+        clearActiveQrOrderId();
+        navigate("/qr/order-type", { replace: true });
+      }
+    } catch (e) {
+      console.error(e);
+      setError(e.message || "Failed to load order");
+      setLoading(false);
     }
+  }, [orderId, navigate]);
+
+  // Poll while the order is active
+  React.useEffect(() => {
+    fetchOnce(); // initial
+    const t = setInterval(fetchOnce, POLL_MS);
+    return () => clearInterval(t);
+  }, [fetchOnce]);
+
+  if (!orderId) return null;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-700">Loading your order status…</div>
+    </div>
+    );
   }
-  load();
 
-  // Poll every 4 sec
-  const iv = setInterval(load, 4000);
-  return () => { abort = true; clearInterval(iv); };
-}, [orderId]);
+  if (error && !order) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-2">
+        <div className="text-red-600 font-semibold">Couldn’t load order</div>
+        <div className="text-gray-600 text-sm">{error}</div>
+        <button
+          onClick={() => navigate("/qr/order-type", { replace: true })}
+          className="mt-4 px-4 py-2 rounded-lg bg-blue-600 text-white"
+        >
+          Start a new order
+        </button>
+      </div>
+    );
+  }
 
-
-  const fetchOrder = async () => {
-    if (!orderId) return;
-    try {
-      const orderRes = await fetch(`${API_URL}/api/orders/${orderId}`);
-      if (!orderRes.ok) throw new Error(`Order ${orderId} not found`);
-      const orderData = await safeJSON(orderRes);
-      setOrder(orderData);
-    } catch {
-      setOrder(null);
-    }
-
-    try {
-      const itemsRes = await fetch(`${API_URL}/api/orders/${orderId}/items`);
-      if (!itemsRes.ok) throw new Error(`Items for order ${orderId} not found`);
-      const raw = await safeJSON(itemsRes);
-      const normalized = toArray(raw).map(normItem);
-      setItems(normalized);
-    } catch {
-      setItems([]);
-    }
-  };
-
-  // Live timer since order created
-  useEffect(() => {
-    if (!order?.created_at) return;
-    function updateTimer() {
-      const start = new Date(order.created_at);
-      const now = new Date();
-      const diff = Math.max(0, Math.floor((now.getTime() - start.getTime()) / 1000));
-      const mins = String(Math.floor(diff / 60)).padStart(2, "0");
-      const secs = String(diff % 60).padStart(2, "0");
-      setTimer(`${mins}:${secs}`);
-    }
-    updateTimer();
-    intervalRef.current = window.setInterval(updateTimer, 1000);
-    return () => intervalRef.current && clearInterval(intervalRef.current);
-  }, [order?.created_at]);
-
-  // Socket.io for live updates
-  useSocketIO(fetchOrder, orderId);
-
-  useEffect(() => {
-    fetchOrder();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId]);
-
-  // Group items by status
-  const preparing = items.filter(i => i.kitchen_status === "preparing" || i.kitchen_status === "new");
-  const ready = items.filter(i => i.kitchen_status === "ready");
-  const delivered = items.filter(i => i.kitchen_status === "delivered");
-
-  // ❌ Removed: auto-close when all delivered
-
-  const tableNo = table ?? order?.table_number ?? null;
+  const items = order?.items || [];
+  const status = (order?.status || "pending").toUpperCase();
 
   return (
-  <div className="fixed inset-0 z-[100] bg-white flex flex-col px-3 py-8 overflow-y-auto">
-    <div className="w-full max-w-md mx-auto bg-gradient-to-br from-blue-50 via-indigo-50 to-pink-50 rounded-3xl shadow-2xl p-5 flex flex-col items-center">
-      <div className="mb-2 text-lg font-bold text-blue-700">
-        {tableNo ? (<>🍽️ {t("Table")} {tableNo}</>) : (<>{t("Your Order")}</>)}
-      </div>
-      <div className="text-2xl font-extrabold text-fuchsia-700 mb-1">
-        {t("Order in Progress")}
-      </div>
-      <div className="mb-4 text-base text-indigo-800 font-semibold">
-        <span>⏱️ {t("Time")}: <span className="font-mono">{timer}</span></span>
-      </div>
+    <div className="min-h-screen w-full max-w-full bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="container mx-auto px-4 py-6">
+        <div className="mb-4">
+          <h1 className="text-2xl font-bold text-indigo-900">Order Status</h1>
+          <p className="text-sm text-indigo-700 mt-1">Order #{orderId} • {status}</p>
+        </div>
 
-      {/* Items */}
-      {items.length > 0 && (
-        <div className="w-full mb-4">
-          <div className="font-bold text-indigo-700 mb-2">🛍️ {t("Items Ordered")}</div>
-          <ul className="flex flex-col gap-2">
-            {items.map((item) => {
-              const lineTotal = (item.price || 0) * (item.quantity || 1);
-              return (
-                <li key={item.id} className="flex flex-col bg-white border border-blue-100 rounded-xl p-3 shadow-sm">
-                  <div className="flex justify-between items-center font-bold text-blue-900">
-                    <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                    <span className="text-xs">x{item.quantity}</span>
-                  </div>
-                  <div className="mt-1 text-sm flex justify-between text-indigo-700 font-semibold">
-                    <span>{t("Price")}: ₺{(item.price || 0).toFixed(2)}</span>
-                    <span>{t("Total")}: ₺{lineTotal.toFixed(2)}</span>
-                  </div>
-                  {item.extras?.length > 0 && (
-                    <div className="mt-1 text-xs text-gray-500">
-                      {t("Extras")}: {item.extras.map(ex => `${ex.name} ×${ex.quantity || 1}`).join(", ")}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="bg-white rounded-xl p-4 shadow border border-indigo-100">
+            <h2 className="font-semibold text-indigo-900 mb-2">Items</h2>
+            <ul className="max-h-[60vh] overflow-auto pr-2 space-y-2">
+              {items.map((it) => {
+                const qty = it.quantity || 1;
+                const name = it.name || it.product_name || "Item";
+                const price = Number(it.price || 0);
+                const line = price * qty;
+                return (
+                  <li key={it.id} className="flex flex-col border border-indigo-50 rounded-lg p-2">
+                    <div className="flex justify-between">
+                      <span className="font-medium text-indigo-900">{name}</span>
+                      <span className="text-indigo-700">x{qty}</span>
                     </div>
-                  )}
-                  {item.note && (
-                    <div className="mt-1 text-xs text-yellow-700 italic">
-                      {t("Note")}: {item.note}
+                    <div className="flex justify-between text-sm text-indigo-700">
+                      <span>₺{price.toFixed(2)}</span>
+                      <span>₺{line.toFixed(2)}</span>
                     </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+                    {Array.isArray(it.extras) && it.extras.length > 0 && (
+                      <div className="mt-1 text-xs text-indigo-600">
+                        + {it.extras.map((e) => e?.name || e?.groupName || "extra").join(", ")}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
 
-      {/* Preparing */}
-      {preparing.length > 0 && (
-        <div className="w-full mb-3">
-          <div className="font-bold text-yellow-700 mb-2">{t("Preparing")}</div>
-          <ul className="flex flex-col gap-2">
-            {preparing.map((item) => (
-              <li key={item.id} className="flex justify-between items-center bg-yellow-50 rounded-xl px-3 py-2 text-yellow-900 font-bold text-base shadow-sm">
-                <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                <span className="text-xs">x{item.quantity}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+          <div className="bg-white rounded-xl p-4 shadow border border-indigo-100">
+            <h2 className="font-semibold text-indigo-900 mb-2">Progress</h2>
+            <div className="text-indigo-800">
+              {status === "PENDING" && "Your order is pending confirmation."}
+              {status === "CONFIRMED" && "Your order was confirmed. Preparing…"}
+              {status === "PREPARING" && "We’re preparing your order…"}
+              {status === "READY" && "Ready for pickup / serving."}
+              {status === "DELIVERING" && "Out for delivery."}
+              {["CLOSED", "COMPLETED", "CANCELLED"].includes(status) && "Order finished."}
+            </div>
 
-      {/* Ready */}
-      {ready.length > 0 && (
-        <div className="w-full mb-3">
-          <div className="font-bold text-blue-700 mb-2">{t("Ready for Pickup")}</div>
-          <ul className="flex flex-col gap-2">
-            {ready.map((item) => (
-              <li key={item.id} className="flex justify-between items-center bg-blue-50 rounded-xl px-3 py-2 text-blue-900 font-bold text-base shadow-sm animate-pulse">
-                <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                <span className="text-xs">x{item.quantity}</span>
-              </li>
-            ))}
-          </ul>
+            <button
+              onClick={() => {
+                clearActiveQrOrderId();
+                navigate("/qr/order-type", { replace: true });
+              }}
+              className="mt-4 w-full px-4 py-2 rounded-xl bg-indigo-600 text-white font-medium"
+            >
+              New Order
+            </button>
+          </div>
         </div>
-      )}
-
-      {/* Delivered */}
-      {delivered.length > 0 && (
-        <div className="w-full mb-3">
-          <div className="font-bold text-green-700 mb-2">{t("Delivered")}</div>
-          <ul className="flex flex-col gap-2">
-            {delivered.map((item) => (
-              <li key={item.id} className="flex justify-between items-center bg-green-50 rounded-xl px-3 py-2 text-green-900 font-bold text-base shadow-sm line-through">
-                <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                <span className="text-xs">x{item.quantity}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <button
-        className="w-full mt-6 py-3 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-white text-lg font-bold shadow-lg hover:scale-105 transition"
-        onClick={onOrderAnother}
-      >
-        {t("Order Another")}
-      </button>
+      </div>
     </div>
-  </div>
-);
-
-};
-
-export default OrderStatusScreen;
+  );
+}
