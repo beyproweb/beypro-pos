@@ -1335,10 +1335,20 @@ function resetTableIfEmptyCart() {
 
 // when user taps the header “×”
 function handleCloseOrderPage() {
+  // If there’s an active order, keep showing status (don’t go back to type)
+  const activeId = orderId || Number(localStorage.getItem("qr_active_order_id")) || null;
+  if (activeId) {
+    setShowStatus(true);
+    setOrderStatus("success");
+    return;
+  }
+
+  // No active order → normal behavior
   resetTableIfEmptyCart();
-  setTable(null);          // clear current selection in state
-  setOrderType(null);      // go back to Order Type modal
+  setTable(null);
+  setOrderType(null);
 }
+
 
 
 
@@ -1377,18 +1387,14 @@ if (activeId) {
       setTable(type === "table" ? Number(order.table_number) || null : null);
       setOrderId(order.id);
 
-      if (type === "table") {
-        // keep current behavior for tables
-        setOrderStatus("success");
-        setShowStatus(true);
-      } else {
-        // Delivery: ALWAYS show the details form first
-        setShowDeliveryForm(true);
-      }
+      // ✅ Always show the Order Status screen while not closed
+      setOrderStatus("success");
+      setShowStatus(true);
       return;
     }
   }
 }
+
 
 
       // Fallback: see if a saved table has an open order
@@ -1720,6 +1726,12 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
 
 async function handleSubmitOrder() {
   try {
+    setLastError(null);
+
+    if (orderType === "online" && !customerInfo) {
+      setShowDeliveryForm(true);
+      return; // stop here; they must confirm details first
+    }
     setLastError(null);
 
     if (!Array.isArray(cart) || cart.length === 0) {
