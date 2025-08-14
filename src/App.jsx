@@ -39,7 +39,7 @@ import QrMenu from "./pages/QrMenu";
 import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
-import { BrowserRouter, Routes, Route, useParams, useNavigate } from "react-router-dom";
+import { BrowserRouter, useNavigate } from "react-router-dom";
 
 import OrderStatusScreen from "./components/OrderStatusScreen";
 import QrMenuSettings from "./pages/QrMenuSettings";
