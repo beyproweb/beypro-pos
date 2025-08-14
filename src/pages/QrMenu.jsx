@@ -1936,49 +1936,50 @@ function handleReset() {
       />
     </div>
 
-    <CategoryBar
-      categories={categories}
-      activeCategory={activeCategory}
-      setActiveCategory={setActiveCategory}
-      categoryImages={categoryImages}
-    />
+      <CategoryBar
+        categories={categories}
+        activeCategory={activeCategory}
+        setActiveCategory={setActiveCategory}
+        categoryImages={categoryImages}
+      />
 
-    <CartDrawer
-      cart={cart}
-      setCart={setCart}
-      orderType={orderType}
-      onSubmitOrder={handleSubmitOrder}
-      paymentMethod={paymentMethod}
-      setPaymentMethod={setPaymentMethod}
-      submitting={submitting}
-      t={t}
-      onOrderAnother={handleOrderAnother}
-    />
+      <CartDrawer
+        cart={cart}
+        setCart={setCart}
+        orderType={orderType}
+        onSubmitOrder={handleSubmitOrder}
+        paymentMethod={paymentMethod}
+        setPaymentMethod={setPaymentMethod}
+        submitting={submitting}
+        t={t}
+        onOrderAnother={handleOrderAnother}
+      />
 
-    <AddToCartModal
-      open={showAddModal}
-      product={selectedProduct}
-      extrasGroups={extrasGroups}
-      onClose={() => setShowAddModal(false)}
-      onAddToCart={(item) => {
-        setCart((prev) => {
-          const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
-          if (idx !== -1) {
-            const copy = [...prev];
-            copy[idx].quantity += item.quantity;
-            return copy;
-          }
-          return [...prev, item];
-        });
-        setShowAddModal(false);
-      }}
-      t={t}
-    />
+      <AddToCartModal
+        open={showAddModal}
+        product={selectedProduct}
+        extrasGroups={extrasGroups}
+        onClose={() => setShowAddModal(false)}
+        onAddToCart={(item) => {
+          setCart((prev) => {
+            const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
+            if (idx !== -1) {
+              const copy = [...prev];
+              copy[idx].quantity += item.quantity;
+              return copy;
+            }
+            return [...prev, item];
+          });
+          setShowAddModal(false);
+        }}
+        t={t}
+      />
 
-    {/* 🔑 Render the status modal portal */}
-    {statusPortal}
-
-
+      {/* 🔑 Show Order Status after submit */}
+      {statusPortal}
+    </div>
+  );
+}
 
 
 {orderType === "online" && showDeliveryForm && (
@@ -2005,8 +2006,5 @@ function handleReset() {
 )}
 
 
-</div>
-);
-}
 
 
