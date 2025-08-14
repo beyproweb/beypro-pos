@@ -4,6 +4,7 @@ import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import useOrderAutoClose from "../hooks/useOrderAutoClose";
+import { setActiveQrOrderId, getActiveQrOrderId, clearActiveQrOrderId } from "@/utils/qrActiveOrder";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -1725,173 +1726,41 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
     payment_method: null,
   };
 }
-
-
-async function handleSubmitOrder() {
-  try {
-    setLastError(null);
-
-    if (orderType === "online" && !customerInfo) {
-      setShowDeliveryForm(true);
-      return; // stop here; they must confirm details first
+React.useEffect(() => {
+    const existing = getActiveQrOrderId();
+    if (existing) {
+      navigate(`/qr/order/${existing}/status`, { replace: true });
     }
-    setLastError(null);
+  }, [navigate]);
 
-    if (!Array.isArray(cart) || cart.length === 0) {
-      throw new Error("Cart is empty.");
-    }
-    if (orderType === "table" && !table) {
-      throw new Error("Please select a table.");
-    }
+  async function handleSubmitOrder() {
+    try {
+      // TODO: build your payload here
+      const res = await fetch(`${import.meta.env.VITE_API_BASE}/api/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildOrderPayload()) // use your current payload function
+      });
 
-    const total = calcOrderTotalWithExtras(cart); // keep your existing total logic
-
-  
-   // ---- TABLE SUB-ORDER: append to existing order (UNPAID) ----
-if (orderType === "table" && orderId) {
-  const itemsPayload = cart.map((i) => ({
-    product_id: i.id,
-    quantity: i.quantity,
-    price: parseFloat(i.price) || 0,
-    ingredients: i.ingredients ?? [],
-    extras: i.extras ?? [],
-    unique_id: i.unique_id,
-    note: i.note || null,
-    confirmed: true,        // send to kitchen right away
-    payment_method: null,   // NOT paid yet
-    receipt_id: null,
-  }));
-
-  await postJSON(`${API_URL}/api/orders/order-items`, {
-    order_id: orderId,
-    receipt_id: null,
-    items: itemsPayload,
-  });
-
-  // success: keep same order, clear cart, show status
-  setCart([]);
-  setOrderStatus("success");
-  setShowStatus(true);
-
-  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
-  localStorage.setItem("qr_show_status", "1");
-  localStorage.setItem("qr_active_order_id", String(orderId)); // <-- persist
-  if (table) localStorage.setItem("qr_table", String(table));   // <-- persist
-
-  try {
-    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
-    setActiveOrder?.(full);
-  } catch {}
-
-  return;
-}
-
-if (orderType === "table" && orderId) {
-  const itemsPayload = cart.map((i) => ({
-    product_id: i.id,
-    quantity: i.quantity,
-    price: parseFloat(i.price) || 0,
-    ingredients: i.ingredients ?? [],
-    extras: i.extras ?? [],
-    unique_id: i.unique_id,
-    note: i.note || null,
-    confirmed: true,        // send to kitchen right away
-    payment_method: null,   // NOT paid yet
-    receipt_id: null,
-    // kitchen_status: 'new', // optional; backend already sets when confirmed && not paid
-  }));
-
-await postJSON(`${API_URL}/api/orders/order-items`, {
-    order_id: orderId,
-    receipt_id: null,
-    items: itemsPayload,
-  });
-
-  // success: keep same order, clear cart, show status
-  setCart([]);
-  setOrderStatus("success");
-  setShowStatus(true);
-
-  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
-  localStorage.setItem("qr_show_status", "1");
-  localStorage.setItem("qr_active_order_id", String(orderId)); // <-- ADD
-  if (table) localStorage.setItem("qr_table", String(table));   // <-- ADD (only after order exists)
-
-  // (optional) refresh full order...
-  try {
-    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
-    setActiveOrder?.(full);
-  } catch {}
-
-  return;
-}
-
-
-    // ---- ONLINE: ensure customer only for online ----
-    let customerId = null;
-    if (orderType === "online" && customerInfo?.phone) {
-      try {
-        const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
-        const candidates = await searchRes.json();
-        const norm = (s) => (s || "").replace(/\D/g, "");
-        const exact = (Array.isArray(candidates) ? candidates : []).find(
-          (c) => norm(c.phone) === norm(customerInfo.phone)
-        );
-        if (exact) {
-          customerId = exact.id;
-        } else {
-          const created = await postJSON(`${API_URL}/api/customers`, {
-            name: customerInfo.name,
-            phone: customerInfo.phone,
-            email: null,
-            birthday: null,
-          });
-          customerId = created?.id;
-        }
-        if (customerId && customerInfo.address) {
-          await postJSON(`${API_URL}/api/customers/${customerId}/addresses`, {
-            label: "Home",
-            address: customerInfo.address,
-            is_default: true,
-          });
-        }
-      } catch (e) {
-        console.error("ensure-customer failed:", e);
-        // don't block order creation for online if address save fails
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Submit failed: ${res.status} ${text}`);
       }
+
+      const data = await res.json();
+      // Support either { id } or { order: { id } }
+      const newId = data?.order?.id ?? data?.id;
+      if (!newId) throw new Error("Order id missing in response");
+
+      setActiveQrOrderId(newId);
+
+      // go straight to OrderStatusScreen
+      navigate(`/qr/order/${newId}/status`, { replace: true });
+    } catch (err) {
+      console.error("Order submit failed:", err);
+      alert("Something went wrong. Please try again.");
     }
-
-    // ---- CREATE NEW ORDER (table OR online) ----
-const created = await postJSON(
-  `${API_URL}/api/orders`,
-  buildOrderPayload({ orderType, table, items: cart, total, customer: orderType === "online" ? customerInfo : null })
-);
-
-const newId = created?.id;
-if (!newId) throw new Error("Server did not return order id.");
-
-setOrderId(newId);
-setOrderStatus("success");
-setShowStatus(true);
-setCart([]);
-
-localStorage.setItem(
-  "qr_active_order",
-  JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null })
-);
-localStorage.setItem("qr_active_order_id", String(newId)); // <-- ADD
-if (orderType === "table" && table) {
-  localStorage.setItem("qr_table", String(table));         // <-- ADD (only now safe to persist)
-}
-localStorage.setItem("qr_show_status", "1");
-
-  } catch (e) {
-    console.error("Order submit failed:", e);
-    setOrderStatus("fail");
-    setShowStatus(true);
-    setLastError(e.message || "Order failed");
   }
-}
 
 
 
