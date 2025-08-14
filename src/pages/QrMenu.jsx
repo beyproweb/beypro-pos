@@ -1916,65 +1916,70 @@ function handleReset() {
 
   
 
-  return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
-     <QrHeader
-  orderType={orderType}
-  table={table}
-  onClose={handleCloseOrderPage}
-  t={t}
-/>
+ return (
+  <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
+    <QrHeader
+      orderType={orderType}
+      table={table}
+      onClose={handleCloseOrderPage}
+      t={t}
+    />
 
-
-      <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
-        <ProductGrid
-          products={products.filter((p) => p.category === activeCategory)}
-          onProductClick={(product) => {
-            setSelectedProduct(product);
-            setShowAddModal(true);
-          }}
-          t={t}
-        />
-      </div>
-
-      <CategoryBar
-        categories={categories}
-        activeCategory={activeCategory}
-        setActiveCategory={setActiveCategory}
-        categoryImages={categoryImages}
-      />
-<CartDrawer
-  cart={cart}
-  setCart={setCart}
-  orderType={orderType}
-  onSubmitOrder={handleSubmitOrder}
-  paymentMethod={paymentMethod}
-  setPaymentMethod={setPaymentMethod}
-  submitting={submitting}
-  t={t}
-  onOrderAnother={handleOrderAnother}   // ← ADD THIS
-/>
-
-
-      <AddToCartModal
-        open={showAddModal}
-        product={selectedProduct}
-        extrasGroups={extrasGroups}
-        onClose={() => setShowAddModal(false)}
-        onAddToCart={(item) => {
-          setCart((prev) => {
-            const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
-            if (idx !== -1) {
-              const copy = [...prev];
-              copy[idx].quantity += item.quantity;
-              return copy;
-            }
-            return [...prev, item];
-          });
-          setShowAddModal(false);
+    <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
+      <ProductGrid
+        products={products.filter((p) => p.category === activeCategory)}
+        onProductClick={(product) => {
+          setSelectedProduct(product);
+          setShowAddModal(true);
         }}
         t={t}
       />
+    </div>
+
+    <CategoryBar
+      categories={categories}
+      activeCategory={activeCategory}
+      setActiveCategory={setActiveCategory}
+      categoryImages={categoryImages}
+    />
+
+    <CartDrawer
+      cart={cart}
+      setCart={setCart}
+      orderType={orderType}
+      onSubmitOrder={handleSubmitOrder}
+      paymentMethod={paymentMethod}
+      setPaymentMethod={setPaymentMethod}
+      submitting={submitting}
+      t={t}
+      onOrderAnother={handleOrderAnother}
+    />
+
+    <AddToCartModal
+      open={showAddModal}
+      product={selectedProduct}
+      extrasGroups={extrasGroups}
+      onClose={() => setShowAddModal(false)}
+      onAddToCart={(item) => {
+        setCart((prev) => {
+          const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
+          if (idx !== -1) {
+            const copy = [...prev];
+            copy[idx].quantity += item.quantity;
+            return copy;
+          }
+          return [...prev, item];
+        });
+        setShowAddModal(false);
+      }}
+      t={t}
+    />
+
+    {/* 🔑 Render the status modal portal */}
+    {statusPortal}
+
+
+
 
 {orderType === "online" && showDeliveryForm && (
   <OnlineOrderForm
