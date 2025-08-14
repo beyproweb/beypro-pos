@@ -1299,6 +1299,16 @@ export default function QrMenu() {
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
+  // show Delivery Info form first, every time Delivery is chosen
+const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+useEffect(() => {
+  if (orderType === "online") {
+    setShowDeliveryForm(true); // force show, even if details are saved (they’ll be prefilled)
+  }
+}, [orderType]);
+
+
+
     // --- Auto-close wiring ---
   const navigate = useNavigate(); // keep if you want to route to /qr/order-type
   useOrderAutoClose(
@@ -1357,25 +1367,29 @@ useEffect(() => {
   (async () => {
     try {
       const activeId = localStorage.getItem("qr_active_order_id");
-      if (activeId) {
-        const res = await fetch(`${API_URL}/api/orders/${activeId}`);
-        if (res.ok) {
-          const order = await res.json();
-          if (order && order.status !== "closed") {
-            const type = order.order_type === "table" ? "table" : "online";
-            setOrderType(type);
-            setTable(type === "table" ? Number(order.table_number) || null : null);
-            setOrderId(order.id);
-            setOrderStatus("success");
-            setShowStatus(true);
-            return; // <- open status immediately on refresh
-          }
-        }
-        // bad/missing/closed -> clear and fall through
-        localStorage.removeItem("qr_active_order");
-        localStorage.removeItem("qr_active_order_id");
-        localStorage.removeItem("qr_show_status");
+if (activeId) {
+  const res = await fetch(`${API_URL}/api/orders/${activeId}`);
+  if (res.ok) {
+    const order = await res.json();
+    if (order && order.status !== "closed") {
+      const type = order.order_type === "table" ? "table" : "online";
+      setOrderType(type);
+      setTable(type === "table" ? Number(order.table_number) || null : null);
+      setOrderId(order.id);
+
+      if (type === "table") {
+        // keep current behavior for tables
+        setOrderStatus("success");
+        setShowStatus(true);
+      } else {
+        // Delivery: ALWAYS show the details form first
+        setShowDeliveryForm(true);
       }
+      return;
+    }
+  }
+}
+
 
       // Fallback: see if a saved table has an open order
       const savedTable = Number(
@@ -1488,15 +1502,19 @@ const statusPortal = showStatus
 if (!orderType)
   return (
     <>
-      <OrderTypeSelect
-        onSelect={(type) => {
-          // Do NOT persist yet. Only set state.
-          setOrderType(type);
-        }}
-        lang={lang}
-        setLang={setLang}
-        t={t}
-      />
+    <OrderTypeSelect
+  onSelect={(type) => {
+    setOrderType(type);
+    if (type === "online") {
+      // always show details modal first
+      setShowDeliveryForm(true);
+    }
+  }}
+  lang={lang}
+  setLang={setLang}
+  t={t}
+/>
+
       {statusPortal}
     </>
   );
@@ -1946,6 +1964,28 @@ function handleReset() {
         t={t}
       />
 
+{orderType === "online" && showDeliveryForm && (
+  <OnlineOrderForm
+    submitting={submitting}
+    t={t}
+    onClose={() => {
+      // if they close without continuing, go back to Order Type
+      setShowDeliveryForm(false);
+      setOrderType(null);
+    }}
+    onSubmit={(form) => {
+      // we ALWAYS show this screen first; saved details will be prefilled here
+      setCustomerInfo({
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        payment_method: form.payment_method, // you can keep/ignore this in submission
+      });
+      setShowDeliveryForm(false);
+      // optional: keep the local save behavior already inside OnlineOrderForm
+    }}
+  />
+)}
 
 
 </div>
