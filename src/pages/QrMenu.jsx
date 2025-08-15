@@ -712,6 +712,10 @@ function resetToTypePicker() {
   setOrderType(null);
 }
 
+  useOrderAutoClose(
+    orderId || localStorage.getItem("qr_active_order_id"),
+    resetToTypePicker
+  );
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   return (
@@ -1335,10 +1339,7 @@ useEffect(() => {
 
     // --- Auto-close wiring ---
   const navigate = useNavigate(); // keep if you want to route to /qr/order-type
-  useOrderAutoClose(
-    orderId || localStorage.getItem("qr_active_order_id"),
-    resetToTypePicker
-  );
+
 
 
 
