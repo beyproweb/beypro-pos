@@ -40,8 +40,10 @@ import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 import OrderStatusScreen from "./components/OrderStatusScreen";
+import QrMenuSettings from "./pages/QrMenuSettings";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
+
 
 
 const isAuthenticated = () => !!localStorage.getItem("beyproUser");
