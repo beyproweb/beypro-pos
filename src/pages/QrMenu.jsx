@@ -1,14 +1,11 @@
 // src/pages/QrMenu.jsx
 import React, { useState, useEffect, useMemo } from "react";
+import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-
-import OrderStatusScreen from "../components/OrderStatusScreen";
 import useOrderAutoClose from "../hooks/useOrderAutoClose";
-import { setActiveQrOrderId, getActiveQrOrderId } from "../utils/qrActiveOrder";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
-
 
 // --- TABLE PERSISTENCE HELPERS ---
 const TABLE_KEY = "qr_selected_table";
@@ -694,7 +691,6 @@ useEffect(() => {
 }
 
 
-
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   return (
@@ -869,7 +865,22 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
     });
   };
 
-
+  // === Always-mounted Order Status (portal) ===
+const statusPortal = showStatus
+  ? createPortal(
+      <OrderStatusModal
+        open={showStatus}
+        status={orderStatus}
+        orderId={orderId}
+        table={orderType === "table" ? table : null}
+        onOrderAnother={handleOrderAnother}
+        onClose={handleReset}
+        onFinished={resetToTypePicker}
+        t={t}
+      />,
+      document.body
+    )
+  : null;
 
 
   const handleBackdrop = (e) => {
@@ -1308,33 +1319,7 @@ export default function QrMenu() {
   const [activeOrder, setActiveOrder] = useState(null);
   // show Delivery Info form first, every time Delivery is chosen
 const [showDeliveryForm, setShowDeliveryForm] = useState(false);
-
-function resetToTypePicker() {
-  // clear all session keys
-  localStorage.removeItem("qr_active_order");
-  localStorage.removeItem("qr_active_order_id");
-  localStorage.removeItem("qr_cart");
-  localStorage.removeItem("qr_table");
-  localStorage.removeItem("qr_orderType");
-  localStorage.removeItem("qr_order_type");
-  localStorage.setItem("qr_show_status", "0");
-
-  // reset UI state
-  setShowStatus(false);
-  setOrderStatus("pending");
-  setOrderId(null);
-  setCart([]);
-  setCustomerInfo(null);
-  setTable(null);
-  setOrderType(null);
-}
-
-  useOrderAutoClose(
-    orderId || localStorage.getItem("qr_active_order_id"),
-    resetToTypePicker
-  );
-
-  useEffect(() => {
+useEffect(() => {
   if (orderType === "online") {
     setShowDeliveryForm(true); // force show, even if details are saved (they’ll be prefilled)
   }
@@ -1344,7 +1329,10 @@ function resetToTypePicker() {
 
     // --- Auto-close wiring ---
   const navigate = useNavigate(); // keep if you want to route to /qr/order-type
-
+  useOrderAutoClose(
+    orderId || localStorage.getItem("qr_active_order_id"),
+    resetToTypePicker
+  );
 
 
 
@@ -1382,6 +1370,25 @@ function handleCloseOrderPage() {
 
 
 
+function resetToTypePicker() {
+  // clear all session keys
+  localStorage.removeItem("qr_active_order");
+  localStorage.removeItem("qr_active_order_id");
+  localStorage.removeItem("qr_cart");
+  localStorage.removeItem("qr_table");
+  localStorage.removeItem("qr_orderType");
+  localStorage.removeItem("qr_order_type");
+  localStorage.setItem("qr_show_status", "0");
+
+  // reset UI state
+  setShowStatus(false);
+  setOrderStatus("pending");
+  setOrderId(null);
+  setCart([]);
+  setCustomerInfo(null);
+  setTable(null);
+  setOrderType(null);
+}
 
 // Bootstrap on refresh: restore by saved order id, else by saved table
 useEffect(() => {
@@ -1733,44 +1740,174 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
     payment_method: null,
   };
 }
-React.useEffect(() => {
-    const existing = getActiveQrOrderId();
-    if (existing) {
-      navigate(`/qr/order/${existing}/status`, { replace: true });
-    }
-  }, [navigate]);
+
+
 async function handleSubmitOrder() {
   try {
-    const payload = buildOrderPayload({
-      orderType,
-      table,
-      items: cart,
-      total: calcOrderTotalWithExtras(cart),
-      customer: customerInfo,
-    });
+    setLastError(null);
 
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/orders`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    if (orderType === "online" && !customerInfo) {
+      setShowDeliveryForm(true);
+      return; // stop here; they must confirm details first
+    }
+    setLastError(null);
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Submit failed: ${res.status} ${text}`);
+    if (!Array.isArray(cart) || cart.length === 0) {
+      throw new Error("Cart is empty.");
+    }
+    if (orderType === "table" && !table) {
+      throw new Error("Please select a table.");
     }
 
-    const data = await res.json();
-    const newId = data?.order?.id ?? data?.id;
-    if (!newId) throw new Error("Order id missing in response");
+    const total = calcOrderTotalWithExtras(cart); // keep your existing total logic
 
-    setActiveQrOrderId(newId);
-    navigate(`/qr/order/${newId}/status`, { replace: true });
-  } catch (err) {
-    console.error("Order submit failed:", err);
-    alert("Something went wrong. Please try again.");
+  
+   // ---- TABLE SUB-ORDER: append to existing order (UNPAID) ----
+if (orderType === "table" && orderId) {
+  const itemsPayload = cart.map((i) => ({
+    product_id: i.id,
+    quantity: i.quantity,
+    price: parseFloat(i.price) || 0,
+    ingredients: i.ingredients ?? [],
+    extras: i.extras ?? [],
+    unique_id: i.unique_id,
+    note: i.note || null,
+    confirmed: true,        // send to kitchen right away
+    payment_method: null,   // NOT paid yet
+    receipt_id: null,
+  }));
+
+  await postJSON(`${API_URL}/api/orders/order-items`, {
+    order_id: orderId,
+    receipt_id: null,
+    items: itemsPayload,
+  });
+
+  // success: keep same order, clear cart, show status
+  setCart([]);
+  setOrderStatus("success");
+  setShowStatus(true);
+
+  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
+  localStorage.setItem("qr_show_status", "1");
+  localStorage.setItem("qr_active_order_id", String(orderId)); // <-- persist
+  if (table) localStorage.setItem("qr_table", String(table));   // <-- persist
+
+  try {
+    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
+    setActiveOrder?.(full);
+  } catch {}
+
+  return;
+}
+
+if (orderType === "table" && orderId) {
+  const itemsPayload = cart.map((i) => ({
+    product_id: i.id,
+    quantity: i.quantity,
+    price: parseFloat(i.price) || 0,
+    ingredients: i.ingredients ?? [],
+    extras: i.extras ?? [],
+    unique_id: i.unique_id,
+    note: i.note || null,
+    confirmed: true,        // send to kitchen right away
+    payment_method: null,   // NOT paid yet
+    receipt_id: null,
+    // kitchen_status: 'new', // optional; backend already sets when confirmed && not paid
+  }));
+
+await postJSON(`${API_URL}/api/orders/order-items`, {
+    order_id: orderId,
+    receipt_id: null,
+    items: itemsPayload,
+  });
+
+  // success: keep same order, clear cart, show status
+  setCart([]);
+  setOrderStatus("success");
+  setShowStatus(true);
+
+  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
+  localStorage.setItem("qr_show_status", "1");
+  localStorage.setItem("qr_active_order_id", String(orderId)); // <-- ADD
+  if (table) localStorage.setItem("qr_table", String(table));   // <-- ADD (only after order exists)
+
+  // (optional) refresh full order...
+  try {
+    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
+    setActiveOrder?.(full);
+  } catch {}
+
+  return;
+}
+
+
+    // ---- ONLINE: ensure customer only for online ----
+    let customerId = null;
+    if (orderType === "online" && customerInfo?.phone) {
+      try {
+        const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
+        const candidates = await searchRes.json();
+        const norm = (s) => (s || "").replace(/\D/g, "");
+        const exact = (Array.isArray(candidates) ? candidates : []).find(
+          (c) => norm(c.phone) === norm(customerInfo.phone)
+        );
+        if (exact) {
+          customerId = exact.id;
+        } else {
+          const created = await postJSON(`${API_URL}/api/customers`, {
+            name: customerInfo.name,
+            phone: customerInfo.phone,
+            email: null,
+            birthday: null,
+          });
+          customerId = created?.id;
+        }
+        if (customerId && customerInfo.address) {
+          await postJSON(`${API_URL}/api/customers/${customerId}/addresses`, {
+            label: "Home",
+            address: customerInfo.address,
+            is_default: true,
+          });
+        }
+      } catch (e) {
+        console.error("ensure-customer failed:", e);
+        // don't block order creation for online if address save fails
+      }
+    }
+
+    // ---- CREATE NEW ORDER (table OR online) ----
+const created = await postJSON(
+  `${API_URL}/api/orders`,
+  buildOrderPayload({ orderType, table, items: cart, total, customer: orderType === "online" ? customerInfo : null })
+);
+
+const newId = created?.id;
+if (!newId) throw new Error("Server did not return order id.");
+
+setOrderId(newId);
+setOrderStatus("success");
+setShowStatus(true);
+setCart([]);
+
+localStorage.setItem(
+  "qr_active_order",
+  JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null })
+);
+localStorage.setItem("qr_active_order_id", String(newId)); // <-- ADD
+if (orderType === "table" && table) {
+  localStorage.setItem("qr_table", String(table));         // <-- ADD (only now safe to persist)
+}
+localStorage.setItem("qr_show_status", "1");
+
+  } catch (e) {
+    console.error("Order submit failed:", e);
+    setOrderStatus("fail");
+    setShowStatus(true);
+    setLastError(e.message || "Order failed");
   }
 }
+
 
 
 
@@ -1797,7 +1934,7 @@ function handleReset() {
 
   
 
-return (
+ return (
   <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
     <QrHeader
       orderType={orderType}
@@ -1817,76 +1954,75 @@ return (
       />
     </div>
 
-    <CategoryBar
-      categories={categories}
-      activeCategory={activeCategory}
-      setActiveCategory={setActiveCategory}
-      categoryImages={categoryImages}
-    />
+      <CategoryBar
+        categories={categories}
+        activeCategory={activeCategory}
+        setActiveCategory={setActiveCategory}
+        categoryImages={categoryImages}
+      />
 
-    <CartDrawer
-      cart={cart}
-      setCart={setCart}
-      orderType={orderType}
-      onSubmitOrder={handleSubmitOrder}
-      paymentMethod={paymentMethod}
-      setPaymentMethod={setPaymentMethod}
-      submitting={submitting}
-      t={t}
-      onOrderAnother={handleOrderAnother}
-    />
-
-    <AddToCartModal
-      open={showAddModal}
-      product={selectedProduct}
-      extrasGroups={extrasGroups}
-      onClose={() => setShowAddModal(false)}
-      onAddToCart={(item) => {
-        setCart((prev) => {
-          const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
-          if (idx !== -1) {
-            const copy = [...prev];
-            copy[idx].quantity += item.quantity;
-            return copy;
-          }
-          return [...prev, item];
-        });
-        setShowAddModal(false);
-      }}
-      t={t}
-    />
-
-    {/* 🔑 Show Order Status after submit */}
-    {statusPortal}
-
-    {/* ✅ Delivery form stays inside the return */}
-    {orderType === "online" && showDeliveryForm && (
-      <OnlineOrderForm
+      <CartDrawer
+        cart={cart}
+        setCart={setCart}
+        orderType={orderType}
+        onSubmitOrder={handleSubmitOrder}
+        paymentMethod={paymentMethod}
+        setPaymentMethod={setPaymentMethod}
         submitting={submitting}
         t={t}
-        onClose={() => {
-          // if they close without continuing, go back to Order Type
-          setShowDeliveryForm(false);
-          setOrderType(null);
-        }}
-        onSubmit={(form) => {
-          // we ALWAYS show this screen first; saved details will be prefilled here
-          setCustomerInfo({
-            name: form.name,
-            phone: form.phone,
-            address: form.address,
-            payment_method: form.payment_method, // optional to use in submission
-          });
-          setShowDeliveryForm(false);
-        }}
+        onOrderAnother={handleOrderAnother}
       />
-    )}
-  </div>
-);
 
+      <AddToCartModal
+        open={showAddModal}
+        product={selectedProduct}
+        extrasGroups={extrasGroups}
+        onClose={() => setShowAddModal(false)}
+        onAddToCart={(item) => {
+          setCart((prev) => {
+            const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
+            if (idx !== -1) {
+              const copy = [...prev];
+              copy[idx].quantity += item.quantity;
+              return copy;
+            }
+            return [...prev, item];
+          });
+          setShowAddModal(false);
+        }}
+        t={t}
+      />
+
+      {/* 🔑 Show Order Status after submit */}
+      {statusPortal}
+    </div>
+  );
 }
 
 
+{orderType === "online" && showDeliveryForm && (
+  <OnlineOrderForm
+    submitting={submitting}
+    t={t}
+    onClose={() => {
+      // if they close without continuing, go back to Order Type
+      setShowDeliveryForm(false);
+      setOrderType(null);
+    }}
+    onSubmit={(form) => {
+      // we ALWAYS show this screen first; saved details will be prefilled here
+      setCustomerInfo({
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        payment_method: form.payment_method, // you can keep/ignore this in submission
+      });
+      setShowDeliveryForm(false);
+      // optional: keep the local save behavior already inside OnlineOrderForm
+    }}
+  />
+  
+)}
 
 
 

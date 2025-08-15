@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 const API_URL = import.meta.env.VITE_API_URL || "";
 import { useNavigate } from "react-router-dom";
 import useOrderAutoClose from "../hooks/useOrderAutoClose";
-import { getActiveQrOrderId, setActiveQrOrderId, clearActiveQrOrderId } from "../utils/qrActiveOrder";
+
 /* ---------- SOCKET.IO HOOK ---------- */
 let socket;
 export function useSocketIO(onOrderUpdate, orderId) {
@@ -108,7 +108,6 @@ useEffect(() => {
   const iv = setInterval(load, 4000);
   return () => { abort = true; clearInterval(iv); };
 }, [orderId]);
-
 
 
   const fetchOrder = async () => {
