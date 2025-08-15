@@ -40,7 +40,7 @@ import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 import { BrowserRouter, useNavigate } from "react-router-dom";
-
+import { Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import OrderStatusScreen from "./components/OrderStatusScreen";
 import QrMenuSettings from "./pages/QrMenuSettings";
 const API_URL = import.meta.env.VITE_API_URL || "";

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import useOrderAutoClose from "../hooks/useOrderAutoClose";
 import { setActiveQrOrderId, getActiveQrOrderId } from "../utils/qrActiveOrder";
+import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -1743,13 +1744,13 @@ async function handleSubmitOrder() {
       table,
       items: cart,
       total: calcOrderTotalWithExtras(cart),
-      customer: customerInfo
+      customer: customerInfo,
     });
 
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/orders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -1763,14 +1764,11 @@ async function handleSubmitOrder() {
 
     setActiveQrOrderId(newId);
     navigate(`/qr/order/${newId}/status`, { replace: true });
-
   } catch (err) {
     console.error("Order submit failed:", err);
     alert("Something went wrong. Please try again.");
   }
 }
-
-
 
 
 
