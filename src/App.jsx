@@ -1,7 +1,7 @@
 // src/App.jsx
-import React, { useEffect, useState } from "react";
-import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "react-router-dom";
 
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
@@ -39,12 +39,9 @@ import QrMenu from "./pages/QrMenu";
 import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
-import OrderStatusScreen from "./components/OrderStatusScreen";
+
 import QrMenuSettings from "./pages/QrMenuSettings";
-
 const API_URL = import.meta.env.VITE_API_URL || "";
-
-
 
 const isAuthenticated = () => !!localStorage.getItem("beyproUser");
 
@@ -60,17 +57,7 @@ export default function App() {
   const [bellOpen, setBellOpen] = useState(false);
   const location = useLocation();
   const hideBell = ["/login"].includes(location.pathname);
-  
-  function OrderStatusRoute() {
-  const { orderId } = useParams();
-  const navigate = useNavigate();
-  return (
-    <OrderStatusScreen
-      orderId={Number(orderId)}
-      onFinished={() => navigate("/qr/order-type", { replace: true })}
-    />
-  );
-}
+
   useEffect(() => {
     localStorage.setItem("beyproBellNotifications", JSON.stringify(lowStockAlerts));
     setUnread(lowStockAlerts.length);
@@ -186,7 +173,6 @@ export default function App() {
               <Route path="/ingredient-prices" element={<ProtectedRoute permission="ingredient-prices"><IngredientPrices /></ProtectedRoute>} />
               <Route path="cash-register-history" element={<ProtectedRoute permission="cash-register-history"><CashRegisterHistory /></ProtectedRoute>} />
               <Route path="integrations" element={<ProtectedRoute permission="integrations"><IntegrationsPage /></ProtectedRoute>} />
-              <Route path="/qr/order/:orderId/status" element={<OrderStatusRoute />} />
 
               {/* QR menu settings (still protected) */}
               <Route
