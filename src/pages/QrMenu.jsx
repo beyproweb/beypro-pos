@@ -1736,7 +1736,6 @@ React.useEffect(() => {
       navigate(`/qr/order/${existing}/status`, { replace: true });
     }
   }, [navigate]);
-
 async function handleSubmitOrder() {
   try {
     const payload = buildOrderPayload({
