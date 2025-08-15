@@ -1732,6 +1732,10 @@ async function handleSubmitOrder() {
     setSubmitting(true);
     setLastError(null);
 
+    // Open the status modal right away so user sees "Sending..."
+    setOrderStatus("pending");
+    setShowStatus(true);
+
     // Online must confirm details first
     if (orderType === "online" && !customerInfo) {
       setShowDeliveryForm(true);
@@ -1747,7 +1751,7 @@ async function handleSubmitOrder() {
 
     const total = calcOrderTotalWithExtras(cart);
 
-    // ---------- TABLE: append to existing order (sub-order) ----------
+    // ---------- TABLE SUB-ORDER (append to existing order) ----------
     if (orderType === "table" && orderId) {
       const itemsPayload = cart.map((i) => ({
         product_id: i.id,
@@ -1755,10 +1759,10 @@ async function handleSubmitOrder() {
         price: parseFloat(i.price) || 0,
         ingredients: i.ingredients ?? [],
         extras: i.extras ?? [],
-        unique_id: i.unique_id,  // stay unique so backend treats as NEW lines
+        unique_id: i.unique_id,
         note: i.note || null,
-        confirmed: true,         // hit kitchen now
-        payment_method: null,    // not paid yet
+        confirmed: true,
+        payment_method: null,
         receipt_id: null,
       }));
 
@@ -1768,7 +1772,7 @@ async function handleSubmitOrder() {
         items: itemsPayload,
       });
 
-      // ✅ Persist active order + show status immediately
+      // Persist + flip to success
       localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
       localStorage.setItem("qr_active_order_id", String(orderId));
       if (table) localStorage.setItem("qr_table", String(table));
@@ -1776,19 +1780,12 @@ async function handleSubmitOrder() {
       localStorage.setItem("qr_show_status", "1");
 
       setCart([]);
-      setOrderStatus("success");
+      setOrderStatus("success");      // <-- show the full OrderStatusScreen
       setShowStatus(true);
-
-      // (optional) refresh full order for status screen
-      try {
-        const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
-        setActiveOrder?.(full);
-      } catch {}
-
       return;
     }
 
-    // ---------- ONLINE: ensure (or create) customer silently ----------
+    // ---------- ONLINE: best-effort ensure customer ----------
     let customerId = null;
     if (orderType === "online" && customerInfo?.phone) {
       try {
@@ -1817,7 +1814,7 @@ async function handleSubmitOrder() {
           });
         }
       } catch {
-        // best-effort; don't block order
+        /* don't block order */
       }
     }
 
@@ -1836,7 +1833,6 @@ async function handleSubmitOrder() {
     const newId = created?.id;
     if (!newId) throw new Error("Server did not return order id.");
 
-    // ✅ Persist active order + show status immediately
     setOrderId(newId);
     localStorage.setItem(
       "qr_active_order",
@@ -1848,7 +1844,7 @@ async function handleSubmitOrder() {
     localStorage.setItem("qr_show_status", "1");
 
     setCart([]);
-    setOrderStatus("success");
+    setOrderStatus("success");  // <-- switch from "pending" to "success"
     setShowStatus(true);
   } catch (e) {
     console.error("Order submit failed:", e);
@@ -1859,6 +1855,7 @@ async function handleSubmitOrder() {
     setSubmitting(false);
   }
 }
+
 
 
 
