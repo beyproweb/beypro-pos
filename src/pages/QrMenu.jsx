@@ -1,13 +1,14 @@
 // src/pages/QrMenu.jsx
 import React, { useState, useEffect, useMemo } from "react";
-import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
+
+import OrderStatusScreen from "../components/OrderStatusScreen";
 import useOrderAutoClose from "../hooks/useOrderAutoClose";
 import { setActiveQrOrderId, getActiveQrOrderId } from "../utils/qrActiveOrder";
-import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
+
 
 // --- TABLE PERSISTENCE HELPERS ---
 const TABLE_KEY = "qr_selected_table";
@@ -1332,7 +1333,8 @@ function resetToTypePicker() {
     orderId || localStorage.getItem("qr_active_order_id"),
     resetToTypePicker
   );
-useEffect(() => {
+
+  useEffect(() => {
   if (orderType === "online") {
     setShowDeliveryForm(true); // force show, even if details are saved (they’ll be prefilled)
   }

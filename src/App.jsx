@@ -1,7 +1,7 @@
 // src/App.jsx
-
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import React, { useEffect, useState } from "react";
+import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "react-router-dom";
+
 import { AuthProvider } from "./context/AuthContext";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
@@ -39,11 +39,10 @@ import QrMenu from "./pages/QrMenu";
 import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
-import { BrowserRouter, useNavigate } from "react-router-dom";
-import { Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import OrderStatusScreen from "./components/OrderStatusScreen";
-import QrMenuSettings from "./pages/QrMenuSettings";
+
 const API_URL = import.meta.env.VITE_API_URL || "";
+
 
 const isAuthenticated = () => !!localStorage.getItem("beyproUser");
 
