@@ -692,30 +692,7 @@ useEffect(() => {
 }
 
 
-function resetToTypePicker() {
-  // clear all session keys
-  localStorage.removeItem("qr_active_order");
-  localStorage.removeItem("qr_active_order_id");
-  localStorage.removeItem("qr_cart");
-  localStorage.removeItem("qr_table");
-  localStorage.removeItem("qr_orderType");
-  localStorage.removeItem("qr_order_type");
-  localStorage.setItem("qr_show_status", "0");
 
-  // reset UI state
-  setShowStatus(false);
-  setOrderStatus("pending");
-  setOrderId(null);
-  setCart([]);
-  setCustomerInfo(null);
-  setTable(null);
-  setOrderType(null);
-}
-
-  useOrderAutoClose(
-    orderId || localStorage.getItem("qr_active_order_id"),
-    resetToTypePicker
-  );
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   return (
@@ -1329,6 +1306,31 @@ export default function QrMenu() {
   const [activeOrder, setActiveOrder] = useState(null);
   // show Delivery Info form first, every time Delivery is chosen
 const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+
+function resetToTypePicker() {
+  // clear all session keys
+  localStorage.removeItem("qr_active_order");
+  localStorage.removeItem("qr_active_order_id");
+  localStorage.removeItem("qr_cart");
+  localStorage.removeItem("qr_table");
+  localStorage.removeItem("qr_orderType");
+  localStorage.removeItem("qr_order_type");
+  localStorage.setItem("qr_show_status", "0");
+
+  // reset UI state
+  setShowStatus(false);
+  setOrderStatus("pending");
+  setOrderId(null);
+  setCart([]);
+  setCustomerInfo(null);
+  setTable(null);
+  setOrderType(null);
+}
+
+  useOrderAutoClose(
+    orderId || localStorage.getItem("qr_active_order_id"),
+    resetToTypePicker
+  );
 useEffect(() => {
   if (orderType === "online") {
     setShowDeliveryForm(true); // force show, even if details are saved (they’ll be prefilled)
