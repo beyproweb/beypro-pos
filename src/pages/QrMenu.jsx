@@ -1729,13 +1729,14 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
 
 async function handleSubmitOrder() {
   try {
+    setSubmitting(true);
     setLastError(null);
 
+    // Online must confirm details first
     if (orderType === "online" && !customerInfo) {
       setShowDeliveryForm(true);
-      return; // stop here; they must confirm details first
+      return;
     }
-    setLastError(null);
 
     if (!Array.isArray(cart) || cart.length === 0) {
       throw new Error("Cart is empty.");
@@ -1744,90 +1745,50 @@ async function handleSubmitOrder() {
       throw new Error("Please select a table.");
     }
 
-    const total = calcOrderTotalWithExtras(cart); // keep your existing total logic
+    const total = calcOrderTotalWithExtras(cart);
 
-  
-   // ---- TABLE SUB-ORDER: append to existing order (UNPAID) ----
-if (orderType === "table" && orderId) {
-  const itemsPayload = cart.map((i) => ({
-    product_id: i.id,
-    quantity: i.quantity,
-    price: parseFloat(i.price) || 0,
-    ingredients: i.ingredients ?? [],
-    extras: i.extras ?? [],
-    unique_id: i.unique_id,
-    note: i.note || null,
-    confirmed: true,        // send to kitchen right away
-    payment_method: null,   // NOT paid yet
-    receipt_id: null,
-  }));
+    // ---------- TABLE: append to existing order (sub-order) ----------
+    if (orderType === "table" && orderId) {
+      const itemsPayload = cart.map((i) => ({
+        product_id: i.id,
+        quantity: i.quantity,
+        price: parseFloat(i.price) || 0,
+        ingredients: i.ingredients ?? [],
+        extras: i.extras ?? [],
+        unique_id: i.unique_id,  // stay unique so backend treats as NEW lines
+        note: i.note || null,
+        confirmed: true,         // hit kitchen now
+        payment_method: null,    // not paid yet
+        receipt_id: null,
+      }));
 
-  await postJSON(`${API_URL}/api/orders/order-items`, {
-    order_id: orderId,
-    receipt_id: null,
-    items: itemsPayload,
-  });
+      await postJSON(`${API_URL}/api/orders/order-items`, {
+        order_id: orderId,
+        receipt_id: null,
+        items: itemsPayload,
+      });
 
-  // success: keep same order, clear cart, show status
-  setCart([]);
-  setOrderStatus("success");
-  setShowStatus(true);
+      // ✅ Persist active order + show status immediately
+      localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
+      localStorage.setItem("qr_active_order_id", String(orderId));
+      if (table) localStorage.setItem("qr_table", String(table));
+      localStorage.setItem("qr_orderType", "table");
+      localStorage.setItem("qr_show_status", "1");
 
-  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
-  localStorage.setItem("qr_show_status", "1");
-  localStorage.setItem("qr_active_order_id", String(orderId)); // <-- persist
-  if (table) localStorage.setItem("qr_table", String(table));   // <-- persist
+      setCart([]);
+      setOrderStatus("success");
+      setShowStatus(true);
 
-  try {
-    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
-    setActiveOrder?.(full);
-  } catch {}
+      // (optional) refresh full order for status screen
+      try {
+        const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
+        setActiveOrder?.(full);
+      } catch {}
 
-  return;
-}
+      return;
+    }
 
-if (orderType === "table" && orderId) {
-  const itemsPayload = cart.map((i) => ({
-    product_id: i.id,
-    quantity: i.quantity,
-    price: parseFloat(i.price) || 0,
-    ingredients: i.ingredients ?? [],
-    extras: i.extras ?? [],
-    unique_id: i.unique_id,
-    note: i.note || null,
-    confirmed: true,        // send to kitchen right away
-    payment_method: null,   // NOT paid yet
-    receipt_id: null,
-    // kitchen_status: 'new', // optional; backend already sets when confirmed && not paid
-  }));
-
-await postJSON(`${API_URL}/api/orders/order-items`, {
-    order_id: orderId,
-    receipt_id: null,
-    items: itemsPayload,
-  });
-
-  // success: keep same order, clear cart, show status
-  setCart([]);
-  setOrderStatus("success");
-  setShowStatus(true);
-
-  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
-  localStorage.setItem("qr_show_status", "1");
-  localStorage.setItem("qr_active_order_id", String(orderId)); // <-- ADD
-  if (table) localStorage.setItem("qr_table", String(table));   // <-- ADD (only after order exists)
-
-  // (optional) refresh full order...
-  try {
-    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
-    setActiveOrder?.(full);
-  } catch {}
-
-  return;
-}
-
-
-    // ---- ONLINE: ensure customer only for online ----
+    // ---------- ONLINE: ensure (or create) customer silently ----------
     let customerId = null;
     if (orderType === "online" && customerInfo?.phone) {
       try {
@@ -1855,43 +1816,50 @@ await postJSON(`${API_URL}/api/orders/order-items`, {
             is_default: true,
           });
         }
-      } catch (e) {
-        console.error("ensure-customer failed:", e);
-        // don't block order creation for online if address save fails
+      } catch {
+        // best-effort; don't block order
       }
     }
 
-    // ---- CREATE NEW ORDER (table OR online) ----
-const created = await postJSON(
-  `${API_URL}/api/orders`,
-  buildOrderPayload({ orderType, table, items: cart, total, customer: orderType === "online" ? customerInfo : null })
-);
+    // ---------- CREATE NEW ORDER (table or online) ----------
+    const created = await postJSON(
+      `${API_URL}/api/orders`,
+      buildOrderPayload({
+        orderType,
+        table,
+        items: cart,
+        total,
+        customer: orderType === "online" ? customerInfo : null,
+      })
+    );
 
-const newId = created?.id;
-if (!newId) throw new Error("Server did not return order id.");
+    const newId = created?.id;
+    if (!newId) throw new Error("Server did not return order id.");
 
-setOrderId(newId);
-setOrderStatus("success");
-setShowStatus(true);
-setCart([]);
+    // ✅ Persist active order + show status immediately
+    setOrderId(newId);
+    localStorage.setItem(
+      "qr_active_order",
+      JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null })
+    );
+    localStorage.setItem("qr_active_order_id", String(newId));
+    if (orderType === "table" && table) localStorage.setItem("qr_table", String(table));
+    localStorage.setItem("qr_orderType", orderType);
+    localStorage.setItem("qr_show_status", "1");
 
-localStorage.setItem(
-  "qr_active_order",
-  JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null })
-);
-localStorage.setItem("qr_active_order_id", String(newId)); // <-- ADD
-if (orderType === "table" && table) {
-  localStorage.setItem("qr_table", String(table));         // <-- ADD (only now safe to persist)
-}
-localStorage.setItem("qr_show_status", "1");
-
+    setCart([]);
+    setOrderStatus("success");
+    setShowStatus(true);
   } catch (e) {
     console.error("Order submit failed:", e);
+    setLastError(e.message || "Order failed");
     setOrderStatus("fail");
     setShowStatus(true);
-    setLastError(e.message || "Order failed");
+  } finally {
+    setSubmitting(false);
   }
 }
+
 
 
 
