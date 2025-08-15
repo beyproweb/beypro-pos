@@ -1737,34 +1737,40 @@ React.useEffect(() => {
     }
   }, [navigate]);
 
-  async function handleSubmitOrder() {
-    try {
-      // TODO: build your payload here
-      const res = await fetch(`${import.meta.env.VITE_API_BASE}/api/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildOrderPayload()) // use your current payload function
-      });
+async function handleSubmitOrder() {
+  try {
+    const payload = buildOrderPayload({
+      orderType,
+      table,
+      items: cart,
+      total: calcOrderTotalWithExtras(cart),
+      customer: customerInfo
+    });
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Submit failed: ${res.status} ${text}`);
-      }
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
 
-      const data = await res.json();
-      // Support either { id } or { order: { id } }
-      const newId = data?.order?.id ?? data?.id;
-      if (!newId) throw new Error("Order id missing in response");
-
-      setActiveQrOrderId(newId);
-
-      // go straight to OrderStatusScreen
-      navigate(`/qr/order/${newId}/status`, { replace: true });
-    } catch (err) {
-      console.error("Order submit failed:", err);
-      alert("Something went wrong. Please try again.");
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Submit failed: ${res.status} ${text}`);
     }
+
+    const data = await res.json();
+    const newId = data?.order?.id ?? data?.id;
+    if (!newId) throw new Error("Order id missing in response");
+
+    setActiveQrOrderId(newId);
+    navigate(`/qr/order/${newId}/status`, { replace: true });
+
+  } catch (err) {
+    console.error("Order submit failed:", err);
+    alert("Something went wrong. Please try again.");
   }
+}
+
 
 
 
