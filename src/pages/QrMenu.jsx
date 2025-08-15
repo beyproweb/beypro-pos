@@ -1375,6 +1375,18 @@ function resetToTypePicker() {
   setOrderType(null);
 }
 
+useEffect(() => {
+  // If we have an order id, make sure the status modal is visible
+  if (orderId) {
+    // If it was still on "pending", treat it as success now
+    setOrderStatus((s) => (s === "pending" ? "success" : s));
+    setShowStatus(true);
+    localStorage.setItem("qr_active_order_id", String(orderId));
+    localStorage.setItem("qr_show_status", "1");
+  }
+}, [orderId]);
+
+
 // Bootstrap on refresh: restore by saved order id, else by saved table
 useEffect(() => {
   (async () => {
