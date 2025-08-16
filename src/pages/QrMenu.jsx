@@ -1385,7 +1385,6 @@ export default function QrMenu() {
   useEffect(() => { localStorage.setItem("qr_lang", lang); }, [lang]);
   const t = useMemo(() => makeT(lang), [lang]);
 
-  const [orderType, setOrderType] = useState(null);
   const [table, setTable] = useState(null);
   const [customerInfo, setCustomerInfo] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -1409,7 +1408,10 @@ export default function QrMenu() {
   const [paymentMethod, setPaymentMethod] = useState(
   () => localStorage.getItem("qr_payment_method") || "online"
 );
-  
+  const [orderType, setOrderType] = useState(
+  () => localStorage.getItem("qr_orderType") || null
+);
+
   // show Delivery Info form first, every time Delivery is chosen
 // show Delivery Info form only when starting a brand-new online order
 const [showDeliveryForm, setShowDeliveryForm] = useState(false);
