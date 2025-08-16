@@ -1059,7 +1059,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
           <button
             className="py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
             onClick={() => {
-              const unique_id = product.id + "-" + btoa(JSON.stringify(selectedExtras) + (note || ""));
+              const unique_id = `${product.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
               onAddToCart({
                 id: product.id,
                 name: product.name,
@@ -2075,19 +2075,11 @@ return (
       extrasGroups={extrasGroups}
       onClose={() => setShowAddModal(false)}
       onAddToCart={(item) => {
-  // allow drawer to auto-open on this user action
   localStorage.setItem("qr_cart_auto_open", "1");
-  setCart((prev) => {
-    const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
-    if (idx !== -1) {
-      const copy = [...prev];
-      copy[idx].quantity += item.quantity;
-      return copy;
-    }
-    return [...prev, item];
-  });
+  setCart((prev) => [...prev, item]);   // always append new line
   setShowAddModal(false);
 }}
+
 
       t={t}
     />
