@@ -1352,9 +1352,21 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
 }
 
 // Payment choice persists across the flow
+// put this AFTER your other useState declarations are fine; it no longer depends on orderType
 const [paymentMethod, setPaymentMethod] = useState(
-  localStorage.getItem("qr_payment_method") || (orderType === "table" ? "card" : "online")
+  () => localStorage.getItem("qr_payment_method") || "online"
 );
+
+// keep this effect to adapt the default when orderType changes
+useEffect(() => {
+  if (orderType === "table" && !["online","card","sodexo","multinet","cash"].includes(paymentMethod)) {
+    setPaymentMethod("card");
+  }
+  if (orderType === "online" && !["online","card","cash"].includes(paymentMethod)) {
+    setPaymentMethod("online");
+  }
+}, [orderType]);
+
 useEffect(() => {
   localStorage.setItem("qr_payment_method", paymentMethod);
 }, [paymentMethod]);
@@ -2050,16 +2062,17 @@ return (
     />
 
     <CartDrawer
-      cart={cart}
-      setCart={setCart}
-      orderType={orderType}
-      onSubmitOrder={handleSubmitOrder}
-      paymentMethod={paymentMethod}
-      setPaymentMethod={setPaymentMethod}
-      submitting={submitting}
-      t={t}
-      onOrderAnother={handleOrderAnother}
-    />
+  cart={cart}
+  setCart={setCart}
+  onSubmitOrder={handleSubmitOrder}
+  orderType={orderType}                 // ✅ add this
+  paymentMethod={paymentMethod}
+  setPaymentMethod={setPaymentMethod}
+  submitting={submitting}
+  onOrderAnother={handleOrderAnother}
+  t={t}
+/>
+
 
     <AddToCartModal
       open={showAddModal}
