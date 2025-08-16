@@ -1327,12 +1327,13 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
        <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
   {orderId ? (
     <OrderStatusScreen
-      orderId={orderId}
-      table={table}
-      onOrderAnother={onOrderAnother}
-      onFinished={onFinished}
-      t={t}
-    />
+  orderId={orderId}
+  table={orderType === "table" ? table : null}   // now safe
+  onOrderAnother={handleOrderAnother}
+  onFinished={resetToTypePicker}
+  t={t}
+/>
+
   ) : null}
 </div>
 
