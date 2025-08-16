@@ -690,6 +690,25 @@ useEffect(() => {
 }
 
 
+function resetToTypePicker() {
+  // clear all session keys
+  localStorage.removeItem("qr_active_order");
+  localStorage.removeItem("qr_active_order_id");
+  localStorage.removeItem("qr_cart");
+  localStorage.removeItem("qr_table");
+  localStorage.removeItem("qr_orderType");
+  localStorage.removeItem("qr_order_type");
+  localStorage.setItem("qr_show_status", "0");
+
+  // reset UI state
+  setShowStatus(false);
+  setOrderStatus("pending");
+  setOrderId(null);
+  setCart([]);
+  setCustomerInfo(null);
+  setTable(null);
+  setOrderType(null);
+}
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   return (
@@ -1406,27 +1425,6 @@ useEffect(() => {
 useEffect(() => {
   localStorage.setItem("qr_payment_method", paymentMethod);
 }, [paymentMethod]);
-
-function resetToTypePicker() {
-  // clear all session keys
-  localStorage.removeItem("qr_active_order");
-  localStorage.removeItem("qr_active_order_id");
-  localStorage.removeItem("qr_cart");
-  localStorage.removeItem("qr_table");
-  localStorage.removeItem("qr_orderType");
-  localStorage.removeItem("qr_order_type");
-  localStorage.setItem("qr_show_status", "0");
-
-  // reset UI state
-  setShowStatus(false);
-  setOrderStatus("pending");
-  setOrderId(null);
-  setCart([]);
-  setCustomerInfo(null);
-  setTable(null);
-  setOrderType(null);
-}
-
 
 
 // === Always-mounted Order Status (portal) ===
