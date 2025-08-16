@@ -1071,14 +1071,23 @@ function CartDrawer({
   paymentMethod,
   setPaymentMethod,
   submitting,
-  onOrderAnother, 
+  onOrderAnother,
   t,
 }) {
   const [show, setShow] = useState(false);
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+  // 👂 Close the drawer when someone asks globally
   useEffect(() => {
-    setShow(cart.length > 0);
+    const handler = () => setShow(false);
+    window.addEventListener("qr:cart-close", handler);
+    return () => window.removeEventListener("qr:cart-close", handler);
+  }, []);
+
+  // 🚪 Auto-open only if allowed
+  useEffect(() => {
+    const auto = localStorage.getItem("qr_cart_auto_open") !== "0";
+    if (auto) setShow(cart.length > 0);
   }, [cart.length]);
 
   function removeItem(idx) {
@@ -1090,7 +1099,11 @@ function CartDrawer({
       {!show && cart.length > 0 && (
         <button
           className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-7 rounded-3xl shadow-xl z-50"
-          onClick={() => setShow(true)}
+          onClick={() => {
+            // ✅ User explicitly asked to see the cart → allow auto-open again
+            localStorage.setItem("qr_cart_auto_open", "1");
+            setShow(true);
+          }}
         >
           🛒 {t("View Cart")} ({cart.length})
         </button>
@@ -1108,22 +1121,18 @@ function CartDrawer({
                 ×
               </button>
             </div>
+
             <div className="flex-1 overflow-y-auto max-h-[48vh]">
               {cart.length === 0 ? (
                 <div className="text-gray-400 text-center py-8">{t("Cart is empty.")}</div>
               ) : (
                 <ul className="flex flex-col gap-3">
                   {cart.map((item, i) => (
-                    <li
-                      key={i}
-                      className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2"
-                    >
+                    <li key={i} className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2">
                       <div className="flex-1 min-w-0">
                         <span className="font-bold block">
-                          {item.name}{" "}
-                          <span className="text-xs text-gray-500">x{item.quantity}</span>
+                          {item.name} <span className="text-xs text-gray-500">x{item.quantity}</span>
                         </span>
-
                         {item.extras && item.extras.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {item.extras.map((ex, j) => {
@@ -1142,21 +1151,11 @@ function CartDrawer({
                             })}
                           </div>
                         )}
-
-                        {item.note && (
-                          <div className="text-xs text-yellow-700 mt-1">
-                            📝 {t("Note")}: {item.note}
-                          </div>
-                        )}
+                        {item.note && <div className="text-xs text-yellow-700 mt-1">📝 {t("Note")}: {item.note}</div>}
                       </div>
                       <div className="flex flex-col items-end shrink-0">
-                        <span className="font-bold text-indigo-700">
-                          ₺{(item.price * item.quantity).toFixed(2)}
-                        </span>
-                        <button
-                          className="text-xs text-red-400 hover:text-red-700 mt-1"
-                          onClick={() => removeItem(i)}
-                        >
+                        <span className="font-bold text-indigo-700">₺{(item.price * item.quantity).toFixed(2)}</span>
+                        <button className="text-xs text-red-400 hover:text-red-700 mt-1" onClick={() => removeItem(i)}>
                           {t("Remove")}
                         </button>
                       </div>
@@ -1165,12 +1164,14 @@ function CartDrawer({
                 </ul>
               )}
             </div>
+
             {cart.length > 0 && (
               <>
                 <div className="flex justify-between text-base font-bold mt-5 mb-3">
                   <span>{t("Total")}:</span>
                   <span className="text-indigo-700 text-xl">₺{total.toFixed(2)}</span>
                 </div>
+
                 {orderType === "online" && (
                   <div className="flex flex-col gap-2 mb-2">
                     <label className="font-bold text-blue-900">{t("Payment:")}</label>
@@ -1185,23 +1186,25 @@ function CartDrawer({
                     </select>
                   </div>
                 )}
-                <button
-    className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
-    onClick={onSubmitOrder}
-    disabled={submitting}
-  >
-    {submitting ? t("Please wait...") : t("Submit Order")}
-  </button>
 
- <button
-  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
-  onClick={() => { 
-    setShow(false);          // 👈 close the cart drawer
-    onOrderAnother?.();      // 👈 your existing logic (rehydrate / keep table context)
-  }}
->
-  {t("Order Another")}
-</button>
+                <button
+                  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
+                  onClick={onSubmitOrder}
+                  disabled={submitting}
+                >
+                  {submitting ? t("Please wait...") : t("Submit Order")}
+                </button>
+
+                <button
+                  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
+                  onClick={() => {
+                    // Close drawer first, then delegate
+                    setShow(false);
+                    onOrderAnother?.();
+                  }}
+                >
+                  {t("Order Another")}
+                </button>
 
                 <button
                   className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
@@ -1217,6 +1220,7 @@ function CartDrawer({
     </>
   );
 }
+
 
 /* ====================== ORDER STATUS MODAL ====================== */
 function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClose, onFinished, t }) {
@@ -1301,6 +1305,8 @@ export default function QrMenu() {
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
+  const AUTO_OPEN_KEY = "qr_cart_auto_open"; // controls whether CartDrawer auto-opens on cart changes
+
   // show Delivery Info form first, every time Delivery is chosen
 const [showDeliveryForm, setShowDeliveryForm] = useState(false);
 useEffect(() => {
@@ -1627,18 +1633,23 @@ async function rehydrateCartFromOrder(orderId) {
   }
 }
 
-// ---- Order Another: stay on same order/table, prefill cart ----
+// ---- Order Another: go back to menu immediately, but keep order context ----
 async function handleOrderAnother() {
   try {
-    // close status overlay if it’s open
+    // Close the status overlay
     setShowStatus(false);
     setOrderStatus("pending");
 
-    // Try to resolve an active order id/type
+    // ⛔️ Tell CartDrawer NOT to auto-open when cart changes
+    localStorage.setItem(AUTO_OPEN_KEY, "0");
+    // ⛔️ Also force-close the drawer if it’s open
+    window.dispatchEvent(new Event("qr:cart-close"));
+
+    // Resolve id/type
     let id = orderId || Number(localStorage.getItem("qr_active_order_id")) || null;
     let type = orderType || localStorage.getItem("qr_orderType") || (table ? "table" : null);
 
-    // If we know the table but not the id, fetch the open order for that table
+    // If table known but no id, fetch the open order
     if (!id && (type === "table" || table)) {
       const tNo = table || Number(localStorage.getItem("qr_table")) || null;
       if (tNo) {
@@ -1660,7 +1671,7 @@ async function handleOrderAnother() {
       }
     }
 
-    // Table flow: rehydrate into cart and keep context
+    // Table flow: rehydrate cart but KEEP drawer closed
     if (type === "table" && id) {
       await rehydrateCartFromOrder(id);
       localStorage.setItem("qr_active_order_id", String(id));
@@ -1670,13 +1681,15 @@ async function handleOrderAnother() {
       return;
     }
 
-    // Online flow (no type/id): don’t kick to order type; just keep them here
-    setShowStatus(true);
-    setOrderStatus("success");
+    // Online flow: just return to menu; keep drawer closed
+    // (If you want to show Delivery form again, uncomment next line)
+    // setShowDeliveryForm(true);
+    return;
   } catch (e) {
     console.error("handleOrderAnother failed:", e);
   }
 }
+
 
 
 
@@ -1938,17 +1951,20 @@ return (
       extrasGroups={extrasGroups}
       onClose={() => setShowAddModal(false)}
       onAddToCart={(item) => {
-        setCart((prev) => {
-          const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
-          if (idx !== -1) {
-            const copy = [...prev];
-            copy[idx].quantity += item.quantity;
-            return copy;
-          }
-          return [...prev, item];
-        });
-        setShowAddModal(false);
-      }}
+  // allow drawer to auto-open on this user action
+  localStorage.setItem("qr_cart_auto_open", "1");
+  setCart((prev) => {
+    const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
+    if (idx !== -1) {
+      const copy = [...prev];
+      copy[idx].quantity += item.quantity;
+      return copy;
+    }
+    return [...prev, item];
+  });
+  setShowAddModal(false);
+}}
+
       t={t}
     />
 
