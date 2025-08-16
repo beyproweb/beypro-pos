@@ -1062,7 +1062,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
   );
 }
 
-/* ====================== CART DRAWER ====================== */
 function CartDrawer({
   cart,
   setCart,
@@ -1075,23 +1074,38 @@ function CartDrawer({
   t,
 }) {
   const [show, setShow] = useState(false);
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  // 👂 Close the drawer when someone asks globally
+  const prevItems = cart.filter(i => i.locked);
+  const newItems  = cart.filter(i => !i.locked);
+
+  const lineTotal = (item) => {
+    const extrasTotal = (item.extras || []).reduce(
+      (s, ex) => s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+      0
+    );
+    return (parseFloat(item.price) || 0 + extrasTotal) * (item.quantity || 1);
+  };
+  const total = newItems.reduce((sum, i) => sum + lineTotal(i), 0);
+
+  // 👂 close by global event
   useEffect(() => {
     const handler = () => setShow(false);
     window.addEventListener("qr:cart-close", handler);
     return () => window.removeEventListener("qr:cart-close", handler);
   }, []);
 
-  // 🚪 Auto-open only if allowed
+  // 🚪 auto-open only if allowed
   useEffect(() => {
     const auto = localStorage.getItem("qr_cart_auto_open") !== "0";
     if (auto) setShow(cart.length > 0);
   }, [cart.length]);
 
-  function removeItem(idx) {
-    setCart((prev) => prev.filter((_, i) => i !== idx));
+  function removeItem(idx, isNew) {
+    if (!isNew) return; // don't remove locked (read-only)
+    setCart((prev) => {
+      let n = -1;
+      return prev.filter((it) => (it.locked ? true : (++n !== idx)));
+    });
   }
 
   return (
@@ -1100,7 +1114,6 @@ function CartDrawer({
         <button
           className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-7 rounded-3xl shadow-xl z-50"
           onClick={() => {
-            // ✅ User explicitly asked to see the cart → allow auto-open again
             localStorage.setItem("qr_cart_auto_open", "1");
             setShow(true);
           }}
@@ -1108,63 +1121,94 @@ function CartDrawer({
           🛒 {t("View Cart")} ({cart.length})
         </button>
       )}
+
       {show && (
         <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/30">
           <div className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl shadow-2xl p-5 flex flex-col">
             <div className="flex justify-between items-center mb-3">
               <span className="text-lg font-bold text-blue-800">🛒 {t("Your Order")}</span>
-              <button
-                className="text-2xl text-gray-400 hover:text-red-500"
-                onClick={() => setShow(false)}
-                aria-label={t("Close")}
-              >
-                ×
-              </button>
+              <button className="text-2xl text-gray-400 hover:text-red-500" onClick={() => setShow(false)} aria-label={t("Close")}>×</button>
             </div>
 
             <div className="flex-1 overflow-y-auto max-h-[48vh]">
               {cart.length === 0 ? (
                 <div className="text-gray-400 text-center py-8">{t("Cart is empty.")}</div>
               ) : (
-                <ul className="flex flex-col gap-3">
-                  {cart.map((item, i) => (
-                    <li key={i} className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2">
-                      <div className="flex-1 min-w-0">
-                        <span className="font-bold block">
-                          {item.name} <span className="text-xs text-gray-500">x{item.quantity}</span>
-                        </span>
-                        {item.extras && item.extras.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {item.extras.map((ex, j) => {
-                              const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0);
-                              const line = unit * (ex.quantity || 1);
-                              return (
-                                <span
-                                  key={j}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-xs rounded-full"
-                                >
-                                  <span>{ex.name}</span>
-                                  <span>×{ex.quantity || 1}</span>
-                                  <span className="font-semibold">₺{line.toFixed(2)}</span>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {item.note && <div className="text-xs text-yellow-700 mt-1">📝 {t("Note")}: {item.note}</div>}
-                      </div>
-                      <div className="flex flex-col items-end shrink-0">
-                        <span className="font-bold text-indigo-700">₺{(item.price * item.quantity).toFixed(2)}</span>
-                        <button className="text-xs text-red-400 hover:text-red-700 mt-1" onClick={() => removeItem(i)}>
-                          {t("Remove")}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex flex-col gap-4">
+                  {/* Previously ordered (locked) */}
+                  {prevItems.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-gray-500 mb-1">Previously in this order (won’t be added again)</div>
+                      <ul className="flex flex-col gap-2">
+                        {prevItems.map((item, i) => (
+                          <li key={`prev-${i}`} className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2 opacity-70">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-bold block">{item.name} <span className="text-xs text-gray-500">x{item.quantity}</span></span>
+                              {item.extras?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.extras.map((ex, j) => {
+                                    const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                                    const line = unit * (ex.quantity || 1);
+                                    return (
+                                      <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-xs rounded-full">
+                                        <span>{ex.name}</span><span>×{ex.quantity || 1}</span><span className="font-semibold">₺{line.toFixed(2)}</span>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {item.note && <div className="text-xs text-yellow-700 mt-1">📝 {t("Note")}: {item.note}</div>}
+                            </div>
+                            <div className="flex flex-col items-end shrink-0">
+                              <span className="font-bold text-indigo-700">₺{lineTotal(item).toFixed(2)}</span>
+                              <span className="text-[10px] text-gray-400 mt-1">locked</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* New items */}
+                  <div>
+                    <div className="text-xs font-bold text-blue-600 mb-1">New items to add</div>
+                    {newItems.length === 0 ? (
+                      <div className="text-gray-400 text-sm">No new items yet</div>
+                    ) : (
+                      <ul className="flex flex-col gap-2">
+                        {newItems.map((item, i) => (
+                          <li key={`new-${i}`} className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-bold block">{item.name} <span className="text-xs text-gray-500">x{item.quantity}</span></span>
+                              {item.extras?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.extras.map((ex, j) => {
+                                    const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                                    const line = unit * (ex.quantity || 1);
+                                    return (
+                                      <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-xs rounded-full">
+                                        <span>{ex.name}</span><span>×{ex.quantity || 1}</span><span className="font-semibold">₺{line.toFixed(2)}</span>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {item.note && <div className="text-xs text-yellow-700 mt-1">📝 {t("Note")}: {item.note}</div>}
+                            </div>
+                            <div className="flex flex-col items-end shrink-0">
+                              <span className="font-bold text-indigo-700">₺{lineTotal(item).toFixed(2)}</span>
+                              <button className="text-xs text-red-400 hover:text-red-700 mt-1" onClick={() => removeItem(i, true)}>{t("Remove")}</button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
+            {/* Footer */}
             {cart.length > 0 && (
               <>
                 <div className="flex justify-between text-base font-bold mt-5 mb-3">
@@ -1175,11 +1219,7 @@ function CartDrawer({
                 {orderType === "online" && (
                   <div className="flex flex-col gap-2 mb-2">
                     <label className="font-bold text-blue-900">{t("Payment:")}</label>
-                    <select
-                      className="rounded-xl px-2 py-1 border"
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                    >
+                    <select className="rounded-xl px-2 py-1 border" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                       <option value="cash">💵 {t("Cash")}</option>
                       <option value="card">💳 {t("Credit Card")}</option>
                       <option value="online">🌐 {t("Online Payment")}</option>
@@ -1190,27 +1230,27 @@ function CartDrawer({
                 <button
                   className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
                   onClick={onSubmitOrder}
-                  disabled={submitting}
+                  disabled={submitting || newItems.length === 0}
                 >
                   {submitting ? t("Please wait...") : t("Submit Order")}
                 </button>
 
                 <button
                   className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
-                  onClick={() => {
-                    // Close drawer first, then delegate
-                    setShow(false);
-                    onOrderAnother?.();
-                  }}
+                  onClick={() => { setShow(false); onOrderAnother?.(); }}
                 >
                   {t("Order Another")}
                 </button>
 
                 <button
                   className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
-                  onClick={() => setCart([])}
+                  onClick={() => {
+                    // Clear only NEW items; keep locked items visible
+                    setCart((prev) => prev.filter(i => i.locked));
+                    localStorage.setItem("qr_cart", JSON.stringify(cart.filter(i => i.locked)));
+                  }}
                 >
-                  {t("Clear Cart")}
+                  Clear New Items
                 </button>
               </>
             )}
@@ -1305,8 +1345,7 @@ export default function QrMenu() {
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
-  const AUTO_OPEN_KEY = "qr_cart_auto_open"; // controls whether CartDrawer auto-opens on cart changes
-
+  
   // show Delivery Info form first, every time Delivery is chosen
 const [showDeliveryForm, setShowDeliveryForm] = useState(false);
 useEffect(() => {
@@ -1604,6 +1643,7 @@ if (orderType === "table" && !table) {
 
 
 // ---- Rehydrate cart from current order (generate NEW unique_id for each line) ----
+// ---- Rehydrate cart from current order, but mark them as locked (read-only) ----
 async function rehydrateCartFromOrder(orderId) {
   try {
     const res = await fetch(`${API_URL}/api/orders/${orderId}/items`);
@@ -1611,8 +1651,8 @@ async function rehydrateCartFromOrder(orderId) {
     const raw = await res.json();
 
     const now36 = Date.now().toString(36);
-    const items = (Array.isArray(raw) ? raw : [])
-      // skip delivered lines; keep new/preparing/ready
+    const lockedItems = (Array.isArray(raw) ? raw : [])
+      // keep non-delivered so customer can see what is in progress/ready
       .filter(i => (i.kitchen_status || "new") !== "delivered")
       .map((it) => ({
         id: it.product_id ?? it.external_product_id,
@@ -1622,30 +1662,29 @@ async function rehydrateCartFromOrder(orderId) {
         extras: typeof it.extras === "string" ? JSON.parse(it.extras) : (it.extras || []),
         note: it.note || "",
         image: null,
-        // IMPORTANT: force a brand-new uid so backend treats as NEW lines
         unique_id: `${(it.product_id ?? it.external_product_id ?? "x")}-${now36}-${Math.random().toString(36).slice(2,8)}`,
+        locked: true, // ← ← ← IMPORTANT
       }));
 
-    setCart(items); // drawer auto-opens due to effect in CartDrawer
-    // localStorage sync happens via useEffect([cart])
+    // Show only locked items for context; new items will be added later
+    setCart(lockedItems);
   } catch (e) {
     console.error("rehydrateCartFromOrder failed:", e);
   }
 }
 
 // ---- Order Another: go back to menu immediately, but keep order context ----
-// ---- Order Another: go back to menu immediately with EMPTY cart ----
+// ---- Order Another: show previous lines (locked), start fresh for new ones ----
 async function handleOrderAnother() {
   try {
-    // Close status overlay
     setShowStatus(false);
     setOrderStatus("pending");
 
-    // Keep the drawer closed + stop any auto-open
+    // keep drawer closed; user can open when ready
     localStorage.setItem("qr_cart_auto_open", "0");
     window.dispatchEvent(new Event("qr:cart-close"));
 
-    // 🔑 Preserve the active order context (so new items append to same table order)
+    // resolve existing order
     let id = orderId || Number(localStorage.getItem("qr_active_order_id")) || null;
     let type = orderType || localStorage.getItem("qr_orderType") || (table ? "table" : null);
 
@@ -1656,30 +1695,32 @@ async function handleOrderAnother() {
           const q = await fetch(`${API_URL}/api/orders?table_number=${tNo}`);
           if (q.ok) {
             const list = await q.json();
-            const open = Array.isArray(list)
-              ? list.find(o => (o.status || "").toLowerCase() !== "closed")
-              : null;
+            const open = Array.isArray(list) ? list.find(o => (o.status || "").toLowerCase() !== "closed") : null;
             if (open) {
               id = open.id;
               type = "table";
               setOrderId(id);
               setOrderType("table");
-              localStorage.setItem("qr_active_order_id", String(id));
-              localStorage.setItem("qr_orderType", "table");
-              if (table) localStorage.setItem("qr_table", String(table));
             }
           }
         } catch {}
       }
     }
 
-    // 🧹 DO NOT rehydrate old items — start fresh
+    // show locked previous items; leave cart clean for new items
+    if (type === "table" && id) {
+      await rehydrateCartFromOrder(id); // sets locked: true items in cart
+      localStorage.setItem("qr_active_order_id", String(id));
+      localStorage.setItem("qr_orderType", "table");
+      if (table) localStorage.setItem("qr_table", String(table));
+      localStorage.setItem("qr_show_status", "0");
+      return;
+    }
+
+    // online flow: usually start clean
     setCart([]);
     localStorage.setItem("qr_cart", "[]");
     localStorage.setItem("qr_show_status", "0");
-
-    // (optional) If you want to re-open the category grid somewhere specific, do nothing:
-    // user can add new items from the menu now with a clean cart.
   } catch (e) {
     console.error("handleOrderAnother failed:", e);
   }
@@ -1743,34 +1784,34 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
   };
 }
 
-
 async function handleSubmitOrder() {
   try {
     setSubmitting(true);
     setLastError(null);
 
-    // Open the status modal right away so user sees "Sending..."
     setOrderStatus("pending");
     setShowStatus(true);
 
-    // Online must confirm details first
     if (orderType === "online" && !customerInfo) {
       setShowDeliveryForm(true);
       return;
     }
 
-    if (!Array.isArray(cart) || cart.length === 0) {
-      throw new Error("Cart is empty.");
+    const newItems = (Array.isArray(cart) ? cart : []).filter(i => !i.locked);
+    if (newItems.length === 0) {
+      // nothing new to add; keep status open
+      setOrderStatus("success");
+      setShowStatus(true);
+      return;
     }
+
     if (orderType === "table" && !table) {
       throw new Error("Please select a table.");
     }
 
-    const total = calcOrderTotalWithExtras(cart);
-
-    // ---------- TABLE SUB-ORDER (append to existing order) ----------
+    // TABLE: sub-order append to existing order
     if (orderType === "table" && orderId) {
-      const itemsPayload = cart.map((i) => ({
+      const itemsPayload = newItems.map((i) => ({
         product_id: i.id,
         quantity: i.quantity,
         price: parseFloat(i.price) || 0,
@@ -1789,59 +1830,34 @@ async function handleSubmitOrder() {
         items: itemsPayload,
       });
 
-      // Persist + flip to success
+      // Success → clear only NEW items; keep locked (context)
+      setCart((prev) => prev.filter(i => i.locked));
       localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
       localStorage.setItem("qr_active_order_id", String(orderId));
       if (table) localStorage.setItem("qr_table", String(table));
       localStorage.setItem("qr_orderType", "table");
       localStorage.setItem("qr_show_status", "1");
 
-      setCart([]);
-      setOrderStatus("success");      // <-- show the full OrderStatusScreen
+      setOrderStatus("success");
       setShowStatus(true);
       return;
     }
 
-    // ---------- ONLINE: best-effort ensure customer ----------
-    let customerId = null;
-    if (orderType === "online" && customerInfo?.phone) {
-      try {
-        const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
-        const candidates = await searchRes.json();
-        const norm = (s) => (s || "").replace(/\D/g, "");
-        const exact = (Array.isArray(candidates) ? candidates : []).find(
-          (c) => norm(c.phone) === norm(customerInfo.phone)
-        );
-        if (exact) {
-          customerId = exact.id;
-        } else {
-          const created = await postJSON(`${API_URL}/api/customers`, {
-            name: customerInfo.name,
-            phone: customerInfo.phone,
-            email: null,
-            birthday: null,
-          });
-          customerId = created?.id;
-        }
-        if (customerId && customerInfo.address) {
-          await postJSON(`${API_URL}/api/customers/${customerId}/addresses`, {
-            label: "Home",
-            address: customerInfo.address,
-            is_default: true,
-          });
-        }
-      } catch {
-        /* don't block order */
-      }
-    }
+    // ONLINE or first TABLE order creation
+    const total = newItems.reduce((sum, item) => {
+      const extrasTotal = (item.extras || []).reduce(
+        (s, ex) => s + (parseFloat(ex.price) || 0) * (ex.quantity || 1),
+        0
+      );
+      return sum + (parseFloat(item.price) + extrasTotal) * (item.quantity || 1);
+    }, 0);
 
-    // ---------- CREATE NEW ORDER (table or online) ----------
     const created = await postJSON(
       `${API_URL}/api/orders`,
       buildOrderPayload({
         orderType,
         table,
-        items: cart,
+        items: newItems,          // ← only new items
         total,
         customer: orderType === "online" ? customerInfo : null,
       })
@@ -1851,17 +1867,15 @@ async function handleSubmitOrder() {
     if (!newId) throw new Error("Server did not return order id.");
 
     setOrderId(newId);
-    localStorage.setItem(
-      "qr_active_order",
-      JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null })
-    );
+    localStorage.setItem("qr_active_order", JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null }));
     localStorage.setItem("qr_active_order_id", String(newId));
     if (orderType === "table" && table) localStorage.setItem("qr_table", String(table));
     localStorage.setItem("qr_orderType", orderType);
     localStorage.setItem("qr_show_status", "1");
 
+    // After creating a brand-new order, nothing is locked yet in cart → clear it
     setCart([]);
-    setOrderStatus("success");  // <-- switch from "pending" to "success"
+    setOrderStatus("success");
     setShowStatus(true);
   } catch (e) {
     console.error("Order submit failed:", e);
@@ -1872,7 +1886,6 @@ async function handleSubmitOrder() {
     setSubmitting(false);
   }
 }
-
 
 
 
