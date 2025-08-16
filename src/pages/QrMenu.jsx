@@ -1413,20 +1413,6 @@ function resetToTypePicker() {
 }
 
 
-useEffect(() => {
-  if (localStorage.getItem("qr_show_status") === "1" && !showStatus) {
-    setShowStatus(true);
-  }
-}, [showStatus]);
-
-useEffect(() => {
-  const id = orderId || localStorage.getItem("qr_active_order_id");
-  if (id) {
-    setOrderStatus((s) => (s === "pending" ? "success" : s));
-    setShowStatus(true);
-    localStorage.setItem("qr_show_status", "1");
-  }
-}, [orderId]);
 
 
 // Bootstrap on refresh: restore by saved order id, else by saved table
@@ -1434,27 +1420,48 @@ useEffect(() => {
   (async () => {
     try {
       const activeId = localStorage.getItem("qr_active_order_id");
-if (activeId) {
-  const res = await fetch(`${API_URL}/api/orders/${activeId}`);
-  if (res.ok) {
-    const order = await res.json();
-    if (order && order.status !== "closed") {
-      const type = order.order_type === "table" ? "table" : "online";
-      setOrderType(type);
-      setTable(type === "table" ? Number(order.table_number) || null : null);
-      setOrderId(order.id);
 
-      // ✅ Always show the Order Status screen while not closed
-      setOrderStatus("success");
-      setShowStatus(true);
-      return;
-    }
-  }
-}
+      // helper: true if ALL items are delivered
+      async function allItemsDelivered(id) {
+        try {
+          const ir = await fetch(`${API_URL}/api/orders/${id}/items`);
+          if (!ir.ok) return false;
+          const raw = await ir.json();
+          const arr = Array.isArray(raw) ? raw : [];
+          return arr.length > 0 && arr.every(it => (it.kitchen_status || "").toLowerCase() === "delivered");
+        } catch { return false; }
+      }
 
+      // 1) If we have a saved active order id, prefer that
+      if (activeId) {
+        const res = await fetch(`${API_URL}/api/orders/${activeId}`);
+        if (res.ok) {
+          const order = await res.json();
+          const status = (order?.status || "").toLowerCase();
 
+          // finished states or everything delivered → reset to type picker
+          if (["closed", "completed", "paid", "canceled"].includes(status) || await allItemsDelivered(activeId)) {
+            resetToTypePicker();
+            return;
+          }
 
-      // Fallback: see if a saved table has an open order
+          // still active → restore and show status
+          const type = order.order_type === "table" ? "table" : "online";
+          setOrderType(type);
+          setTable(type === "table" ? Number(order.table_number) || null : null);
+          setOrderId(order.id);
+
+          setOrderStatus("success");
+          setShowStatus(true);
+          return;
+        }
+
+        // bad fetch or missing → clean up any stale flags
+        resetToTypePicker();
+        return;
+      }
+
+      // 2) Fallback: see if a saved table has an open (non-closed) order
       const savedTable = Number(
         localStorage.getItem("qr_table") ||
         localStorage.getItem("qr_selected_table") ||
@@ -1467,7 +1474,15 @@ if (activeId) {
           const raw = await q.json();
           const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
           const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
+
           if (openOrder) {
+            // all delivered? → reset
+            if (await allItemsDelivered(openOrder.id)) {
+              resetToTypePicker();
+              return;
+            }
+
+            // restore
             setOrderType("table");
             setTable(savedTable);
             setOrderId(openOrder.id);
@@ -1482,7 +1497,7 @@ if (activeId) {
         }
       }
 
-      // Nothing to restore
+      // 3) Nothing to restore
       setOrderType(null);
       setTable(null);
       setShowStatus(false);
@@ -1493,6 +1508,7 @@ if (activeId) {
     }
   })();
 }, []);
+
 
   useEffect(() => {
     fetch(`${API_URL}/api/category-images`)
@@ -1544,11 +1560,12 @@ if (activeId) {
     function tryJSON(v) { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
   }, []);
 
+
 // === Always-mounted Order Status (portal) ===
-const statusPortal = showStatus
+const statusPortal = (showStatus && orderId)
   ? createPortal(
       <OrderStatusModal
-        open={showStatus}
+        open={true}
         status={orderStatus}
         orderId={orderId}
         table={orderType === "table" ? table : null}
@@ -1560,6 +1577,7 @@ const statusPortal = showStatus
       document.body
     )
   : null;
+
 
 // --- Order type select (show modal here too if needed) ---
 if (!orderType)
