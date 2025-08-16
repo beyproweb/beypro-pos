@@ -16,26 +16,7 @@ function saveSelectedTable(tableNo) {
   }
 }
 
-// at the top of QrMenu component
-const [showQrPrompt, setShowQrPrompt] = useState(() => {
-  return !localStorage.getItem("qr_saved");
-});
 
-function handleDownloadQr() {
-  // Your QR PNG (pre-generated and uploaded)
-  const qrUrl = "https://pos.beypro.com/uploads/qr-menu.png";
-
-  const link = document.createElement("a");
-  link.href = qrUrl;
-  link.download = "Beypro-QR-Menu.png";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  // Remember that user saved it
-  localStorage.setItem("qr_saved", "1");
-  setShowQrPrompt(false);
-}
 
 function getSavedTable() {
   const v = localStorage.getItem(TABLE_KEY);
@@ -1445,6 +1426,27 @@ export default function QrMenu() {
   const [orderType, setOrderType] = useState(
   () => localStorage.getItem("qr_orderType") || null
 );
+
+// at the top of QrMenu component
+const [showQrPrompt, setShowQrPrompt] = useState(() => {
+  return !localStorage.getItem("qr_saved");
+});
+
+function handleDownloadQr() {
+  // Your QR PNG (pre-generated and uploaded)
+  const qrUrl = "https://pos.beypro.com/uploads/qr-menu.png";
+
+  const link = document.createElement("a");
+  link.href = qrUrl;
+  link.download = "Beypro-QR-Menu.png";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // Remember that user saved it
+  localStorage.setItem("qr_saved", "1");
+  setShowQrPrompt(false);
+}
 
 // When switching order type, choose a sensible default
 useEffect(() => {
