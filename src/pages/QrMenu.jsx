@@ -1216,16 +1216,32 @@ function CartDrawer({
                   <span className="text-indigo-700 text-xl">₺{total.toFixed(2)}</span>
                 </div>
 
-                {orderType === "online" && (
-                  <div className="flex flex-col gap-2 mb-2">
-                    <label className="font-bold text-blue-900">{t("Payment:")}</label>
-                    <select className="rounded-xl px-2 py-1 border" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-                      <option value="cash">💵 {t("Cash")}</option>
-                      <option value="card">💳 {t("Credit Card")}</option>
-                      <option value="online">🌐 {t("Online Payment")}</option>
-                    </select>
-                  </div>
-                )}
+                {/* Payment choice */}
+<div className="flex flex-col gap-2 mb-2">
+  <label className="font-bold text-blue-900">{t("Payment:")}</label>
+  <select
+    className="rounded-xl px-2 py-1 border"
+    value={paymentMethod}
+    onChange={(e) => setPaymentMethod(e.target.value)}
+  >
+    {orderType === "table" ? (
+      <>
+        <option value="online">🌐 {t("Pay Online Now")}</option>
+        <option value="card">💳 {t("Card at Table")}</option>
+        <option value="sodexo">🍽️ Sodexo</option>
+        <option value="multinet">🍽️ Multinet</option>
+        <option value="cash">💵 {t("Cash at Table")}</option>
+      </>
+    ) : (
+      <>
+        <option value="cash">💵 {t("Cash")}</option>
+        <option value="card">💳 {t("Credit Card")}</option>
+        <option value="online">🌐 {t("Online Payment")}</option>
+      </>
+    )}
+  </select>
+</div>
+
 
                 <button
                   className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
@@ -1259,6 +1275,25 @@ function CartDrawer({
       )}
     </>
   );
+}
+
+async function startOnlinePaymentSession(id) {
+  try {
+    const res = await fetch(`${API_URL}/api/payments/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_id: id, method: "online" }) // backend should compute unpaid total
+    });
+    const text = await res.text();
+    const data = JSON.parse(text).pay_url ? JSON.parse(text) : {};
+    if (data.pay_url) {
+      localStorage.setItem("qr_payment_url", data.pay_url);
+      return data.pay_url;
+    }
+  } catch (e) {
+    console.error("startOnlinePaymentSession failed:", e);
+  }
+  return null;
 }
 
 
@@ -1316,6 +1351,23 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
   );
 }
 
+// Payment choice persists across the flow
+const [paymentMethod, setPaymentMethod] = useState(
+  localStorage.getItem("qr_payment_method") || (orderType === "table" ? "card" : "online")
+);
+useEffect(() => {
+  localStorage.setItem("qr_payment_method", paymentMethod);
+}, [paymentMethod]);
+
+// When switching order type, choose a sensible default
+useEffect(() => {
+  if (orderType === "table" && !["online","card","sodexo","multinet","cash"].includes(paymentMethod)) {
+    setPaymentMethod("card");
+  }
+  if (orderType === "online" && !["online","card","cash"].includes(paymentMethod)) {
+    setPaymentMethod("online");
+  }
+}, [orderType]);
 
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
@@ -1820,11 +1872,10 @@ async function handleSubmitOrder() {
     setSubmitting(true);
     setLastError(null);
 
-    // open status immediately
     setOrderStatus("pending");
     setShowStatus(true);
 
-    // Require delivery details only for brand-new ONLINE order
+    // Require delivery details only when starting a brand-new ONLINE order
     const hasActiveOnline = orderType === "online" && (orderId || localStorage.getItem("qr_active_order_id"));
     if (orderType === "online" && !hasActiveOnline && !customerInfo) {
       setShowDeliveryForm(true);
@@ -1842,7 +1893,7 @@ async function handleSubmitOrder() {
       throw new Error("Please select a table.");
     }
 
-    // ---------- APPEND to existing order (works for TABLE & ONLINE) ----------
+    // ---------- APPEND to existing order ----------
     if (orderId) {
       const itemsPayload = newItems.map((i) => ({
         product_id: i.id,
@@ -1863,13 +1914,28 @@ async function handleSubmitOrder() {
         items: itemsPayload,
       });
 
-      // success: clear only NEW items; keep locked ones for context
+      // Save/patch the chosen payment method on the order (ignore if backend doesn't support)
+      try {
+        await fetch(`${API_URL}/api/orders/${orderId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payment_method: paymentMethod }),
+        });
+      } catch {}
+
+      // If user chose Online, create/refresh a checkout session
+      if (paymentMethod === "online") {
+        await startOnlinePaymentSession(orderId);
+      }
+
+      // clear only NEW items
       setCart((prev) => prev.filter(i => i.locked));
 
       localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table: orderType === "table" ? table : null }));
       localStorage.setItem("qr_active_order_id", String(orderId));
       if (orderType === "table" && table) localStorage.setItem("qr_table", String(table));
       localStorage.setItem("qr_orderType", orderType);
+      localStorage.setItem("qr_payment_method", paymentMethod);
       localStorage.setItem("qr_show_status", "1");
 
       setOrderStatus("success");
@@ -1877,7 +1943,7 @@ async function handleSubmitOrder() {
       return;
     }
 
-    // ---------- CREATE brand-new order (TABLE or ONLINE) ----------
+    // ---------- CREATE brand-new order ----------
     const total = newItems.reduce((sum, item) => {
       const extrasTotal = (item.extras || []).reduce(
         (s, ex) => s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
@@ -1891,24 +1957,31 @@ async function handleSubmitOrder() {
       buildOrderPayload({
         orderType,
         table,
-        items: newItems,          // only new lines
+        items: newItems,
         total,
         customer: orderType === "online" ? customerInfo : null,
+        // 👇 tell backend what the customer selected (store it on the order)
+        payment_method: paymentMethod,
       })
     );
 
     const newId = created?.id;
     if (!newId) throw new Error("Server did not return order id.");
 
+    // If Online, start a checkout session for this order
+    if (paymentMethod === "online") {
+      await startOnlinePaymentSession(newId);
+    }
+
     setOrderId(newId);
     localStorage.setItem("qr_active_order", JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null }));
     localStorage.setItem("qr_active_order_id", String(newId));
     if (orderType === "table" && table) localStorage.setItem("qr_table", String(table));
     localStorage.setItem("qr_orderType", orderType);
+    localStorage.setItem("qr_payment_method", paymentMethod);
     localStorage.setItem("qr_show_status", "1");
 
-    // fresh order → clear cart
-    setCart([]);
+    setCart([]); // fresh order → empty cart
     setOrderStatus("success");
     setShowStatus(true);
   } catch (e) {
@@ -1920,6 +1993,7 @@ async function handleSubmitOrder() {
     setSubmitting(false);
   }
 }
+
 
 
 

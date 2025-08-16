@@ -61,6 +61,36 @@ const OrderStatusScreen = ({
 
   // States considered finished by backend
   const FINISHED_STATES = ["closed", "completed", "paid", "delivered", "canceled"];
+  
+  // Helpers near top of component:
+const pm = (order?.payment_method || localStorage.getItem("qr_payment_method") || "").toLowerCase();
+const paymentUrl = order?.payment_url || localStorage.getItem("qr_payment_url") || null;
+const pmLabel = (m) => {
+  switch (m) {
+    case "online": return t("Online");
+    case "card": return t("Card at Table");
+    case "sodexo": return "Sodexo";
+    case "multinet": return "Multinet";
+    case "cash": return t("Cash");
+    default: return m || "—";
+  }
+};
+async function requestPaymentLink() {
+  try {
+    const res = await fetch(`${API_URL}/api/payments/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_id: orderId, method: "online" }),
+    });
+    const data = await safeJSON(res);
+    if (data?.pay_url) {
+      localStorage.setItem("qr_payment_url", data.pay_url);
+      fetchOrder(); // refresh to pick up order.payment_url if backend stores it
+    }
+  } catch (e) {
+    console.error("requestPaymentLink failed:", e);
+  }
+}
 
   // If backend says it's finished, then (and only then) close
   useEffect(() => {
@@ -172,6 +202,43 @@ const OrderStatusScreen = ({
         <div className="mb-2 text-base text-indigo-800 font-semibold">
           <span>⏱️ {t("Time")}: <span className="font-mono">{timer}</span></span>
         </div>
+        {/* Payment method / Pay Now */}
+<div className="w-full mb-3">
+  <div className="text-sm font-semibold text-indigo-800">
+    {t("Payment Method")}: <span className="font-bold">{pmLabel(pm)}</span>
+  </div>
+
+  {pm === "online" && (order?.payment_status || "").toLowerCase() !== "paid" && (
+    paymentUrl ? (
+      <a
+        href={paymentUrl}
+        target="_blank"
+        rel="noopener"
+        className="mt-2 inline-flex justify-center w-full py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold shadow hover:scale-105 transition"
+      >
+        {t("Pay Now")}
+      </a>
+    ) : (
+      <button
+        onClick={requestPaymentLink}
+        className="mt-2 inline-flex justify-center w-full py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold shadow hover:scale-105 transition"
+      >
+        {t("Get Payment Link")}
+      </button>
+    )
+  )}
+
+  {pm !== "online" && (order?.payment_status || "").toLowerCase() !== "paid" && (
+    <div className="mt-1 text-xs text-gray-600">
+      {t("A staff member will collect your payment at the table.")}
+    </div>
+  )}
+
+  {(order?.payment_status || "").toLowerCase() === "paid" && (
+    <div className="mt-1 text-sm font-semibold text-green-700">✅ {t("Paid")}</div>
+  )}
+</div>
+
 
         {/* Show a small hint while we see 404s */}
         {order404 && (
