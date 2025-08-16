@@ -81,33 +81,37 @@ useEffect(() => {
   }
 }, [order?.status]);
 
+// Poll order WITHOUT auto-finishing on 404
 useEffect(() => {
   let abort = false;
+
   async function load() {
     try {
       const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
         headers: { Accept: "application/json" },
       });
+
       if (!res.ok) {
+        // ⛔️ IMPORTANT: DO NOT call onFinished() on 404.
+        // Keep the status screen open; we'll keep polling.
         if (res.status === 404 && !abort) {
-          // Order no longer exists
-          setOrder(null);
-          onFinished?.();
+          setOrder(null); // show skeleton/empty state while backend catches up
         }
         return;
       }
+
       const data = await safeJSON(res);
       if (!abort) setOrder(data);
     } catch (err) {
       console.error("Order fetch failed:", err.message);
     }
   }
-  load();
 
-  // Poll every 4 sec
-  const iv = setInterval(load, 4000);
+  load();                          // initial fetch
+  const iv = setInterval(load, 4000); // poll every 4s
   return () => { abort = true; clearInterval(iv); };
 }, [orderId]);
+
 
 
   const fetchOrder = async () => {
