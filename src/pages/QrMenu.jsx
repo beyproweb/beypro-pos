@@ -1355,9 +1355,7 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
 
 
 
-useEffect(() => {
-  localStorage.setItem("qr_payment_method", paymentMethod);
-}, [paymentMethod]);
+
 
 
 
@@ -1404,6 +1402,10 @@ useEffect(() => {
     setPaymentMethod("online");
   }
 }, [orderType]);
+
+useEffect(() => {
+  localStorage.setItem("qr_payment_method", paymentMethod);
+}, [paymentMethod]);
 
 // === Always-mounted Order Status (portal) ===
 const statusPortal = (showStatus && orderId)
