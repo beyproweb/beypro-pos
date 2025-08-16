@@ -1354,29 +1354,12 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
 
 
 
-// keep this effect to adapt the default when orderType changes
-useEffect(() => {
-  if (orderType === "table" && !["online","card","sodexo","multinet","cash"].includes(paymentMethod)) {
-    setPaymentMethod("card");
-  }
-  if (orderType === "online" && !["online","card","cash"].includes(paymentMethod)) {
-    setPaymentMethod("online");
-  }
-}, [orderType]);
 
 useEffect(() => {
   localStorage.setItem("qr_payment_method", paymentMethod);
 }, [paymentMethod]);
 
-// When switching order type, choose a sensible default
-useEffect(() => {
-  if (orderType === "table" && !["online","card","sodexo","multinet","cash"].includes(paymentMethod)) {
-    setPaymentMethod("card");
-  }
-  if (orderType === "online" && !["online","card","cash"].includes(paymentMethod)) {
-    setPaymentMethod("online");
-  }
-}, [orderType]);
+
 
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
@@ -1411,6 +1394,16 @@ export default function QrMenu() {
   const [orderType, setOrderType] = useState(
   () => localStorage.getItem("qr_orderType") || null
 );
+
+// When switching order type, choose a sensible default
+useEffect(() => {
+  if (orderType === "table" && !["online","card","sodexo","multinet","cash"].includes(paymentMethod)) {
+    setPaymentMethod("card");
+  }
+  if (orderType === "online" && !["online","card","cash"].includes(paymentMethod)) {
+    setPaymentMethod("online");
+  }
+}, [orderType]);
 
 // === Always-mounted Order Status (portal) ===
 const statusPortal = (showStatus && orderId)
