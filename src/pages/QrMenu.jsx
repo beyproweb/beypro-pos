@@ -1351,11 +1351,7 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
   );
 }
 
-// Payment choice persists across the flow
-// put this AFTER your other useState declarations are fine; it no longer depends on orderType
-const [paymentMethod, setPaymentMethod] = useState(
-  () => localStorage.getItem("qr_payment_method") || "online"
-);
+
 
 // keep this effect to adapt the default when orderType changes
 useEffect(() => {
@@ -1404,11 +1400,14 @@ export default function QrMenu() {
   const [showStatus, setShowStatus] = useState(false);
   const [orderStatus, setOrderStatus] = useState("pending");
   const [orderId, setOrderId] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState("cash");
+
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState(
+  () => localStorage.getItem("qr_payment_method") || "online"
+);
   
   // show Delivery Info form first, every time Delivery is chosen
 // show Delivery Info form only when starting a brand-new online order
