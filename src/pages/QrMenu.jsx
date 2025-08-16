@@ -1347,12 +1347,15 @@ export default function QrMenu() {
   const [activeOrder, setActiveOrder] = useState(null);
   
   // show Delivery Info form first, every time Delivery is chosen
+// show Delivery Info form only when starting a brand-new online order
 const [showDeliveryForm, setShowDeliveryForm] = useState(false);
 useEffect(() => {
-  if (orderType === "online") {
-    setShowDeliveryForm(true); // force show, even if details are saved (they’ll be prefilled)
+  const hasActive = !!(orderId || localStorage.getItem("qr_active_order_id"));
+  if (orderType === "online" && !hasActive) {
+    setShowDeliveryForm(true);
   }
-}, [orderType]);
+}, [orderType, orderId]);
+
 
 
 
@@ -1691,14 +1694,13 @@ async function rehydrateCartFromOrder(orderId) {
   }
 }
 
-// ---- Order Another: go back to menu immediately, but keep order context ----
 // ---- Order Another: show previous lines (locked), start fresh for new ones ----
 async function handleOrderAnother() {
   try {
     setShowStatus(false);
     setOrderStatus("pending");
 
-    // keep drawer closed; user can open when ready
+    // keep drawer closed; user opens if needed
     localStorage.setItem("qr_cart_auto_open", "0");
     window.dispatchEvent(new Event("qr:cart-close"));
 
@@ -1706,6 +1708,7 @@ async function handleOrderAnother() {
     let id = orderId || Number(localStorage.getItem("qr_active_order_id")) || null;
     let type = orderType || localStorage.getItem("qr_orderType") || (table ? "table" : null);
 
+    // If table known but no id, fetch open order for that table
     if (!id && (type === "table" || table)) {
       const tNo = table || Number(localStorage.getItem("qr_table")) || null;
       if (tNo) {
@@ -1725,9 +1728,20 @@ async function handleOrderAnother() {
       }
     }
 
-    // show locked previous items; leave cart clean for new items
+    // ONLINE branch: rehydrate previous (locked) items too
+    if (type === "online" && id) {
+      await rehydrateCartFromOrder(id); // sets locked: true items
+      setOrderType("online");
+      localStorage.setItem("qr_active_order_id", String(id));
+      localStorage.setItem("qr_orderType", "online");
+      localStorage.setItem("qr_show_status", "0");
+      setShowDeliveryForm(false); // don’t ask details again
+      return;
+    }
+
+    // TABLE branch (unchanged)
     if (type === "table" && id) {
-      await rehydrateCartFromOrder(id); // sets locked: true items in cart
+      await rehydrateCartFromOrder(id); // sets locked: true items
       localStorage.setItem("qr_active_order_id", String(id));
       localStorage.setItem("qr_orderType", "table");
       if (table) localStorage.setItem("qr_table", String(table));
@@ -1735,7 +1749,7 @@ async function handleOrderAnother() {
       return;
     }
 
-    // online flow: usually start clean
+    // nothing to restore → clean cart
     setCart([]);
     localStorage.setItem("qr_cart", "[]");
     localStorage.setItem("qr_show_status", "0");
@@ -1801,23 +1815,24 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
     payment_method: null,
   };
 }
-
 async function handleSubmitOrder() {
   try {
     setSubmitting(true);
     setLastError(null);
 
+    // open status immediately
     setOrderStatus("pending");
     setShowStatus(true);
 
-    if (orderType === "online" && !customerInfo) {
+    // Require delivery details only for brand-new ONLINE order
+    const hasActiveOnline = orderType === "online" && (orderId || localStorage.getItem("qr_active_order_id"));
+    if (orderType === "online" && !hasActiveOnline && !customerInfo) {
       setShowDeliveryForm(true);
       return;
     }
 
     const newItems = (Array.isArray(cart) ? cart : []).filter(i => !i.locked);
     if (newItems.length === 0) {
-      // nothing new to add; keep status open
       setOrderStatus("success");
       setShowStatus(true);
       return;
@@ -1827,8 +1842,8 @@ async function handleSubmitOrder() {
       throw new Error("Please select a table.");
     }
 
-    // TABLE: sub-order append to existing order
-    if (orderType === "table" && orderId) {
+    // ---------- APPEND to existing order (works for TABLE & ONLINE) ----------
+    if (orderId) {
       const itemsPayload = newItems.map((i) => ({
         product_id: i.id,
         quantity: i.quantity,
@@ -1848,12 +1863,13 @@ async function handleSubmitOrder() {
         items: itemsPayload,
       });
 
-      // Success → clear only NEW items; keep locked (context)
+      // success: clear only NEW items; keep locked ones for context
       setCart((prev) => prev.filter(i => i.locked));
-      localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
+
+      localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table: orderType === "table" ? table : null }));
       localStorage.setItem("qr_active_order_id", String(orderId));
-      if (table) localStorage.setItem("qr_table", String(table));
-      localStorage.setItem("qr_orderType", "table");
+      if (orderType === "table" && table) localStorage.setItem("qr_table", String(table));
+      localStorage.setItem("qr_orderType", orderType);
       localStorage.setItem("qr_show_status", "1");
 
       setOrderStatus("success");
@@ -1861,10 +1877,10 @@ async function handleSubmitOrder() {
       return;
     }
 
-    // ONLINE or first TABLE order creation
+    // ---------- CREATE brand-new order (TABLE or ONLINE) ----------
     const total = newItems.reduce((sum, item) => {
       const extrasTotal = (item.extras || []).reduce(
-        (s, ex) => s + (parseFloat(ex.price) || 0) * (ex.quantity || 1),
+        (s, ex) => s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
         0
       );
       return sum + (parseFloat(item.price) + extrasTotal) * (item.quantity || 1);
@@ -1875,7 +1891,7 @@ async function handleSubmitOrder() {
       buildOrderPayload({
         orderType,
         table,
-        items: newItems,          // ← only new items
+        items: newItems,          // only new lines
         total,
         customer: orderType === "online" ? customerInfo : null,
       })
@@ -1891,7 +1907,7 @@ async function handleSubmitOrder() {
     localStorage.setItem("qr_orderType", orderType);
     localStorage.setItem("qr_show_status", "1");
 
-    // After creating a brand-new order, nothing is locked yet in cart → clear it
+    // fresh order → clear cart
     setCart([]);
     setOrderStatus("success");
     setShowStatus(true);
