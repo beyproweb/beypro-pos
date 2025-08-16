@@ -1412,6 +1412,22 @@ export default function QrMenu() {
   () => localStorage.getItem("qr_orderType") || null
 );
 
+// === Always-mounted Order Status (portal) ===
+const statusPortal = (showStatus && orderId)
+  ? createPortal(
+      <OrderStatusModal
+        open={true}
+        status={orderStatus}
+        orderId={orderId}
+        table={orderType === "table" ? table : null}
+        onOrderAnother={handleOrderAnother}
+        onClose={handleReset}
+        onFinished={resetToTypePicker}
+        t={t}
+      />,
+      document.body
+    )
+  : null;
   // show Delivery Info form first, every time Delivery is chosen
 // show Delivery Info form only when starting a brand-new online order
 const [showDeliveryForm, setShowDeliveryForm] = useState(false);
@@ -1630,22 +1646,7 @@ useEffect(() => {
   }, []);
 
 
-// === Always-mounted Order Status (portal) ===
-const statusPortal = (showStatus && orderId)
-  ? createPortal(
-      <OrderStatusModal
-        open={true}
-        status={orderStatus}
-        orderId={orderId}
-        table={orderType === "table" ? table : null}
-        onOrderAnother={handleOrderAnother}
-        onClose={handleReset}
-        onFinished={resetToTypePicker}
-        t={t}
-      />,
-      document.body
-    )
-  : null;
+
 
 
 // --- Order type select (show modal here too if needed) ---
