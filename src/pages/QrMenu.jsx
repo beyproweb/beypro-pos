@@ -1298,7 +1298,7 @@ async function startOnlinePaymentSession(id) {
 
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClose, onFinished, t }) {
+function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t }) {
   if (!open) return null;
 
   const title =
@@ -1414,6 +1414,7 @@ const statusPortal = (showStatus && orderId)
         open={true}
         status={orderStatus}
         orderId={orderId}
+        orderType={orderType} 
         table={orderType === "table" ? table : null}
         onOrderAnother={handleOrderAnother}
         onClose={handleReset}
