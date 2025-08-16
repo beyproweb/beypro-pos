@@ -1,5 +1,5 @@
 // src/pages/QrMenu.jsx
-import React, { useState, useEffect, useRef, memo } from "react";
+import React, { useState, useEffect, useRef, memo, useMemo } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
