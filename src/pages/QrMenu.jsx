@@ -1272,7 +1272,7 @@ function CartDrawer({
 
                 <button
                   className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
-                  onClick={() => { setShow(false); onOrderAnother?.(); }}
+                  onClick={() => setShow(false)}
                 >
                   {t("Order Another")}
                 </button>
