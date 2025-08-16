@@ -131,6 +131,8 @@ const DICT = {
     "Use saved card": "Use saved card",
     "Use a new card": "Use a new card",
     "Saved card": "Saved card",
+    "Please select a payment method before continuing.": "Please select a payment method before continuing.",
+
   },
   tr: {
     "Order Type": "Sipariş Türü",
@@ -190,6 +192,8 @@ const DICT = {
     "Use saved card": "Kayıtlı kartı kullan",
     "Use a new card": "Yeni kart kullan",
     "Saved card": "Kayıtlı kart",
+    "Please select a payment method before continuing.": "Lütfen devam etmeden önce bir ödeme yöntemi seçin.",
+
   },
   de: {}, // new keys fall back to en
   fr: {}, // new keys fall back to en
@@ -1892,13 +1896,24 @@ async function handleSubmitOrder() {
     setShowStatus(true);
 
     // Require delivery details only when starting a brand-new ONLINE order
-    const hasActiveOnline = orderType === "online" && (orderId || localStorage.getItem("qr_active_order_id"));
+    const hasActiveOnline =
+      orderType === "online" &&
+      (orderId || localStorage.getItem("qr_active_order_id"));
     if (orderType === "online" && !hasActiveOnline && !customerInfo) {
       setShowDeliveryForm(true);
       return;
     }
 
-    const newItems = (Array.isArray(cart) ? cart : []).filter(i => !i.locked);
+    // 🔒 Require payment method ONLY for delivery orders
+    if (orderType === "online" && !paymentMethod) {
+      alert(t("Please select a payment method before continuing."));
+      setSubmitting(false);
+      setOrderStatus("pending");
+      setShowStatus(false);
+      return;
+    }
+
+    const newItems = (Array.isArray(cart) ? cart : []).filter((i) => !i.locked);
     if (newItems.length === 0) {
       setOrderStatus("success");
       setShowStatus(true);
@@ -1945,11 +1960,19 @@ async function handleSubmitOrder() {
       }
 
       // clear only NEW items
-      setCart((prev) => prev.filter(i => i.locked));
+      setCart((prev) => prev.filter((i) => i.locked));
 
-      localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table: orderType === "table" ? table : null }));
+      localStorage.setItem(
+        "qr_active_order",
+        JSON.stringify({
+          orderId,
+          orderType,
+          table: orderType === "table" ? table : null,
+        })
+      );
       localStorage.setItem("qr_active_order_id", String(orderId));
-      if (orderType === "table" && table) localStorage.setItem("qr_table", String(table));
+      if (orderType === "table" && table)
+        localStorage.setItem("qr_table", String(table));
       localStorage.setItem("qr_orderType", orderType);
       localStorage.setItem("qr_payment_method", paymentMethod);
       localStorage.setItem("qr_show_status", "1");
@@ -1962,10 +1985,16 @@ async function handleSubmitOrder() {
     // ---------- CREATE brand-new order ----------
     const total = newItems.reduce((sum, item) => {
       const extrasTotal = (item.extras || []).reduce(
-        (s, ex) => s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+        (s, ex) =>
+          s +
+          (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
+            (ex.quantity || 1),
         0
       );
-      return sum + (parseFloat(item.price) + extrasTotal) * (item.quantity || 1);
+      return (
+        sum +
+        (parseFloat(item.price) + extrasTotal) * (item.quantity || 1)
+      );
     }, 0);
 
     const created = await postJSON(
@@ -1990,9 +2019,17 @@ async function handleSubmitOrder() {
     }
 
     setOrderId(newId);
-    localStorage.setItem("qr_active_order", JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null }));
+    localStorage.setItem(
+      "qr_active_order",
+      JSON.stringify({
+        orderId: newId,
+        orderType,
+        table: orderType === "table" ? table : null,
+      })
+    );
     localStorage.setItem("qr_active_order_id", String(newId));
-    if (orderType === "table" && table) localStorage.setItem("qr_table", String(table));
+    if (orderType === "table" && table)
+      localStorage.setItem("qr_table", String(table));
     localStorage.setItem("qr_orderType", orderType);
     localStorage.setItem("qr_payment_method", paymentMethod);
     localStorage.setItem("qr_show_status", "1");
@@ -2009,11 +2046,6 @@ async function handleSubmitOrder() {
     setSubmitting(false);
   }
 }
-
-
-
-
-
 
 function handleReset() {
   setShowStatus(false);
