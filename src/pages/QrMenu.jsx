@@ -256,7 +256,16 @@ function OrderTypeSelect({ onSelect, lang, setLang, t }) {
           <label className="text-sm font-bold mb-1 text-blue-600">🌐 {t("Language")}</label>
           <select
             value={lang}
-            onChange={(e) => setLang(e.target.value)}
+            onChange={(e) => {
+  const val = e.target.value;
+  setPaymentMethod(val);
+
+  // if it's a TABLE order and they pick "online", pop up the card form
+  if (orderType === "table" && val === "online") {
+    setShowDeliveryForm(true);
+  }
+}}
+
             className="rounded-xl px-4 py-2 bg-white border border-blue-200 text-base font-semibold shadow"
           >
             {LANGS.map((l) => (
@@ -2088,27 +2097,27 @@ return (
     {statusPortal}
 
     {/* ✅ Delivery form stays inside the return */}
-    {orderType === "online" && showDeliveryForm && (
-      <OnlineOrderForm
-        submitting={submitting}
-        t={t}
-        onClose={() => {
-          // if they close without continuing, go back to Order Type
-          setShowDeliveryForm(false);
-          setOrderType(null);
-        }}
-        onSubmit={(form) => {
-          // we ALWAYS show this screen first; saved details will be prefilled here
-          setCustomerInfo({
-            name: form.name,
-            phone: form.phone,
-            address: form.address,
-            payment_method: form.payment_method, // optional to use in submission
-          });
-          setShowDeliveryForm(false);
-        }}
-      />
-    )}
+   {((orderType === "online" && showDeliveryForm) || 
+  (orderType === "table" && paymentMethod === "online" && showDeliveryForm)) && (
+  <OnlineOrderForm
+    submitting={submitting}
+    t={t}
+    onClose={() => {
+      setShowDeliveryForm(false);
+      if (orderType === "online") setOrderType(null); // keep table
+    }}
+    onSubmit={(form) => {
+      setCustomerInfo({
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        payment_method: form.payment_method,
+      });
+      setShowDeliveryForm(false);
+    }}
+  />
+)}
+
   </div>
 );
 
