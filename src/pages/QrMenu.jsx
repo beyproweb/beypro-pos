@@ -1634,22 +1634,21 @@ async function rehydrateCartFromOrder(orderId) {
 }
 
 // ---- Order Another: go back to menu immediately, but keep order context ----
+// ---- Order Another: go back to menu immediately with EMPTY cart ----
 async function handleOrderAnother() {
   try {
-    // Close the status overlay
+    // Close status overlay
     setShowStatus(false);
     setOrderStatus("pending");
 
-    // ⛔️ Tell CartDrawer NOT to auto-open when cart changes
-    localStorage.setItem(AUTO_OPEN_KEY, "0");
-    // ⛔️ Also force-close the drawer if it’s open
+    // Keep the drawer closed + stop any auto-open
+    localStorage.setItem("qr_cart_auto_open", "0");
     window.dispatchEvent(new Event("qr:cart-close"));
 
-    // Resolve id/type
+    // 🔑 Preserve the active order context (so new items append to same table order)
     let id = orderId || Number(localStorage.getItem("qr_active_order_id")) || null;
     let type = orderType || localStorage.getItem("qr_orderType") || (table ? "table" : null);
 
-    // If table known but no id, fetch the open order
     if (!id && (type === "table" || table)) {
       const tNo = table || Number(localStorage.getItem("qr_table")) || null;
       if (tNo) {
@@ -1665,26 +1664,22 @@ async function handleOrderAnother() {
               type = "table";
               setOrderId(id);
               setOrderType("table");
+              localStorage.setItem("qr_active_order_id", String(id));
+              localStorage.setItem("qr_orderType", "table");
+              if (table) localStorage.setItem("qr_table", String(table));
             }
           }
         } catch {}
       }
     }
 
-    // Table flow: rehydrate cart but KEEP drawer closed
-    if (type === "table" && id) {
-      await rehydrateCartFromOrder(id);
-      localStorage.setItem("qr_active_order_id", String(id));
-      localStorage.setItem("qr_orderType", "table");
-      if (table) localStorage.setItem("qr_table", String(table));
-      localStorage.setItem("qr_show_status", "0");
-      return;
-    }
+    // 🧹 DO NOT rehydrate old items — start fresh
+    setCart([]);
+    localStorage.setItem("qr_cart", "[]");
+    localStorage.setItem("qr_show_status", "0");
 
-    // Online flow: just return to menu; keep drawer closed
-    // (If you want to show Delivery form again, uncomment next line)
-    // setShowDeliveryForm(true);
-    return;
+    // (optional) If you want to re-open the category grid somewhere specific, do nothing:
+    // user can add new items from the menu now with a clean cart.
   } catch (e) {
     console.error("handleOrderAnother failed:", e);
   }
