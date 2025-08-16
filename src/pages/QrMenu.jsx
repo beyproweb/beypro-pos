@@ -3,7 +3,6 @@ import React, { useState, useEffect, useMemo } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import useOrderAutoClose from "../hooks/useOrderAutoClose";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -1312,13 +1311,6 @@ useEffect(() => {
 
 
 
-    // --- Auto-close wiring ---
-  const navigate = useNavigate(); // keep if you want to route to /qr/order-type
-  useOrderAutoClose(
-    orderId || localStorage.getItem("qr_active_order_id"),
-    resetToTypePicker
-  );
-
 
 
 // -- clear saved table ONLY when no items in cart and no active order
@@ -1375,13 +1367,18 @@ function resetToTypePicker() {
   setOrderType(null);
 }
 
+
 useEffect(() => {
-  // If we have an order id, make sure the status modal is visible
-  if (orderId) {
-    // If it was still on "pending", treat it as success now
+  if (localStorage.getItem("qr_show_status") === "1" && !showStatus) {
+    setShowStatus(true);
+  }
+}, [showStatus]);
+
+useEffect(() => {
+  const id = orderId || localStorage.getItem("qr_active_order_id");
+  if (id) {
     setOrderStatus((s) => (s === "pending" ? "success" : s));
     setShowStatus(true);
-    localStorage.setItem("qr_active_order_id", String(orderId));
     localStorage.setItem("qr_show_status", "1");
   }
 }, [orderId]);
