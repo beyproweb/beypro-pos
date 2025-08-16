@@ -16,6 +16,27 @@ function saveSelectedTable(tableNo) {
   }
 }
 
+// at the top of QrMenu component
+const [showQrPrompt, setShowQrPrompt] = useState(() => {
+  return !localStorage.getItem("qr_saved");
+});
+
+function handleDownloadQr() {
+  // Your QR PNG (pre-generated and uploaded)
+  const qrUrl = "https://pos.beypro.com/uploads/qr-menu.png";
+
+  const link = document.createElement("a");
+  link.href = qrUrl;
+  link.download = "Beypro-QR-Menu.png";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // Remember that user saved it
+  localStorage.setItem("qr_saved", "1");
+  setShowQrPrompt(false);
+}
+
 function getSavedTable() {
   const v = localStorage.getItem(TABLE_KEY);
   return v && v !== "null" ? v : "";
@@ -2149,6 +2170,20 @@ return (
     }}
   />
 )}
+{showQrPrompt && (
+  <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white border border-blue-200 rounded-2xl shadow-lg px-5 py-3 flex items-center gap-3 z-[200]">
+    <span className="text-blue-700 font-bold text-sm">
+      📲 Save our QR menu for quick access!
+    </span>
+    <button
+      onClick={handleDownloadQr}
+      className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold px-3 py-1.5 rounded-xl text-sm shadow hover:scale-105 transition"
+    >
+      Download QR
+    </button>
+  </div>
+)}
+
 
   </div>
 );
