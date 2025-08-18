@@ -379,7 +379,7 @@ const handleSubmit = async (e) => {
     const file = e.target.files[0];
     if (!file || !product.category) return alert("Category required first!");
     const fd = new FormData();
-    fd.append("file", file);  // must match upload.single("file")
+    fd.append("image", file);  // must match upload.single("file")
     fd.append("category", product.category.trim()); // do NOT lower for upload
 const res = await fetch(`${API_URL}/api/category-images`, {
       method: "POST",
