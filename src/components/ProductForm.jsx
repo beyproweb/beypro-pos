@@ -93,7 +93,16 @@ useEffect(() => {
       .then(data => {
         console.log("Category image fetch result:", data); // <-- ADD THIS
         if (data.length > 0 && data[0].image) {
-          setCategoryImagePreview(data[0].image); // if already Cloudinary URL
+          const img = data[0].image;
+if (img) {
+  const fullUrl = /^https?:\/\//.test(img)
+    ? img
+    : `${API_URL}/uploads/${img.replace(/^\/?uploads\//, "")}`;
+  setCategoryImagePreview(fullUrl);
+} else {
+  setCategoryImagePreview(null);
+}
+ // if already Cloudinary URL
         } else {
           setCategoryImagePreview(null);
         }
@@ -372,7 +381,16 @@ const res = await fetch(`${API_URL}/api/category-images`, {
       .then(res => res.json())
       .then(data => {
         if (data.length > 0 && data[0].image) {
-          setCategoryImagePreview(data[0].image); // if already Cloudinary URL
+          const img = data[0].image;
+if (img) {
+  const fullUrl = /^https?:\/\//.test(img)
+    ? img
+    : `${API_URL}/uploads/${img.replace(/^\/?uploads\//, "")}`;
+  setCategoryImagePreview(fullUrl);
+} else {
+  setCategoryImagePreview(null);
+}
+ // if already Cloudinary URL
         }
       });
   }}
