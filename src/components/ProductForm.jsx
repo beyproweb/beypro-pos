@@ -147,45 +147,25 @@ useEffect(() => {
     setCalculatedCost(total);
   }, [product.ingredients, product.extras, ingredientPrices]);
 
- useEffect(() => {
+useEffect(() => {
   if (initialData) {
     const normalized = {
       ...initialData,
-      preparation_time: initialData.preparation_time || "",
-      discount_type: initialData.discount_type || "none",
-      discount_value: initialData.discount_value || "",
-      promo_start: initialData.promo_start
-        ? new Date(initialData.promo_start).toISOString().split("T")[0]
-        : "",
-      promo_end: initialData.promo_end
-        ? new Date(initialData.promo_end).toISOString().split("T")[0]
-        : "",
       image: initialData.image || initialData.image_url || null,
-      ingredients:
-        Array.isArray(initialData.ingredients)
-          ? initialData.ingredients
-          : (typeof initialData.ingredients === "string" && initialData.ingredients.trim().startsWith("["))
-            ? JSON.parse(initialData.ingredients)
-            : [],
-    extras:
-  normalizeExtras(
-    Array.isArray(initialData.extras)
-      ? initialData.extras
-      : (typeof initialData.extras === "string" && initialData.extras.trim().startsWith("["))
-        ? JSON.parse(initialData.extras)
-        : []
-  ),
-
     };
+
+    // 🔧 Fix here:
+    if (normalized.image && !/^https?:\/\//.test(normalized.image)) {
+      normalized.image = `${API_URL}/uploads/${normalized.image.replace(/^\/?uploads\//, "")}`;
+    }
+
     setProduct((prev) => ({ ...prev, ...normalized }));
-if (normalized.image) {
-  setImagePreview(normalized.image); // treat full URL as-is
-}
-
-
-
+    if (normalized.image) {
+      setImagePreview(normalized.image);
+    }
   }
 }, [initialData]);
+
 
 
   // --- Handlers ---
