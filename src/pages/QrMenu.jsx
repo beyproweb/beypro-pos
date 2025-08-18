@@ -246,36 +246,52 @@ function OrderTypeSelect({ onSelect, lang, setLang, t }) {
         <h2 className="text-2xl font-extrabold mb-6 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
           {t("Order Type")}
         </h2>
+
+        {/* Table Order */}
         <button
           className="py-4 w-full mb-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl hover:scale-105 transition"
           onClick={() => onSelect("table")}
         >
           🍽️ {t("Table Order")}
         </button>
+
+        {/* Delivery */}
         <button
           className="py-4 w-full rounded-2xl font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-xl hover:scale-105 transition"
           onClick={() => onSelect("online")}
         >
           🏠 {t("Delivery")}
         </button>
+
+        {/* ✅ Install QR Menu */}
+        <div className="w-full mt-6 flex flex-col items-center">
+          <a
+            href="https://pos.beypro.com/qr-menu"
+            target="_blank"
+            rel="noopener"
+            className="inline-block px-5 py-3 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold shadow hover:scale-105 transition"
+          >
+            📲 {t("Save QR Menu to Phone")}
+          </a>
+          <div className="mt-2 text-xs text-gray-600">
+            {t("Tap here to install the menu as an app")}
+          </div>
+        </div>
+
+        {/* Language picker */}
         <div className="w-full mt-8 flex flex-col items-center">
-          <label className="text-sm font-bold mb-1 text-blue-600">🌐 {t("Language")}</label>
+          <label className="text-sm font-bold mb-1 text-blue-600">
+            🌐 {t("Language")}
+          </label>
           <select
             value={lang}
-            onChange={(e) => {
-  const val = e.target.value;
-  setPaymentMethod(val);
-
-  // if it's a TABLE order and they pick "online", pop up the card form
-  if (orderType === "table" && val === "online") {
-    setShowDeliveryForm(true);
-  }
-}}
-
+            onChange={(e) => setLang(e.target.value)}
             className="rounded-xl px-4 py-2 bg-white border border-blue-200 text-base font-semibold shadow"
           >
             {LANGS.map((l) => (
-              <option key={l.code} value={l.code}>{l.label}</option>
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
             ))}
           </select>
         </div>
@@ -283,6 +299,7 @@ function OrderTypeSelect({ onSelect, lang, setLang, t }) {
     </div>
   );
 }
+
 
 /* ====================== TABLE SELECT ====================== */
 function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTables = [], t }) {
@@ -2172,19 +2189,7 @@ return (
     }}
   />
 )}
-{showQrPrompt && (
-  <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white border border-blue-200 rounded-2xl shadow-lg px-5 py-3 flex items-center gap-3 z-[200]">
-    <span className="text-blue-700 font-bold text-sm">
-      📲 Save our QR menu for quick access!
-    </span>
-    <button
-      onClick={handleDownloadQr}
-      className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold px-3 py-1.5 rounded-xl text-sm shadow hover:scale-105 transition"
-    >
-      Download QR
-    </button>
-  </div>
-)}
+
 
 
   </div>
