@@ -240,7 +240,7 @@ function QrHeader({ orderType, table, onClose, t }) {
 }
 
 /* ====================== ORDER TYPE MODAL ====================== */
-function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstall }) {
+function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstall, showIosHelp, setShowIosHelp }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
@@ -1743,19 +1743,22 @@ useEffect(() => {
 if (!orderType)
   return (
     <>
-    <OrderTypeSelect
-      onSelect={(type) => {
-        setOrderType(type);
-        if (type === "online") {
-          setShowDeliveryForm(true);
-        }
-      }}
-      lang={lang}
-      setLang={setLang}
-      t={t}
-      onInstallClick={handleInstallClick}
-      canInstall={canInstall}
-    />
+   <OrderTypeSelect
+  onSelect={(type) => {
+    setOrderType(type);
+    if (type === "online") {
+      setShowDeliveryForm(true);
+    }
+  }}
+  lang={lang}
+  setLang={setLang}
+  t={t}
+  onInstallClick={handleInstallClick}
+  canInstall={canInstall}
+  showIosHelp={showIosHelp}
+  setShowIosHelp={setShowIosHelp}
+/>
+
 
 
       {statusPortal}
