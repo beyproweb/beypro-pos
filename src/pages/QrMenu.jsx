@@ -1730,30 +1730,19 @@ if (!orderType)
   return (
     <>
     <OrderTypeSelect
-  onSelect={(type) => {
-    setOrderType(type);
-    if (type === "online") {
-      setShowDeliveryForm(true);
-    }
-  }}
-  lang={lang}
-  setLang={setLang}
-  t={t}
-  onInstallClick={handleInstallClick}
-  canInstall={canInstall}
-/>
+      onSelect={(type) => {
+        setOrderType(type);
+        if (type === "online") {
+          setShowDeliveryForm(true);
+        }
+      }}
+      lang={lang}
+      setLang={setLang}
+      t={t}
+      onInstallClick={handleInstallClick}
+      canInstall={canInstall}
+    />
 
-  onSelect={(type) => {
-    setOrderType(type);
-    if (type === "online") {
-      // always show details modal first
-      setShowDeliveryForm(true);
-    }
-  }}
-  lang={lang}
-  setLang={setLang}
-  t={t}
-/>
 
       {statusPortal}
     </>
