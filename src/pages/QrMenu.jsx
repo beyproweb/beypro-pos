@@ -268,16 +268,25 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
         {/* ✅ Install QR Menu (PWA) */}
 <div className="w-full mt-6 flex flex-col items-center">
   <button
-    onClick={onInstallClick}
-    disabled={!canInstall}
-    className={`inline-block px-5 py-3 rounded-2xl font-bold shadow transition ${
-      canInstall
-        ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105"
-        : "bg-gray-300 text-gray-500 cursor-not-allowed"
-    }`}
-  >
-    📲 {t("Save QR Menu to Phone")}
-  </button>
+  onClick={() => {
+    if (canInstall) {
+      onInstallClick();
+    } else {
+      // fallback: download QR PNG
+      const qrUrl = "https://pos.beypro.com/uploads/qr-menu.png";
+      const link = document.createElement("a");
+      link.href = qrUrl;
+      link.download = "Beypro-QR-Menu.png";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }}
+  className="inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
+>
+  📲 {t("Save QR Menu to Phone")}
+</button>
+
   <div className="mt-2 text-xs text-gray-600">
     {t("Tap here to install the menu as an app")}
   </div>
