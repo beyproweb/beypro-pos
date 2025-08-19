@@ -95,13 +95,11 @@ useEffect(() => {
         if (data.length > 0 && data[0].image) {
           const img = data[0].image;
 if (img) {
-  const fullUrl = /^https?:\/\//.test(img)
-    ? img
-    : `${API_URL}/uploads/${img.replace(/^\/?uploads\//, "")}`;
-  setCategoryImagePreview(fullUrl);
+  setCategoryImagePreview(img); // always Cloudinary URL now
 } else {
   setCategoryImagePreview(null);
 }
+
  // if already Cloudinary URL
         } else {
           setCategoryImagePreview(null);
