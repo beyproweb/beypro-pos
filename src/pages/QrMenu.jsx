@@ -1432,8 +1432,6 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 
 
 
-const [showIosHelp, setShowIosHelp] = useState(false);
-
 
 
 
@@ -1443,7 +1441,7 @@ export default function QrMenu() {
   const [lang, setLang] = useState(() => localStorage.getItem("qr_lang") || "en");
   useEffect(() => { localStorage.setItem("qr_lang", lang); }, [lang]);
   const t = useMemo(() => makeT(lang), [lang]);
-
+  const [showIosHelp, setShowIosHelp] = useState(false);
   const [table, setTable] = useState(null);
   const [customerInfo, setCustomerInfo] = useState(null);
   const [categories, setCategories] = useState([]);
