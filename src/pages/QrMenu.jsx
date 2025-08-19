@@ -80,6 +80,7 @@ const DICT = {
     "Table Order": "Table Order",
     Delivery: "Delivery",
     Language: "Language",
+    
     "Choose Table": "Choose Table",
     Occupied: "Occupied",
     "Start Order": "Start Order",
@@ -239,7 +240,8 @@ function QrHeader({ orderType, table, onClose, t }) {
 }
 
 /* ====================== ORDER TYPE MODAL ====================== */
-function OrderTypeSelect({ onSelect, lang, setLang, t }) {
+function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstall }) {
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-[340px] text-center flex flex-col items-center">
@@ -263,20 +265,24 @@ function OrderTypeSelect({ onSelect, lang, setLang, t }) {
           🏠 {t("Delivery")}
         </button>
 
-        {/* ✅ Install QR Menu */}
-        <div className="w-full mt-6 flex flex-col items-center">
-          <a
-            href="https://pos.beypro.com/qr-menu"
-            target="_blank"
-            rel="noopener"
-            className="inline-block px-5 py-3 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold shadow hover:scale-105 transition"
-          >
-            📲 {t("Save QR Menu to Phone")}
-          </a>
-          <div className="mt-2 text-xs text-gray-600">
-            {t("Tap here to install the menu as an app")}
-          </div>
-        </div>
+        {/* ✅ Install QR Menu (PWA) */}
+<div className="w-full mt-6 flex flex-col items-center">
+  <button
+    onClick={onInstallClick}
+    disabled={!canInstall}
+    className={`inline-block px-5 py-3 rounded-2xl font-bold shadow transition ${
+      canInstall
+        ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105"
+        : "bg-gray-300 text-gray-500 cursor-not-allowed"
+    }`}
+  >
+    📲 {t("Save QR Menu to Phone")}
+  </button>
+  <div className="mt-2 text-xs text-gray-600">
+    {t("Tap here to install the menu as an app")}
+  </div>
+</div>
+
 
         {/* Language picker */}
         <div className="w-full mt-8 flex flex-col items-center">
@@ -1448,6 +1454,31 @@ export default function QrMenu() {
 const [showQrPrompt, setShowQrPrompt] = useState(() => {
   return !localStorage.getItem("qr_saved");
 });
+// === PWA INSTALL HANDLER ===
+const [deferredPrompt, setDeferredPrompt] = useState(null);
+const [canInstall, setCanInstall] = useState(false);
+
+useEffect(() => {
+  const handler = (e) => {
+    e.preventDefault();
+    setDeferredPrompt(e);
+    setCanInstall(true);
+  };
+  window.addEventListener("beforeinstallprompt", handler);
+  return () => window.removeEventListener("beforeinstallprompt", handler);
+}, []);
+
+function handleInstallClick() {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then((choice) => {
+    if (choice.outcome === "accepted") {
+      console.log("✅ User installed app");
+    }
+    setDeferredPrompt(null);
+    setCanInstall(false);
+  });
+}
 
 function handleDownloadQr() {
   // Your QR PNG (pre-generated and uploaded)
@@ -1699,6 +1730,19 @@ if (!orderType)
   return (
     <>
     <OrderTypeSelect
+  onSelect={(type) => {
+    setOrderType(type);
+    if (type === "online") {
+      setShowDeliveryForm(true);
+    }
+  }}
+  lang={lang}
+  setLang={setLang}
+  t={t}
+  onInstallClick={handleInstallClick}
+  canInstall={canInstall}
+/>
+
   onSelect={(type) => {
     setOrderType(type);
     if (type === "online") {
