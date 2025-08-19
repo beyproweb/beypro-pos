@@ -56,17 +56,66 @@ const [autoPrintPacket, setAutoPrintPacket] = useState(
 );
 
 async function handleOrderConfirmed(orderId) {
-  // Fetch the full order data
   try {
     const res = await fetch(`${API_URL}/api/orders/${orderId}`);
     if (!res.ok) throw new Error("Could not fetch order");
     const order = await res.json();
-    // Print the order
     autoPrintReceipt(order);
   } catch (e) {
-    console.error("Failed to print order:", e);
+    console.error("❌ Failed to auto-print order:", e);
   }
 }
+
+// ✅ Print order receipt in hidden window
+function autoPrintReceipt(order) {
+  const printWindow = window.open("", "PrintWindow", "width=400,height=600");
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Order Receipt</title>
+        <style>
+          body {
+            font-family: monospace;
+            font-size: ${layout.fontSize}px;
+            line-height: ${layout.lineHeight};
+            text-align: ${layout.alignment};
+            background: #fff;
+            margin: 0;
+          }
+        </style>
+      </head>
+      <body>
+        <div>
+          <h3>${layout.headerText}</h3>
+          <p>Order #${order.id}</p>
+          <p>Total: ₺${order.total}</p>
+          <hr/>
+          ${order.items.map(item => `
+            <div>${item.quantity}x ${item.name} - ₺${item.price}</div>
+          `).join("")}
+          <hr/>
+          <p>${layout.footerText}</p>
+        </div>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 400);
+}
+
+// ✅ Listen for socket event when order confirmed
+useEffect(() => {
+  if (!socket) return;
+  socket.on("order_confirmed", ({ orderId }) => {
+    console.log("🖨️ Auto-printing order", orderId);
+    handleOrderConfirmed(orderId);
+  });
+  return () => socket.off("order_confirmed");
+}, []);
 
 
 function handlePrintTest() {
