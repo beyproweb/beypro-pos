@@ -265,32 +265,26 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
           🏠 {t("Delivery")}
         </button>
 
-        {/* ✅ Install QR Menu (PWA) */}
+{/* ✅ Install QR Menu (PWA) */}
 <div className="w-full mt-6 flex flex-col items-center">
   <button
-  onClick={() => {
-    if (canInstall) {
-      onInstallClick();
-    } else {
-      // fallback: download QR PNG
-      const qrUrl = "https://pos.beypro.com/uploads/qr-menu.png";
-      const link = document.createElement("a");
-      link.href = qrUrl;
-      link.download = "Beypro-QR-Menu.png";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-  }}
-  className="inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
->
-  📲 {t("Save QR Menu to Phone")}
-</button>
-
+    onClick={() => {
+      if (canInstall) {
+        onInstallClick();
+      } else {
+        // fallback → open the live QR menu page
+        window.location.href = "https://pos.beypro.com/qr-menu";
+      }
+    }}
+    className="inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
+  >
+    📲 {t("Save QR Menu to Phone")}
+  </button>
   <div className="mt-2 text-xs text-gray-600">
     {t("Tap here to install the menu as an app")}
   </div>
 </div>
+
 
 
         {/* Language picker */}
@@ -1490,15 +1484,10 @@ function handleInstallClick() {
 }
 
 function handleDownloadQr() {
-  // Your QR PNG (pre-generated and uploaded)
-  const qrUrl = "https://pos.beypro.com/uploads/qr-menu.png";
+  
+// fallback: open QR Menu page so user can add it manually
+window.location.href = "https://pos.beypro.com/qr-menu";
 
-  const link = document.createElement("a");
-  link.href = qrUrl;
-  link.download = "Beypro-QR-Menu.png";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
 
   // Remember that user saved it
   localStorage.setItem("qr_saved", "1");
