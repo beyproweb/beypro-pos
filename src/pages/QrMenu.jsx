@@ -17,6 +17,12 @@ function saveSelectedTable(tableNo) {
 }
 
 
+function getPlatform() {
+  const ua = navigator.userAgent || navigator.vendor || window.opera;
+  if (/android/i.test(ua)) return "android";
+  if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return "ios";
+  return "other";
+}
 
 function getSavedTable() {
   const v = localStorage.getItem(TABLE_KEY);
@@ -240,7 +246,7 @@ function QrHeader({ orderType, table, onClose, t }) {
 }
 
 /* ====================== ORDER TYPE MODAL ====================== */
-function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstall, showIosHelp, setShowIosHelp }) {
+function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstall, showHelp, setShowHelp, platform }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
@@ -267,42 +273,59 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
 
 {/* ✅ Install QR Menu (PWA) */}
 <div className="w-full mt-6 flex flex-col items-center">
-  <button
-    onClick={() => {
-      if (canInstall) {
-  onInstallClick();
-} else {
-  setShowIosHelp(true); // 👈 show help instead of opening link
-}
+ <button
+  onClick={() => {
+    if (canInstall) {
+      onInstallClick();
+    } else {
+      setShowHelp(true); // show help instructions
+    }
+  }}
+  className="inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
+>
+  📲 {t("Save QR Menu to Phone")}
+</button>
 
-    }}
-    className="inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
-  >
-    📲 {t("Save QR Menu to Phone")}
-  </button>
   <div className="mt-2 text-xs text-gray-600">
     {t("Tap here to install the menu as an app")}
   </div>
 </div>
 
-{showIosHelp && (
+{showHelp && (
   <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50">
     <div className="bg-white rounded-2xl shadow-xl p-6 w-[90%] max-w-sm text-center">
-      <h2 className="text-xl font-bold mb-3 text-blue-600">📲 Add to Home Screen</h2>
-      <p className="text-gray-700 text-sm mb-4">
-        On iPhone or iPad, tap the <span className="font-bold">Share</span> icon in Safari
-        (<span className="text-lg">⬆️</span>) and select{" "}
-        <span className="font-bold">Add to Home Screen</span>.
-      </p>
+      <h2 className="text-xl font-bold mb-3 text-blue-600">📲 {t("Add to Home Screen")}</h2>
+      
+      {platform === "ios" && (
+        <div className="text-gray-700 text-sm space-y-2">
+          <p>1. Tap the <span className="font-bold">Share</span> button in Safari (⬆️).</p>
+          <p>2. Scroll and tap <span className="font-bold">Add to Home Screen</span>.</p>
+        </div>
+      )}
+
+      {platform === "android" && (
+        <div className="text-gray-700 text-sm space-y-2">
+          <p>1. Tap the <span className="font-bold">⋮ menu</span> in Chrome.</p>
+          <p>2. Tap <span className="font-bold">Add to Home Screen</span>.</p>
+        </div>
+      )}
+
+      {platform === "other" && (
+        <div className="text-gray-700 text-sm">
+          {t("Open in your mobile browser to save this app.")}
+        </div>
+      )}
+
       <button
-        onClick={() => setShowIosHelp(false)}
-        className="w-full py-2 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600"
+        onClick={() => setShowHelp(false)}
+        className="w-full mt-4 py-2 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600"
       >
         OK
       </button>
     </div>
   </div>
 )}
+
 
 
         {/* Language picker */}
@@ -1442,6 +1465,9 @@ export default function QrMenu() {
   useEffect(() => { localStorage.setItem("qr_lang", lang); }, [lang]);
   const t = useMemo(() => makeT(lang), [lang]);
   const [showIosHelp, setShowIosHelp] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+const [platform, setPlatform] = useState(getPlatform());
+
   const [table, setTable] = useState(null);
   const [customerInfo, setCustomerInfo] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -1755,8 +1781,9 @@ if (!orderType)
   t={t}
   onInstallClick={handleInstallClick}
   canInstall={canInstall}
-  showIosHelp={showIosHelp}
-  setShowIosHelp={setShowIosHelp}
+  showHelp={showHelp}
+  setShowHelp={setShowHelp}
+  platform={platform}
 />
 
 
