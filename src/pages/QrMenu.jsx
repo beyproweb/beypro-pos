@@ -1432,7 +1432,7 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 
 
 
-
+const [showIosHelp, setShowIosHelp] = useState(false);
 
 
 
@@ -1459,7 +1459,7 @@ export default function QrMenu() {
   const [showStatus, setShowStatus] = useState(false);
   const [orderStatus, setOrderStatus] = useState("pending");
   const [orderId, setOrderId] = useState(null);
-  const [showIosHelp, setShowIosHelp] = useState(false);
+  
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
