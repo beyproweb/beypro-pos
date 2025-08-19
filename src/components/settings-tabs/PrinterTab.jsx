@@ -56,6 +56,7 @@ const [autoPrintPacket, setAutoPrintPacket] = useState(
 );
 
 // ✅ FINAL: robust handler with fallback to /by-number and longer retry
+// ✅ FINAL: robust handler with fallback to /by-number and longer retry
 async function handleOrderConfirmed(payload) {
   // Accept a bunch of payload shapes; also try to discover order_number
   const orderId = Number(
@@ -103,11 +104,15 @@ async function handleOrderConfirmed(payload) {
           return;
         } catch (e1) {
           lastErr = e1;
-          // if 404 by id and we have a number, fall back immediately to by-number
-          if (String(e1?.message || "").includes("404") && orderNumber) {
-            const order = await fetchByNumber(orderNumber);
-            autoPrintReceipt(order);
-            return;
+          // 🔁 NEW: also try by-number on ANY failure (not only 404)
+          if (orderNumber) {
+            try {
+              const order = await fetchByNumber(orderNumber);
+              autoPrintReceipt(order);
+              return;
+            } catch (e2) {
+              lastErr = e2;
+            }
           }
         }
       }
@@ -128,6 +133,7 @@ async function handleOrderConfirmed(payload) {
 
   console.error("❌ [AUTO-PRINT] Failed after retries:", lastErr);
 }
+
 
 
 
@@ -172,18 +178,20 @@ function autoPrintReceipt(order) {
   }, 400);
 }
 
-// NEW CODE — replace your listener in /PrinterTab.jsx
 useEffect(() => {
   if (!socket) return;
 
   socket.on("order_confirmed", (payload) => {
-    const idForLog = payload?.orderId ?? payload?.id ?? payload?.order?.id ?? payload;
+    const idForLog =
+      payload?.orderId ?? payload?.id ?? payload?.order?.id ??
+      payload?.order_number ?? payload?.number ?? payload;
     console.log("🖨️ Auto-printing order", idForLog, "payload:", payload);
     handleOrderConfirmed(payload);
   });
 
   return () => socket.off("order_confirmed");
 }, []);
+
 
 
 
