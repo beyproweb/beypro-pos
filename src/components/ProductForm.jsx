@@ -84,22 +84,27 @@ function normalizeExtras(arr = []) {
 
 useEffect(() => {
   if (product.category) {
-    fetch(`${API_URL}/api/category-images?category=${encodeURIComponent(product.category.trim())}`)
+    const cat = product.category.trim().toLowerCase();
+    fetch(`${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`)
       .then(res => res.json())
       .then(data => {
-        console.log("Category image fetch result:", data); // <-- ADD THIS
+        console.log("Category image fetch result:", data);
         if (data.length > 0 && data[0].image) {
           const img = data[0].image;
-if (img) {
-  setCategoryImagePreview(img); // always Cloudinary URL now
-} else {
-  setCategoryImagePreview(null);
-}
-
- // if already Cloudinary URL
+          if (img && img.startsWith("http")) {
+            setCategoryImagePreview(img); // Cloudinary full URL
+          } else if (img) {
+            setCategoryImagePreview(`${API_URL}/uploads/${img}`); // fallback
+          } else {
+            setCategoryImagePreview(null);
+          }
         } else {
           setCategoryImagePreview(null);
         }
+      })
+      .catch(err => {
+        console.error("Category image fetch failed:", err);
+        setCategoryImagePreview(null);
       });
   }
 }, [product.category]);
@@ -359,34 +364,48 @@ const handleSubmit = async (e) => {
   accept="image/*"
   onChange={async (e) => {
     const file = e.target.files[0];
-    if (!file || !product.category) return alert("Category required first!");
-    const fd = new FormData();
-    fd.append("image", file);  // must match upload.single("file")
-    fd.append("category", product.category.trim()); // do NOT lower for upload
-const res = await fetch(`${API_URL}/api/category-images`, {
-      method: "POST",
-      body: fd,
-    });
-    if (!res.ok) return alert("Upload failed");
-    alert("Category image uploaded!");
-    // Refetch preview image
-    fetch(`${API_URL}/api/category-images?category=${encodeURIComponent(product.category.trim())}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.length > 0 && data[0].image) {
-          const img = data[0].image;
-if (img) {
-  setCategoryImagePreview(img); // Cloudinary already returns a full URL
-} else {
-  setCategoryImagePreview(null);
-}
+    if (!file || !product.category) {
+      toast.error("Category required first!");
+      return;
+    }
 
- // if already Cloudinary URL
-        }
+    const fd = new FormData();
+    fd.append("image", file);
+    fd.append("category", product.category.trim().toLowerCase());
+
+    try {
+      const res = await fetch(`${API_URL}/api/category-images`, {
+        method: "POST",
+        body: fd,
       });
+      if (!res.ok) {
+        toast.error("Upload failed");
+        return;
+      }
+      toast.success("Category image uploaded!");
+
+      // Refetch preview after upload
+      const cat = product.category.trim().toLowerCase();
+      const resp = await fetch(`${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`);
+      const data = await resp.json();
+      if (data.length > 0 && data[0].image) {
+        const img = data[0].image;
+        if (img && img.startsWith("http")) {
+          setCategoryImagePreview(img);
+        } else if (img) {
+          setCategoryImagePreview(`${API_URL}/uploads/${img}`);
+        } else {
+          setCategoryImagePreview(null);
+        }
+      }
+    } catch (err) {
+      console.error("Category upload failed:", err);
+      toast.error("Category upload failed!");
+    }
   }}
   className="w-full p-1 mt-1"
 />
+
 
 
 {/* Show category image preview */}
