@@ -381,13 +381,11 @@ const res = await fetch(`${API_URL}/api/category-images`, {
         if (data.length > 0 && data[0].image) {
           const img = data[0].image;
 if (img) {
-  const fullUrl = /^https?:\/\//.test(img)
-    ? img
-    : `${API_URL}/uploads/${img.replace(/^\/?uploads\//, "")}`;
-  setCategoryImagePreview(fullUrl);
+  setCategoryImagePreview(img); // Cloudinary already returns a full URL
 } else {
   setCategoryImagePreview(null);
 }
+
  // if already Cloudinary URL
         }
       });
