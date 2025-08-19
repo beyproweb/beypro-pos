@@ -56,6 +56,8 @@ const handleUpload = async () => {
     return "";
   }
   setImageUrl(data.url);
+  setImagePreview(data.url);
+
   return data.url;
 };
 
@@ -160,8 +162,10 @@ useEffect(() => {
 
     setProduct((prev) => ({ ...prev, ...normalized }));
     if (normalized.image) {
-      setImagePreview(normalized.image);
-    }
+  setImagePreview(normalized.image);
+  setImageUrl(normalized.image); // ensure preview works
+}
+
   }
 }, [initialData]);
 
