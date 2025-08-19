@@ -86,7 +86,6 @@ const DICT = {
     "Table Order": "Table Order",
     Delivery: "Delivery",
     Language: "Language",
-    
     "Choose Table": "Choose Table",
     Occupied: "Occupied",
     "Start Order": "Start Order",
@@ -141,7 +140,11 @@ const DICT = {
     "Use a new card": "Use a new card",
     "Saved card": "Saved card",
     "Please select a payment method before continuing.": "Please select a payment method before continuing.",
-
+    // ✅ Added translations
+    "Share QR Menu": "Share QR Menu",
+    "Save QR Menu to Phone": "Save QR Menu to Phone",
+    "Tap here to install the menu as an app": "Tap here to install the menu as an app",
+    "Add to Home Screen": "Add to Home Screen",
   },
   tr: {
     "Order Type": "Sipariş Türü",
@@ -202,11 +205,26 @@ const DICT = {
     "Use a new card": "Yeni kart kullan",
     "Saved card": "Kayıtlı kart",
     "Please select a payment method before continuing.": "Lütfen devam etmeden önce bir ödeme yöntemi seçin.",
-
+    // ✅ Added translations
+    "Share QR Menu": "QR Menüyü Paylaş",
+    "Save QR Menu to Phone": "QR Menüyü Telefona Kaydet",
+    "Tap here to install the menu as an app": "Menüyü uygulama olarak yüklemek için buraya dokunun",
+    "Add to Home Screen": "Ana Ekrana Ekle",
   },
-  de: {}, // new keys fall back to en
-  fr: {}, // new keys fall back to en
+  de: {
+    "Share QR Menu": "QR-Menü teilen",
+    "Save QR Menu to Phone": "QR-Menü auf dem Handy speichern",
+    "Tap here to install the menu as an app": "Tippen Sie hier, um das Menü als App zu installieren",
+    "Add to Home Screen": "Zum Startbildschirm hinzufügen",
+  },
+  fr: {
+    "Share QR Menu": "Partager le menu QR",
+    "Save QR Menu to Phone": "Enregistrer le menu QR sur le téléphone",
+    "Tap here to install the menu as an app": "Appuyez ici pour installer le menu comme une application",
+    "Add to Home Screen": "Ajouter à l'écran d'accueil",
+  },
 };
+
 function makeT(lang) {
   const base = DICT.en;
   return (key) => (DICT[lang]?.[key] ?? base[key] ?? key);
