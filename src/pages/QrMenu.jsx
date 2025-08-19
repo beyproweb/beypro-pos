@@ -271,8 +271,7 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
           🏠 {t("Delivery")}
         </button>
 
-<div className="w-full mt-6 flex flex-col items-center">
-
+<div className="w-full mt-6 flex flex-col gap-3">
   {/* Share */}
   <button
     onClick={() => {
@@ -288,13 +287,12 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
         });
       }
     }}
-    className="mt-3 inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:scale-105 transition"
+    className="w-full py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:scale-105 transition"
   >
     🔗 {t("Share QR Menu")}
   </button>
-</div>
 
-  {/* Install / Save */}
+  {/* Save / Install */}
   <button
     onClick={() => {
       if (canInstall) {
@@ -303,13 +301,12 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
         setShowHelp(true); // show help instructions
       }
     }}
-    className="inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
+    className="w-full py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
   >
     📲 {t("Save QR Menu to Phone")}
   </button>
-  <div className="mt-2 text-xs text-gray-600">
-    {t("Tap here to install the menu as an app")}
-  </div>
+</div>
+
 
   
 
