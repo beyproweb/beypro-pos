@@ -104,24 +104,29 @@ async function handleOrderConfirmed(payload) {
           return;
         } catch (e1) {
           lastErr = e1;
-          // 🔁 NEW: also try by-number on ANY failure (not only 404)
-          if (orderNumber) {
-            try {
-              const order = await fetchByNumber(orderNumber);
-              autoPrintReceipt(order);
-              return;
-            } catch (e2) {
-              lastErr = e2;
-            }
+          // ⚠️ If by-id failed, we will try by-number using:
+          //    a) explicit orderNumber field if present, else
+          //    b) the same numeric id value (many emitters send public number as "id")
+          const candidateNumber = orderNumber ?? orderId;
+          try {
+            const order = await fetchByNumber(candidateNumber);
+            autoPrintReceipt(order);
+            return;
+          } catch (e2) {
+            lastErr = e2;
           }
         }
       }
 
-      // 2) Or try by-number if we didn’t have a valid id or id failed
+      // 2) Or try by-number if we didn’t have a valid id or id failed above
       if (orderNumber) {
-        const order = await fetchByNumber(orderNumber);
-        autoPrintReceipt(order);
-        return;
+        try {
+          const order = await fetchByNumber(orderNumber);
+          autoPrintReceipt(order);
+          return;
+        } catch (e3) {
+          lastErr = e3;
+        }
       }
 
       throw lastErr || new Error("No valid id/number to fetch");
@@ -130,6 +135,7 @@ async function handleOrderConfirmed(payload) {
       await new Promise((r) => setTimeout(r, backoffMs * attempt));
     }
   }
+
 
   console.error("❌ [AUTO-PRINT] Failed after retries:", lastErr);
 }
