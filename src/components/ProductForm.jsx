@@ -62,15 +62,10 @@ const handleUpload = async () => {
  
 const getImageSource = () => {
   if (imageUrl) return imageUrl;
-  if (imagePreview) {
-    // If it's not a full URL, prepend backend URL
-    if (!/^https?:\/\//.test(imagePreview)) {
-      return `${API_URL}/uploads/${imagePreview.replace(/^\/?uploads\//, "")}`;
-    }
-    return imagePreview;
-  }
+  if (imagePreview) return imagePreview; // Cloudinary already gives full URL
   return null;
 };
+
 
 
 
@@ -161,10 +156,7 @@ useEffect(() => {
       image: initialData.image || initialData.image_url || null,
     };
 
-    // 🔧 Fix here:
-    if (normalized.image && !/^https?:\/\//.test(normalized.image)) {
-      normalized.image = `${API_URL}/uploads/${normalized.image.replace(/^\/?uploads\//, "")}`;
-    }
+   
 
     setProduct((prev) => ({ ...prev, ...normalized }));
     if (normalized.image) {
