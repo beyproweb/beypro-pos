@@ -401,18 +401,6 @@ if (img) {
   </div>
 )}
 
-{/* Show product image preview */}
-{getImageSource() && (
-  <div className="my-2">
-    <p className="text-xs text-gray-500">{t("Product Image Preview")}</p>
-    <img
-      src={getImageSource()}
-      alt="Preview"
-      className="w-20 h-20 rounded-xl object-cover border shadow"
-    />
-  </div>
-)}
-
 
 
           <label className="font-semibold">{t("Preparation Time (min)")}</label>
