@@ -2304,26 +2304,6 @@ return (
   />
 )}
 
-{/* ✅ Share QR Menu */}
-<button
-  onClick={() => {
-    if (navigator.share) {
-      navigator.share({
-        title: "Beypro QR Menu",
-        text: "Check out our menu!",
-        url: "https://pos.beypro.com/qr-menu",
-      }).catch((err) => console.error("Share failed:", err));
-    } else {
-      // fallback: copy link to clipboard
-      navigator.clipboard.writeText("https://pos.beypro.com/qr-menu").then(() => {
-        alert("Link copied! You can paste it into WhatsApp or any app.");
-      });
-    }
-  }}
-  className="mt-3 inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:scale-105 transition"
->
-  🔗 {t("Share QR Menu")}
-</button>
 
 
   </div>
