@@ -55,16 +55,37 @@ const [autoPrintPacket, setAutoPrintPacket] = useState(
   localStorage.getItem("autoPrintPacket") === "true"
 );
 
-async function handleOrderConfirmed(orderId) {
-  try {
-    const res = await fetch(`${API_URL}/api/orders/${orderId}`);
-    if (!res.ok) throw new Error("Could not fetch order");
-    const order = await res.json();
-    autoPrintReceipt(order);
-  } catch (e) {
-    console.error("❌ Failed to auto-print order:", e);
+// NEW CODE — replace the whole handleOrderConfirmed in /PrinterTab.jsx
+async function handleOrderConfirmed(payload) {
+  // accept various payload shapes: {orderId}, {id}, {order:{id}}, or just the id
+  const orderId = Number(
+    payload?.orderId ?? payload?.id ?? payload?.order?.id ?? payload
+  );
+
+  if (!Number.isFinite(orderId)) {
+    console.warn("🟡 [AUTO-PRINT] Could not parse order id from payload:", payload);
+    return;
   }
+
+  const maxAttempts = 4; // retry to avoid race with DB commit/network
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${API_URL}/api/orders/${orderId}`, { cache: "no-store" });
+      if (res.status === 404) throw new Error("404 Not Found");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const order = await res.json();
+      autoPrintReceipt(order);
+      return;
+    } catch (err) {
+      lastErr = err;
+      // small backoff: 0.3s, 0.6s, 0.9s, ...
+      await new Promise(r => setTimeout(r, 300 * attempt));
+    }
+  }
+  console.error("❌ [AUTO-PRINT] Failed after retries:", lastErr);
 }
+
 
 // ✅ Print order receipt in hidden window
 function autoPrintReceipt(order) {
@@ -107,15 +128,19 @@ function autoPrintReceipt(order) {
   }, 400);
 }
 
-// ✅ Listen for socket event when order confirmed
+// NEW CODE — replace your listener in /PrinterTab.jsx
 useEffect(() => {
   if (!socket) return;
-  socket.on("order_confirmed", ({ orderId }) => {
-    console.log("🖨️ Auto-printing order", orderId);
-    handleOrderConfirmed(orderId);
+
+  socket.on("order_confirmed", (payload) => {
+    const idForLog = payload?.orderId ?? payload?.id ?? payload?.order?.id ?? payload;
+    console.log("🖨️ Auto-printing order", idForLog, "payload:", payload);
+    handleOrderConfirmed(payload);
   });
+
   return () => socket.off("order_confirmed");
 }, []);
+
 
 
 function handlePrintTest() {
