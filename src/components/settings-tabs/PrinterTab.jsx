@@ -55,36 +55,80 @@ const [autoPrintPacket, setAutoPrintPacket] = useState(
   localStorage.getItem("autoPrintPacket") === "true"
 );
 
-// NEW CODE — replace the whole handleOrderConfirmed in /PrinterTab.jsx
+// ✅ FINAL: robust handler with fallback to /by-number and longer retry
 async function handleOrderConfirmed(payload) {
-  // accept various payload shapes: {orderId}, {id}, {order:{id}}, or just the id
+  // Accept a bunch of payload shapes; also try to discover order_number
   const orderId = Number(
     payload?.orderId ?? payload?.id ?? payload?.order?.id ?? payload
   );
+  const orderNumber =
+    payload?.orderNumber ??
+    payload?.order_number ??
+    payload?.number ??
+    payload?.order?.orderNumber ??
+    payload?.order?.order_number ??
+    payload?.order?.number ??
+    (Number.isFinite(orderId) ? orderId : undefined); // fallback guess
 
-  if (!Number.isFinite(orderId)) {
-    console.warn("🟡 [AUTO-PRINT] Could not parse order id from payload:", payload);
+  if (!Number.isFinite(orderId) && !orderNumber) {
+    console.warn("🟡 [AUTO-PRINT] Could not parse order id/number from payload:", payload);
     return;
   }
 
-  const maxAttempts = 4; // retry to avoid race with DB commit/network
+  // Helper to fetch by internal id
+  const fetchById = async (id) => {
+    const res = await fetch(`${API_URL}/api/orders/${id}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`by-id HTTP ${res.status}`);
+    return res.json();
+  };
+
+  // Helper to fetch by public order_number
+  const fetchByNumber = async (num) => {
+    const res = await fetch(`${API_URL}/api/orders/by-number/${num}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`by-number HTTP ${res.status}`);
+    return res.json();
+  };
+
+  const maxAttempts = 6;   // a bit longer for Render’s latency
+  const backoffMs   = 400; // 0.4s, 0.8s, 1.2s, ...
+
   let lastErr;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const res = await fetch(`${API_URL}/api/orders/${orderId}`, { cache: "no-store" });
-      if (res.status === 404) throw new Error("404 Not Found");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const order = await res.json();
-      autoPrintReceipt(order);
-      return;
+      // 1) Try internal id first if we have it
+      if (Number.isFinite(orderId)) {
+        try {
+          const order = await fetchById(orderId);
+          autoPrintReceipt(order);
+          return;
+        } catch (e1) {
+          lastErr = e1;
+          // if 404 by id and we have a number, fall back immediately to by-number
+          if (String(e1?.message || "").includes("404") && orderNumber) {
+            const order = await fetchByNumber(orderNumber);
+            autoPrintReceipt(order);
+            return;
+          }
+        }
+      }
+
+      // 2) Or try by-number if we didn’t have a valid id or id failed
+      if (orderNumber) {
+        const order = await fetchByNumber(orderNumber);
+        autoPrintReceipt(order);
+        return;
+      }
+
+      throw lastErr || new Error("No valid id/number to fetch");
     } catch (err) {
       lastErr = err;
-      // small backoff: 0.3s, 0.6s, 0.9s, ...
-      await new Promise(r => setTimeout(r, 300 * attempt));
+      await new Promise((r) => setTimeout(r, backoffMs * attempt));
     }
   }
+
   console.error("❌ [AUTO-PRINT] Failed after retries:", lastErr);
 }
+
 
 
 // ✅ Print order receipt in hidden window
