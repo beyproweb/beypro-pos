@@ -271,24 +271,45 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
           🏠 {t("Delivery")}
         </button>
 
-{/* ✅ Install QR Menu (PWA) */}
 <div className="w-full mt-6 flex flex-col items-center">
- <button
-  onClick={() => {
-    if (canInstall) {
-      onInstallClick();
-    } else {
-      setShowHelp(true); // show help instructions
-    }
-  }}
-  className="inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
->
-  📲 {t("Save QR Menu to Phone")}
-</button>
-
+  {/* Install / Save */}
+  <button
+    onClick={() => {
+      if (canInstall) {
+        onInstallClick();
+      } else {
+        setShowHelp(true); // show help instructions
+      }
+    }}
+    className="inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
+  >
+    📲 {t("Save QR Menu to Phone")}
+  </button>
   <div className="mt-2 text-xs text-gray-600">
     {t("Tap here to install the menu as an app")}
   </div>
+
+  {/* Share */}
+  <button
+    onClick={() => {
+      if (navigator.share) {
+        navigator.share({
+          title: "Beypro QR Menu",
+          text: "Check out our menu!",
+          url: "https://pos.beypro.com/qr-menu",
+        }).catch((err) => console.error("Share failed:", err));
+      } else {
+        navigator.clipboard.writeText("https://pos.beypro.com/qr-menu").then(() => {
+          alert("Link copied! You can paste it into WhatsApp or any app.");
+        });
+      }
+    }}
+    className="mt-3 inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:scale-105 transition"
+  >
+    🔗 {t("Share QR Menu")}
+  </button>
+</div>
+
 </div>
 
 {showHelp && (
@@ -2267,6 +2288,26 @@ return (
   />
 )}
 
+{/* ✅ Share QR Menu */}
+<button
+  onClick={() => {
+    if (navigator.share) {
+      navigator.share({
+        title: "Beypro QR Menu",
+        text: "Check out our menu!",
+        url: "https://pos.beypro.com/qr-menu",
+      }).catch((err) => console.error("Share failed:", err));
+    } else {
+      // fallback: copy link to clipboard
+      navigator.clipboard.writeText("https://pos.beypro.com/qr-menu").then(() => {
+        alert("Link copied! You can paste it into WhatsApp or any app.");
+      });
+    }
+  }}
+  className="mt-3 inline-block px-5 py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:scale-105 transition"
+>
+  🔗 {t("Share QR Menu")}
+</button>
 
 
   </div>
