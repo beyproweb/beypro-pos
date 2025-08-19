@@ -63,10 +63,9 @@ const handleUpload = async () => {
 
  
 const getImageSource = () => {
-  if (imageUrl) return imageUrl;
-  if (imagePreview) return imagePreview; // Cloudinary already gives full URL
-  return null;
+  return imageUrl || imagePreview || null;
 };
+
 
 
 
