@@ -55,15 +55,10 @@ export default function PrinterTab() {
     localStorage.getItem("autoPrintPacket") === "true"
   );
 
-  // Printer method + preferred printer
-  const [printMethod, setPrintMethod] = useState(
-    localStorage.getItem("printMethod") || "system" // "system" | "qz"
+  // NEW: simple printing mode (no third-party)
+  const [printingMode, setPrintingMode] = useState(
+    localStorage.getItem("printingMode") || "standard" // 'standard' | 'kiosk'
   );
-  const [printers, setPrinters] = useState([]);
-  const [preferredPrinter, setPreferredPrinter] = useState(
-    localStorage.getItem("preferredPrinter") || ""
-  );
-  const [qzStatus, setQzStatus] = useState("disconnected"); // disconnected | connected | error
 
   // Load saved layout from backend
   useEffect(() => {
@@ -80,79 +75,6 @@ export default function PrinterTab() {
       .catch(() => setError("Could not load printer settings."))
       .finally(() => setLoading(false));
   }, []);
-
-  // Dynamically load qz-tray client if it's missing
-  function loadQzScript() {
-    return new Promise((resolve, reject) => {
-      if (window.qz) return resolve();
-      const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/qz-tray/qz-tray.js";
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error("Failed to load qz-tray.js"));
-      document.body.appendChild(s);
-    });
-  }
-
-  // Dev-only: allow unsigned connection during development
-  function setupQzDevSecurity() {
-    if (!window.qz || !qz.security) return;
-    try {
-      qz.security.setCertificatePromise((resolve, reject) => resolve(null));
-      qz.security.setSignaturePromise((toSign) => (resolve, reject) => resolve(null));
-    } catch {}
-  }
-
-  // Robust connect that auto-loads client and uses dev handshake
-  async function ensureQzConnected() {
-    try {
-      if (!window.qz) {
-        await loadQzScript(); // try to load the client if missing
-      }
-      if (!window.qz) throw new Error("QZ Tray client script not found");
-
-      // Dev handshake (unsigned) so connect works without cert during development
-      setupQzDevSecurity();
-
-      if (!qz.websocket.isActive()) {
-        await qz.websocket.connect(); // requires QZ Tray desktop app running
-      }
-      setQzStatus("connected");
-      return true;
-    } catch (e) {
-      console.warn("[QZ] connect failed:", e);
-      setQzStatus("error");
-      return false;
-    }
-  }
-
-  async function loadQzPrinters() {
-    if (printMethod !== "qz") return;
-    const ok = await ensureQzConnected();
-    if (!ok) return;
-    try {
-      const list = await qz.printers.find();
-      setPrinters(list || []);
-      if (!preferredPrinter && list?.length) {
-        setPreferredPrinter(list[0]);
-        localStorage.setItem("preferredPrinter", list[0]);
-      }
-    } catch (e) {
-      console.warn("[QZ] list printers failed:", e);
-    }
-  }
-
-  // Load printer list when switching to QZ method
-  useEffect(() => {
-    if (printMethod === "qz") {
-      loadQzPrinters();
-    }
-    return () => {
-      if (window.qz && qz.websocket.isActive()) {
-        qz.websocket.disconnect().catch(() => {});
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [printMethod]);
 
   // Just to show we hear order events here (printing handled globally)
   useEffect(() => {
@@ -171,13 +93,24 @@ export default function PrinterTab() {
     return () => socket.off("order_confirmed", handler);
   }, []);
 
-  // Test print using current preview (system dialog)
+  // Test print using current preview
   function handlePrintTest() {
     const preview = document.getElementById("printable-receipt");
     if (!preview) return alert("Receipt preview not found!");
 
-    const printWindow = window.open("", "PrintWindow", "width=400,height=600");
-    printWindow.document.write(`
+    // Use same path as kiosk (iframe) so user sees expected behavior with flag
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
       <html>
         <head>
           <title>Test Print</title>
@@ -199,8 +132,6 @@ export default function PrinterTab() {
               min-height: ${layout.receiptHeight || 400}px;
               margin: 0 auto;
               padding: 0;
-              box-shadow: none;
-              border: none;
             }
           </style>
         </head>
@@ -211,12 +142,13 @@ export default function PrinterTab() {
         </body>
       </html>
     `);
-    printWindow.document.close();
-    printWindow.focus();
+    doc.close();
+
     setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 400);
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 800);
+    }, 300);
   }
 
   // Handlers for layout form
@@ -243,101 +175,57 @@ export default function PrinterTab() {
         🖨️ {t("Printer Settings")}
       </h2>
 
-      {/* Auto-print toggles + PRINTER DROPDOWNS */}
-      <div className="flex flex-col gap-4 mb-3">
-        <div className="flex flex-wrap gap-4">
-          <label className="flex gap-2 items-center">
-            <input
-              type="checkbox"
-              checked={autoPrintTable}
+      {/* Printing Mode + Auto-print scope */}
+      <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="font-bold">Printing Mode</label>
+            <select
+              className="rounded-xl border border-gray-300 p-2 w-full"
+              value={printingMode}
               onChange={(e) => {
-                setAutoPrintTable(e.target.checked);
-                localStorage.setItem("autoPrintTable", e.target.checked);
+                const v = e.target.value;
+                setPrintingMode(v);
+                localStorage.setItem("printingMode", v);
               }}
-            />
-            Auto Print Table Orders
-          </label>
-          <label className="flex gap-2 items-center">
-            <input
-              type="checkbox"
-              checked={autoPrintPacket}
-              onChange={(e) => {
-                setAutoPrintPacket(e.target.checked);
-                localStorage.setItem("autoPrintPacket", e.target.checked);
-              }}
-            />
-            Auto Print Packet Orders (Phone/Online)
-          </label>
-        </div>
-
-        <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="font-bold">Auto-print Method</label>
-              <select
-                className="rounded-xl border border-gray-300 p-2 w-full"
-                value={printMethod}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setPrintMethod(v);
-                  localStorage.setItem("printMethod", v);
-                }}
-              >
-                <option value="system">System dialog (popup/iframe)</option>
-                <option value="qz">QZ Tray (silent)</option>
-              </select>
-
-              {printMethod === "qz" && qzStatus !== "connected" && (
-                <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-sm p-2">
-                  QZ Tray not connected. Make sure the <b>QZ Tray</b> app is installed and running on this computer,
-                  then click <b>Refresh</b>. Until then, printing will fall back to the system dialog.
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="font-bold">Preferred Printer</label>
-              <div className="flex gap-2">
-                <select
-                  className="rounded-xl border border-gray-300 p-2 w-full"
-                  disabled={printMethod !== "qz"}
-                  value={preferredPrinter}
-                  onChange={(e) => {
-                    setPreferredPrinter(e.target.value);
-                    localStorage.setItem("preferredPrinter", e.target.value);
-                  }}
-                >
-                  <option value="">(Default system printer)</option>
-                  {printers.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="px-3 py-2 rounded-xl bg-indigo-100 text-indigo-700"
-                  disabled={printMethod !== "qz"}
-                  onClick={() => loadQzPrinters()}
-                >
-                  Refresh
-                </button>
+            >
+              <option value="standard">Standard (shows dialog)</option>
+              <option value="kiosk">Kiosk Silent (no dialog)</option>
+            </select>
+            <div className="text-xs text-gray-500 mt-1 space-y-1">
+              <div>
+                <b>Kiosk Silent</b> requires launching Chrome with{" "}
+                <code>--kiosk-printing</code>. Uses your OS <b>default printer</b>.
               </div>
-              {printMethod === "qz" && (
-                <div className="text-xs mt-1">
-                  QZ:{" "}
-                  <span
-                    className={
-                      qzStatus === "connected"
-                        ? "text-green-600"
-                        : qzStatus === "error"
-                        ? "text-red-600"
-                        : "text-gray-600"
-                    }
-                  >
-                    {qzStatus}
-                  </span>
-                </div>
-              )}
+              <div>Tip: set your thermal printer as default in Windows/macOS.</div>
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold">Auto-print Scope</label>
+            <div className="flex flex-col gap-2">
+              <label className="flex gap-2 items-center">
+                <input
+                  type="checkbox"
+                  checked={autoPrintTable}
+                  onChange={(e) => {
+                    setAutoPrintTable(e.target.checked);
+                    localStorage.setItem("autoPrintTable", e.target.checked);
+                  }}
+                />
+                Auto Print Table Orders
+              </label>
+              <label className="flex gap-2 items-center">
+                <input
+                  type="checkbox"
+                  checked={autoPrintPacket}
+                  onChange={(e) => {
+                    setAutoPrintPacket(e.target.checked);
+                    localStorage.setItem("autoPrintPacket", e.target.checked);
+                  }}
+                />
+                Auto Print Packet/Delivery Orders
+              </label>
             </div>
           </div>
         </div>

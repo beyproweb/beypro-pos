@@ -33,36 +33,6 @@ const defaultLayout = {
   receiptHeight: "",
 };
 
-// --- QZ Tray helpers for silent printing ---
-async function qzEnsureConnected() {
-  if (!window.qz) throw new Error("QZ Tray not found");
-  if (!qz.websocket.isActive()) {
-    await qz.websocket.connect();
-  }
-}
-
-async function qzPrintHTML(html) {
-  await qzEnsureConnected();
-  const preferred = localStorage.getItem("preferredPrinter") || null;
-  const cfg = qz.configs.create(preferred || undefined, {
-    // These options help rasterize HTML for ESC/POS-style printers
-    scaleContent: true,
-    rasterize: true,
-    colorType: "grayscale",
-    copies: 1,
-    jobName: "Beypro Receipt",
-  });
-
-  const data = [
-    {
-      type: "html",
-      format: "plain",
-      data: `<html><head><meta charset="utf-8" /></head><body>${html}</body></html>`,
-    },
-  ];
-
-  return qz.print(cfg, data);
-}
 
 
 function renderReceiptHTML(order, layout = defaultLayout) {
@@ -174,23 +144,69 @@ function renderReceiptHTML(order, layout = defaultLayout) {
   `;
 }
 
+// NEW: kiosk-friendly, de-duplicated system printing
+const _printedIds = new Set(); // in-memory print lock
+
 function autoPrintReceipt(order, layout = defaultLayout) {
-  const html = renderReceiptHTML(order, layout);
-  const method = localStorage.getItem("printMethod") || "system";
+  try {
+    const id = order?.id ?? order?.order_number ?? order?.number;
+    if (id) {
+      if (_printedIds.has(id)) {
+        console.log("🖨️ [GLOBAL] Skipping duplicate print for", id);
+        return;
+      }
+      _printedIds.add(id);
+      setTimeout(() => _printedIds.delete(id), 20000); // 20s cooldown
+    }
 
-  // Prefer QZ Tray if selected and available
-  if (method === "qz" && window.qz) {
-    qzPrintHTML(html)
-      .then(() => console.log("🖨️ [GLOBAL] QZ print done"))
-      .catch((err) => {
-        console.warn("🖨️ [GLOBAL] QZ failed, falling back to system print:", err);
-        systemPrint(html);
-      });
-    return;
+    const html = renderReceiptHTML(order, layout);
+    const mode = localStorage.getItem("printingMode") || "standard";
+
+    if (mode === "kiosk") {
+      // Hidden iframe path works best with Chrome --kiosk-printing (no dialog)
+      iframeSilentPrint(html);
+      return;
+    }
+
+    // Standard: show popup (user can Cancel/OK)
+    popupPrint(html);
+  } catch (err) {
+    console.warn("🖨️ [GLOBAL] autoPrintReceipt failed:", err);
   }
+}
 
-  // default fallback
-  systemPrint(html);
+
+
+// Hidden iframe print (best for kiosk silent)
+function iframeSilentPrint(html) {
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(`
+    <html>
+      <head>
+        <title>Print</title>
+        <meta charset="utf-8" />
+        <style>@media print { body { margin:0; } } body{font-family:monospace}</style>
+      </head>
+      <body>${html}</body>
+    </html>
+  `);
+  doc.close();
+
+  setTimeout(() => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print(); // with --kiosk-printing this is silent
+    setTimeout(() => document.body.removeChild(iframe), 800);
+  }, 300);
 }
 
 // System dialog popup/iframe fallback
