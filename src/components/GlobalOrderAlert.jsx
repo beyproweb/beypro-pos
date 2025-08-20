@@ -11,6 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL || "";
 import { useSetting } from "../components/hooks/useSetting";
 import { toast } from "react-toastify";
 import socket from "../utils/socket"; // ✅ Use shared socket!
+
 // Receipt print logic (from PrinterTab, can be shared)
 const defaultLayout = {
   fontSize: 14,
@@ -47,7 +48,7 @@ function renderReceiptHTML(order, layout = defaultLayout) {
       const itemTotal = parseFloat(item.price) * qty;
       const extrasTotal = (item.extras || []).reduce((sum, ex) => {
         const extraQty = parseInt(ex.qty || ex.quantity || 1);
-        return sum + (qty * extraQty * parseFloat(ex.price || 0));
+        return sum + qty * extraQty * parseFloat(ex.price || 0);
       }, 0);
       total += itemTotal + extrasTotal;
     });
@@ -141,9 +142,6 @@ function renderReceiptHTML(order, layout = defaultLayout) {
   `;
 }
 
-
-
-
 function autoPrintReceipt(order, layout = defaultLayout) {
   console.log("🖨️ [GLOBAL] Opening print window for order:", order);
   const html = renderReceiptHTML(order, layout);
@@ -187,22 +185,18 @@ export default function GlobalOrderAlert() {
   const [soundQueue, setSoundQueue] = useState([]);
   const soundPlayingRef = useRef(false);
   const debounceRef = useRef(null);
-    // 🔄 Receipt Layout
+  // 🔄 Receipt Layout
   const [layout, setLayout] = useState(defaultLayout);
 
   // Load layout from backend if needed
   useEffect(() => {
     fetch(`${API_URL}/api/printer-settings/1`)
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (data.layout) setLayout(data.layout);
       })
       .catch(() => {});
   }, []);
-
-
-
-
 
   const enqueueSound = useCallback((key) => {
     setSoundQueue((q) => (q.includes(key) ? q : [...q, key]));
@@ -307,95 +301,95 @@ export default function GlobalOrderAlert() {
       enqueueSound(e.detail.key);
     };
     window.addEventListener("play_sound", soundHandler);
-  const yemeksepetiHandler = () => enqueueSound('yemeksepeti_order');
+    const yemeksepetiHandler = () => enqueueSound("yemeksepeti_order");
 
-  socket.on("yemeksepeti_order", yemeksepetiHandler);
+    socket.on("yemeksepeti_order", yemeksepetiHandler);
 
-  return () => {
-    socket.off("yemeksepeti_order", yemeksepetiHandler);
-  };
-}, [enqueueSound])
+    return () => {
+      socket.off("yemeksepeti_order", yemeksepetiHandler);
+    };
+  }, [enqueueSound]);
 
   // 🔁 Polling checks
-  const pollingChecks = useMemo(() => [
-  {
-    key: "order_preparing",
-    endpoint: `${API_URL}/api/order-items/preparing`,
-    extractIds: (data) => data,
-  },
-  {
-    key: "order_ready",
-    endpoint: `${API_URL}/api/kitchen-orders`,
-    extractIds: (data) =>
-      data.filter((i) => i.kitchen_status === "ready").map((i) => i.item_id),
-  },
-  {
-    key: "order_delivered",
-    endpoint: `${API_URL}/api/orders`,
-    extractIds: (data) =>
-      data.filter((o) => o.status === "delivered").map((o) => o.id),
-  },
-  {
-    key: "payment_made",
-    endpoint: `${API_URL}/api/orders`,
-    extractIds: (data) =>
-      data.filter((o) => o.is_paid).map((o) => o.id),
-  },
-  {
-    key: "stock_low",
-    endpoint: `${API_URL}/api/stock`,
-    extractIds: (data) => {
-      const criticalNow = [];
-      data.forEach((item) => {
-        const prevQty = previousStockQty.current[item.id];
-        if (item.qty <= item.critical_qty) {
-          if (prevQty === undefined || prevQty > item.critical_qty) {
-            criticalNow.push(item.id);
-          }
-        }
-        previousStockQty.current[item.id] = item.qty;
-      });
-      return criticalNow;
-    },
-  },
-  {
-    key: "stock_restocked",
-    endpoint: `${API_URL}/api/stock`,
-    extractIds: (data) => {
-      const restocked = [];
-      data.forEach((item) => {
-        const prevQty = previousStockQty.current[item.id] || 0;
-        if (item.qty > prevQty) {
-          restocked.push(item.id);
-        }
-        previousStockQty.current[item.id] = item.qty;
-      });
-      return restocked;
-    },
-  },
-  {
-    key: "order_delayed",
-    endpoint: `${API_URL}/api/orders`,
-    extractIds: (data) => {
-      const now = Date.now();
-      return data
-        .filter(
-          (o) =>
-            o.expected_time &&
-            new Date(o.expected_time).getTime() < now &&
-            !["delivered", "closed"].includes(o.status)
-        )
-        .map((o) => o.id);
-    },
-  },
-  {
-    key: "driver_arrived",
-    endpoint: `${API_URL}/api/orders`,
-    extractIds: (data) =>
-      data.filter((o) => o.driver_status === "delivered").map((o) => o.id),
-  },
-], [API_URL]);
-
+  const pollingChecks = useMemo(
+    () => [
+      {
+        key: "order_preparing",
+        endpoint: `${API_URL}/api/order-items/preparing`,
+        extractIds: (data) => data,
+      },
+      {
+        key: "order_ready",
+        endpoint: `${API_URL}/api/kitchen-orders`,
+        extractIds: (data) =>
+          data.filter((i) => i.kitchen_status === "ready").map((i) => i.item_id),
+      },
+      {
+        key: "order_delivered",
+        endpoint: `${API_URL}/api/orders`,
+        extractIds: (data) => data.filter((o) => o.status === "delivered").map((o) => o.id),
+      },
+      {
+        key: "payment_made",
+        endpoint: `${API_URL}/api/orders`,
+        extractIds: (data) => data.filter((o) => o.is_paid).map((o) => o.id),
+      },
+      {
+        key: "stock_low",
+        endpoint: `${API_URL}/api/stock`,
+        extractIds: (data) => {
+          const criticalNow = [];
+          data.forEach((item) => {
+            const prevQty = previousStockQty.current[item.id];
+            if (item.qty <= item.critical_qty) {
+              if (prevQty === undefined || prevQty > item.critical_qty) {
+                criticalNow.push(item.id);
+              }
+            }
+            previousStockQty.current[item.id] = item.qty;
+          });
+          return criticalNow;
+        },
+      },
+      {
+        key: "stock_restocked",
+        endpoint: `${API_URL}/api/stock`,
+        extractIds: (data) => {
+          const restocked = [];
+          data.forEach((item) => {
+            const prevQty = previousStockQty.current[item.id] || 0;
+            if (item.qty > prevQty) {
+              restocked.push(item.id);
+            }
+            previousStockQty.current[item.id] = item.qty;
+          });
+          return restocked;
+        },
+      },
+      {
+        key: "order_delayed",
+        endpoint: `${API_URL}/api/orders`,
+        extractIds: (data) => {
+          const now = Date.now();
+          return data
+            .filter(
+              (o) =>
+                o.expected_time &&
+                new Date(o.expected_time).getTime() < now &&
+                !["delivered", "closed"].includes(o.status)
+            )
+            .map((o) => o.id);
+        },
+      },
+      {
+        key: "driver_arrived",
+        endpoint: `${API_URL}/api/orders`,
+        extractIds: (data) =>
+          data.filter((o) => o.driver_status === "delivered").map((o) => o.id),
+      },
+    ],
+    [API_URL]
+  );
 
   // 🧠 Polling runner
   const pollAll = useCallback(async () => {
@@ -423,12 +417,14 @@ export default function GlobalOrderAlert() {
               }
 
               const itemCount = newly.length;
-              const msg = itemCount === 1
-                ? "🧂 Stock Low item detected!"
-                : `🧂 ${itemCount} items low in stock`;
+              const msg =
+                itemCount === 1
+                  ? "🧂 Stock Low item detected!"
+                  : `🧂 ${itemCount} items low in stock`;
 
               const now = Date.now();
-              const cooldownMs = (notificationSettings.stockAlert.cooldownMinutes ?? 10) * 60 * 1000;
+              const cooldownMs =
+                (notificationSettings.stockAlert.cooldownMinutes ?? 10) * 60 * 1000;
               const last = lastCooldownAt.current[msg] || 0;
 
               if (now - last >= cooldownMs) {
@@ -457,57 +453,101 @@ export default function GlobalOrderAlert() {
     }
   }, [pollingChecks, enqueueSound, notificationSettings]);
 
-  // Watch for order_confirmed
-useEffect(() => {
-const onConfirmed = async ({ orderId }) => {
-  const autoPrintTable = localStorage.getItem("autoPrintTable") === "true";
-  const autoPrintPacket = localStorage.getItem("autoPrintPacket") === "true";
+  // ✅ Watch for order_confirmed (robust against different payload shapes)
+  useEffect(() => {
+    if (!socket) return;
 
-  try {
-    const res = await fetch(`${API_URL}/api/orders/${orderId}`);
-    if (!res.ok) throw new Error("Could not fetch order");
-    const order = await res.json();
+    const onOrderConfirmed = async (payload) => {
+      try {
+        const autoPrintTable = localStorage.getItem("autoPrintTable") === "true";
+        const autoPrintPacket = localStorage.getItem("autoPrintPacket") === "true";
 
-    // ✅ Verify order items exist before printing
-    if (!order.items || order.items.length === 0) {
-      console.warn("Order fetched without items; skipping receipt print.");
-      return;
-    }
+        // If server already sent the full order, print directly (no fetch)
+        if (payload?.order && Array.isArray(payload.order.items)) {
+          const order = {
+            id: payload.order.id ?? payload.id,
+            ...payload.order,
+          };
 
-    if (
-      (order.order_type === "table" && autoPrintTable) ||
-      ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
-    ) {
-      enqueueSound("new_order");
-      autoPrintReceipt(order, layout);
-    }
-  } catch (e) {
-    console.error("Failed to auto-print order:", e);
-  }
-};
+          if (
+            (order.order_type === "table" && autoPrintTable) ||
+            ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
+          ) {
+            enqueueSound("new_order");
+            autoPrintReceipt(order, layout);
+          }
+          return;
+        }
 
+        // Otherwise resolve a numeric id from various possible fields
+        const candidates = [
+          payload?.id,
+          payload?.order?.id,
+          payload?.orderId,
+          payload?.order_number,
+          payload?.number,
+        ];
+        const resolvedId = candidates.map((v) => Number(v)).find((v) => Number.isFinite(v));
 
-  const handler = ({ orderId }) => {
-    setTimeout(() => onConfirmed({ orderId }), 200);
-  };
+        if (!Number.isFinite(resolvedId)) {
+          console.warn("[GLOBAL] order_confirmed without numeric id:", payload);
+          return; // do NOT fetch /undefined
+        }
 
-  socket.on("order_confirmed", handler);
-  return () => socket.off("order_confirmed", handler); // ✅ Now properly removes
-}, [layout, enqueueSound]);
+        // Retry fetch with backoff until items are present (read-after-write tolerance)
+        const maxAttempts = 8;
+        const baseDelayMs = 350;
+        let lastErr;
 
-  // 🔌 Socket listeners
-   useEffect(() => {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const res = await fetch(`${API_URL}/api/orders/${resolvedId}`, { cache: "no-store" });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const order = await res.json();
+
+            const itemCount = Array.isArray(order?.items) ? order.items.length : 0;
+            if (itemCount === 0 && attempt < maxAttempts) {
+              throw new Error(`Order ${resolvedId} has 0 items (attempt ${attempt})`);
+            }
+
+            if (
+              (order.order_type === "table" && autoPrintTable) ||
+              ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
+            ) {
+              enqueueSound("new_order");
+              autoPrintReceipt(order, layout);
+            }
+            return; // success
+          } catch (e) {
+            lastErr = e;
+            const jitter = Math.floor(Math.random() * 120);
+            await new Promise((r) => setTimeout(r, baseDelayMs * attempt + jitter));
+          }
+        }
+
+        console.error("[GLOBAL] Failed to fetch order after retries:", lastErr);
+      } catch (e) {
+        console.error("[GLOBAL] onOrderConfirmed fatal:", e);
+      }
+    };
+
+    socket.on("order_confirmed", onOrderConfirmed);
+    return () => socket.off("order_confirmed", onOrderConfirmed);
+  }, [layout, enqueueSound]);
+
+  // 🔌 Other socket listeners + polling
+  useEffect(() => {
     let interval;
 
     // Define named handlers
     const ordersUpdatedHandler = () => pollAll();
-    const orderConfirmedHandler = () => enqueueSound("new_order");
     const orderReadyHandler = () => enqueueSound("order_ready");
     const orderDeliveredHandler = () => enqueueSound("order_delivered");
     const alertHandler = ({ message }) => {
       if (!message.startsWith("🧂")) return;
       const now = Date.now();
-      const cooldownMs = (notificationSettings?.stockAlert?.cooldownMinutes ?? 10) * 60 * 1000;
+      const cooldownMs =
+        (notificationSettings?.stockAlert?.cooldownMinutes ?? 10) * 60 * 1000;
       const last = lastCooldownAt.current[message] || 0;
       if (now - last < cooldownMs) return;
       lastCooldownAt.current[message] = now;
@@ -516,7 +556,6 @@ const onConfirmed = async ({ orderId }) => {
 
     // Attach handlers
     socket.on("orders_updated", ordersUpdatedHandler);
-
     socket.on("order_ready", orderReadyHandler);
     socket.on("order_delivered", orderDeliveredHandler);
     socket.on("alert_event", alertHandler);
@@ -529,7 +568,6 @@ const onConfirmed = async ({ orderId }) => {
 
     return () => {
       socket.off("orders_updated", ordersUpdatedHandler);
-
       socket.off("order_ready", orderReadyHandler);
       socket.off("order_delivered", orderDeliveredHandler);
       socket.off("alert_event", alertHandler);
@@ -543,7 +581,8 @@ const onConfirmed = async ({ orderId }) => {
 
     const key = soundQueue[0];
     const ref = soundRefs.current[key];
-    const soundName = notificationSettings.eventSounds[key] || notificationSettings.defaultSound;
+    const soundName =
+      notificationSettings.eventSounds[key] || notificationSettings.defaultSound;
 
     if (soundName === "none") {
       setSoundQueue((q) => q.slice(1));
@@ -556,11 +595,14 @@ const onConfirmed = async ({ orderId }) => {
       audioEl.pause();
       audioEl.currentTime = 0;
 
-      audioEl.play()
-        .then(() => setTimeout(() => {
-          soundPlayingRef.current = false;
-          setSoundQueue((q) => q.slice(1));
-        }, 500))
+      audioEl
+        .play()
+        .then(() =>
+          setTimeout(() => {
+            soundPlayingRef.current = false;
+            setSoundQueue((q) => q.slice(1));
+          }, 500)
+        )
         .catch(() => {
           soundPlayingRef.current = false;
           setSoundQueue((q) => q.slice(1));
@@ -574,7 +616,9 @@ const onConfirmed = async ({ orderId }) => {
     <>
       {notificationSettings
         ? eventKeys.map((key) => {
-            const soundName = notificationSettings.eventSounds[key] || notificationSettings.defaultSound;
+            const soundName =
+              notificationSettings.eventSounds[key] ||
+              notificationSettings.defaultSound;
             const src = soundName && soundName !== "none" ? `/${soundName}` : "";
             return (
               <audio
