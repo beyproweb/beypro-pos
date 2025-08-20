@@ -105,17 +105,30 @@ function autoPrintReceipt(order, layout = defaultLayout) {
         return;
       }
       const text = renderReceiptText(order, layout);
-      fetch(`${API_URL}/api/lan-printers/print-raw`, {
+            fetch(`${API_URL}/api/lan-printers/print-raw`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ host, port, content: text }),
       })
         .then(async (r) => {
-          if (!r.ok) throw new Error((await r.json()).error || "LAN print failed");
-          console.log("🖨️ [GLOBAL] LAN print sent to", host + ":" + port);
+          const ct = r.headers.get("content-type") || "";
+          if (!r.ok) {
+            let msg = `LAN print failed (HTTP ${r.status})`;
+            if (ct.includes("application/json")) {
+              const j = await r.json().catch(() => null);
+              if (j && j.error) msg += ` - ${j.error}`;
+            } else {
+              const t = await r.text().catch(() => "");
+              if (t) msg += ` - ${t.slice(0, 160)}`;
+            }
+            throw new Error(msg);
+          }
+          // Success — JSON or empty is fine
+          console.log("🖨️ [GLOBAL] LAN print sent to", `${host}:${port}`);
         })
-        .catch((e) => console.warn("🖨️ [GLOBAL] LAN print error:", e));
+        .catch((e) => console.warn("🖨️ [GLOBAL] LAN print error:", e.message || e));
       return;
+
     }
 
     const html = renderReceiptHTML(order, layout);
