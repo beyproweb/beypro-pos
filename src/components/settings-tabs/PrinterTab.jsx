@@ -59,10 +59,11 @@ const [autoPrintPacket, setAutoPrintPacket] = useState(
 // ✅ FINAL: robust handler with fallback to /by-number and longer retry
 async function handleOrderConfirmed(payload) {
   // Accept a bunch of payload shapes; also try to discover order_number
-  const orderId = Number.isFinite(+payload?.id) ? +payload.id
-              : Number.isFinite(+payload?.orderId) ? +payload.orderId
-              : Number.isFinite(+payload?.order?.id) ? +payload.order.id
-              : null;
+const orderId =
+  Number.isFinite(+payload?.id) ? +payload.id :
+  Number.isFinite(+payload?.orderId) ? +payload.orderId :
+  Number.isFinite(+payload?.order?.id) ? +payload.order.id :
+  null;
 
 const orderNumber =
   payload?.order_number ??
@@ -72,6 +73,7 @@ const orderNumber =
   payload?.order?.orderNumber ??
   payload?.order?.number ??
   (orderId || null);
+
 
 
   if (!Number.isFinite(orderId) && !orderNumber) {
@@ -93,8 +95,9 @@ const orderNumber =
     return res.json();
   };
 
-  const maxAttempts = 6;   // a bit longer for Render’s latency
-  const backoffMs   = 400; // 0.4s, 0.8s, 1.2s, ...
+  const maxAttempts = 10;  // handles Render spikes
+const backoffMs   = 600; // 0.6s, 1.2s, 1.8s, ...
+
 
   let lastErr;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -148,6 +151,12 @@ autoPrintReceipt(order);
       await new Promise((r) => setTimeout(r, backoffMs * attempt));
     }
   }
+  console.error("[AUTO-PRINT] fetch failed", {
+  triedById: Number.isFinite(orderId) ? `/api/orders/${orderId}` : null,
+  triedByNumber: orderNumber ? `/api/orders/by-number/${orderNumber}` : null,
+  lastErr
+});
+
 
 
   console.error("❌ [AUTO-PRINT] Failed after retries:", lastErr);
