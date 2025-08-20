@@ -33,6 +33,38 @@ const defaultLayout = {
   receiptHeight: "",
 };
 
+// --- QZ Tray helpers for silent printing ---
+async function qzEnsureConnected() {
+  if (!window.qz) throw new Error("QZ Tray not found");
+  if (!qz.websocket.isActive()) {
+    await qz.websocket.connect();
+  }
+}
+
+async function qzPrintHTML(html) {
+  await qzEnsureConnected();
+  const preferred = localStorage.getItem("preferredPrinter") || null;
+  const cfg = qz.configs.create(preferred || undefined, {
+    // These options help rasterize HTML for ESC/POS-style printers
+    scaleContent: true,
+    rasterize: true,
+    colorType: "grayscale",
+    copies: 1,
+    jobName: "Beypro Receipt",
+  });
+
+  const data = [
+    {
+      type: "html",
+      format: "plain",
+      data: `<html><head><meta charset="utf-8" /></head><body>${html}</body></html>`,
+    },
+  ];
+
+  return qz.print(cfg, data);
+}
+
+
 function renderReceiptHTML(order, layout = defaultLayout) {
   // 1. Gather all items (including suborders)
   const allItems =
@@ -143,10 +175,27 @@ function renderReceiptHTML(order, layout = defaultLayout) {
 }
 
 function autoPrintReceipt(order, layout = defaultLayout) {
-  console.log("🖨️ [GLOBAL] Opening print window for order:", order);
   const html = renderReceiptHTML(order, layout);
+  const method = localStorage.getItem("printMethod") || "system";
 
-  // Try a popup first
+  // Prefer QZ Tray if selected and available
+  if (method === "qz" && window.qz) {
+    qzPrintHTML(html)
+      .then(() => console.log("🖨️ [GLOBAL] QZ print done"))
+      .catch((err) => {
+        console.warn("🖨️ [GLOBAL] QZ failed, falling back to system print:", err);
+        systemPrint(html);
+      });
+    return;
+  }
+
+  // default fallback
+  systemPrint(html);
+}
+
+// System dialog popup/iframe fallback
+function systemPrint(html) {
+  // Try popup first
   const win = window.open("", "PrintWindow", "width=400,height=600");
   if (win && win.document) {
     win.document.write(`
@@ -170,8 +219,7 @@ function autoPrintReceipt(order, layout = defaultLayout) {
     return;
   }
 
-  // Fallback: hidden iframe (works when popups are blocked)
-  console.warn("🖨️ [GLOBAL] Popup blocked — using iframe fallback.");
+  // Fallback: hidden iframe if popup blocked
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";
   iframe.style.right = "0";
@@ -203,6 +251,7 @@ function autoPrintReceipt(order, layout = defaultLayout) {
     setTimeout(() => document.body.removeChild(iframe), 800);
   }, 400);
 }
+
 
 // Global de-dupe: ensure we print a given order only once in a short window
 function shouldPrintNow(orderId, windowMs = 10000) {

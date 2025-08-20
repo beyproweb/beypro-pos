@@ -1,12 +1,39 @@
+<!-- index.html (Vite) -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>HurryPOS Vite</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Beypro POS</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- ▼▼▼ PASTE BELOW THIS LINE, RIGHT ABOVE </body> ▼▼▼ -->
+    <!-- Beypro POS: print helpers (safe to paste anywhere after your root element) -->
+    <div
+      id="beypro-portals"
+      style="position: fixed; left: -99999px; top: -99999px"
+    ></div>
+    <script>
+      // Optional diagnostic: does the browser allow popups (for print window)?
+      window.beyproCanPopup = function () {
+        try {
+          const w = window.open("", "", "width=1,height=1");
+          if (w) {
+            w.close();
+            return true;
+          }
+        } catch (e) {}
+        return false;
+      };
+      // Mark first user gesture so audio/popups can unlock early if needed
+      window.addEventListener("pointerdown", function once() {
+        window.dispatchEvent(new Event("beypro_user_interacted"));
+        window.removeEventListener("pointerdown", once);
+      });
+    </script>
+    <!-- ▲▲▲ PASTE ABOVE THIS LINE ▲▲▲ -->
   </body>
 </html>

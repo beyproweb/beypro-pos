@@ -1,10 +1,10 @@
-import React, { useState,useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import socket from "../../utils/socket";
-console.log("🔌 [AUTO-PRINT] socket:", socket);
-const API_URL = import.meta.env.VITE_API_URL || "";
 
+const API_URL = import.meta.env.VITE_API_URL || "";
 const SHOP_ID = 1;
+
 const previewOrder = {
   id: 12345,
   date: "2025-07-18 13:30",
@@ -36,219 +36,179 @@ const defaultLayout = {
   ],
   showPacketCustomerInfo: true,
   receiptWidth: "58mm",
-     receiptHeight: "",// <--- ADD THIS
+  receiptHeight: "",
 };
-
 
 export default function PrinterTab() {
   const { t } = useTranslation();
+
   const [layout, setLayout] = useState(defaultLayout);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
 
-const [loading, setLoading] = useState(true);
-const [saving, setSaving] = useState(false);
-const [error, setError] = useState("");
-const [success, setSuccess] = useState(false);
-const [autoPrintTable, setAutoPrintTable] = useState(
-  localStorage.getItem("autoPrintTable") === "true"
-);
-const [autoPrintPacket, setAutoPrintPacket] = useState(
-  localStorage.getItem("autoPrintPacket") === "true"
-);
+  const [autoPrintTable, setAutoPrintTable] = useState(
+    localStorage.getItem("autoPrintTable") === "true"
+  );
+  const [autoPrintPacket, setAutoPrintPacket] = useState(
+    localStorage.getItem("autoPrintPacket") === "true"
+  );
 
-async function handleOrderConfirmed(payload) {
-  try {
-    // Resolve a numeric internal order id from various payload shapes
-    const candidates = [
-      payload?.id,
-      payload?.order?.id,
-      payload?.orderId,
-    ];
-    const orderId = candidates
-      .map(v => Number(v))
-      .find(v => Number.isFinite(v)) ?? null;
+  // NEW: printer dropdown state
+  const [printMethod, setPrintMethod] = useState(
+    localStorage.getItem("printMethod") || "system" // "system" | "qz"
+  );
+  const [printers, setPrinters] = useState([]);
+  const [preferredPrinter, setPreferredPrinter] = useState(
+    localStorage.getItem("preferredPrinter") || ""
+  );
+  const [qzStatus, setQzStatus] = useState("disconnected"); // disconnected | connected | error
 
-    if (!Number.isFinite(orderId)) {
-      console.warn("[AUTO-PRINT] Could not parse numeric id from payload:", payload);
-      return; // do NOT fetch /api/orders/undefined
-    }
+  // Load saved layout from backend
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Not found");
+        return res.json();
+      })
+      .then((data) => {
+        if (data.layout) setLayout(data.layout);
+        setError("");
+      })
+      .catch(() => setError("Could not load printer settings."))
+      .finally(() => setLoading(false));
+  }, []);
 
-    const fetchById = async (id) => {
-      const url = `${API_URL}/api/orders/${id}`;
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-      return res.json();
-    };
-
-    // Retry loop to tolerate read-after-write lag
-    const maxAttempts = 10;
-    const baseDelayMs = 400;
-    let lastErr;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const order = await fetchById(orderId);
-
-        // If items aren’t in yet, treat as not-ready and retry
-        const itemCount = Array.isArray(order?.items) ? order.items.length : 0;
-        if (itemCount === 0 && attempt < maxAttempts) {
-          throw new Error(`Order ${orderId} has 0 items (attempt ${attempt})`);
-        }
-
-        console.log("[AUTO-PRINT] Ready to print:", { id: orderId, items: itemCount });
-        await autoPrintReceipt(order);
-        return; // success
-      } catch (err) {
-        lastErr = err;
-        const jitter = Math.floor(Math.random() * 150);
-        const delay = baseDelayMs * attempt + jitter; // simple backoff + jitter
-        await new Promise(r => setTimeout(r, delay));
+  // --- QZ Tray helpers for listing printers ---
+  async function ensureQzConnected() {
+    try {
+      if (!window.qz) throw new Error("QZ Tray not found");
+      if (!qz.websocket.isActive()) {
+        await qz.websocket.connect();
       }
+      setQzStatus("connected");
+      return true;
+    } catch (e) {
+      console.warn("[QZ] connect failed:", e);
+      setQzStatus("error");
+      return false;
     }
-
-    console.error(`[AUTO-PRINT] Failed to fetch order ${orderId} after retries:`, lastErr);
-  } catch (outer) {
-    console.error("[AUTO-PRINT] handleOrderConfirmed fatal:", outer);
   }
-}
 
+  async function loadQzPrinters() {
+    if (printMethod !== "qz") return;
+    const ok = await ensureQzConnected();
+    if (!ok) return;
+    try {
+      const list = await qz.printers.find();
+      setPrinters(list || []);
+      if (!preferredPrinter && list?.length) {
+        setPreferredPrinter(list[0]);
+        localStorage.setItem("preferredPrinter", list[0]);
+      }
+    } catch (e) {
+      console.warn("[QZ] list printers failed:", e);
+    }
+  }
 
-// ✅ Print order receipt in hidden window
-function autoPrintReceipt(order) {
-  const printWindow = window.open("", "PrintWindow", "width=400,height=600");
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>Order Receipt</title>
-        <style>
-          body {
-            font-family: monospace;
-            font-size: ${layout.fontSize}px;
-            line-height: ${layout.lineHeight};
-            text-align: ${layout.alignment};
-            background: #fff;
-            margin: 0;
-          }
-        </style>
-      </head>
-      <body>
-        <div>
-          <h3>${layout.headerText}</h3>
-          <p>Order #${order.id}</p>
-          <p>Total: ₺${order.total}</p>
-          <hr/>
-          ${order.items.map(item => `
-            <div>${item.quantity}x ${item.name} - ₺${item.price}</div>
-          `).join("")}
-          <hr/>
-          <p>${layout.footerText}</p>
-        </div>
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.focus();
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 400);
-}
+  // Load printer list when switching to QZ method
+  useEffect(() => {
+    if (printMethod === "qz") {
+      loadQzPrinters();
+    }
+    return () => {
+      if (window.qz && qz.websocket.isActive()) {
+        qz.websocket.disconnect().catch(() => {});
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printMethod]);
 
-useEffect(() => {
-  if (!socket) return;
+  // Just to show we hear order events here (printing handled globally)
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (payload) => {
+      const idForLog =
+        payload?.orderId ??
+        payload?.id ??
+        payload?.order?.id ??
+        payload?.order_number ??
+        payload?.number ??
+        payload;
+      console.log(
+        "🖨️ [PrinterTab] order_confirmed received:",
+        idForLog,
+        "(preview-only)"
+      );
+    };
+    socket.on("order_confirmed", handler);
+    return () => socket.off("order_confirmed", handler);
+  }, []);
 
-  const handler = (payload) => {
-    const idForLog =
-      payload?.orderId ?? payload?.id ?? payload?.order?.id ??
-      payload?.order_number ?? payload?.number ?? payload;
-    console.log("🖨️ [PrinterTab] order_confirmed received:", idForLog, "(preview-only)");
-    // Printing is centrally handled in GlobalOrderAlert.jsx to avoid duplicates.
-  };
+  // Test print using current preview (system dialog)
+  function handlePrintTest() {
+    const preview = document.getElementById("printable-receipt");
+    if (!preview) return alert("Receipt preview not found!");
 
-  socket.on("order_confirmed", handler);
-  return () => socket.off("order_confirmed", handler);
-}, []);
-
-
-function handlePrintTest() {
-  const preview = document.getElementById("printable-receipt");
-  if (!preview) return alert("Receipt preview not found!");
-
-  // Open print window
-  const printWindow = window.open("", "PrintWindow", "width=400,height=600");
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>Test Print</title>
-        <style>
-          @media print {
+    const printWindow = window.open("", "PrintWindow", "width=400,height=600");
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Test Print</title>
+          <style>
+            @media print { body { margin:0; background:#fff; } }
             body {
-              margin: 0;
+              font-family: monospace;
+              font-size: ${layout.fontSize}px;
+              line-height: ${layout.lineHeight};
+              text-align: ${layout.alignment};
               background: #fff;
             }
-          }
-          body {
-            font-family: monospace;
-            font-size: ${layout.fontSize}px;
-            line-height: ${layout.lineHeight};
-            text-align: ${layout.alignment};
-            background: #fff;
-          }
-          .receipt-preview {
-            width: ${layout.receiptWidth === "custom"
-              ? (layout.customReceiptWidth || "70mm")
-              : layout.receiptWidth};
-            min-height: ${layout.receiptHeight || 400}px;
-            margin: 0 auto;
-            padding: 0;
-            box-shadow: none;
-            border: none;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="receipt-preview">
-          ${preview.innerHTML}
-        </div>
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.focus();
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 400);
-}
+            .receipt-preview {
+              width: ${
+                layout.receiptWidth === "custom"
+                  ? layout.customReceiptWidth || "70mm"
+                  : layout.receiptWidth
+              };
+              min-height: ${layout.receiptHeight || 400}px;
+              margin: 0 auto;
+              padding: 0;
+              box-shadow: none;
+              border: none;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="receipt-preview">
+            ${preview.innerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 400);
+  }
 
-
-useEffect(() => {
-  setLoading(true);
-  fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`)
-    .then(res => {
-      if (!res.ok) throw new Error("Not found");
-      return res.json();
-    })
-    .then(data => {
-      if (data.layout) setLayout(data.layout);
-      setError("");
-    })
-    .catch(() => setError("Could not load printer settings."))
-    .finally(() => setLoading(false));
-}, []);
-  // For adding/editing extras
-  const handle = (k, v) => setLayout(prev => ({ ...prev, [k]: v }));
+  // Handlers for layout form
+  const handle = (k, v) => setLayout((prev) => ({ ...prev, [k]: v }));
   const handleExtraChange = (i, key, v) => {
     const updated = [...layout.extras];
     updated[i][key] = v;
-    setLayout(prev => ({ ...prev, extras: updated }));
+    setLayout((prev) => ({ ...prev, extras: updated }));
   };
   const addExtra = () =>
-    setLayout(prev => ({
+    setLayout((prev) => ({
       ...prev,
       extras: [...prev.extras, { label: "", value: "" }],
     }));
-  const removeExtra = i =>
-    setLayout(prev => ({
+  const removeExtra = (i) =>
+    setLayout((prev) => ({
       ...prev,
       extras: prev.extras.filter((_, idx) => idx !== i),
     }));
@@ -258,34 +218,109 @@ useEffect(() => {
       <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-600 text-transparent bg-clip-text tracking-tight drop-shadow mb-3">
         🖨️ {t("Printer Settings")}
       </h2>
-      <div className="flex gap-4 mb-3">
-  <label className="flex gap-2 items-center">
-    <input
-      type="checkbox"
-      checked={autoPrintTable}
-      onChange={e => {
-        setAutoPrintTable(e.target.checked);
-        localStorage.setItem("autoPrintTable", e.target.checked);
-      }}
-    />
-    Auto Print Table Orders
-  </label>
-  <label className="flex gap-2 items-center">
-    <input
-      type="checkbox"
-      checked={autoPrintPacket}
-      onChange={e => {
-        setAutoPrintPacket(e.target.checked);
-        localStorage.setItem("autoPrintPacket", e.target.checked);
-      }}
-    />
-    Auto Print Packet Orders (Phone/Online)
-  </label>
-</div>
+
+      {/* Auto-print toggles + PRINTER DROPDOWNS */}
+      <div className="flex flex-col gap-4 mb-3">
+        <div className="flex flex-wrap gap-4">
+          <label className="flex gap-2 items-center">
+            <input
+              type="checkbox"
+              checked={autoPrintTable}
+              onChange={(e) => {
+                setAutoPrintTable(e.target.checked);
+                localStorage.setItem("autoPrintTable", e.target.checked);
+              }}
+            />
+            Auto Print Table Orders
+          </label>
+          <label className="flex gap-2 items-center">
+            <input
+              type="checkbox"
+              checked={autoPrintPacket}
+              onChange={(e) => {
+                setAutoPrintPacket(e.target.checked);
+                localStorage.setItem("autoPrintPacket", e.target.checked);
+              }}
+            />
+            Auto Print Packet Orders (Phone/Online)
+          </label>
+        </div>
+
+        <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="font-bold">Auto-print Method</label>
+              <select
+                className="rounded-xl border border-gray-300 p-2 w-full"
+                value={printMethod}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPrintMethod(v);
+                  localStorage.setItem("printMethod", v);
+                }}
+              >
+                <option value="system">System dialog (popup/iframe)</option>
+                <option value="qz">QZ Tray (silent)</option>
+              </select>
+              {printMethod === "qz" && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Requires QZ Tray app running on this computer.
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="font-bold">Preferred Printer</label>
+              <div className="flex gap-2">
+                <select
+                  className="rounded-xl border border-gray-300 p-2 w-full"
+                  disabled={printMethod !== "qz"}
+                  value={preferredPrinter}
+                  onChange={(e) => {
+                    setPreferredPrinter(e.target.value);
+                    localStorage.setItem("preferredPrinter", e.target.value);
+                  }}
+                >
+                  <option value="">(Default system printer)</option>
+                  {printers.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="px-3 py-2 rounded-xl bg-indigo-100 text-indigo-700"
+                  disabled={printMethod !== "qz"}
+                  onClick={() => loadQzPrinters()}
+                >
+                  Refresh
+                </button>
+              </div>
+              {printMethod === "qz" && (
+                <div className="text-xs mt-1">
+                  QZ:{" "}
+                  <span
+                    className={
+                      qzStatus === "connected"
+                        ? "text-green-600"
+                        : qzStatus === "error"
+                        ? "text-red-600"
+                        : "text-gray-600"
+                    }
+                  >
+                    {qzStatus}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <p className="text-gray-500 mb-4">
         {t("Customize how your orders are printed. All changes preview live!")}
       </p>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Controls */}
         <div className="space-y-4">
@@ -296,58 +331,69 @@ useEffect(() => {
               className="border rounded-xl p-2 w-full font-mono resize-y min-h-[60px]"
               rows={2}
               value={layout.shopAddress}
-              onChange={e => handle("shopAddress", e.target.value)}
+              onChange={(e) => handle("shopAddress", e.target.value)}
               placeholder={t("Type your shop's printout address here")}
             />
           </div>
-          <div>
-  <label className="font-bold">{t("Receipt Width")}:</label>
-  <select
-    value={layout.receiptWidth}
-    onChange={e => handle("receiptWidth", e.target.value)}
-    className="rounded-xl border border-gray-300 p-2 w-full"
-  >
-    <option value="58mm">58mm</option>
-    <option value="80mm">80mm</option>
-    <option value="custom">{t("Custom")}</option>
-  </select>
-  {layout.receiptWidth === "custom" && (
-    <input
-      type="text"
-      className="border rounded-xl p-2 w-full mt-2"
-      placeholder={t("Enter width (e.g. 70mm or 300px)")}
-      value={layout.customReceiptWidth || ""}
-      onChange={e => handle("customReceiptWidth", e.target.value)}
-    />
-  )}
-</div>
-<div>
-  <label className="font-bold flex gap-2 items-center">
-    <input
-      type="checkbox"
-      checked={layout.showPacketCustomerInfo}
-      onChange={e => handle("showPacketCustomerInfo", e.target.checked)}
-    />
-    {t("Show Customer Name, Phone & Address on Packet Receipt")}
-  </label>
-  <div className="text-xs text-gray-500 pl-7">
-    {t("When enabled, the packet/delivery receipt will display the customer's info (name, phone, address) at the top.")}
-  </div>
-</div>
-<div>
-  <label className="font-bold">{t("Receipt Height (optional)")}</label>
-  <input
-    type="text"
-    className="border rounded-xl p-2 w-full"
-    placeholder={t("e.g. 300mm, 1000px, or leave blank for auto")}
-    value={layout.receiptHeight || ""}
-    onChange={e => handle("receiptHeight", e.target.value)}
-  />
-  <div className="text-xs text-gray-500">
-    {t("Set a fixed height for your receipt (e.g. 300mm, 1000px). Leave blank for auto height.")}
-  </div>
-</div>
 
+          {/* Width */}
+          <div>
+            <label className="font-bold">{t("Receipt Width")}:</label>
+            <select
+              value={layout.receiptWidth}
+              onChange={(e) => handle("receiptWidth", e.target.value)}
+              className="rounded-xl border border-gray-300 p-2 w-full"
+            >
+              <option value="58mm">58mm</option>
+              <option value="80mm">80mm</option>
+              <option value="custom">{t("Custom")}</option>
+            </select>
+            {layout.receiptWidth === "custom" && (
+              <input
+                type="text"
+                className="border rounded-xl p-2 w-full mt-2"
+                placeholder={t("Enter width (e.g. 70mm or 300px)")}
+                value={layout.customReceiptWidth || ""}
+                onChange={(e) => handle("customReceiptWidth", e.target.value)}
+              />
+            )}
+          </div>
+
+          {/* Packet info toggle */}
+          <div>
+            <label className="font-bold flex gap-2 items-center">
+              <input
+                type="checkbox"
+                checked={layout.showPacketCustomerInfo}
+                onChange={(e) =>
+                  handle("showPacketCustomerInfo", e.target.checked)
+                }
+              />
+              {t("Show Customer Name, Phone & Address on Packet Receipt")}
+            </label>
+            <div className="text-xs text-gray-500 pl-7">
+              {t(
+                "When enabled, the packet/delivery receipt will display the customer's info (name, phone, address) at the top."
+              )}
+            </div>
+          </div>
+
+          {/* Height */}
+          <div>
+            <label className="font-bold">{t("Receipt Height (optional)")}</label>
+            <input
+              type="text"
+              className="border rounded-xl p-2 w-full"
+              placeholder={t("e.g. 300mm, 1000px, or leave blank for auto")}
+              value={layout.receiptHeight || ""}
+              onChange={(e) => handle("receiptHeight", e.target.value)}
+            />
+            <div className="text-xs text-gray-500">
+              {t(
+                "Set a fixed height for your receipt (e.g. 300mm, 1000px). Leave blank for auto height."
+              )}
+            </div>
+          </div>
 
           {/* Extras */}
           <div>
@@ -359,7 +405,7 @@ useEffect(() => {
                     className="border rounded-xl p-2 flex-1"
                     placeholder={t("Label")}
                     value={extra.label}
-                    onChange={e =>
+                    onChange={(e) =>
                       handleExtraChange(i, "label", e.target.value)
                     }
                   />
@@ -367,7 +413,7 @@ useEffect(() => {
                     className="border rounded-xl p-2 flex-1"
                     placeholder={t("Value")}
                     value={extra.value}
-                    onChange={e =>
+                    onChange={(e) =>
                       handleExtraChange(i, "value", e.target.value)
                     }
                   />
@@ -387,6 +433,7 @@ useEffect(() => {
               </button>
             </div>
           </div>
+
           {/* Style controls */}
           <div>
             <label className="font-bold">{t("Font Size")}:</label>
@@ -395,11 +442,12 @@ useEffect(() => {
               min={10}
               max={24}
               value={layout.fontSize}
-              onChange={e => handle("fontSize", Number(e.target.value))}
+              onChange={(e) => handle("fontSize", Number(e.target.value))}
               className="w-full"
             />
             <div className="text-sm text-gray-400">{layout.fontSize}px</div>
           </div>
+
           <div>
             <label className="font-bold">{t("Line Height")}:</label>
             <input
@@ -408,16 +456,17 @@ useEffect(() => {
               max={2}
               step={0.05}
               value={layout.lineHeight}
-              onChange={e => handle("lineHeight", Number(e.target.value))}
+              onChange={(e) => handle("lineHeight", Number(e.target.value))}
               className="w-full"
             />
             <div className="text-sm text-gray-400">{layout.lineHeight}</div>
           </div>
+
           <div>
             <label className="font-bold">{t("Text Alignment")}:</label>
             <select
               value={layout.alignment}
-              onChange={e => handle("alignment", e.target.value)}
+              onChange={(e) => handle("alignment", e.target.value)}
               className="rounded-xl border border-gray-300 p-2 w-full"
             >
               <option value="left">{t("Left")}</option>
@@ -425,12 +474,13 @@ useEffect(() => {
               <option value="right">{t("Right")}</option>
             </select>
           </div>
+
           <div className="flex gap-3 items-center mt-2">
             <label className="flex gap-2 items-center">
               <input
                 type="checkbox"
                 checked={layout.showLogo}
-                onChange={e => handle("showLogo", e.target.checked)}
+                onChange={(e) => handle("showLogo", e.target.checked)}
               />
               {t("Show Logo")}
             </label>
@@ -438,7 +488,7 @@ useEffect(() => {
               <input
                 type="checkbox"
                 checked={layout.showHeader}
-                onChange={e => handle("showHeader", e.target.checked)}
+                onChange={(e) => handle("showHeader", e.target.checked)}
               />
               {t("Show Header")}
             </label>
@@ -446,7 +496,7 @@ useEffect(() => {
               <input
                 type="checkbox"
                 checked={layout.showFooter}
-                onChange={e => handle("showFooter", e.target.checked)}
+                onChange={(e) => handle("showFooter", e.target.checked)}
               />
               {t("Show Footer")}
             </label>
@@ -454,23 +504,22 @@ useEffect(() => {
               <input
                 type="checkbox"
                 checked={layout.showQr}
-                onChange={e => handle("showQr", e.target.checked)}
+                onChange={(e) => handle("showQr", e.target.checked)}
               />
               {t("Show QR")}
             </label>
           </div>
+
           {layout.showHeader && (
             <div>
               <label className="font-bold">{t("Header Text")}:</label>
               <input
                 className="border rounded-xl p-2 w-full"
                 value={layout.headerText}
-                onChange={e => handle("headerText", e.target.value)}
+                onChange={(e) => handle("headerText", e.target.value)}
               />
             </div>
-
           )}
-
 
           {layout.showFooter && (
             <div>
@@ -478,59 +527,61 @@ useEffect(() => {
               <input
                 className="border rounded-xl p-2 w-full"
                 value={layout.footerText}
-                onChange={e => handle("footerText", e.target.value)}
+                onChange={(e) => handle("footerText", e.target.value)}
               />
             </div>
           )}
         </div>
 
-
         {/* Live Preview */}
-<div className="bg-gradient-to-b from-gray-100 to-white rounded-2xl border border-indigo-200 shadow-xl p-6 relative min-h-[450px]">
-  <div
-    id="printable-receipt"
-    style={{
-      fontSize: layout.fontSize,
-      lineHeight: layout.lineHeight,
-      textAlign: layout.alignment,
-      fontFamily: "monospace",
-      width:
-        layout.receiptWidth === "custom"
-          ? (layout.customReceiptWidth || "70mm")
-          : layout.receiptWidth,
-      minHeight: layout.receiptHeight || 400,
-      maxHeight: layout.receiptHeight || "none",
-      height: layout.receiptHeight || "auto",
-      margin: "0 auto",
-      overflow: layout.receiptHeight ? "hidden" : "visible",
-    }}
-  >
-
-            {/* Logo */}
+        <div className="bg-gradient-to-b from-gray-100 to-white rounded-2xl border border-indigo-200 shadow-xl p-6 relative min-h-[450px]">
+          <div
+            id="printable-receipt"
+            style={{
+              fontSize: layout.fontSize,
+              lineHeight: layout.lineHeight,
+              textAlign: layout.alignment,
+              fontFamily: "monospace",
+              width:
+                layout.receiptWidth === "custom"
+                  ? layout.customReceiptWidth || "70mm"
+                  : layout.receiptWidth,
+              minHeight: layout.receiptHeight || 400,
+              maxHeight: layout.receiptHeight || "none",
+              height: layout.receiptHeight || "auto",
+              margin: "0 auto",
+              overflow: layout.receiptHeight ? "hidden" : "visible",
+            }}
+          >
             {layout.showLogo && (
               <div className="flex justify-center mb-2">
                 <img src="/logo192.png" alt="Logo" className="h-10 mb-2" />
               </div>
             )}
-            {/* Header */}
+
             {layout.showHeader && (
               <div className="font-bold text-lg mb-2">{layout.headerText}</div>
             )}
-            {/* Shop Address */}
-            <div className="text-xs whitespace-pre-line mb-2">{layout.shopAddress}</div>
-            <div className="text-xs mb-1">{previewOrder.date}</div>
-            <div className="mb-1">{t("Order")} #{previewOrder.id}</div>
 
-                  {layout.showPacketCustomerInfo && (
-  <>
-    <div className="mb-2 font-bold">{previewOrder.customer}</div>
-    <div className="mb-2">{previewOrder.address}</div>
-    <div className="mb-2">{t("Phone")}: 0555 123 4567</div>
-  </>
-)}
+            <div className="text-xs whitespace-pre-line mb-2">
+              {layout.shopAddress}
+            </div>
+            <div className="text-xs mb-1">{previewOrder.date}</div>
+            <div className="mb-1">
+              {t("Order")} #{previewOrder.id}
+            </div>
+
+            {layout.showPacketCustomerInfo && (
+              <>
+                <div className="mb-2 font-bold">{previewOrder.customer}</div>
+                <div className="mb-2">{previewOrder.address}</div>
+                <div className="mb-2">{t("Phone")}: 0555 123 4567</div>
+              </>
+            )}
+
             <hr className="my-2" />
             <div className="mb-2">
-              {previewOrder.items.map(item => (
+              {previewOrder.items.map((item) => (
                 <div key={item.name} className="flex justify-between">
                   <span>
                     {item.qty}x {item.name}
@@ -547,8 +598,6 @@ useEffect(() => {
               {t("Payment")}: {previewOrder.payment}
             </div>
 
-
-            {/* Extras section in preview */}
             {layout.extras.length > 0 && (
               <div className="mt-4 mb-2 space-y-1">
                 {layout.extras.map(
@@ -563,7 +612,7 @@ useEffect(() => {
                 )}
               </div>
             )}
-            {/* QR */}
+
             {layout.showQr && (
               <div className="flex justify-center mt-3">
                 <img
@@ -572,67 +621,60 @@ useEffect(() => {
                 />
               </div>
             )}
-            {/* Footer */}
+
             {layout.showFooter && (
-              <div className="mt-4 text-xs text-gray-500">{layout.footerText}</div>
+              <div className="mt-4 text-xs text-gray-500">
+                {layout.footerText}
+              </div>
             )}
           </div>
-       <span className="absolute top-3 right-6 bg-indigo-200 text-indigo-800 rounded-xl px-3 py-1 font-mono text-xs shadow live-preview-badge">
-  Live Preview
-</span>
 
+          <span className="absolute top-3 right-6 bg-indigo-200 text-indigo-800 rounded-xl px-3 py-1 font-mono text-xs shadow">
+            Live Preview
+          </span>
         </div>
+
         <button
-  className="px-2 py-2 rounded-xl bg-green-600 text-white font-bold shadow hover:bg-green-700 transition mt-2"
-  onClick={handlePrintTest}
->
-  Print Test Receipt
-</button>
+          className="px-2 py-2 rounded-xl bg-green-600 text-white font-bold shadow hover:bg-green-700 transition mt-2"
+          onClick={handlePrintTest}
+        >
+          Print Test Receipt
+        </button>
       </div>
 
       <button
-  className="px-28 py-2 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition mt-6"
-  disabled={saving}
-  onClick={async () => {
-    setSaving(true);
-    setError("");
-    setSuccess(false);
-    try {
-      const res = await fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`, {
-        method: "PUT", // Use PUT for update, POST for first-time creation
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ layout }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Save failed");
-      }
-      setSuccess(true);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSaving(false);
-      setTimeout(() => setSuccess(false), 1800); // hide success after 1.8s
-    }
-  }}
->
+        className="px-28 py-2 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition mt-6"
+        disabled={saving}
+        onClick={async () => {
+          setSaving(true);
+          setError("");
+          setSuccess(false);
+          try {
+            const res = await fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ layout }),
+            });
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.error || "Save failed");
+            }
+            setSuccess(true);
+          } catch (e) {
+            setError(e.message);
+          } finally {
+            setSaving(false);
+            setTimeout(() => setSuccess(false), 1800);
+          }
+        }}
+      >
+        {saving ? "Saving..." : "Save Printer Settings"}
+      </button>
 
-  {saving ? "Saving..." : "Save Printer Settings"}
-
-
-</button>
-{success && (
-  <div className="mt-2 text-green-600 font-bold animate-pulse">Saved!</div>
-)}
-
-{error && (
-  <div className="mt-2 text-red-600 font-bold">{error}</div>
-)}
-
-
-
+      {success && (
+        <div className="mt-2 text-green-600 font-bold animate-pulse">Saved!</div>
+      )}
+      {error && <div className="mt-2 text-red-600 font-bold">{error}</div>}
     </div>
-
-
   );
 }
