@@ -102,8 +102,18 @@ const orderNumber =
       // 1) Try internal id first if we have it
       if (Number.isFinite(orderId)) {
         try {
-          const order = await fetchById(orderId);
-          autoPrintReceipt(order);
+          // existing code to fetch...
+const order = await fetchById(orderId);
+
+// ADD THIS DEBUG LOG — proves we reached the print step with a real order
+console.log("[AUTO-PRINT] fetched order OK, proceeding to print:", {
+  id: order?.id,
+  items: order?.items?.length,
+  total: order?.total
+});
+
+autoPrintReceipt(order);
+
           return;
         } catch (e1) {
           lastErr = e1;
