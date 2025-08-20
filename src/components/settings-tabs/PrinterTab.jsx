@@ -156,24 +156,16 @@ function autoPrintReceipt(order) {
 useEffect(() => {
   if (!socket) return;
 
-  socket.on("order_confirmed", (payload) => {
+  const handler = (payload) => {
     const idForLog =
       payload?.orderId ?? payload?.id ?? payload?.order?.id ??
       payload?.order_number ?? payload?.number ?? payload;
-    console.log("🖨️ Auto-print event", idForLog, "payload:", payload);
+    console.log("🖨️ [PrinterTab] order_confirmed received:", idForLog, "(preview-only)");
+    // Printing is centrally handled in GlobalOrderAlert.jsx to avoid duplicates.
+  };
 
-    // ✅ If server already sent the full order, print directly (no fetch → no 404 window)
-    if (payload?.order && Array.isArray(payload.order.items)) {
-      console.log("[AUTO-PRINT] using payload.order (no fetch needed)");
-      autoPrintReceipt(payload.order);
-      return;
-    }
-
-    // Fallback: robust fetch/retry if server didn’t bundle the order
-    handleOrderConfirmed(payload);
-  });
-
-  return () => socket.off("order_confirmed");
+  socket.on("order_confirmed", handler);
+  return () => socket.off("order_confirmed", handler);
 }, []);
 
 

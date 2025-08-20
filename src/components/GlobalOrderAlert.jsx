@@ -204,6 +204,24 @@ function autoPrintReceipt(order, layout = defaultLayout) {
   }, 400);
 }
 
+// Global de-dupe: ensure we print a given order only once in a short window
+function shouldPrintNow(orderId, windowMs = 10000) {
+  if (!orderId) return false;
+  const key = String(orderId);
+  const now = Date.now();
+
+  if (!window.__beyproPrinted) window.__beyproPrinted = {};
+  const last = window.__beyproPrinted[key] || 0;
+
+  if (now - last < windowMs) {
+    console.warn(`[PRINT DE-DUPE] Skipping duplicate print for order ${orderId}`);
+    return false;
+  }
+
+  window.__beyproPrinted[key] = now;
+  return true;
+}
+
 
 export default function GlobalOrderAlert() {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
@@ -490,8 +508,15 @@ export default function GlobalOrderAlert() {
   const autoPrintPacket = localStorage.getItem("autoPrintPacket") === "true";
 
   // If server already gave us the full order with items, print immediately
-  if (payload?.order && Array.isArray(payload.order.items) && payload.order.items.length) {
-    const order = payload.order;
+// If server already sent the full order, print directly (no fetch) — ONLY if items exist
+if (payload?.order && Array.isArray(payload.order.items) && payload.order.items.length > 0) {
+  const order = {
+    id: payload.order.id ?? payload.id,
+    ...payload.order,
+  };
+
+  // de-dupe: only print this order once per short window
+  if (shouldPrintNow(order.id)) {
     if (
       (order.order_type === "table" && autoPrintTable) ||
       ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
@@ -499,8 +524,10 @@ export default function GlobalOrderAlert() {
       enqueueSound("new_order");
       autoPrintReceipt(order, layout);
     }
-    return;
   }
+  return; // ok to return, since we successfully handled an order with items
+}
+
 
   // Otherwise, resolve a numeric id from various shapes and fetch with retry
   const candidates = [payload?.orderId, payload?.id, payload?.order?.id, payload?.number];
@@ -533,14 +560,17 @@ export default function GlobalOrderAlert() {
         return;
       }
 
-      if (
-        (order.order_type === "table" && autoPrintTable) ||
-        ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
-      ) {
-        enqueueSound("new_order");
-        autoPrintReceipt(order, layout);
-      }
-      return;
+    if (shouldPrintNow(order.id)) {
+  if (
+    (order.order_type === "table" && autoPrintTable) ||
+    ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
+  ) {
+    enqueueSound("new_order");
+    autoPrintReceipt(order, layout);
+  }
+}
+return; // success
+
     } catch (e) {
       lastErr = e;
       const jitter = Math.floor(Math.random() * 150);
@@ -551,88 +581,21 @@ export default function GlobalOrderAlert() {
   console.error(`[GLOBAL] Failed to fetch order after retries:`, lastErr);
 }
 
+// Watch for order_confirmed (robust payload + retry + print)
+useEffect(() => {
+  const handler = (payload) => {
+    // Small delay to let DB commits settle, then handle
+    setTimeout(() => {
+      handleOrderConfirmed(payload).catch((e) =>
+        console.error("[GLOBAL] onOrderConfirmed fatal:", e)
+      );
+    }, 200);
+  };
 
-  // ✅ Watch for order_confirmed (robust against different payload shapes)
-  useEffect(() => {
-    if (!socket) return;
+  socket.on("order_confirmed", handler);
+  return () => socket.off("order_confirmed", handler);
+}, [layout, enqueueSound]);
 
-    const onOrderConfirmed = async (payload) => {
-      try {
-        const autoPrintTable = localStorage.getItem("autoPrintTable") === "true";
-        const autoPrintPacket = localStorage.getItem("autoPrintPacket") === "true";
-
-        // If server already sent the full order, print directly (no fetch)
-        if (payload?.order && Array.isArray(payload.order.items)) {
-          const order = {
-            id: payload.order.id ?? payload.id,
-            ...payload.order,
-          };
-
-          if (
-            (order.order_type === "table" && autoPrintTable) ||
-            ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
-          ) {
-            enqueueSound("new_order");
-            autoPrintReceipt(order, layout);
-          }
-          return;
-        }
-
-        // Otherwise resolve a numeric id from various possible fields
-        const candidates = [
-          payload?.id,
-          payload?.order?.id,
-          payload?.orderId,
-          payload?.order_number,
-          payload?.number,
-        ];
-        const resolvedId = candidates.map((v) => Number(v)).find((v) => Number.isFinite(v));
-
-        if (!Number.isFinite(resolvedId)) {
-          console.warn("[GLOBAL] order_confirmed without numeric id:", payload);
-          return; // do NOT fetch /undefined
-        }
-
-        // Retry fetch with backoff until items are present (read-after-write tolerance)
-        const maxAttempts = 8;
-        const baseDelayMs = 350;
-        let lastErr;
-
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          try {
-            const res = await fetch(`${API_URL}/api/orders/${resolvedId}`, { cache: "no-store" });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const order = await res.json();
-
-            const itemCount = Array.isArray(order?.items) ? order.items.length : 0;
-            if (itemCount === 0 && attempt < maxAttempts) {
-              throw new Error(`Order ${resolvedId} has 0 items (attempt ${attempt})`);
-            }
-
-            if (
-              (order.order_type === "table" && autoPrintTable) ||
-              ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
-            ) {
-              enqueueSound("new_order");
-              autoPrintReceipt(order, layout);
-            }
-            return; // success
-          } catch (e) {
-            lastErr = e;
-            const jitter = Math.floor(Math.random() * 120);
-            await new Promise((r) => setTimeout(r, baseDelayMs * attempt + jitter));
-          }
-        }
-
-        console.error("[GLOBAL] Failed to fetch order after retries:", lastErr);
-      } catch (e) {
-        console.error("[GLOBAL] onOrderConfirmed fatal:", e);
-      }
-    };
-
-    socket.on("order_confirmed", onOrderConfirmed);
-    return () => socket.off("order_confirmed", onOrderConfirmed);
-  }, [layout, enqueueSound]);
 
   // 🔌 Other socket listeners + polling
   useEffect(() => {
