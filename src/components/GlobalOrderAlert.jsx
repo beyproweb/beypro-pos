@@ -146,33 +146,64 @@ function autoPrintReceipt(order, layout = defaultLayout) {
   console.log("🖨️ [GLOBAL] Opening print window for order:", order);
   const html = renderReceiptHTML(order, layout);
 
-  const printWindow = window.open("", "PrintWindow", "width=400,height=600");
-  printWindow.document.write(`
+  // Try a popup first
+  const win = window.open("", "PrintWindow", "width=400,height=600");
+  if (win && win.document) {
+    win.document.write(`
+      <html>
+        <head>
+          <title>Auto Print Order</title>
+          <style>
+            @media print { body { margin: 0; background: #fff; } }
+            body { font-family: monospace; background: #fff; }
+          </style>
+        </head>
+        <body>${html}</body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => {
+      win.print();
+      win.close();
+    }, 400);
+    return;
+  }
+
+  // Fallback: hidden iframe (works when popups are blocked)
+  console.warn("🖨️ [GLOBAL] Popup blocked — using iframe fallback.");
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(`
     <html>
       <head>
         <title>Auto Print Order</title>
         <style>
-          @media print {
-            body { margin: 0; background: #fff; }
-          }
-          body {
-            font-family: monospace;
-            background: #fff;
-          }
+          @media print { body { margin: 0; background: #fff; } }
+          body { font-family: monospace; background: #fff; }
         </style>
       </head>
-      <body>
-        ${html}
-      </body>
+      <body>${html}</body>
     </html>
   `);
-  printWindow.document.close();
-  printWindow.focus();
+  doc.close();
+
   setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+    setTimeout(() => document.body.removeChild(iframe), 800);
   }, 400);
 }
+
 
 export default function GlobalOrderAlert() {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
@@ -452,6 +483,74 @@ export default function GlobalOrderAlert() {
       }
     }
   }, [pollingChecks, enqueueSound, notificationSettings]);
+
+  async function handleOrderConfirmed(payload) {
+  // Read toggles at event time
+  const autoPrintTable = localStorage.getItem("autoPrintTable") === "true";
+  const autoPrintPacket = localStorage.getItem("autoPrintPacket") === "true";
+
+  // If server already gave us the full order with items, print immediately
+  if (payload?.order && Array.isArray(payload.order.items) && payload.order.items.length) {
+    const order = payload.order;
+    if (
+      (order.order_type === "table" && autoPrintTable) ||
+      ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
+    ) {
+      enqueueSound("new_order");
+      autoPrintReceipt(order, layout);
+    }
+    return;
+  }
+
+  // Otherwise, resolve a numeric id from various shapes and fetch with retry
+  const candidates = [payload?.orderId, payload?.id, payload?.order?.id, payload?.number];
+  const orderId = candidates.map(Number).find(Number.isFinite);
+
+  if (!Number.isFinite(orderId)) {
+    console.warn("[GLOBAL] Could not determine order id from payload:", payload);
+    return;
+  }
+
+  const fetchById = async (id) => {
+    const res = await fetch(`${API_URL}/api/orders/${id}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  };
+
+  const maxAttempts = 10;
+  const baseDelay = 400;
+  let lastErr;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const order = await fetchById(orderId);
+
+      // Ensure items are present before printing (handle eventual consistency)
+      if (!order.items || order.items.length === 0) {
+        if (attempt < maxAttempts) throw new Error(`No items yet (attempt ${attempt})`);
+        // Final attempt — still empty, skip printing to avoid blank receipt
+        console.warn(`[GLOBAL] Order ${orderId} still empty after retries, skipping print.`);
+        return;
+      }
+
+      if (
+        (order.order_type === "table" && autoPrintTable) ||
+        ((order.order_type === "phone" || order.order_type === "packet") && autoPrintPacket)
+      ) {
+        enqueueSound("new_order");
+        autoPrintReceipt(order, layout);
+      }
+      return;
+    } catch (e) {
+      lastErr = e;
+      const jitter = Math.floor(Math.random() * 150);
+      const delay = baseDelay * attempt + jitter;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  console.error(`[GLOBAL] Failed to fetch order after retries:`, lastErr);
+}
+
 
   // ✅ Watch for order_confirmed (robust against different payload shapes)
   useEffect(() => {
