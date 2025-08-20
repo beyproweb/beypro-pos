@@ -144,21 +144,9 @@ function renderReceiptHTML(order, layout = defaultLayout) {
   `;
 }
 
-// NEW: kiosk-friendly, de-duplicated system printing
-const _printedIds = new Set(); // in-memory print lock
-
+// NEW: kiosk-friendly printing (de-dupe handled by shouldPrintNow)
 function autoPrintReceipt(order, layout = defaultLayout) {
   try {
-    const id = order?.id ?? order?.order_number ?? order?.number;
-    if (id) {
-      if (_printedIds.has(id)) {
-        console.log("🖨️ [GLOBAL] Skipping duplicate print for", id);
-        return;
-      }
-      _printedIds.add(id);
-      setTimeout(() => _printedIds.delete(id), 20000); // 20s cooldown
-    }
-
     const html = renderReceiptHTML(order, layout);
     const mode = localStorage.getItem("printingMode") || "standard";
 
@@ -169,13 +157,38 @@ function autoPrintReceipt(order, layout = defaultLayout) {
     }
 
     // Standard: show popup (user can Cancel/OK)
-    popupPrint(html);
+    systemPrint(html);
   } catch (err) {
     console.warn("🖨️ [GLOBAL] autoPrintReceipt failed:", err);
   }
 }
 
 
+// Popup print with a small window (shows dialog unless kiosk flag is set)
+function popupPrint(html) {
+  const win = window.open("", "BeyproPrint", "width=420,height=640");
+  if (win && win.document) {
+    win.document.write(`
+      <html>
+        <head>
+          <title>Print</title>
+          <meta charset="utf-8" />
+          <style>@media print { body { margin:0; } } body{font-family:monospace}</style>
+        </head>
+        <body>${html}</body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => {
+      win.print(); // with --kiosk-printing this is silent
+      setTimeout(() => win.close(), 300);
+    }, 300);
+    return;
+  }
+  // Fallback to iframe if popup blocked
+  iframeSilentPrint(html);
+}
 
 // Hidden iframe print (best for kiosk silent)
 function iframeSilentPrint(html) {
@@ -208,6 +221,11 @@ function iframeSilentPrint(html) {
     setTimeout(() => document.body.removeChild(iframe), 800);
   }, 300);
 }
+
+
+
+
+
 
 // System dialog popup/iframe fallback
 function systemPrint(html) {
