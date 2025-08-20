@@ -206,22 +206,19 @@ useEffect(() => {
       payload?.order_number ?? payload?.number ?? payload;
     console.log("🖨️ Auto-print event", idForLog, "payload:", payload);
 
-    // If the server already bundled the order, print immediately (no fetch = no 404).
+    // ✅ If server already sent the full order, print directly (no fetch → no 404 window)
     if (payload?.order && Array.isArray(payload.order.items)) {
-      console.log("[AUTO-PRINT] using payload.order (no fetch)");
+      console.log("[AUTO-PRINT] using payload.order (no fetch needed)");
       autoPrintReceipt(payload.order);
       return;
     }
 
-    // Fallback to robust fetch+retry handler
+    // Fallback: robust fetch/retry if server didn’t bundle the order
     handleOrderConfirmed(payload);
   });
 
   return () => socket.off("order_confirmed");
 }, []);
-
-
-
 
 
 function handlePrintTest() {
