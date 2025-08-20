@@ -55,109 +55,61 @@ const [autoPrintPacket, setAutoPrintPacket] = useState(
   localStorage.getItem("autoPrintPacket") === "true"
 );
 
-// ✅ FINAL: robust handler with fallback to /by-number and longer retry
-// ✅ FINAL: robust handler with fallback to /by-number and longer retry
 async function handleOrderConfirmed(payload) {
-  // Accept a bunch of payload shapes; also try to discover order_number
-const orderId =
-  Number.isFinite(+payload?.id) ? +payload.id :
-  Number.isFinite(+payload?.orderId) ? +payload.orderId :
-  Number.isFinite(+payload?.order?.id) ? +payload.order.id :
-  null;
+  try {
+    // Resolve a numeric internal order id from various payload shapes
+    const candidates = [
+      payload?.id,
+      payload?.order?.id,
+      payload?.orderId,
+    ];
+    const orderId = candidates
+      .map(v => Number(v))
+      .find(v => Number.isFinite(v)) ?? null;
 
-const orderNumber =
-  payload?.order_number ??
-  payload?.orderNumber ??
-  payload?.number ??
-  payload?.order?.order_number ??
-  payload?.order?.orderNumber ??
-  payload?.order?.number ??
-  (orderId || null);
-
-
-
-  if (!Number.isFinite(orderId) && !orderNumber) {
-    console.warn("🟡 [AUTO-PRINT] Could not parse order id/number from payload:", payload);
-    return;
-  }
-
-  // Helper to fetch by internal id
-  const fetchById = async (id) => {
-    const res = await fetch(`${API_URL}/api/orders/${id}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`by-id HTTP ${res.status}`);
-    return res.json();
-  };
-
- 
-
-  const maxAttempts = 10;  // handles Render spikes
-const backoffMs   = 600; // 0.6s, 1.2s, 1.8s, ...
-
-
-  let lastErr;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      // 1) Try internal id first if we have it
-      if (Number.isFinite(orderId)) {
-        try {
-          // existing code to fetch...
-const order = await fetchById(orderId);
-
-// ADD THIS DEBUG LOG — proves we reached the print step with a real order
-console.log("[AUTO-PRINT] fetched order OK, proceeding to print:", {
-  id: order?.id,
-  items: order?.items?.length,
-  total: order?.total
-});
-
-autoPrintReceipt(order);
-
-          return;
-        } catch (e1) {
-          lastErr = e1;
-          // ⚠️ If by-id failed, we will try by-number using:
-          //    a) explicit orderNumber field if present, else
-          //    b) the same numeric id value (many emitters send public number as "id")
-          const candidateNumber = orderNumber ?? orderId;
-          try {
-            const order = await fetchByNumber(candidateNumber);
-            autoPrintReceipt(order);
-            return;
-          } catch (e2) {
-            lastErr = e2;
-          }
-        }
-      }
-
-      // 2) Or try by-number if we didn’t have a valid id or id failed above
-      if (orderNumber) {
-        try {
-          const order = await fetchByNumber(orderNumber);
-          autoPrintReceipt(order);
-          return;
-        } catch (e3) {
-          lastErr = e3;
-        }
-      }
-
-      throw lastErr || new Error("No valid id/number to fetch");
-    } catch (err) {
-      lastErr = err;
-      await new Promise((r) => setTimeout(r, backoffMs * attempt));
+    if (!Number.isFinite(orderId)) {
+      console.warn("[AUTO-PRINT] Could not parse numeric id from payload:", payload);
+      return; // do NOT fetch /api/orders/undefined
     }
+
+    const fetchById = async (id) => {
+      const url = `${API_URL}/api/orders/${id}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      return res.json();
+    };
+
+    // Retry loop to tolerate read-after-write lag
+    const maxAttempts = 10;
+    const baseDelayMs = 400;
+    let lastErr;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const order = await fetchById(orderId);
+
+        // If items aren’t in yet, treat as not-ready and retry
+        const itemCount = Array.isArray(order?.items) ? order.items.length : 0;
+        if (itemCount === 0 && attempt < maxAttempts) {
+          throw new Error(`Order ${orderId} has 0 items (attempt ${attempt})`);
+        }
+
+        console.log("[AUTO-PRINT] Ready to print:", { id: orderId, items: itemCount });
+        await autoPrintReceipt(order);
+        return; // success
+      } catch (err) {
+        lastErr = err;
+        const jitter = Math.floor(Math.random() * 150);
+        const delay = baseDelayMs * attempt + jitter; // simple backoff + jitter
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+
+    console.error(`[AUTO-PRINT] Failed to fetch order ${orderId} after retries:`, lastErr);
+  } catch (outer) {
+    console.error("[AUTO-PRINT] handleOrderConfirmed fatal:", outer);
   }
-  console.error("[AUTO-PRINT] fetch failed", {
-  triedById: Number.isFinite(orderId) ? `/api/orders/${orderId}` : null,
-  triedByNumber: orderNumber ? `/api/orders/by-number/${orderNumber}` : null,
-  lastErr
-});
-
-
-
-  console.error("❌ [AUTO-PRINT] Failed after retries:", lastErr);
 }
-
-
 
 
 // ✅ Print order receipt in hidden window
@@ -204,44 +156,25 @@ function autoPrintReceipt(order) {
 useEffect(() => {
   if (!socket) return;
 
-  socket.on("order_confirmed", async (payload) => {
-  // Robustly resolve numeric id from the payload we emit server-side
-  const orderId =
-    Number.isFinite(+payload?.id) ? +payload.id :
-    Number.isFinite(+payload?.order?.id) ? +payload.order.id :
-    Number.isFinite(+payload?.orderId) ? +payload.orderId :
-    null;
+  socket.on("order_confirmed", (payload) => {
+    const idForLog =
+      payload?.orderId ?? payload?.id ?? payload?.order?.id ??
+      payload?.order_number ?? payload?.number ?? payload;
+    console.log("🖨️ Auto-print event", idForLog, "payload:", payload);
 
-  if (!Number.isFinite(orderId)) {
-    console.warn("[AUTO-PRINT] Could not parse numeric id from payload:", payload);
-    return; // don't call the backend with 'undefined'
-  }
-
-  // Helper to fetch by internal id only
-  const fetchById = async (id) => {
-    const res = await fetch(`${API_URL}/api/orders/${id}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`by-id HTTP ${res.status}`);
-    return res.json();
-  };
-
-  // Retry a few times in case the items commit lags a bit
-  const maxAttempts = 10;
-  const backoffMs = 500;
-  let lastErr;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const order = await fetchById(orderId);
-      console.log("[AUTO-PRINT] fetched order OK:", { id: order?.id, items: order?.items?.length });
-      await autoPrintReceipt(order);
+    // ✅ If server already sent the full order, print directly (no fetch → no 404 window)
+    if (payload?.order && Array.isArray(payload.order.items)) {
+      console.log("[AUTO-PRINT] using payload.order (no fetch needed)");
+      autoPrintReceipt(payload.order);
       return;
-    } catch (err) {
-      lastErr = err;
-      await new Promise(r => setTimeout(r, backoffMs * attempt));
     }
-  }
-  console.error("❌ [AUTO-PRINT] Failed after retries:", lastErr);
-});
 
+    // Fallback: robust fetch/retry if server didn’t bundle the order
+    handleOrderConfirmed(payload);
+  });
+
+  return () => socket.off("order_confirmed");
+}, []);
 
 
 function handlePrintTest() {
@@ -294,8 +227,6 @@ function handlePrintTest() {
     printWindow.close();
   }, 400);
 }
-
-
 
 
 useEffect(() => {
