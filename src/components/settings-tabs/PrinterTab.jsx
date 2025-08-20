@@ -204,12 +204,22 @@ useEffect(() => {
     const idForLog =
       payload?.orderId ?? payload?.id ?? payload?.order?.id ??
       payload?.order_number ?? payload?.number ?? payload;
-    console.log("🖨️ Auto-printing order", idForLog, "payload:", payload);
+    console.log("🖨️ Auto-print event", idForLog, "payload:", payload);
+
+    // If the server already bundled the order, print immediately (no fetch = no 404).
+    if (payload?.order && Array.isArray(payload.order.items)) {
+      console.log("[AUTO-PRINT] using payload.order (no fetch)");
+      autoPrintReceipt(payload.order);
+      return;
+    }
+
+    // Fallback to robust fetch+retry handler
     handleOrderConfirmed(payload);
   });
 
   return () => socket.off("order_confirmed");
 }, []);
+
 
 
 
