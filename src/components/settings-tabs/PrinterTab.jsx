@@ -179,27 +179,58 @@ export default function PrinterTab() {
       <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="font-bold">Printing Mode</label>
-            <select
-              className="rounded-xl border border-gray-300 p-2 w-full"
-              value={printingMode}
-              onChange={(e) => {
-                const v = e.target.value;
-                setPrintingMode(v);
-                localStorage.setItem("printingMode", v);
-              }}
-            >
-              <option value="standard">Standard (shows dialog)</option>
-              <option value="kiosk">Kiosk Silent (no dialog)</option>
-            </select>
-            <div className="text-xs text-gray-500 mt-1 space-y-1">
-              <div>
-                <b>Kiosk Silent</b> requires launching Chrome with{" "}
-                <code>--kiosk-printing</code>. Uses your OS <b>default printer</b>.
-              </div>
-              <div>Tip: set your thermal printer as default in Windows/macOS.</div>
-            </div>
-          </div>
+  <label className="font-bold">Printing Mode</label>
+  <select
+    className="rounded-xl border border-gray-300 p-2 w-full"
+    value={printingMode}
+    onChange={(e) => {
+      const v = e.target.value;
+      setPrintingMode(v);
+      localStorage.setItem("printingMode", v);
+    }}
+  >
+    <option value="standard">Standard (shows dialog)</option>
+    <option value="kiosk">Kiosk Silent (no dialog)</option>
+    <option value="lan">LAN (send raw ESC/POS to IP)</option>
+  </select>
+
+  <div className="text-xs text-gray-500 mt-1 space-y-1">
+    <div>
+      <b>Kiosk Silent</b> requires Chrome with <code>--kiosk-printing</code>,
+      uses your OS <b>default printer</b>.
+    </div>
+    <div><b>LAN</b> sends raw ESC/POS to <code>TCP :9100</code> (Epson/Star compatible).</div>
+  </div>
+
+  {printingMode === "lan" && (
+    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label className="font-bold">Printer IP</label>
+        <input
+          className="rounded-xl border border-gray-300 p-2 w-full"
+          placeholder="e.g. 192.168.1.50"
+          defaultValue={localStorage.getItem("lanPrinterHost") || ""}
+          onChange={(e) => localStorage.setItem("lanPrinterHost", e.target.value.trim())}
+        />
+      </div>
+      <div>
+        <label className="font-bold">Port</label>
+        <input
+          type="number"
+          className="rounded-xl border border-gray-300 p-2 w-full"
+          placeholder="9100"
+          defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
+          onChange={(e) => localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")}
+        />
+      </div>
+      <div className="md:col-span-2 text-xs text-gray-500">
+        Make sure your thermal printer has <b>Static IP</b> and supports
+        <code> RAW/JetDirect :9100</code>.
+      </div>
+    </div>
+  )}
+</div>
+
 
           <div>
             <label className="font-bold">Auto-print Scope</label>

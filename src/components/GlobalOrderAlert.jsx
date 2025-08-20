@@ -35,120 +35,90 @@ const defaultLayout = {
 
 
 
-function renderReceiptHTML(order, layout = defaultLayout) {
-  // 1. Gather all items (including suborders)
+// Render a simple text receipt for ESC/POS (fits 58mm, monospaced)
+function renderReceiptText(order, layout = defaultLayout) {
   const allItems =
     order.suborders && Array.isArray(order.suborders) && order.suborders.length
       ? order.suborders.flatMap((so) => so.items || [])
       : order.items || [];
 
-  // 2. Calculate grand total with correct extras qty logic
-  const calculateGrandTotal = (items) => {
-    let total = 0;
-    items.forEach((item) => {
-      const qty = parseInt(item.qty || item.quantity || 1);
-      const itemTotal = parseFloat(item.price) * qty;
-      const extrasTotal = (item.extras || []).reduce((sum, ex) => {
-        const extraQty = parseInt(ex.qty || ex.quantity || 1);
-        return sum + qty * extraQty * parseFloat(ex.price || 0);
-      }, 0);
-      total += itemTotal + extrasTotal;
-    });
-    return total.toFixed(2);
-  };
+  const lines = [];
+  const title = (layout.showHeader ? layout.headerText : "Beypro POS");
+  lines.push(title);
+  lines.push((layout.shopAddress || "").split("\n").join(" "));
+  lines.push(new Date(order.created_at || Date.now()).toLocaleString());
+  lines.push(`Order #${order.id}`);
+  if (layout.showPacketCustomerInfo && (order.customer || order.customer_name)) {
+    lines.push(`Cust: ${order.customer || order.customer_name}`);
+    if (order.customer_phone) lines.push(`Phone: ${order.customer_phone}`);
+    if (order.address || order.customer_address)
+      lines.push(`Addr: ${(order.address || order.customer_address).replace(/\s+/g, " ")}`);
+  }
+  lines.push("--------------------------------");
 
-  const grandTotal = calculateGrandTotal(allItems);
+  let grand = 0;
+  for (const it of allItems) {
+    const name = it.name || it.product_name || "Item";
+    const qty = parseInt(it.qty || it.quantity || 1);
+    const price = parseFloat(it.price || 0);
+    grand += qty * price;
 
-  // 3. Build receipt HTML
-  return `
-    <div style="font-size:${layout.fontSize}px;line-height:${layout.lineHeight};text-align:${layout.alignment};font-family:monospace;width:${
-      layout.receiptWidth === "custom"
-        ? layout.customReceiptWidth || "70mm"
-        : layout.receiptWidth
-    };min-height:${layout.receiptHeight || 400}px;">
-      ${layout.showLogo ? `<div style="text-align:center;"><img src='/logo192.png' alt="Logo" style="height:40px;"/></div>` : ""}
-      ${layout.showHeader ? `<div style="font-weight:bold;font-size:16px;">${layout.headerText}</div>` : ""}
-      <div style="font-size:11px;white-space:pre-line">${layout.shopAddress}</div>
-      <div style="font-size:11px;">${order.date || new Date().toLocaleString()}</div>
-      <div>Order #${order.id}</div>
-      ${
-        layout.showPacketCustomerInfo && (order.customer || order.customer_name)
-          ? `<div style="font-weight:bold">${order.customer || order.customer_name}</div>
-             <div>${order.address || order.customer_address || ""}</div>
-             <div>Phone: ${order.customer_phone || ""}</div>`
-          : ""
+    lines.push(`${qty} x ${name}  ${price.toFixed(2)}`);
+    if (Array.isArray(it.extras)) {
+      for (const ex of it.extras) {
+        const exQty = parseInt(ex.qty || ex.quantity || 1);
+        const exPrice = parseFloat(ex.price || 0);
+        grand += qty * exQty * exPrice;
+        const nm = ex.name || ex.label || "extra";
+        lines.push(`  + ${exQty} x ${nm}  ${(qty * exQty * exPrice).toFixed(2)}`);
       }
-      <hr/>
-      <div>
-        ${allItems
-          .map((item) => {
-            const qty = parseInt(item.qty || item.quantity || 1);
-            return `<div style="margin-bottom:4px;">
-                <div style="display:flex;justify-content:space-between">
-                  <span>${qty}x ${item.name || item.product_name}</span>
-                  <span>₺${item.price}</span>
-                </div>
-                ${
-                  item.extras && item.extras.length > 0
-                    ? `<div style="font-size:11px;color:gray;margin-left:8px;">
-                        ${item.extras
-                          .map((ex) => {
-                            const extraQty = parseInt(ex.qty || ex.quantity || 1);
-                            const lineQty = qty * extraQty;
-                            return `<div style="display:flex;justify-content:space-between;">
-                              <span>+${extraQty > 1 ? ` ${extraQty}x ` : " "}${ex.name || ex.label}</span>
-                              <span>₺${(lineQty * parseFloat(ex.price || 0)).toFixed(2)}</span>
-                            </div>`;
-                          })
-                          .join("")}
-                      </div>`
-                    : ""
-                }
-                ${
-                  item.note
-                    ? `<div style="font-size:11px;color:#c2410c;margin-left:8px;">
-                        📝 ${item.note}
-                      </div>`
-                    : ""
-                }
-              </div>`;
-          })
-          .join("")}
-      </div>
-      <hr/>
-      <div style="font-weight:bold;font-size:18px;">Grand Total: ₺${grandTotal}</div>
-      <div>Payment: ${order.payment || order.payment_method || ""}</div>
-      ${
-        layout.extras && layout.extras.length > 0
-          ? `<div style="margin-top:12px;">
-              ${layout.extras
-                .map(
-                  (ex) =>
-                    ex.label && ex.value
-                      ? `<div style="display:flex;justify-content:space-between;font-size:12px;">
-                            <span>${ex.label}:</span>
-                            <span>${ex.value}</span>
-                         </div>`
-                      : ""
-                )
-                .join("")}
-            </div>`
-          : ""
-      }
-      ${
-        layout.showFooter
-          ? `<div style="margin-top:10px;font-size:11px;color:gray;">${layout.footerText}</div>`
-          : ""
-      }
-    </div>
-  `;
+    }
+    if (it.note) lines.push(`  📝 ${it.note}`);
+  }
+
+  lines.push("--------------------------------");
+  lines.push(`TOTAL: ${grand.toFixed(2)} TL`);
+  const pay = order.payment || order.payment_method || "";
+  if (pay) lines.push(`PAYMENT: ${pay}`);
+  if (layout.showFooter && layout.footerText) {
+    lines.push("--------------------------------");
+    lines.push(layout.footerText);
+  }
+  // Feed & space for cut
+  lines.push("");
+  lines.push("");
+  return lines.join("\n");
 }
 
-// NEW: kiosk-friendly printing (de-dupe handled by shouldPrintNow)
+
+
+// NEW: kiosk-friendly + LAN printing (de-dupe handled by shouldPrintNow)
 function autoPrintReceipt(order, layout = defaultLayout) {
   try {
-    const html = renderReceiptHTML(order, layout);
     const mode = localStorage.getItem("printingMode") || "standard";
+
+    if (mode === "lan") {
+      const host = localStorage.getItem("lanPrinterHost");
+      const port = parseInt(localStorage.getItem("lanPrinterPort") || "9100", 10);
+      if (!host) {
+        console.warn("🖨️ [GLOBAL] LAN mode selected but no printer IP set");
+        return;
+      }
+      const text = renderReceiptText(order, layout);
+      fetch(`${API_URL}/api/lan-printers/print-raw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host, port, content: text }),
+      })
+        .then(async (r) => {
+          if (!r.ok) throw new Error((await r.json()).error || "LAN print failed");
+          console.log("🖨️ [GLOBAL] LAN print sent to", host + ":" + port);
+        })
+        .catch((e) => console.warn("🖨️ [GLOBAL] LAN print error:", e));
+      return;
+    }
+
+    const html = renderReceiptHTML(order, layout);
 
     if (mode === "kiosk") {
       // Hidden iframe path works best with Chrome --kiosk-printing (no dialog)
