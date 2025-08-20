@@ -59,17 +59,20 @@ const [autoPrintPacket, setAutoPrintPacket] = useState(
 // ✅ FINAL: robust handler with fallback to /by-number and longer retry
 async function handleOrderConfirmed(payload) {
   // Accept a bunch of payload shapes; also try to discover order_number
-  const orderId = Number(
-    payload?.orderId ?? payload?.id ?? payload?.order?.id ?? payload
-  );
-  const orderNumber =
-    payload?.orderNumber ??
-    payload?.order_number ??
-    payload?.number ??
-    payload?.order?.orderNumber ??
-    payload?.order?.order_number ??
-    payload?.order?.number ??
-    (Number.isFinite(orderId) ? orderId : undefined); // fallback guess
+  const orderId = Number.isFinite(+payload?.id) ? +payload.id
+              : Number.isFinite(+payload?.orderId) ? +payload.orderId
+              : Number.isFinite(+payload?.order?.id) ? +payload.order.id
+              : null;
+
+const orderNumber =
+  payload?.order_number ??
+  payload?.orderNumber ??
+  payload?.number ??
+  payload?.order?.order_number ??
+  payload?.order?.orderNumber ??
+  payload?.order?.number ??
+  (orderId || null);
+
 
   if (!Number.isFinite(orderId) && !orderNumber) {
     console.warn("🟡 [AUTO-PRINT] Could not parse order id/number from payload:", payload);
