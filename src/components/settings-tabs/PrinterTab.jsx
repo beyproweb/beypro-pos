@@ -55,7 +55,7 @@ export default function PrinterTab() {
     localStorage.getItem("autoPrintPacket") === "true"
   );
 
-  // NEW: printer dropdown state
+  // Printer method + preferred printer
   const [printMethod, setPrintMethod] = useState(
     localStorage.getItem("printMethod") || "system" // "system" | "qz"
   );
@@ -81,12 +81,40 @@ export default function PrinterTab() {
       .finally(() => setLoading(false));
   }, []);
 
-  // --- QZ Tray helpers for listing printers ---
+  // Dynamically load qz-tray client if it's missing
+  function loadQzScript() {
+    return new Promise((resolve, reject) => {
+      if (window.qz) return resolve();
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/qz-tray/qz-tray.js";
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("Failed to load qz-tray.js"));
+      document.body.appendChild(s);
+    });
+  }
+
+  // Dev-only: allow unsigned connection during development
+  function setupQzDevSecurity() {
+    if (!window.qz || !qz.security) return;
+    try {
+      qz.security.setCertificatePromise((resolve, reject) => resolve(null));
+      qz.security.setSignaturePromise((toSign) => (resolve, reject) => resolve(null));
+    } catch {}
+  }
+
+  // Robust connect that auto-loads client and uses dev handshake
   async function ensureQzConnected() {
     try {
-      if (!window.qz) throw new Error("QZ Tray not found");
+      if (!window.qz) {
+        await loadQzScript(); // try to load the client if missing
+      }
+      if (!window.qz) throw new Error("QZ Tray client script not found");
+
+      // Dev handshake (unsigned) so connect works without cert during development
+      setupQzDevSecurity();
+
       if (!qz.websocket.isActive()) {
-        await qz.websocket.connect();
+        await qz.websocket.connect(); // requires QZ Tray desktop app running
       }
       setQzStatus("connected");
       return true;
@@ -137,11 +165,7 @@ export default function PrinterTab() {
         payload?.order_number ??
         payload?.number ??
         payload;
-      console.log(
-        "🖨️ [PrinterTab] order_confirmed received:",
-        idForLog,
-        "(preview-only)"
-      );
+      console.log("🖨️ [PrinterTab] order_confirmed received:", idForLog, "(preview-only)");
     };
     socket.on("order_confirmed", handler);
     return () => socket.off("order_confirmed", handler);
@@ -262,9 +286,11 @@ export default function PrinterTab() {
                 <option value="system">System dialog (popup/iframe)</option>
                 <option value="qz">QZ Tray (silent)</option>
               </select>
-              {printMethod === "qz" && (
-                <div className="text-xs text-gray-500 mt-1">
-                  Requires QZ Tray app running on this computer.
+
+              {printMethod === "qz" && qzStatus !== "connected" && (
+                <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-sm p-2">
+                  QZ Tray not connected. Make sure the <b>QZ Tray</b> app is installed and running on this computer,
+                  then click <b>Refresh</b>. Until then, printing will fall back to the system dialog.
                 </div>
               )}
             </div>
