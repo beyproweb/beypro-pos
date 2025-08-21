@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/bridge/(.*)", "destination": "https://hurrypos-backend.onrender.com/bridge/$1" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
