@@ -105,7 +105,8 @@ function autoPrintReceipt(order, layout = defaultLayout) {
         return;
       }
       const text = renderReceiptText(order, layout);
-            fetch(`${API_URL}/api/lan-printers/print-raw`, {
+       const bridge = (localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777").replace(/\/+$/,"");
+      fetch(`${bridge}/print-raw`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ host, port, content: text }),
@@ -123,11 +124,11 @@ function autoPrintReceipt(order, layout = defaultLayout) {
             }
             throw new Error(msg);
           }
-          // Success — JSON or empty is fine
-          console.log("🖨️ [GLOBAL] LAN print sent to", `${host}:${port}`);
+          console.log("🖨️ [GLOBAL] LAN print sent to", `${host}:${port}`, "via", bridge);
         })
         .catch((e) => console.warn("🖨️ [GLOBAL] LAN print error:", e.message || e));
       return;
+
 
     }
 

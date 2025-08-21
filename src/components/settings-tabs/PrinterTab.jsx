@@ -39,6 +39,152 @@ const defaultLayout = {
   receiptHeight: "",
 };
 
+function BridgeTools() {
+  const [bridgeUrl, setBridgeUrl] = React.useState(
+    localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777"
+  );
+  const [status, setStatus] = React.useState("");
+  const [testing, setTesting] = React.useState(false);
+
+  // TODO: set these to your hosted binaries
+  const DOWNLOADS = {
+    mac: "https://your-cdn.example.com/beypro-bridge-mac.zip",
+    win: "https://your-cdn.example.com/beypro-bridge-win.zip",
+    linux: "https://your-cdn.example.com/beypro-bridge-linux.tar.gz",
+  };
+  const ua = navigator.userAgent || "";
+  const os = ua.includes("Mac") ? "mac" : ua.includes("Win") ? "win" : "linux";
+  const suggested = DOWNLOADS[os];
+
+  const saveBridge = (url) => {
+    setBridgeUrl(url);
+    localStorage.setItem("lanBridgeUrl", url);
+  };
+
+  const ping = async () => {
+    setStatus("Pinging…");
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort("timeout"), 1500);
+      const r = await fetch(bridgeUrl.replace(/\/+$/,"") + "/ping", { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json().catch(() => ({}));
+      setStatus(`✅ Bridge online: ${JSON.stringify(j)}`);
+    } catch (e) {
+      setStatus("❌ Bridge not reachable. Is it installed and running?");
+    }
+  };
+
+  const testPrint = async () => {
+    setTesting(true);
+    setStatus("Sending test...");
+    try {
+      const host = localStorage.getItem("lanPrinterHost");
+      const port = parseInt(localStorage.getItem("lanPrinterPort") || "9100", 10);
+      if (!host) {
+        setStatus("⚠️ Set Printer IP first.");
+        setTesting(false);
+        return;
+      }
+      const body = {
+        host,
+        port,
+        content: "Beypro Test\n1x Burger 195.00\nTOTAL 195.00 TL\n\n",
+      };
+      const r = await fetch(bridgeUrl.replace(/\/+$/,"") + "/print-raw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        throw new Error(`HTTP ${r.status} ${t.slice(0,100)}`);
+      }
+      setStatus("✅ Test ticket sent.");
+    } catch (e) {
+      setStatus("❌ Test failed: " + (e.message || e));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-bold">Beypro Print Bridge</span>
+        <a
+          className="px-3 py-1 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700"
+          href={suggested}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Download for this device
+        </a>
+        <a
+          className="px-3 py-1 rounded-xl bg-slate-200 text-slate-800 font-bold shadow hover:bg-slate-300"
+          href={DOWNLOADS.mac}
+          target="_blank"
+          rel="noreferrer"
+        >
+          mac
+        </a>
+        <a
+          className="px-3 py-1 rounded-xl bg-slate-200 text-slate-800 font-bold shadow hover:bg-slate-300"
+          href={DOWNLOADS.win}
+          target="_blank"
+          rel="noreferrer"
+        >
+          windows
+        </a>
+        <a
+          className="px-3 py-1 rounded-xl bg-slate-200 text-slate-800 font-bold shadow hover:bg-slate-300"
+          href={DOWNLOADS.linux}
+          target="_blank"
+          rel="noreferrer"
+        >
+          linux
+        </a>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="md:col-span-2">
+          <label className="font-bold">Bridge URL</label>
+          <input
+            className="rounded-xl border border-gray-300 p-2 w-full"
+            value={bridgeUrl}
+            onChange={(e) => saveBridge(e.target.value.trim())}
+            placeholder="http://127.0.0.1:7777 or http://192.168.1.10:7777"
+          />
+          <div className="text-xs text-gray-500 mt-1">
+            Install the bridge, then keep this URL pointing to your local PC (127.0.0.1) or a central hub.
+          </div>
+        </div>
+        <div className="flex items-end gap-2">
+          <button
+            className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700"
+            onClick={ping}
+            type="button"
+          >
+            Detect Bridge
+          </button>
+          <button
+            className="px-3 py-2 rounded-xl bg-blue-600 text-white font-bold shadow hover:bg-blue-700 disabled:opacity-60"
+            onClick={testPrint}
+            type="button"
+            disabled={testing}
+          >
+            {testing ? "Testing…" : "Test Print"}
+          </button>
+        </div>
+      </div>
+
+      {status && <div className="text-sm">{status}</div>}
+    </div>
+  );
+}
+
+
 export default function PrinterTab() {
   const { t } = useTranslation();
 
@@ -176,91 +322,97 @@ export default function PrinterTab() {
       </h2>
 
       {/* Printing Mode + Auto-print scope */}
-      <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-  <label className="font-bold">Printing Mode</label>
-  <select
-    className="rounded-xl border border-gray-300 p-2 w-full"
-    value={printingMode}
-    onChange={(e) => {
-      const v = e.target.value;
-      setPrintingMode(v);
-      localStorage.setItem("printingMode", v);
-    }}
-  >
-    <option value="standard">Standard (shows dialog)</option>
-    <option value="kiosk">Kiosk Silent (no dialog)</option>
-    <option value="lan">LAN (send raw ESC/POS to IP)</option>
-  </select>
-
-  <div className="text-xs text-gray-500 mt-1 space-y-1">
+<div className="rounded-2xl border p-4 bg-white/70 space-y-3">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {/* Printing Mode */}
     <div>
-      <b>Kiosk Silent</b> requires Chrome with <code>--kiosk-printing</code>,
-      uses your OS <b>default printer</b>.
-    </div>
-    <div><b>LAN</b> sends raw ESC/POS to <code>TCP :9100</code> (Epson/Star compatible).</div>
-  </div>
+      <label className="font-bold">Printing Mode</label>
+      <select
+        className="rounded-xl border border-gray-300 p-2 w-full"
+        value={printingMode}
+        onChange={(e) => {
+          const v = e.target.value;
+          setPrintingMode(v);
+          localStorage.setItem("printingMode", v);
+        }}
+      >
+        <option value="standard">Standard (shows dialog)</option>
+        <option value="kiosk">Kiosk Silent (no dialog)</option>
+        <option value="lan">LAN (Bridge/Hub → ESC/POS)</option>
+      </select>
 
-  {printingMode === "lan" && (
-    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div>
-        <label className="font-bold">Printer IP</label>
-        <input
-          className="rounded-xl border border-gray-300 p-2 w-full"
-          placeholder="e.g. 192.168.1.50"
-          defaultValue={localStorage.getItem("lanPrinterHost") || ""}
-          onChange={(e) => localStorage.setItem("lanPrinterHost", e.target.value.trim())}
-        />
-      </div>
-      <div>
-        <label className="font-bold">Port</label>
-        <input
-          type="number"
-          className="rounded-xl border border-gray-300 p-2 w-full"
-          placeholder="9100"
-          defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
-          onChange={(e) => localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")}
-        />
-      </div>
-      <div className="md:col-span-2 text-xs text-gray-500">
-        Make sure your thermal printer has <b>Static IP</b> and supports
-        <code> RAW/JetDirect :9100</code>.
-      </div>
-    </div>
-  )}
-</div>
-
-
-          <div>
-            <label className="font-bold">Auto-print Scope</label>
-            <div className="flex flex-col gap-2">
-              <label className="flex gap-2 items-center">
-                <input
-                  type="checkbox"
-                  checked={autoPrintTable}
-                  onChange={(e) => {
-                    setAutoPrintTable(e.target.checked);
-                    localStorage.setItem("autoPrintTable", e.target.checked);
-                  }}
-                />
-                Auto Print Table Orders
-              </label>
-              <label className="flex gap-2 items-center">
-                <input
-                  type="checkbox"
-                  checked={autoPrintPacket}
-                  onChange={(e) => {
-                    setAutoPrintPacket(e.target.checked);
-                    localStorage.setItem("autoPrintPacket", e.target.checked);
-                  }}
-                />
-                Auto Print Packet/Delivery Orders
-              </label>
-            </div>
-          </div>
+      <div className="text-xs text-gray-500 mt-1 space-y-1">
+        <div>
+          <b>Kiosk Silent</b> (Chrome <code>--kiosk-printing</code>) prints to your OS <b>default printer</b>.
+        </div>
+        <div>
+          <b>LAN</b> sends ESC/POS to <code>TCP :9100</code> via a small <b>Beypro Print Bridge</b>.
         </div>
       </div>
+
+      {/* Bridge Installer & Tools (only when LAN is selected) */}
+      {printingMode === "lan" && (
+        <div className="mt-4 space-y-3 rounded-xl border bg-white/60 p-3">
+          <BridgeTools />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold">Printer IP</label>
+              <input
+                className="rounded-xl border border-gray-300 p-2 w-full"
+                placeholder="e.g. 192.168.1.50"
+                defaultValue={localStorage.getItem("lanPrinterHost") || ""}
+                onChange={(e) => localStorage.setItem("lanPrinterHost", e.target.value.trim())}
+              />
+            </div>
+            <div>
+              <label className="font-bold">Port</label>
+              <input
+                type="number"
+                className="rounded-xl border border-gray-300 p-2 w-full"
+                placeholder="9100"
+                defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
+                onChange={(e) => localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")}
+              />
+            </div>
+          </div>
+          <div className="text-xs text-gray-500">
+            Give your printer a <b>Static IP</b> and enable RAW/JetDirect <code>:9100</code>.
+          </div>
+        </div>
+      )}
+    </div>
+
+    {/* Auto-print Scope */}
+    <div>
+      <label className="font-bold">Auto-print Scope</label>
+      <div className="flex flex-col gap-2">
+        <label className="flex gap-2 items-center">
+          <input
+            type="checkbox"
+            checked={autoPrintTable}
+            onChange={(e) => {
+              setAutoPrintTable(e.target.checked);
+              localStorage.setItem("autoPrintTable", e.target.checked);
+            }}
+          />
+          Auto Print Table Orders
+        </label>
+        <label className="flex gap-2 items-center">
+          <input
+            type="checkbox"
+            checked={autoPrintPacket}
+            onChange={(e) => {
+              setAutoPrintPacket(e.target.checked);
+              localStorage.setItem("autoPrintPacket", e.target.checked);
+            }}
+          />
+          Auto Print Packet/Delivery Orders
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
 
       <p className="text-gray-500 mb-4">
         {t("Customize how your orders are printed. All changes preview live!")}
