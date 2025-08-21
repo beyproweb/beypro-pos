@@ -320,17 +320,17 @@ export default function PrinterTab() {
       <div className="flex flex-wrap gap-2">
         <a
           className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700"
-          href="/bridge/beypro-bridge-mac.zip"
+          href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}
           target="_blank" rel="noreferrer"
         >Download for macOS</a>
         <a
           className="px-3 py-2 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-900"
-          href="/bridge/beypro-bridge-win-x64.zip"
+          href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}
           target="_blank" rel="noreferrer"
         >Download for Windows</a>
         <a
           className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700"
-          href="/bridge/beypro-bridge-linux-x64.tar.gz"
+          href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}
           target="_blank" rel="noreferrer"
         >Download for Linux</a>
       </div>
