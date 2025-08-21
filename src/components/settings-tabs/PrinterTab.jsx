@@ -3,6 +3,9 @@ import { useTranslation } from "react-i18next";
 import socket from "../../utils/socket";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
+// Prefer env backend; fallback to your Render backend
+const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://hurrypos-backend.onrender.com";
+
 const SHOP_ID = 1;
 
 const previewOrder = {
@@ -46,12 +49,12 @@ function BridgeTools() {
   const [status, setStatus] = React.useState("");
   const [testing, setTesting] = React.useState(false);
 
-  // TODO: set these to your hosted binaries
   const DOWNLOADS = {
-    mac: "https://hurrypos-backend.onrender.com/bridge/beypro-bridge-mac.zip",
-    win: "https://hurrypos-backend.onrender.com/bridge/beypro-bridge-win.zip",
-    linux: "https://hurrypos-backend.onrender.com/bridge/beypro-bridge-linux.tar.gz",
+    mac: `${BACKEND}/bridge/beypro-bridge-mac.zip`,
+    win: `${BACKEND}/bridge/beypro-bridge-win-x64.zip`,
+    linux: `${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`,
   };
+
   const ua = navigator.userAgent || "";
   const os = ua.includes("Mac") ? "mac" : ua.includes("Win") ? "win" : "linux";
   const suggested = DOWNLOADS[os];
@@ -114,37 +117,21 @@ function BridgeTools() {
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-bold">Beypro Print Bridge</span>
         <a
-          className="px-3 py-1 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700"
-          href={suggested}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Download for this device
-        </a>
-        <a
-          className="px-3 py-1 rounded-xl bg-slate-200 text-slate-800 font-bold shadow hover:bg-slate-300"
-          href={DOWNLOADS.mac}
-          target="_blank"
-          rel="noreferrer"
-        >
-          mac
-        </a>
-        <a
-          className="px-3 py-1 rounded-xl bg-slate-200 text-slate-800 font-bold shadow hover:bg-slate-300"
-          href={DOWNLOADS.win}
-          target="_blank"
-          rel="noreferrer"
-        >
-          windows
-        </a>
-        <a
-          className="px-3 py-1 rounded-xl bg-slate-200 text-slate-800 font-bold shadow hover:bg-slate-300"
-          href={DOWNLOADS.linux}
-          target="_blank"
-          rel="noreferrer"
-        >
-          linux
-        </a>
+  className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700"
+  href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}
+  target="_blank" rel="noreferrer"
+>Download for macOS</a>
+<a
+  className="px-3 py-2 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-900"
+  href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}
+  target="_blank" rel="noreferrer"
+>Download for Windows</a>
+<a
+  className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+  href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}
+  target="_blank" rel="noreferrer"
+>Download for Linux</a>
+
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
