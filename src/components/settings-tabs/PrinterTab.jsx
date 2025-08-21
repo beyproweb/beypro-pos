@@ -325,62 +325,98 @@ export default function PrinterTab() {
 <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
     {/* Printing Mode */}
-    <div>
-      <label className="font-bold">Printing Mode</label>
-      <select
-        className="rounded-xl border border-gray-300 p-2 w-full"
-        value={printingMode}
-        onChange={(e) => {
-          const v = e.target.value;
-          setPrintingMode(v);
-          localStorage.setItem("printingMode", v);
-        }}
-      >
-        <option value="standard">Standard (shows dialog)</option>
-        <option value="kiosk">Kiosk Silent (no dialog)</option>
-        <option value="lan">LAN (Bridge/Hub → ESC/POS)</option>
-      </select>
+   {printingMode === "lan" && (
+  <div className="mt-3 space-y-3">
+    {/* STEP 1: Download & install */}
+    <div className="rounded-xl border bg-white/60 p-3">
+      <div className="font-bold mb-2">Step 1 — Download Beypro Bridge</div>
+      <div className="flex flex-wrap gap-2">
+        <a
+          className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700"
+          href="/bridge/beypro-bridge-mac.zip"
+          target="_blank" rel="noreferrer"
+        >Download for macOS</a>
+        <a
+          className="px-3 py-2 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-900"
+          href="/bridge/beypro-bridge-win-x64.zip"
+          target="_blank" rel="noreferrer"
+        >Download for Windows</a>
+        <a
+          className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+          href="/bridge/beypro-bridge-linux-x64.tar.gz"
+          target="_blank" rel="noreferrer"
+        >Download for Linux</a>
+      </div>
+      <div className="text-xs text-gray-600 mt-2">
+        Open the download and keep the Bridge running. If macOS/Windows asks, click <b>Allow</b>.
+      </div>
+    </div>
 
-      <div className="text-xs text-gray-500 mt-1 space-y-1">
-        <div>
-          <b>Kiosk Silent</b> (Chrome <code>--kiosk-printing</code>) prints to your OS <b>default printer</b>.
+    {/* STEP 2: Detect Bridge */}
+    <div className="rounded-xl border bg-white/60 p-3">
+      <div className="font-bold mb-2">Step 2 — Detect Bridge</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="md:col-span-2">
+          <label className="font-bold">Local Bridge URL</label>
+          <input
+            className="rounded-xl border border-gray-300 p-2 w-full"
+            placeholder="http://127.0.0.1:7777"
+            defaultValue={localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777"}
+            onChange={(e) => localStorage.setItem("lanBridgeUrl", e.target.value.trim())}
+          />
+          <div className="text-xs text-gray-500 mt-1">
+            Usually <code>http://127.0.0.1:7777</code> on this computer.
+          </div>
         </div>
-        <div>
-          <b>LAN</b> sends ESC/POS to <code>TCP :9100</code> via a small <b>Beypro Print Bridge</b>.
+        <div className="flex items-end">
+          <button
+            type="button"
+            className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 w-full"
+            onClick={async () => {
+              const u = (localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777").replace(/\/+$/,"");
+              try {
+                const r = await fetch(u + "/ping", { method: "GET" });
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                alert("✅ Bridge detected at " + u);
+              } catch {
+                alert("❌ Bridge not reachable. Please open the Bridge app, then try again.");
+              }
+            }}
+          >
+            Detect Bridge
+          </button>
         </div>
       </div>
-
-      {/* Bridge Installer & Tools (only when LAN is selected) */}
-      {printingMode === "lan" && (
-        <div className="mt-4 space-y-3 rounded-xl border bg-white/60 p-3">
-          <BridgeTools />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="font-bold">Printer IP</label>
-              <input
-                className="rounded-xl border border-gray-300 p-2 w-full"
-                placeholder="e.g. 192.168.1.50"
-                defaultValue={localStorage.getItem("lanPrinterHost") || ""}
-                onChange={(e) => localStorage.setItem("lanPrinterHost", e.target.value.trim())}
-              />
-            </div>
-            <div>
-              <label className="font-bold">Port</label>
-              <input
-                type="number"
-                className="rounded-xl border border-gray-300 p-2 w-full"
-                placeholder="9100"
-                defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
-                onChange={(e) => localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")}
-              />
-            </div>
-          </div>
-          <div className="text-xs text-gray-500">
-            Give your printer a <b>Static IP</b> and enable RAW/JetDirect <code>:9100</code>.
-          </div>
-        </div>
-      )}
     </div>
+
+    {/* STEP 3: Set Printer IP/Port */}
+    <div className="rounded-xl border bg-white/60 p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label className="font-bold">Printer IP</label>
+        <input
+          className="rounded-xl border border-gray-300 p-2 w-full"
+          placeholder="e.g. 192.168.1.50"
+          defaultValue={localStorage.getItem("lanPrinterHost") || ""}
+          onChange={(e) => localStorage.setItem("lanPrinterHost", e.target.value.trim())}
+        />
+      </div>
+      <div>
+        <label className="font-bold">Port</label>
+        <input
+          type="number"
+          className="rounded-xl border border-gray-300 p-2 w-full"
+          placeholder="9100"
+          defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
+          onChange={(e) => localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")}
+        />
+      </div>
+      <div className="md:col-span-2 text-xs text-gray-500">
+        Set your printer to a <b>Static IP</b> and enable RAW/JetDirect <code>:9100</code>.
+      </div>
+    </div>
+  </div>
+)}
+
 
     {/* Auto-print Scope */}
     <div>
