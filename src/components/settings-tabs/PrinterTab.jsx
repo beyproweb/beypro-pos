@@ -48,9 +48,9 @@ function BridgeTools() {
 
   // TODO: set these to your hosted binaries
   const DOWNLOADS = {
-    mac: "https://your-cdn.example.com/beypro-bridge-mac.zip",
-    win: "https://your-cdn.example.com/beypro-bridge-win.zip",
-    linux: "https://your-cdn.example.com/beypro-bridge-linux.tar.gz",
+    mac: "https://hurrypos-backend.onrender.com/bridge/beypro-bridge-mac.zip",
+    win: "https://hurrypos-backend.onrender.com/bridge/beypro-bridge-win.zip",
+    linux: "https://hurrypos-backend.onrender.com/bridge/beypro-bridge-linux.tar.gz",
   };
   const ua = navigator.userAgent || "";
   const os = ua.includes("Mac") ? "mac" : ua.includes("Win") ? "win" : "linux";
