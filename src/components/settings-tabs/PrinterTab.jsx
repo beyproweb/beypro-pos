@@ -48,6 +48,9 @@ function BridgeTools() {
   );
   const [status, setStatus] = React.useState("");
   const [testing, setTesting] = React.useState(false);
+  const [scanning, setScanning] = React.useState(false);
+  const [found, setFound] = React.useState([]); // [{host,port}]
+
 
   const DOWNLOADS = {
     mac: `${BACKEND}/bridge/beypro-bridge-mac.zip`,
@@ -62,6 +65,28 @@ function BridgeTools() {
   const saveBridge = (url) => {
     setBridgeUrl(url);
     localStorage.setItem("lanBridgeUrl", url);
+  };
+
+  const scanPrinters = async () => {
+    setScanning(true);
+    setStatus("Scanning LAN for printers on :9100…");
+    setFound([]);
+    try {
+      const u = bridgeUrl.replace(/\/+$/,"") + "/discover";
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort("timeout"), 20000);
+      const r = await fetch(u, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      if (!j.ok) throw new Error("Scan failed");
+      setFound(Array.isArray(j.results) ? j.results : []);
+      setStatus(`Found ${Array.isArray(j.results) ? j.results.length : 0} printer(s).`);
+    } catch (e) {
+      setStatus("Scan failed: " + (e.message || e));
+    } finally {
+      setScanning(false);
+    }
   };
 
   const ping = async () => {
@@ -396,6 +421,34 @@ export default function PrinterTab() {
           defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
           onChange={(e) => localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")}
         />
+      </div>
+      <div className="md:col-span-2 flex items-center gap-2">
+        <button
+          type="button"
+         onClick={scanPrinters}
+          disabled={scanning}
+          className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {scanning ? "Scanning…" : "Find Printers (Scan)"}
+        </button>
+        {found.length > 0 && (
+          <select
+            className="rounded-xl border border-gray-300 p-2"
+            onChange={(e) => {
+              const host = e.target.value;
+              if (host) {
+                localStorage.setItem("lanPrinterHost", host);
+                setStatus(`Selected ${host} as printer host.`);
+              }
+            }}
+            defaultValue=""
+          >
+            <option value="" disabled>Select a printer</option>
+            {found.map(({host, port}) => (
+              <option key={host} value={host}>{host}:{port}</option>
+            ))}
+          </select>
+        )}
       </div>
       <div className="md:col-span-2 text-xs text-gray-500">
         Set your printer to a <b>Static IP</b> and enable RAW/JetDirect <code>:9100</code>.
