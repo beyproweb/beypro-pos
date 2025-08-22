@@ -1,208 +1,221 @@
-import React, { useState, useEffect } from "react";
+// src/pages/PrinterTab.jsx
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import socket from "../../utils/socket";
 
+// Prefer your prod backend when VITE_API_URL is not set
+const API_URL = import.meta?.env?.VITE_API_URL || "";
+const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://pos.beypro.com";
 
-  function BridgeTools() {
-  const [bridgeUrl, setBridgeUrl] = React.useState(
+function BridgeTools() {
+  const { t } = useTranslation();
+
+  const [bridgeUrl, setBridgeUrl] = useState(
     localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777"
   );
-  const [status, setStatus] = React.useState("");
-  const [testing, setTesting] = React.useState(false);
+  const [status, setStatus] = useState("");
+  const [testing, setTesting] = useState(false);
 
+  // NEW: scan state
+  const [scanning, setScanning] = useState(false);
+  const [found, setFound] = useState([]); // [{host, port}]
 
-  const DOWNLOADS = {
-    mac: `${BACKEND}/bridge/beypro-bridge-mac.zip`,
-    win: `${BACKEND}/bridge/beypro-bridge-win-x64.zip`,
-    linux: `${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`,
-  };
-
-  const ua = navigator.userAgent || "";
-  const os = ua.includes("Mac") ? "mac" : ua.includes("Win") ? "win" : "linux";
-  const suggested = DOWNLOADS[os];
-
+  // Persist immediately when changed
   const saveBridge = (url) => {
-    setBridgeUrl(url);
-    localStorage.setItem("lanBridgeUrl", url);
+    const clean = (url || "").trim().replace(/\/+$/, "");
+    setBridgeUrl(clean);
+    localStorage.setItem("lanBridgeUrl", clean);
   };
 
-
-
-  const ping = async () => {
-    setStatus("Pinging…");
+  const pingBridge = async () => {
     try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort("timeout"), 1500);
-      const r = await fetch(bridgeUrl.replace(/\/+$/,"") + "/ping", { signal: ctrl.signal });
-      clearTimeout(t);
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const j = await r.json().catch(() => ({}));
-      setStatus(`✅ Bridge online: ${JSON.stringify(j)}`);
+      setStatus("Checking bridge…");
+      const r = await fetch(`${bridgeUrl}/ping`, { cache: "no-store" });
+      if (!r.ok) throw new Error("Bridge HTTP " + r.status);
+      const j = await r.json();
+      setStatus(`Bridge online ✅ (${new Date(j.ts || Date.now()).toLocaleTimeString()})`);
     } catch (e) {
-      setStatus("❌ Bridge not reachable. Is it installed and running?");
+      setStatus("Bridge offline ❌ " + (e.message || e));
     }
   };
 
-  const testPrint = async () => {
-    setTesting(true);
-    setStatus("Sending test...");
-    try {
-      const host = localStorage.getItem("lanPrinterHost");
-      const port = parseInt(localStorage.getItem("lanPrinterPort") || "9100", 10);
-      if (!host) {
-        setStatus("⚠️ Set Printer IP first.");
-        setTesting(false);
-        return;
-      }
-      const body = {
-        host,
-        port,
-        content: "Beypro Test\n1x Burger 195.00\nTOTAL 195.00 TL\n\n",
-      };
-      const r = await fetch(bridgeUrl.replace(/\/+$/,"") + "/print-raw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!r.ok) {
-        const t = await r.text().catch(() => "");
-        throw new Error(`HTTP ${r.status} ${t.slice(0,100)}`);
-      }
-      setStatus("✅ Test ticket sent.");
-    } catch (e) {
-      setStatus("❌ Test failed: " + (e.message || e));
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-bold">Beypro Print Bridge</span>
-        <a
-  className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700"
-  href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}
-  target="_blank" rel="noreferrer"
->Download for macOS</a>
-<a
-  className="px-3 py-2 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-900"
-  href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}
-  target="_blank" rel="noreferrer"
->Download for Windows</a>
-<a
-  className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700"
-  href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}
-  target="_blank" rel="noreferrer"
->Download for Linux</a>
-
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="md:col-span-2">
-          <label className="font-bold">Bridge URL</label>
-          <input
-            className="rounded-xl border border-gray-300 p-2 w-full"
-            value={bridgeUrl}
-            onChange={(e) => saveBridge(e.target.value.trim())}
-            placeholder="http://127.0.0.1:7777 or http://192.168.1.10:7777"
-          />
-          <div className="text-xs text-gray-500 mt-1">
-            Install the bridge, then keep this URL pointing to your local PC (127.0.0.1) or a central hub.
-          </div>
-        </div>
-        <div className="flex items-end gap-2">
-          <button
-            className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700"
-            onClick={ping}
-            type="button"
-          >
-            Detect Bridge
-          </button>
-          <button
-            className="px-3 py-2 rounded-xl bg-blue-600 text-white font-bold shadow hover:bg-blue-700 disabled:opacity-60"
-            onClick={testPrint}
-            type="button"
-            disabled={testing}
-          >
-            {testing ? "Testing…" : "Test Print"}
-          </button>
-        </div>
-      </div>
-
-      {status && <div className="text-sm">{status}</div>}
-    </div>
-  );
-}
-const API_URL = import.meta.env.VITE_API_URL || "";
-// Prefer env backend; fallback to your Render backend
-const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://hurrypos-backend.onrender.com";
-
+  // NEW: scan printers on LAN via bridge /discover
   const scanPrinters = async () => {
     setScanning(true);
-    setStatus("Scanning LAN for printers on :9100…");
+    setStatus("Scanning LAN for :9100 printers…");
     setFound([]);
     try {
-      const u = bridgeUrl.replace(/\/+$/,"") + "/discover";
+      const u = `${bridgeUrl.replace(/\/+$/, "")}/discover`;
       const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort("timeout"), 20000);
-      const r = await fetch(u, { signal: ctrl.signal });
-      clearTimeout(t);
-      if (!r.ok) throw new Error("HTTP " + r.status);
+      const timer = setTimeout(() => ctrl.abort("timeout"), 25000);
+      const r = await fetch(u, { signal: ctrl.signal, cache: "no-store" });
+      clearTimeout(timer);
+      if (!r.ok) throw new Error("Scan HTTP " + r.status);
       const j = await r.json();
-      if (!j.ok) throw new Error("Scan failed");
-      setFound(Array.isArray(j.results) ? j.results : []);
-      setStatus(`Found ${Array.isArray(j.results) ? j.results.length : 0} printer(s).`);
+      const list = Array.isArray(j.results) ? j.results : [];
+      setFound(list);
+      setStatus(`Found ${list.length} printer(s).`);
     } catch (e) {
-      setStatus("Scan failed: " + (e.message || e));
+      setStatus("Scan failed ❌ " + (e.message || e));
     } finally {
       setScanning(false);
     }
   };
 
-const SHOP_ID = 1;
+  // Test print uses stored host/port + longer timeout
+  const testPrint = async () => {
+    try {
+      setTesting(true);
+      setStatus("Sending test print…");
+      const host = (localStorage.getItem("lanPrinterHost") || "").trim();
+      const port = Number(localStorage.getItem("lanPrinterPort") || "9100") || 9100;
+      if (!host) throw new Error("Set Printer IP first.");
+      const body = {
+        host,
+        port,
+        content: "Beypro Test\n1x Burger 195.00\nTOTAL 195.00 TL\n",
+        timeoutMs: 15000,
+      };
+      const r = await fetch(`${bridgeUrl}/print-raw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error || `Print HTTP ${r.status}`);
+      }
+      setStatus("Test sent ✅ Check your printer.");
+    } catch (e) {
+      setStatus("Print failed ❌ " + (e.message || e));
+    } finally {
+      setTesting(false);
+    }
+  };
 
-const previewOrder = {
-  id: 12345,
-  date: "2025-07-18 13:30",
-  customer: "Shai Hurry",
-  address: "123 Smashburger Ave.",
-  items: [
-    { name: "Smash Burger", qty: 2, price: 195 },
-    { name: "Fries", qty: 1, price: 59 },
-    { name: "Coke", qty: 1, price: 35 },
-  ],
-  total: 484,
-  payment: "Cash",
-};
+  useEffect(() => {
+    // Auto ping on mount
+    pingBridge();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-const defaultLayout = {
-  fontSize: 14,
-  lineHeight: 1.3,
-  showLogo: true,
-  showQr: true,
-  showHeader: true,
-  showFooter: true,
-  headerText: "Beypro POS - HurryBey",
-  footerText: "Thank you for your order! / Teşekkürler!",
-  alignment: "left",
-  shopAddress: "Your Shop Address\n123 Street Name, İzmir",
-  extras: [
-    { label: "Instagram", value: "@yourshop" },
-    { label: "Tax No", value: "1234567890" },
-  ],
-  showPacketCustomerInfo: true,
-  receiptWidth: "58mm",
-  receiptHeight: "",
-};
+  return (
+    <div className="space-y-4">
+      {/* Step 1 — Download & Install */}
+      <div className="rounded-xl border bg-white/60 p-4 space-y-2">
+        <h3 className="text-xl font-bold">Step 1 — Download & Install Beypro Bridge</h3>
+        <div className="flex flex-wrap gap-2">
+          <a className="px-3 py-2 rounded-xl bg-black text-white"
+             href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}>macOS (ZIP)</a>
+          <a className="px-3 py-2 rounded-xl bg-blue-700 text-white"
+             href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}>Windows (ZIP)</a>
+          <a className="px-3 py-2 rounded-xl bg-gray-800 text-white"
+             href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}>Linux (TAR.GZ)</a>
+        </div>
+        <p className="text-xs text-gray-600">
+          After download, run the included installer to auto‑start Bridge on login.
+        </p>
+      </div>
 
+      {/* Step 2 — Bridge URL */}
+      <div className="rounded-xl border bg-white/60 p-4 space-y-2">
+        <h3 className="text-xl font-bold">Step 2 — Detect Bridge</h3>
+        <div className="flex gap-2">
+          <input
+            className="rounded-xl border p-2 flex-1"
+            value={bridgeUrl}
+            onChange={(e) => saveBridge(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={pingBridge}
+            className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold"
+          >
+            {t("Detect Bridge")}
+          </button>
+        </div>
+        <div className="text-sm text-gray-700">{status}</div>
+      </div>
 
+      {/* Step 3 — Set Printer & Scan */}
+      <div className="rounded-xl border bg-white/60 p-4 space-y-3">
+        <h3 className="text-xl font-bold">Step 3 — Set Printer IP / Port</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="font-semibold">Printer IP</label>
+            <input
+              className="rounded-xl border p-2 w-full"
+              placeholder="e.g. 192.168.1.50"
+              defaultValue={localStorage.getItem("lanPrinterHost") || ""}
+              onChange={(e) => localStorage.setItem("lanPrinterHost", e.target.value.trim())}
+            />
+          </div>
+          <div>
+            <label className="font-semibold">Port</label>
+            <input
+              type="number"
+              className="rounded-xl border p-2 w-full"
+              placeholder="9100"
+              defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
+              onChange={(e) =>
+                localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")
+              }
+            />
+          </div>
 
+          <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={scanPrinters}
+              disabled={scanning}
+              className="px-3 py-2 rounded-xl bg-purple-600 text-white font-bold disabled:opacity-50"
+            >
+              {scanning ? "Scanning…" : "Find Printers (Scan)"}
+            </button>
+
+            {found.length > 0 && (
+              <select
+                className="rounded-xl border p-2"
+                defaultValue=""
+                onChange={(e) => {
+                  const host = e.target.value;
+                  if (host) {
+                    localStorage.setItem("lanPrinterHost", host);
+                    setStatus(`Selected ${host} as printer host.`);
+                  }
+                }}
+              >
+                <option value="" disabled>Select a printer</option>
+                {found.map(({ host, port }) => (
+                  <option key={host} value={host}>{host}:{port}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div className="md:col-span-2 text-xs text-gray-600">
+            Tip: Set your printer to a <b>Static IP</b> and enable RAW/JetDirect <code>9100</code>.
+          </div>
+        </div>
+      </div>
+
+      {/* Step 4 — Test Print */}
+      <div className="rounded-xl border bg-white/60 p-4 space-y-2">
+        <h3 className="text-xl font-bold">Step 4 — Test Print</h3>
+        <button
+          type="button"
+          onClick={testPrint}
+          disabled={testing}
+          className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-50"
+        >
+          {testing ? "Printing…" : "Send Test Ticket"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function PrinterTab() {
   const { t } = useTranslation();
-  const [scanning, setScanning] = React.useState(false);
-  const [found, setFound] = React.useState([]); // [{host,port}]
 
   const [layout, setLayout] = useState(defaultLayout);
   const [loading, setLoading] = useState(true);
@@ -221,8 +234,6 @@ export default function PrinterTab() {
   const [printingMode, setPrintingMode] = useState(
     localStorage.getItem("printingMode") || "standard" // 'standard' | 'kiosk'
   );
-
-
 
   // Load saved layout from backend
   useEffect(() => {
@@ -428,10 +439,10 @@ export default function PrinterTab() {
           onChange={(e) => localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")}
         />
       </div>
-      <div className="md:col-span-2 flex items-center gap-2">
+            <div className="md:col-span-2 flex items-center gap-2">
         <button
           type="button"
-         onClick={scanPrinters}
+          onClick={scanPrinters}
           disabled={scanning}
           className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-50"
         >
