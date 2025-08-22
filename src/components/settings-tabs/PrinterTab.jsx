@@ -137,8 +137,6 @@ import socket from "../../utils/socket";
 const API_URL = import.meta.env.VITE_API_URL || "";
 // Prefer env backend; fallback to your Render backend
 const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://hurrypos-backend.onrender.com";
-  const [scanning, setScanning] = React.useState(false);
-  const [found, setFound] = React.useState([]); // [{host,port}]
 
   const scanPrinters = async () => {
     setScanning(true);
@@ -203,6 +201,8 @@ const defaultLayout = {
 
 export default function PrinterTab() {
   const { t } = useTranslation();
+  const [scanning, setScanning] = React.useState(false);
+  const [found, setFound] = React.useState([]); // [{host,port}]
 
   const [layout, setLayout] = useState(defaultLayout);
   const [loading, setLoading] = useState(true);
