@@ -2,47 +2,8 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import socket from "../../utils/socket";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
-// Prefer env backend; fallback to your Render backend
-const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://hurrypos-backend.onrender.com";
 
-const SHOP_ID = 1;
-
-const previewOrder = {
-  id: 12345,
-  date: "2025-07-18 13:30",
-  customer: "Shai Hurry",
-  address: "123 Smashburger Ave.",
-  items: [
-    { name: "Smash Burger", qty: 2, price: 195 },
-    { name: "Fries", qty: 1, price: 59 },
-    { name: "Coke", qty: 1, price: 35 },
-  ],
-  total: 484,
-  payment: "Cash",
-};
-
-const defaultLayout = {
-  fontSize: 14,
-  lineHeight: 1.3,
-  showLogo: true,
-  showQr: true,
-  showHeader: true,
-  showFooter: true,
-  headerText: "Beypro POS - HurryBey",
-  footerText: "Thank you for your order! / Teşekkürler!",
-  alignment: "left",
-  shopAddress: "Your Shop Address\n123 Street Name, İzmir",
-  extras: [
-    { label: "Instagram", value: "@yourshop" },
-    { label: "Tax No", value: "1234567890" },
-  ],
-  showPacketCustomerInfo: true,
-  receiptWidth: "58mm",
-  receiptHeight: "",
-};
-
-function BridgeTools() {
+  function BridgeTools() {
   const [bridgeUrl, setBridgeUrl] = React.useState(
     localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777"
   );
@@ -67,27 +28,7 @@ function BridgeTools() {
     localStorage.setItem("lanBridgeUrl", url);
   };
 
-  const scanPrinters = async () => {
-    setScanning(true);
-    setStatus("Scanning LAN for printers on :9100…");
-    setFound([]);
-    try {
-      const u = bridgeUrl.replace(/\/+$/,"") + "/discover";
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort("timeout"), 20000);
-      const r = await fetch(u, { signal: ctrl.signal });
-      clearTimeout(t);
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const j = await r.json();
-      if (!j.ok) throw new Error("Scan failed");
-      setFound(Array.isArray(j.results) ? j.results : []);
-      setStatus(`Found ${Array.isArray(j.results) ? j.results.length : 0} printer(s).`);
-    } catch (e) {
-      setStatus("Scan failed: " + (e.message || e));
-    } finally {
-      setScanning(false);
-    }
-  };
+
 
   const ping = async () => {
     setStatus("Pinging…");
@@ -195,6 +136,69 @@ function BridgeTools() {
     </div>
   );
 }
+const API_URL = import.meta.env.VITE_API_URL || "";
+// Prefer env backend; fallback to your Render backend
+const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://hurrypos-backend.onrender.com";
+
+  const scanPrinters = async () => {
+    setScanning(true);
+    setStatus("Scanning LAN for printers on :9100…");
+    setFound([]);
+    try {
+      const u = bridgeUrl.replace(/\/+$/,"") + "/discover";
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort("timeout"), 20000);
+      const r = await fetch(u, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      if (!j.ok) throw new Error("Scan failed");
+      setFound(Array.isArray(j.results) ? j.results : []);
+      setStatus(`Found ${Array.isArray(j.results) ? j.results.length : 0} printer(s).`);
+    } catch (e) {
+      setStatus("Scan failed: " + (e.message || e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
+const SHOP_ID = 1;
+
+const previewOrder = {
+  id: 12345,
+  date: "2025-07-18 13:30",
+  customer: "Shai Hurry",
+  address: "123 Smashburger Ave.",
+  items: [
+    { name: "Smash Burger", qty: 2, price: 195 },
+    { name: "Fries", qty: 1, price: 59 },
+    { name: "Coke", qty: 1, price: 35 },
+  ],
+  total: 484,
+  payment: "Cash",
+};
+
+const defaultLayout = {
+  fontSize: 14,
+  lineHeight: 1.3,
+  showLogo: true,
+  showQr: true,
+  showHeader: true,
+  showFooter: true,
+  headerText: "Beypro POS - HurryBey",
+  footerText: "Thank you for your order! / Teşekkürler!",
+  alignment: "left",
+  shopAddress: "Your Shop Address\n123 Street Name, İzmir",
+  extras: [
+    { label: "Instagram", value: "@yourshop" },
+    { label: "Tax No", value: "1234567890" },
+  ],
+  showPacketCustomerInfo: true,
+  receiptWidth: "58mm",
+  receiptHeight: "",
+};
+
+
 
 
 export default function PrinterTab() {
@@ -217,6 +221,8 @@ export default function PrinterTab() {
   const [printingMode, setPrintingMode] = useState(
     localStorage.getItem("printingMode") || "standard" // 'standard' | 'kiosk'
   );
+
+
 
   // Load saved layout from backend
   useEffect(() => {
