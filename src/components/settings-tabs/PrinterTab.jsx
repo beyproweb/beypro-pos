@@ -279,7 +279,7 @@ export default function PrinterTab() {
   // Load saved layout from backend
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_URL}/api/printer-settings/${SHOP_ID_SAFE}`)
+    fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`)
       .then((res) => {
         if (!res.ok) throw new Error("Not found");
         return res.json();
@@ -782,7 +782,7 @@ export default function PrinterTab() {
           setError("");
           setSuccess(false);
           try {
-            const res = await fetch(`${API_URL}/api/printer-settings/${SHOP_ID_SAFE}`, {
+            const res = await fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ layout }),
