@@ -6,6 +6,23 @@ import { useTranslation } from "react-i18next";
 const API_URL = import.meta?.env?.VITE_API_URL || "";
 const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://pos.beypro.com";
 
+const defaultLayout = {
+  shopAddress: "",
+  receiptWidth: "80mm",
+  customReceiptWidth: "",
+  receiptHeight: "",
+  fontSize: 14,
+  lineHeight: 1.2,
+  alignment: "left",
+  showLogo: false,
+  showHeader: false,
+  showFooter: false,
+  showQr: false,
+  headerText: "",
+  footerText: "",
+  showPacketCustomerInfo: false,
+  extras: [],
+};
 function BridgeTools() {
   const { t } = useTranslation();
 
