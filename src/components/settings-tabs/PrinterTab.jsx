@@ -29,7 +29,7 @@ const defaultLayout = {
 const previewOrder = {
   id: 1234,
   date: new Date().toLocaleString(),
-  customer: "John Doe",
+  customer: "Hurry Bey",
   address: "Test Mah. No: 5, İzmir",
   payment: "Card",
   items: [
@@ -40,6 +40,8 @@ const previewOrder = {
     return this.items.reduce((s, i) => s + i.price * i.qty, 0);
   },
 };
+
+
 
 // Safe SHOP_ID for API calls
 const SHOP_ID_SAFE =
@@ -279,7 +281,7 @@ export default function PrinterTab() {
   // Load saved layout from backend
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`)
+    fetch(`${API_URL}/api/printer-settings`)
       .then((res) => {
         if (!res.ok) throw new Error("Not found");
         return res.json();
@@ -782,7 +784,7 @@ export default function PrinterTab() {
           setError("");
           setSuccess(false);
           try {
-            const res = await fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`, {
+            const res = await fetch(`${API_URL}/api/printer-settings`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ layout }),
