@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 const API_URL = import.meta?.env?.VITE_API_URL || "";
 const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://pos.beypro.com";
 
+// Default printer layout (keep in sync with backend DEFAULT_LAYOUT)
 const defaultLayout = {
   shopAddress: "",
   receiptWidth: "80mm",
@@ -23,6 +24,28 @@ const defaultLayout = {
   showPacketCustomerInfo: false,
   extras: [],
 };
+
+// Demo preview order to avoid ReferenceError
+const previewOrder = {
+  id: 1234,
+  date: new Date().toLocaleString(),
+  customer: "John Doe",
+  address: "Test Mah. No: 5, İzmir",
+  payment: "Card",
+  items: [
+    { name: "Smash Burger", qty: 1, price: 195 },
+    { name: "Fries", qty: 1, price: 65 },
+  ],
+  get total() {
+    return this.items.reduce((s, i) => s + i.price * i.qty, 0);
+  },
+};
+
+// Safe SHOP_ID for API calls
+const SHOP_ID_SAFE =
+  (typeof SHOP_ID !== "undefined" ? SHOP_ID : (import.meta?.env?.VITE_SHOP_ID || "default"));
+
+// ---------- BridgeTools: LAN discovery + test via local bridge ----------
 function BridgeTools() {
   const { t } = useTranslation();
 
@@ -55,7 +78,7 @@ function BridgeTools() {
     }
   };
 
-  // NEW: scan printers on LAN via bridge /discover
+  // Scan printers on LAN via bridge /discover
   const scanPrinters = async () => {
     setScanning(true);
     setStatus("Scanning LAN for :9100 printers…");
@@ -78,7 +101,7 @@ function BridgeTools() {
     }
   };
 
-  // Test print uses stored host/port + longer timeout
+  // Test print via bridge using stored host/port
   const testPrint = async () => {
     try {
       setTesting(true);
@@ -129,7 +152,7 @@ function BridgeTools() {
              href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}>Linux (TAR.GZ)</a>
         </div>
         <p className="text-xs text-gray-600">
-          After download, run the included installer to auto‑start Bridge on login.
+          After download, run the included installer to auto-start Bridge on login.
         </p>
       </div>
 
@@ -215,7 +238,7 @@ function BridgeTools() {
         </div>
       </div>
 
-      {/* Step 4 — Test Print */}
+      {/* Step 4 — Test Print (Bridge direct) */}
       <div className="rounded-xl border bg-white/60 p-4 space-y-2">
         <h3 className="text-xl font-bold">Step 4 — Test Print</h3>
         <button
@@ -231,6 +254,7 @@ function BridgeTools() {
   );
 }
 
+// ---------- PrinterTab ----------
 export default function PrinterTab() {
   const { t } = useTranslation();
 
@@ -249,19 +273,19 @@ export default function PrinterTab() {
 
   // NEW: simple printing mode (no third-party)
   const [printingMode, setPrintingMode] = useState(
-    localStorage.getItem("printingMode") || "standard" // 'standard' | 'kiosk'
+    localStorage.getItem("printingMode") || "standard" // 'standard' | 'kiosk' | 'lan'
   );
 
   // Load saved layout from backend
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`)
+    fetch(`${API_URL}/api/printer-settings/${SHOP_ID_SAFE}`)
       .then((res) => {
         if (!res.ok) throw new Error("Not found");
         return res.json();
       })
       .then((data) => {
-        if (data.layout) setLayout(data.layout);
+        if (data.layout) setLayout({ ...defaultLayout, ...data.layout });
         setError("");
       })
       .catch(() => setError("Could not load printer settings."))
@@ -270,7 +294,8 @@ export default function PrinterTab() {
 
   // Just to show we hear order events here (printing handled globally)
   useEffect(() => {
-    if (!socket) return;
+    const sock = (typeof socket !== "undefined" ? socket : (typeof window !== "undefined" ? window.socket : null));
+    if (!sock) return;
     const handler = (payload) => {
       const idForLog =
         payload?.orderId ??
@@ -281,16 +306,15 @@ export default function PrinterTab() {
         payload;
       console.log("🖨️ [PrinterTab] order_confirmed received:", idForLog, "(preview-only)");
     };
-    socket.on("order_confirmed", handler);
-    return () => socket.off("order_confirmed", handler);
+    sock.on("order_confirmed", handler);
+    return () => sock.off("order_confirmed", handler);
   }, []);
 
-  // Test print using current preview
+  // Test print using current preview (browser print path)
   function handlePrintTest() {
     const preview = document.getElementById("printable-receipt");
     if (!preview) return alert("Receipt preview not found!");
 
-    // Use same path as kiosk (iframe) so user sees expected behavior with flag
     const iframe = document.createElement("iframe");
     iframe.style.position = "fixed";
     iframe.style.right = "0";
@@ -368,161 +392,62 @@ export default function PrinterTab() {
       </h2>
 
       {/* Printing Mode + Auto-print scope */}
-<div className="rounded-2xl border p-4 bg-white/70 space-y-3">
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    {/* Printing Mode */}
-   {printingMode === "lan" && (
-  <div className="mt-3 space-y-3">
-    {/* STEP 1: Download & install */}
-    <div className="rounded-xl border bg-white/60 p-3">
-      <div className="font-bold mb-2">Step 1 — Download Beypro Bridge</div>
-      <div className="flex flex-wrap gap-2">
-        <a
-          className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700"
-          href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}
-          target="_blank" rel="noreferrer"
-        >Download for macOS</a>
-        <a
-          className="px-3 py-2 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-900"
-          href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}
-          target="_blank" rel="noreferrer"
-        >Download for Windows</a>
-        <a
-          className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700"
-          href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}
-          target="_blank" rel="noreferrer"
-        >Download for Linux</a>
-      </div>
-      <div className="text-xs text-gray-600 mt-2">
-        Open the download and keep the Bridge running. If macOS/Windows asks, click <b>Allow</b>.
-      </div>
-    </div>
+      <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Printing Mode selector */}
+          <div className="space-y-2">
+            <label className="font-bold">Printing Mode</label>
+            <select
+              className="rounded-xl border p-2 w-full"
+              value={printingMode}
+              onChange={(e) => {
+                const val = e.target.value;
+                setPrintingMode(val);
+                localStorage.setItem("printingMode", val);
+              }}
+            >
+              <option value="standard">Standard (Browser Print)</option>
+              <option value="kiosk">Kiosk (Silent Print)</option>
+              <option value="lan">LAN Thermal (Bridge)</option>
+            </select>
+            <p className="text-xs text-gray-500">
+              Choose how printing should work on this device.
+            </p>
+          </div>
 
-    {/* STEP 2: Detect Bridge */}
-    <div className="rounded-xl border bg-white/60 p-3">
-      <div className="font-bold mb-2">Step 2 — Detect Bridge</div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="md:col-span-2">
-          <label className="font-bold">Local Bridge URL</label>
-          <input
-            className="rounded-xl border border-gray-300 p-2 w-full"
-            placeholder="http://127.0.0.1:7777"
-            defaultValue={localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777"}
-            onChange={(e) => localStorage.setItem("lanBridgeUrl", e.target.value.trim())}
-          />
-          <div className="text-xs text-gray-500 mt-1">
-            Usually <code>http://127.0.0.1:7777</code> on this computer.
+          {/* Auto-print Scope */}
+          <div>
+            <label className="font-bold">Auto-print Scope</label>
+            <div className="flex flex-col gap-2">
+              <label className="flex gap-2 items-center">
+                <input
+                  type="checkbox"
+                  checked={autoPrintTable}
+                  onChange={(e) => {
+                    setAutoPrintTable(e.target.checked);
+                    localStorage.setItem("autoPrintTable", e.target.checked);
+                  }}
+                />
+                Auto Print Table Orders
+              </label>
+              <label className="flex gap-2 items-center">
+                <input
+                  type="checkbox"
+                  checked={autoPrintPacket}
+                  onChange={(e) => {
+                    setAutoPrintPacket(e.target.checked);
+                    localStorage.setItem("autoPrintPacket", e.target.checked);
+                  }}
+                />
+                Auto Print Packet/Delivery Orders
+              </label>
+            </div>
           </div>
         </div>
-        <div className="flex items-end">
-          <button
-            type="button"
-            className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 w-full"
-            onClick={async () => {
-              const u = (localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777").replace(/\/+$/,"");
-              try {
-                const r = await fetch(u + "/ping", { method: "GET" });
-                if (!r.ok) throw new Error("HTTP " + r.status);
-                alert("✅ Bridge detected at " + u);
-              } catch {
-                alert("❌ Bridge not reachable. Please open the Bridge app, then try again.");
-              }
-            }}
-          >
-            Detect Bridge
-          </button>
-        </div>
       </div>
-    </div>
 
-    {/* STEP 3: Set Printer IP/Port */}
-    <div className="rounded-xl border bg-white/60 p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div>
-        <label className="font-bold">Printer IP</label>
-        <input
-          className="rounded-xl border border-gray-300 p-2 w-full"
-          placeholder="e.g. 192.168.1.50"
-          defaultValue={localStorage.getItem("lanPrinterHost") || ""}
-          onChange={(e) => localStorage.setItem("lanPrinterHost", e.target.value.trim())}
-        />
-      </div>
-      <div>
-        <label className="font-bold">Port</label>
-        <input
-          type="number"
-          className="rounded-xl border border-gray-300 p-2 w-full"
-          placeholder="9100"
-          defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
-          onChange={(e) => localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")}
-        />
-      </div>
-            <div className="md:col-span-2 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={scanPrinters}
-          disabled={scanning}
-          className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {scanning ? "Scanning…" : "Find Printers (Scan)"}
-        </button>
-        {found.length > 0 && (
-          <select
-            className="rounded-xl border border-gray-300 p-2"
-            onChange={(e) => {
-              const host = e.target.value;
-              if (host) {
-                localStorage.setItem("lanPrinterHost", host);
-                setStatus(`Selected ${host} as printer host.`);
-              }
-            }}
-            defaultValue=""
-          >
-            <option value="" disabled>Select a printer</option>
-            {found.map(({host, port}) => (
-              <option key={host} value={host}>{host}:{port}</option>
-            ))}
-          </select>
-        )}
-      </div>
-      <div className="md:col-span-2 text-xs text-gray-500">
-        Set your printer to a <b>Static IP</b> and enable RAW/JetDirect <code>:9100</code>.
-      </div>
-    </div>
-  </div>
-)}
-
-
-    {/* Auto-print Scope */}
-    <div>
-      <label className="font-bold">Auto-print Scope</label>
-      <div className="flex flex-col gap-2">
-        <label className="flex gap-2 items-center">
-          <input
-            type="checkbox"
-            checked={autoPrintTable}
-            onChange={(e) => {
-              setAutoPrintTable(e.target.checked);
-              localStorage.setItem("autoPrintTable", e.target.checked);
-            }}
-          />
-          Auto Print Table Orders
-        </label>
-        <label className="flex gap-2 items-center">
-          <input
-            type="checkbox"
-            checked={autoPrintPacket}
-            onChange={(e) => {
-              setAutoPrintPacket(e.target.checked);
-              localStorage.setItem("autoPrintPacket", e.target.checked);
-            }}
-          />
-          Auto Print Packet/Delivery Orders
-        </label>
-      </div>
-    </div>
-  </div>
-</div>
-
+      {/* Show LAN tools when selected (contains scanPrinters definition) */}
+      {printingMode === "lan" && <BridgeTools />}
 
       <p className="text-gray-500 mb-4">
         {t("Customize how your orders are printed. All changes preview live!")}
@@ -857,7 +782,7 @@ export default function PrinterTab() {
           setError("");
           setSuccess(false);
           try {
-            const res = await fetch(`${API_URL}/api/printer-settings/${SHOP_ID}`, {
+            const res = await fetch(`${API_URL}/api/printer-settings/${SHOP_ID_SAFE}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ layout }),
