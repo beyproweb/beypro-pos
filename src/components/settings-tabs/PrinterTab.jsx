@@ -3,9 +3,8 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 // Prefer your prod backend when VITE_API_URL is not set
-const API_URL = import.meta?.env?.VITE_API_URL || "";
-const BACKEND = (API_URL && API_URL.replace(/\/+$/, "")) || "https://pos.beypro.com";
-
+ const API_URL = (import.meta?.env?.VITE_API_URL || "https://hurrypos-backend.onrender.com").replace(/\/+$/, "");
+ const BACKEND = "https://pos.beypro.com";
 // Default printer layout (keep in sync with backend DEFAULT_LAYOUT)
 const defaultLayout = {
   shopAddress: "",
