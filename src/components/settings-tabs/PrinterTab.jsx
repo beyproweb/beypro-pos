@@ -47,61 +47,43 @@ const SHOP_ID_SAFE =
   (typeof SHOP_ID !== "undefined" ? SHOP_ID : (import.meta?.env?.VITE_SHOP_ID || "default"));
 
 // ---------- BridgeTools: LAN discovery + test via local bridge ----------
+// ---------- BridgeTools: LAN discovery + test via local bridge ----------
 function BridgeTools() {
   const { t } = useTranslation();
 
+  // State
   const [bridgeUrl, setBridgeUrl] = useState(
     localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777"
   );
   const [status, setStatus] = useState("");
   const [testing, setTesting] = useState(false);
-
-  // NEW: scan state
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState([]); // [{host, port}]
+  // ✅ define these so the button & fixer work
   const [loading, setLoading] = useState(false);
-  const [selectedHost, setSelectedHost] = useState("");
+  const [selectedHost, setSelectedHost] = useState(
+    localStorage.getItem("lanPrinterHost") || ""
+  );
 
-    async function runFixScript() {
-  resetStatus();
-  const host = selectedHost || layout.printerHost;
-  if (!host) {
-    setError("Select a printer (or type its IP) first.");
-    return;
-  }
-  setLoading(true);
-  try {
-    const res = await fetch(`${BRIDGE}/assist/fix-printer`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printerHost: host }) // you can also pass adapterAlias/tempIp if needed
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      throw new Error(data.error || "Failed to launch fix script.");
-    }
-    setMsg("PowerShell launched (with Admin). Follow the window instructions, switch printer to DHCP, reboot, then click Rescan.");
-  } catch (e) {
-    setError("Could not launch PowerShell. Ensure Beypro Bridge is running and try Run as Administrator.");
-  } finally {
-    setLoading(false);
-  }
-}
+  const resetStatus = () => setStatus("");
 
-  // Persist immediately when changed
+  // Persist Bridge URL
   const saveBridge = (url) => {
     const clean = (url || "").trim().replace(/\/+$/, "");
     setBridgeUrl(clean);
     localStorage.setItem("lanBridgeUrl", clean);
   };
 
+  // Ping local bridge
   const pingBridge = async () => {
     try {
       setStatus("Checking bridge…");
       const r = await fetch(`${bridgeUrl}/ping`, { cache: "no-store" });
       if (!r.ok) throw new Error("Bridge HTTP " + r.status);
       const j = await r.json();
-      setStatus(`Bridge online ✅ (${new Date(j.ts || Date.now()).toLocaleTimeString()})`);
+      setStatus(
+        `Bridge online ✅ (${new Date(j.ts || Date.now()).toLocaleTimeString()})`
+      );
     } catch (e) {
       setStatus("Bridge offline ❌ " + (e.message || e));
     }
@@ -135,7 +117,8 @@ function BridgeTools() {
     try {
       setTesting(true);
       setStatus("Sending test print…");
-      const host = (localStorage.getItem("lanPrinterHost") || "").trim();
+      const host =
+        selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
       const port = Number(localStorage.getItem("lanPrinterPort") || "9100") || 9100;
       if (!host) throw new Error("Set Printer IP first.");
       const body = {
@@ -161,8 +144,38 @@ function BridgeTools() {
     }
   };
 
+  // 🔧 Windows-only assisted fixer (launches elevated PowerShell via bridge)
+  const runFixScript = async () => {
+    resetStatus();
+    const host = selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
+    if (!host) {
+      setStatus("Select a printer (or type its IP) first.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${bridgeUrl}/assist/fix-printer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ printerHost: host }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Failed to launch fix script.");
+      }
+      setStatus(
+        "PowerShell launched (Admin). Switch the printer to DHCP, reboot it, then click Rescan."
+      );
+    } catch (e) {
+      setStatus(
+        "Could not launch PowerShell. Ensure Beypro Bridge is running and try Run as Administrator."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Auto ping on mount
     pingBridge();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -214,8 +227,12 @@ function BridgeTools() {
             <input
               className="rounded-xl border p-2 w-full"
               placeholder="e.g. 192.168.1.50"
-              defaultValue={localStorage.getItem("lanPrinterHost") || ""}
-              onChange={(e) => localStorage.setItem("lanPrinterHost", e.target.value.trim())}
+              defaultValue={selectedHost}
+              onChange={(e) => {
+                const host = e.target.value.trim();
+                setSelectedHost(host);
+                localStorage.setItem("lanPrinterHost", host);
+              }}
             />
           </div>
           <div>
@@ -247,7 +264,7 @@ function BridgeTools() {
                 defaultValue=""
                 onChange={(e) => {
                   const host = e.target.value;
-                  setSelectedHost(host);
+                  setSelectedHost(host); // ✅ keep in state
                   if (host) {
                     localStorage.setItem("lanPrinterHost", host);
                     setStatus(`Selected ${host} as printer host.`);
@@ -280,18 +297,20 @@ function BridgeTools() {
           {testing ? "Printing…" : "Send Test Ticket"}
         </button>
       </div>
-      <button
-  className="px-3 py-2 rounded bg-indigo-600 text-white disabled:opacity-50"
-  onClick={runFixScript}
-  disabled={loading || (!selectedHost && !layout.printerHost)}
-  title="Launch PowerShell fixer to temporarily add IP, open printer UI, and clean up"
->
-  Fix via PowerShell Script
-</button>
 
+      {/* Windows PowerShell helper */}
+      <button
+        className="px-3 py-2 rounded bg-indigo-600 text-white disabled:opacity-50"
+        onClick={runFixScript}
+        disabled={loading || !(selectedHost || localStorage.getItem("lanPrinterHost"))}
+        title="Launch PowerShell fixer to temporarily add IP, open printer UI, and clean up"
+      >
+        Fix via PowerShell Script
+      </button>
     </div>
   );
 }
+
 
 // ---------- PrinterTab ----------
 export default function PrinterTab() {
