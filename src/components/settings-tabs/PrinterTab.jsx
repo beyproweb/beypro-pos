@@ -60,6 +60,32 @@ function BridgeTools() {
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState([]); // [{host, port}]
 
+    async function runFixScript() {
+  resetStatus();
+  const host = selectedHost || layout.printerHost;
+  if (!host) {
+    setError("Select a printer (or type its IP) first.");
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await fetch(`${BRIDGE}/assist/fix-printer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ printerHost: host }) // you can also pass adapterAlias/tempIp if needed
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || "Failed to launch fix script.");
+    }
+    setMsg("PowerShell launched (with Admin). Follow the window instructions, switch printer to DHCP, reboot, then click Rescan.");
+  } catch (e) {
+    setError("Could not launch PowerShell. Ensure Beypro Bridge is running and try Run as Administrator.");
+  } finally {
+    setLoading(false);
+  }
+}
+
   // Persist immediately when changed
   const saveBridge = (url) => {
     const clean = (url || "").trim().replace(/\/+$/, "");
@@ -274,31 +300,7 @@ export default function PrinterTab() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   
-  async function runFixScript() {
-  resetStatus();
-  const host = selectedHost || layout.printerHost;
-  if (!host) {
-    setError("Select a printer (or type its IP) first.");
-    return;
-  }
-  setLoading(true);
-  try {
-    const res = await fetch(`${BRIDGE}/assist/fix-printer`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printerHost: host }) // you can also pass adapterAlias/tempIp if needed
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      throw new Error(data.error || "Failed to launch fix script.");
-    }
-    setMsg("PowerShell launched (with Admin). Follow the window instructions, switch printer to DHCP, reboot, then click Rescan.");
-  } catch (e) {
-    setError("Could not launch PowerShell. Ensure Beypro Bridge is running and try Run as Administrator.");
-  } finally {
-    setLoading(false);
-  }
-}
+
 
   const [autoPrintTable, setAutoPrintTable] = useState(
     localStorage.getItem("autoPrintTable") === "true"
