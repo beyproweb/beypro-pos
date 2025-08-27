@@ -59,6 +59,8 @@ function BridgeTools() {
   // NEW: scan state
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState([]); // [{host, port}]
+  const [loading, setLoading] = useState(false);
+  const [selectedHost, setSelectedHost] = useState("");
 
     async function runFixScript() {
   resetStatus();
@@ -245,6 +247,7 @@ function BridgeTools() {
                 defaultValue=""
                 onChange={(e) => {
                   const host = e.target.value;
+                  setSelectedHost(host);
                   if (host) {
                     localStorage.setItem("lanPrinterHost", host);
                     setStatus(`Selected ${host} as printer host.`);
