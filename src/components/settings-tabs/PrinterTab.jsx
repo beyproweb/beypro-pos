@@ -112,6 +112,32 @@ function BridgeTools() {
     }
   };
 
+  // Probe a specific host to see open ports and if it's on the same subnet
+const probeHost = async () => {
+  try {
+    const host =
+      selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
+    if (!host) {
+      setStatus("Set Printer IP first.");
+      return;
+    }
+    setStatus(`Probing ${host}…`);
+    const u = `${bridgeUrl.replace(/\/+$/, "")}/probe?host=${encodeURIComponent(host)}&ports=9100,9101,515,631&timeoutMs=800`;
+    const r = await fetch(u, { cache: "no-store" });
+    if (!r.ok) throw new Error("Probe HTTP " + r.status);
+    const j = await r.json();
+    const open = (j.open || []).map(p => p.port).join(", ") || "none";
+    if (j.sameSubnet === false) {
+      setStatus(`Reachable ports: ${open}. ⚠️ Different subnet (PC ${j.primaryBase} vs printer ${host}). Use “Fix via PowerShell Script” below, switch printer to DHCP, then Rescan.`);
+    } else {
+      setStatus(`Reachable ports: ${open}. ${open.includes("9100") ? "✅ 9100 open – should print." : "❌ 9100 closed – check printer RAW/JetDirect."}`);
+    }
+  } catch (e) {
+    setStatus("Probe failed ❌ " + (e.message || e));
+  }
+};
+
+
   // Test print via bridge using stored host/port
   const testPrint = async () => {
     try {
@@ -257,6 +283,15 @@ function BridgeTools() {
             >
               {scanning ? "Scanning…" : "Find Printers (Scan)"}
             </button>
+
+            <button
+  type="button"
+  onClick={probeHost}
+  className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold"
+>
+  Probe IP
+</button>
+
 
             {found.length > 0 && (
               <select
