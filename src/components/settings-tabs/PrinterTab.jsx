@@ -95,7 +95,7 @@ function BridgeTools() {
     setStatus("Scanning LAN for :9100 printers…");
     setFound([]);
     try {
-      const u = `${bridgeUrl.replace(/\/+$/, "")}/discover?timeoutMs=2000&concurrency=32`;
+      const u = `${bridgeUrl.replace(/\/+$/, "")}/discover?all=1&timeoutMs=2000&concurrency=32`;
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort("timeout"), 25000);
       const r = await fetch(u, { signal: ctrl.signal, cache: "no-store" });
