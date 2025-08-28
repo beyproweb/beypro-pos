@@ -111,6 +111,56 @@ function BridgeTools() {
       setScanning(false);
     }
   };
+// Add temporary IP alias (Windows only) so your PC can talk to 192.168.123.x
+const assistAdd = async () => {
+  try {
+    const host = selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
+    if (!host) return setStatus("Set Printer IP first.");
+    setLoading(true);
+    setStatus("Adding temporary IP alias… (Admin required)");
+    const r = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/add`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ printerHost: host })
+    });
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || "Add IP failed");
+    setStatus(`Temp IP added on ${j.adapterAlias} as ${j.tempIp}/${j.prefixLength}. Now click “Open Printer UI”, switch to DHCP, reboot printer, then “Remove Temp IP”.`);
+  } catch (e) {
+    setStatus("Add temp IP failed ❌ " + (e.message || e));
+  } finally { setLoading(false); }
+};
+
+const assistOpen = async () => {
+  try {
+    const host = selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
+    if (!host) return setStatus("Set Printer IP first.");
+    setStatus("Opening printer web UI…");
+    const r = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/open`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ printerHost: host })
+    });
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || "Open failed");
+    setStatus("Printer UI opened. Switch network to DHCP (or your main subnet), then reboot printer.");
+  } catch (e) {
+    setStatus("Open UI failed ❌ " + (e.message || e));
+  }
+};
+
+const assistCleanup = async () => {
+  try {
+    setStatus("Removing temporary IP…");
+    const r = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/cleanup`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}) // bridge picks primary alias + last temp
+    });
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || "Cleanup failed");
+    setStatus("Temporary IP removed ✅");
+  } catch (e) {
+    setStatus("Cleanup failed ❌ " + (e.message || e));
+  }
+};
 
   // Probe a specific host to see open ports and if it's on the same subnet
 const probeHost = async () => {
@@ -185,17 +235,17 @@ const probeHost = async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ printerHost: host }),
       });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Failed to launch fix script.");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.error) {
+       const msg = [data?.error, data?.details].filter(Boolean).join(" — ");
+        throw new Error(msg || `HTTP ${res.status}`);
       }
-      setStatus(
-        "PowerShell launched (Admin). Switch the printer to DHCP, reboot it, then click Rescan."
-      );
+      setStatus(`PowerShell launched (Admin). If you didn’t see a UAC prompt, right-click the Bridge and “Run as administrator”. Script: ${data.scriptPath || "embedded"}`);
     } catch (e) {
       setStatus(
         "Could not launch PowerShell. Ensure Beypro Bridge is running and try Run as Administrator."
       );
+      setStatus(`Could not launch PowerShell ❌ ${e.message || e}`);
     } finally {
       setLoading(false);
     }
@@ -292,6 +342,25 @@ const probeHost = async () => {
   Probe IP
 </button>
 
+<div className="flex flex-wrap items-center gap-2">
+  <button onClick={scanPrinters} disabled={scanning}
+    className="px-3 py-2 rounded-xl bg-purple-600 text-white font-bold disabled:opacity-50">
+    {scanning ? "Scanning…" : "Find Printers (Scan)"}
+  </button>
+
+  <button onClick={assistAdd}
+    className="px-3 py-2 rounded-xl bg-amber-600 text-white font-bold">
+    Add Temp IP (Windows)
+  </button>
+  <button onClick={assistOpen}
+    className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold">
+    Open Printer UI
+  </button>
+  <button onClick={assistCleanup}
+    className="px-3 py-2 rounded-xl bg-gray-600 text-white font-bold">
+    Remove Temp IP
+  </button>
+</div>
 
             {found.length > 0 && (
               <select
