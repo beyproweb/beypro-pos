@@ -325,22 +325,6 @@ const probeHost = async () => {
           </div>
 
           <div className="md:col-span-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={scanPrinters}
-              disabled={scanning}
-              className="px-3 py-2 rounded-xl bg-purple-600 text-white font-bold disabled:opacity-50"
-            >
-              {scanning ? "Scanning…" : "Find Printers (Scan)"}
-            </button>
-
-            <button
-  type="button"
-  onClick={probeHost}
-  className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold"
->
-  Probe IP
-</button>
 
 <div className="flex flex-wrap items-center gap-2">
   <button onClick={scanPrinters} disabled={scanning}
@@ -360,6 +344,13 @@ const probeHost = async () => {
     className="px-3 py-2 rounded-xl bg-gray-600 text-white font-bold">
     Remove Temp IP
   </button>
+              <button
+  type="button"
+  onClick={probeHost}
+  className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold"
+>
+  Probe IP
+</button>
 </div>
 
             {found.length > 0 && (
