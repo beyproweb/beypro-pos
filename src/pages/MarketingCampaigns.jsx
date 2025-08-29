@@ -1,306 +1,291 @@
-import React, { useState, useEffect } from "react";
-import { Megaphone, Send, Users, Percent, BarChart, Mail } from "lucide-react";
-import axios from "axios";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { toast } from "react-toastify";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-function rate(n, d) {
-  // percent with 1 decimal (e.g. 12.3%)
-  if (!d || d <= 0) return null;         // return null so UI can show "—"
-  return Math.round((n / d) * 1000) / 10;
+// If you already centralize your API base, you can replace this with your helper
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+// --- Helpers ---------------------------------------------------------------
+const emailRegex = /[^\s,;<>"']+@[^\s,;<>"']+\.[^\s,;<>"']+/i;
+
+function parseRecipients(input) {
+  return input
+    .split(/[\n,;]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-function normalizeCampaign(c = {}) {
-  // handle provider naming differences
-  const delivered =
-    c.delivered ??
-    (typeof c.sent === "number"
-      ? c.sent - (c.bounced ?? 0) - (c.spam ?? 0)
-      : c.total_delivered ?? c.success ?? 0);
-
-  return {
-    ...c,
-    delivered,
-    opens_unique:
-      c.opens_unique ?? c.unique_opens ?? c.opens_unique_count ?? c.opens ?? 0,
-    clicks_unique:
-      c.clicks_unique ?? c.unique_clicks ?? c.clicks_unique_count ?? c.clicks ?? 0,
-    sent_at: c.sent_at ?? c.created_at ?? c.started_at ?? c.date ?? null,
-  };
+function validateRecipients(list) {
+  const bad = list.filter((e) => !emailRegex.test(e));
+  return { ok: bad.length === 0, bad };
 }
 
-function pickLastCompleted(list = []) {
-  return [...list]
-    .map(normalizeCampaign)
-    .filter(c => (c.delivered ?? 0) > 0 && c.sent_at)
-    .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
-}
+const TEMPLATES = [
+  {
+    id: "blank",
+    name: "Blank",
+    subject: "",
+    html: "",
+  },
+  {
+    id: "new-burger",
+    name: "🍔 New Burger Launch",
+    subject: "Meet our new smashburger!",
+    html: `<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8" />
+    <title>Beypro Campaign</title>
+  </head>
+  <body style="margin:0;background:#0b1220;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#ffffff;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#111b2e;border-radius:16px;overflow:hidden;">
+      <tr>
+        <td style="padding:24px 24px 0 24px;text-align:center;">
+          <h1 style="margin:0;font-size:28px;">🔥 New Smashburger Alert</h1>
+          <p style="opacity:.9;margin:8px 0 0 0;">Crispy edges, melty cheese, and a toasted bun.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:16px 24px 24px 24px;">
+          <div style="background:#18243a;border-radius:12px;padding:16px;">
+            <p style="margin:0 0 12px 0;">Limited-time offer: <strong>20% off</strong> today only.</p>
+            <a href="https://beypro.com" style="display:inline-block;padding:12px 16px;background:#4f46e5;border-radius:10px;color:#fff;text-decoration:none;">Order Now</a>
+          </div>
+          <p style="margin:16px 0 0 0;font-size:12px;opacity:.7;">You are receiving this because you visited us recently. Unsubscribe anytime.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`,
+  },
+  {
+    id: "promo",
+    name: "% Discount Promo",
+    subject: "Today only — save big at Hurrybey!",
+    html: `<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8" />
+    <title>Beypro Campaign</title>
+  </head>
+  <body style="margin:0;background:#ffffff;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#111827;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;">
+      <tr>
+        <td style="padding:24px 24px 0 24px;">
+          <h1 style="margin:0 0 8px 0;font-size:26px;">% İndirim Fırsatı</h1>
+          <p style="margin:0;color:#4b5563">Bugüne özel kampanya — kaçırma!</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:16px 24px 24px 24px;">
+          <p style="margin:0 0 12px 0;">Kasada <strong>KOD: BEYPRO20</strong> kullan.</p>
+          <a href="https://beypro.com" style="display:inline-block;padding:12px 16px;background:#111827;border-radius:10px;color:#fff;text-decoration:none;">Sipariş Ver</a>
+          <p style="margin:16px 0 0 0;font-size:12px;color:#6b7280">Aboneliği iptal etmek için bu e-postayı yanıtlayabilir veya profilinden çıkış yapabilirsin.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`,
+  },
+];
 
-export default function EmailCampaignLanding() {
-  const [message, setMessage] = useState("");
+// --- Component ------------------------------------------------------------
+export default function MarketingCampaigns() {
   const [subject, setSubject] = useState("");
+  const [html, setHtml] = useState("");
+  const [toList, setToList] = useState("");
+  const [fromEmail, setFromEmail] = useState("");
+  const [fromName, setFromName] = useState("Beypro");
   const [sending, setSending] = useState(false);
-  const [history, setHistory] = useState([]);
-  const [stats, setStats] = useState({ totalCustomers: 0, lastOpen: 0, lastClick: 0 });
+  const [selectedTemplate, setSelectedTemplate] = useState("blank");
 
-  // WhatsApp customer selection state
-  const [customers, setCustomers] = useState([]);
-  const [selectedPhones, setSelectedPhones] = useState([]);
+  // derive recipients
+  const recipients = useMemo(() => parseRecipients(toList), [toList]);
 
-useEffect(() => {
-  fetchCustomerCount().then(count =>
-    setStats(s => ({ ...s, totalCustomers: count }))
-  );
-  fetch(`${API_URL}/api/campaigns/stats/last`)
-    .then(res => res.json())
-    .then(data => {
-      setStats(s => ({
-        ...s,
-        lastOpen: data.openRate,
-        lastClick: data.clickRate
-      }));
-      setHistory([
-        {
-          date: data.sent_at.slice(0,10),
-          type: 'Email',
-          subject: data.subject,
-          message: data.message,
-          openRate: data.openRate,
-          clickRate: data.clickRate,
-        }
-      ]);
-    });
-  fetchCustomers();
-}, []);
-
-
-  async function fetchCustomerCount() {
-    const res = await axios.get(`${API_URL}/api/customers`);
-    return res.data.length || 0;
-  }
-
-  async function fetchCustomers() {
-  const res = await axios.get(`${API_URL}/api/customers`);
-  // Only customers with phone, deduplicated by phone number
-  const phoneMap = new Map();
-  res.data.forEach(c => {
-    if (c.phone && !phoneMap.has(c.phone)) {
-      phoneMap.set(c.phone, { name: c.name, phone: c.phone });
+  useEffect(() => {
+    // Load template on first mount or when changed
+    const tpl = TEMPLATES.find((t) => t.id === selectedTemplate);
+    if (tpl) {
+      if (tpl.subject !== undefined) setSubject(tpl.subject);
+      if (tpl.html !== undefined) setHtml(tpl.html);
     }
-  });
-  const uniquePhoneCustomers = Array.from(phoneMap.values());
-  setCustomers(uniquePhoneCustomers);
-  setSelectedPhones(uniquePhoneCustomers.map(c => c.phone)); // Select all by default
-}
+  }, [selectedTemplate]);
 
+  const handleSend = useCallback(async () => {
+    if (!subject.trim()) {
+      toast.error("Please enter a subject.");
+      return;
+    }
+    if (!html.trim()) {
+      toast.error("Please enter HTML content.");
+      return;
+    }
+    if (recipients.length === 0) {
+      toast.error("Please add at least one recipient.");
+      return;
+    }
+    const { ok, bad } = validateRecipients(recipients);
+    if (!ok) {
+      toast.error(`Invalid recipient(s): ${bad.join(", ")}`);
+      return;
+    }
 
-  async function sendCampaign() {
-    if (!message || !subject) return;
     setSending(true);
     try {
-      await axios.post(`${API_URL}/api/campaigns/email`, {
-        subject,
-        body: message
+      const res = await fetch(`${API_BASE}/api/campaigns/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject,
+          html,
+          recipients,
+          fromEmail: fromEmail || undefined,
+          fromName: fromName || undefined,
+          campaignId: "marketing-campaigns-ui",
+        }),
       });
-      setHistory([
-        { date: new Date().toISOString().slice(0, 10), type: "Email", subject, message, openRate: 0, clickRate: 0 },
-        ...history,
-      ]);
-      setMessage("");
-      setSubject("");
-    } catch (e) {
-      alert("Failed to send campaign!");
-    }
-    setSending(false);
-  }
 
-  async function sendWhatsAppCampaign() {
-    if (!message) return;
-    setSending(true);
-    try {
-      await axios.post(`${API_URL}/api/campaigns/whatsapp`, {
-        body: message,
-        phones: selectedPhones,
-      });
-      setHistory([
-        { date: new Date().toISOString().slice(0, 10), type: "WhatsApp", message, openRate: 0, clickRate: 0 },
-        ...history,
-      ]);
-      setMessage("");
-    } catch (e) {
-      alert("Failed to send WhatsApp campaign!");
-    }
-    setSending(false);
-  }
+      // Read text first to guard against HTML error pages
+      const text = await res.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || `HTTP ${res.status} (non-JSON)`);
+      }
 
-  function handleSelectAll() {
-    if (selectedPhones.length === customers.length) {
-      setSelectedPhones([]); // Unselect all
-    } else {
-      setSelectedPhones(customers.map(c => c.phone)); // Select all
-    }
-  }
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
 
-  function handleSelectOne(phone) {
-    setSelectedPhones(phones =>
-      phones.includes(phone)
-        ? phones.filter(p => p !== phone)
-        : [...phones, phone]
-    );
-  }
+      toast.success(`Sent ${data.sent} email(s).`);
+    } catch (err) {
+      toast.error(`Send failed: ${err.message}`);
+    } finally {
+      setSending(false);
+    }
+  }, [subject, html, recipients, fromEmail, fromName]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-tr from-orange-50 via-white to-blue-50 dark:from-zinc-900 dark:via-zinc-950 dark:to-blue-900 py-10">
-      <div className="max-w-3xl mx-auto px-5">
-        {/* Hero */}
-        <div className="flex flex-col items-center gap-2 mb-6">
-          <div className="bg-orange-500/90 p-3 rounded-full shadow-xl mb-2">
-            <Megaphone className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-4xl font-black text-zinc-900 dark:text-white mb-1 text-center">Boost Sales with Email & WhatsApp Campaigns</h1>
-          <p className="text-lg text-gray-600 dark:text-gray-300 text-center mb-2">
-            Instantly reach your customers with stunning email and WhatsApp promotions. <br />
-            <span className="font-semibold text-orange-600">Send, track, and grow your restaurant loyalty.</span>
-          </p>
-        </div>
-        {/* Stats */}
-        <div className="flex gap-4 mb-10 justify-center">
-          <StatCard icon={<Users />} label="Total Customers" value={stats.totalCustomers} color="from-blue-500 to-blue-700" />
-          <StatCard
-  icon={<Percent />}
-  label="Last Open Rate"
-  value={Number.isFinite(stats.lastOpen) ? `${stats.lastOpen}%` : "—"}
-  color="from-green-400 to-green-600"
-/>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold">Marketing Campaigns</h1>
+        <p className="text-sm text-gray-500">Compose and send simple email campaigns.</p>
+      </div>
 
-<StatCard
-  icon={<BarChart />}
-  label="Last Click Rate"
-  value={Number.isFinite(stats.lastClick) ? `${stats.lastClick}%` : "—"}
-  color="from-yellow-400 to-yellow-600"
-/>
-
-        </div>
-        {/* Email/WhatsApp Campaign Form */}
-        <div className="bg-white/90 dark:bg-zinc-900/80 rounded-2xl shadow-xl border border-orange-200 dark:border-zinc-800 p-8 mb-8 flex flex-col gap-3">
-          <h2 className="text-xl font-extrabold mb-2 flex items-center gap-2">
-            <Mail className="w-6 h-6 text-blue-600" /> New Campaign
-          </h2>
-          <input
-            className="w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 mb-1 shadow focus:ring-2 focus:ring-blue-400 font-semibold transition"
-            type="text"
-            value={subject}
-            placeholder="Email Subject"
-            onChange={e => setSubject(e.target.value)}
-            disabled={sending}
-            maxLength={80}
-          />
-          <textarea
-            className="w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 mb-3 shadow focus:ring-2 focus:ring-orange-400 font-semibold transition resize-none"
-            rows={3}
-            value={message}
-            placeholder="Type your campaign message…"
-            onChange={e => setMessage(e.target.value)}
-            disabled={sending}
-            maxLength={400}
-          />
-
-          {/* WhatsApp Customer Selector */}
-          <div className="mb-3">
-            <div className="flex items-center gap-3 mb-1">
-              <button
-                className="px-3 py-1 rounded bg-blue-200 dark:bg-blue-700 text-blue-900 dark:text-white text-xs font-bold"
-                onClick={handleSelectAll}
-                type="button"
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: Composer */}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div className="sm:col-span-1">
+              <label className="block text-sm font-medium mb-1">Template</label>
+              <select
+                className="w-full border rounded-lg p-2 bg-white"
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
               >
-                {selectedPhones.length === customers.length ? "Unselect All" : "Select All"}
-              </button>
-              <span className="text-xs text-gray-600 dark:text-gray-400">
-                {selectedPhones.length} / {customers.length} selected for WhatsApp
-              </span>
+                {TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
             </div>
-            <div className="max-h-40 overflow-y-auto border rounded bg-orange-50 dark:bg-zinc-900 p-2">
-              {customers.map((c) => (
-                <label key={c.phone} className="flex items-center gap-2 py-1 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedPhones.includes(c.phone)}
-                    onChange={() => handleSelectOne(c.phone)}
-                  />
-                  <span className="font-semibold">{c.name}</span>
-                  <span className="text-xs text-gray-500 ml-2">{c.phone}</span>
-                </label>
-              ))}
+            <div className="sm:col-span-1">
+              <label className="block text-sm font-medium mb-1">From Name</label>
+              <input
+                className="w-full border rounded-lg p-2"
+                value={fromName}
+                onChange={(e) => setFromName(e.target.value)}
+                placeholder="Beypro"
+              />
+            </div>
+            <div className="sm:col-span-1">
+              <label className="block text-sm font-medium mb-1">From Email (optional)</label>
+              <input
+                className="w-full border rounded-lg p-2"
+                value={fromEmail}
+                onChange={(e) => setFromEmail(e.target.value)}
+                placeholder="no-reply@beypro.com"
+              />
             </div>
           </div>
 
-          <div className="flex gap-3 items-center">
-            <button
-              className="px-6 py-2.5 rounded-xl bg-orange-600 text-white font-bold shadow hover:bg-orange-700 transition disabled:opacity-70"
-              disabled={sending || !message || !subject}
-              onClick={sendCampaign}
-            >
-              <Send className="inline w-5 h-5 mr-1 -mt-1" /> {sending ? "Sending…" : "Send Email"}
-            </button>
-            <button
-              className="px-6 py-2.5 rounded-xl bg-green-600 text-white font-bold shadow hover:bg-green-700 transition disabled:opacity-70"
-              disabled={sending || !message || selectedPhones.length === 0}
-              onClick={sendWhatsAppCampaign}
-            >
-              <Send className="inline w-5 h-5 mr-1 -mt-1" /> {sending ? "Sending…" : "Send WhatsApp"}
-            </button>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              Will send to all checked customers with WhatsApp.
-            </span>
+          <div>
+            <label className="block text-sm font-medium mb-1">Recipients</label>
+            <textarea
+              className="w-full border rounded-lg p-2 h-24"
+              value={toList}
+              onChange={(e) => setToList(e.target.value)}
+              placeholder="one@domain.com, two@domain.com or newline separated"
+            />
+            <div className="text-xs text-gray-500 mt-1">{recipients.length} recipient(s)</div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Subject</label>
+            <input
+              className="w-full border rounded-lg p-2"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Your campaign subject"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">HTML</label>
+            <textarea
+              className="w-full border rounded-lg p-2 h-64 font-mono"
+              value={html}
+              onChange={(e) => setHtml(e.target.value)}
+              placeholder="Paste or write HTML here"
+            />
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs text-gray-500">Tracking pixel is injected server-side when configured.</span>
+              <button
+                onClick={handleSend}
+                disabled={sending}
+                className="px-4 py-2 rounded-lg bg-indigo-600 text-white disabled:opacity-50"
+              >
+                {sending ? "Sending…" : "Send Campaign"}
+              </button>
+            </div>
           </div>
         </div>
-        {/* Recent Campaigns */}
-        <div>
-          <h2 className="font-bold mb-2 text-lg">Recent Campaigns</h2>
-          <div className="overflow-x-auto rounded-2xl shadow bg-white dark:bg-zinc-900/70 border border-orange-100 dark:border-zinc-800">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b border-orange-100 dark:border-zinc-700">
-                  <th className="py-2 px-3 font-bold">Date</th>
-                  <th className="py-2 px-3 font-bold">Type</th>
-                  <th className="py-2 px-3 font-bold">Subject</th>
-                  <th className="py-2 px-3 font-bold">Message</th>
-                  <th className="py-2 px-3 font-bold">Open Rate</th>
-                  <th className="py-2 px-3 font-bold">Click Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-6 text-gray-400">No campaigns yet</td></tr>
-                ) : history.map((c, i) => (
-                  <tr key={i} className="border-b border-orange-50 dark:border-zinc-800 hover:bg-orange-50/60 dark:hover:bg-zinc-800/30 transition">
-                    <td className="py-2 px-3">{c.date}</td>
-                    <td className="py-2 px-3">{c.type}</td>
-                    <td className="py-2 px-3">{c.subject}</td>
-                    <td className="py-2 px-3">{c.message}</td>
-                    <td className="py-2 px-3">{c.openRate ? `${c.openRate}%` : "—"}</td>
-                    <td className="py-2 px-3">{c.clickRate ? `${c.clickRate}%` : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+        {/* Right: Live Preview */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Preview</h2>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(html).then(
+                  () => toast.success("HTML copied"),
+                  () => toast.error("Copy failed")
+                );
+              }}
+              className="text-sm px-3 py-1 rounded border"
+            >
+              Copy HTML
+            </button>
           </div>
-        </div>
-        {/* Footer */}
-        <div className="mt-7 text-sm text-gray-400 text-center">
-          <span className="font-semibold">Beypro Marketing</span> — Reach every customer, fill every table.
+
+          <div className="border rounded-lg overflow-hidden bg-white">
+            {/* Using sandboxed iframe-like preview with srcDoc approach is not available directly here; using div */}
+            <div className="p-0">
+              <div
+                className="min-h-[400px]"
+                style={{ background: "#f8fafc" }}
+                dangerouslySetInnerHTML={{ __html: html || "<div style='padding:16px;color:#64748b'>No content</div>" }}
+              />
+            </div>
+          </div>
+
+          <div className="text-xs text-gray-500">
+            Tip: Real inboxes may render emails differently. Keep layout simple (tables, inline styles) for best compatibility.
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// Stats Card
-function StatCard({ icon, label, value, color }) {
-  return (
-    <div className={`flex flex-col items-center min-w-[110px] rounded-xl bg-gradient-to-br ${color} text-white shadow-lg px-4 py-2`}>
-      <span className="mb-1">{icon}</span>
-      <span className="text-xl font-bold">{value}</span>
-      <span className="text-xs">{label}</span>
     </div>
   );
 }
