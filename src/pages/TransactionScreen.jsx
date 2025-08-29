@@ -523,7 +523,7 @@ useEffect(() => {
       console.log("Fetched products in TransactionScreen:", data);  // Debug
       setProducts(data);
 
-      const categories = [...new Set(data.map((p) => p.category))].filter(Boolean);
+      const categories = [...new Set(products.map((p) => p.category))].filter(Boolean);
       console.log("Categories found in TransactionScreen:", categories);  // Debug
 
       if (categories.length > 0) setCurrentCategoryIndex(0);
@@ -1366,48 +1366,45 @@ return (
 
 
 
-    {categories.map((cat, idx) => (
-      <button
-        key={cat}
-        onClick={() => setCurrentCategoryIndex(idx)}
-        className={`
-          aspect-square w-full max-w-[110px]
-          flex flex-col items-center justify-center
-          rounded-2xl border-2
-          bg-white/20 dark:bg-blue-900/30 backdrop-blur-xl
-          shadow-2xl hover:shadow-3xl
-          border-blue-200/30
-          transition
-          ${currentCategoryIndex === idx
-            ? "ring-2 ring-fuchsia-400 scale-105"
-            : "opacity-90 hover:opacity-100"
-          }
-        `}
-      >
-const slug = (cat || "").trim().toLowerCase();
-const catSrc = categoryImages[slug] || "";
+    {categories.map((cat, idx) => {
+  const slug = (cat || "").trim().toLowerCase();
+  const catSrc = categoryImages[slug] || "";
+  const hasImg = !!catSrc;
 
-<img
-  src={catSrc}
-  alt={cat}
-  className={`w-14 h-14 rounded-2xl object-cover border shadow ${catSrc ? "" : "hidden"}`}
-/>
-
-<span className={catSrc ? "hidden" : "text-4xl"}>
-  {categoryIcons[cat] || categoryIcons.default}
-</span>
-
-
-
-        <span className={categoryImages[cat.trim().toLowerCase()] ? "hidden" : "text-4xl"}>
+  return (
+    <button
+      key={cat}
+      onClick={() => setCurrentCategoryIndex(idx)}
+      className={`
+        aspect-square w-full max-w-[110px]
+        flex flex-col items-center justify-center
+        rounded-2xl border-2
+        bg-white/20 dark:bg-blue-900/30 backdrop-blur-xl
+        shadow-2xl hover:shadow-3xl
+        border-blue-200/30
+        transition
+        ${currentCategoryIndex === idx ? "ring-2 ring-fuchsia-400 scale-105" : "opacity-90 hover:opacity-100"}
+      `}
+    >
+      {hasImg ? (
+        <img
+          src={catSrc}
+          alt={cat}
+          className="w-14 h-14 rounded-2xl object-cover border shadow"
+        />
+      ) : (
+        <span className="text-4xl">
           {categoryIcons[cat] || categoryIcons.default}
         </span>
-<span className="mt-1 text-[13px] font-bold text-center leading-tight break-all whitespace-pre-line">
-  {t(cat).split(" ").join("\n")}
-</span>
+      )}
 
-      </button>
-    ))}
+      <span className="mt-1 text-[13px] font-bold text-center leading-tight break-all whitespace-pre-line">
+        {t(cat).split(" ").join("\n")}
+      </span>
+    </button>
+  );
+})}
+
   </div>
 </aside>
 
