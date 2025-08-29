@@ -3,6 +3,37 @@ import { Megaphone, Send, Users, Percent, BarChart, Mail } from "lucide-react";
 import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+function rate(n, d) {
+  // percent with 1 decimal (e.g. 12.3%)
+  if (!d || d <= 0) return null;         // return null so UI can show "—"
+  return Math.round((n / d) * 1000) / 10;
+}
+
+function normalizeCampaign(c = {}) {
+  // handle provider naming differences
+  const delivered =
+    c.delivered ??
+    (typeof c.sent === "number"
+      ? c.sent - (c.bounced ?? 0) - (c.spam ?? 0)
+      : c.total_delivered ?? c.success ?? 0);
+
+  return {
+    ...c,
+    delivered,
+    opens_unique:
+      c.opens_unique ?? c.unique_opens ?? c.opens_unique_count ?? c.opens ?? 0,
+    clicks_unique:
+      c.clicks_unique ?? c.unique_clicks ?? c.clicks_unique_count ?? c.clicks ?? 0,
+    sent_at: c.sent_at ?? c.created_at ?? c.started_at ?? c.date ?? null,
+  };
+}
+
+function pickLastCompleted(list = []) {
+  return [...list]
+    .map(normalizeCampaign)
+    .filter(c => (c.delivered ?? 0) > 0 && c.sent_at)
+    .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
+}
 
 export default function EmailCampaignLanding() {
   const [message, setMessage] = useState("");
@@ -10,7 +41,17 @@ export default function EmailCampaignLanding() {
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({ totalCustomers: 0, lastOpen: 0, lastClick: 0 });
+    const last = useMemo(() => pickLastCompleted(campaigns), [campaigns]);
 
+  const lastOpenRate = useMemo(() => {
+    if (!last) return null;
+    return rate(last.opens_unique, last.delivered);
+  }, [last]);
+
+  const lastClickRate = useMemo(() => {
+    if (!last) return null;
+    return rate(last.clicks_unique, last.delivered);
+  }, [last]);
   // WhatsApp customer selection state
   const [customers, setCustomers] = useState([]);
   const [selectedPhones, setSelectedPhones] = useState([]);
@@ -134,8 +175,20 @@ useEffect(() => {
         {/* Stats */}
         <div className="flex gap-4 mb-10 justify-center">
           <StatCard icon={<Users />} label="Total Customers" value={stats.totalCustomers} color="from-blue-500 to-blue-700" />
-          <StatCard icon={<Percent />} label="Last Open Rate" value={history[0]?.openRate ? `${history[0].openRate}%` : "—"} color="from-green-400 to-green-600" />
-          <StatCard icon={<BarChart />} label="Last Click Rate" value={history[0]?.clickRate ? `${history[0].clickRate}%` : "—"} color="from-yellow-400 to-yellow-600" />
+          <StatCard
+  icon={<Percent />}
+  label="Last Open Rate"
+  value={Number.isFinite(stats.lastOpen) ? `${stats.lastOpen}%` : "—"}
+  color="from-green-400 to-green-600"
+/>
+
+<StatCard
+  icon={<BarChart />}
+  label="Last Click Rate"
+  value={Number.isFinite(stats.lastClick) ? `${stats.lastClick}%` : "—"}
+  color="from-yellow-400 to-yellow-600"
+/>
+
         </div>
         {/* Email/WhatsApp Campaign Form */}
         <div className="bg-white/90 dark:bg-zinc-900/80 rounded-2xl shadow-xl border border-orange-200 dark:border-zinc-800 p-8 mb-8 flex flex-col gap-3">
