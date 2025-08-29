@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react"; 
+import React, { useState, useEffect } from "react";
 import { Megaphone, Send, Users, Percent, BarChart, Mail } from "lucide-react";
 import axios from "axios";
 
