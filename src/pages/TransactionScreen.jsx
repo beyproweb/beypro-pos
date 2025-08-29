@@ -11,6 +11,7 @@ import { useOutletContext } from "react-router-dom";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import MoveTableModal from "../components/MoveTableModal";
 import MergeTableModal from "../components/MergeTableModal";
+import { toCategorySlug } from "../utils/slugCategory"; 
  const API_URL = import.meta.env.VITE_API_URL || "";
 const paymentMethods = ["Cash", "Credit Card", "Sodexo", "Multinet"];
 const categoryIcons = {
@@ -100,7 +101,11 @@ function splitDrinkExtras(extras, drinksList) {
   }
   return [drinkExtras, otherExtras];
 }
-
+const imgForCategory = (category) => {
+  // category can be an object or a string depending on your code
+  const slug = toCategorySlug(category);
+  return categoryImages[slug] || CATEGORY_FALLBACK_IMAGE;
+};
 // 3. In the handler for confirming product+extras (after ExtrasModal, or wherever you call addToCart with extras)
 const handleAddProductWithExtras = (product, selectedExtras) => {
   const [drinkExtras, otherExtras] = splitDrinkExtras(selectedExtras, drinksList);
@@ -1374,13 +1379,7 @@ return (
         `}
       >
        <img
-  src={
-    categoryImages[cat.trim().toLowerCase()]
-      ? /^https?:\/\//.test(categoryImages[cat.trim().toLowerCase()])
-        ? categoryImages[cat.trim().toLowerCase()]
-        : `${API_URL}/uploads/${categoryImages[cat.trim().toLowerCase()].replace(/^\/?uploads\//, "")}`
-      : ""
-  }
+  src={imgForCategory(category)}
   alt=""
   className={`w-14 h-14 rounded-2xl object-cover border shadow ${categoryImages[cat.trim().toLowerCase()] ? "" : "hidden"}`}
 />
