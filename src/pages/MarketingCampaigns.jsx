@@ -41,17 +41,7 @@ export default function EmailCampaignLanding() {
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({ totalCustomers: 0, lastOpen: 0, lastClick: 0 });
-    const last = useMemo(() => pickLastCompleted(campaigns), [campaigns]);
 
-  const lastOpenRate = useMemo(() => {
-    if (!last) return null;
-    return rate(last.opens_unique, last.delivered);
-  }, [last]);
-
-  const lastClickRate = useMemo(() => {
-    if (!last) return null;
-    return rate(last.clicks_unique, last.delivered);
-  }, [last]);
   // WhatsApp customer selection state
   const [customers, setCustomers] = useState([]);
   const [selectedPhones, setSelectedPhones] = useState([]);
