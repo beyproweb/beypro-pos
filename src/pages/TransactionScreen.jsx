@@ -12,7 +12,7 @@ import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import MoveTableModal from "../components/MoveTableModal";
 import MergeTableModal from "../components/MergeTableModal";
 import { toCategorySlug } from "../utils/slugCategory"; 
- const API_URL = import.meta.env.VITE_API_URL || "";
+
 const paymentMethods = ["Cash", "Credit Card", "Sodexo", "Multinet"];
 const categoryIcons = {
   Meat: "🍔",
@@ -159,19 +159,25 @@ useEffect(() => {
   // Optionally clean up when unmounting
   return () => setHeader({});
 }, [orderId, order, tableId, t, navigate, setHeader]);
-
 useEffect(() => {
   fetch(`${API_URL}/api/category-images`)
-    .then(res => res.json())
-    .then(data => {
+    .then((res) => res.json())
+    .then((data) => {
       const dict = {};
-    data.forEach(({ category, image }) => {
-  dict[category.trim().toLowerCase()] = `/uploads/${image}`;
-});
-
+      (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
+        const key = (category || "").trim().toLowerCase();
+        if (!key || !image) return;
+        // Backend already returns a full Cloudinary URL; keep it as-is
+        dict[key] = image;
+      });
       setCategoryImages(dict);
+    })
+    .catch((err) => {
+      console.error("❌ Failed to load category images:", err);
+      setCategoryImages({});
     });
 }, []);
+
 
 // At the top inside TransactionScreen()
 const handleQuickDiscount = () => {
@@ -1378,11 +1384,19 @@ return (
           }
         `}
       >
-       <img
-  src={imgForCategory(category)}
-  alt=""
-  className={`w-14 h-14 rounded-2xl object-cover border shadow ${categoryImages[cat.trim().toLowerCase()] ? "" : "hidden"}`}
+const slug = (cat || "").trim().toLowerCase();
+const catSrc = categoryImages[slug] || "";
+
+<img
+  src={catSrc}
+  alt={cat}
+  className={`w-14 h-14 rounded-2xl object-cover border shadow ${catSrc ? "" : "hidden"}`}
 />
+
+<span className={catSrc ? "hidden" : "text-4xl"}>
+  {categoryIcons[cat] || categoryIcons.default}
+</span>
+
 
 
         <span className={categoryImages[cat.trim().toLowerCase()] ? "hidden" : "text-4xl"}>
