@@ -1748,18 +1748,22 @@ useEffect(() => {
 }, []);
 
 
-  useEffect(() => {
-    fetch(`${API_URL}/api/category-images`)
-      .then((res) => res.json())
-      .then((data) => {
-        const dict = {};
-        data.forEach(({ category, image }) => {
-          dict[category.trim().toLowerCase()] = `/uploads/${image}`;
-        });
-        setCategoryImages(dict);
-      })
-      .catch(() => setCategoryImages({}));
-  }, []);
+  // QrMenu.jsx
+useEffect(() => {
+  fetch(`${API_URL}/api/category-images`)
+    .then(res => res.json())
+    .then(data => {
+      const dict = {};
+      (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
+        const key = (category || "").trim().toLowerCase();
+        if (!key || !image) return;
+        dict[key] = image; // <-- keep full Cloudinary URL (or relative) as-is
+      });
+      setCategoryImages(dict);
+    })
+    .catch(() => setCategoryImages({}));
+}, []);
+
 
   useEffect(() => {
     localStorage.setItem("qr_cart", JSON.stringify(cart));
