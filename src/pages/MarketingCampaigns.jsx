@@ -38,6 +38,7 @@ function pickLastCompleted(list = []) {
 export default function EmailCampaignLanding() {
   const [message, setMessage] = useState("");
   const [subject, setSubject] = useState("");
+  const [primaryUrl, setPrimaryUrl] = useState(""); // ← tracked CTA link
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({ totalCustomers: 0, lastOpen: 0, lastClick: 0 });
@@ -46,32 +47,33 @@ export default function EmailCampaignLanding() {
   const [customers, setCustomers] = useState([]);
   const [selectedPhones, setSelectedPhones] = useState([]);
 
-useEffect(() => {
-  fetchCustomerCount().then(count =>
-    setStats(s => ({ ...s, totalCustomers: count }))
-  );
-  fetch(`${API_URL}/api/campaigns/stats/last`)
-    .then(res => res.json())
-    .then(data => {
-      setStats(s => ({
-        ...s,
-        lastOpen: data.openRate,
-        lastClick: data.clickRate
-      }));
-      setHistory([
-        {
-          date: data.sent_at.slice(0,10),
-          type: 'Email',
-          subject: data.subject,
-          message: data.message,
-          openRate: data.openRate,
-          clickRate: data.clickRate,
-        }
-      ]);
-    });
-  fetchCustomers();
-}, []);
-
+  useEffect(() => {
+    fetchCustomerCount().then(count =>
+      setStats(s => ({ ...s, totalCustomers: count }))
+    );
+    fetch(`${API_URL}/api/campaigns/stats/last`)
+      .then(res => res.json())
+      .then(data => {
+        setStats(s => ({
+          ...s,
+          lastOpen: data.openRate,
+          lastClick: data.clickRate
+        }));
+        setHistory([
+          {
+            date: data.sent_at ? data.sent_at.slice(0,10) : new Date().toISOString().slice(0,10),
+            type: 'Email',
+            subject: data.subject,
+            message: data.message,
+            openRate: data.openRate,
+            clickRate: data.clickRate,
+          }
+        ]);
+      })
+      .catch(() => {}); // ignore if stats endpoint returns nothing
+      
+    fetchCustomers();
+  }, []);
 
   async function fetchCustomerCount() {
     const res = await axios.get(`${API_URL}/api/customers`);
@@ -79,34 +81,41 @@ useEffect(() => {
   }
 
   async function fetchCustomers() {
-  const res = await axios.get(`${API_URL}/api/customers`);
-  // Only customers with phone, deduplicated by phone number
-  const phoneMap = new Map();
-  res.data.forEach(c => {
-    if (c.phone && !phoneMap.has(c.phone)) {
-      phoneMap.set(c.phone, { name: c.name, phone: c.phone });
-    }
-  });
-  const uniquePhoneCustomers = Array.from(phoneMap.values());
-  setCustomers(uniquePhoneCustomers);
-  setSelectedPhones(uniquePhoneCustomers.map(c => c.phone)); // Select all by default
-}
-
+    const res = await axios.get(`${API_URL}/api/customers`);
+    // Only customers with phone, deduplicated by phone number
+    const phoneMap = new Map();
+    res.data.forEach(c => {
+      if (c.phone && !phoneMap.has(c.phone)) {
+        phoneMap.set(c.phone, { name: c.name, phone: c.phone });
+      }
+    });
+    const uniquePhoneCustomers = Array.from(phoneMap.values());
+    setCustomers(uniquePhoneCustomers);
+    setSelectedPhones(uniquePhoneCustomers.map(c => c.phone)); // Select all by default
+  }
 
   async function sendCampaign() {
     if (!message || !subject) return;
     setSending(true);
     try {
+      if (primaryUrl && !/^https?:\/\//i.test(primaryUrl)) {
+        alert("Tracked link must start with http:// or https://");
+        setSending(false);
+        return;
+      }
       await axios.post(`${API_URL}/api/campaigns/email`, {
         subject,
-        body: message
+        body: message,
+        // ↓↓↓ tracked CTA link goes to backend; it becomes the big button and is click-tracked
+        primary_url: primaryUrl || undefined,
       });
-      setHistory([
+       setHistory(prev => [
         { date: new Date().toISOString().slice(0, 10), type: "Email", subject, message, openRate: 0, clickRate: 0 },
-        ...history,
+        ...prev,
       ]);
       setMessage("");
       setSubject("");
+      setPrimaryUrl("");
     } catch (e) {
       alert("Failed to send campaign!");
     }
@@ -166,19 +175,17 @@ useEffect(() => {
         <div className="flex gap-4 mb-10 justify-center">
           <StatCard icon={<Users />} label="Total Customers" value={stats.totalCustomers} color="from-blue-500 to-blue-700" />
           <StatCard
-  icon={<Percent />}
-  label="Last Open Rate"
-  value={Number.isFinite(stats.lastOpen) ? `${stats.lastOpen}%` : "—"}
-  color="from-green-400 to-green-600"
-/>
-
-<StatCard
-  icon={<BarChart />}
-  label="Last Click Rate"
-  value={Number.isFinite(stats.lastClick) ? `${stats.lastClick}%` : "—"}
-  color="from-yellow-400 to-yellow-600"
-/>
-
+            icon={<Percent />}
+            label="Last Open Rate"
+            value={Number.isFinite(stats.lastOpen) ? `${stats.lastOpen}%` : "—"}
+            color="from-green-400 to-green-600"
+          />
+          <StatCard
+            icon={<BarChart />}
+            label="Last Click Rate"
+            value={Number.isFinite(stats.lastClick) ? `${stats.lastClick}%` : "—"}
+            color="from-yellow-400 to-yellow-600"
+          />
         </div>
         {/* Email/WhatsApp Campaign Form */}
         <div className="bg-white/90 dark:bg-zinc-900/80 rounded-2xl shadow-xl border border-orange-200 dark:border-zinc-800 p-8 mb-8 flex flex-col gap-3">
@@ -194,11 +201,22 @@ useEffect(() => {
             disabled={sending}
             maxLength={80}
           />
+
+          {/* NEW: Tracked link (CTA) */}
+          <input
+            className="w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 mb-1 shadow focus:ring-2 focus:ring-blue-400 font-semibold transition"
+            type="url"
+            value={primaryUrl}
+            placeholder="Tracked link (e.g. https://www.beypro.com/)"
+            onChange={e => setPrimaryUrl(e.target.value)}
+            disabled={sending}
+          />
+
           <textarea
             className="w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 mb-3 shadow focus:ring-2 focus:ring-orange-400 font-semibold transition resize-none"
             rows={3}
             value={message}
-            placeholder="Type your campaign message…"
+            placeholder="Type your campaign message… (links inside your message are also tracked)"
             onChange={e => setMessage(e.target.value)}
             disabled={sending}
             maxLength={400}
