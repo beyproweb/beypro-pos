@@ -9,6 +9,7 @@ function rate(n, d) {
   return Math.round((n / d) * 1000) / 10;
 }
 
+
 function normalizeCampaign(c = {}) {
   // handle provider naming differences
   const delivered =
@@ -33,6 +34,34 @@ function pickLastCompleted(list = []) {
     .map(normalizeCampaign)
     .filter(c => (c.delivered ?? 0) > 0 && c.sent_at)
     .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))[0];
+}
+function escapeHtml(s = "") {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Minimal CTA block (keeps your existing design)
+function buildCtaBlock(url, text = "Open") {
+  return `
+  <div style="text-align:center;margin:24px 0">
+    <a href="${url}" target="_blank" rel="noopener"
+       style="display:inline-block;padding:12px 18px;background:#111827;color:#fff;
+              border-radius:10px;text-decoration:none;font-weight:600">
+      ${escapeHtml(text)}
+    </a>
+  </div>`;
+}
+
+// Append CTA block just before </body> if present; otherwise at the end.
+function appendCta(html = "", url, text) {
+  const block = buildCtaBlock(url, text);
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, block + "</body>");
+  }
+  return html + block;
 }
 
 export default function EmailCampaignLanding() {
@@ -103,12 +132,25 @@ export default function EmailCampaignLanding() {
         setSending(false);
         return;
       }
-      await axios.post(`${API_URL}/api/campaigns/email`, {
+      const { data } = await axios.post(`${API_URL}/api/campaigns/email`, {
         subject,
         body: message,
         // ↓↓↓ tracked CTA link goes to backend; it becomes the big button and is click-tracked
         primary_url: primaryUrl || undefined,
       });
+      // If backend returns campaignId, refresh stats for that exact campaign
+      if (data?.campaignId) {
+        try {
+          const statsRes = await axios.get(`${API_URL}/api/campaigns/stats/by/${data.campaignId}`);
+          if (statsRes.data?.ok) {
+            setStats(s => ({
+              ...s,
+              lastOpen: statsRes.data.openRate ?? s.lastOpen,
+              lastClick: statsRes.data.clickRate ?? s.lastClick,
+            }));
+          }
+        } catch {}
+      }
        setHistory(prev => [
         { date: new Date().toISOString().slice(0, 10), type: "Email", subject, message, openRate: 0, clickRate: 0 },
         ...prev,
