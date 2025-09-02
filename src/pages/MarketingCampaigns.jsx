@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Megaphone, Send, Users, Percent, BarChart, Mail } from "lucide-react";
 import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+const STATS_POLL_MS = 5000;   // poll every 5s
+const STATS_POLL_MAX = 12;    // for up to 60s
 function rate(n, d) {
   // percent with 1 decimal (e.g. 12.3%)
   if (!d || d <= 0) return null;         // return null so UI can show "—"
@@ -71,10 +74,65 @@ export default function EmailCampaignLanding() {
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({ totalCustomers: 0, lastOpen: 0, lastClick: 0 });
-
+  const pollRef = useRef(null);
+  const pollCountRef = useRef(0);
   // WhatsApp customer selection state
   const [customers, setCustomers] = useState([]);
   const [selectedPhones, setSelectedPhones] = useState([]);
+
+
+  +  // Fetch + apply stats (prefers /by/:cid, falls back to /last)
+  async function fetchAndApplyStats(cid) {
+    try {
+      let payload = null;
+      if (cid) {
+        try {
+          const res = await axios.get(`${API_URL}/api/campaigns/stats/by/${cid}`);
+          payload = res.data;
+        } catch {
+          const res = await axios.get(`${API_URL}/api/campaigns/stats/last`);
+          payload = res.data;
+        }
+      } else {
+        const res = await axios.get(`${API_URL}/api/campaigns/stats/last`);
+        payload = res.data;
+      }
+      if (payload?.ok) {
+        setStats(s => ({
+          ...s,
+          lastOpen: Number.isFinite(payload.openRate) ? payload.openRate : s.lastOpen,
+          lastClick: Number.isFinite(payload.clickRate) ? payload.clickRate : s.lastClick,
+        }));
+        // also reflect in the top row of the table
+        setHistory(prev => {
+          if (!prev.length) return prev;
+          const [first, ...rest] = prev;
+          return [{
+            ...first,
+            openRate: payload.openRate ?? first.openRate,
+            clickRate: payload.clickRate ?? first.clickRate,
+          }, ...rest];
+        });
+        // stop early if we have any non-zero rate
+        if ((payload.openRate ?? 0) > 0 || (payload.clickRate ?? 0) > 0) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        }
+      }
+    } catch {}
+  }
+
+  function startStatsPolling(cid) {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollCountRef.current = 0;
+    pollRef.current = setInterval(async () => {
+      pollCountRef.current += 1;
+      await fetchAndApplyStats(cid);
+      if (pollCountRef.current >= STATS_POLL_MAX) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }, STATS_POLL_MS);
+  }
 
   useEffect(() => {
     fetchCustomerCount().then(count =>
@@ -123,7 +181,7 @@ export default function EmailCampaignLanding() {
     setSelectedPhones(uniquePhoneCustomers.map(c => c.phone)); // Select all by default
   }
 
-  async function sendCampaign() {
+   async function sendCampaign() {
     if (!message || !subject) return;
     setSending(true);
     try {
