@@ -135,12 +135,12 @@ export default function EmailCampaignLanding() {
   }
 
 useEffect(() => {
-  // top counters
+  // Top counters
   fetchCustomerCount().then(count =>
     setStats(s => ({ ...s, totalCustomers: count }))
   );
 
-  // keep top cards (Last Open/Click) in sync with "last" endpoint
+  // Keep top cards in sync with "last"
   fetch(`${API_URL}/api/campaigns/stats/last`)
     .then(res => res.json())
     .then(data => {
@@ -152,10 +152,10 @@ useEffect(() => {
     })
     .catch(() => {});
 
-  // load customers for WhatsApp selector
+  // Load customers for WhatsApp selector
   fetchCustomers().catch(() => {});
 
-  // NEW: fetch campaign list (with open/click rates for each row)
+  // Load recent campaigns (with rates)
   axios.get(`${API_URL}/api/campaigns/list`)
     .then(res => {
       if (res.data?.ok && Array.isArray(res.data.campaigns)) {
@@ -167,7 +167,7 @@ useEffect(() => {
             message: c.message,
             openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
             clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-            _id: c.id, // keep internal id if needed
+            _id: c.id,
           }))
         );
       } else {
@@ -175,8 +175,8 @@ useEffect(() => {
       }
     })
     .catch(() => {});
-
 }, []);
+
 
 
   async function fetchCustomerCount() {
@@ -211,11 +211,10 @@ async function sendCampaign() {
     const { data } = await axios.post(`${API_URL}/api/campaigns/email`, {
       subject,
       body: message,
-      // ↓↓↓ tracked CTA link goes to backend; it becomes the big button and is click-tracked
       primary_url: primaryUrl || undefined,
     });
 
-    // Optimistically prepend the new campaign row at 0% / 0%
+    // Optimistic row so user sees it instantly
     setHistory(prev => [
       {
         date: new Date().toISOString().slice(0, 10),
@@ -229,21 +228,19 @@ async function sendCampaign() {
       ...prev,
     ]);
 
-    // Start polling stats for THIS campaign (updates top cards and first row)
+    // Start polling stats for THIS campaign (updates top cards & first row)
     if (data?.campaignId) {
       startStatsPolling(data.campaignId);
     }
 
-    // ⏳ OPTIONAL C: Refetch the campaign list once after a short delay,
-    // in case the newly-sent campaign isn't first in the list.
+    // Refetch /list shortly to beat DB race (insert/update latency)
     setTimeout(() => {
-      axios
-        .get(`${API_URL}/api/campaigns/list`)
+      axios.get(`${API_URL}/api/campaigns/list`)
         .then(res => {
           if (res.data?.ok && Array.isArray(res.data.campaigns)) {
             setHistory(
               res.data.campaigns.map(c => ({
-                date: c.sent_at ? String(c.sent_at).slice(0, 10) : "",
+                date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
                 type: "Email",
                 subject: c.subject,
                 message: c.message,
@@ -255,7 +252,7 @@ async function sendCampaign() {
           }
         })
         .catch(() => {});
-    }, 3000);
+    }, 3000); // 3s is plenty; adjust if needed
 
     // Clear inputs
     setMessage("");
@@ -266,6 +263,7 @@ async function sendCampaign() {
   }
   setSending(false);
 }
+
 
 
   async function sendWhatsAppCampaign() {
