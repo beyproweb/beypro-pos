@@ -147,6 +147,60 @@ export default function EmailCampaignLanding() {
       }
     }, STATS_POLL_MS);
   }
+// ---- Sticky merge helpers ----
+function truthyStr(s) {
+  return typeof s === "string" && s.trim().length > 0 ? s : "";
+}
+
+function stickyMergeHistory(prev, incoming) {
+  // Key by campaign id when available; else by date+subject+message
+  const keyOf = (r) => r._id || `${r.date}|${r.subject}|${r.message}`;
+
+  const map = new Map();
+  // seed with previous (keeps optimistic rows)
+  for (const row of prev) {
+    map.set(keyOf(row), row);
+  }
+
+  for (const row of incoming) {
+    const k = keyOf(row);
+    const old = map.get(k);
+
+    if (!old) {
+      map.set(k, row);
+      continue;
+    }
+
+    // Preserve any previously known non-empty subject/message
+    const subject = truthyStr(row.subject) || old.subject || "";
+    const message = truthyStr(row.message) || old.message || "";
+
+    // Prefer newer open/click rates if present
+    const openRate = Number.isFinite(row.openRate) ? row.openRate : old.openRate;
+    const clickRate = Number.isFinite(row.clickRate) ? row.clickRate : old.clickRate;
+
+    // Prefer whichever has a concrete date (server date wins if present)
+    const date = row.date || old.date;
+
+    map.set(k, {
+      ...old,
+      ...row, // keep other incoming fields (type, etc.)
+      date,
+      subject,
+      message,
+      openRate,
+      clickRate,
+      _id: old._id || row._id, // keep id
+    });
+  }
+
+  // newest first
+  return Array.from(map.values()).sort((a, b) => {
+    const da = new Date(a.date || 0).getTime();
+    const db = new Date(b.date || 0).getTime();
+    return db - da;
+  });
+}
 
 useEffect(() => {
   // Top counters
@@ -171,24 +225,24 @@ useEffect(() => {
 
   // Load recent campaigns (with rates)
   axios.get(`${API_URL}/api/campaigns/list`)
-    .then(res => {
-      if (res.data?.ok && Array.isArray(res.data.campaigns)) {
-        setHistory(
-          res.data.campaigns.map(c => ({
-            date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
-            type: "Email",
-            subject: c.subject,
-            message: c.message,
-            openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
-            clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-            _id: c.id,
-          }))
-        );
-      } else {
-        setHistory([]);
-      }
-    })
-    .catch(() => {});
+  .then(res => {
+    if (res.data?.ok && Array.isArray(res.data.campaigns)) {
+      const rows = res.data.campaigns.map(c => ({
+        date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
+        type: "Email",
+        subject: c.subject || "",
+        message: c.message || "",
+        openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+        clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+        _id: String(c.id || ""), // important for stable identity
+      }));
+      setHistory(prev => stickyMergeHistory(prev, rows)); // 👈 sticky merge
+    } else {
+      // don't clobber; keep whatever we had
+    }
+  })
+  .catch(() => { /* ignore */ });
+
 }, []);
 
 
@@ -249,23 +303,25 @@ async function sendCampaign() {
 
     // Refetch /list shortly to beat DB race (insert/update latency)
     setTimeout(() => {
+setTimeout(() => {
   axios.get(`${API_URL}/api/campaigns/list`)
     .then(res => {
       if (res.data?.ok && Array.isArray(res.data.campaigns)) {
         const rows = res.data.campaigns.map(c => ({
           date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
           type: "Email",
-          subject: c.subject,
-          message: c.message,
+          subject: c.subject || "",
+          message: c.message || "",
           openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
           clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-          _id: c.id,
+          _id: String(c.id || ""),
         }));
-        setHistory(prev => mergeHistory(prev, rows)); // 👈 merge, don’t drop
+        setHistory(prev => stickyMergeHistory(prev, rows)); // 👈 sticky merge
       }
     })
     .catch(() => {});
 }, 3000);
+
 
 
     // Clear inputs
