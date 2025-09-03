@@ -87,7 +87,7 @@ const fetchProductHistory = (productName) => {
 
   setLoadingMap((prev) => ({ ...prev, [product.name]: 'producing' }));
 
-  const res = await fetch('${API_URL}/api/production/production-log', {
+  const res = await fetch(`${API_URL}/api/production/production-log`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -116,7 +116,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit }) => {
   console.log("📤 Sending final stock payload:", payload);
 
   try {
-    const res = await fetch('${API_URL}/api/stock', {
+    const res = await fetch(`${API_URL}/api/stock`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -144,8 +144,9 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit }) => {
 
   const handleAddOrUpdateRecipe = async (recipe) => {
     const method = editRecipe ? 'PUT' : 'POST';
-    const endpoint = editRecipe ? `${API_URL}/api/production/recipes/${editRecipe.id}` : '${API_URL}/api/production/recipes';
-
+const endpoint = editRecipe
+   ? `${API_URL}/api/production/recipes/${editRecipe.id}`
+   : `${API_URL}/api/production/recipes`;
     const res = await fetch(endpoint, {
       method,
       headers: { 'Content-Type': 'application/json' },
@@ -153,7 +154,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit }) => {
     });
 
     if (res.ok) {
-      const updated = await fetch('${API_URL}/api/production/recipes').then(res => res.json());
+      const updated = await fetch(`${API_URL}/api/production/recipes`).then(res => res.json());
       setRecipes(updated);
       const q = {};
       updated.forEach((r) => (q[r.name] = 1));
