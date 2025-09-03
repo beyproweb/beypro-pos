@@ -207,6 +207,7 @@ async function sendCampaign() {
       setSending(false);
       return;
     }
+
     const { data } = await axios.post(`${API_URL}/api/campaigns/email`, {
       subject,
       body: message,
@@ -228,10 +229,33 @@ async function sendCampaign() {
       ...prev,
     ]);
 
-    // Start polling stats for THIS campaign (updates top cards and first row via fetchAndApplyStats)
+    // Start polling stats for THIS campaign (updates top cards and first row)
     if (data?.campaignId) {
       startStatsPolling(data.campaignId);
     }
+
+    // ⏳ OPTIONAL C: Refetch the campaign list once after a short delay,
+    // in case the newly-sent campaign isn't first in the list.
+    setTimeout(() => {
+      axios
+        .get(`${API_URL}/api/campaigns/list`)
+        .then(res => {
+          if (res.data?.ok && Array.isArray(res.data.campaigns)) {
+            setHistory(
+              res.data.campaigns.map(c => ({
+                date: c.sent_at ? String(c.sent_at).slice(0, 10) : "",
+                type: "Email",
+                subject: c.subject,
+                message: c.message,
+                openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+                clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+                _id: c.id,
+              }))
+            );
+          }
+        })
+        .catch(() => {});
+    }, 3000);
 
     // Clear inputs
     setMessage("");
