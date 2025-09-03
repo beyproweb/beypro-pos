@@ -12,6 +12,20 @@ function rate(n, d) {
   return Math.round((n / d) * 1000) / 10;
 }
 
+// Add near the top of the component (helpers)
+function mergeHistory(prev, listFromServer) {
+  // Key by _id if present, else by date+subject+message
+  const keyOf = (x) => x._id || `${x.date}|${x.subject}|${x.message}`;
+  const map = new Map();
+  // keep existing (optimistic rows included)
+  for (const it of prev) map.set(keyOf(it), it);
+  // overlay from server
+  for (const s of listFromServer) map.set(keyOf(s), s);
+
+  // Return newest first
+  return Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+}
+
 
 function normalizeCampaign(c = {}) {
   // handle provider naming differences
@@ -235,24 +249,24 @@ async function sendCampaign() {
 
     // Refetch /list shortly to beat DB race (insert/update latency)
     setTimeout(() => {
-      axios.get(`${API_URL}/api/campaigns/list`)
-        .then(res => {
-          if (res.data?.ok && Array.isArray(res.data.campaigns)) {
-            setHistory(
-              res.data.campaigns.map(c => ({
-                date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
-                type: "Email",
-                subject: c.subject,
-                message: c.message,
-                openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
-                clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-                _id: c.id,
-              }))
-            );
-          }
-        })
-        .catch(() => {});
-    }, 3000); // 3s is plenty; adjust if needed
+  axios.get(`${API_URL}/api/campaigns/list`)
+    .then(res => {
+      if (res.data?.ok && Array.isArray(res.data.campaigns)) {
+        const rows = res.data.campaigns.map(c => ({
+          date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
+          type: "Email",
+          subject: c.subject,
+          message: c.message,
+          openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+          clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+          _id: c.id,
+        }));
+        setHistory(prev => mergeHistory(prev, rows)); // 👈 merge, don’t drop
+      }
+    })
+    .catch(() => {});
+}, 3000);
+
 
     // Clear inputs
     setMessage("");
