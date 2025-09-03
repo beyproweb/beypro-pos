@@ -113,10 +113,11 @@ export default function EmailCampaignLanding() {
       }
       if (payload?.ok) {
         setStats(s => ({
-          ...s,
-          lastOpen: Number.isFinite(payload.openRate) ? payload.openRate : s.lastOpen,
-          lastClick: Number.isFinite(payload.clickRate) ? payload.clickRate : s.lastClick,
-        }));
+  ...s,
+  lastOpen: Number.isFinite(payload.openRate) ? payload.openRate : s.lastOpen,
+  lastClick: Number.isFinite(payload.clickRate) ? payload.clickRate : s.lastClick,
+}));
+
         // also reflect in the top row of the table
         setHistory(prev => {
           if (!prev.length) return prev;
