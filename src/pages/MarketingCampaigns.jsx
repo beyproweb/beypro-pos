@@ -134,48 +134,50 @@ export default function EmailCampaignLanding() {
     }, STATS_POLL_MS);
   }
 
-  useEffect(() => {
-    fetchCustomerCount().then(count =>
-      setStats(s => ({ ...s, totalCustomers: count }))
-    );
-    fetch(`${API_URL}/api/campaigns/stats/last`)
-      .then(res => res.json())
-      .then(data => {
-        setStats(s => ({
-          ...s,
-          lastOpen: data.openRate,
-          lastClick: data.clickRate
-        }));
-        setHistory([
-          {
-            date: data.sent_at ? data.sent_at.slice(0,10) : new Date().toISOString().slice(0,10),
-            type: 'Email',
-            subject: data.subject,
-            message: data.message,
-            openRate: data.openRate,
-            clickRate: data.clickRate,
-          }
-        ]);
-      })
-      .catch(() => {}); // ignore if stats endpoint returns nothing
-      
-    fetchCustomers();
-    axios.get(`${API_URL}/api/campaigns/list`)
-  .then(res => {
-    if (res.data?.ok && res.data.campaigns) {
-      setHistory(res.data.campaigns.map(c => ({
-        date: c.sent_at ? c.sent_at.slice(0,10) : "",
-        type: "Email",
-        subject: c.subject,
-        message: c.message,
-        openRate: 0,  // you could also fetch /stats/by/:id for each if needed
-        clickRate: 0,
-      })));
-    }
-  })
-  .catch(() => {});
+useEffect(() => {
+  // top counters
+  fetchCustomerCount().then(count =>
+    setStats(s => ({ ...s, totalCustomers: count }))
+  );
 
-  }, []);
+  // keep top cards (Last Open/Click) in sync with "last" endpoint
+  fetch(`${API_URL}/api/campaigns/stats/last`)
+    .then(res => res.json())
+    .then(data => {
+      setStats(s => ({
+        ...s,
+        lastOpen: data.openRate ?? s.lastOpen,
+        lastClick: data.clickRate ?? s.lastClick
+      }));
+    })
+    .catch(() => {});
+
+  // load customers for WhatsApp selector
+  fetchCustomers().catch(() => {});
+
+  // NEW: fetch campaign list (with open/click rates for each row)
+  axios.get(`${API_URL}/api/campaigns/list`)
+    .then(res => {
+      if (res.data?.ok && Array.isArray(res.data.campaigns)) {
+        setHistory(
+          res.data.campaigns.map(c => ({
+            date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
+            type: "Email",
+            subject: c.subject,
+            message: c.message,
+            openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+            clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+            _id: c.id, // keep internal id if needed
+          }))
+        );
+      } else {
+        setHistory([]);
+      }
+    })
+    .catch(() => {});
+
+}, []);
+
 
   async function fetchCustomerCount() {
     const res = await axios.get(`${API_URL}/api/customers`);
@@ -196,46 +198,51 @@ export default function EmailCampaignLanding() {
     setSelectedPhones(uniquePhoneCustomers.map(c => c.phone)); // Select all by default
   }
 
-   async function sendCampaign() {
-    if (!message || !subject) return;
-    setSending(true);
-    try {
-      if (primaryUrl && !/^https?:\/\//i.test(primaryUrl)) {
-        alert("Tracked link must start with http:// or https://");
-        setSending(false);
-        return;
-      }
-      const { data } = await axios.post(`${API_URL}/api/campaigns/email`, {
-        subject,
-        body: message,
-        // ↓↓↓ tracked CTA link goes to backend; it becomes the big button and is click-tracked
-        primary_url: primaryUrl || undefined,
-      });
-      // If backend returns campaignId, refresh stats for that exact campaign
-      if (data?.campaignId) {
-        try {
-          const statsRes = await axios.get(`${API_URL}/api/campaigns/stats/by/${data.campaignId}`);
-          if (statsRes.data?.ok) {
-            setStats(s => ({
-              ...s,
-              lastOpen: statsRes.data.openRate ?? s.lastOpen,
-              lastClick: statsRes.data.clickRate ?? s.lastClick,
-            }));
-          }
-        } catch {}
-      }
-       setHistory(prev => [
-        { date: new Date().toISOString().slice(0, 10), type: "Email", subject, message, openRate: 0, clickRate: 0 },
-        ...prev,
-      ]);
-      setMessage("");
-      setSubject("");
-      setPrimaryUrl("");
-    } catch (e) {
-      alert("Failed to send campaign!");
+async function sendCampaign() {
+  if (!message || !subject) return;
+  setSending(true);
+  try {
+    if (primaryUrl && !/^https?:\/\//i.test(primaryUrl)) {
+      alert("Tracked link must start with http:// or https://");
+      setSending(false);
+      return;
     }
-    setSending(false);
+    const { data } = await axios.post(`${API_URL}/api/campaigns/email`, {
+      subject,
+      body: message,
+      // ↓↓↓ tracked CTA link goes to backend; it becomes the big button and is click-tracked
+      primary_url: primaryUrl || undefined,
+    });
+
+    // Optimistically prepend the new campaign row at 0% / 0%
+    setHistory(prev => [
+      {
+        date: new Date().toISOString().slice(0, 10),
+        type: "Email",
+        subject,
+        message,
+        openRate: 0,
+        clickRate: 0,
+        _id: data?.campaignId || undefined,
+      },
+      ...prev,
+    ]);
+
+    // Start polling stats for THIS campaign (updates top cards and first row via fetchAndApplyStats)
+    if (data?.campaignId) {
+      startStatsPolling(data.campaignId);
+    }
+
+    // Clear inputs
+    setMessage("");
+    setSubject("");
+    setPrimaryUrl("");
+  } catch (e) {
+    alert("Failed to send campaign!");
   }
+  setSending(false);
+}
+
 
   async function sendWhatsAppCampaign() {
     if (!message) return;
