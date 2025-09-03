@@ -160,6 +160,21 @@ export default function EmailCampaignLanding() {
       .catch(() => {}); // ignore if stats endpoint returns nothing
       
     fetchCustomers();
+    axios.get(`${API_URL}/api/campaigns/list`)
+  .then(res => {
+    if (res.data?.ok && res.data.campaigns) {
+      setHistory(res.data.campaigns.map(c => ({
+        date: c.sent_at ? c.sent_at.slice(0,10) : "",
+        type: "Email",
+        subject: c.subject,
+        message: c.message,
+        openRate: 0,  // you could also fetch /stats/by/:id for each if needed
+        clickRate: 0,
+      })));
+    }
+  })
+  .catch(() => {});
+
   }, []);
 
   async function fetchCustomerCount() {
