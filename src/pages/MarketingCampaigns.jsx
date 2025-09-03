@@ -224,24 +224,38 @@ useEffect(() => {
   fetchCustomers().catch(() => {});
 
   // Load recent campaigns (with rates)
- axios.get(`${API_URL}/api/campaigns/list`)
+axios.get(`${API_URL}/api/campaigns/list`)
   .then(res => {
     if (res.data?.ok && Array.isArray(res.data.campaigns)) {
-      const rows = res.data.campaigns.map(c => ({
-        date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
-        type: "Email",
-        subject: c.subject || "",
-        message: c.message || "",
-        openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
-        clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-        _id: String(c.id || ""), // important for stable identity
-      }));
-      setHistory(prev => stickyMergeHistory(prev, rows)); // 👈 sticky merge
-    } else {
-      // don't clobber; keep whatever we had
+      const rows = res.data.campaigns
+        .filter(c => c && c.id)
+        .map(c => ({
+          date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
+          type: "Email",
+          subject: c.subject || "",
+          message: c.message || "",
+          openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+          clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+          _id: String(c.id),
+        }));
+
+      // merge into table
+      const merged = stickyMergeHistory([], rows); // or: setHistory(prev => stickyMergeHistory(prev, rows));
+      setHistory(prev => stickyMergeHistory(prev, rows));
+
+      // 🔝 bump the top cards from the latest visible campaign
+      const latest = merged[0];
+      if (latest) {
+        setStats(s => ({
+          ...s,
+          lastOpen: Number.isFinite(latest.openRate) ? latest.openRate : 0,
+          lastClick: Number.isFinite(latest.clickRate) ? latest.clickRate : 0,
+        }));
+      }
     }
   })
-  .catch(() => { /* ignore */ });
+  .catch(() => {});
+
 }, []);
 
 
@@ -303,20 +317,36 @@ async function sendCampaign() {
     // Refetch /list shortly to beat DB race (insert/update latency)
 setTimeout(() => {
   axios.get(`${API_URL}/api/campaigns/list`)
-    .then(res => {
-      if (res.data?.ok && Array.isArray(res.data.campaigns)) {
-        const rows = res.data.campaigns.map(c => ({
-          date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
-          type: "Email",
-          subject: c.subject || "",
-          message: c.message || "",
-          openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
-          clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-          _id: String(c.id || ""),
+.then(res => {
+  if (res.data?.ok && Array.isArray(res.data.campaigns)) {
+    const rows = res.data.campaigns
+      .filter(c => c && c.id)
+      .map(c => ({
+        date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
+        type: "Email",
+        subject: c.subject || "",
+        message: c.message || "",
+        openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+        clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+        _id: String(c.id),
+      }));
+
+    setHistory(prev => {
+      const merged = stickyMergeHistory(prev, rows);
+      // 🔝 sync top cards from newest row
+      const latest = merged[0];
+      if (latest) {
+        setStats(s => ({
+          ...s,
+          lastOpen: Number.isFinite(latest.openRate) ? latest.openRate : 0,
+          lastClick: Number.isFinite(latest.clickRate) ? latest.clickRate : 0,
         }));
-        setHistory(prev => stickyMergeHistory(prev, rows)); // 👈 sticky merge
       }
-    })
+      return merged;
+    });
+  }
+})
+
     .catch(() => {});
 }, 3000);
 
