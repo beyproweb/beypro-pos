@@ -224,7 +224,7 @@ useEffect(() => {
   fetchCustomers().catch(() => {});
 
   // Load recent campaigns (with rates)
-  axios.get(`${API_URL}/api/campaigns/list`)
+ axios.get(`${API_URL}/api/campaigns/list`)
   .then(res => {
     if (res.data?.ok && Array.isArray(res.data.campaigns)) {
       const rows = res.data.campaigns.map(c => ({
@@ -242,7 +242,6 @@ useEffect(() => {
     }
   })
   .catch(() => { /* ignore */ });
-
 }, []);
 
 
@@ -302,7 +301,6 @@ async function sendCampaign() {
     }
 
     // Refetch /list shortly to beat DB race (insert/update latency)
-    setTimeout(() => {
 setTimeout(() => {
   axios.get(`${API_URL}/api/campaigns/list`)
     .then(res => {
