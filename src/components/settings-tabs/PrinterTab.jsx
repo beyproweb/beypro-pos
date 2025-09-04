@@ -68,11 +68,22 @@ function BridgeTools() {
   const resetStatus = () => setStatus("");
 
   // Persist Bridge URL
-  const saveBridge = (url) => {
-    const clean = (url || "").trim().replace(/\/+$/, "");
-    setBridgeUrl(clean);
-    localStorage.setItem("lanBridgeUrl", clean);
-  };
+// replace your saveBridge with this hardened version
+const saveBridge = (url) => {
+  const clean = (url || "").trim().replace(/\/+$/, "");
+  // 🚧 Only allow localhost/127.0.0.1 to prevent pointing at your backend/domain
+  try {
+    const u = new URL(clean);
+    const isLocal = (u.hostname === "127.0.0.1" || u.hostname === "localhost") && (u.port === "7777");
+    const finalUrl = isLocal ? `http://127.0.0.1:7777` : `http://127.0.0.1:7777`;
+    setBridgeUrl(finalUrl);
+    localStorage.setItem("lanBridgeUrl", finalUrl);
+  } catch {
+    setBridgeUrl("http://127.0.0.1:7777");
+    localStorage.setItem("lanBridgeUrl", "http://127.0.0.1:7777");
+  }
+};
+
 
   // Ping local bridge
   const pingBridge = async () => {
@@ -347,6 +358,13 @@ const probeHost = async () => {
         <button onClick={rescuePrinter} className="px-3 py-2 rounded-xl bg-emerald-700 text-white font-bold">
   Rescue Printer (One-Click)
 </button>
+<button
+  type="button"
+  onClick={() => saveBridge("http://127.0.0.1:7777")}
+  className="px-3 py-2 rounded-xl bg-gray-500 text-white font-bold"
+>
+  Reset Bridge URL
+</button>
 
         <div className="text-sm text-gray-700">{status}</div>
       </div>
@@ -430,7 +448,6 @@ const probeHost = async () => {
               </select>
             )}
           </div>
-
           <div className="md:col-span-2 text-xs text-gray-600">
             Tip: Set your printer to a <b>Static IP</b> and enable RAW/JetDirect <code>9100</code>.
           </div>
