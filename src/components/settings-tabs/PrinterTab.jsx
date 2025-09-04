@@ -172,7 +172,7 @@ const probeHost = async () => {
       return;
     }
     setStatus(`Probing ${host}…`);
-    const u = `${bridgeUrl.replace(/\/+$/, "")}/probe?host=${encodeURIComponent(host)}&ports=9100,9101,515,631&timeoutMs=800`;
+    const u = `${bridgeUrl.replace(/\/+$/, "")}/probe?host=${encodeURIComponent(host)}&ports=80,443,9100,9101,515,631&timeoutMs=1200`;
     const r = await fetch(u, { cache: "no-store" });
     if (!r.ok) throw new Error("Probe HTTP " + r.status);
     const j = await r.json();
