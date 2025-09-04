@@ -1,11 +1,12 @@
 // src/pages/PrinterTab.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-// Prefer your prod backend when VITE_API_URL is not set
- const API_URL = (import.meta?.env?.VITE_API_URL || "https://hurrypos-backend.onrender.com").replace(/\/+$/, "");
- const BACKEND = "https://pos.beypro.com";
-// Default printer layout (keep in sync with backend DEFAULT_LAYOUT)
+/* ---------------------- Backend (unchanged) ---------------------- */
+const API_URL = (import.meta?.env?.VITE_API_URL || "https://hurrypos-backend.onrender.com").replace(/\/+$/, "");
+const BACKEND = "https://pos.beypro.com";
+
+/* ---------------------- Defaults (unchanged) ---------------------- */
 const defaultLayout = {
   shopAddress: "",
   receiptWidth: "80mm",
@@ -24,7 +25,6 @@ const defaultLayout = {
   extras: [],
 };
 
-// Demo preview order to avoid ReferenceError
 const previewOrder = {
   id: 1234,
   date: new Date().toLocaleString(),
@@ -40,242 +40,217 @@ const previewOrder = {
   },
 };
 
+const BRIDGE_DEFAULT = "http://127.0.0.1:7777";
 
-
-// Safe SHOP_ID for API calls
-const SHOP_ID_SAFE =
-  (typeof SHOP_ID !== "undefined" ? SHOP_ID : (import.meta?.env?.VITE_SHOP_ID || "default"));
-
-// ---------- BridgeTools: LAN discovery + test via local bridge ----------
-// ---------- BridgeTools: LAN discovery + test via local bridge ----------
-function BridgeTools() {
+/* =================================================================
+   SIMPLE LAN PRINTING — BridgeToolsSimple
+   ================================================================= */
+function BridgeToolsSimple() {
   const { t } = useTranslation();
 
-  // State
-  const [bridgeUrl, setBridgeUrl] = useState(
-    localStorage.getItem("lanBridgeUrl") || "http://127.0.0.1:7777"
-  );
+  // --- State
+  const [bridgeUrl, setBridgeUrl] = useState(() => {
+    const saved = localStorage.getItem("lanBridgeUrl");
+    return saved && saved.startsWith("http") ? BRIDGE_DEFAULT : BRIDGE_DEFAULT;
+  });
   const [status, setStatus] = useState("");
-  const [testing, setTesting] = useState(false);
+  const [bridgeOk, setBridgeOk] = useState(false);
+
   const [scanning, setScanning] = useState(false);
-  const [found, setFound] = useState([]); // [{host, port}]
-  // ✅ define these so the button & fixer work
+  const [found, setFound] = useState([]); // [{host, ports:[...], base, sameSubnet}]
+  const [selectedHost, setSelectedHost] = useState(localStorage.getItem("lanPrinterHost") || "");
+  const [selectedPort, setSelectedPort] = useState(Number(localStorage.getItem("lanPrinterPort") || "9100") || 9100);
+
   const [loading, setLoading] = useState(false);
-  const [selectedHost, setSelectedHost] = useState(
-    localStorage.getItem("lanPrinterHost") || ""
-  );
+  const [testing, setTesting] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const resetStatus = () => setStatus("");
+  // --- Helpers
+  const lockBridgeUrl = (val) => {
+    // Always lock to local bridge
+    setBridgeUrl(BRIDGE_DEFAULT);
+    localStorage.setItem("lanBridgeUrl", BRIDGE_DEFAULT);
+  };
 
-  // Persist Bridge URL
-// replace your saveBridge with this hardened version
-const saveBridge = (url) => {
-  const clean = (url || "").trim().replace(/\/+$/, "");
-  // 🚧 Only allow localhost/127.0.0.1 to prevent pointing at your backend/domain
-  try {
-    const u = new URL(clean);
-    const isLocal = (u.hostname === "127.0.0.1" || u.hostname === "localhost") && (u.port === "7777");
-    const finalUrl = isLocal ? `http://127.0.0.1:7777` : `http://127.0.0.1:7777`;
-    setBridgeUrl(finalUrl);
-    localStorage.setItem("lanBridgeUrl", finalUrl);
-  } catch {
-    setBridgeUrl("http://127.0.0.1:7777");
-    localStorage.setItem("lanBridgeUrl", "http://127.0.0.1:7777");
+  async function fetchJson(url, init) {
+    const r = await fetch(url, init);
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch {
+      const head = text.slice(0, 120);
+      throw new Error(`Non-JSON from ${url} (HTTP ${r.status}). First bytes: ${head}`);
+    }
+    if (!r.ok || data?.error) {
+      throw new Error(data?.error || `HTTP ${r.status}`);
+    }
+    return data;
   }
-};
 
+  const safeBridge = useMemo(() => bridgeUrl.replace(/\/+$/, ""), [bridgeUrl]);
 
-  // Ping local bridge
+  // --- Bridge ping
   const pingBridge = async () => {
     try {
-      setStatus("Checking bridge…");
-      const r = await fetch(`${bridgeUrl}/ping`, { cache: "no-store" });
-      if (!r.ok) throw new Error("Bridge HTTP " + r.status);
-      const j = await r.json();
-      setStatus(
-        `Bridge online ✅ (${new Date(j.ts || Date.now()).toLocaleTimeString()})`
-      );
+      const j = await fetchJson(`${safeBridge}/ping`, { cache: "no-store" });
+      setBridgeOk(true);
+      setStatus(`Bridge online ✅ (${new Date(j.ts || Date.now()).toLocaleTimeString()})`);
     } catch (e) {
-      setStatus("Bridge offline ❌ " + (e.message || e));
+      setBridgeOk(false);
+      setStatus(`Bridge offline ❌ ${e.message || e}`);
     }
   };
 
-  // Scan printers on LAN via bridge /discover
+  // --- Discover printers (all local subnets)
   const scanPrinters = async () => {
     setScanning(true);
-    setStatus("Scanning LAN for :9100 printers…");
+    setStatus("Scanning LAN for printers…");
     setFound([]);
     try {
-      const u = `${bridgeUrl.replace(/\/+$/, "")}/discover?all=1&timeoutMs=2000&concurrency=32`;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort("timeout"), 25000);
-      const r = await fetch(u, { signal: ctrl.signal, cache: "no-store" });
-      clearTimeout(timer);
-      if (!r.ok) throw new Error("Scan HTTP " + r.status);
-      const j = await r.json();
+      const u = `${safeBridge}/discover?all=1&timeoutMs=2000&concurrency=48`;
+      const j = await fetchJson(u, { cache: "no-store" });
       const list = Array.isArray(j.results) ? j.results : [];
+      // Prefer hosts with 9100 open
+      list.sort((a,b) => {
+        const a9100 = a.ports.includes(9100) ? 1 : 0;
+        const b9100 = b.ports.includes(9100) ? 1 : 0;
+        if (b9100 !== a9100) return b9100 - a9100;
+        return a.host.localeCompare(b.host);
+      });
       setFound(list);
       setStatus(`Found ${list.length} printer(s).`);
+      // If nothing selected yet but there is a candidate, preselect first 9100
+      if (!selectedHost && list.length) {
+        const first = list[0];
+        setSelectedHost(first.host);
+        localStorage.setItem("lanPrinterHost", first.host);
+        if (first.ports?.includes(9100)) {
+          setSelectedPort(9100);
+          localStorage.setItem("lanPrinterPort", "9100");
+        }
+      }
     } catch (e) {
       setStatus("Scan failed ❌ " + (e.message || e));
     } finally {
       setScanning(false);
     }
   };
-// Add temporary IP alias (Windows only) so your PC can talk to 192.168.123.x
-const assistAdd = async () => {
-  try {
-    const host = selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
-    if (!host) return setStatus("Set Printer IP first.");
-    setLoading(true);
-    setStatus("Adding temporary IP alias… (Admin required)");
-    const r = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/add`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printerHost: host })
-    });
-    const j = await r.json();
-    if (!r.ok || j.error) throw new Error(j.error || "Add IP failed");
 
-    // 🔴 NEW: remember these for cleanup
-    localStorage.setItem("lanTempIp", j.tempIp || "");
-    localStorage.setItem("lanAdapterAlias", j.adapterAlias || "");
-
-    setStatus(`Temp IP added on ${j.adapterAlias} as ${j.tempIp}/${j.prefixLength}. Now click “Open Printer UI”, switch to DHCP, reboot printer, then “Remove Temp IP”.`);
-  } catch (e) {
-    setStatus("Add temp IP failed ❌ " + (e.message || e));
-  } finally { setLoading(false); }
-};
-
-const assistOpen = async () => {
-  try {
-    const host = selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
-    if (!host) return setStatus("Set Printer IP first.");
-    setStatus("Opening printer web UI…");
-    const r = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/open`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printerHost: host })
-    });
-    const j = await r.json();
-    if (!r.ok || j.error) throw new Error(j.error || "Open failed");
-    setStatus("Printer UI opened. Switch network to DHCP (or your main subnet), then reboot printer.");
-  } catch (e) {
-    setStatus("Open UI failed ❌ " + (e.message || e));
-  }
-};
-
-const assistCleanup = async () => {
-  try {
-    setStatus("Removing temporary IP…");
-    // 🔴 NEW: read the saved values
-    const tempIp = localStorage.getItem("lanTempIp") || "";
-    const adapterAlias = localStorage.getItem("lanAdapterAlias") || "";
-    if (!tempIp || !adapterAlias) {
-      return setStatus("Cleanup failed ❌ Missing temp IP info. Re-run 'Add Temp IP' first.");
-    }
-    const r = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/cleanup`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tempIp, adapterAlias }) // 🔴 send both
-    });
-    const j = await r.json();
-    if (!r.ok || j.error) throw new Error(j.error || "Cleanup failed");
-    setStatus("Temporary IP removed ✅");
-  } catch (e) {
-    setStatus("Cleanup failed ❌ " + (e.message || e));
-  }
-};
-
-const rescuePrinter = async () => {
-  resetStatus();
-  const host = selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
-  if (!host) return setStatus("Set Printer IP first.");
-  setLoading(true);
-  try {
-    // 1) Add temp IP
-    const addRes = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/add`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printerHost: host })
-    });
-    const addJ = await addRes.json();
-    if (!addRes.ok || addJ.error) throw new Error(addJ.error || "Add IP failed");
-    localStorage.setItem("lanTempIp", addJ.tempIp || "");
-    localStorage.setItem("lanAdapterAlias", addJ.adapterAlias || "");
-    setStatus(`✅ Temp IP ${addJ.tempIp} set. Checking printer web page…`);
-
-    // 2) Probe web ports
-    const probeUrl = `${bridgeUrl.replace(/\/+$/, "")}/probe?host=${encodeURIComponent(host)}&ports=80,443,8080,8000,8443&timeoutMs=1200`;
-    const probeRes = await fetch(probeUrl);
-    const probeJ = await probeRes.json();
-
-    // 3) Open the most likely UI automatically
-    const openRes = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/open`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printerHost: host })
-    });
-    await openRes.json().catch(() => ({}));
-
-    // 4) Guide the user
-    const webOpen = (probeJ.open || []).some(p => [80,443,8080,8000,8443].includes(p.port));
-    setStatus(webOpen
-      ? "🌐 Printer UI opened. In Network → TCP/IP set Mode = DHCP, save & reboot. Then click “Remove Temp IP”."
-      : "ℹ️ Couldn’t see a web port. Use the printer’s FEED-button/DIP reset to enable DHCP, then click “Remove Temp IP”."
-    );
-  } catch (e) {
-    setStatus("Rescue failed ❌ " + (e.message || e));
-  } finally {
-    setLoading(false);
-  }
-};
-
-  // Probe a specific host to see open ports and if it's on the same subnet
-const probeHost = async () => {
-  try {
-    const host =
-      selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
-    if (!host) {
-      setStatus("Set Printer IP first.");
-      return;
-    }
-    setStatus(`Probing ${host}…`);
-    const u = `${bridgeUrl.replace(/\/+$/, "")}/probe?host=${encodeURIComponent(host)}&ports=80,443,9100,9101,515,631&timeoutMs=1200`;
-    const r = await fetch(u, { cache: "no-store" });
-    if (!r.ok) throw new Error("Probe HTTP " + r.status);
-    const j = await r.json();
-    const open = (j.open || []).map(p => p.port).join(", ") || "none";
-    if (j.sameSubnet === false) {
-      setStatus(`Reachable ports: ${open}. ⚠️ Different subnet (PC ${j.primaryBase} vs printer ${host}). Use “Fix via PowerShell Script” below, switch printer to DHCP, then Rescan.`);
-    } else {
-      setStatus(`Reachable ports: ${open}. ${open.includes("9100") ? "✅ 9100 open – should print." : "❌ 9100 closed – check printer RAW/JetDirect."}`);
-    }
-  } catch (e) {
-    setStatus("Probe failed ❌ " + (e.message || e));
-  }
-};
-
-
-  // Test print via bridge using stored host/port
-  const testPrint = async () => {
+  // --- Probe a single host to see if web is reachable
+  const probeSelected = async () => {
+    if (!selectedHost) return setStatus("Select a printer first.");
     try {
-      setTesting(true);
-      setStatus("Sending test print…");
-      const host =
-        selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
-      const port = Number(localStorage.getItem("lanPrinterPort") || "9100") || 9100;
-      if (!host) throw new Error("Set Printer IP first.");
-      const body = {
-        host,
-        port,
-        content: "Beypro Test\n1x Burger 195.00\nTOTAL 195.00 TL\n",
-        timeoutMs: 15000,
-      };
-      const r = await fetch(`${bridgeUrl}/print-raw`, {
+      setStatus(`Probing ${selectedHost}…`);
+      const u = `${safeBridge}/probe?host=${encodeURIComponent(selectedHost)}&ports=80,443,8080,8000,8443,9100,9101,515,631&timeoutMs=1200`;
+      const j = await fetchJson(u, { cache: "no-store" });
+      const openPorts = (j.open || []).map(p => p.port);
+      const webOpen = openPorts.some(p => [80,443,8080,8000,8443].includes(p));
+      const printOpen = openPorts.includes(9100);
+      const same = j.sameSubnet;
+      setStatus([
+        `Open ports: ${openPorts.length ? openPorts.join(", ") : "none"}.`,
+        same === false ? ` ⚠️ Different subnet (PC ${j.primaryBase} vs printer ${selectedHost}).` : "",
+        printOpen ? " ✅ 9100 open – should print." : " ❌ 9100 closed – check RAW/JetDirect.",
+        webOpen ? " 🌐 Web UI reachable — you can open and set DHCP." : "",
+      ].join(""));
+      return { webOpen, printOpen, same };
+    } catch (e) {
+      setStatus("Probe failed ❌ " + (e.message || e));
+      return { webOpen:false, printOpen:false, same:null };
+    }
+  };
+
+  // --- Open printer web UI via bridge (OS default browser)
+  const openPrinterUI = async () => {
+    if (!selectedHost) return setStatus("Select a printer first.");
+    try {
+      await fetchJson(`${safeBridge}/assist/subnet/open`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ printerHost: selectedHost })
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error || `Print HTTP ${r.status}`);
+      setStatus("Printer UI opened. In Network → TCP/IP, set Mode = DHCP, save & reboot.");
+    } catch (e) {
+      setStatus("Open UI failed ❌ " + (e.message || e));
+    }
+  };
+
+  // --- One-click rescue: add temp IP (Win), open UI, guide; store temp for cleanup
+  const rescuePrinter = async () => {
+    if (!selectedHost) return setStatus("Select a printer first.");
+    setLoading(true);
+    try {
+      // 1) Add temp IP (Windows only; if not win will return error gracefully)
+      let addOk = false;
+      try {
+        const addJ = await fetchJson(`${safeBridge}/assist/subnet/add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ printerHost: selectedHost })
+        });
+        addOk = true;
+        localStorage.setItem("lanTempIp", addJ.tempIp || "");
+        localStorage.setItem("lanAdapterAlias", addJ.adapterAlias || "");
+        setStatus(`✅ Temp IP ${addJ.tempIp} set on ${addJ.adapterAlias}.`);
+      } catch (e) {
+        // Not Windows or elevation issue — continue, we may still reach web port
+        setStatus(`Temp IP step skipped/failed: ${e.message}. Trying to open UI…`);
       }
+
+      // 2) Probe & open UI
+      await probeSelected();
+      await openPrinterUI();
+
+      setStatus((prev) =>
+        prev + "  In the page, set DHCP (or set a static in your main LAN), save & reboot. Then click “Remove Temp IP”."
+      );
+    } catch (e) {
+      setStatus("Rescue failed ❌ " + (e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Remove temp IP (Windows)
+  const cleanupTemp = async () => {
+    setLoading(true);
+    try {
+      const tempIp = localStorage.getItem("lanTempIp") || "";
+      const adapterAlias = localStorage.getItem("lanAdapterAlias") || "";
+      if (!tempIp || !adapterAlias) {
+        setStatus("Cleanup failed ❌ Missing temp IP info. Run Rescue/Add Temp again.");
+        return;
+      }
+      await fetchJson(`${safeBridge}/assist/subnet/cleanup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tempIp, adapterAlias })
+      });
+      setStatus("Temporary IP removed ✅");
+      localStorage.removeItem("lanTempIp");
+      localStorage.removeItem("lanAdapterAlias");
+    } catch (e) {
+      setStatus("Cleanup failed ❌ " + (e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Test print
+  const testPrint = async () => {
+    if (!selectedHost) return setStatus("Select a printer first.");
+    setTesting(true);
+    try {
+      await fetchJson(`${safeBridge}/print-raw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host: selectedHost,
+          port: selectedPort || 9100,
+          content: "Beypro Test\n1x Burger 195.00\nTOTAL 195.00 TL\n",
+          timeoutMs: 15000,
+        })
+      });
       setStatus("Test sent ✅ Check your printer.");
     } catch (e) {
       setStatus("Print failed ❌ " + (e.message || e));
@@ -284,204 +259,174 @@ const probeHost = async () => {
     }
   };
 
-  // 🔧 Windows-only assisted fixer (launches elevated PowerShell via bridge)
-  const runFixScript = async () => {
-    resetStatus();
-    const host = selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
-    if (!host) {
-      setStatus("Select a printer (or type its IP) first.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await fetch(`${bridgeUrl}/assist/fix-printer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ printerHost: host }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data?.error) {
-       const msg = [data?.error, data?.details].filter(Boolean).join(" — ");
-        throw new Error(msg || `HTTP ${res.status}`);
-      }
-      setStatus(`PowerShell launched (Admin). If you didn’t see a UAC prompt, right-click the Bridge and “Run as administrator”. Script: ${data.scriptPath || "embedded"}`);
-    } catch (e) {
-      setStatus(
-        "Could not launch PowerShell. Ensure Beypro Bridge is running and try Run as Administrator."
-      );
-      setStatus(`Could not launch PowerShell ❌ ${e.message || e}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // --- Auto ping on mount + lock URL
   useEffect(() => {
+    lockBridgeUrl(BRIDGE_DEFAULT);
     pingBridge();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- UI
   return (
     <div className="space-y-4">
-      {/* Step 1 — Download & Install */}
+      {/* Step 1 — Install Bridge */}
       <div className="rounded-xl border bg-white/60 p-4 space-y-2">
-        <h3 className="text-xl font-bold">Step 1 — Download & Install Beypro Bridge</h3>
+        <h3 className="text-xl font-bold">Step 1 — Install Beypro Bridge</h3>
         <div className="flex flex-wrap gap-2">
-          <a className="px-3 py-2 rounded-xl bg-black text-white"
-             href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}>macOS (ZIP)</a>
-          <a className="px-3 py-2 rounded-xl bg-blue-700 text-white"
-             href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}>Windows (ZIP)</a>
-          <a className="px-3 py-2 rounded-xl bg-gray-800 text-white"
-             href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}>Linux (TAR.GZ)</a>
+          <a className="px-3 py-2 rounded-xl bg-black text-white" href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}>macOS (ZIP)</a>
+          <a className="px-3 py-2 rounded-xl bg-blue-700 text-white" href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}>Windows (ZIP)</a>
+          <a className="px-3 py-2 rounded-xl bg-gray-800 text-white" href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}>Linux (TAR.GZ)</a>
         </div>
-        <p className="text-xs text-gray-600">
-          After download, run the included installer to auto-start Bridge on login.
-        </p>
+        <div className="flex items-center gap-2">
+          <button onClick={pingBridge} className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold">Detect Bridge</button>
+          <button onClick={() => lockBridgeUrl(BRIDGE_DEFAULT)} className="px-3 py-2 rounded-xl bg-gray-600 text-white font-bold">Reset Bridge URL</button>
+          <span className="text-sm text-gray-700">{status}</span>
+        </div>
       </div>
 
-      {/* Step 2 — Bridge URL */}
-      <div className="rounded-xl border bg-white/60 p-4 space-y-2">
-        <h3 className="text-xl font-bold">Step 2 — Detect Bridge</h3>
-        <div className="flex gap-2">
-          <input
-            className="rounded-xl border p-2 flex-1"
-            value={bridgeUrl}
-            onChange={(e) => saveBridge(e.target.value)}
-          />
+      {/* Step 2 — Plug & Print (Find → Select → Test) */}
+      <div className="rounded-xl border bg-white/60 p-4 space-y-3">
+        <h3 className="text-xl font-bold">Step 2 — Plug & Print (LAN)</h3>
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            type="button"
-            onClick={pingBridge}
-            className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold"
+            onClick={scanPrinters}
+            disabled={scanning || !bridgeOk}
+            className="px-3 py-2 rounded-xl bg-purple-600 text-white font-bold disabled:opacity-50"
           >
-            {t("Detect Bridge")}
+            {scanning ? "Scanning…" : "Find Printers"}
+          </button>
+
+          <button
+            onClick={probeSelected}
+            disabled={!selectedHost}
+            className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold disabled:opacity-50"
+          >
+            Probe Selected
+          </button>
+
+          <button
+            onClick={testPrint}
+            disabled={!selectedHost || testing}
+            className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-50"
+          >
+            {testing ? "Printing…" : "Send Test Ticket"}
           </button>
         </div>
-        <button onClick={rescuePrinter} className="px-3 py-2 rounded-xl bg-emerald-700 text-white font-bold">
-  Rescue Printer (One-Click)
-</button>
-<button
-  type="button"
-  onClick={() => saveBridge("http://127.0.0.1:7777")}
-  className="px-3 py-2 rounded-xl bg-gray-500 text-white font-bold"
->
-  Reset Bridge URL
-</button>
 
-        <div className="text-sm text-gray-700">{status}</div>
-      </div>
-
-      {/* Step 3 — Set Printer & Scan */}
-      <div className="rounded-xl border bg-white/60 p-4 space-y-3">
-        <h3 className="text-xl font-bold">Step 3 — Set Printer IP / Port</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="font-semibold">Printer IP</label>
-            <input
-              className="rounded-xl border p-2 w-full"
-              placeholder="e.g. 192.168.1.50"
-              defaultValue={selectedHost}
+        {/* Printers list */}
+        {found.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <label className="font-semibold">Select a printer</label>
+            <select
+              className="rounded-xl border p-2"
+              value={selectedHost || ""}
               onChange={(e) => {
-                const host = e.target.value.trim();
+                const host = e.target.value;
                 setSelectedHost(host);
                 localStorage.setItem("lanPrinterHost", host);
+                // pick a sensible port (prefer 9100 if present in list)
+                const x = found.find(f => f.host === host);
+                const pick = (x?.ports || []).includes(9100) ? 9100 : (x?.ports?.[0] || 9100);
+                setSelectedPort(pick);
+                localStorage.setItem("lanPrinterPort", String(pick));
+                setStatus(`Selected ${host}:${pick}`);
               }}
-            />
+            >
+              {found.map(({ host, ports, sameSubnet }) => (
+                <option key={host} value={host}>
+                  {host}:{ports.includes(9100) ? 9100 : (ports[0] || "—")}
+                  {sameSubnet === false ? "  (other subnet ⚠️)" : ""}
+                </option>
+              ))}
+            </select>
           </div>
-          <div>
-            <label className="font-semibold">Port</label>
-            <input
-              type="number"
-              className="rounded-xl border p-2 w-full"
-              placeholder="9100"
-              defaultValue={localStorage.getItem("lanPrinterPort") || "9100"}
-              onChange={(e) =>
-                localStorage.setItem("lanPrinterPort", e.target.value.trim() || "9100")
-              }
-            />
-          </div>
+        )}
 
-          <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+        {/* One-click Rescue */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={rescuePrinter}
+            disabled={!selectedHost}
+            className="px-3 py-2 rounded-xl bg-amber-600 text-white font-bold disabled:opacity-50"
+          >
+            Rescue Printer (Open UI & Fix)
+          </button>
+          <button
+            onClick={openPrinterUI}
+            disabled={!selectedHost}
+            className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold disabled:opacity-50"
+          >
+            Open Printer UI
+          </button>
+          <button
+            onClick={cleanupTemp}
+            className="px-3 py-2 rounded-xl bg-gray-600 text-white font-bold"
+          >
+            Remove Temp IP
+          </button>
 
-<div className="flex flex-wrap items-center gap-2">
-  <button onClick={scanPrinters} disabled={scanning}
-    className="px-3 py-2 rounded-xl bg-purple-600 text-white font-bold disabled:opacity-50">
-    {scanning ? "Scanning…" : "Find Printers (Scan)"}
-  </button>
-
-  <button onClick={assistAdd}
-    className="px-3 py-2 rounded-xl bg-amber-600 text-white font-bold">
-    Add Temp IP (Windows)
-  </button>
-  <button onClick={assistOpen}
-    className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold">
-    Open Printer UI
-  </button>
-  <button onClick={assistCleanup}
-    className="px-3 py-2 rounded-xl bg-gray-600 text-white font-bold">
-    Remove Temp IP
-  </button>
-              <button
-  type="button"
-  onClick={probeHost}
-  className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold"
->
-  Probe IP
-</button>
-</div>
-
-            {found.length > 0 && (
-              <select
-                className="rounded-xl border p-2"
-                defaultValue=""
-                onChange={(e) => {
-                  const host = e.target.value;
-                  setSelectedHost(host); // ✅ keep in state
-                  if (host) {
-                    localStorage.setItem("lanPrinterHost", host);
-                    setStatus(`Selected ${host} as printer host.`);
-                  }
-                }}
-              >
-                <option value="" disabled>Select a printer</option>
-                {found.map(({ host, port }) => (
-                  <option key={host} value={host}>{host}:{port}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div className="md:col-span-2 text-xs text-gray-600">
-            Tip: Set your printer to a <b>Static IP</b> and enable RAW/JetDirect <code>9100</code>.
-          </div>
+          <button
+            onClick={() => setShowAdvanced(v => !v)}
+            className="ml-auto px-3 py-2 rounded-xl bg-gray-200 text-gray-800 font-bold"
+          >
+            {showAdvanced ? "Hide Advanced" : "Advanced…"}
+          </button>
         </div>
-      </div>
 
-      {/* Step 4 — Test Print (Bridge direct) */}
-      <div className="rounded-xl border bg-white/60 p-4 space-y-2">
-        <h3 className="text-xl font-bold">Step 4 — Test Print</h3>
-        <button
-          type="button"
-          onClick={testPrint}
-          disabled={testing}
-          className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-50"
-        >
-          {testing ? "Printing…" : "Send Test Ticket"}
-        </button>
-      </div>
+        {/* Advanced (optional IP/port override) */}
+        {showAdvanced && (
+          <div className="rounded-lg border bg-white/70 p-3 space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="font-semibold">Printer IP</label>
+                <input
+                  className="rounded-xl border p-2 w-full"
+                  value={selectedHost}
+                  onChange={(e) => {
+                    const host = e.target.value.trim();
+                    setSelectedHost(host);
+                    localStorage.setItem("lanPrinterHost", host);
+                  }}
+                  placeholder="e.g. 192.168.1.50"
+                />
+              </div>
+              <div>
+                <label className="font-semibold">Port</label>
+                <input
+                  type="number"
+                  className="rounded-xl border p-2 w-full"
+                  value={selectedPort}
+                  onChange={(e) => {
+                    const p = Number(e.target.value || "9100") || 9100;
+                    setSelectedPort(p);
+                    localStorage.setItem("lanPrinterPort", String(p));
+                  }}
+                  placeholder="9100"
+                />
+              </div>
+              <div className="flex items-end">
+                <button onClick={probeSelected} className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold w-full">
+                  Probe IP
+                </button>
+              </div>
+            </div>
+            <div className="text-xs text-gray-600">
+              Tip: Printers should be DHCP (recommended) or a static IP in your main LAN. Printing uses RAW/JetDirect (port 9100).
+            </div>
+          </div>
+        )}
 
-      {/* Windows PowerShell helper */}
-      <button
-        className="px-3 py-2 rounded bg-indigo-600 text-white disabled:opacity-50"
-        onClick={runFixScript}
-        disabled={loading || !(selectedHost || localStorage.getItem("lanPrinterHost"))}
-        title="Launch PowerShell fixer to temporarily add IP, open printer UI, and clean up"
-      >
-        Fix via PowerShell Script
-      </button>
+        {/* Status */}
+        <div className="text-sm text-gray-700">{status}</div>
+      </div>
     </div>
   );
 }
 
-
-// ---------- PrinterTab ----------
+/* =================================================================
+   MAIN PAGE — keeps your customize-print section the same
+   ================================================================= */
 export default function PrinterTab() {
   const { t } = useTranslation();
 
@@ -490,22 +435,13 @@ export default function PrinterTab() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  
 
+  const [autoPrintTable, setAutoPrintTable] = useState(localStorage.getItem("autoPrintTable") === "true");
+  const [autoPrintPacket, setAutoPrintPacket] = useState(localStorage.getItem("autoPrintPacket") === "true");
 
-  const [autoPrintTable, setAutoPrintTable] = useState(
-    localStorage.getItem("autoPrintTable") === "true"
-  );
-  const [autoPrintPacket, setAutoPrintPacket] = useState(
-    localStorage.getItem("autoPrintPacket") === "true"
-  );
+  const [printingMode, setPrintingMode] = useState(localStorage.getItem("printingMode") || "lan"); // default to LAN
 
-  // NEW: simple printing mode (no third-party)
-  const [printingMode, setPrintingMode] = useState(
-    localStorage.getItem("printingMode") || "standard" // 'standard' | 'kiosk' | 'lan'
-  );
-
-  // Load saved layout from backend
+  // Load saved layout
   useEffect(() => {
     setLoading(true);
     fetch(`${API_URL}/api/printer-settings`)
@@ -521,7 +457,7 @@ export default function PrinterTab() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Just to show we hear order events here (printing handled globally)
+  // Listen preview-only (unchanged)
   useEffect(() => {
     const sock = (typeof socket !== "undefined" ? socket : (typeof window !== "undefined" ? window.socket : null));
     if (!sock) return;
@@ -539,7 +475,7 @@ export default function PrinterTab() {
     return () => sock.off("order_confirmed", handler);
   }, []);
 
-  // Test print using current preview (browser print path)
+  // Browser print preview test (unchanged)
   function handlePrintTest() {
     const preview = document.getElementById("printable-receipt");
     if (!preview) return alert("Receipt preview not found!");
@@ -596,23 +532,15 @@ export default function PrinterTab() {
     }, 300);
   }
 
-  // Handlers for layout form
+  // Layout handlers (unchanged)
   const handle = (k, v) => setLayout((prev) => ({ ...prev, [k]: v }));
   const handleExtraChange = (i, key, v) => {
     const updated = [...layout.extras];
     updated[i][key] = v;
     setLayout((prev) => ({ ...prev, extras: updated }));
   };
-  const addExtra = () =>
-    setLayout((prev) => ({
-      ...prev,
-      extras: [...prev.extras, { label: "", value: "" }],
-    }));
-  const removeExtra = (i) =>
-    setLayout((prev) => ({
-      ...prev,
-      extras: prev.extras.filter((_, idx) => idx !== i),
-    }));
+  const addExtra = () => setLayout((prev) => ({ ...prev, extras: [...prev.extras, { label: "", value: "" }]}));
+  const removeExtra = (i) => setLayout((prev) => ({ ...prev, extras: prev.extras.filter((_, idx) => idx !== i) }));
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -620,10 +548,9 @@ export default function PrinterTab() {
         🖨️ {t("Printer Settings")}
       </h2>
 
-      {/* Printing Mode + Auto-print scope */}
+      {/* Printing Mode + Auto-print (kept) */}
       <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Printing Mode selector */}
           <div className="space-y-2">
             <label className="font-bold">Printing Mode</label>
             <select
@@ -639,12 +566,9 @@ export default function PrinterTab() {
               <option value="kiosk">Kiosk (Silent Print)</option>
               <option value="lan">LAN Thermal (Bridge)</option>
             </select>
-            <p className="text-xs text-gray-500">
-              Choose how printing should work on this device.
-            </p>
+            <p className="text-xs text-gray-500">Choose how printing should work on this device.</p>
           </div>
 
-          {/* Auto-print Scope */}
           <div>
             <label className="font-bold">Auto-print Scope</label>
             <div className="flex flex-col gap-2">
@@ -675,17 +599,17 @@ export default function PrinterTab() {
         </div>
       </div>
 
-      {/* Show LAN tools when selected (contains scanPrinters definition) */}
-      {printingMode === "lan" && <BridgeTools />}
+      {/* Show simplified LAN tools by default */}
+      {printingMode === "lan" && <BridgeToolsSimple />}
 
       <p className="text-gray-500 mb-4">
         {t("Customize how your orders are printed. All changes preview live!")}
       </p>
 
+      {/* Customize print (unchanged UI) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Controls */}
         <div className="space-y-4">
-          {/* Shop Address */}
           <div>
             <label className="font-bold">{t("Shop Address")}:</label>
             <textarea
@@ -697,7 +621,6 @@ export default function PrinterTab() {
             />
           </div>
 
-          {/* Width */}
           <div>
             <label className="font-bold">{t("Receipt Width")}:</label>
             <select
@@ -720,26 +643,20 @@ export default function PrinterTab() {
             )}
           </div>
 
-          {/* Packet info toggle */}
           <div>
             <label className="font-bold flex gap-2 items-center">
               <input
                 type="checkbox"
                 checked={layout.showPacketCustomerInfo}
-                onChange={(e) =>
-                  handle("showPacketCustomerInfo", e.target.checked)
-                }
+                onChange={(e) => handle("showPacketCustomerInfo", e.target.checked)}
               />
               {t("Show Customer Name, Phone & Address on Packet Receipt")}
             </label>
             <div className="text-xs text-gray-500 pl-7">
-              {t(
-                "When enabled, the packet/delivery receipt will display the customer's info (name, phone, address) at the top."
-              )}
+              {t("When enabled, the packet/delivery receipt will display the customer's info (name, phone, address) at the top.")}
             </div>
           </div>
 
-          {/* Height */}
           <div>
             <label className="font-bold">{t("Receipt Height (optional)")}</label>
             <input
@@ -750,13 +667,10 @@ export default function PrinterTab() {
               onChange={(e) => handle("receiptHeight", e.target.value)}
             />
             <div className="text-xs text-gray-500">
-              {t(
-                "Set a fixed height for your receipt (e.g. 300mm, 1000px). Leave blank for auto height."
-              )}
+              {t("Set a fixed height for your receipt (e.g. 300mm, 1000px). Leave blank for auto height.")}
             </div>
           </div>
 
-          {/* Extras */}
           <div>
             <label className="font-bold">{t("Extra Fields")}:</label>
             <div className="space-y-2">
@@ -766,17 +680,13 @@ export default function PrinterTab() {
                     className="border rounded-xl p-2 flex-1"
                     placeholder={t("Label")}
                     value={extra.label}
-                    onChange={(e) =>
-                      handleExtraChange(i, "label", e.target.value)
-                    }
+                    onChange={(e) => handleExtraChange(i, "label", e.target.value)}
                   />
                   <input
                     className="border rounded-xl p-2 flex-1"
                     placeholder={t("Value")}
                     value={extra.value}
-                    onChange={(e) =>
-                      handleExtraChange(i, "value", e.target.value)
-                    }
+                    onChange={(e) => handleExtraChange(i, "value", e.target.value)}
                   />
                   <button
                     className="px-2 py-1 bg-red-200 text-red-700 rounded-xl font-bold"
@@ -795,7 +705,6 @@ export default function PrinterTab() {
             </div>
           </div>
 
-          {/* Style controls */}
           <div>
             <label className="font-bold">{t("Font Size")}:</label>
             <input
@@ -838,35 +747,19 @@ export default function PrinterTab() {
 
           <div className="flex gap-3 items-center mt-2">
             <label className="flex gap-2 items-center">
-              <input
-                type="checkbox"
-                checked={layout.showLogo}
-                onChange={(e) => handle("showLogo", e.target.checked)}
-              />
+              <input type="checkbox" checked={layout.showLogo} onChange={(e) => handle("showLogo", e.target.checked)} />
               {t("Show Logo")}
             </label>
             <label className="flex gap-2 items-center">
-              <input
-                type="checkbox"
-                checked={layout.showHeader}
-                onChange={(e) => handle("showHeader", e.target.checked)}
-              />
+              <input type="checkbox" checked={layout.showHeader} onChange={(e) => handle("showHeader", e.target.checked)} />
               {t("Show Header")}
             </label>
             <label className="flex gap-2 items-center">
-              <input
-                type="checkbox"
-                checked={layout.showFooter}
-                onChange={(e) => handle("showFooter", e.target.checked)}
-              />
+              <input type="checkbox" checked={layout.showFooter} onChange={(e) => handle("showFooter", e.target.checked)} />
               {t("Show Footer")}
             </label>
             <label className="flex gap-2 items-center">
-              <input
-                type="checkbox"
-                checked={layout.showQr}
-                onChange={(e) => handle("showQr", e.target.checked)}
-              />
+              <input type="checkbox" checked={layout.showQr} onChange={(e) => handle("showQr", e.target.checked)} />
               {t("Show QR")}
             </label>
           </div>
@@ -874,27 +767,19 @@ export default function PrinterTab() {
           {layout.showHeader && (
             <div>
               <label className="font-bold">{t("Header Text")}:</label>
-              <input
-                className="border rounded-xl p-2 w-full"
-                value={layout.headerText}
-                onChange={(e) => handle("headerText", e.target.value)}
-              />
+              <input className="border rounded-xl p-2 w-full" value={layout.headerText} onChange={(e) => handle("headerText", e.target.value)} />
             </div>
           )}
 
           {layout.showFooter && (
             <div>
               <label className="font-bold">{t("Footer Text")}:</label>
-              <input
-                className="border rounded-xl p-2 w-full"
-                value={layout.footerText}
-                onChange={(e) => handle("footerText", e.target.value)}
-              />
+              <input className="border rounded-xl p-2 w-full" value={layout.footerText} onChange={(e) => handle("footerText", e.target.value)} />
             </div>
           )}
         </div>
 
-        {/* Live Preview */}
+        {/* Live Preview (unchanged) */}
         <div className="bg-gradient-to-b from-gray-100 to-white rounded-2xl border border-indigo-200 shadow-xl p-6 relative min-h-[450px]">
           <div
             id="printable-receipt"
@@ -903,10 +788,7 @@ export default function PrinterTab() {
               lineHeight: layout.lineHeight,
               textAlign: layout.alignment,
               fontFamily: "monospace",
-              width:
-                layout.receiptWidth === "custom"
-                  ? layout.customReceiptWidth || "70mm"
-                  : layout.receiptWidth,
+              width: layout.receiptWidth === "custom" ? (layout.customReceiptWidth || "70mm") : layout.receiptWidth,
               minHeight: layout.receiptHeight || 400,
               maxHeight: layout.receiptHeight || "none",
               height: layout.receiptHeight || "auto",
@@ -920,17 +802,11 @@ export default function PrinterTab() {
               </div>
             )}
 
-            {layout.showHeader && (
-              <div className="font-bold text-lg mb-2">{layout.headerText}</div>
-            )}
+            {layout.showHeader && <div className="font-bold text-lg mb-2">{layout.headerText}</div>}
 
-            <div className="text-xs whitespace-pre-line mb-2">
-              {layout.shopAddress}
-            </div>
+            <div className="text-xs whitespace-pre-line mb-2">{layout.shopAddress}</div>
             <div className="text-xs mb-1">{previewOrder.date}</div>
-            <div className="mb-1">
-              {t("Order")} #{previewOrder.id}
-            </div>
+            <div className="mb-1">{t("Order")} #{previewOrder.id}</div>
 
             {layout.showPacketCustomerInfo && (
               <>
@@ -944,50 +820,35 @@ export default function PrinterTab() {
             <div className="mb-2">
               {previewOrder.items.map((item) => (
                 <div key={item.name} className="flex justify-between">
-                  <span>
-                    {item.qty}x {item.name}
-                  </span>
+                  <span>{item.qty}x {item.name}</span>
                   <span>₺{item.price}</span>
                 </div>
               ))}
             </div>
             <hr className="my-2" />
-            <div className="font-bold text-xl mb-2">
-              {t("Total")}: ₺{previewOrder.total}
-            </div>
-            <div className="mb-2">
-              {t("Payment")}: {previewOrder.payment}
-            </div>
+            <div className="font-bold text-xl mb-2">{t("Total")}: ₺{previewOrder.total}</div>
+            <div className="mb-2">{t("Payment")}: {previewOrder.payment}</div>
 
             {layout.extras.length > 0 && (
               <div className="mt-4 mb-2 space-y-1">
-                {layout.extras.map(
-                  (ex, i) =>
-                    ex.label &&
-                    ex.value && (
-                      <div key={i} className="flex justify-between text-xs">
-                        <span className="font-semibold">{ex.label}:</span>
-                        <span>{ex.value}</span>
-                      </div>
-                    )
+                {layout.extras.map((ex, i) =>
+                  ex.label && ex.value ? (
+                    <div key={i} className="flex justify-between text-xs">
+                      <span className="font-semibold">{ex.label}:</span>
+                      <span>{ex.value}</span>
+                    </div>
+                  ) : null
                 )}
               </div>
             )}
 
             {layout.showQr && (
               <div className="flex justify-center mt-3">
-                <img
-                  src="https://api.qrserver.com/v1/create-qr-code/?data=https://hurrybey.com&size=80x80"
-                  alt="QR"
-                />
+                <img src="https://api.qrserver.com/v1/create-qr-code/?data=https://hurrybey.com&size=80x80" alt="QR" />
               </div>
             )}
 
-            {layout.showFooter && (
-              <div className="mt-4 text-xs text-gray-500">
-                {layout.footerText}
-              </div>
-            )}
+            {layout.showFooter && <div className="mt-4 text-xs text-gray-500">{layout.footerText}</div>}
           </div>
 
           <span className="absolute top-3 right-6 bg-indigo-200 text-indigo-800 rounded-xl px-3 py-1 font-mono text-xs shadow">
@@ -1032,9 +893,7 @@ export default function PrinterTab() {
         {saving ? "Saving..." : "Save Printer Settings"}
       </button>
 
-      {success && (
-        <div className="mt-2 text-green-600 font-bold animate-pulse">Saved!</div>
-      )}
+      {success && <div className="mt-2 text-green-600 font-bold animate-pulse">Saved!</div>}
       {error && <div className="mt-2 text-red-600 font-bold">{error}</div>}
     </div>
   );
