@@ -124,6 +124,11 @@ const assistAdd = async () => {
     });
     const j = await r.json();
     if (!r.ok || j.error) throw new Error(j.error || "Add IP failed");
+
+    // 🔴 NEW: remember these for cleanup
+    localStorage.setItem("lanTempIp", j.tempIp || "");
+    localStorage.setItem("lanAdapterAlias", j.adapterAlias || "");
+
     setStatus(`Temp IP added on ${j.adapterAlias} as ${j.tempIp}/${j.prefixLength}. Now click “Open Printer UI”, switch to DHCP, reboot printer, then “Remove Temp IP”.`);
   } catch (e) {
     setStatus("Add temp IP failed ❌ " + (e.message || e));
@@ -150,15 +155,63 @@ const assistOpen = async () => {
 const assistCleanup = async () => {
   try {
     setStatus("Removing temporary IP…");
+    // 🔴 NEW: read the saved values
+    const tempIp = localStorage.getItem("lanTempIp") || "";
+    const adapterAlias = localStorage.getItem("lanAdapterAlias") || "";
+    if (!tempIp || !adapterAlias) {
+      return setStatus("Cleanup failed ❌ Missing temp IP info. Re-run 'Add Temp IP' first.");
+    }
     const r = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/cleanup`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}) // bridge picks primary alias + last temp
+      body: JSON.stringify({ tempIp, adapterAlias }) // 🔴 send both
     });
     const j = await r.json();
     if (!r.ok || j.error) throw new Error(j.error || "Cleanup failed");
     setStatus("Temporary IP removed ✅");
   } catch (e) {
     setStatus("Cleanup failed ❌ " + (e.message || e));
+  }
+};
+
+const rescuePrinter = async () => {
+  resetStatus();
+  const host = selectedHost || (localStorage.getItem("lanPrinterHost") || "").trim();
+  if (!host) return setStatus("Set Printer IP first.");
+  setLoading(true);
+  try {
+    // 1) Add temp IP
+    const addRes = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/add`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ printerHost: host })
+    });
+    const addJ = await addRes.json();
+    if (!addRes.ok || addJ.error) throw new Error(addJ.error || "Add IP failed");
+    localStorage.setItem("lanTempIp", addJ.tempIp || "");
+    localStorage.setItem("lanAdapterAlias", addJ.adapterAlias || "");
+    setStatus(`✅ Temp IP ${addJ.tempIp} set. Checking printer web page…`);
+
+    // 2) Probe web ports
+    const probeUrl = `${bridgeUrl.replace(/\/+$/, "")}/probe?host=${encodeURIComponent(host)}&ports=80,443,8080,8000,8443&timeoutMs=1200`;
+    const probeRes = await fetch(probeUrl);
+    const probeJ = await probeRes.json();
+
+    // 3) Open the most likely UI automatically
+    const openRes = await fetch(`${bridgeUrl.replace(/\/+$/, "")}/assist/subnet/open`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ printerHost: host })
+    });
+    await openRes.json().catch(() => ({}));
+
+    // 4) Guide the user
+    const webOpen = (probeJ.open || []).some(p => [80,443,8080,8000,8443].includes(p.port));
+    setStatus(webOpen
+      ? "🌐 Printer UI opened. In Network → TCP/IP set Mode = DHCP, save & reboot. Then click “Remove Temp IP”."
+      : "ℹ️ Couldn’t see a web port. Use the printer’s FEED-button/DIP reset to enable DHCP, then click “Remove Temp IP”."
+    );
+  } catch (e) {
+    setStatus("Rescue failed ❌ " + (e.message || e));
+  } finally {
+    setLoading(false);
   }
 };
 
@@ -291,6 +344,10 @@ const probeHost = async () => {
             {t("Detect Bridge")}
           </button>
         </div>
+        <button onClick={rescuePrinter} className="px-3 py-2 rounded-xl bg-emerald-700 text-white font-bold">
+  Rescue Printer (One-Click)
+</button>
+
         <div className="text-sm text-gray-700">{status}</div>
       </div>
 
