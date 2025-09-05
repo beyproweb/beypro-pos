@@ -278,10 +278,10 @@ function BridgeToolsSimple() {
         >
           Plug & Print
         </button>
-<div className="flex items-center gap-2">
+
           <button onClick={pingBridge} className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold">Detect Bridge</button>
           <span className="text-sm text-gray-700">{status}</span>
-        </div>
+     
         <div className="flex flex-wrap gap-2">
           <button onClick={autoReserve} disabled={!selectedHost} className="px-3 py-2 rounded-xl bg-indigo-700 text-white font-bold">
             Pin IP (Auto-Reserve)
@@ -344,8 +344,7 @@ function BridgeToolsSimple() {
           </div>
         )}
 
-        {/* Status */}
-        <div className="text-sm text-gray-700">{status}</div>
+    
       </div>
     </div>
   );
