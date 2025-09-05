@@ -296,34 +296,6 @@ function BridgeToolsSimple() {
     </button>
 
     <button
-      onClick={probeSelected}
-      className="px-4 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition"
-    >
-      Probe
-    </button>
-
-    <button
-      onClick={openPrinterUI}
-      className="px-4 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition"
-    >
-      Open Printer UI
-    </button>
-
-    <button
-      onClick={() => rescuePrinter()}
-      className="px-4 py-3 rounded-xl bg-amber-600 text-white font-bold shadow hover:bg-amber-700 transition"
-    >
-      Rescue (Win)
-    </button>
-
-    <button
-      onClick={cleanupTemp}
-      className="px-4 py-3 rounded-xl bg-gray-600 text-white font-bold shadow hover:bg-gray-700 transition"
-    >
-      Remove Temp IP
-    </button>
-
-    <button
       onClick={() => testPrint()}
       disabled={!selectedHost || testing}
       className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition disabled:opacity-50"
