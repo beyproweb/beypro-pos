@@ -268,28 +268,79 @@ function BridgeToolsSimple() {
         
       </div>
 
-      {/* Step 2 — One button */}
-      <div className="rounded-xl border bg-white/60 p-4 space-y-3">
-        <h3 className="text-xl font-bold">Step 2 — Plug & Print (LAN)</h3>
+{/* Step 2 — LAN Printing */}
+<div className="rounded-xl border bg-white/60 p-4 space-y-4">
+  <h3 className="text-xl font-bold">Step 2 — Plug & Print (LAN)</h3>
 
-        <button
-          onClick={plugAndPrint}
-          className="w-full px-4 py-4 rounded-2xl bg-emerald-600 text-white font-extrabold text-lg shadow hover:bg-emerald-700 transition"
-        >
-          Plug & Print
-        </button>
+  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+    <button
+      onClick={plugAndPrint}
+      className="col-span-2 md:col-span-3 px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition"
+    >
+      Plug & Print
+    </button>
 
-          <button onClick={pingBridge} className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold">Detect Bridge</button>
-          <span className="text-sm text-gray-700">{status}</span>
-     
-        <div className="flex flex-wrap gap-2">
-          <button onClick={autoReserve} disabled={!selectedHost} className="px-3 py-2 rounded-xl bg-indigo-700 text-white font-bold">
-            Pin IP (Auto-Reserve)
-          </button>
-          <button onClick={() => setShowAdvanced(v => !v)} className="ml-auto px-3 py-2 rounded-xl bg-gray-200 text-gray-800 font-bold">
-            {showAdvanced ? "Hide Advanced" : "Advanced…"}
-          </button>
-        </div>
+    <button
+      onClick={pingBridge}
+      className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition"
+    >
+      Detect Bridge
+    </button>
+
+    <button
+      onClick={autoReserve}
+      disabled={!selectedHost}
+      className="px-4 py-3 rounded-xl bg-indigo-700 text-white font-bold shadow hover:bg-indigo-800 transition disabled:opacity-50"
+    >
+      Pin IP
+    </button>
+
+    <button
+      onClick={probeSelected}
+      className="px-4 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition"
+    >
+      Probe
+    </button>
+
+    <button
+      onClick={openPrinterUI}
+      className="px-4 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition"
+    >
+      Open Printer UI
+    </button>
+
+    <button
+      onClick={() => rescuePrinter()}
+      className="px-4 py-3 rounded-xl bg-amber-600 text-white font-bold shadow hover:bg-amber-700 transition"
+    >
+      Rescue (Win)
+    </button>
+
+    <button
+      onClick={cleanupTemp}
+      className="px-4 py-3 rounded-xl bg-gray-600 text-white font-bold shadow hover:bg-gray-700 transition"
+    >
+      Remove Temp IP
+    </button>
+
+    <button
+      onClick={() => testPrint()}
+      disabled={!selectedHost || testing}
+      className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition disabled:opacity-50"
+    >
+      {testing ? "Printing…" : "Test Print"}
+    </button>
+
+    <button
+      onClick={() => setShowAdvanced(v => !v)}
+      className="px-4 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold shadow hover:bg-gray-300 transition col-span-2 md:col-span-3"
+    >
+      {showAdvanced ? "Hide Advanced" : "Advanced Options"}
+    </button>
+  </div>
+
+  <div className="text-sm text-gray-700">{status}</div>
+
 
         {/* Advanced drawer */}
         {showAdvanced && (
