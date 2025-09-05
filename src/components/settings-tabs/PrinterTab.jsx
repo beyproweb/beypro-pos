@@ -1,4 +1,8 @@
-// src/pages/PrinterTab.jsx
+// src/pages/PrinterTab.jsx — CLEANED
+// - Step 2 buttons aligned + equal sizing
+// - USB printing tools (generic ESC/POS over USB‑Serial via Bridge)
+// - Auto‑fallback: if LAN fails or internet goes offline → switch to USB (when enabled)
+
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -41,40 +45,19 @@ const previewOrder = {
 const BRIDGE_DEFAULT = "http://127.0.0.1:7777";
 
 /* =================================================================
-   SIMPLE LAN PRINTING — BridgeToolsSimple
+   SHARED helpers
    ================================================================= */
-function BridgeToolsSimple() {
-  const { t } = useTranslation();
+async function fetchJson(url, init) {
+  const r = await fetch(url, init);
+  const txt = await r.text();
+  let data;
+  try { data = JSON.parse(txt); }
+  catch { throw new Error(`Non-JSON from ${url} (HTTP ${r.status})`); }
+  if (!r.ok || data?.error) throw new Error(data?.error || `HTTP ${r.status}`);
+  return data;
+}
 
-  // --- State
-  const [bridgeUrl, setBridgeUrl] = useState(BRIDGE_DEFAULT);
-  const [status, setStatus] = useState("");
-  const [bridgeOk, setBridgeOk] = useState(false);
-
-  const [found, setFound] = useState([]);
-  const [selectedHost, setSelectedHost] = useState(localStorage.getItem("lanPrinterHost") || "");
-  const [selectedPort, setSelectedPort] = useState(Number(localStorage.getItem("lanPrinterPort") || "9100") || 9100);
-
-  const [testing, setTesting] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  // lock Bridge URL to local
-  const lockBridgeUrl = () => {
-    setBridgeUrl(BRIDGE_DEFAULT);
-    localStorage.setItem("lanBridgeUrl", BRIDGE_DEFAULT);
-  };
-  useEffect(() => { lockBridgeUrl(); }, []);
-
-  async function fetchJson(url, init) {
-    const r = await fetch(url, init);
-    const txt = await r.text();
-    let data;
-    try { data = JSON.parse(txt); }
-    catch { throw new Error(`Non-JSON from ${url} (HTTP ${r.status})`); }
-    if (!r.ok || data?.error) throw new Error(data?.error || `HTTP ${r.status}`);
-    return data;
-  }
-  /* =================================================================
+/* =================================================================
    USB PRINTING — BridgeToolsUSB
    ================================================================= */
 function BridgeToolsUSB() {
@@ -161,7 +144,7 @@ function BridgeToolsUSB() {
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center">
         <button onClick={testPrint} className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold">
           Test Print (USB)
         </button>
@@ -172,9 +155,9 @@ function BridgeToolsUSB() {
 }
 
 /* =================================================================
-   SIMPLE LAN PRINTING — BridgeToolsSimple (with fallback hooks)
+   LAN PRINTING — BridgeToolsLAN (with fallback hooks)
    ================================================================= */
-function BridgeToolsSimple({ onLanFailureFallback }) {
+function BridgeToolsLAN({ onLanFailureFallback }) {
   const { t } = useTranslation();
 
   const [bridgeUrl, setBridgeUrl] = useState(BRIDGE_DEFAULT);
@@ -188,7 +171,7 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
   const [testing, setTesting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // NEW: auto fallback toggle (LAN -> USB when LAN print fails OR internet offline)
+  // Auto fallback toggle (LAN → USB)
   const [autoFallbackUsb, setAutoFallbackUsb] = useState(localStorage.getItem("autoFallbackUsb") === "true");
 
   const safeBridge = useMemo(() => bridgeUrl.replace(/\/+$/, ""), [bridgeUrl]);
@@ -198,14 +181,10 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
   };
   useEffect(() => { lockBridgeUrl(); }, []);
 
-  async function fetchJsonLocal(url, init) {
-    return fetchJson(url, init);
-  }
-
   // Bridge ping
   const pingBridge = async () => {
     try {
-      const j = await fetchJsonLocal(`${safeBridge}/ping`, { cache: "no-store" });
+      const j = await fetchJson(`${safeBridge}/ping`, { cache: "no-store" });
       setBridgeOk(true);
       setStatus(`Bridge online ✅ (${new Date(j.ts || Date.now()).toLocaleTimeString()})`);
     } catch (e) {
@@ -214,9 +193,9 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
     }
   };
 
-  // Scan subnets
+  // Scan all subnets
   const scanAll = async () => {
-    const j = await fetchJsonLocal(`${safeBridge}/discover?all=1&timeoutMs=2000&concurrency=48`, { cache: "no-store" });
+    const j = await fetchJson(`${safeBridge}/discover?all=1&timeoutMs=2000&concurrency=48`, { cache: "no-store" });
     const list = Array.isArray(j.results) ? j.results : [];
     list.sort((a,b) => {
       const aScore = (a.ports.includes(9100) ? 100 : 0) + (a.sameSubnet === false ? 0 : 10);
@@ -227,11 +206,11 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
     return list;
   };
 
-  // Probe
+  // Probe selected
   const probeSelected = async () => {
     if (!selectedHost) return setStatus("Select a printer first.");
     try {
-      const j = await fetchJsonLocal(`${safeBridge}/probe?host=${encodeURIComponent(selectedHost)}&ports=80,443,8080,8000,8443,9100,9101,515,631&timeoutMs=1200`);
+      const j = await fetchJson(`${safeBridge}/probe?host=${encodeURIComponent(selectedHost)}&ports=80,443,8080,8000,8443,9100,9101,515,631&timeoutMs=1200`);
       const openPorts = (j.open || []).map(p => p.port);
       const webOpen = openPorts.some(p => [80,443,8080,8000,8443].includes(p));
       const printOpen = openPorts.includes(9100);
@@ -249,11 +228,11 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
     }
   };
 
-  // Open printer UI
+  // Open printer UI (Bridge opens OS browser)
   const openPrinterUI = async () => {
     if (!selectedHost) return setStatus("Select a printer first.");
     try {
-      await fetchJsonLocal(`${safeBridge}/assist/subnet/open`, {
+      await fetchJson(`${safeBridge}/assist/subnet/open`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ printerHost: selectedHost })
       });
@@ -263,13 +242,13 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
     }
   };
 
-  // Rescue (Windows)
+  // Windows rescue flow (temp IP add + open UI)
   const rescuePrinter = async (host) => {
     const target = host || selectedHost;
     if (!target) return setStatus("Select a printer first.");
     try {
       try {
-        const addJ = await fetchJsonLocal(`${safeBridge}/assist/subnet/add`, {
+        const addJ = await fetchJson(`${safeBridge}/assist/subnet/add`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ printerHost: target })
         });
@@ -277,7 +256,7 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
         localStorage.setItem("lanAdapterAlias", addJ.adapterAlias || "");
         setStatus(`Temp IP ${addJ.tempIp} added on ${addJ.adapterAlias}. Opening printer page…`);
       } catch {}
-      await fetchJsonLocal(`${safeBridge}/assist/subnet/open`, {
+      await fetchJson(`${safeBridge}/assist/subnet/open`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ printerHost: target })
       });
@@ -287,13 +266,13 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
     }
   };
 
-  // Remove temp
+  // Remove temp IP
   const cleanupTemp = async () => {
     try {
       const tempIp = localStorage.getItem("lanTempIp") || "";
       const adapterAlias = localStorage.getItem("lanAdapterAlias") || "";
       if (!tempIp || !adapterAlias) return setStatus("Missing temp IP info. Run Rescue again.");
-      await fetchJsonLocal(`${safeBridge}/assist/subnet/cleanup`, {
+      await fetchJson(`${safeBridge}/assist/subnet/cleanup`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tempIp, adapterAlias })
       });
@@ -303,14 +282,32 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
     } catch (e) { setStatus("Cleanup failed ❌ " + (e.message || e)); }
   };
 
-  // LAN test print with fallback
+  // Auto-reserve (Pin IP)
+  const autoReserve = async () => {
+    if (!selectedHost) return setStatus("Select a printer first.");
+    setStatus("Trying to pin IP (auto-reserve)…");
+    try {
+      await fetchJson(`${safeBridge}/router/reserve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: selectedHost })
+      });
+      setStatus("Router reservation succeeded ✅");
+    } catch {
+      setStatus("Auto-reserve not supported on this setup. Opening common router pages…");
+      const gateways = ["http://192.168.1.1","http://192.168.0.1","http://10.0.0.1","http://192.168.2.1"];
+      gateways.forEach(u => { try { window.open(u, "_blank", "noopener,noreferrer"); } catch {} });
+    }
+  };
+
+  // LAN test print with optional fallback
   const testPrint = async (host, port) => {
     const h = host || selectedHost;
     const p = port || selectedPort || 9100;
     if (!h) return setStatus("Select a printer first.");
     setTesting(true);
     try {
-      await fetchJsonLocal(`${safeBridge}/print-raw`, {
+      await fetchJson(`${safeBridge}/print-raw`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           host: h, port: p,
@@ -322,14 +319,14 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
     } catch (e) {
       setStatus("LAN print failed ❌ " + (e.message || e));
       if (autoFallbackUsb && typeof onLanFailureFallback === "function") {
-        onLanFailureFallback(); // trigger USB try (main component will handle)
+        onLanFailureFallback();
       }
     } finally { setTesting(false); }
   };
 
-  // Plug & Print
+  // Plug & Print flow
   const plugAndPrint = async () => {
-    try { await fetchJsonLocal(`${safeBridge}/ping`, { cache: "no-store" }); setBridgeOk(true); }
+    try { await fetchJson(`${safeBridge}/ping`, { cache: "no-store" }); setBridgeOk(true); }
     catch (e) { setBridgeOk(false); setStatus("Bridge offline ❌ Install/run Beypro Bridge, then try again."); return; }
 
     setStatus("Scanning for printers…");
@@ -355,9 +352,19 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
     await rescuePrinter(top.host);
   };
 
-  // UI (Step 2 redesigned grid)
   return (
     <div className="space-y-4">
+      {/* Step 1 — Bridge installers */}
+      <div className="rounded-xl border bg-white/60 p-4 space-y-2">
+        <h3 className="text-xl font-bold">Step 1 — Install Beypro Bridge</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <a className="px-3 py-2 rounded-xl bg-black text-white text-center" href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}>macOS</a>
+          <a className="px-3 py-2 rounded-xl bg-blue-700 text-white text-center" href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}>Windows</a>
+          <a className="px-3 py-2 rounded-xl bg-gray-800 text-white text-center" href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}>Linux</a>
+        </div>
+      </div>
+
+      {/* Step 2 — Aligned grid actions */}
       <div className="rounded-xl border bg-white/60 p-4 space-y-4">
         <h3 className="text-xl font-bold">Step 2 — Plug & Print (LAN)</h3>
 
@@ -372,7 +379,7 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
               localStorage.setItem("autoFallbackUsb", String(v));
             }}
           />
-          Auto-fallback to USB if LAN fails or internet is offline
+          Auto‑fallback to USB if LAN fails or internet is offline
         </label>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -380,11 +387,11 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
             Plug & Print
           </button>
 
-          <button onClick={async () => pingBridge()} className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition">
+          <button onClick={pingBridge} className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition">
             Detect Bridge
           </button>
 
-          <button onClick={async () => testPrint()} className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition" disabled={testing}>
+          <button onClick={() => testPrint()} className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition" disabled={testing}>
             {testing ? "Printing…" : "Test Print"}
           </button>
 
@@ -405,6 +412,10 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
 
           <button onClick={cleanupTemp} className="px-4 py-3 rounded-xl bg-gray-600 text-white font-bold shadow hover:bg-gray-700 transition">
             Remove Temp IP
+          </button>
+
+          <button onClick={autoReserve} className="px-4 py-3 rounded-xl bg-indigo-700 text-white font-bold shadow hover:bg-indigo-800 transition">
+            Pin IP
           </button>
 
           <button onClick={() => setShowAdvanced(v => !v)} className="px-4 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold shadow hover:bg-gray-300 transition col-span-2 md:col-span-3">
@@ -457,308 +468,8 @@ function BridgeToolsSimple({ onLanFailureFallback }) {
   );
 }
 
-  
-  const safeBridge = useMemo(() => bridgeUrl.replace(/\/+$/, ""), [bridgeUrl]);
-
-  // --- Bridge ping
-  const pingBridge = async () => {
-    try {
-      const j = await fetchJson(`${safeBridge}/ping`, { cache: "no-store" });
-      setBridgeOk(true);
-      setStatus(`Bridge online ✅ (${new Date(j.ts || Date.now()).toLocaleTimeString()})`);
-    } catch (e) {
-      setBridgeOk(false);
-      setStatus(`Bridge offline ❌ ${e.message || e}`);
-    }
-  };
-
-  // --- Scan all subnets
-  const scanAll = async () => {
-    const j = await fetchJson(`${safeBridge}/discover?all=1&timeoutMs=2000&concurrency=48`, { cache: "no-store" });
-    const list = Array.isArray(j.results) ? j.results : [];
-    list.sort((a,b) => {
-      const aScore = (a.ports.includes(9100) ? 100 : 0) + (a.sameSubnet === false ? 0 : 10);
-      const bScore = (b.ports.includes(9100) ? 100 : 0) + (b.sameSubnet === false ? 0 : 10);
-      return bScore - aScore;
-    });
-    setFound(list);
-    return list;
-  };
-
-  // --- Probe host for helpful messaging
-  const probeSelected = async () => {
-    if (!selectedHost) return setStatus("Select a printer first.");
-    try {
-      const j = await fetchJson(`${safeBridge}/probe?host=${encodeURIComponent(selectedHost)}&ports=80,443,8080,8000,8443,9100,9101,515,631&timeoutMs=1200`);
-      const openPorts = (j.open || []).map(p => p.port);
-      const webOpen = openPorts.some(p => [80,443,8080,8000,8443].includes(p));
-      const printOpen = openPorts.includes(9100);
-      const same = j.sameSubnet;
-      setStatus([
-        `Open ports: ${openPorts.length ? openPorts.join(", ") : "none"}.`,
-        same === false ? ` ⚠️ Different subnet.` : "",
-        printOpen ? " ✅ 9100 open – should print." : " ❌ 9100 closed – enable RAW/JetDirect.",
-        webOpen ? " 🌐 Web UI reachable — set DHCP there." : "",
-      ].join(""));
-      return { webOpen, printOpen, same };
-    } catch (e) {
-      setStatus("Probe failed ❌ " + (e.message || e));
-      return { webOpen:false, printOpen:false, same:null };
-    }
-  };
-
-  // --- Open printer UI (Bridge opens OS browser)
-  const openPrinterUI = async () => {
-    if (!selectedHost) return setStatus("Select a printer first.");
-    try {
-      await fetchJson(`${safeBridge}/assist/subnet/open`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ printerHost: selectedHost })
-      });
-      setStatus("Printer page opened. In Network → TCP/IP set Mode = DHCP, save & reboot.");
-    } catch (e) {
-      setStatus("Open UI failed ❌ " + (e.message || e));
-    }
-  };
-
-  // --- One-click rescue: add temp IP (Windows), open UI, guide
-  const rescuePrinter = async (host) => {
-    const target = host || selectedHost;
-    if (!target) return setStatus("Select a printer first.");
-    try {
-      // Try add temp IP (Windows only)
-      try {
-        const addJ = await fetchJson(`${safeBridge}/assist/subnet/add`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ printerHost: target })
-        });
-        localStorage.setItem("lanTempIp", addJ.tempIp || "");
-        localStorage.setItem("lanAdapterAlias", addJ.adapterAlias || "");
-        setStatus(`Temp IP ${addJ.tempIp} added on ${addJ.adapterAlias}. Opening printer page…`);
-      } catch {
-        // non-Windows / no admin — continue
-      }
-      await fetchJson(`${safeBridge}/assist/subnet/open`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ printerHost: target })
-      });
-      setStatus("Set DHCP on the printer page, save & reboot. Then press Plug & Print again.");
-    } catch (e) {
-      setStatus("Rescue failed ❌ " + (e.message || e));
-    }
-  };
-
-  // --- Remove temp IP
-  const cleanupTemp = async () => {
-    try {
-      const tempIp = localStorage.getItem("lanTempIp") || "";
-      const adapterAlias = localStorage.getItem("lanAdapterAlias") || "";
-      if (!tempIp || !adapterAlias) return setStatus("Missing temp IP info. Run Rescue again.");
-      await fetchJson(`${safeBridge}/assist/subnet/cleanup`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tempIp, adapterAlias })
-      });
-      setStatus("Temporary IP removed ✅");
-      localStorage.removeItem("lanTempIp");
-      localStorage.removeItem("lanAdapterAlias");
-    } catch (e) { setStatus("Cleanup failed ❌ " + (e.message || e)); }
-  };
-
-  // --- Test print
-  const testPrint = async (host, port) => {
-    const h = host || selectedHost;
-    const p = port || selectedPort || 9100;
-    if (!h) return setStatus("Select a printer first.");
-    setTesting(true);
-    try {
-      await fetchJson(`${safeBridge}/print-raw`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          host: h, port: p,
-          content: "Beypro Test\n1x Burger 195.00\nTOTAL 195.00 TL\n",
-          timeoutMs: 15000,
-        })
-      });
-      setStatus(`Printed via ${h}:${p} ✅`);
-    } catch (e) {
-      setStatus("Print failed ❌ " + (e.message || e));
-    } finally { setTesting(false); }
-  };
-
-  // --- Plug & Print (one big button)
-  const plugAndPrint = async () => {
-    lockBridgeUrl();
-    setStatus("Checking bridge…");
-    try { await fetchJson(`${safeBridge}/ping`, { cache: "no-store" }); setBridgeOk(true); }
-    catch (e) { setBridgeOk(false); setStatus("Bridge offline ❌ Install/run Beypro Bridge, then try again."); return; }
-
-    setStatus("Scanning for printers…");
-    let list = [];
-    try { list = await scanAll(); } catch (e) { setStatus("Scan failed ❌ " + (e.message || e)); return; }
-    if (!list.length) { setStatus("No printers found. Is it powered and connected to the router?"); return; }
-
-    const top = list[0];
-    setFound(list);
-    setSelectedHost(top.host);
-    const pickPort = top.ports.includes(9100) ? 9100 : (top.ports[0] || 9100);
-    setSelectedPort(pickPort);
-    localStorage.setItem("lanPrinterHost", top.host);
-    localStorage.setItem("lanPrinterPort", String(pickPort));
-
-    // Same subnet + 9100 → print now
-    const sameSubnet = top.sameSubnet !== false;
-    if (sameSubnet && top.ports.includes(9100)) {
-      setStatus(`Printer found: ${top.host}:${pickPort} ✅ Sending test…`);
-      await testPrint(top.host, pickPort);
-      return;
-    }
-
-    // Otherwise run Rescue flow so user can set DHCP
-    setStatus("Printer is on a different subnet or RAW is closed. Opening its page to set DHCP…");
-    await rescuePrinter(top.host);
-  };
-
-  // --- Pin IP (Auto-Reserve)
-  const autoReserve = async () => {
-    if (!selectedHost) return setStatus("Select a printer first.");
-    setStatus("Trying to pin IP (auto-reserve)…");
-    try {
-      // Optional Bridge enhancement — if not present, this will 404 and we fallback
-      await fetchJson(`${safeBridge}/router/reserve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ host: selectedHost })
-      });
-      setStatus("Router reservation succeeded ✅");
-    } catch {
-      // Fallback: guide user quickly — open common gateways in new tabs
-      setStatus("Auto-reserve not supported on this setup. Opening common router pages…");
-      const gateways = ["http://192.168.1.1","http://192.168.0.1","http://10.0.0.1","http://192.168.2.1"];
-      gateways.forEach(u => { try { window.open(u, "_blank", "noopener,noreferrer"); } catch {} });
-    }
-  };
-
-  // UI
-  return (
-    <div className="space-y-4">
-      {/* Step 1 — Bridge */}
-      <div className="rounded-xl border bg-white/60 p-4 space-y-2">
-        <h3 className="text-xl font-bold">Step 1 — Install Beypro Bridge</h3>
-        <div className="flex flex-wrap gap-2">
-          <a className="px-3 py-2 rounded-xl bg-black text-white" href={`${BACKEND}/bridge/beypro-bridge-mac.zip`}>macOS</a>
-          <a className="px-3 py-2 rounded-xl bg-blue-700 text-white" href={`${BACKEND}/bridge/beypro-bridge-win-x64.zip`}>Windows</a>
-          <a className="px-3 py-2 rounded-xl bg-gray-800 text-white" href={`${BACKEND}/bridge/beypro-bridge-linux-x64.tar.gz`}>Linux</a>
-        </div>
-        
-      </div>
-
-{/* Step 2 — LAN Printing */}
-<div className="rounded-xl border bg-white/60 p-4 space-y-4">
-  <h3 className="text-xl font-bold">Step 2 — Plug & Print (LAN)</h3>
-
-  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-    <button
-      onClick={plugAndPrint}
-      className="col-span-2 md:col-span-3 px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition"
-    >
-      Plug & Print
-    </button>
-
-    <button
-      onClick={pingBridge}
-      className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition"
-    >
-      Detect Bridge
-    </button>
-
-    <button
-      onClick={autoReserve}
-      disabled={!selectedHost}
-      className="px-4 py-3 rounded-xl bg-indigo-700 text-white font-bold shadow hover:bg-indigo-800 transition disabled:opacity-50"
-    >
-      Pin IP
-    </button>
-
-    <button
-      onClick={() => testPrint()}
-      disabled={!selectedHost || testing}
-      className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition disabled:opacity-50"
-    >
-      {testing ? "Printing…" : "Test Print"}
-    </button>
-
-    <button
-      onClick={() => setShowAdvanced(v => !v)}
-      className="px-4 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold shadow hover:bg-gray-300 transition col-span-2 md:col-span-3"
-    >
-      {showAdvanced ? "Hide Advanced" : "Advanced Options"}
-    </button>
-  </div>
-
-  <div className="text-sm text-gray-700">{status}</div>
-
-
-        {/* Advanced drawer */}
-        {showAdvanced && (
-          <div className="mt-3 space-y-3 rounded-xl border bg-white/70 p-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="font-semibold">Printer IP</label>
-                <input
-                  className="rounded-xl border p-2 w-full"
-                  value={selectedHost}
-                  onChange={(e) => {
-                    const host = e.target.value.trim();
-                    setSelectedHost(host);
-                    localStorage.setItem("lanPrinterHost", host);
-                  }}
-                  placeholder="e.g. 192.168.1.50"
-                />
-              </div>
-              <div>
-                <label className="font-semibold">Port</label>
-                <input
-                  type="number"
-                  className="rounded-xl border p-2 w-full"
-                  value={selectedPort}
-                  onChange={(e) => {
-                    const p = Number(e.target.value || "9100") || 9100;
-                    setSelectedPort(p);
-                    localStorage.setItem("lanPrinterPort", String(p));
-                  }}
-                  placeholder="9100"
-                />
-              </div>
-              <div className="flex items-end gap-2">
-                <button onClick={probeSelected} className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold w-full">
-                  Probe
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button onClick={openPrinterUI} className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold">Open Printer UI</button>
-              <button onClick={() => rescuePrinter()} className="px-3 py-2 rounded-xl bg-amber-600 text-white font-bold">Rescue (Windows)</button>
-              <button onClick={cleanupTemp} className="px-3 py-2 rounded-xl bg-gray-600 text-white font-bold">Remove Temp IP</button>
-              <button
-                onClick={() => testPrint()}
-                disabled={!selectedHost || testing}
-                className="ml-auto px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-50"
-              >
-                {testing ? "Printing…" : "Send Test Ticket"}
-              </button>
-            </div>
-          </div>
-        )}
-
-    
-      </div>
-    </div>
-  );
-}
-
 /* =================================================================
-   MAIN PAGE — your customize print section kept intact
+   MAIN PAGE — PrinterTab
    ================================================================= */
 export default function PrinterTab() {
   const { t } = useTranslation();
@@ -770,8 +481,16 @@ export default function PrinterTab() {
   const [printingMode, setPrintingMode] = useState(localStorage.getItem("printingMode") || "lan");
   const [autoPrintTable, setAutoPrintTable] = useState(localStorage.getItem("autoPrintTable") === "true");
   const [autoPrintPacket, setAutoPrintPacket] = useState(localStorage.getItem("autoPrintPacket") === "true");
-  
-    // NEW: internet offline auto-switch (only if LAN selected and autoFallback enabled)
+
+  // Load printer settings once
+  useEffect(() => {
+    fetch(`${API_URL}/api/printer-settings`)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => { if (data.layout) setLayout({ ...defaultLayout, ...data.layout }); })
+      .catch(() => setError("Could not load printer settings."));
+  }, []);
+
+  // Offline auto-switch: when LAN is selected + autoFallback enabled + USB available
   useEffect(() => {
     function handleOnlineChange() {
       const autoFallbackUsb = localStorage.getItem("autoFallbackUsb") === "true";
@@ -789,21 +508,6 @@ export default function PrinterTab() {
       window.removeEventListener("offline", handleOnlineChange);
     };
   }, [printingMode]);
-
-  // Load settings
-  useEffect(() => {
-    fetch(`${API_URL}/api/printer-settings`)
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((data) => { if (data.layout) setLayout({ ...defaultLayout, ...data.layout }); })
-      .catch(() => setError("Could not load printer settings."));
-  }, []);
-
-  useEffect(() => {
-    fetch(`${API_URL}/api/printer-settings`)
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((data) => { if (data.layout) setLayout({ ...defaultLayout, ...data.layout }); })
-      .catch(() => setError("Could not load printer settings."));
-  }, []);
 
   // Browser print preview (unchanged)
   function handlePrintTest() {
@@ -836,15 +540,19 @@ export default function PrinterTab() {
     setTimeout(() => { iframe.contentWindow.focus(); iframe.contentWindow.print(); setTimeout(() => document.body.removeChild(iframe), 800); }, 300);
   }
 
-  const handle = (k, v) => setLayout((prev) => ({ ...prev, [k]: v }));
+  // Layout handlers (fixed spreads)
+  const handle = (k, v) => setLayout(prev => ({ ...prev, [k]: v }));
   const handleExtraChange = (i, key, v) => {
-    const updated = [...layout.extras];
-    updated[i][key] = v;
-    setLayout((prev) => ({ ...prev, extras: updated }));
+    setLayout(prev => {
+      const updated = [...prev.extras];
+      updated[i] = { ...updated[i], [key]: v };
+      return { ...prev, extras: updated };
+    });
   };
-  const addExtra = () => setLayout((prev) => ({ ...prev, extras: [...prev.extras, { label: "", value: "" }]}));
-  const removeExtra = (i) => setLayout((prev) => ({ ...prev, extras: prev.extras.filter((_, idx) => idx !== i) }));
-   // Fallback runner (LAN failure → try USB once)
+  const addExtra = () => setLayout(prev => ({ ...prev, extras: [...prev.extras, { label: "", value: "" }] }));
+  const removeExtra = (i) => setLayout(prev => ({ ...prev, extras: prev.extras.filter((_, idx) => idx !== i) }));
+
+  // LAN failure → try USB test once, switch mode on success
   const handleLanFailureFallback = async () => {
     try {
       const bridge = BRIDGE_DEFAULT.replace(/\/+$/, "");
@@ -855,13 +563,13 @@ export default function PrinterTab() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, baudRate: baud }),
       });
-      // Switch UI mode to USB after a successful fallback test
       setPrintingMode("usb");
       localStorage.setItem("printingMode", "usb");
     } catch {
       // keep mode; user can check USB panel for errors
     }
   };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-600 text-transparent bg-clip-text tracking-tight drop-shadow mb-3">
@@ -883,11 +591,11 @@ export default function PrinterTab() {
               <option value="lan">LAN Thermal (Bridge)</option>
               <option value="usb">USB Thermal (Bridge)</option>
             </select>
-            <p className="text-xs text-gray-500">Choose how printing should work on this device. Tip: enable “Auto-fallback to USB” inside LAN tools.</p>
+            <p className="text-xs text-gray-500">Choose how printing should work on this device. Tip: enable “Auto‑fallback to USB” inside LAN tools.</p>
           </div>
 
           <div>
-            <label className="font-bold">Auto-print Scope</label>
+            <label className="font-bold">Auto‑print Scope</label>
             <div className="flex flex-col gap-2">
               <label className="flex gap-2 items-center">
                 <input type="checkbox" checked={autoPrintTable} onChange={(e) => { setAutoPrintTable(e.target.checked); localStorage.setItem("autoPrintTable", e.target.checked); }} />
@@ -903,11 +611,12 @@ export default function PrinterTab() {
       </div>
 
       {/* Tools by mode */}
-      {printingMode === "lan" && <BridgeToolsSimple onLanFailureFallback={handleLanFailureFallback} />}
+      {printingMode === "lan" && <BridgeToolsLAN onLanFailureFallback={handleLanFailureFallback} />}
       {printingMode === "usb" && <BridgeToolsUSB />}
 
       <p className="text-gray-500 mb-4">{t("Customize how your orders are printed. All changes preview live!")}</p>
-      {/* Customize print controls (kept) */}
+
+      {/* Customize print controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Controls */}
         <div className="space-y-4">
@@ -1000,6 +709,10 @@ export default function PrinterTab() {
 
           {layout.showHeader && (<div><label className="font-bold">{t("Header Text")}:</label><input className="border rounded-xl p-2 w-full" value={layout.headerText} onChange={(e) => handle("headerText", e.target.value)} /></div>)}
           {layout.showFooter && (<div><label className="font-bold">{t("Footer Text")}:</label><input className="border rounded-xl p-2 w-full" value={layout.footerText} onChange={(e) => handle("footerText", e.target.value)} /></div>)}
+
+          <button className="px-2 py-2 rounded-xl bg-green-600 text-white font-bold shadow hover:bg-green-700 transition mt-2" onClick={handlePrintTest}>
+            Print Test Receipt
+          </button>
         </div>
 
         {/* Live Preview */}
@@ -1040,10 +753,6 @@ export default function PrinterTab() {
           </div>
           <span className="absolute top-3 right-6 bg-indigo-200 text-indigo-800 rounded-xl px-3 py-1 font-mono text-xs shadow">Live Preview</span>
         </div>
-
-        <button className="px-2 py-2 rounded-xl bg-green-600 text-white font-bold shadow hover:bg-green-700 transition mt-2" onClick={handlePrintTest}>
-          Print Test Receipt
-        </button>
       </div>
 
       <button
