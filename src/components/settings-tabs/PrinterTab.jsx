@@ -392,11 +392,12 @@ function BridgeToolsLAN({ onLanFailureFallback }) {
     </button>
 
     <button
-      onClick={pingBridge}
-      className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition"
-    >
-      Detect Bridge
-    </button>
+  onClick={pingBridge}
+  className="col-span-2 md:col-span-3 px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition"
+>
+  Detect Bridge
+</button>
+
 
     {/* --- move all other actions into advanced --- */}
     <button
