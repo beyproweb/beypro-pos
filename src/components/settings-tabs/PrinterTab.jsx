@@ -157,7 +157,7 @@ function BridgeToolsUSB() {
 /* =================================================================
    LAN PRINTING — BridgeToolsLAN (with fallback hooks)
    ================================================================= */
-function BridgeToolsLAN({ onLanFailureFallback, onPrintTest }) {
+function BridgeToolsLAN({ onLanFailureFallback }) {
   const { t } = useTranslation();
 
   const [bridgeUrl, setBridgeUrl] = useState(BRIDGE_DEFAULT);
@@ -382,33 +382,30 @@ function BridgeToolsLAN({ onLanFailureFallback, onPrintTest }) {
     Auto-fallback to USB if LAN fails or internet is offline
   </label>
 
-{/* --- Buttons: Plug / Detect Bridge / Print Test --- */}
-<div className="flex flex-wrap items-center gap-2">
-  {(() => {
-    const btn =
-      "inline-flex items-center justify-center h-11 min-w-[160px] px-4 " +
-      "rounded-xl border border-blue-200/60 bg-white/80 text-gray-800 " +
-      "hover:bg-blue-50 active:scale-[0.98] shadow-sm transition font-semibold";
-    return (
-      <>
-        <button className={btn} onClick={plugAndPrint}>
-          🔌 Plug
-        </button>
+  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+    {/* --- keep these always visible --- */}
+    <button
+      onClick={plugAndPrint}
+      className="col-span-2 md:col-span-3 px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition"
+    >
+      Plug & Print
+    </button>
 
-        <button className={btn} onClick={pingBridge}>
-          🌉 Detect Bridge
-        </button>
+    <button
+      onClick={pingBridge}
+      className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition"
+    >
+      Detect Bridge
+    </button>
 
-        <button className={btn} onClick={onPrintTest}>
-          🖨️ Print Test
-        </button>
-      </>
-    );
-  })()}
-</div>
-
-
-
+    {/* --- move all other actions into advanced --- */}
+    <button
+      onClick={() => setShowAdvanced(v => !v)}
+      className="px-4 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold shadow hover:bg-gray-300 transition col-span-2 md:col-span-3"
+    >
+      {showAdvanced ? "Hide Advanced" : "Advanced Options"}
+    </button>
+  </div>
 
   <span className="text-sm text-gray-700">{status}</span>
 
