@@ -384,7 +384,6 @@ function BridgeToolsLAN({ onLanFailureFallback }) {
 
 {/* --- Buttons: Plug / Detect Bridge / Print Test --- */}
 <div className="flex flex-wrap items-center gap-2">
-  {/** shared button style to keep sizes identical */}
   {(() => {
     const btn =
       "inline-flex items-center justify-center h-11 min-w-[160px] px-4 " +
@@ -392,11 +391,11 @@ function BridgeToolsLAN({ onLanFailureFallback }) {
       "hover:bg-blue-50 active:scale-[0.98] shadow-sm transition font-semibold";
     return (
       <>
-        <button className={btn} onClick={handlePlugPrinter}>
+        <button className={btn} onClick={plugAndPrint}>
           🔌 Plug
         </button>
 
-        <button className={btn} onClick={handleDetectBridge}>
+        <button className={btn} onClick={pingBridge}>
           🌉 Detect Bridge
         </button>
 
@@ -407,6 +406,7 @@ function BridgeToolsLAN({ onLanFailureFallback }) {
     );
   })()}
 </div>
+
 
 
   <span className="text-sm text-gray-700">{status}</span>
