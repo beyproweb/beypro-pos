@@ -364,106 +364,144 @@ function BridgeToolsLAN({ onLanFailureFallback }) {
         </div>
       </div>
 
-      {/* Step 2 — Aligned grid actions */}
-      <div className="rounded-xl border bg-white/60 p-4 space-y-4">
-        <h3 className="text-xl font-bold">Step 2 — Plug & Print (LAN)</h3>
+     {/* Step 2 — Aligned grid actions */}
+<div className="rounded-xl border bg-white/60 p-4 space-y-4">
+  <h3 className="text-xl font-bold">Step 2 — Plug & Print (LAN)</h3>
 
-        {/* Fallback toggle */}
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={autoFallbackUsb}
-            onChange={e => {
-              const v = e.target.checked;
-              setAutoFallbackUsb(v);
-              localStorage.setItem("autoFallbackUsb", String(v));
-            }}
-          />
-          Auto‑fallback to USB if LAN fails or internet is offline
-        </label>
+  {/* Fallback toggle */}
+  <label className="flex items-center gap-2 text-sm">
+    <input
+      type="checkbox"
+      checked={autoFallbackUsb}
+      onChange={e => {
+        const v = e.target.checked;
+        setAutoFallbackUsb(v);
+        localStorage.setItem("autoFallbackUsb", String(v));
+      }}
+    />
+    Auto-fallback to USB if LAN fails or internet is offline
+  </label>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <button onClick={plugAndPrint} className="col-span-2 md:col-span-3 px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition">
-            Plug & Print
-          </button>
+  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+    {/* --- keep these always visible --- */}
+    <button
+      onClick={plugAndPrint}
+      className="col-span-2 md:col-span-3 px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition"
+    >
+      Plug & Print
+    </button>
 
-          <button onClick={pingBridge} className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition">
-            Detect Bridge
-          </button>
+    <button
+      onClick={pingBridge}
+      className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition"
+    >
+      Detect Bridge
+    </button>
 
-          <button onClick={() => testPrint()} className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition" disabled={testing}>
-            {testing ? "Printing…" : "Test Print"}
-          </button>
+    {/* --- move all other actions into advanced --- */}
+    <button
+      onClick={() => setShowAdvanced(v => !v)}
+      className="px-4 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold shadow hover:bg-gray-300 transition col-span-2 md:col-span-3"
+    >
+      {showAdvanced ? "Hide Advanced" : "Advanced Options"}
+    </button>
+  </div>
 
-          <button onClick={async () => {
+  <span className="text-sm text-gray-700">{status}</span>
+
+  {showAdvanced && (
+    <div className="mt-3 space-y-3 rounded-xl border bg-white/70 p-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <button
+          onClick={() => testPrint()}
+          className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition"
+          disabled={testing}
+        >
+          {testing ? "Printing…" : "Test Print"}
+        </button>
+
+        <button
+          onClick={async () => {
             const r = await probeSelected();
-            if (!r?.printOpen && autoFallbackUsb && typeof onLanFailureFallback === "function") onLanFailureFallback();
-          }} className="px-4 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition">
+            if (!r?.printOpen && autoFallbackUsb && typeof onLanFailureFallback === "function")
+              onLanFailureFallback();
+          }}
+          className="px-4 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition"
+        >
+          Probe
+        </button>
+
+        <button
+          onClick={openPrinterUI}
+          className="px-4 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition"
+        >
+          Open Printer UI
+        </button>
+
+        <button
+          onClick={() => rescuePrinter()}
+          className="px-4 py-3 rounded-xl bg-amber-600 text-white font-bold shadow hover:bg-amber-700 transition"
+        >
+          Rescue (Win)
+        </button>
+
+        <button
+          onClick={cleanupTemp}
+          className="px-4 py-3 rounded-xl bg-gray-600 text-white font-bold shadow hover:bg-gray-700 transition"
+        >
+          Remove Temp IP
+        </button>
+
+        <button
+          onClick={autoReserve}
+          className="px-4 py-3 rounded-xl bg-indigo-700 text-white font-bold shadow hover:bg-indigo-800 transition"
+        >
+          Pin IP
+        </button>
+      </div>
+
+      {/* Advanced input fields */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+        <div>
+          <label className="font-semibold">Printer IP</label>
+          <input
+            className="rounded-xl border p-2 w-full"
+            value={selectedHost}
+            onChange={(e) => {
+              const host = e.target.value.trim();
+              setSelectedHost(host);
+              localStorage.setItem("lanPrinterHost", host);
+            }}
+            placeholder="e.g. 192.168.1.50"
+          />
+        </div>
+        <div>
+          <label className="font-semibold">Port</label>
+          <input
+            type="number"
+            className="rounded-xl border p-2 w-full"
+            value={selectedPort}
+            onChange={(e) => {
+              const p = Number(e.target.value || "9100") || 9100;
+              setSelectedPort(p);
+              localStorage.setItem("lanPrinterPort", String(p));
+            }}
+            placeholder="9100"
+          />
+        </div>
+        <div className="flex items-end gap-2">
+          <button
+            onClick={probeSelected}
+            className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold w-full"
+          >
             Probe
           </button>
-
-          <button onClick={openPrinterUI} className="px-4 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition">
-            Open Printer UI
-          </button>
-
-          <button onClick={() => rescuePrinter()} className="px-4 py-3 rounded-xl bg-amber-600 text-white font-bold shadow hover:bg-amber-700 transition">
-            Rescue (Win)
-          </button>
-
-          <button onClick={cleanupTemp} className="px-4 py-3 rounded-xl bg-gray-600 text-white font-bold shadow hover:bg-gray-700 transition">
-            Remove Temp IP
-          </button>
-
-          <button onClick={autoReserve} className="px-4 py-3 rounded-xl bg-indigo-700 text-white font-bold shadow hover:bg-indigo-800 transition">
-            Pin IP
-          </button>
-
-          <button onClick={() => setShowAdvanced(v => !v)} className="px-4 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold shadow hover:bg-gray-300 transition col-span-2 md:col-span-3">
-            {showAdvanced ? "Hide Advanced" : "Advanced Options"}
-          </button>
         </div>
-
-        <span className="text-sm text-gray-700">{status}</span>
-
-        {showAdvanced && (
-          <div className="mt-3 space-y-3 rounded-xl border bg-white/70 p-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="font-semibold">Printer IP</label>
-                <input
-                  className="rounded-xl border p-2 w-full"
-                  value={selectedHost}
-                  onChange={(e) => {
-                    const host = e.target.value.trim();
-                    setSelectedHost(host);
-                    localStorage.setItem("lanPrinterHost", host);
-                  }}
-                  placeholder="e.g. 192.168.1.50"
-                />
-              </div>
-              <div>
-                <label className="font-semibold">Port</label>
-                <input
-                  type="number"
-                  className="rounded-xl border p-2 w-full"
-                  value={selectedPort}
-                  onChange={(e) => {
-                    const p = Number(e.target.value || "9100") || 9100;
-                    setSelectedPort(p);
-                    localStorage.setItem("lanPrinterPort", String(p));
-                  }}
-                  placeholder="9100"
-                />
-              </div>
-              <div className="flex items-end gap-2">
-                <button onClick={probeSelected} className="px-3 py-2 rounded-xl bg-slate-700 text-white font-bold w-full">
-                  Probe
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
+    </div>
+  )}
+</div>
+
     </div>
   );
 }
