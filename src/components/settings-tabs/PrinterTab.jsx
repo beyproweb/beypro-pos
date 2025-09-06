@@ -157,7 +157,7 @@ function BridgeToolsUSB() {
 /* =================================================================
    LAN PRINTING — BridgeToolsLAN (with fallback hooks)
    ================================================================= */
-function BridgeToolsLAN({ onLanFailureFallback }) {
+function BridgeToolsLAN({ onLanFailureFallback, onPrintTest }) {
   const { t } = useTranslation();
 
   const [bridgeUrl, setBridgeUrl] = useState(BRIDGE_DEFAULT);
@@ -399,7 +399,7 @@ function BridgeToolsLAN({ onLanFailureFallback }) {
           🌉 Detect Bridge
         </button>
 
-        <button className={btn} onClick={handlePrintTest}>
+        <button className={btn} onClick={onPrintTest}>
           🖨️ Print Test
         </button>
       </>
