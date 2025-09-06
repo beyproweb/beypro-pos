@@ -409,6 +409,7 @@ function BridgeToolsLAN({ onLanFailureFallback }) {
 
 
 
+
   <span className="text-sm text-gray-700">{status}</span>
 
   {showAdvanced && (
