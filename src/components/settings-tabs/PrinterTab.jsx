@@ -120,8 +120,7 @@ export default function PrinterTab() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        {/* Step 1 — Download & Install Bridge */}
+              {/* Step 1 — Download & Install Bridge */}
 <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
   <h3 className="text-xl font-bold">Step 1 — Install Beypro Bridge</h3>
   <p className="text-sm text-gray-600">
@@ -151,6 +150,8 @@ export default function PrinterTab() {
     </a>
   </div>
 </div>
+      <div className="flex items-center justify-between">
+
 
         <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-600 text-transparent bg-clip-text tracking-tight drop-shadow">
           🖨️ {t("USB Thermal Printer")}
