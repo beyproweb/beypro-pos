@@ -382,30 +382,32 @@ function BridgeToolsLAN({ onLanFailureFallback }) {
     Auto-fallback to USB if LAN fails or internet is offline
   </label>
 
-  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-    {/* --- keep these always visible --- */}
-    <button
-      onClick={plugAndPrint}
-      className="col-span-2 md:col-span-3 px-4 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition"
-    >
-      Plug & Print
-    </button>
+{/* --- Buttons: Plug / Detect Bridge / Print Test --- */}
+<div className="flex flex-wrap items-center gap-2">
+  {/** shared button style to keep sizes identical */}
+  {(() => {
+    const btn =
+      "inline-flex items-center justify-center h-11 min-w-[160px] px-4 " +
+      "rounded-xl border border-blue-200/60 bg-white/80 text-gray-800 " +
+      "hover:bg-blue-50 active:scale-[0.98] shadow-sm transition font-semibold";
+    return (
+      <>
+        <button className={btn} onClick={handlePlugPrinter}>
+          🔌 Plug
+        </button>
 
-    <button
-      onClick={pingBridge}
-      className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow hover:bg-indigo-700 transition"
-    >
-      Detect Bridge
-    </button>
+        <button className={btn} onClick={handleDetectBridge}>
+          🌉 Detect Bridge
+        </button>
 
-    {/* --- move all other actions into advanced --- */}
-    <button
-      onClick={() => setShowAdvanced(v => !v)}
-      className="px-4 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold shadow hover:bg-gray-300 transition col-span-2 md:col-span-3"
-    >
-      {showAdvanced ? "Hide Advanced" : "Advanced Options"}
-    </button>
-  </div>
+        <button className={btn} onClick={handlePrintTest}>
+          🖨️ Print Test
+        </button>
+      </>
+    );
+  })()}
+</div>
+
 
   <span className="text-sm text-gray-700">{status}</span>
 
