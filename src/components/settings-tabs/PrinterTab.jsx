@@ -126,33 +126,36 @@ export default function PrinterTab() {
   <p className="text-sm text-gray-600">
     Install the bridge on the computer where your USB printer is plugged in. It will auto-start and let this page talk to the printer at <code>http://127.0.0.1:7777</code>.
   </p>
-  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-    <a
-      href="https://pos.beypro.com/bridge/beypro-bridge-win-x64-v1.0.5.zip"
-      className="px-4 py-3 rounded-xl bg-blue-700 text-white font-bold text-center shadow hover:bg-blue-800 transition"
-      download
-    >
-      Windows
-    </a>
-    <a
-      href="https://pos.beypro.com/bridge/beypro-bridge-mac-universal-v1.0.5.tar.gz"
-      className="px-4 py-3 rounded-xl bg-black text-white font-bold text-center shadow hover:bg-gray-900 transition"
-      download
-    >
-      macOS
-    </a>
-    <a
-      href="https://pos.beypro.com/bridge/beypro-bridge-linux-x64-v1.0.5.tar.gz"
-      className="px-4 py-3 rounded-xl bg-gray-800 text-white font-bold text-center shadow hover:bg-gray-900 transition"
-      download
-    >
-      Linux
-    </a>
-  </div>
+<div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  <a
+    href="https://github.com/beyproweb/bridge-mini/releases/latest/download/beypro-bridge-win-x64-v1.0.6.zip"
+    className="px-4 py-3 rounded-xl bg-blue-700 text-white font-bold text-center shadow hover:bg-blue-800"
+    download
+  >
+    Windows
+  </a>
+  <a
+    href="https://github.com/beyproweb/bridge-mini/releases/latest/download/beypro-bridge-mac-x64-v1.0.6.tar.gz"
+    className="px-4 py-3 rounded-xl bg-black text-white font-bold text-center shadow hover:bg-gray-900"
+    download
+  >
+    macOS (Intel/Rosetta)
+  </a>
+  <a
+    href="https://github.com/beyproweb/bridge-mini/releases/latest/download/beypro-bridge-linux-x64-v1.0.6.tar.gz"
+    className="px-4 py-3 rounded-xl bg-gray-800 text-white font-bold text-center shadow hover:bg-gray-900"
+    download
+  >
+    Linux
+  </a>
+</div>
+<p className="text-xs text-gray-500 mt-2">
+  Apple-Silicon Macs may need Rosetta for the x64 build:
+  <code>softwareupdate --install-rosetta --agree-to-license</code>
+</p>
+
 </div>
       <div className="flex items-center justify-between">
-
-
         <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-600 text-transparent bg-clip-text tracking-tight drop-shadow">
           🖨️ {t("USB Thermal Printer")}
         </h2>
