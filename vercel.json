@@ -1,6 +1,9 @@
 {
   "rewrites": [
-    { "source": "/bridge/:file", "destination": "https://github.com/beyproweb/bridge-mini/releases/latest/download/:file" },
+    {
+      "source": "/bridge/:file",
+      "destination": "https://github.com/beyproweb/bridge-mini/releases/download/v1.0.7/:file"
+    },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
