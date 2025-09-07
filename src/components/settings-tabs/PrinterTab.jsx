@@ -1,9 +1,11 @@
 // src/pages/PrinterTab.jsx — USB via LOCAL BRIDGE (127.0.0.1:7777)
+// Updated: bridge download links now point to your own backend /bridge/* instead of GitHub Releases
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 const BRIDGE = "http://127.0.0.1:7777"; // <-- local Bridge, not your cloud API
+const BRIDGE_DOWNLOAD_BASE = `${window.location.origin.replace(/\/$/, "")}/bridge`;
 
 const previewOrder = {
   id: 1234,
@@ -69,8 +71,9 @@ export default function PrinterTab() {
   const refreshUsb = async () => {
     setStatus("Detecting USB printers…");
     try {
+      // NOTE: Your bridge should expose /printers OR adjust here to /usb/list depending on your bridge build
       const j = await fetchJson(`${BRIDGE.replace(/\/+$/,"")}/printers`, { cache: "no-store" });
-      const list = j?.usb || j?.printers?.usb || []; // bridge returns {usb:[]}, fallback to {printers:{usb:[]}}
+      const list = j?.usb || j?.printers?.usb || [];
       setUsbPrinters(list);
       setStatus(`Found ${list.length} USB device(s).`);
       if (!selected && list.length > 0) {
@@ -93,7 +96,7 @@ export default function PrinterTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           interface: "usb",
-          vendorId: selected.vendorId,  // e.g. "0x04b8"
+          vendorId: selected.vendorId,
           productId: selected.productId,
           content,
           encoding,
@@ -120,41 +123,40 @@ export default function PrinterTab() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-              {/* Step 1 — Download & Install Bridge */}
-<div className="rounded-2xl border p-4 bg-white/70 space-y-3">
-  <h3 className="text-xl font-bold">Step 1 — Install Beypro Bridge</h3>
-  <p className="text-sm text-gray-600">
-    Install the bridge on the computer where your USB printer is plugged in. It will auto-start and let this page talk to the printer at <code>http://127.0.0.1:7777</code>.
-  </p>
-<div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-  <a
-    href="https://github.com/beyproweb/bridge-mini/releases/latest/download/beypro-bridge-win-x64-v1.0.6.zip"
-    className="px-4 py-3 rounded-xl bg-blue-700 text-white font-bold text-center shadow hover:bg-blue-800"
-    download
-  >
-    Windows
-  </a>
-  <a
-    href="https://github.com/beyproweb/bridge-mini/releases/latest/download/beypro-bridge-mac-x64-v1.0.6.tar.gz"
-    className="px-4 py-3 rounded-xl bg-black text-white font-bold text-center shadow hover:bg-gray-900"
-    download
-  >
-    macOS (Intel/Rosetta)
-  </a>
-  <a
-    href="https://github.com/beyproweb/bridge-mini/releases/latest/download/beypro-bridge-linux-x64-v1.0.6.tar.gz"
-    className="px-4 py-3 rounded-xl bg-gray-800 text-white font-bold text-center shadow hover:bg-gray-900"
-    download
-  >
-    Linux
-  </a>
-</div>
-<p className="text-xs text-gray-500 mt-2">
-  Apple-Silicon Macs may need Rosetta for the x64 build:
-  <code>softwareupdate --install-rosetta --agree-to-license</code>
-</p>
+      {/* Step 1 — Download & Install Bridge */}
+      <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
+        <h3 className="text-xl font-bold">Step 1 — Install Beypro Bridge</h3>
+        <p className="text-sm text-gray-600">
+          Install the bridge on the computer where your USB printer is plugged in. It will auto-start and let this page talk to the printer at <code>http://127.0.0.1:7777</code>.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <a
+            href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-win-x64-v1.0.6.zip`}
+            className="px-4 py-3 rounded-xl bg-blue-700 text-white font-bold text-center shadow hover:bg-blue-800"
+            download
+          >
+            Windows
+          </a>
+          <a
+            href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-x64-v1.0.6.tar.gz`}
+            className="px-4 py-3 rounded-xl bg-black text-white font-bold text-center shadow hover:bg-gray-900"
+            download
+          >
+            macOS (Intel/Rosetta)
+          </a>
+          <a
+            href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-linux-x64-v1.0.6.tar.gz`}
+            className="px-4 py-3 rounded-xl bg-gray-800 text-white font-bold text-center shadow hover:bg-gray-900"
+            download
+          >
+            Linux
+          </a>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          Apple‑silicon Macs may need Rosetta for the x64 build: <code>softwareupdate --install-rosetta --agree-to-license</code>
+        </p>
+      </div>
 
-</div>
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-600 text-transparent bg-clip-text tracking-tight drop-shadow">
           🖨️ {t("USB Thermal Printer")}
@@ -245,8 +247,7 @@ export default function PrinterTab() {
 
       <div className="text-xs text-gray-500 space-y-1">
         <div>• Windows: install the printer’s USB driver if detection fails.</div>
-        <div>• macOS/Linux: install <code>libusb</code> (e.g. <code>brew install libusb</code> / <code>apt-get install libusb-1.0-0</code>).</div>
-        <div>• Encoding tip: <code>cp857</code> prints Turkish characters (ğüşiöç) correctly on most printers.</div>
+        <div>• macOS/Linux: install <code>libusb</code> (e.g. <code>brew install libusb</code> / <code>apt-get install libusb-1.0-0</code>), then replug.</div>
       </div>
     </div>
   );
