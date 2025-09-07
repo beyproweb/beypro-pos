@@ -202,7 +202,8 @@ export default function PrinterTab() {
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-win-x64.zip`} download>Windows</a>
-<a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-universal.tar.gz`} download>macOS (Universal)</a>
+<a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-arm64.tar.gz`} download>macOS (Apple Silicon)</a>
+<a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-x64.tar.gz`} download>macOS (Intel/Rosetta)</a>
 <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-linux-x64.tar.gz`} download>Linux</a>
         </div>
         <p className="text-xs text-gray-500 mt-2">
