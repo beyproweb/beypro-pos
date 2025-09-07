@@ -1,6 +1,9 @@
 {
   "rewrites": [
-    { "source": "/bridge/(.*)", "destination": "https://hurrypos-backend.onrender.com/bridge/$1" },
+    {
+      "source": "/bridge/:file",
+      "destination": "https://github.com/beyproweb/bridge-mini/releases/latest/download/:file"
+    },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
