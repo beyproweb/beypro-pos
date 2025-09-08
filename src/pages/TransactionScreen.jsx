@@ -294,103 +294,104 @@ useEffect(() => {
   });
 
 
-    // New: payment confirm with splits
+// New: payment confirm with splits (cleaned)
 const confirmPaymentWithSplits = async (splits) => {
-  const totalDue = calculateTotal(); // assume cartItems has all unpaid
-  const receiptId = uuidv4();
+  try {
+    // 1) Use the discounted total shown to the user
+    const totalDue = calculateDiscountedTotal();
 
-const enhancedItems = cartItems.map((i) => ({
-  ...i,
-  product_id: i.product_id || i.id,
-  quantity: i.quantity,
-  price: i.price,
-  ingredients: i.ingredients,
-  extras: i.extras,
-  unique_id: i.unique_id,
-  payment_method: null,
-  receipt_id: receiptId,
-  confirmed: true,
-  discountType: discountValue > 0 ? discountType : null,
-  discountValue: discountValue > 0 ? discountValue : 0,
-}));
+    // 2) Generate a receipt id once (backend can also create one if omitted)
+    const receiptId = uuidv4();
 
-  // 👉 Insert order with all items (once)
-await fetch(`${API_URL}/api/orders/sub-orders`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    order_id: order.id,
-    total: totalDue,
-    payment_method: "Split",
-    receipt_id: receiptId,
-    items: enhancedItems
-  }),
-});
+    // 3) Prepare items (include unique_id so backend can mark them paid)
+    const enhancedItems = cartItems.map((i) => ({
+      ...i,
+      product_id: i.product_id || i.id,
+      quantity: i.quantity,
+      price: i.price,
+      ingredients: i.ingredients,
+      extras: i.extras,
+      unique_id: i.unique_id,
+      payment_method: null,
+      receipt_id: receiptId,
+      confirmed: true,
+      discountType: discountValue > 0 ? discountType : null,
+      discountValue: discountValue > 0 ? discountValue : 0,
+    }));
 
+    // 4) Create the sub-order and mark items paid (server’s default mark_paid = true)
+    const rSub = await fetch(`${API_URL}/api/orders/sub-orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        total: totalDue,
+        payment_method: "Split",
+        receipt_id: receiptId,
+        items: enhancedItems,
+      }),
+    });
+    if (!rSub.ok) throw new Error("Sub-order creation failed");
 
-// Before calling fetch(`${API_URL}/api/orders/receipt-methods", ...)
-const total = calculateDiscountedTotal();
- // (apply your discount here if needed, same as you display to the user)
+    // 5) Clean the splits payload (REMOVE undefined/empty/zero)
+    const cleanedSplits = Object.fromEntries(
+      Object.entries(splits)
+        .map(([k, v]) => [k, String(v ?? "").trim()])
+        .filter(([_, v]) => v !== "" && !isNaN(parseFloat(v)) && parseFloat(v) > 0)
+    );
 
- await fetch(`${API_URL}/api/orders/receipt-methods`, {
-   method: "POST",
-   headers: { "Content-Type": "application/json" },
-   body: JSON.stringify({
-     order_id: order.id,
-     receipt_id: receiptId,
-     methods: { [method]: total }   // 👈 send the actual method+amount
-   }),
- });
-await fetch(`${API_URL}/api/orders/receipt-methods`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    order_id: order.id,        // <-- make sure this is included!
-    receipt_id: receiptId,     // (if you already have it; else backend creates)
-    methods: cleanedSplits
-  }),
-});
+    // Optional guard: ensure sum equals total
+    const sumSplits = Object.values(cleanedSplits)
+      .reduce((s, v) => s + parseFloat(v), 0);
+    if (Math.abs(sumSplits - totalDue) > 0.005) {
+      throw new Error("Split amounts must equal the total.");
+    }
 
+    // 6) Save receipt methods ONCE (remove the earlier { [method]: total } post)
+    const rMethods = await fetch(`${API_URL}/api/orders/receipt-methods`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        receipt_id: receiptId,
+        methods: cleanedSplits, // e.g., { "Cash": "100", "Credit Card": "50" }
+      }),
+    });
+    if (!rMethods.ok) throw new Error("Failed to save receipt methods");
 
+    // 7) UI updates
+    await new Promise((r) => setTimeout(r, 100));
+    if (window && typeof window.playPaidSound === "function") window.playPaidSound();
 
+    await refreshReceiptAfterPayment();
+    await fetchOrderItems(order.id);
+    await fetchSubOrders();
+    setSelectedForPayment([]);
+    setShowPaymentModal(false);
 
+    // 8) If all items are paid, mark order as paid
+    const res = await fetch(`${API_URL}/api/orders/${order.id}/items`);
+    const allItems = await res.json();
+    const isFullyPaid = allItems.every((item) => item.paid_at);
 
-
-
-
-
-  await new Promise((r) => setTimeout(r, 100));
-  // Play paid sound for split/suborder payments (NEW LINE)
-if (window && typeof window.playPaidSound === "function") window.playPaidSound();
-await refreshReceiptAfterPayment();
-await fetchOrderItems(order.id);
-await fetchSubOrders();
-setSelectedForPayment([]);
-setShowPaymentModal(false);
-
-
-
-
-  const res = await fetch(`${API_URL}/api/orders/${order.id}/items`);
-  const allItems = await res.json();
-  const isFullyPaid = allItems.every((item) => item.paid_at);
-
-  if (isFullyPaid) {
-   await fetch(`${API_URL}/api/orders/${order.id}/status`, {
-  method: "PUT",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    status: "paid",
-    total: totalDue,
-    // Do NOT send payment_method here. Or, if you must, join the keys:
-    payment_method: Object.keys(splits).filter(k => splits[k] > 0).join("+")
-  }),
-});
-
-
-    setOrder((prev) => ({ ...prev, status: "paid" }));
+    if (isFullyPaid) {
+      await fetch(`${API_URL}/api/orders/${order.id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "paid",
+          total: totalDue,
+          payment_method: Object.keys(cleanedSplits).join("+"),
+        }),
+      });
+      setOrder((prev) => ({ ...prev, status: "paid" }));
+    }
+  } catch (err) {
+    console.error("❌ confirmPaymentWithSplits failed:", err);
+    // optionally toast
   }
 };
+
 function TableNavigationRow({ tableId, navigate, t, cartMode }) {
   return (
     <div className={`flex items-center justify-center w-full ${cartMode ? "gap-4 py-2" : "gap-2 md:gap-6 py-2"}`}>
