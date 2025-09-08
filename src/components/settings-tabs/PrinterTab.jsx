@@ -6,6 +6,27 @@
 
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
+// --- ESC/POS bridge helpers ---
+async function printEscposToBridge(printerIp, escposUint8Array) {
+  const dataBase64 = btoa(String.fromCharCode(...escposUint8Array));
+  const r = await fetch("http://127.0.0.1:7777/print", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ host: printerIp, dataBase64 })
+  });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || "Print failed");
+}
+
+function buildSimpleEscpos(text) {
+  // ESC @ (init), text, LFx3, GS V 0 (full cut)
+  const bytes = [];
+  bytes.push(0x1B, 0x40);
+  const enc = new TextEncoder();
+  bytes.push(...enc.encode(text + "\n\n\n"));
+  bytes.push(0x1D, 0x56, 0x00);
+  return new Uint8Array(bytes);
+}
 
 const BRIDGE = "http://127.0.0.1:7777"; // local bridge service
 const BRIDGE_DOWNLOAD_BASE = `${window.location.origin.replace(/\/$/, "")}/bridge`;
@@ -72,6 +93,17 @@ export default function PrinterTab() {
 
   const content = useMemo(() => makeTicketText(previewOrder, shopAddress), [shopAddress]);
   const pingTimer = useRef(null);
+  
+  const handleTestPrint = async () => {
+  try {
+    const ip = localStorage.getItem("printerIp") || printerIpState; 
+    const text = "HURRYBEY - BEYPRO\n---------------------\n1x Burger   195.00 TL\nTOTAL       195.00 TL";
+    await printEscposToBridge(ip, buildSimpleEscpos(text));
+    alert("✅ Test print sent to bridge!");
+  } catch (e) {
+    alert("❌ Print failed: " + e.message);
+  }
+};
 
   // --- Bridge status ping ---
   const pingBridge = async () => {
@@ -209,6 +241,13 @@ export default function PrinterTab() {
             Recheck
           </button>
         </div>
+        <button
+  onClick={handleTestPrint}
+  className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+>
+  Test Print
+</button>
+
       </div>
 
       <div className="flex items-center justify-between">
