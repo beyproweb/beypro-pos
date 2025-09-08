@@ -329,9 +329,7 @@ await fetch(`${API_URL}/api/orders/sub-orders`, {
 
 
 // Before calling fetch(`${API_URL}/api/orders/receipt-methods", ...)
-const total = cartItems
-   .filter(i => ids.includes(i.unique_id))
-   .reduce((sum, i) => sum + i.price * i.quantity, 0);
+const total = calculateDiscountedTotal();
  // (apply your discount here if needed, same as you display to the user)
 
  await fetch(`${API_URL}/api/orders/receipt-methods`, {
