@@ -28,8 +28,10 @@ function buildSimpleEscpos(text) {
   return new Uint8Array(bytes);
 }
 
-const BRIDGE = "http://127.0.0.1:7777"; // local bridge service
+const BRIDGE = "http://127.0.0.1:7777";
 const BRIDGE_DOWNLOAD_BASE = `${window.location.origin.replace(/\/$/, "")}/bridge`;
+// Bump this on every release to force browsers/CDNs to fetch fresh files
+const BRIDGE_VER = "1.2.2";
 
 const previewOrder = {
   id: 1234,
@@ -212,11 +214,12 @@ export default function PrinterTab() {
           Install the bridge on the computer where your USB printer is plugged in. It will allow this page to talk to the
           printer at <code>http://127.0.0.1:7777</code>.
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-win-x64.zip`} className="px-4 py-3 rounded-xl bg-blue-700 text-white font-bold text-center shadow hover:bg-blue-800" download>Windows</a>
-          <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-arm64.tar.gz`} className="px-4 py-3 rounded-xl bg-black text-white font-bold text-center shadow hover:bg-gray-900" download>macOS (Apple Silicon)</a>
-          <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-x64.tar.gz`} className="px-4 py-3 rounded-xl bg-neutral-900 text-white font-bold text-center shadow hover:bg-neutral-950" download>macOS (Intel/Rosetta)</a>
-          <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-linux-x64.tar.gz`} className="px-4 py-3 rounded-xl bg-gray-800 text-white font-bold text-center shadow hover:bg-gray-900" download>Linux</a>
+     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-win-x64.zip?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-blue-700 text-white font-bold text-center shadow hover:bg-blue-800" download>Windows</a>
+          {/* Use the same x64 package on Apple Silicon (installer will use Rosetta if needed) */}
+          <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-x64.tar.gz?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-gray-800 text-white font-bold text-center shadow hover:bg-gray-900" download>macOS (Apple Silicon via Rosetta)</a>
+          <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-x64.tar.gz?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-neutral-900 text-white font-bold text-center shadow hover:bg-neutral-950" download>macOS (Intel/Rosetta)</a>
+          <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-linux-x64.tar.gz?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-zinc-900 text-white font-bold text-center shadow hover:bg-zinc-950" download>Linux</a>
         </div>
         <p className="text-xs text-gray-500 mt-2">
           Apple‑silicon Macs may need Rosetta to run the x64 build: <code>softwareupdate --install-rosetta --agree-to-license</code>
