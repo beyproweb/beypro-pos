@@ -30,11 +30,13 @@ function buildSimpleEscpos(text) {
 
 
 const BRIDGE = "http://127.0.0.1:7777";
+// Use backend origin if provided at build time (Render env)
 const BRIDGE_DOWNLOAD_ORIGIN =
   (import.meta?.env?.VITE_BRIDGE_DOWNLOAD_ORIGIN || window.location.origin)
     .replace(/\/$/, "");
 const BRIDGE_DOWNLOAD_BASE = `${BRIDGE_DOWNLOAD_ORIGIN}/bridge`;
-const BRIDGE_VER = "1.2.2";  // 
+const BRIDGE_VER = "1.2.2";
+
 
 const previewOrder = {
   id: 1234,
