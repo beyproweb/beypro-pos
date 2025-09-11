@@ -30,12 +30,16 @@ function buildSimpleEscpos(text) {
 
 
 const BRIDGE = "http://127.0.0.1:7777";
-// Use backend origin if provided at build time (Render env)
-const BRIDGE_DOWNLOAD_ORIGIN =
+// Prefer env, else runtime fallback for production host
+const DEFAULT_BACKEND = "https://hurrypos-backend.onrender.com";
+let BRIDGE_DOWNLOAD_ORIGIN =
   (import.meta?.env?.VITE_BRIDGE_DOWNLOAD_ORIGIN || window.location.origin)
     .replace(/\/$/, "");
+// If we are on the public POS host, force the backend origin
+if (window.location.hostname === "pos.beypro.com") {
+  BRIDGE_DOWNLOAD_ORIGIN = DEFAULT_BACKEND;
+}
 const BRIDGE_DOWNLOAD_BASE = `${BRIDGE_DOWNLOAD_ORIGIN}/bridge`;
-const BRIDGE_VER = "1.2.2";
 
 
 const previewOrder = {
