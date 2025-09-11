@@ -30,9 +30,9 @@ function buildSimpleEscpos(text) {
 
 
 const BRIDGE = "http://127.0.0.1:7777";
-const BRIDGE_DOWNLOAD_BASE = `${window.location.origin.replace(/\/$/, "")}/bridge`;
-// Bump this on every release to force browsers/CDNs to fetch fresh files
-const BRIDGE_VER = "1.2.2";
+const BRIDGE_DOWNLOAD_BASE =
+  `${window.location.origin.replace(/\/$/, '')}/bridge`;
+const BRIDGE_VER = "1.2.2";  // 
 
 const previewOrder = {
   id: 1234,
@@ -79,7 +79,9 @@ function makeTicketText(order, shopAddress) {
 
 export default function PrinterTab() {
   const { t } = useTranslation();
-
+  const [printerIpState, setPrinterIpState] = useState(
+    localStorage.getItem("printerIp") || ""
+  );
   const [bridgeInfo, setBridgeInfo] = useState(null);
   const [usbPrinters, setUsbPrinters] = useState([]);
   const [selected, setSelected] = useState(() => {
@@ -99,7 +101,8 @@ export default function PrinterTab() {
   
   const handleTestPrint = async () => {
   try {
-    const ip = localStorage.getItem("printerIp") || printerIpState; 
+    const ip = (printerIpState || localStorage.getItem("printerIp") || "").trim();
+    if (!ip) { alert("Please set a printer IP first."); return; }
     const text = "HURRYBEY - BEYPRO\n---------------------\n1x Burger   195.00 TL\nTOTAL       195.00 TL";
     await printEscposToBridge(ip, buildSimpleEscpos(text));
     alert("✅ Test print sent to bridge!");
