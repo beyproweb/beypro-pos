@@ -28,6 +28,7 @@ function buildSimpleEscpos(text) {
   return new Uint8Array(bytes);
 }
 
+
 const BRIDGE = "http://127.0.0.1:7777";
 const BRIDGE_DOWNLOAD_BASE = `${window.location.origin.replace(/\/$/, "")}/bridge`;
 // Bump this on every release to force browsers/CDNs to fetch fresh files
