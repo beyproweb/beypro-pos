@@ -30,9 +30,9 @@ function buildSimpleEscpos(text) {
 
 
 const BRIDGE = "http://127.0.0.1:7777";
-const BRIDGE_DOWNLOAD_BASE = `${window.location.origin.replace(/\/$/, "")}/bridge`;
-// Bump this on every release to force browsers/CDNs to fetch fresh files
-const BRIDGE_VER = "1.2.2";
+const BRIDGE_DOWNLOAD_BASE =
+  `${window.location.origin.replace(/\/$/, '')}/bridge`;
+const BRIDGE_VER = "1.2.2";  // 
 
 const previewOrder = {
   id: 1234,
