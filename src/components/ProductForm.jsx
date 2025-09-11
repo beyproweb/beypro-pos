@@ -489,62 +489,59 @@ const handleSubmit = async (e) => {
          <select
   value=""
   onChange={(e) => {
-    const groupName = e.target.value;
-    if (!groupName) return;
-    if (product.selectedExtrasGroup?.includes(groupName)) return;
-    const selected = extrasGroups.find((g) => g.group_name === groupName);
-    if (selected) {
-      setProduct((prev) => ({
-        ...prev,
-        selectedExtrasGroup: [...(prev.selectedExtrasGroup || []), groupName],
-  extras: [
-  ...(prev.extras || []),
-  ...(selected.items || []).map(item => ({
-    name: item.name,
-    extraPrice:
-      item.extraPrice !== undefined
-        ? item.extraPrice
-        : (item.price !== undefined ? item.price : 0),
-  }))
-],
+   const groupId = Number(e.target.value);
+if (!groupId) return;
+if (product.selectedExtrasGroup?.includes(groupId)) return;
 
-      }));
-    }
+const selected = extrasGroups.find((g) => g.id === groupId);
+if (selected) {
+  setProduct((prev) => ({
+    ...prev,
+    selectedExtrasGroup: [...(prev.selectedExtrasGroup || []), groupId],
+    extras: [
+      ...(prev.extras || []),
+      ...(selected.items || []).map(item => ({
+        name: item.name,
+        extraPrice: item.extraPrice !== undefined ? item.extraPrice : (item.price !== undefined ? item.price : 0),
+      }))
+    ],
+  }));
+}
+
   }}
   className="p-2 border rounded-xl w-full mb-2 bg-white text-gray-900 dark:bg-gray-900 dark:text-white"
 >
-  <option value="" className="text-gray-700 dark:text-white bg-white dark:bg-gray-900">
-    {t("-- Select Extras Group --")}
+<option value="" disabled>{t("-- Select Extras Group --")}</option>
+{extrasGroups.map((group) => (
+  <option key={group.id} value={group.id}>
+    {group.group_name}
   </option>
-  {extrasGroups.map((group, i) => (
-    <option
-      key={i}
-      value={group.group_name}
-      className="text-gray-900 dark:text-white bg-white dark:bg-gray-900"
-    >
-      {group.group_name}
-    </option>
-  ))}
+))}
+
 </select>
 
 
           <div className="flex flex-wrap gap-2 mb-2">
-            {(product.selectedExtrasGroup || []).map((groupName, idx) => (
-              <div key={idx} className="flex items-center px-3 py-1 bg-indigo-100 text-indigo-800 rounded-xl font-semibold">
-                {groupName}
-                <button type="button" onClick={() => {
-                  const updatedGroups = product.selectedExtrasGroup.filter((g) => g !== groupName);
-                  const updatedExtras = (product.extras || []).filter(
-                    (ex) => !extrasGroups.find((g) => g.group_name === groupName)?.items.some((item) => item.name === ex.name)
-                  );
-                  setProduct((prev) => ({
-                    ...prev,
-                    selectedExtrasGroup: updatedGroups,
-                    extras: updatedExtras,
-                  }));
-                }} className="ml-2 text-red-500 font-bold text-lg">&times;</button>
-              </div>
-            ))}
+{(product.selectedExtrasGroup || []).map((groupId, idx) => {
+  const group = extrasGroups.find((g) => g.id === groupId);
+  return group ? (
+    <div key={idx} className="flex items-center px-3 py-1 bg-indigo-100 text-indigo-800 rounded-xl font-semibold">
+      {group.group_name}
+      <button type="button" onClick={() => {
+        const updatedGroups = product.selectedExtrasGroup.filter((id) => id !== groupId);
+        const updatedExtras = (product.extras || []).filter(
+          (ex) => !group.items.some((item) => item.name === ex.name)
+        );
+        setProduct((prev) => ({
+          ...prev,
+          selectedExtrasGroup: updatedGroups,
+          extras: updatedExtras,
+        }));
+      }} className="ml-2 text-red-500 font-bold text-lg">&times;</button>
+    </div>
+  ) : null;
+})}
+
           </div>
           {product.extras.length > 0 && (
             <ul className="mt-2 list-disc list-inside text-sm text-gray-700 dark:text-gray-200 space-y-1">
