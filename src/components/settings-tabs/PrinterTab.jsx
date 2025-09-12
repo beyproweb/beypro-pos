@@ -6,6 +6,7 @@
 
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
+
 // --- ESC/POS bridge helpers ---
 async function printEscposToBridge(printerIp, escposUint8Array) {
   const dataBase64 = btoa(String.fromCharCode(...escposUint8Array));
@@ -40,9 +41,8 @@ if (window.location.hostname === "pos.beypro.com") {
 }
 const BRIDGE_DOWNLOAD_BASE = `${BRIDGE_DOWNLOAD_ORIGIN}/bridge`;
 
-// ⬅️ This line was missing:
+// ⬅️ Ensure version query param is present for cache-busting
 const BRIDGE_VER = (import.meta?.env?.VITE_BRIDGE_VER || "1.2.2");
-
 
 const previewOrder = {
   id: 1234,
@@ -87,8 +87,21 @@ function makeTicketText(order, shopAddress) {
   return lines.join("\n");
 }
 
+// ---- Helpers for stable device identity ----
+function keyFor(dev, idx = 0) {
+  const vid = `${dev?.vendorId ?? dev?.VID ?? ""}`.trim();
+  const pid = `${dev?.productId ?? dev?.PID ?? ""}`.trim();
+  const path = `${dev?.path ?? dev?.deviceAddress ?? ""}`.trim();
+  const base = [vid, pid, path].join(":");
+  return base || `idx:${idx}`; // last resort fallback
+}
+function sameKey(a, b, idxA = 0, idxB = 0) {
+  return keyFor(a, idxA) === keyFor(b, idxB);
+}
+
 export default function PrinterTab() {
   const { t } = useTranslation();
+
   const [printerIpState, setPrinterIpState] = useState(
     localStorage.getItem("printerIp") || ""
   );
@@ -108,18 +121,18 @@ export default function PrinterTab() {
 
   const content = useMemo(() => makeTicketText(previewOrder, shopAddress), [shopAddress]);
   const pingTimer = useRef(null);
-  
+
   const handleTestPrint = async () => {
-  try {
-    const ip = (printerIpState || localStorage.getItem("printerIp") || "").trim();
-    if (!ip) { alert("Please set a printer IP first."); return; }
-    const text = "HURRYBEY - BEYPRO\n---------------------\n1x Burger   195.00 TL\nTOTAL       195.00 TL";
-    await printEscposToBridge(ip, buildSimpleEscpos(text));
-    alert("✅ Test print sent to bridge!");
-  } catch (e) {
-    alert("❌ Print failed: " + e.message);
-  }
-};
+    try {
+      const ip = (printerIpState || localStorage.getItem("printerIp") || "").trim();
+      if (!ip) { alert("Please set a printer IP first."); return; }
+      const text = "HURRYBEY - BEYPRO\n---------------------\n1x Burger   195.00 TL\nTOTAL       195.00 TL";
+      await printEscposToBridge(ip, buildSimpleEscpos(text));
+      alert("✅ Test print sent to bridge!");
+    } catch (e) {
+      alert("❌ Print failed: " + e.message);
+    }
+  };
 
   // --- Bridge status ping ---
   const pingBridge = async () => {
@@ -131,28 +144,54 @@ export default function PrinterTab() {
     }
   };
 
-  // --- USB scan with fallback (/printers -> /usb/list) ---
+  // --- USB scan with fallback (/printers -> /usb/list) and robust reconciliation ---
   const refreshUsb = async () => {
     setStatus("Detecting USB printers…");
     try {
+      const base = BRIDGE.replace(/\/+$/, "");
       let list = [];
       try {
-        const j1 = await fetchJson(`${BRIDGE.replace(/\/+$/, "")}/printers`, { cache: "no-store" });
+        const j1 = await fetchJson(`${base}/printers`, { cache: "no-store" });
         list = j1?.usb || j1?.printers?.usb || [];
       } catch {
-        const j2 = await fetchJson(`${BRIDGE.replace(/\/+$/, "")}/usb/list`, { cache: "no-store" });
-        list = j2?.ports || [];
-        list = list.map((p) => ({
-          vendorId: p.vendorId || p.vendorID || p.vendor || "",
-          productId: p.productId || p.productID || p.product || "",
-          path: p.path || p.comName || "",
+        const j2 = await fetchJson(`${base}/usb/list`, { cache: "no-store" });
+        const ports = j2?.ports || [];
+        list = ports.map(p => ({
+          vendorId: `${p.vendorId || p.vendorID || p.vendor || ""}`,
+          productId: `${p.productId || p.productID || p.product || ""}`,
+          path: `${p.path || p.comName || ""}`,
+          name: p.product || p.manufacturer || "USB Printer",
         }));
       }
+
+      // Ensure normalized strings for all IDs/fields we rely on
+      list = list.map(p => ({
+        ...p,
+        vendorId: `${p.vendorId ?? p.VID ?? ""}`,
+        productId: `${p.productId ?? p.PID ?? ""}`,
+        path: `${p.path ?? p.deviceAddress ?? ""}`,
+      }));
+
       setUsbPrinters(list);
       setStatus(`Found ${list.length} USB device(s).`);
-      if (!selected && list.length > 0) {
+
+      // Reconcile selection or auto-select single device
+      const saved = selected;
+      if (list.length === 1 && !saved) {
         setSelected(list[0]);
         localStorage.setItem("usbSelectedJson", JSON.stringify(list[0]));
+      } else if (saved) {
+        const idx = list.findIndex((p, i) => sameKey(p, saved, i, 0));
+        if (idx >= 0) {
+          setSelected(list[idx]);
+          localStorage.setItem("usbSelectedJson", JSON.stringify(list[idx]));
+        } else if (list.length) {
+          setSelected(list[0]);
+          localStorage.setItem("usbSelectedJson", JSON.stringify(list[0]));
+        } else {
+          setSelected(null);
+          localStorage.removeItem("usbSelectedJson");
+        }
       }
     } catch (e) {
       setStatus(`Scan failed ❌ ${e.message || e}`);
@@ -164,22 +203,36 @@ export default function PrinterTab() {
     refreshUsb();
     pingTimer.current = setInterval(pingBridge, 5000);
     return () => clearInterval(pingTimer.current);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // --- Tolerant USB print: prefer /print (VID/PID), fallback to /usb/print-raw (path) ---
   const handlePrint = async () => {
-    if (!selected?.vendorId || !selected?.productId) return setStatus("Pick a USB printer first.");
+    // If nothing selected but exactly one exists, auto-pick it
+    let chosen = selected;
+    if (!chosen && usbPrinters.length === 1) {
+      chosen = usbPrinters[0];
+      setSelected(chosen);
+      localStorage.setItem("usbSelectedJson", JSON.stringify(chosen));
+    }
+    if (!chosen) {
+      setStatus("Select a USB printer from the list first.");
+      return;
+    }
+
     setBusy(true);
     setStatus("Printing…");
     const base = BRIDGE.replace(/\/+$/, "");
 
     const tryBridgeMiniPrint = async () => {
+      const hasIds = chosen.vendorId && chosen.productId;
+      if (!hasIds) throw new Error("Missing VID/PID for bridge /print");
       await fetchJson(`${base}/print`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           interface: "usb",
-          vendorId: selected.vendorId,
-          productId: selected.productId,
+          vendorId: `${chosen.vendorId}`,
+          productId: `${chosen.productId}`,
           content,
           encoding,
           cut: !!autoCut,
@@ -189,23 +242,30 @@ export default function PrinterTab() {
     };
 
     const tryLegacyUsbRaw = async () => {
-      if (!selected?.path) throw new Error("Legacy USB print requires a device path (not available).");
+      const path = chosen.path || chosen.deviceAddress || "";
+      if (!path) throw new Error("Legacy USB print requires a device path.");
       const encoder = new TextEncoder();
       const bytes = encoder.encode(content + "\n\n\n");
       const dataBase64 = btoa(String.fromCharCode(...bytes));
       await fetchJson(`${base}/usb/print-raw`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: selected.path, dataBase64 }),
+        body: JSON.stringify({ path, dataBase64, cut: !!autoCut }),
       });
     };
 
     try {
-      try { await tryBridgeMiniPrint(); } catch { await tryLegacyUsbRaw(); }
+      try {
+        await tryBridgeMiniPrint();
+      } catch {
+        await tryLegacyUsbRaw();
+      }
       setStatus("Printed ✅");
     } catch (e) {
       setStatus(`Print failed ❌ ${e.message || e}`);
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleBrowserPrint = () => {
@@ -228,7 +288,7 @@ export default function PrinterTab() {
           Install the bridge on the computer where your USB printer is plugged in. It will allow this page to talk to the
           printer at <code>http://127.0.0.1:7777</code>.
         </p>
-     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-win-x64.zip?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-blue-700 text-white font-bold text-center shadow hover:bg-blue-800" download>Windows</a>
           {/* Use the same x64 package on Apple Silicon (installer will use Rosetta if needed) */}
           <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-x64.tar.gz?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-gray-800 text-white font-bold text-center shadow hover:bg-gray-900" download>macOS (Apple Silicon via Rosetta)</a>
@@ -236,7 +296,7 @@ export default function PrinterTab() {
           <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-linux-x64.tar.gz?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-zinc-900 text-white font-bold text-center shadow hover:bg-zinc-950" download>Linux</a>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          Apple‑silicon Macs may need Rosetta to run the x64 build: <code>softwareupdate --install-rosetta --agree-to-license</code>
+          Apple-silicon Macs may need Rosetta to run the x64 build: <code>softwareupdate --install-rosetta --agree-to-license</code>
         </p>
 
         {/* Bridge Status */}
@@ -244,8 +304,8 @@ export default function PrinterTab() {
           <div className="font-semibold mb-1">Bridge Status</div>
           {bridgeInfo?.ok ? (
             <div className="text-sm text-emerald-700">
-              ✅ Detected: <span className="font-mono">v{bridgeInfo.version || "?"}</span> on {" "}
-              <span className="font-mono">{bridgeInfo.platform || "?"}</span> | USB: {" "}
+              ✅ Detected: <span className="font-mono">v{bridgeInfo.version || "?"}</span> on{" "}
+              <span className="font-mono">{bridgeInfo.platform || "?"}</span> | USB:{" "}
               <span className="font-mono">{String(bridgeInfo.usb !== undefined ? bridgeInfo.usb : "unknown")}</span>
             </div>
           ) : (
@@ -258,13 +318,13 @@ export default function PrinterTab() {
             Recheck
           </button>
         </div>
-        <button
-  onClick={handleTestPrint}
-  className="px-4 py-2 bg-blue-600 text-white rounded-lg"
->
-  Test Print
-</button>
 
+        <button
+          onClick={handleTestPrint}
+          className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg"
+        >
+          Test Print
+        </button>
       </div>
 
       <div className="flex items-center justify-between">
@@ -282,31 +342,49 @@ export default function PrinterTab() {
             <label className="font-bold">{t("USB Printer")}</label>
             <select
               className="rounded-xl border p-2 w-full"
-              value={selected ? `${selected.vendorId}:${selected.productId}` : ""}
+              value={selected ? keyFor(selected, 0) : ""}
               onChange={(e) => {
-                const [vid, pid] = e.target.value.split(":");
-                const found = usbPrinters.find(p => p.vendorId === vid && p.productId === pid) || null;
+                const chosenKey = e.target.value;
+                const found = usbPrinters.find((p, i) => keyFor(p, i) === chosenKey) || null;
                 setSelected(found);
-                localStorage.setItem("usbSelectedJson", JSON.stringify(found));
+                if (found) localStorage.setItem("usbSelectedJson", JSON.stringify(found));
+                else localStorage.removeItem("usbSelectedJson");
               }}
             >
               <option value="">{usbPrinters.length ? t("Select a device") : t("No devices found")}</option>
-              {usbPrinters.map((p, i) => (
-                <option key={i} value={`${p.vendorId}:${p.productId}`}>{`VID:${p.vendorId || "?"}  PID:${p.productId || "?"}`}</option>
-              ))}
+              {usbPrinters.map((p, i) => {
+                const label =
+                  (p.name || p.product || "USB Printer") +
+                  `  (VID:${p.vendorId || "?"}  PID:${p.productId || "?"})`;
+                return (
+                  <option key={keyFor(p, i)} value={keyFor(p, i)}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
-            <p className="text-xs text-gray-500 mt-1">{t("If empty: install printer driver (Windows) or libusb (macOS/Linux), then replug.")}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {t("If empty: install printer driver (Windows) or libusb (macOS/Linux), then replug.")}
+            </p>
           </div>
           <div>
             <label className="font-bold">{t("Encoding")}</label>
-            <select className="rounded-xl border p-2 w-full" value={encoding} onChange={(e) => { setEncoding(e.target.value); localStorage.setItem("usbEncoding", e.target.value); }}>
+            <select
+              className="rounded-xl border p-2 w-full"
+              value={encoding}
+              onChange={(e) => { setEncoding(e.target.value); localStorage.setItem("usbEncoding", e.target.value); }}
+            >
               <option value="cp857">cp857 (Türkçe)</option>
               <option value="cp437">cp437</option>
               <option value="gb18030">gb18030</option>
               <option value="utf8">utf8 (printer must support)</option>
             </select>
             <label className="flex gap-2 items-center mt-2">
-              <input type="checkbox" checked={autoCut} onChange={(e) => { setAutoCut(e.target.checked); localStorage.setItem("usbAutoCut", String(e.target.checked)); }} />
+              <input
+                type="checkbox"
+                checked={autoCut}
+                onChange={(e) => { setAutoCut(e.target.checked); localStorage.setItem("usbAutoCut", String(e.target.checked)); }}
+              />
               {t("Auto Cut")}
             </label>
           </div>
@@ -316,7 +394,12 @@ export default function PrinterTab() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="rounded-2xl border p-4 bg-white/70 space-y-2">
           <label className="font-bold">{t("Shop Address on Ticket")}</label>
-          <textarea className="border rounded-xl p-2 w-full font-mono resize-y min-h-[70px]" value={shopAddress} onChange={(e) => { setShopAddress(e.target.value); localStorage.setItem("shopAddress", e.target.value); }} placeholder="Your shop name\nStreet, City" />
+          <textarea
+            className="border rounded-xl p-2 w-full font-mono resize-y min-h-[70px]"
+            value={shopAddress}
+            onChange={(e) => { setShopAddress(e.target.value); localStorage.setItem("shopAddress", e.target.value); }}
+            placeholder="Your shop name\nStreet, City"
+          />
           <div className="text-xs text-gray-500">{t("Shown at the top of the receipt.")}</div>
         </div>
         <div className="bg-gradient-to-b from-gray-100 to-white rounded-2xl border border-indigo-200 shadow-xl p-4 relative min-h-[320px]">
@@ -328,10 +411,17 @@ export default function PrinterTab() {
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <button onClick={handlePrint} disabled={busy} className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition disabled:opacity-60">
+        <button
+          onClick={handlePrint}
+          disabled={busy}
+          className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition disabled:opacity-60"
+        >
           {busy ? t("Printing…") : t("Print via USB")}
         </button>
-        <button onClick={handleBrowserPrint} className="px-6 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition">
+        <button
+          onClick={handleBrowserPrint}
+          className="px-6 py-3 rounded-xl bg-slate-700 text-white font-bold shadow hover:bg-slate-800 transition"
+        >
           {t("Browser Print (Fallback)")}
         </button>
         <span className="text-sm text-gray-700 self-center">{status}</span>
@@ -344,5 +434,3 @@ export default function PrinterTab() {
     </div>
   );
 }
-
-
