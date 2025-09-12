@@ -1,7 +1,8 @@
 // ==============================
 // File: src/pages/PrinterTab.jsx
-// Purpose: Stable bridge download links (GitHub Releases or backend),
-//          Bridge status ping, robust USB scan & print fallback
+// Purpose: Bridge download links, bridge ping,
+//          USB scan & print (robust keying),
+//          Windows printers (name) detection & optional spooler print
 // ==============================
 
 import React, { useEffect, useMemo, useState, useRef } from "react";
@@ -25,6 +26,7 @@ function buildSimpleEscpos(text) {
   bytes.push(0x1B, 0x40);
   const enc = new TextEncoder();
   bytes.push(...enc.encode(text + "\n\n\n"));
+  // full cut
   bytes.push(0x1D, 0x56, 0x00);
   return new Uint8Array(bytes);
 }
@@ -40,8 +42,6 @@ if (window.location.hostname === "pos.beypro.com") {
   BRIDGE_DOWNLOAD_ORIGIN = DEFAULT_BACKEND;
 }
 const BRIDGE_DOWNLOAD_BASE = `${BRIDGE_DOWNLOAD_ORIGIN}/bridge`;
-
-// ⬅️ Ensure version query param is present for cache-busting
 const BRIDGE_VER = (import.meta?.env?.VITE_BRIDGE_VER || "1.2.2");
 
 const previewOrder = {
@@ -87,13 +87,13 @@ function makeTicketText(order, shopAddress) {
   return lines.join("\n");
 }
 
-// ---- Helpers for stable device identity ----
+// ---- Helpers for stable USB device identity ----
 function keyFor(dev, idx = 0) {
   const vid = `${dev?.vendorId ?? dev?.VID ?? ""}`.trim();
   const pid = `${dev?.productId ?? dev?.PID ?? ""}`.trim();
   const path = `${dev?.path ?? dev?.deviceAddress ?? ""}`.trim();
   const base = [vid, pid, path].join(":");
-  return base || `idx:${idx}`; // last resort fallback
+  return base || `idx:${idx}`;
 }
 function sameKey(a, b, idxA = 0, idxB = 0) {
   return keyFor(a, idxA) === keyFor(b, idxB);
@@ -102,18 +102,22 @@ function sameKey(a, b, idxA = 0, idxB = 0) {
 export default function PrinterTab() {
   const { t } = useTranslation();
 
-  const [printerIpState, setPrinterIpState] = useState(
-    localStorage.getItem("printerIp") || ""
-  );
+  const [printerIpState, setPrinterIpState] = useState(localStorage.getItem("printerIp") || "");
   const [bridgeInfo, setBridgeInfo] = useState(null);
+
+  // USB state
   const [usbPrinters, setUsbPrinters] = useState([]);
-  const [selected, setSelected] = useState(() => {
+  const [selectedUsb, setSelectedUsb] = useState(() => {
     const v = localStorage.getItem("usbSelectedJson");
     return v ? JSON.parse(v) : null;
   });
 
+  // Windows printers state
+  const [winPrinters, setWinPrinters] = useState([]);
+  const [selectedWin, setSelectedWin] = useState(localStorage.getItem("winPrinterName") || "");
+
   const [encoding, setEncoding] = useState(localStorage.getItem("usbEncoding") || "cp857");
-  const [autoCut, setAutoCut]   = useState(localStorage.getItem("usbAutoCut") !== "false");
+  const [autoCut, setAutoCut] = useState(localStorage.getItem("usbAutoCut") !== "false");
   const [shopAddress, setShopAddress] = useState(localStorage.getItem("shopAddress") || "Hurrybey Burger\nİzmir");
 
   const [status, setStatus] = useState("");
@@ -164,7 +168,7 @@ export default function PrinterTab() {
         }));
       }
 
-      // Ensure normalized strings for all IDs/fields we rely on
+      // Normalize
       list = list.map(p => ({
         ...p,
         vendorId: `${p.vendorId ?? p.VID ?? ""}`,
@@ -175,26 +179,48 @@ export default function PrinterTab() {
       setUsbPrinters(list);
       setStatus(`Found ${list.length} USB device(s).`);
 
-      // Reconcile selection or auto-select single device
-      const saved = selected;
+      // Reconcile/auto-select
+      const saved = selectedUsb;
       if (list.length === 1 && !saved) {
-        setSelected(list[0]);
+        setSelectedUsb(list[0]);
         localStorage.setItem("usbSelectedJson", JSON.stringify(list[0]));
       } else if (saved) {
         const idx = list.findIndex((p, i) => sameKey(p, saved, i, 0));
         if (idx >= 0) {
-          setSelected(list[idx]);
+          setSelectedUsb(list[idx]);
           localStorage.setItem("usbSelectedJson", JSON.stringify(list[idx]));
         } else if (list.length) {
-          setSelected(list[0]);
+          setSelectedUsb(list[0]);
           localStorage.setItem("usbSelectedJson", JSON.stringify(list[0]));
         } else {
-          setSelected(null);
+          setSelectedUsb(null);
           localStorage.removeItem("usbSelectedJson");
         }
       }
     } catch (e) {
       setStatus(`Scan failed ❌ ${e.message || e}`);
+    }
+  };
+
+  // --- Windows printers: detect friendly names from OS ---
+  const refreshWindowsPrinters = async () => {
+    setStatus("Detecting Windows printers…");
+    try {
+      const base = BRIDGE.replace(/\/+$/, "");
+      const j = await fetchJson(`${base}/win/printers?d=${Date.now()}`, { cache: "no-store" });
+      const list = Array.isArray(j.printers) ? j.printers : [];
+      setWinPrinters(list);
+      setStatus(`Found ${list.length} Windows printer(s).`);
+      if (!selectedWin && list.length) {
+        const def = list.find(p => p.isDefault);
+        const first = def || list[0];
+        if (first?.name) {
+          setSelectedWin(first.name);
+          localStorage.setItem("winPrinterName", first.name);
+        }
+      }
+    } catch (e) {
+      setStatus(`Windows scan failed ❌ ${e.message || e}`);
     }
   };
 
@@ -205,22 +231,26 @@ export default function PrinterTab() {
     return () => clearInterval(pingTimer.current);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-load Windows printers when bridge says it's Windows
+  useEffect(() => {
+    if (bridgeInfo?.platform && String(bridgeInfo.platform).toLowerCase().includes("win")) {
+      refreshWindowsPrinters();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridgeInfo?.platform]);
+
   // --- Tolerant USB print: prefer /print (VID/PID), fallback to /usb/print-raw (path) ---
-  const handlePrint = async () => {
-    // If nothing selected but exactly one exists, auto-pick it
-    let chosen = selected;
+  const handlePrintUsb = async () => {
+    let chosen = selectedUsb;
     if (!chosen && usbPrinters.length === 1) {
       chosen = usbPrinters[0];
-      setSelected(chosen);
+      setSelectedUsb(chosen);
       localStorage.setItem("usbSelectedJson", JSON.stringify(chosen));
     }
-    if (!chosen) {
-      setStatus("Select a USB printer from the list first.");
-      return;
-    }
+    if (!chosen) { setStatus("Select a USB printer from the list first."); return; }
 
     setBusy(true);
-    setStatus("Printing…");
+    setStatus("Printing via USB…");
     const base = BRIDGE.replace(/\/+$/, "");
 
     const tryBridgeMiniPrint = async () => {
@@ -245,24 +275,43 @@ export default function PrinterTab() {
       const path = chosen.path || chosen.deviceAddress || "";
       if (!path) throw new Error("Legacy USB print requires a device path.");
       const encoder = new TextEncoder();
-      const bytes = encoder.encode(content + "\n\n\n");
+      let bytes = encoder.encode(content + "\n\n\n");
+      if (autoCut) bytes = new Uint8Array([...bytes, 0x1D, 0x56, 0x00]);
       const dataBase64 = btoa(String.fromCharCode(...bytes));
       await fetchJson(`${base}/usb/print-raw`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, dataBase64, cut: !!autoCut }),
+        body: JSON.stringify({ path, dataBase64 }),
       });
     };
 
     try {
-      try {
-        await tryBridgeMiniPrint();
-      } catch {
-        await tryLegacyUsbRaw();
-      }
-      setStatus("Printed ✅");
+      try { await tryBridgeMiniPrint(); } catch { await tryLegacyUsbRaw(); }
+      setStatus("Printed via USB ✅");
     } catch (e) {
-      setStatus(`Print failed ❌ ${e.message || e}`);
+      setStatus(`USB print failed ❌ ${e.message || e}`);
+    } finally { setBusy(false); }
+  };
+
+  // --- (Optional) Windows spooler print by friendly name ---
+  const handlePrintWindows = async () => {
+    if (!selectedWin) { setStatus("Select a Windows printer first."); return; }
+    setBusy(true);
+    setStatus("Printing via Windows…");
+    try {
+      const base = BRIDGE.replace(/\/+$/, "");
+      const encoder = new TextEncoder();
+      let bytes = encoder.encode(content + "\n\n\n");
+      if (autoCut) bytes = new Uint8Array([...bytes, 0x1D, 0x56, 0x00]);
+      const dataBase64 = btoa(String.fromCharCode(...bytes));
+      await fetchJson(`${base}/win/print-raw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ printerName: selectedWin, dataBase64, encoding }),
+      });
+      setStatus("Printed via Windows ✅");
+    } catch (e) {
+      setStatus(`Windows print failed ❌ ${e.message || e}`);
     } finally {
       setBusy(false);
     }
@@ -290,7 +339,6 @@ export default function PrinterTab() {
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-win-x64.zip?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-blue-700 text-white font-bold text-center shadow hover:bg-blue-800" download>Windows</a>
-          {/* Use the same x64 package on Apple Silicon (installer will use Rosetta if needed) */}
           <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-x64.tar.gz?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-gray-800 text-white font-bold text-center shadow hover:bg-gray-900" download>macOS (Apple Silicon via Rosetta)</a>
           <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-mac-x64.tar.gz?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-neutral-900 text-white font-bold text-center shadow hover:bg-neutral-950" download>macOS (Intel/Rosetta)</a>
           <a href={`${BRIDGE_DOWNLOAD_BASE}/beypro-bridge-linux-x64.tar.gz?v=${BRIDGE_VER}`} className="px-4 py-3 rounded-2xl bg-zinc-900 text-white font-bold text-center shadow hover:bg-zinc-950" download>Linux</a>
@@ -314,9 +362,16 @@ export default function PrinterTab() {
               {bridgeInfo?.error ? ` — ${bridgeInfo.error}` : ""}
             </div>
           )}
-          <button onClick={() => { setStatus(""); pingBridge(); }} className="mt-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
-            Recheck
-          </button>
+          <div className="flex gap-2 mt-2">
+            <button onClick={() => { setStatus(""); pingBridge(); }} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
+              Recheck
+            </button>
+            {String(bridgeInfo?.platform || "").toLowerCase().includes("win") && (
+              <button onClick={refreshWindowsPrinters} className="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
+                Scan Windows Printers
+              </button>
+            )}
+          </div>
         </div>
 
         <button
@@ -327,6 +382,7 @@ export default function PrinterTab() {
         </button>
       </div>
 
+      {/* USB section */}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-600 text-transparent bg-clip-text tracking-tight drop-shadow">
           🖨️ {t("USB Thermal Printer")}
@@ -342,11 +398,11 @@ export default function PrinterTab() {
             <label className="font-bold">{t("USB Printer")}</label>
             <select
               className="rounded-xl border p-2 w-full"
-              value={selected ? keyFor(selected, 0) : ""}
+              value={selectedUsb ? keyFor(selectedUsb, 0) : ""}
               onChange={(e) => {
                 const chosenKey = e.target.value;
                 const found = usbPrinters.find((p, i) => keyFor(p, i) === chosenKey) || null;
-                setSelected(found);
+                setSelectedUsb(found);
                 if (found) localStorage.setItem("usbSelectedJson", JSON.stringify(found));
                 else localStorage.removeItem("usbSelectedJson");
               }}
@@ -391,6 +447,46 @@ export default function PrinterTab() {
         </div>
       </div>
 
+      {/* Windows printers section */}
+      {String(bridgeInfo?.platform || "").toLowerCase().includes("win") && (
+        <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
+          <h3 className="text-xl font-bold">🪟 {t("Windows Printers (Spooler)")}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="font-bold">{t("Printer Name")}</label>
+              <select
+                className="rounded-xl border p-2 w-full"
+                value={selectedWin}
+                onChange={(e) => {
+                  setSelectedWin(e.target.value);
+                  localStorage.setItem("winPrinterName", e.target.value);
+                }}
+              >
+                <option value="">{winPrinters.length ? t("Select a Windows printer") : t("No printers found")}</option>
+                {winPrinters.map((p, i) => (
+                  <option key={`${p.name}:${i}`} value={p.name}>
+                    {p.isDefault ? "⭐ " : ""}{p.name} {p.driver ? `— ${p.driver}` : ""} {p.port ? `(${p.port})` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {t("Shows printers installed in Windows (Control Panel → Devices and Printers).")}
+              </p>
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={handlePrintWindows}
+                disabled={busy || !selectedWin}
+                className="px-6 py-3 rounded-xl bg-blue-600 text-white font-bold shadow hover:bg-blue-700 transition disabled:opacity-60"
+              >
+                {busy ? t("Printing…") : t("Print via Windows")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live preview */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="rounded-2xl border p-4 bg-white/70 space-y-2">
           <label className="font-bold">{t("Shop Address on Ticket")}</label>
@@ -410,9 +506,10 @@ export default function PrinterTab() {
         </div>
       </div>
 
+      {/* Action row */}
       <div className="flex flex-wrap gap-3">
         <button
-          onClick={handlePrint}
+          onClick={handlePrintUsb}
           disabled={busy}
           className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition disabled:opacity-60"
         >
