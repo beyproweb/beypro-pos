@@ -1,221 +1,220 @@
-import React, { useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+// ExtrasModal.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { X, Check, Loader2, AlertCircle } from "lucide-react";
+// ⬇️ Adjust this import to your project. If you don't have it, use the fallback below.
+import { EXTRAS_GROUPS_API as API_FROM_UTILS } from "../utils/api";
+import { toast } from "react-toastify";
+
+const FALLBACK_API =
+  (typeof window !== "undefined" &&
+    `${window.location.origin.replace(/\/$/, "")}/api/extras-groups`) ||
+  "/api/extras-groups";
+
+const EXTRAS_GROUPS_API = API_FROM_UTILS || FALLBACK_API;
 
 export default function ExtrasModal({
-  showExtrasModal,
-  setShowExtrasModal,
-  selectedProduct,
-  setSelectedProduct,
-  selectedExtras,
-  setSelectedExtras,
-  extrasGroups,
-  setCartItems,
-  cartItems,
-  editingCartItemIndex,
-  setEditingCartItemIndex,
-  note,
-  setNote,
-  fullTotal,
-  t,
+  isOpen,
+  onClose,
+  onConfirm, // (selectedItems) => void
+  defaultSelected = [], // [{id, name, price}] optional
 }) {
-  const [activeGroupIdx, setActiveGroupIdx] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [groups, setGroups] = useState([]); // [{id, group_name, items:[{id,name,price}]}]
+  const [activeGroupId, setActiveGroupId] = useState(null);
+  const [selected, setSelected] = useState(() => {
+    // Map for O(1) membership checks
+    const m = new Map();
+    for (const it of defaultSelected) m.set(String(it.id), it);
+    return m;
+  });
 
-  if (!showExtrasModal || !selectedProduct) return null;
+  // Fetch when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    let ignore = false;
 
-  // Filter and order groups
-  const groupNames = selectedProduct.selectedExtrasGroup.filter(
-    (name) => extrasGroups.some((g) => g.groupName === name)
+    (async () => {
+      setErr("");
+      setLoading(true);
+      try {
+        const res = await fetch(EXTRAS_GROUPS_API, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(
+            `GET ${EXTRAS_GROUPS_API} ${res.status} ${res.statusText} ${text}`
+          );
+        }
+        const data = await res.json();
+        if (ignore) return;
+
+        const normalized = Array.isArray(data) ? data : [];
+        setGroups(normalized);
+        // Auto-select first group tab
+        if (normalized.length && !activeGroupId) {
+          setActiveGroupId(normalized[0].id);
+        }
+      } catch (e) {
+        const msg = e?.message || "Failed to fetch extras groups";
+        setErr(msg);
+        toast.error(`Extras yüklenemedi: ${msg}`);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+    // re-fetch every time it opens so you see latest groups/items
+  }, [isOpen]);
+
+  const activeGroup = useMemo(
+    () => groups.find((g) => String(g.id) === String(activeGroupId)) || null,
+    [groups, activeGroupId]
   );
-  const activeGroup = extrasGroups.find((g) => g.groupName === groupNames[activeGroupIdx]);
+
+  const toggleItem = (item) => {
+    const key = String(item.id);
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(key)) next.delete(key);
+      else next.set(key, item);
+      return next;
+    });
+  };
+
+  const confirm = () => {
+    onConfirm?.(Array.from(selected.values()));
+    onClose?.();
+  };
+
+  if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-gradient-to-br from-white via-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 rounded-3xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden max-h-[90vh]">
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-[min(100%,980px)] max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <div className="p-6 pb-0 border-b border-blue-100 flex flex-col items-center">
-          <h2 className="text-2xl font-extrabold text-blue-900 dark:text-white mb-1 drop-shadow">
-            ✨ {t("Select Extras")}
-          </h2>
-
-          <p className="text-gray-600 dark:text-gray-300 text-center text-base mb-4">
-            {t("Add-ons for")} <span className="font-bold text-blue-600">{selectedProduct.name}</span>
-          </p>
-
-          {/* Tabs */}
-          <div className="w-full overflow-x-auto flex gap-3 mb-4">
-            {groupNames.map((name, idx) => (
-              <button
-                key={name}
-                onClick={() => setActiveGroupIdx(idx)}
-                className={`flex-1 whitespace-nowrap px-4 py-2 rounded-full text-sm font-semibold transition
-                  ${activeGroupIdx === idx
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-indigo-800'
-                }`}
-              >
-                {t(name)}
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <h3 className="text-xl font-semibold">Choose Extras</h3>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
         </div>
 
-        {/* Content: Single Group */}
-        <div className="flex-1 overflow-auto px-6 pb-4 grid grid-cols-2 gap-3">
-          {activeGroup?.items.map((item) => {
-            const found = selectedExtras.find((e) => e.name === item.name) || { quantity: 0 };
-            return (
-              <label
-                key={item.name}
-                className={`border-2 rounded-xl p-3 cursor-pointer transition flex flex-col justify-between h-full
-                  ${found.quantity > 0
-                    ? 'bg-gradient-to-br from-blue-100 via-fuchsia-50 to-indigo-100 border-blue-400'
-                    : 'bg-white dark:bg-gray-800 border-blue-100 hover:bg-blue-50'
-                }`}
-              >
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-sm">{item.name}</span>
-                  <span className="text-sm text-blue-700">
-                    ₺{parseFloat(item.price || item.extraPrice || 0).toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center mt-2">
-                  <button
-                    className="bg-gray-300 text-black px-2 py-1 rounded-full hover:bg-gray-400 transition"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSelectedExtras((prev) => {
-                        const cur = prev.find((ex) => ex.name === item.name);
-                        if (!cur) return prev;
-                        if (cur.quantity === 1) return prev.filter((ex) => ex.name !== item.name);
-                        return prev.map((ex) => ex.name === item.name ? {...ex, quantity: ex.quantity - 1} : ex);
-                      });
-                    }}
-                  >
-                    ➖
-                  </button>
-                  <span className="text-lg font-semibold">{found.quantity}</span>
-                  <button
-                    className="bg-green-500 text-white px-2 py-1 rounded-full hover:bg-green-600 transition"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSelectedExtras((prev) => {
-                        const cur = prev.find((ex) => ex.name === item.name);
-                        if (!cur) return [...prev, { ...item, quantity: 1 }];
-                        return prev.map((ex) => ex.name === item.name ? {...ex, quantity: ex.quantity + 1} : ex);
-                      });
-                    }}
-                  >
-                    ➕
-                  </button>
-                </div>
-              </label>
-            );
-          })}
-        </div>
+        {/* Body */}
+        <div className="flex">
+          {/* Left: Groups */}
+          <div className="w-56 border-r p-3 overflow-auto max-h-[65vh]">
+            {loading && (
+              <div className="flex items-center gap-2 text-gray-600">
+                <Loader2 className="animate-spin" size={18} />
+                Loading extras…
+              </div>
+            )}
+            {!!err && (
+              <div className="flex items-start gap-2 text-red-600 text-sm">
+                <AlertCircle size={18} />
+                <span>Failed to fetch extras.</span>
+              </div>
+            )}
 
-        {/* Sticky Footer */}
-        <div className="sticky bottom-0 bg-gradient-to-r from-blue-50 via-white to-indigo-50 dark:from-zinc-900 dark:to-zinc-800 border-t border-blue-100/40 dark:border-zinc-800/70 rounded-b-3xl px-6 py-4 flex flex-col space-y-3">
-          {/* Quantity & Notes */}
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-3">
-              <button
-                className="bg-gray-200 dark:bg-zinc-700 text-black dark:text-white px-4 py-2 rounded-full hover:bg-blue-200 dark:hover:bg-indigo-900 font-bold text-xl transition"
-                onClick={() =>
-                  setSelectedProduct((prev) => ({ ...prev, quantity: Math.max((prev.quantity || 1) - 1, 1) }))
-                }
-              >➖</button>
-              <span className="text-2xl font-semibold text-blue-900 dark:text-blue-200">
-                {selectedProduct.quantity || 1}
-              </span>
-              <button
-                className="bg-green-500 text-white px-4 py-2 rounded-full hover:bg-green-600 font-bold text-xl transition"
-                onClick={() =>
-                  setSelectedProduct((prev) => ({ ...prev, quantity: (prev.quantity || 1) + 1 }))
-                }
-              >➕</button>
-            </div>
-            <div className="text-lg font-bold">
-              {t("Total")}:
-              <span className="ml-2">₺{fullTotal.toFixed(2)}</span>
-            </div>
-          </div>
-          {/* Notes */}
-          <div>
-            <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-100 mb-1">📝 {t("Notes")}</h3>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {['No ketchup', 'Extra spicy', 'Sauce on side', 'Well done'].map((preset) => (
+            {!loading && !err && groups.length === 0 && (
+              <div className="text-gray-500 text-sm">No extras groups.</div>
+            )}
+
+            {!loading &&
+              !err &&
+              groups.map((g) => (
                 <button
-                  key={preset}
-                  onClick={() =>
-                    setNote((prev) =>
-                      prev.includes(preset) ? prev.replace(preset, '').trim() : `${prev} ${preset}`.trim()
-                    )
-                  }
-                  className={`px-3 py-1 rounded-full border text-xs font-semibold transition
-                    ${note.includes(preset)
-                      ? 'bg-blue-100 border-blue-400 text-blue-800'
-                      : 'bg-gray-100 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-600 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-indigo-700'
+                  key={g.id}
+                  onClick={() => setActiveGroupId(g.id)}
+                  className={`block w-full text-left px-3 py-2 rounded-xl mb-2 border ${
+                    String(activeGroupId) === String(g.id)
+                      ? "bg-blue-50 border-blue-300 text-blue-700"
+                      : "hover:bg-gray-50"
                   }`}
                 >
-                  {t(preset)}
+                  {g.group_name}
                 </button>
               ))}
-            </div>
-            <textarea
-              rows={2}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder={t("Custom notes, e.g. 'no bun', 'extra napkins'...")}
-              className="w-full border border-blue-100 dark:border-zinc-800 rounded-xl p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 dark:focus:ring-indigo-500 bg-white dark:bg-zinc-900 text-gray-800 dark:text-gray-100"
-            />
           </div>
-          {/* Actions */}
+
+          {/* Right: Items */}
+          <div className="flex-1 p-4 overflow-auto max-h-[65vh]">
+            {activeGroup ? (
+              <div>
+                <h4 className="font-semibold mb-3">
+                  {activeGroup.group_name}
+                </h4>
+                {(!activeGroup.items || activeGroup.items.length === 0) && (
+                  <div className="text-gray-500 text-sm">
+                    No items in this group.
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {activeGroup.items?.map((it) => {
+                    const checked = selected.has(String(it.id));
+                    return (
+                      <label
+                        key={it.id}
+                        className={`flex items-center justify-between gap-3 border rounded-xl px-3 py-2 cursor-pointer ${
+                          checked ? "border-blue-400 bg-blue-50" : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleItem(it)}
+                            className="h-4 w-4"
+                          />
+                          <div>
+                            <div className="font-medium">{it.name}</div>
+                            <div className="text-sm text-gray-500">
+                              {Number(it.price || 0).toFixed(2)} ₺
+                            </div>
+                          </div>
+                        </div>
+                        {checked && <Check className="text-blue-600" size={18} />}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="text-gray-500 text-sm">
+                Select a group on the left.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 p-4 border-t">
+          <div className="text-sm text-gray-600">
+            Selected: {selected.size} item{selected.size !== 1 ? "s" : ""}
+          </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setShowExtrasModal(false)}
-              className="flex-1 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-xl font-bold transition"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border hover:bg-gray-50"
             >
-              ❌ {t("Cancel")}
+              Cancel
             </button>
             <button
-              onClick={() => {
-                const productQty = selectedProduct.quantity || 1;
-                const validExtras = selectedExtras.filter((ex) => ex.quantity > 0).map((ex) => ({ ...ex, quantity: Number(ex.quantity), price: parseFloat(ex.price || ex.extraPrice || 0) }));
-                const extrasPrice = validExtras.reduce((sum, ex) => sum + ex.price * ex.quantity, 0);
-                const itemPrice = parseFloat(selectedProduct.price); // ONLY the base price!
-                const extrasKey = JSON.stringify(validExtras);
-                const uniqueId = `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
-
-                if (editingCartItemIndex !== null) {
-                  setCartItems((prev) => {
-                    const updated = [...prev];
-                    updated[editingCartItemIndex] = { ...updated[editingCartItemIndex], quantity: productQty, price: itemPrice, extras: validExtras, unique_id: uniqueId, note: note || null };
-                    return updated;
-                  });
-                  setEditingCartItemIndex(null);
-                } else {
-                  setCartItems((prev) => [
-  ...prev,
-  {
-    id: selectedProduct.id,
-    name: selectedProduct.name,
-    price: itemPrice, // now just the base price!
-    quantity: productQty,
-    ingredients: selectedProduct.ingredients || [],
-    extras: validExtras,
-    unique_id: uniqueId,
-    note: note || null,
-  },
-]);
-
-                }
-
-                setShowExtrasModal(false);
-                setSelectedExtras([]);
-              }}
-              className="flex-1 py-2 bg-gradient-to-r from-green-500 via-blue-400 to-indigo-400 text-white rounded-xl font-bold shadow-lg hover:brightness-105 transition-all"
+              onClick={confirm}
+              className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 active:scale-95"
             >
-              ✅ {t("Add to Cart")}
+              Add Extras
             </button>
           </div>
         </div>
