@@ -441,20 +441,24 @@ export default function ProductForm({ onSuccess, initialData = null }) {
               const selected = groupById.get(groupId);
               if (!selected) return;
 
-              setProduct(prev => ({
-                ...prev,
-                selectedExtrasGroup: [...(prev.selectedExtrasGroup || []), groupId],
-                extras: [
-                  ...(prev.extras || []),
-                  ...(selected.items || []).map(item => ({
-                    name: item.name,
-                    extraPrice:
-                      item.extraPrice !== undefined
-                        ? item.extraPrice
-                        : (item.price !== undefined ? item.price : 0),
-                  })),
-                ],
-              }));
+              setProduct(prev => {
+  const updatedGroupIds = [...(prev.selectedExtrasGroup || []), groupId];
+  // Dynamically derive extras from all selected groups
+  const newExtras = updatedGroupIds.flatMap(id => {
+    const group = groupById.get(id);
+    return group?.items?.map(item => ({
+      name: item.name,
+      extraPrice: item.extraPrice,
+    })) || [];
+  });
+
+  return {
+    ...prev,
+    selectedExtrasGroup: updatedGroupIds,
+    extras: newExtras,
+  };
+});
+
             }}
             className="p-2 border rounded-xl w-full mb-2 bg-white text-gray-900 dark:bg-gray-900 dark:text-white"
           >
@@ -477,16 +481,21 @@ export default function ProductForm({ onSuccess, initialData = null }) {
                   <button
                     type="button"
                     onClick={() => {
-                      const updatedGroups = product.selectedExtrasGroup.filter((id) => id !== groupId);
-                      const updatedExtras = (product.extras || []).filter(
-                        (ex) => !group.items.some((item) => item.name === ex.name)
-                      );
-                      setProduct(prev => ({
-                        ...prev,
-                        selectedExtrasGroup: updatedGroups,
-                        extras: updatedExtras,
-                      }));
-                    }}
+  const updatedGroups = product.selectedExtrasGroup.filter((id) => id !== groupId);
+  const updatedExtras = updatedGroups.flatMap(id => {
+    const group = groupById.get(id);
+    return group?.items?.map(item => ({
+      name: item.name,
+      extraPrice: item.extraPrice,
+    })) || [];
+  });
+  setProduct(prev => ({
+    ...prev,
+    selectedExtrasGroup: updatedGroups,
+    extras: updatedExtras,
+  }));
+}}
+
                     className="ml-2 text-red-500 font-bold text-lg"
                   >
                     &times;
