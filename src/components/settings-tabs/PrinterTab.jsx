@@ -115,6 +115,7 @@ export default function PrinterTab() {
   // Windows printers state
   const [winPrinters, setWinPrinters] = useState([]);
   const [selectedWin, setSelectedWin] = useState(localStorage.getItem("winPrinterName") || "");
+  const [manualWinName, setManualWinName] = useState(localStorage.getItem("winPrinterName") || "");
 
   const [encoding, setEncoding] = useState(localStorage.getItem("usbEncoding") || "cp857");
   const [autoCut, setAutoCut] = useState(localStorage.getItem("usbAutoCut") !== "false");
@@ -366,11 +367,96 @@ export default function PrinterTab() {
             <button onClick={() => { setStatus(""); pingBridge(); }} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
               Recheck
             </button>
-            {String(bridgeInfo?.platform || "").toLowerCase().includes("win") && (
-              <button onClick={refreshWindowsPrinters} className="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
-                Scan Windows Printers
+           {String(bridgeInfo?.platform || "").toLowerCase().includes("win") && (
+  <div className="rounded-2xl border p-4 bg-white/70 space-y-3">
+    <h3 className="text-xl font-bold">🪟 {t("Windows Printers (Spooler)")}</h3>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Left column: either dropdown (if any) or manual input fallback */}
+      <div>
+        <label className="font-bold">{t("Printer Name")}</label>
+
+        {winPrinters.length > 0 ? (
+          <select
+            className="rounded-xl border p-2 w-full"
+            value={selectedWin}
+            onChange={(e) => {
+              setSelectedWin(e.target.value);
+              setManualWinName(e.target.value);
+              localStorage.setItem("winPrinterName", e.target.value);
+            }}
+          >
+            <option value="">{t("Select a Windows printer")}</option>
+            {winPrinters.map((p, i) => (
+              <option key={`${p.name}:${i}`} value={p.name}>
+                {p.isDefault ? "⭐ " : ""}{p.name} {p.driver ? `— ${p.driver}` : ""} {p.port ? `(${p.port})` : ""}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="space-y-2">
+            <input
+              type="text"
+              className="rounded-xl border p-2 w-full font-mono"
+              placeholder='Type exact Windows printer name (e.g. "EPSON TM-T20II Receipt")'
+              value={manualWinName}
+              onChange={(e) => setManualWinName(e.target.value)}
+            />
+            <p className="text-xs text-gray-500">
+              {t("List is empty. Enter the exact printer name from Control Panel → Devices and Printers, then click “Use This Name”.")}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const name = (manualWinName || "").trim();
+                  setSelectedWin(name);
+                  if (name) localStorage.setItem("winPrinterName", name);
+                  setStatus(name ? `Using manual printer name: ${name}` : "Please enter a printer name.");
+                }}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
+              >
+                {t("Use This Name")}
               </button>
-            )}
+
+              <button
+                onClick={refreshWindowsPrinters}
+                className="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700"
+              >
+                {t("Re-scan Windows Printers")}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-500 mt-1">
+          {t("Shows printers installed in Windows (Control Panel → Devices and Printers).")}
+        </p>
+      </div>
+
+      {/* Right column: actions */}
+      <div className="flex items-end gap-2">
+        <button
+          onClick={handlePrintWindows}
+          disabled={busy || !selectedWin}
+          className="px-6 py-3 rounded-xl bg-blue-600 text-white font-bold shadow hover:bg-blue-700 transition disabled:opacity-60"
+        >
+          {busy ? t("Printing…") : t("Print via Windows")}
+        </button>
+
+        <button
+          onClick={async () => {
+            setStatus("Detecting Windows printers…");
+            await refreshWindowsPrinters();
+          }}
+          className="px-4 py-3 rounded-xl bg-slate-600 text-white font-bold shadow hover:bg-slate-700 transition"
+        >
+          {t("Scan")}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
           </div>
         </div>
 
