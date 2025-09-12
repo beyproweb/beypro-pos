@@ -41,7 +41,22 @@ const selectedGroupIds = new Set(
   (selectedProduct?.selectedExtrasGroup || []).map(id => Number(id)).filter(Number.isFinite)
 );
 
-const allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
+let allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
+
+// If no selected groups, fallback to manual extras
+if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {
+  allowedGroups = [
+    {
+      id: "manual",
+      groupName: "Extras",
+      items: selectedProduct.extras.map((ex, idx) => ({
+        id: idx,
+        name: ex.name,
+        price: Number(ex.extraPrice || ex.price || 0),
+      })),
+    },
+  ];
+}
 
 
   // Keep tab index in bounds
