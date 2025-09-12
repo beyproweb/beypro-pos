@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function ExtrasModal({
@@ -8,7 +8,7 @@ export default function ExtrasModal({
   setSelectedProduct,
   selectedExtras,
   setSelectedExtras,
-  extrasGroups,          // <- raw from API (uses group_name)
+  extrasGroups,          // raw from API (group_name)
   setCartItems,
   cartItems,
   editingCartItemIndex,
@@ -19,38 +19,50 @@ export default function ExtrasModal({
   t,
 }) {
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
+  const [normalizedGroups, setNormalizedGroups] = useState([]);
+  const [filteredGroups, setFilteredGroups] = useState([]);
+
   if (!showExtrasModal || !selectedProduct) return null;
 
-  // ✅ 1) Normalize groups coming from API
-  const normalizedGroups = useMemo(
-    () =>
-      (Array.isArray(extrasGroups) ? extrasGroups : []).map((g) => ({
-        id: g.id,
-        groupName: g.groupName || g.group_name || "", // handle both keys
-        items: (g.items || []).map((it) => ({
-          id: it.id,
-          name: it.name || it.ingredient_name || it.title || "",
-          price: Number(it.price ?? it.extraPrice ?? 0),
-        })),
+  // 1) Normalize groups from API safely (no useMemo)
+  useEffect(() => {
+    const src = Array.isArray(extrasGroups) ? extrasGroups : [];
+    const norm = src.map((g) => ({
+      id: g.id,
+      groupName: g.groupName || g.group_name || "",
+      items: (g.items || []).map((it) => ({
+        id: it.id,
+        name: it.name || it.ingredient_name || it.title || "",
+        price: Number(it.price ?? it.extraPrice ?? 0),
       })),
-    [extrasGroups]
-  );
+    }));
+    setNormalizedGroups(norm);
+  }, [extrasGroups]);
 
-  // ✅ 2) Accept names OR IDs in selectedProduct.selectedExtrasGroup
-  const selectedKeys = Array.isArray(selectedProduct.selectedExtrasGroup)
-    ? selectedProduct.selectedExtrasGroup
-    : [];
+  // 2) Recompute filtered groups whenever selectedProduct or normalizedGroups changes
+  useEffect(() => {
+    const keys = Array.isArray(selectedProduct?.selectedExtrasGroup)
+      ? selectedProduct.selectedExtrasGroup
+      : [];
 
-  const filteredGroups = useMemo(() => {
-    if (!selectedKeys.length) return [];
-    return normalizedGroups.filter((g) =>
-      selectedKeys.some(
-        (k) => String(k) === String(g.id) || String(k) === String(g.groupName)
-      )
-    );
-  }, [normalizedGroups, selectedKeys]);
+    const fg = !keys.length
+      ? []
+      : normalizedGroups.filter((g) =>
+          keys.some(
+            (k) => String(k) === String(g.id) || String(k) === String(g.groupName)
+          )
+        );
 
-  // Tabs use names for display
+    setFilteredGroups(fg);
+
+    // Keep active index in bounds
+    if (fg.length === 0) {
+      if (activeGroupIdx !== 0) setActiveGroupIdx(0);
+    } else if (activeGroupIdx >= fg.length) {
+      setActiveGroupIdx(0);
+    }
+  }, [normalizedGroups, selectedProduct, activeGroupIdx]);
+
   const groupNames = filteredGroups.map((g) => g.groupName);
   const activeGroup = filteredGroups[activeGroupIdx] || null;
 
@@ -127,7 +139,7 @@ export default function ExtrasModal({
                       setSelectedExtras((prev) => {
                         const cur = prev.find((ex) => ex.name === item.name);
                         if (!cur) return [...prev, { ...item, quantity: 1 }];
-                        return prev.map((ex) => ex.name === item.name ? {...ex, quantity: ex.quantity + 1} : ex);
+                        return prev.map((ex) => ex.name === item.name ? {...ex, quantity: cur.quantity + 1} : ex);
                       });
                     }}
                   >➕</button>
