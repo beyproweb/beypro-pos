@@ -37,13 +37,12 @@ export default function ExtrasModal({
   const keys = Array.isArray(selectedProduct?.selectedExtrasGroup)
     ? selectedProduct.selectedExtrasGroup
     : [];
-  const idSet = new Set(keys.map(k => Number(k)).filter(Number.isFinite));
-  const nameSet = new Set(keys.filter(k => typeof k === "string" && k.trim() !== ""));
+const selectedGroupIds = new Set(
+  (selectedProduct?.selectedExtrasGroup || []).map(id => Number(id)).filter(Number.isFinite)
+);
 
-  // Only groups that match by id OR by name
-  const allowedGroups = groups.filter(g =>
-    idSet.has(Number(g.id)) || nameSet.has(g.groupName)
-  );
+const allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
+
 
   // Keep tab index in bounds
   const safeIdx = allowedGroups.length === 0
