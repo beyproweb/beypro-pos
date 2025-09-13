@@ -11,6 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL || "";
 import { useSetting } from "../components/hooks/useSetting";
 import { toast } from "react-toastify";
 import socket from "../utils/socket"; // ✅ Use shared socket!
+import { publicPath, soundFileUrl } from '../utils/publicPath'; // adjust path if this file is deeper
 
 // Receipt print logic (from PrinterTab, can be shared)
 const defaultLayout = {
@@ -741,24 +742,29 @@ useEffect(() => {
     }
   }, [soundQueue, notificationSettings, audioUnlocked]);
 
-  return (
-    <>
-      {notificationSettings
-        ? eventKeys.map((key) => {
-            const soundName =
-              notificationSettings.eventSounds[key] ||
-              notificationSettings.defaultSound;
-            const src = soundName && soundName !== "none" ? `/${soundName}` : "";
-            return (
-              <audio
-                key={`${key}-${soundName}-${notificationSettings?.volume}`}
-                ref={soundRefs.current[key]}
-                src={src}
-                preload="auto"
-              />
-            );
-          })
-        : null}
-    </>
-  );
+return (
+  <>
+    {notificationSettings
+      ? eventKeys.map((key) => {
+          const soundName =
+            notificationSettings.eventSounds[key] ||
+            notificationSettings.defaultSound;
+
+          // Build a safe, relative URL that works in web + Electron
+          const src =
+            soundName && soundName !== "none" ? soundFileUrl(soundName) : "";
+
+          return (
+            <audio
+              key={`${key}-${soundName}-${notificationSettings?.volume}`}
+              ref={soundRefs.current[key]}
+              src={src}
+              preload="auto"
+            />
+          );
+        })
+      : null}
+  </>
+);
+
 }
