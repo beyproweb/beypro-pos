@@ -41,7 +41,7 @@ import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 
 import QrMenuSettings from "./pages/QrMenuSettings";
-const API_URL = import.meta.env.VITE_API_URL || "";
+const API_URL = (import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com").replace(/\/+$/, "");
 
 const isAuthenticated = () => !!localStorage.getItem("beyproUser");
 
@@ -170,9 +170,10 @@ export default function App() {
               <Route path="subscription" element={<SubscriptionTab />} />
               <Route path="settings/notifications" element={<ProtectedRoute permission="settings-notifications"><NotificationsTab /></ProtectedRoute>} />
               <Route path="/expenses" element={<ProtectedRoute permission="expenses"><ExpensesPage /></ProtectedRoute>} />
-              <Route path="/ingredient-prices" element={<ProtectedRoute permission="ingredient-prices"><IngredientPrices /></ProtectedRoute>} />
+              <Route path="ingredient-prices" element={<ProtectedRoute permission="ingredient-prices"><IngredientPrices /></ProtectedRoute>} />
               <Route path="cash-register-history" element={<ProtectedRoute permission="cash-register-history"><CashRegisterHistory /></ProtectedRoute>} />
               <Route path="integrations" element={<ProtectedRoute permission="integrations"><IntegrationsPage /></ProtectedRoute>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
 
               {/* QR menu settings (still protected) */}
               <Route

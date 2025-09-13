@@ -17,11 +17,14 @@ function createWindow() {
   });
 
   // In dev, load the Vite dev server URL; in prod, load built index.html
-  if (process.env.VITE_DEV_SERVER_URL) {
-    win.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    win.loadFile(path.join(__dirname, "dist", "index.html"));
-  }
+if (process.env.VITE_DEV_SERVER_URL) {
+  win.loadURL(process.env.VITE_DEV_SERVER_URL);
+} else {
+  // Force hash so React Router won't try to match the raw file path
+  const indexPath = path.join(__dirname, "dist", "index.html").replace(/\\/g, "/");
+  win.loadURL(`file://${indexPath}#/`);
+}
+
 }
 
 app.whenReady().then(createWindow);

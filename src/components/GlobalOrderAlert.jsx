@@ -7,8 +7,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-const API_URL = import.meta.env.VITE_API_URL || "";
-import { useSetting } from "../components/hooks/useSetting";
+const API_URL = (import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com").replace(/\/+$/, "");import { useSetting } from "../components/hooks/useSetting";
 import { toast } from "react-toastify";
 import socket from "../utils/socket"; // ✅ Use shared socket!
 import { publicPath, soundFileUrl } from '../utils/publicPath'; // adjust path if this file is deeper
