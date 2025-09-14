@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   // Use relative paths in production so Electron (file://) can resolve them
-  base: mode === 'production' ? './' : '/',
+  base: mode === 'production' ? '/' : '/',
+
 
   build: {
     outDir: 'dist',

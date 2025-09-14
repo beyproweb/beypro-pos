@@ -15,7 +15,7 @@ const Router = isElectron ? HashRouter : BrowserRouter;
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <Router basename={isElectron ? undefined : import.meta.env.BASE_URL}>
+    <Router basename={isElectron ? undefined : "/"}>
       <App />
     </Router>
   </React.StrictMode>
