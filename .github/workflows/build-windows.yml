@@ -1,49 +1,38 @@
-name: Build Windows Installer
+name: Build Windows App
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main, feat/electron]
+    tags:
+      - "v*" # build only when you push a version tag, e.g. v0.1.0
+  workflow_dispatch: # allow manual trigger from GitHub Actions tab
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
-          cache: "npm"
+          node-version: 18
 
-      - name: Install deps
-        run: npm ci
+      - name: Install dependencies
+        run: npm install --include=optional
 
-      - name: Build web
+      - name: Build renderer (Vite)
         run: npm run build
 
-      - name: Build desktop (Windows)
-        # This should run your electron-builder build
+      - name: Build Windows installer
         run: npm run desktop:build
 
-      # 🔎 Show where installers actually landed
-      - name: Find installers
-        shell: pwsh
-        run: |
-          Write-Host "Searching for .exe/.msi under $PWD"
-          Get-ChildItem -Recurse -File -Include *.exe,*.msi | ForEach-Object {
-            Write-Host "::notice file::Found -> $($_.FullName)"
-          }
-
-      # 📦 Upload whatever we found (dist, release, or anywhere)
-      - name: Upload Windows installers
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Beypro-Windows
+          name: windows-build
           path: |
-            **/*.exe
-            **/*.msi
-          if-no-files-found: error
+            dist/*.exe
+            dist/*.yml
+            dist/*.blockmap
