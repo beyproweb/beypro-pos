@@ -26,21 +26,24 @@ jobs:
         run: npm run build
 
       - name: Build desktop (Windows)
-        # this should run your electron/electron-builder script
+        # This should run your electron-builder build
         run: npm run desktop:build
 
-      # Optional: show what was produced (helps debugging)
-      - name: List dist
+      # 🔎 Show where installers actually landed
+      - name: Find installers
+        shell: pwsh
         run: |
-          echo "Listing dist contents:"
-          dir dist
+          Write-Host "Searching for .exe/.msi under $PWD"
+          Get-ChildItem -Recurse -File -Include *.exe,*.msi | ForEach-Object {
+            Write-Host "::notice file::Found -> $($_.FullName)"
+          }
 
-      - name: Upload Windows installer(s)
+      # 📦 Upload whatever we found (dist, release, or anywhere)
+      - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:
           name: Beypro-Windows
-          # ✅ Use a multiline list and quote the glob — no stray spaces, no weird paths
           path: |
-            "dist/*.exe"
-            "dist/*.msi"
+            **/*.exe
+            **/*.msi
           if-no-files-found: error
