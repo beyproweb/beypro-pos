@@ -3,20 +3,44 @@ name: Build Windows Installer
 on:
   workflow_dispatch:
   push:
-    branches: [ main, feat/electron ]
+    branches: [main, feat/electron]
 
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
-      - run: npm ci
-      - run: npm run build
-      - run: npm run desktop:build
-      - uses: actions/upload-artifact@v4
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build web
+        run: npm run build
+
+      - name: Build desktop (Windows)
+        # this should run your electron/electron-builder script
+        run: npm run desktop:build
+
+      # Optional: show what was produced (helps debugging)
+      - name: List dist
+        run: |
+          echo "Listing dist contents:"
+          dir dist
+
+      - name: Upload Windows installer(s)
+        uses: actions/upload-artifact@v4
         with:
           name: Beypro-Windows
-          path: dist/*.exe
+          # ✅ Use a multiline list and quote the glob — no stray spaces, no weird paths
+          path: |
+            "dist/*.exe"
+            "dist/*.msi"
+          if-no-files-found: error
