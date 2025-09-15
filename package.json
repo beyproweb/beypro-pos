@@ -1,6 +1,6 @@
 {
   "name": "hurryposdash",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "main": "main.js",
   "proxy": "http://localhost:5000",
@@ -12,35 +12,34 @@
     "desktop:dev:no-optional": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && cross-env npm_config_optional=false VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "desktop:build": "npm run build && electron-builder --publish=never"
   },
-"build": {
-  "appId": "com.beypro.pos",
-  "productName": "Beypro POS",
-  "files": [
-    "dist/**",
-    "main.js",
-    "preload.js",
-    "package.json",
-    "node_modules/**"
-  ],
-  "asarUnpack": [
-    "node_modules/printer/**"
-  ],
-  "mac": {
-    "target": "dmg",
-    "category": "public.app-category.business"
+  "build": {
+    "appId": "com.beypro.pos",
+    "productName": "Beypro POS",
+    "files": [
+      "dist/**",
+      "main.js",
+      "preload.js",
+      "package.json",
+      "node_modules/**"
+    ],
+    "asarUnpack": [
+      "node_modules/printer/**"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": true,
+      "allowElevation": true,
+      "deleteAppDataOnUninstall": false
+    }
   },
-  "win": {
-    "target": "nsis",
-    "icon": "build/icon.ico"
-  },
-  "nsis": {
-    "oneClick": true,
-    "perMachine": true,
-    "allowElevation": true,
-    "deleteAppDataOnUninstall": false
-  }
-}
-,
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
