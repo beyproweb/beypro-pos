@@ -3,8 +3,8 @@ name: Build Windows App
 on:
   push:
     tags:
-      - "v*" # build when you push a version tag like v0.1.0
-  workflow_dispatch: # allow manual trigger from Actions tab
+      - "v*"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,12 +19,16 @@ jobs:
         with:
           node-version: 18
 
-      # Install build tools for native modules like 'printer'
+      # Install prerequisites for native modules
       - name: Install Windows build tools
         run: |
           choco install -y python --version=3.10.11
           choco install -y visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --quiet --norestart"
-          npm config set msvs_version 2022
+
+      - name: Verify tools
+        run: |
+          python --version
+          cl.exe /?
 
       - name: Install dependencies
         run: npm install --include=optional
