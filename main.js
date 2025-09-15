@@ -34,16 +34,20 @@ app.on("window-all-closed", () => {
 
 // ---- Native printer access ----
 // Load printer module only on Windows; ignore elsewhere
+// ---- Native printer access ----
+// Load printer module only on Windows; ignore elsewhere
 let printer = null;
 try {
   if (process.platform === "win32") {
-    printer = require("printer"); // optionalDependency
+    printer = require("printer"); // native addon
+    console.log("✅ Printer module loaded successfully");
   }
-} catch (_) {
+} catch (err) {
+  console.error("❌ Failed to load printer module:", err);
   printer = null;
 }
-// npm i printer
 
+// ---- Info handler ----
 ipcMain.handle("beypro:getInfo", () => ({
   ok: true,
   platform: `${os.platform()} ${os.arch()} (electron)`,
@@ -51,43 +55,23 @@ ipcMain.handle("beypro:getInfo", () => ({
   usb: true,
 }));
 
+// ---- Printers handler ----
 ipcMain.handle("beypro:getPrinters", () => {
-  if (!printer) return [];
+  if (!printer) {
+    console.warn("⚠️ Printer module not available, returning empty list");
+    return [];
+  }
   try {
     const list = printer.getPrinters() || [];
+    console.log("🖨️ Found printers:", list);
     return list.map(p => ({
       name: p.name,
       isDefault: !!p.isDefault,
       driver: p.driverName || p.driver || "",
       port: p.portName || "",
     }));
-  } catch {
+  } catch (err) {
+    console.error("❌ Error listing printers:", err);
     return [];
   }
-});
-
-
-ipcMain.handle("beypro:printRaw", async (_evt, { printerName, dataBase64 }) => {
-  if (!printer) return { ok: false, error: "Native printer module not available on this OS." };
-  return await new Promise((resolve) => {
-    const data = Buffer.from(dataBase64, "base64");
-    printer.printDirect({
-      data,
-      printer: printerName,
-      type: "RAW",
-      success: (jobID) => resolve({ ok: true, jobID }),
-      error: (err) => resolve({ ok: false, error: String(err) }),
-    });
-  });
-});
-
-// Optional: direct 9100 network print (no driver)
-const net = require("net");
-ipcMain.handle("beypro:printNet", async (_evt, { host, dataBase64, port = 9100 }) => {
-  return await new Promise((resolve) => {
-    const raw = Buffer.from(dataBase64, "base64");
-    const sock = net.createConnection(port, host, () => { sock.write(raw); sock.end(); });
-    sock.on("error", (err) => resolve({ ok: false, error: String(err) }));
-    sock.on("close", () => resolve({ ok: true }));
-  });
 });
