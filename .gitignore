@@ -33,3 +33,7 @@ Thumbs.db
 
 
 node_modules
+
+# electron-builder outputs
+builder-effective-config.yaml
+builder-debug.yml
