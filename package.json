@@ -1,6 +1,6 @@
 {
   "name": "hurryposdash",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "main": "main.js",
   "proxy": "http://localhost:5000",
@@ -23,7 +23,8 @@
       "node_modules/**"
     ],
     "asarUnpack": [
-      "node_modules/printer/**"
+      "node_modules/printer/**",
+      "**/*.node"
     ],
     "mac": {
       "target": "dmg",
