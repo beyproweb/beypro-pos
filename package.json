@@ -15,8 +15,6 @@
 "build": {
   "appId": "com.beypro.pos",
   "productName": "Beypro POS",
-
-  // ✅ Include production deps
   "files": [
     "dist/**",
     "main.js",
@@ -24,12 +22,9 @@
     "package.json",
     "node_modules/**"
   ],
-
-  // ✅ Make sure native addon is not inside app.asar
   "asarUnpack": [
     "node_modules/printer/**"
   ],
-
   "mac": {
     "target": "dmg",
     "category": "public.app-category.business"
