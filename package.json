@@ -5,14 +5,14 @@
   "main": "main.js",
   "proxy": "http://localhost:5000",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "desktop:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
-    "desktop:dev:no-optional": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && cross-env npm_config_optional=false VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
-    "desktop:build": "npm run build && electron-builder --publish=never",
-    "postinstall": "electron-builder install-app-deps"
-  },
+  "dev": "vite",
+  "build": "vite build",
+  "preview": "vite preview",
+  "desktop:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+  "desktop:dev:no-optional": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && cross-env npm_config_optional=false VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+  "desktop:build": "npm run build && electron-builder --publish=never",
+  "postinstall": "node -e \"if(process.env.BEYPRO_DESKTOP==='1'){require('child_process').execSync('npx electron-builder install-app-deps',{stdio:'inherit'})}\""
+},
   "build": {
     "appId": "com.beypro.pos",
     "productName": "Beypro POS",
@@ -24,7 +24,7 @@
       "node_modules/**"
     ],
     "asarUnpack": [
-      "node_modules/printer/**",
+      "node_modules/@thesusheer/electron-printer/**",
       "**/*.node"
     ],
     "mac": {
@@ -88,7 +88,7 @@
     "uuid": "^11.1.0",
     "web-vitals": "^2.1.4",
     "xlsx": "^0.18.5",
-    "printer": "^0.4.0"
+    "@thesusheer/electron-printer": "^2.0.4"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.4.1",
