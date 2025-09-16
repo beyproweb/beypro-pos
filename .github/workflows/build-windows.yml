@@ -18,8 +18,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: "npm"
 
       - name: Install prerequisites
+        shell: pwsh
         run: |
           choco install -y python --version=3.10.11
           choco install -y visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --quiet --norestart"
@@ -29,8 +31,19 @@ jobs:
         with:
           arch: x64
 
-      - name: Install dependencies
-        run: npm install --include=optional
+      - name: Configure NPM for native builds
+        shell: pwsh
+        run: |
+          npm config set msvs_version 2022
+          npm config set python C:\Python310\python.exe
+          echo "npm_config_build_from_source=true" >> $env:GITHUB_ENV
+
+      - name: Clean install deps (runs postinstall -> electron-builder install-app-deps)
+        run: npm ci --include=optional
+
+      # OPTIONAL: If you prefer an explicit rebuild instead of relying on postinstall, uncomment:
+      # - name: Rebuild native modules for Electron (explicit)
+      #   run: npx electron-rebuild -f -w printer
 
       - name: Build renderer (Vite)
         run: npm run build
