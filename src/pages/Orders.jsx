@@ -298,11 +298,13 @@ useEffect(() => {
 
       fetchOrders();
     });
-
+    socket.on("order_closed", ({ orderId }) => {
+     setOrders(prev => prev.filter(o => o.id !== orderId));
+   });
     return () => {
       if (window.socket) {
-        socket.off("orders_updated")
-;
+        socket.off("orders_updated");
+        socket.off("order_closed");
       }
     };
   } else {
