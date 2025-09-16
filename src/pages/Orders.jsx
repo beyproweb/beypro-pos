@@ -293,26 +293,21 @@ useEffect(() => {
     setLoading(true);
     fetchOrders().then(() => setLoading(false));
 
+    socket.on("orders_updated", fetchOrders);
 
-    socket.on("orders_updated", () => {
-
-      fetchOrders();
-    });
     socket.on("order_closed", ({ orderId }) => {
-     setOrders(prev => prev.filter(o => o.id !== orderId));
-   });
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+    });
+
     return () => {
-      if (window.socket) {
-        socket.off("orders_updated");
-        socket.off("order_closed");
-      }
+      socket.off("orders_updated");
+      socket.off("order_closed");
     };
   } else {
     setOrders(propOrders);
     setLoading(false);
   }
 }, [propOrders]);
-
 
 
 useEffect(() => {
