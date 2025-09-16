@@ -28,14 +28,19 @@ export default function LoginScreen() {
 
     if (response.data.success) {
 if (response.data.user) {
-  // Normal user/admin login
+  const baseUser = response.data.user;
+  const resolvedPermissions = baseUser.permissions?.length
+    ? baseUser.permissions
+    : (userSettings.roles?.[baseUser.role] || []); // same logic as AuthContext
+
   const userObj = {
-    ...response.data.user,
-    name: response.data.user.full_name || response.data.user.fullName || response.data.user.name || "Manager"
+    ...baseUser,
+    name: baseUser.full_name || baseUser.fullName || baseUser.name || "Manager",
+    permissions: resolvedPermissions,
   };
+
   localStorage.setItem("beyproUser", JSON.stringify(userObj));
   setCurrentUser(userObj);
-
 } else if (response.data.staff) {
     // Staff login
     const staffObj = {
