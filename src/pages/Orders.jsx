@@ -1407,7 +1407,7 @@ const discountedTotal = baseTotal - totalDiscount; // shown on the card
       )
     );
     await fetch(`${API_URL}/api/orders/${order.id}/close`, { method: "POST" });
-if (!propOrders) await fetchOrders();
+
     // Optionally: await fetchOrders();
   }}
 >
