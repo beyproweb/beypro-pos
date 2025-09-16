@@ -18,7 +18,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: "npm"
+          # (no cache since there's no lockfile)
 
       - name: Install prerequisites
         shell: pwsh
@@ -38,12 +38,13 @@ jobs:
           npm config set python C:\Python310\python.exe
           echo "npm_config_build_from_source=true" >> $env:GITHUB_ENV
 
-      - name: Clean install deps (runs postinstall -> electron-builder install-app-deps)
-        run: npm ci --include=optional
+      - name: Install deps (desktop build, no lockfile)
+        env:
+          BEYPRO_DESKTOP: "1"
+        run: npm install --include=optional
 
-      # OPTIONAL: If you prefer an explicit rebuild instead of relying on postinstall, uncomment:
-      # - name: Rebuild native modules for Electron (explicit)
-      #   run: npx electron-rebuild -f -w printer
+      # If you still had electron-rebuild before, you can remove it.
+      # With @thesusheer/electron-printer you don't need it.
 
       - name: Build renderer (Vite)
         run: npm run build
