@@ -18,33 +18,50 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          # (no cache since there's no lockfile)
 
-      - name: Install prerequisites
+      - name: Setup Python (for node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Visual Studio Build Tools + Windows SDK
         shell: pwsh
         run: |
-          choco install -y python --version=3.10.11
-          choco install -y visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --quiet --norestart"
+          choco install -y visualstudio2022buildtools `
+            --package-parameters "--add Microsoft.VisualStudio.Component.VC.CoreBuildTools `
+            --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            --add Microsoft.VisualStudio.Component.Windows10SDK.19041 `
+            --add Microsoft.VisualStudio.Component.Windows11SDK.22621 `
+            --quiet --norestart"
+          choco install -y windows-sdk-10
 
       - name: Setup MSVC build environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      - name: Configure NPM for native builds
+      - name: Sanity check toolchain
         shell: pwsh
         run: |
-          npm config set msvs_version 2022
-          npm config set python C:\Python310\python.exe
-          echo "npm_config_build_from_source=true" >> $env:GITHUB_ENV
+          python --version
+          node -v
+          npm -v
+          where cl.exe || echo "cl.exe not on PATH (msvc-dev-cmd should fix this)"
+
+      # ✅ Set env vars for node-gyp & our conditional postinstall
+      - name: Install printer module & rebuild natives for Electron
+        run: |
+          npm install @thesusheer/electron-printer@^2.0.4 --no-save
+          npx electron-builder install-app-deps
 
       - name: Install deps (desktop build, no lockfile)
-        env:
-          BEYPRO_DESKTOP: "1"
         run: npm install --include=optional
 
-      # If you still had electron-rebuild before, you can remove it.
-      # With @thesusheer/electron-printer you don't need it.
+      # Install desktop-only native printer module (NOT in package.json) and rebuild for Electron
+      - name: Install printer module & rebuild natives for Electron
+        run: |
+          npm install @thesusheer/electron-printer@^2.0.4 --no-save
+          npx electron-builder install-app-deps
 
       - name: Build renderer (Vite)
         run: npm run build
