@@ -29,16 +29,11 @@ export default function LoginScreen() {
     if (response.data.success) {
 if (response.data.user) {
   const baseUser = response.data.user;
-  const resolvedPermissions = baseUser.permissions?.length
-    ? baseUser.permissions
-    : (userSettings.roles?.[baseUser.role] || []); // same logic as AuthContext
-
-  const userObj = {
+const userObj = {
     ...baseUser,
     name: baseUser.full_name || baseUser.fullName || baseUser.name || "Manager",
-    permissions: resolvedPermissions,
   };
-
+  // Let AuthContext handle permissions resolution with userSettings
   localStorage.setItem("beyproUser", JSON.stringify(userObj));
   setCurrentUser(userObj);
 } else if (response.data.staff) {
