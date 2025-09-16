@@ -52,18 +52,19 @@ app.on("activate", () => {
 });
 
 // ---------- Native printer access (Windows only) ----------
+// ---------- Native printer access (cross-platform via N-API) ----------
 let printer = null;
 try {
-  if (process.platform === "win32") {
-    printer = require("printer"); // native addon from "printer" package
-    console.log("✅ Printer module loaded successfully");
-  } else {
-    console.log("ℹ️ Non-Windows platform detected; native printer module not used.");
-  }
+  // Uses @thesusheer/electron-printer (N-API, prebuilt)
+  // Works on Windows and POSIX; no node-gyp/grunt peer issues.
+  // eslint-disable-next-line import/no-extraneous-dependencies
+  printer = require("@thesusheer/electron-printer");
+  console.log("✅ Electron printer module loaded");
 } catch (err) {
-  console.error("❌ Failed to load printer module:", err);
+  console.error("❌ Failed to load @thesusheer/electron-printer:", err?.message || err);
   printer = null;
 }
+
 
 // ---------- IPC: app/bridge info ----------
 ipcMain.handle("beypro:getInfo", () => ({

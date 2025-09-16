@@ -49,3 +49,6 @@ builder-debug.yml
 # electron-builder outputs
 builder-effective-config.yaml
 builder-debug.yml
+
+.env
+.env.*
