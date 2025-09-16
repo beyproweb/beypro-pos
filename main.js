@@ -1,157 +1,159 @@
-// main.js (Electron main process)
-const { app, BrowserWindow, ipcMain } = require("electron");
-const path = require("path");
-const os = require("os");
-const net = require("net");
+// ---------- Native printer access (robust with fallback + logging) ----------
+const fs = require("fs");
+const { execFile } = require("child_process");
+const LOG_PATH = path.join(app.getPath("userData"), "printer-debug.log");
 
-// ---------- Single instance (optional but nice) ----------
-const gotTheLock = app.requestSingleInstanceLock?.() ?? true;
-if (!gotTheLock) {
-  app.quit();
+function log(...args) {
+  const line = `[${new Date().toISOString()}] ${args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
+  try { fs.appendFileSync(LOG_PATH, line); } catch {}
+  console.log(...args);
 }
 
-// ---------- Create window ----------
-let win;
-function createWindow() {
-  win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      // sandbox: false, // leave default unless you explicitly need it
-    },
-  });
-
-  // In dev, load the Vite dev server URL; in prod, load built index.html
-  if (process.env.VITE_DEV_SERVER_URL) {
-    win.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    // Force hash so React Router won't try to match the raw file path
-    const indexPath = path.join(__dirname, "dist", "index.html").replace(/\\/g, "/");
-    win.loadURL(`file://${indexPath}#/`);
-  }
-}
-
-app.whenReady().then(createWindow);
-
-app.on("second-instance", () => {
-  if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
-  }
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
-
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
-
-// ---------- Native printer access (Windows only) ----------
-// ---------- Native printer access (cross-platform via N-API) ----------
+// Try to load the native module
 let printer = null;
 try {
-  // Uses @thesusheer/electron-printer (N-API, prebuilt)
-  // Works on Windows and POSIX; no node-gyp/grunt peer issues.
+  // If you switched package, change the require below:
+  // const modName = "printer";
+  const modName = "@thesusheer/electron-printer";
   // eslint-disable-next-line import/no-extraneous-dependencies
-  printer = require("@thesusheer/electron-printer");
-  console.log("✅ Electron printer module loaded");
+  printer = require(modName);
+  log("✅ Printer module loaded:", modName, "electron", process.versions.electron, "node", process.versions.node);
 } catch (err) {
-  console.error("❌ Failed to load @thesusheer/electron-printer:", err?.message || err);
+  log("❌ Failed to load printer module:", err?.message || err);
   printer = null;
 }
 
+// --- Windows PowerShell fallback ---
+function psJson(cmd) {
+  return new Promise((resolve, reject) => {
+    const ps = process.env.ComSpec?.toLowerCase().includes("cmd") ? "powershell.exe" : "powershell.exe";
+    execFile(ps, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `${cmd} | ConvertTo-Json -Depth 5`], { windowsHide: true }, (err, stdout, stderr) => {
+      if (err) {
+        return reject(new Error(stderr?.toString() || err.message));
+      }
+      try {
+        const parsed = JSON.parse(stdout.toString() || "[]");
+        resolve(parsed);
+      } catch (e) {
+        reject(new Error("Failed to parse PowerShell JSON"));
+      }
+    });
+  });
+}
+
+async function listPrintersFallbackWindows() {
+  try {
+    const res = await psJson("Get-Printer | Select-Object Name,DriverName,PortName,Shared,Type,Default");
+    const arr = Array.isArray(res) ? res : [res];
+    const mapped = arr
+      .filter(Boolean)
+      .map(p => ({
+        name: p.Name,
+        isDefault: !!p.Default,
+        driver: p.DriverName || "",
+        port: p.PortName || "",
+        source: "powershell"
+      }));
+    return mapped;
+  } catch (e) {
+    log("⚠️ PowerShell fallback failed:", e?.message || e);
+    return [];
+  }
+}
 
 // ---------- IPC: app/bridge info ----------
 ipcMain.handle("beypro:getInfo", () => ({
   ok: true,
   platform: `${os.platform()} ${os.arch()} (electron)`,
   version: app.getVersion(),
-  usb: !!printer, // tells renderer whether native USB/spooler is available
+  usb: !!printer,
+  logPath: LOG_PATH,
 }));
 
-// ---------- IPC: list Windows printers ----------
-ipcMain.handle("beypro:getPrinters", () => {
-  if (!printer) {
-    console.warn("⚠️ Printer module not available, returning empty list");
-    return [];
-  }
+// ---------- IPC: list printers (module → fallback) ----------
+ipcMain.handle("beypro:getPrinters", async () => {
+  let list = [];
   try {
-    const list = printer.getPrinters() || [];
-    console.log("🖨️ Found printers:", list);
-    return list.map((p) => ({
-      name: p.name,
-      isDefault: !!p.isDefault,
-      driver: p.driverName || p.driver || "",
-      port: p.portName || "",
-    }));
+    if (printer && typeof printer.getPrinters === "function") {
+      list = printer.getPrinters() || [];
+      // normalize shapes
+      list = list.map(p => ({
+        name: p.name || p.Name || "",
+        isDefault: !!(p.isDefault || p.Default),
+        driver: p.driverName || p.driver || p.DriverName || "",
+        port: p.portName || p.PortName || "",
+        source: "module",
+      }));
+      log("🖨️ Module printers:", list);
+    }
   } catch (err) {
-    console.error("❌ Error listing printers:", err);
+    log("❌ Module getPrinters failed:", err?.message || err);
+  }
+
+  // Fallback if module missing or returned empty
+  if (!list || list.length === 0) {
+    if (process.platform === "win32") {
+      const psList = await listPrintersFallbackWindows();
+      if (psList.length > 0) {
+        log("🖨️ PowerShell printers:", psList);
+        return psList;
+      }
+    }
+    log("⚠️ No printers found by module or fallback.");
     return [];
   }
+  return list;
 });
 
-// ---------- IPC: RAW print via Windows spooler ----------
-/**
- * Args: { printerName: string (optional if default), dataBase64: string }
- * dataBase64 should be ESC/POS or other RAW bytes encoded as base64.
- */
+// ---------- IPC: RAW print via module (if available) ----------
 ipcMain.handle("beypro:printRaw", async (_evt, args = {}) => {
-  if (!printer) {
-    return { ok: false, error: "Printer module not available" };
+  if (!printer || typeof printer.printDirect !== "function") {
+    log("❌ printRaw requested but printer module unavailable.");
+    return { ok: false, error: "Printer module unavailable. Use network 9100." };
   }
   try {
-    const { printerName, dataBase64 } = args;
+    const { printerName, dataBase64, type } = args;
     if (!dataBase64) return { ok: false, error: "dataBase64 is required" };
-
     const data = Buffer.from(String(dataBase64), "base64");
 
     return await new Promise((resolve) => {
       try {
         printer.printDirect({
-          data,                         // Buffer with raw bytes
-          type: "RAW",                  // RAW passthrough to spooler
-          printer: printerName || undefined, // default printer when undefined
+          data,
+          type: type || "RAW",
+          printer: printerName || undefined,
           docname: "Beypro Ticket",
-          success: (jobID) => resolve({ ok: true, jobID }),
-          error: (err) => resolve({ ok: false, error: String(err) }),
+          success: (jobID) => { log("✅ RAW printed job:", jobID); resolve({ ok: true, jobID }); },
+          error: (err)   => { log("❌ RAW print error:", err?.message || err); resolve({ ok: false, error: String(err) }); },
         });
       } catch (err) {
+        log("❌ RAW print exception:", err?.message || err);
         resolve({ ok: false, error: String(err) });
       }
     });
   } catch (err) {
+    log("❌ RAW print outer error:", err?.message || err);
     return { ok: false, error: String(err?.message || err) };
   }
 });
 
 // ---------- IPC: TCP RAW print to network printers (port 9100) ----------
-/**
- * Args: { host: string, port?: number (default 9100), dataBase64: string }
- */
 ipcMain.handle("beypro:printNet", async (_evt, args = {}) => {
   try {
     const { host, port = 9100, dataBase64 } = args;
     if (!host) return { ok: false, error: "host is required" };
     if (!dataBase64) return { ok: false, error: "dataBase64 is required" };
-
     const data = Buffer.from(String(dataBase64), "base64");
 
     return await new Promise((resolve) => {
       const socket = new net.Socket();
       let finished = false;
-
       const done = (ok, extra = {}) => {
         if (finished) return;
         finished = true;
         try { socket.destroy(); } catch {}
         resolve({ ok, ...extra });
       };
-
       socket.setTimeout(8000);
       socket.on("timeout", () => done(false, { error: "Timeout" }));
       socket.on("error", (err) => done(false, { error: String(err) }));
@@ -163,6 +165,7 @@ ipcMain.handle("beypro:printNet", async (_evt, args = {}) => {
       });
     });
   } catch (err) {
+    log("❌ Net9100 error:", err?.message || err);
     return { ok: false, error: String(err?.message || err) };
   }
 });
