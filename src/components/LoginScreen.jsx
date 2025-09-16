@@ -46,6 +46,7 @@ if (response.data.user) {
     setCurrentUser(staffObj);
   }
   toast.success(t("Welcome back!"));
+  navigate("/dashboard"); 
 }
  else {
       toast.error(response.data.error || t("Login failed"));
