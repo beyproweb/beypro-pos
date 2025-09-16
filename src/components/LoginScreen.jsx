@@ -27,24 +27,35 @@ export default function LoginScreen() {
  // password is either password or pin
 
     if (response.data.success) {
+// Helper to resolve permissions immediately
+const resolvePermissions = (user) => {
+  const storedSettings = JSON.parse(localStorage.getItem("beyproUserSettings") || "{}");
+  const roles = storedSettings.roles || {};
+  const perms = user.permissions?.length
+    ? user.permissions
+    : (roles[user.role] || []);
+  return { ...user, permissions: perms };
+};
+
 if (response.data.user) {
   const baseUser = response.data.user;
-const userObj = {
+  const userObj = {
     ...baseUser,
     name: baseUser.full_name || baseUser.fullName || baseUser.name || "Manager",
   };
-  // Let AuthContext handle permissions resolution with userSettings
-  localStorage.setItem("beyproUser", JSON.stringify(userObj));
-  setCurrentUser(userObj);
+  const fullUser = resolvePermissions(userObj);
+  localStorage.setItem("beyproUser", JSON.stringify(fullUser));
+  setCurrentUser(fullUser);
 } else if (response.data.staff) {
-    // Staff login
-    const staffObj = {
-      ...response.data.staff,
-      name: response.data.staff.name || "Manager"
-    };
-    localStorage.setItem("beyproUser", JSON.stringify(staffObj));
-    setCurrentUser(staffObj);
-  }
+  const staffObj = {
+    ...response.data.staff,
+    name: response.data.staff.name || "Manager",
+  };
+  const fullUser = resolvePermissions(staffObj);
+  localStorage.setItem("beyproUser", JSON.stringify(fullUser));
+  setCurrentUser(fullUser);
+}
+
   toast.success(t("Welcome back!"));
   navigate("/dashboard"); 
 }
