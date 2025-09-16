@@ -24,16 +24,7 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install Visual Studio Build Tools + Windows SDK
-        shell: pwsh
-        run: |
-          choco install -y visualstudio2022buildtools `
-            --package-parameters "--add Microsoft.VisualStudio.Component.VC.CoreBuildTools `
-            --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            --add Microsoft.VisualStudio.Component.Windows10SDK.19041 `
-            --add Microsoft.VisualStudio.Component.Windows11SDK.22621 `
-            --quiet --norestart"
-          choco install -y windows-sdk-10
+      # ❌ No Chocolatey installs — runner already has VS 2022 + Windows SDK
 
       - name: Setup MSVC build environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -46,18 +37,22 @@ jobs:
           python --version
           node -v
           npm -v
-          where cl.exe || echo "cl.exe not on PATH (msvc-dev-cmd should fix this)"
+          where cl.exe
 
-      # ✅ Set env vars for node-gyp & our conditional postinstall
-      - name: Install printer module & rebuild natives for Electron
+      - name: Configure env for native builds
+        shell: pwsh
         run: |
-          npm install @thesusheer/electron-printer@^2.0.4 --no-save
-          npx electron-builder install-app-deps
+          @"
+          PYTHON=$env:PythonLocation\python.exe
+          GYP_MSVS_VERSION=2022
+          npm_config_msvs_version=2022
+          npm_config_build_from_source=true
+          BEYPRO_DESKTOP=1
+          "@ | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install deps (desktop build, no lockfile)
         run: npm install --include=optional
 
-      # Install desktop-only native printer module (NOT in package.json) and rebuild for Electron
       - name: Install printer module & rebuild natives for Electron
         run: |
           npm install @thesusheer/electron-printer@^2.0.4 --no-save
