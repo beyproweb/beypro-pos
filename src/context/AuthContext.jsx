@@ -13,6 +13,12 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true); // ADD THIS
 
   useSetting("users", setUserSettings, { roles: {} });
+  // Persist latest roles so LoginScreen's resolvePermissions can read them
+useEffect(() => {
+  try {
+    localStorage.setItem("beyproUserSettings", JSON.stringify(userSettings || { roles: {} }));
+  } catch {}
+}, [userSettings]);
 
   useEffect(() => {
     setLoading(true); // START loading

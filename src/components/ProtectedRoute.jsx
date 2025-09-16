@@ -1,21 +1,31 @@
-// components/ProtectedRoute.jsx
-import React from 'react';
-import { Navigate } from 'react-router-dom';
-import { useHasPermission } from '../components/hooks/useHasPermission';
+// src/components/ProtectedRoute.jsx
+import React from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../utils/permissions";
 
 export default function ProtectedRoute({ permission, children }) {
-  const has = useHasPermission(permission);
-  const { loading } = useAuth();
+  const { currentUser, loading } = useAuth();
+  const location = useLocation();
 
+  // ⏳ Wait for AuthContext to finish resolving (prevents false "unauthorized")
   if (loading) {
-    // You can customize your loader here
-    return <div className="flex justify-center items-center h-screen">Loading...</div>;
+    return null; // or a spinner/skeleton
   }
 
-  if (!has) {
-    return <Navigate to="/unauthorized" replace />;
+  // Not logged in → to login
+  if (!currentUser) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  return children;
+  // Load roles config that AuthContext persisted
+  let rolesConfig = {};
+  try {
+    const stored = JSON.parse(localStorage.getItem("beyproUserSettings") || "{}");
+    rolesConfig = stored.roles || {};
+  } catch {}
+
+  // ✅ Check permission now that everything is ready
+  const allowed = hasPermission(permission, currentUser, rolesConfig);
+  return allowed ? children : <Navigate to="/unauthorized" replace />;
 }
