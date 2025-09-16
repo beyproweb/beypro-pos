@@ -52,3 +52,6 @@ builder-debug.yml
 
 .env
 .env.*
+
+.env
+.env.*
