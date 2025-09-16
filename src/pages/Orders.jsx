@@ -296,7 +296,7 @@ useEffect(() => {
     socket.on("orders_updated", fetchOrders);
 
     socket.on("order_closed", ({ orderId }) => {
-      setOrders(prev => prev.filter(o => o.id !== orderId));
+      setOrders(prev => prev.filter(o => Number(o.id) !== Number(orderId)));
     });
 
     return () => {
@@ -1407,7 +1407,7 @@ const discountedTotal = baseTotal - totalDiscount; // shown on the card
       )
     );
     await fetch(`${API_URL}/api/orders/${order.id}/close`, { method: "POST" });
-
+    setOrders(prev => prev.filter(o => Number(o.id) !== Number(order.id)));
     // Optionally: await fetchOrders();
   }}
 >
