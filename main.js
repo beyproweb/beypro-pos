@@ -15,7 +15,6 @@ try {
   // If you switched package, change the require below:
   // const modName = "printer";
   const modName = "@thesusheer/electron-printer";
-  // eslint-disable-next-line import/no-extraneous-dependencies
   printer = require(modName);
   log("✅ Printer module loaded:", modName, "electron", process.versions.electron, "node", process.versions.node);
 } catch (err) {
