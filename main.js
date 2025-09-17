@@ -14,6 +14,54 @@ function log(...args) {
   console.log(...args);
 }
 
+// ---------- App / window bootstrap ----------
+let win;
+
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  // In dev, use Vite dev server; in prod, load built index.html with hash routing
+  if (process.env.VITE_DEV_SERVER_URL) {
+    win.loadURL(process.env.VITE_DEV_SERVER_URL);
+  } else {
+    const indexPath = path.join(__dirname, "dist", "index.html").replace(/\\/g, "/");
+    win.loadURL(`file://${indexPath}#/`);
+  }
+
+  win.on("closed", () => (win = null));
+}
+
+// Single-instance & lifecycle
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+
+  app.whenReady().then(createWindow);
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+}
+
 // Try to load the native module
 let printer = null;
 try {
