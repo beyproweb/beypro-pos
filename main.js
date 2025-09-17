@@ -1,8 +1,13 @@
-// ---------- Native printer access (robust with fallback + logging) ----------
+// ---------- Core imports (must come first) ----------
+const { app, BrowserWindow, ipcMain } = require("electron");
+const path = require("path");
+const os = require("os");
+const net = require("net");
 const fs = require("fs");
 const { execFile } = require("child_process");
-const LOG_PATH = path.join(app.getPath("userData"), "printer-debug.log");
 
+// Log file (safe to call with 'app' here)
+const LOG_PATH = path.join(app.getPath("userData"), "printer-debug.log");
 function log(...args) {
   const line = `[${new Date().toISOString()}] ${args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
   try { fs.appendFileSync(LOG_PATH, line); } catch {}
