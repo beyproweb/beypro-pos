@@ -158,6 +158,7 @@ ipcMain.handle("beypro:getPrinters", async () => {
 });
 
 // ---------- IPC: RAW print via module (if available) ----------
+// ---------- IPC: RAW print via module (if available) ----------
 ipcMain.handle("beypro:printRaw", async (_evt, args = {}) => {
   if (!printer || typeof printer.printDirect !== "function") {
     log("❌ printRaw requested but printer module unavailable.");
@@ -166,20 +167,31 @@ ipcMain.handle("beypro:printRaw", async (_evt, args = {}) => {
   try {
     const { printerName, dataBase64, type } = args;
     if (!dataBase64) return { ok: false, error: "dataBase64 is required" };
-    const data = Buffer.from(String(dataBase64), "base64");
+
+    const data = Buffer.from(dataBase64, "base64");
+    const dataLen = data?.length ?? 0;
+    const jobType = type || "RAW";
+
+    log(`➡️ beypro:printRaw request: printer="${printerName}" type=${jobType} bytes=${dataLen}`);
 
     return await new Promise((resolve) => {
       try {
         printer.printDirect({
           data,
-          type: type || "RAW",
+          type: jobType,
           printer: printerName || undefined,
           docname: "Beypro Ticket",
-          success: (jobID) => { log("✅ RAW printed job:", jobID); resolve({ ok: true, jobID }); },
-          error: (err)   => { log("❌ RAW print error:", err?.message || err); resolve({ ok: false, error: String(err) }); },
+          success: (jobID) => {
+            log(`✅ Spool accepted: jobID=${jobID} printer="${printerName}" type=${jobType} bytes=${dataLen}`);
+            resolve({ ok: true, jobID });
+          },
+          error: (err) => {
+            log(`❌ Spool error: printer="${printerName}" type=${jobType} bytes=${dataLen} err=${err?.message || err}`);
+            resolve({ ok: false, error: String(err) });
+          },
         });
       } catch (err) {
-        log("❌ RAW print exception:", err?.message || err);
+        log(`❌ printDirect exception: printer="${printerName}" type=${jobType} bytes=${dataLen} err=${err?.message || err}`);
         resolve({ ok: false, error: String(err) });
       }
     });
@@ -188,6 +200,7 @@ ipcMain.handle("beypro:printRaw", async (_evt, args = {}) => {
     return { ok: false, error: String(err?.message || err) };
   }
 });
+
 
 // ---------- IPC: TCP RAW print to network printers (port 9100) ----------
 ipcMain.handle("beypro:printNet", async (_evt, args = {}) => {

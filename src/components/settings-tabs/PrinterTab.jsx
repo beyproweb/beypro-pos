@@ -232,9 +232,10 @@ async function handleTestPrint() {
     bytes.set(init, 0);
     bytes.set(body, init.length);
     bytes.set(cut, init.length + body.length);
+    console.debug("🧾 handleTestPrint sending", { printerName: selected, bytes: bytes.length });
 
     await printRawSafe({ data: bytes, printerName: selected });
-
+    console.debug("🧾 handleTestPrint done");
     setStatus("ok");
     setMessage("RAW test print sent successfully.");
   } catch (err) {
