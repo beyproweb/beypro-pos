@@ -49,18 +49,28 @@ async function printHTMLSafe({ html, printerName }) {
 }
 
 // Optionally try raw ESC/POS if your bridge supports it
+// Optionally try raw ESC/POS if your bridge supports it
 async function printRawSafe({ data, printerName }) {
-  if (window?.beypro?.printRaw) {
-    return window.beypro.printRaw({ data, printerName });
+  if (!(data instanceof Uint8Array)) {
+    throw new Error("printRawSafe expects Uint8Array in 'data'");
   }
+  // Encode bytes to base64 for the Electron IPC
+  const dataBase64 = btoa(String.fromCharCode(...data));
+
+  // Preferred preload contract (your preload.js exposes 'printRaw')
+  if (window?.beypro?.printRaw) {
+    return window.beypro.printRaw({ printerName, dataBase64, type: "RAW" });
+  }
+  // Alternative common shapes (kept for compatibility)
   if (window?.electron?.printers?.printRaw) {
-    return window.electron.printers.printRaw({ data, printerName });
+    return window.electron.printers.printRaw({ printerName, dataBase64, type: "RAW" });
   }
   if (window?.beypro?.invoke) {
-    return window.beypro.invoke("printRaw", { data, printerName });
+    return window.beypro.invoke("printRaw", { printerName, dataBase64, type: "RAW" });
   }
   throw new Error("No RAW print bridge found");
 }
+
 
 function isElectron() {
   return (
@@ -202,48 +212,36 @@ export default function PrinterTab() {
     setMessage(`Selected printer: ${name || "—"}`);
   }
 
-  async function handleTestPrint() {
-    setStatus("idle");
-    setMessage("");
-    if (!selected) {
-      setStatus("error");
-      setMessage("Please select a printer first.");
-      return;
-    }
-
-    // Build HTML from the on-screen preview
-    const html = previewRef.current?.innerHTML
-      ? `<!doctype html><html><head><meta charset="utf-8"/></head><body>${previewRef.current.innerHTML}</body></html>`
-      : "<html><body><b>Test</b></body></html>";
-
-    try {
-      // Try HTML print first
-      await printHTMLSafe({ html, printerName: selected });
-      setStatus("ok");
-      setMessage("Test receipt sent to printer successfully.");
-    } catch (htmlErr) {
-      console.warn("HTML print failed, will try RAW:", htmlErr?.message);
-      // Fallback: try a tiny ESC/POS sample (most 80mm printers support it)
-      const raw = [
-        0x1b, 0x40, // Initialize
-        // Text
-        ...new TextEncoder().encode("Beypro Test\nHello Printer!\n\n"),
-        0x1b, 0x64, 0x03, // Feed 3 lines
-        0x1d, 0x56, 0x00, // Full cut
-      ];
-      try {
-        await printRawSafe({ data: Uint8Array.from(raw), printerName: selected });
-        setStatus("ok");
-        setMessage("RAW test print sent successfully.");
-      } catch (rawErr) {
-        console.error("Both HTML and RAW print failed:", rawErr);
-        setStatus("error");
-        setMessage(
-          `Print failed. ${rawErr?.message || "No printer bridge available."}`
-        );
-      }
-    }
+async function handleTestPrint() {
+  setStatus("idle");
+  setMessage("");
+  if (!selected) {
+    setStatus("error");
+    setMessage("Please select a printer first.");
+    return;
   }
+
+  try {
+    // Minimal, reliable ESC/POS: ESC @ (init) + text + feed + full cut
+    const enc = new TextEncoder();
+    const init = Uint8Array.from([0x1B, 0x40]);           // ESC @
+    const body = enc.encode("Beypro Test\nMerhaba Yazıcı!\n\n\n");
+    const cut  = Uint8Array.from([0x1D, 0x56, 0x00]);      // GS V 0 (full cut)
+
+    const bytes = new Uint8Array(init.length + body.length + cut.length);
+    bytes.set(init, 0);
+    bytes.set(body, init.length);
+    bytes.set(cut, init.length + body.length);
+
+    await printRawSafe({ data: bytes, printerName: selected });
+
+    setStatus("ok");
+    setMessage("RAW test print sent successfully.");
+  } catch (err) {
+    setStatus("error");
+    setMessage(`Print failed: ${err?.message || err}`);
+  }
+}
 
   // ---------- UI ----------
   const electronWarn =
