@@ -12,6 +12,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
   const [outputUnit, setOutputUnit] = useState('pcs');
   const [ingredients, setIngredients] = useState([{ name: '', amount: '', unit: '' }]);
   const [ingredientPrices, setIngredientPrices] = useState([]);
+  const [availableUnits, setAvailableUnits] = useState([]); // ✅ from stock
   const { t } = useTranslation();
 
   // Fetch latest ingredient prices for live costing
@@ -20,6 +21,17 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
       .then(res => res.json())
       .then(data => setIngredientPrices(Array.isArray(data) ? data : []))
       .catch(() => setIngredientPrices([]));
+  }, []);
+
+  // Fetch units from stock
+  useEffect(() => {
+    fetch(`${API_URL}/api/stock`)
+      .then(res => res.json())
+      .then(data => {
+        const units = Array.from(new Set(data.map(item => item.unit))).sort();
+        setAvailableUnits(units);
+      })
+      .catch(() => setAvailableUnits([]));
   }, []);
 
   // Populate fields when editing
@@ -81,7 +93,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
       ingredients: ingredients.map(ing => ({
         name: ing.name.trim(),
         amountPerBatch: parseFloat(ing.amount),
-        unit: ing.unit.trim()
+        unit: ing.unit.trim().toLowerCase() // ✅ normalize
       }))
     };
 
@@ -99,7 +111,6 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
   };
 
   // ---- COST CALCULATION SECTION ----
-  // Compute total and per-unit cost using live ingredientPrices + modal state
   let totalCost = 0, perUnit = 0;
   if (Array.isArray(ingredients) && parseFloat(baseQuantity) > 0) {
     totalCost = ingredients.reduce((sum, ing) => {
@@ -181,12 +192,19 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
                 onChange={(e) => handleIngredientChange(index, 'amount', e.target.value)}
                 className="border p-2 rounded w-1/3"
               />
-              <input
-                placeholder={t("Unit")}
+              {/* ✅ Unit dropdown */}
+              <select
                 value={ing.unit}
                 onChange={(e) => handleIngredientChange(index, 'unit', e.target.value)}
                 className="border p-2 rounded w-1/3"
-              />
+              >
+                <option value="">{t("Select Unit")}</option>
+                {availableUnits.map((unit, i) => (
+                  <option key={i} value={unit}>
+                    {unit}
+                  </option>
+                ))}
+              </select>
             </div>
           ))}
           <button
