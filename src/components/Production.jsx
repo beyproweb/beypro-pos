@@ -129,27 +129,55 @@ export default function Production() {
   /**
    * Add finished product to stock after production is logged
    */
-  const handleAddToStock = async ({ supplier_id, quantity, name, unit }) => {
-    const payload = { supplier_id, name, quantity, unit, from_production: true };
-    try {
-      const res = await fetch(`${API_URL}/api/stock`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        toast.success(`✔️ "${name}" ${t('added to stock!')}`);
-      } else {
-        const error = await res.json().catch(() => ({}));
-        toast.error(`❌ ${t('Failed to add stock')}: ${error.error || 'Unknown error'}`);
-      }
-    } catch {
-      toast.error(`❌ ${t('Network error adding stock!')}`);
-    } finally {
-      setLoadingMap((prev) => ({ ...prev, [name]: null }));
-      setLockedProduce((prev) => ({ ...prev, [name]: false }));
+const handleAddToStock = async ({ supplier_id, quantity, name, unit, productObj, batchCount }) => {
+  try {
+    // ✅ 1) Always log production first (deduct ingredients)
+    const payloadLog = {
+      product_name: productObj.name,
+      base_quantity: productObj.base_quantity,
+      batch_count: batchCount ?? Math.max(1, Math.round(quantity / (productObj.base_quantity || 1))),
+      produced_by: 'admin',
+      ingredients: productObj.ingredients,
+      product_unit: productObj.output_unit
+    };
+
+    console.log("🧾 Calling /production-log with:", payloadLog);
+    const prodRes = await fetch(`${API_URL}/api/production/production-log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payloadLog)
+    });
+
+    if (!prodRes.ok) {
+      const msg = await prodRes.text().catch(() => '');
+      toast.error(`❌ Could not deduct ingredients: ${msg || 'production-log failed'}`);
+      return;
     }
-  };
+
+    // ✅ 2) Then add finished product to stock
+    const payloadStock = { supplier_id, name, quantity, unit, from_production: true };
+    console.log("📤 Sending final stock payload:", payloadStock);
+
+    const res = await fetch(`${API_URL}/api/stock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payloadStock)
+    });
+
+    if (res.ok) {
+      toast.success(`✔️ "${name}" added to stock!`);
+    } else {
+      const error = await res.json().catch(() => ({}));
+      toast.error(`❌ Failed to add stock: ${error.error || 'Unknown error'}`);
+    }
+  } catch (err) {
+    console.error(err);
+    toast.error(`❌ Network error during production/stock add!`);
+  } finally {
+    setLoadingMap((prev) => ({ ...prev, [name]: null }));
+    setLockedProduce((prev) => ({ ...prev, [name]: false }));
+  }
+};
 
   const handleAddOrUpdateRecipe = async (recipe) => {
     const method = editRecipe ? 'PUT' : 'POST';
@@ -255,11 +283,13 @@ export default function Production() {
 
                     // 2) Open modal to add finished product to stock
                     setStockModal({
-                      open: true,
-                      product: product.name,
-                      quantity: totalOut,
-                      unit: product.output_unit
-                    });
+  open: true,
+  product: product.name,
+  quantity: product.base_quantity * (quantities[product.name] || 1),
+  unit: product.output_unit,
+  productObj: product,                    // ✅ include full recipe
+  batchCount: (quantities[product.name] || 1)
+}); 
                   }}
                 >
                   ➕ {t("Add to Stock")}
