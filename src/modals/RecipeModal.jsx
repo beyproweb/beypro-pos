@@ -40,12 +40,19 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
   }, []);
 
   // ✅ Fetch distinct ingredients (with unit) from suppliers/stock
-  useEffect(() => {
-    fetch(`${API_URL}/api/suppliers/ingredients`)
-      .then(res => res.json())
-      .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
-      .catch(() => setAvailableIngredients([]));
-  }, []);
+useEffect(() => {
+  fetch(`${API_URL}/api/suppliers/ingredients`)
+    .then(res => res.json())
+    .then(data => {
+      console.log("✅ Ingredients fetched for dropdown:", data);
+      setAvailableIngredients(Array.isArray(data) ? data : []);
+    })
+    .catch((err) => {
+      console.error("❌ Error fetching ingredients:", err);
+      setAvailableIngredients([]);
+    });
+}, []);
+
 
   // Populate fields when editing
   useEffect(() => {
