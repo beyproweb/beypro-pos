@@ -529,39 +529,43 @@ return (
       {t("Add Group")}
     </button>
     <button
-      onClick={async () => {
-        try {
-          await Promise.all(
-            extrasGroups.map(async (group) => {
-              const cleaned = {
-                group_name: (group.groupName || "").trim(),
-                items: (group.items || [])
-                  .filter((i) => (i.name || "").trim() !== "")
-                  .map(i => ({
-                    name: i.name,
-                    amount: Number(i.amount) || 0,
-                    unit: i.unit || "",
-                    price: Number(i.price) || 0,
-                  })),
-              };
-              if (!cleaned.group_name || cleaned.items.length === 0) return;
-              await fetch(EXTRAS_GROUPS_API, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(cleaned),
-              });
-            })
-          );
-          alert("✅ Groups saved!");
-          setShowGroupModal(false);
-        } catch (err) {
-          alert("Failed to save one or more groups.");
-        }
-      }}
-      className="bg-green-600 text-white px-4 py-2 rounded-xl"
-    >
-      💾 {t("Save All")}
-    </button>
+  onClick={async () => {
+    try {
+      await Promise.all(
+        extrasGroups.map(async (group) => {
+          const cleaned = {
+            group_name: (group.groupName || "").trim(),
+            items: (group.items || [])
+              .filter((i) => (i.name || "").trim() !== "")
+              .map(i => ({
+                name: i.name,
+                amount: Number(i.amount) || 1,   // ✅ save amount
+                unit: i.unit || "",              // ✅ save unit
+                price: Number(i.price) || 0,     // ✅ keep price
+              })),
+          };
+
+          if (!cleaned.group_name || cleaned.items.length === 0) return;
+
+          await fetch(EXTRAS_GROUPS_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(cleaned),
+          });
+        })
+      );
+
+      alert("✅ Groups saved!");
+      setShowGroupModal(false);
+    } catch (err) {
+      alert("Failed to save one or more groups.");
+    }
+  }}
+  className="bg-green-600 text-white px-4 py-2 rounded-xl"
+>
+  💾 {t("Save All")}
+</button>
+
     <button
       onClick={() => setShowGroupModal(false)}
       className="bg-gray-500 text-white px-4 py-2 rounded-xl"
