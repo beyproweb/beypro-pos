@@ -32,7 +32,7 @@ export default function ExtrasModal({
 
   if (!showExtrasModal || !selectedProduct) return null;
 
-  // --- Normalize groups (accept both group_name and groupName) ---
+  // --- Normalize groups ---
   const groups = Array.isArray(extrasGroups) ? extrasGroups.map(g => ({
     id: g.id,
     groupName: g.group_name ?? g.groupName ?? "",
@@ -43,7 +43,6 @@ export default function ExtrasModal({
     })) : [],
   })) : [];
 
-  // --- Build allowed set from product’s selectedExtrasGroup (IDs or names) ---
   const selectedGroupIds = new Set(
     (selectedProduct?.selectedExtrasGroup || [])
       .map(id => Number(id))
@@ -52,7 +51,7 @@ export default function ExtrasModal({
 
   let allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
 
-  // If no selected groups, fallback to supplier ingredients list
+  // Fallback to supplier ingredients
   if (allowedGroups.length === 0) {
     allowedGroups = [
       {
@@ -61,19 +60,17 @@ export default function ExtrasModal({
         items: availableIngredients.map((item, idx) => ({
           id: idx,
           name: item.name,
-          price: 0, // default price, can be adjusted
+          price: 0,
           unit: item.unit,
         })),
       },
     ];
   }
 
-  // Keep tab index in bounds
   const safeIdx = allowedGroups.length === 0
     ? 0
     : Math.min(activeGroupIdx, allowedGroups.length - 1);
   const activeGroup = allowedGroups[safeIdx];
-
   const groupTabs = allowedGroups.map(g => g.groupName || String(g.id));
 
   return (
@@ -110,9 +107,10 @@ export default function ExtrasModal({
           </div>
         </div>
 
-        {/* Content: if manual extras, show dropdown */}
-        <div className="flex-1 overflow-auto px-6 pb-4 grid grid-cols-1 gap-3">
-          {activeGroup?.id === "manual" ? (
+        {/* Content */}
+        <div className="flex-1 overflow-auto px-6 pb-4 flex flex-col gap-3">
+          {/* ✅ Ingredient Dropdown for manual selection */}
+          {activeGroup?.id === "manual" && (
             <select
               onChange={(e) => {
                 const value = e.target.value;
@@ -126,15 +124,18 @@ export default function ExtrasModal({
               }}
               className="border p-2 rounded w-full"
             >
-              <option value="">{t("Select Ingredient")}</option>
+              <option value="">{t("Select Extra Ingredient")}</option>
               {availableIngredients.map((item, i) => (
                 <option key={i} value={item.name}>
                   {item.name} ({item.unit})
                 </option>
               ))}
             </select>
-          ) : (
-            activeGroup?.items.map((item) => {
+          )}
+
+          {/* Grid of extras */}
+          <div className="grid grid-cols-2 gap-3">
+            {activeGroup?.items.map((item) => {
               const found = selectedExtras.find((e) => e.name === item.name) || { quantity: 0 };
               return (
                 <label
@@ -146,7 +147,9 @@ export default function ExtrasModal({
                   }`}
                 >
                   <div className="flex justify-between items-center">
-                    <span className="font-medium text-sm">{item.name}</span>
+                    <span className="font-medium text-sm">
+                      {item.name} {item.unit ? `(${item.unit})` : ""}
+                    </span>
                     <span className="text-sm text-blue-700">₺{item.price.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center mt-2">
@@ -177,8 +180,8 @@ export default function ExtrasModal({
                   </div>
                 </label>
               );
-            })
-          )}
+            })}
+          </div>
         </div>
 
         {/* Sticky Footer */}
@@ -211,25 +214,6 @@ export default function ExtrasModal({
           {/* Notes */}
           <div>
             <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-100 mb-1">📝 {t("Notes")}</h3>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {['No ketchup', 'Extra spicy', 'Sauce on side', 'Well done'].map((preset) => (
-                <button
-                  key={preset}
-                  onClick={() =>
-                    setNote((prev) =>
-                      prev.includes(preset) ? prev.replace(preset, '').trim() : `${prev} ${preset}`.trim()
-                    )
-                  }
-                  className={`px-3 py-1 rounded-full border text-xs font-semibold transition
-                    ${note.includes(preset)
-                      ? 'bg-blue-100 border-blue-400 text-blue-800'
-                      : 'bg-gray-100 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-600 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-indigo-700'
-                  }`}
-                >
-                  {t(preset)}
-                </button>
-              ))}
-            </div>
             <textarea
               rows={2}
               value={note}
