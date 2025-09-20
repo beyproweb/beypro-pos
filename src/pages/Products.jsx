@@ -479,18 +479,20 @@ return (
 
         <div className="my-4" />
         <button
-          onClick={() => {
-            const updated = [...extrasGroups];
-            if (!Array.isArray(updated[groupIdx].items)) {
-              updated[groupIdx].items = [];
-            }
-            updated[groupIdx].items.push({ name: "", amount: "", unit: "", price: "" });
-            setExtrasGroups(updated);
-          }}
-          className="text-sm text-blue-600"
-        >
-          {t("Add Extra to this group")}
-        </button>
+  onClick={() => {
+    const updated = [...extrasGroups];
+    if (!Array.isArray(updated[groupIdx].items)) {
+      updated[groupIdx].items = [];
+    }
+    // initialize with all fields: name, amount, unit, price
+    updated[groupIdx].items.push({ name: "", amount: "", unit: "", price: "" });
+    setExtrasGroups(updated);
+  }}
+  className="text-sm text-blue-600"
+>
+  {t("Add Extra to this group")}
+</button>
+
 
         {/* Delete group */}
         <button
