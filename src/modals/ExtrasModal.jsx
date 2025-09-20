@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function ExtrasModal({
@@ -19,7 +20,13 @@ export default function ExtrasModal({
   t,
 }) {
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
-
+ const [availableIngredients, setAvailableIngredients] = useState([]);
+useEffect(() => {
+  fetch(`${API_URL}/api/suppliers/ingredients`)
+    .then(res => res.json())
+    .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
+    .catch(() => setAvailableIngredients([]));
+}, []);
   if (!showExtrasModal || !selectedProduct) return null;
 
   // --- Normalize groups (accept both group_name and groupName) ---
@@ -44,19 +51,22 @@ const selectedGroupIds = new Set(
 let allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
 
 // If no selected groups, fallback to manual extras
-if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {
+if (allowedGroups.length === 0) {
   allowedGroups = [
     {
       id: "manual",
       groupName: "Extras",
-      items: selectedProduct.extras.map((ex, idx) => ({
+      items: availableIngredients.map((item, idx) => ({
         id: idx,
-        name: ex.name,
-        price: Number(ex.extraPrice || ex.price || 0),
+        name: item.name,
+        price: 0, // default, can adjust later
+        unit: item.unit,
       })),
     },
   ];
 }
+
+
 
 
   // Keep tab index in bounds
@@ -115,7 +125,10 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
                 }`}
               >
                 <div className="flex justify-between items-center">
-                  <span className="font-medium text-sm">{item.name}</span>
+                  <span className="font-medium text-sm">
+  {item.name} ({item.unit})
+</span>
+
                   <span className="text-sm text-blue-700">₺{item.price.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center mt-2">
