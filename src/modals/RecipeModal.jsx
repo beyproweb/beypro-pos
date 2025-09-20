@@ -1,3 +1,4 @@
+// 📁 RecipeModal.jsx
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from "react-i18next";
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -11,11 +12,14 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
   const [baseQuantity, setBaseQuantity] = useState('');
   const [outputUnit, setOutputUnit] = useState('pcs');
   const [ingredients, setIngredients] = useState([{ name: '', amount: '', unit: '' }]);
+
   const [ingredientPrices, setIngredientPrices] = useState([]);
-  const [availableUnits, setAvailableUnits] = useState([]); // ✅ from stock
+  const [availableUnits, setAvailableUnits] = useState([]);
+  const [availableIngredients, setAvailableIngredients] = useState([]); // ✅ from suppliers
+
   const { t } = useTranslation();
 
-  // Fetch latest ingredient prices for live costing
+  // Fetch latest ingredient prices
   useEffect(() => {
     fetch(`${API_URL}/api/ingredient-prices`)
       .then(res => res.json())
@@ -23,7 +27,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
       .catch(() => setIngredientPrices([]));
   }, []);
 
-  // Fetch units from stock
+  // Fetch distinct units from stock
   useEffect(() => {
     fetch(`${API_URL}/api/stock`)
       .then(res => res.json())
@@ -32,6 +36,14 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
         setAvailableUnits(units);
       })
       .catch(() => setAvailableUnits([]));
+  }, []);
+
+  // ✅ Fetch distinct ingredients (with unit) from suppliers/stock
+  useEffect(() => {
+    fetch(`${API_URL}/api/suppliers/ingredients`)
+      .then(res => res.json())
+      .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
+      .catch(() => setAvailableIngredients([]));
   }, []);
 
   // Populate fields when editing
@@ -59,9 +71,18 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
     }
   }, [existingRecipe]);
 
+  // ✅ Handle ingredient updates (auto-fill unit if match found)
   const handleIngredientChange = (index, field, value) => {
     const updated = [...ingredients];
     updated[index][field] = value;
+
+    if (field === "name") {
+      const match = availableIngredients.find(i => i.name === value);
+      if (match) {
+        updated[index].unit = match.unit;
+      }
+    }
+
     setIngredients(updated);
   };
 
@@ -93,7 +114,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
       ingredients: ingredients.map(ing => ({
         name: ing.name.trim(),
         amountPerBatch: parseFloat(ing.amount),
-        unit: ing.unit.trim().toLowerCase() // ✅ normalize
+        unit: ing.unit.trim().toLowerCase()
       }))
     };
 
@@ -134,6 +155,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
           {existingRecipe ? `✏️ ${t("Edit Recipe")}` : `➕ ${t("Create New Recipe")}`}
         </h2>
 
+        {/* Product Details */}
         <div className="mb-3">
           <label className="block font-medium">{t("Product Name")}:</label>
           <input
@@ -175,16 +197,26 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
           />
         </div>
 
+        {/* Ingredients Section */}
         <div>
           <h3 className="font-semibold mb-2">{t("Ingredients")}</h3>
           {ingredients.map((ing, index) => (
             <div key={index} className="flex gap-2 mb-2">
-              <input
-                placeholder={t("Name")}
+              {/* ✅ Ingredient Dropdown */}
+              <select
                 value={ing.name}
                 onChange={(e) => handleIngredientChange(index, 'name', e.target.value)}
                 className="border p-2 rounded w-1/3"
-              />
+              >
+                <option value="">{t("Select Ingredient")}</option>
+                {availableIngredients.map((item, i) => (
+                  <option key={i} value={item.name}>
+                    {item.name} ({item.unit})
+                  </option>
+                ))}
+              </select>
+
+              {/* Amount */}
               <input
                 placeholder={t("Amount")}
                 type="number"
@@ -192,7 +224,8 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
                 onChange={(e) => handleIngredientChange(index, 'amount', e.target.value)}
                 className="border p-2 rounded w-1/3"
               />
-              {/* ✅ Unit dropdown */}
+
+              {/* Unit Dropdown */}
               <select
                 value={ing.unit}
                 onChange={(e) => handleIngredientChange(index, 'unit', e.target.value)}
@@ -225,27 +258,28 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
           </div>
         </div>
 
+        {/* Actions */}
         <div className="flex justify-between mt-6">
           {existingRecipe && (
             <button
               onClick={handleDelete}
-              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+              className="bg-red-500 text-white px-4 py-2 rounded"
             >
-              🗑 {t("Delete")}
+              {t("Delete")}
             </button>
           )}
-          <div className="flex gap-2 ml-auto">
+          <div className="ml-auto flex gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              className="bg-gray-300 px-4 py-2 rounded"
             >
               {t("Cancel")}
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold"
+              className="bg-blue-600 text-white px-4 py-2 rounded"
             >
-              {t("Save Recipe")}
+              {t("Save")}
             </button>
           </div>
         </div>
