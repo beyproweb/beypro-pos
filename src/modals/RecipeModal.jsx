@@ -1,7 +1,8 @@
 // 📁 RecipeModal.jsx
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from "react-i18next";
-const API_URL = import.meta.env.VITE_API_URL || "";
+const API_URL = import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com";
+
 
 // For fetch fallback and badge style
 const BADGE_STYLE = "ml-2 px-2 py-1 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 text-sm font-bold";
