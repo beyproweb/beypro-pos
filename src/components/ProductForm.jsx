@@ -39,7 +39,13 @@ export default function ProductForm({ onSuccess, initialData = null }) {
   const [categoryImagePreview, setCategoryImagePreview] = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
-
+  const [availableIngredients, setAvailableIngredients] = useState([]);
+  useEffect(() => {
+  fetch(`${API_URL}/api/suppliers/ingredients`)
+    .then(res => res.json())
+    .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
+    .catch(() => setAvailableIngredients([]));
+}, []);
   // ---------- helpers ----------
   const handleUpload = async () => {
     if (!imageFile) return "";
@@ -402,22 +408,64 @@ export default function ProductForm({ onSuccess, initialData = null }) {
           <h3 className="font-bold mb-3">{t("Ingredients")}</h3>
           <div className="space-y-2">
             {product.ingredients.map((ing, i) => (
-              <div key={i} className="flex flex-wrap gap-2 items-center">
-                <input type="text" name="ingredient" placeholder={t("Ingredient Name")}
-                       value={ing.ingredient} onChange={e => handleIngredientChange(i, e)}
-                       className="p-2 rounded-xl border flex-1 min-w-[120px]" />
-                <input type="number" name="quantity" placeholder={t("Qty")}
-                       value={ing.quantity} onChange={e => handleIngredientChange(i, e)}
-                       className="p-2 rounded-xl border w-20 min-w-[60px]" />
-                <input type="text" name="unit" placeholder={t("Unit")}
-                       value={ing.unit} onChange={e => handleIngredientChange(i, e)}
-                       className="p-2 rounded-xl border w-20 min-w-[60px]" />
-                <button type="button" onClick={() => removeIngredient(i)}
-                        className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-xl" title={t("Remove")}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
+  <div key={i} className="flex flex-wrap gap-2 items-center">
+    {/* ✅ Ingredient Dropdown */}
+    <select
+      name="ingredient"
+      value={ing.ingredient}
+      onChange={e => {
+        handleIngredientChange(i, e);
+
+        // Auto-fill unit when ingredient is selected
+        const match = availableIngredients.find(ai => ai.name === e.target.value);
+        if (match) {
+          const list = [...product.ingredients];
+          list[i].unit = match.unit;
+          setProduct(prev => ({ ...prev, ingredients: list }));
+        }
+      }}
+      className="p-2 rounded-xl border flex-1 min-w-[120px]"
+    >
+      <option value="">{t("Select Ingredient")}</option>
+      {availableIngredients.map((item, idx) => (
+        <option key={idx} value={item.name}>
+          {item.name} ({item.unit})
+        </option>
+      ))}
+    </select>
+
+    {/* Quantity */}
+    <input
+      type="number"
+      name="quantity"
+      placeholder={t("Qty")}
+      value={ing.quantity}
+      onChange={e => handleIngredientChange(i, e)}
+      className="p-2 rounded-xl border w-20 min-w-[60px]"
+    />
+
+    {/* Unit (auto-filled but editable) */}
+    <input
+      type="text"
+      name="unit"
+      placeholder={t("Unit")}
+      value={ing.unit}
+      onChange={e => handleIngredientChange(i, e)}
+      className="p-2 rounded-xl border w-20 min-w-[60px]"
+    />
+
+    {/* Remove button */}
+    <button
+      type="button"
+      onClick={() => removeIngredient(i)}
+      className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-xl"
+      title={t("Remove")}
+    >
+      <Trash2 size={16} />
+    </button>
+  </div>
+))}
+
             <button type="button" onClick={addIngredient}
                     className="mt-1 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-1 font-semibold">
               <Plus size={18} /> {t("Add Ingredient")}
