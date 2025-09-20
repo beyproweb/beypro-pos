@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
+const API_URL = import.meta.env.VITE_API_URL || "";
+
 export default function ExtrasModal({
   showExtrasModal,
   setShowExtrasModal,
@@ -19,13 +21,15 @@ export default function ExtrasModal({
   t,
 }) {
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
- const [availableIngredients, setAvailableIngredients] = useState([]);
-useEffect(() => {
-  fetch(`${API_URL}/api/suppliers/ingredients`)
-    .then(res => res.json())
-    .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
-    .catch(() => setAvailableIngredients([]));
-}, []);
+  const [availableIngredients, setAvailableIngredients] = useState([]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/suppliers/ingredients`)
+      .then(res => res.json())
+      .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
+      .catch(() => setAvailableIngredients([]));
+  }, []);
+
   if (!showExtrasModal || !selectedProduct) return null;
 
   // --- Normalize groups (accept both group_name and groupName) ---
@@ -40,33 +44,29 @@ useEffect(() => {
   })) : [];
 
   // --- Build allowed set from product’s selectedExtrasGroup (IDs or names) ---
-  const keys = Array.isArray(selectedProduct?.selectedExtrasGroup)
-    ? selectedProduct.selectedExtrasGroup
-    : [];
-const selectedGroupIds = new Set(
-  (selectedProduct?.selectedExtrasGroup || []).map(id => Number(id)).filter(Number.isFinite)
-);
+  const selectedGroupIds = new Set(
+    (selectedProduct?.selectedExtrasGroup || [])
+      .map(id => Number(id))
+      .filter(Number.isFinite)
+  );
 
-let allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
+  let allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
 
-// If no selected groups, fallback to manual extras
-if (allowedGroups.length === 0) {
-  allowedGroups = [
-    {
-      id: "manual",
-      groupName: "Extras",
-      items: availableIngredients.map((item, idx) => ({
-        id: idx,
-        name: item.name,
-        price: 0, // default, can adjust later
-        unit: item.unit,
-      })),
-    },
-  ];
-}
-
-
-
+  // If no selected groups, fallback to supplier ingredients list
+  if (allowedGroups.length === 0) {
+    allowedGroups = [
+      {
+        id: "manual",
+        groupName: "Extras",
+        items: availableIngredients.map((item, idx) => ({
+          id: idx,
+          name: item.name,
+          price: 0, // default price, can be adjusted
+          unit: item.unit,
+        })),
+      },
+    ];
+  }
 
   // Keep tab index in bounds
   const safeIdx = allowedGroups.length === 0
@@ -88,7 +88,7 @@ if (allowedGroups.length === 0) {
             {t("Add-ons for")} <span className="font-bold text-blue-600">{selectedProduct.name}</span>
           </p>
 
-          {/* Tabs (only allowed groups) */}
+          {/* Tabs */}
           <div className="w-full overflow-x-auto flex gap-3 mb-4">
             {groupTabs.length === 0 ? (
               <div className="w-full text-center text-sm text-gray-500">
@@ -110,55 +110,75 @@ if (allowedGroups.length === 0) {
           </div>
         </div>
 
-        {/* Content: items of the selected allowed group */}
-        <div className="flex-1 overflow-auto px-6 pb-4 grid grid-cols-2 gap-3">
-          {activeGroup?.items.map((item) => {
-            const found = selectedExtras.find((e) => e.name === item.name) || { quantity: 0 };
-            return (
-              <label
-                key={item.id ?? item.name}
-                className={`border-2 rounded-xl p-3 cursor-pointer transition flex flex-col justify-between h-full
-                  ${found.quantity > 0
-                    ? 'bg-gradient-to-br from-blue-100 via-fuchsia-50 to-indigo-100 border-blue-400'
-                    : 'bg-white dark:bg-gray-800 border-blue-100 hover:bg-blue-50'
-                }`}
-              >
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-sm">
-  {item.name} ({item.unit})
-</span>
-
-                  <span className="text-sm text-blue-700">₺{item.price.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center mt-2">
-                  <button
-                    className="bg-gray-300 text-black px-2 py-1 rounded-full hover:bg-gray-400 transition"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSelectedExtras((prev) => {
-                        const cur = prev.find((ex) => ex.name === item.name);
-                        if (!cur) return prev;
-                        if (cur.quantity === 1) return prev.filter((ex) => ex.name !== item.name);
-                        return prev.map((ex) => ex.name === item.name ? {...ex, quantity: ex.quantity - 1} : ex);
-                      });
-                    }}
-                  >➖</button>
-                  <span className="text-lg font-semibold">{found.quantity}</span>
-                  <button
-                    className="bg-green-500 text-white px-2 py-1 rounded-full hover:bg-green-600 transition"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSelectedExtras((prev) => {
-                        const cur = prev.find((ex) => ex.name === item.name);
-                        if (!cur) return [...prev, { ...item, quantity: 1 }];
-                        return prev.map((ex) => ex.name === item.name ? {...ex, quantity: cur.quantity + 1} : ex);
-                      });
-                    }}
-                  >➕</button>
-                </div>
-              </label>
-            );
-          })}
+        {/* Content: if manual extras, show dropdown */}
+        <div className="flex-1 overflow-auto px-6 pb-4 grid grid-cols-1 gap-3">
+          {activeGroup?.id === "manual" ? (
+            <select
+              onChange={(e) => {
+                const value = e.target.value;
+                const match = availableIngredients.find(ai => ai.name === value);
+                if (match) {
+                  setSelectedExtras((prev) => {
+                    if (prev.find(ex => ex.name === match.name)) return prev;
+                    return [...prev, { ...match, price: 0, quantity: 1 }];
+                  });
+                }
+              }}
+              className="border p-2 rounded w-full"
+            >
+              <option value="">{t("Select Ingredient")}</option>
+              {availableIngredients.map((item, i) => (
+                <option key={i} value={item.name}>
+                  {item.name} ({item.unit})
+                </option>
+              ))}
+            </select>
+          ) : (
+            activeGroup?.items.map((item) => {
+              const found = selectedExtras.find((e) => e.name === item.name) || { quantity: 0 };
+              return (
+                <label
+                  key={item.id ?? item.name}
+                  className={`border-2 rounded-xl p-3 cursor-pointer transition flex flex-col justify-between h-full
+                    ${found.quantity > 0
+                      ? 'bg-gradient-to-br from-blue-100 via-fuchsia-50 to-indigo-100 border-blue-400'
+                      : 'bg-white dark:bg-gray-800 border-blue-100 hover:bg-blue-50'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-sm">{item.name}</span>
+                    <span className="text-sm text-blue-700">₺{item.price.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                    <button
+                      className="bg-gray-300 text-black px-2 py-1 rounded-full hover:bg-gray-400 transition"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setSelectedExtras((prev) => {
+                          const cur = prev.find((ex) => ex.name === item.name);
+                          if (!cur) return prev;
+                          if (cur.quantity === 1) return prev.filter((ex) => ex.name !== item.name);
+                          return prev.map((ex) => ex.name === item.name ? {...ex, quantity: ex.quantity - 1} : ex);
+                        });
+                      }}
+                    >➖</button>
+                    <span className="text-lg font-semibold">{found.quantity}</span>
+                    <button
+                      className="bg-green-500 text-white px-2 py-1 rounded-full hover:bg-green-600 transition"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setSelectedExtras((prev) => {
+                          const cur = prev.find((ex) => ex.name === item.name);
+                          if (!cur) return [...prev, { ...item, quantity: 1 }];
+                          return prev.map((ex) => ex.name === item.name ? {...ex, quantity: cur.quantity + 1} : ex);
+                        });
+                      }}
+                    >➕</button>
+                  </div>
+                </label>
+              );
+            })
+          )}
         </div>
 
         {/* Sticky Footer */}
@@ -234,7 +254,7 @@ if (allowedGroups.length === 0) {
                   .filter((ex) => ex.quantity > 0)
                   .map((ex) => ({ ...ex, quantity: Number(ex.quantity), price: Number(ex.price ?? ex.extraPrice ?? 0) }));
 
-                const itemPrice = Number(selectedProduct.price); // base price only
+                const itemPrice = Number(selectedProduct.price);
                 const extrasKey = JSON.stringify(validExtras);
                 const uniqueId = `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
 
