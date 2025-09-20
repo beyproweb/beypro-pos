@@ -377,180 +377,200 @@ return (
 
 
       {/* EXTRAS GROUP MODAL (keep as is, style optional) */}
-      <Modal
-        isOpen={showGroupModal}
-        onRequestClose={() => setShowGroupModal(false)}
-        contentLabel={t("Manage Extras Groups")}
-        className="bg-white p-6 rounded-3xl shadow-2xl max-w-2xl mx-auto mt-34"
-        overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center"
-      >
-        <h2 className="text-2xl font-bold mb-4">{t("Manage Extras Groups")}</h2>
-        <div className="max-h-[60vh] overflow-y-auto pr-2">
-          {(extrasGroups || []).map((group, groupIdx) => (
-            <div key={groupIdx} className="mb-6 border rounded-2xl p-4 bg-gray-50 relative">
-              <input
-                type="text"
-                placeholder={t("Enter Group Name")}
-                value={group.groupName}
-                onChange={(e) => {
-                  const updatedGroups = [...extrasGroups];
-                  updatedGroups[groupIdx].groupName = e.target.value;
-                  setExtrasGroups(updatedGroups);
-                }}
-                className="w-full font-bold text-lg mb-3 p-2 border rounded-xl"
-              />
-              {(group.items || []).map((item, itemIdx) => (
-                <div key={itemIdx} className="flex gap-2 mb-2">
-                  <select
-  value={item.name}
-  onChange={(e) => {
-    const updated = [...extrasGroups];
-    updated[groupIdx].items[itemIdx].name = e.target.value;
-
-    // ✅ Auto-fill unit if match is found
-    const match = availableIngredients.find(ai => ai.name === e.target.value);
-    if (match) {
-      updated[groupIdx].items[itemIdx].unit = match.unit;
-    }
-
-    setExtrasGroups(updated);
-  }}
-  className="flex-1 p-2 border rounded-xl"
+<Modal
+  isOpen={showGroupModal}
+  onRequestClose={() => setShowGroupModal(false)}
+  contentLabel={t("Manage Extras Groups")}
+  className="bg-white p-6 rounded-3xl shadow-2xl max-w-2xl mx-auto mt-34"
+  overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center"
 >
-  <option value="">{t("Select Ingredient")}</option>
-  {availableIngredients.map((ing, idx) => (
-    <option key={idx} value={ing.name}>
-      {ing.name} ({ing.unit})
-    </option>
-  ))}
-</select>
+  <h2 className="text-2xl font-bold mb-4">{t("Manage Extras Groups")}</h2>
+  <div className="max-h-[60vh] overflow-y-auto pr-2">
+    {(extrasGroups || []).map((group, groupIdx) => (
+      <div key={groupIdx} className="mb-6 border rounded-2xl p-4 bg-gray-50 relative">
+        <input
+          type="text"
+          placeholder={t("Enter Group Name")}
+          value={group.groupName}
+          onChange={(e) => {
+            const updatedGroups = [...extrasGroups];
+            updatedGroups[groupIdx].groupName = e.target.value;
+            setExtrasGroups(updatedGroups);
+          }}
+          className="w-full font-bold text-lg mb-3 p-2 border rounded-xl"
+        />
+        {(group.items || []).map((item, itemIdx) => (
+          <div key={itemIdx} className="flex gap-2 mb-2 items-center">
+            {/* ✅ Extra name dropdown */}
+            <select
+              value={item.name}
+              onChange={(e) => {
+                const updated = [...extrasGroups];
+                updated[groupIdx].items[itemIdx].name = e.target.value;
 
-                  <input
-                    type={t("number")}
-                    placeholder={t("₺ Price")}
-                    value={item.price}
-                    onChange={(e) => {
-                      const updated = [...extrasGroups];
-                      updated[groupIdx].items[itemIdx].price = e.target.value;
-                      setExtrasGroups(updated);
-                    }}
-                    className="w-24 p-2 border rounded-xl"
-                  />
-         <button
-  onClick={async () => {
-    // Remove from backend if item has an id (already saved)
-    const itemId = item.id;
-    const groupId = group.id; // Make sure group.id exists!
-    if (itemId && groupId) {
-      try {
-        await fetch(`${API_URL}/api/extras-groups/${groupId}/items/${itemId}`, {
-          method: "DELETE",
-        });
-      } catch (err) {
-        alert("❌ Failed to delete from server!");
-        // Optionally: return early here
-      }
-    }
-    // Remove from local state
-    const updated = [...extrasGroups];
-    updated[groupIdx].items = updated[groupIdx].items.filter((_, i) => i !== itemIdx);
-    setExtrasGroups(updated);
-  }}
-  className="bg-red-500 text-white px-3 rounded-xl"
->
-  x
-</button>
+                // Auto-fill unit if match is found
+                const match = availableIngredients.find(ai => ai.name === e.target.value);
+                if (match) {
+                  updated[groupIdx].items[itemIdx].unit = match.unit;
+                }
 
-                </div>
+                setExtrasGroups(updated);
+              }}
+              className="flex-1 p-2 border rounded-xl"
+            >
+              <option value="">{t("Select Ingredient")}</option>
+              {availableIngredients.map((ing, idx) => (
+                <option key={idx} value={ing.name}>
+                  {ing.name} ({ing.unit})
+                </option>
               ))}
-              <div className="my-4" />
-              <button
-                onClick={() => {
-                  const updated = [...extrasGroups];
-                  if (!Array.isArray(updated[groupIdx].items)) {
-                    updated[groupIdx].items = [];
+            </select>
+
+            {/* ✅ Amount field */}
+            <input
+              type="number"
+              placeholder={t("Amount")}
+              value={item.amount || ""}
+              onChange={(e) => {
+                const updated = [...extrasGroups];
+                updated[groupIdx].items[itemIdx].amount = e.target.value;
+                setExtrasGroups(updated);
+              }}
+              className="w-24 p-2 border rounded-xl"
+            />
+
+            {/* Price field */}
+            <input
+              type="number"
+              placeholder={t("₺ Price")}
+              value={item.price}
+              onChange={(e) => {
+                const updated = [...extrasGroups];
+                updated[groupIdx].items[itemIdx].price = e.target.value;
+                setExtrasGroups(updated);
+              }}
+              className="w-24 p-2 border rounded-xl"
+            />
+
+            {/* Remove button */}
+            <button
+              onClick={async () => {
+                const itemId = item.id;
+                const groupId = group.id;
+                if (itemId && groupId) {
+                  try {
+                    await fetch(`${API_URL}/api/extras-groups/${groupId}/items/${itemId}`, {
+                      method: "DELETE",
+                    });
+                  } catch (err) {
+                    alert("❌ Failed to delete from server!");
                   }
-                  updated[groupIdx].items.push({ name: "", price: "" });
-                  setExtrasGroups(updated);
-                }}
-                className="text-sm text-blue-600"
-              >
-                {t("Add Extra to this group")}
-              </button>
-              {/* Delete group */}
-              <button
-               onClick={async () => {
-  const groupId = group.id;
-  if (groupId) {
-    try {
-      await fetch(`${API_URL}/api/extras-groups/${groupId}`, { method: "DELETE" });
-    } catch (err) {
-      alert("❌ Failed to delete group from server!");
-      return;
-    }
-  }
-  const updated = extrasGroups.filter((_, i) => i !== groupIdx);
-  setExtrasGroups(updated);
-}}
+                }
+                const updated = [...extrasGroups];
+                updated[groupIdx].items = updated[groupIdx].items.filter((_, i) => i !== itemIdx);
+                setExtrasGroups(updated);
+              }}
+              className="bg-red-500 text-white px-3 rounded-xl"
+            >
+              x
+            </button>
+          </div>
+        ))}
 
-                className="text-red-600 text-sm font-bold flex items-center gap-1 mt-2"
-              >
-                🗑 {t("Delete Group")}
-              </button>
-            </div>
-          ))}
-        </div>
-        {/* Action buttons */}
-        <div className="flex justify-end gap-2 mt-6">
-          <button
-            onClick={() => {
-              setExtrasGroups((prev) => [...prev, { groupName: "", items: [{ name: "", price: "" }] }]);
-            }}
-            className="bg-blue-500 text-white px-4 py-2 rounded-xl"
-          >
-            {t("Add Group")}
-          </button>
-          <button
-           onClick={async () => {
-  try {
-    await Promise.all(
-      extrasGroups.map(async (group) => {
-        const cleaned = {
-          group_name: (group.groupName || "").trim(),
-          items: (group.items || []).filter((i) => (i.name || "").trim() !== "").map(i => ({
-            name: i.name,
-            price: Number(i.price) || 0
-          })),
-        };
-        if (!cleaned.group_name || cleaned.items.length === 0) return;
-        await fetch(EXTRAS_GROUPS_API, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(cleaned),
-        });
-      })
-    );
-    alert("✅ Groups saved!");
-    setShowGroupModal(false);
-  } catch (err) {
-    alert("Failed to save one or more groups.");
-  }
-}}
+        <div className="my-4" />
+        <button
+          onClick={() => {
+            const updated = [...extrasGroups];
+            if (!Array.isArray(updated[groupIdx].items)) {
+              updated[groupIdx].items = [];
+            }
+            updated[groupIdx].items.push({ name: "", amount: "", unit: "", price: "" });
+            setExtrasGroups(updated);
+          }}
+          className="text-sm text-blue-600"
+        >
+          {t("Add Extra to this group")}
+        </button>
 
+        {/* Delete group */}
+        <button
+          onClick={async () => {
+            const groupId = group.id;
+            if (groupId) {
+              try {
+                await fetch(`${API_URL}/api/extras-groups/${groupId}`, { method: "DELETE" });
+              } catch (err) {
+                alert("❌ Failed to delete group from server!");
+                return;
+              }
+            }
+            const updated = extrasGroups.filter((_, i) => i !== groupIdx);
+            setExtrasGroups(updated);
+          }}
+          className="text-red-600 text-sm font-bold flex items-center gap-1 mt-2"
+        >
+          🗑 {t("Delete Group")}
+        </button>
+      </div>
+    ))}
+  </div>
 
+  {/* Action buttons */}
+  <div className="flex justify-end gap-2 mt-6">
+    <button
+      onClick={() => {
+        setExtrasGroups((prev) => [
+          ...prev,
+          { groupName: "", items: [{ name: "", amount: "", unit: "", price: "" }] }
+        ]);
+      }}
+      className="bg-blue-500 text-white px-4 py-2 rounded-xl"
+    >
+      {t("Add Group")}
+    </button>
+    <button
+      onClick={async () => {
+        try {
+          await Promise.all(
+            extrasGroups.map(async (group) => {
+              const cleaned = {
+                group_name: (group.groupName || "").trim(),
+                items: (group.items || [])
+                  .filter((i) => (i.name || "").trim() !== "")
+                  .map(i => ({
+                    name: i.name,
+                    amount: Number(i.amount) || 0,
+                    unit: i.unit || "",
+                    price: Number(i.price) || 0,
+                  })),
+              };
+              if (!cleaned.group_name || cleaned.items.length === 0) return;
+              await fetch(EXTRAS_GROUPS_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(cleaned),
+              });
+            })
+          );
+          alert("✅ Groups saved!");
+          setShowGroupModal(false);
+        } catch (err) {
+          alert("Failed to save one or more groups.");
+        }
+      }}
+      className="bg-green-600 text-white px-4 py-2 rounded-xl"
+    >
+      💾 {t("Save All")}
+    </button>
+    <button
+      onClick={() => setShowGroupModal(false)}
+      className="bg-gray-500 text-white px-4 py-2 rounded-xl"
+    >
+      ❌ {t("Cancel")}
+    </button>
+  </div>
+</Modal>
 
-            className="bg-green-600 text-white px-4 py-2 rounded-xl"
-          >
-            💾 {t("Save All")}
-          </button>
-          <button
-            onClick={() => setShowGroupModal(false)}
-            className="bg-gray-500 text-white px-4 py-2 rounded-xl"
-          >
-            ❌ {t("Cancel")}
-          </button>
-        </div>
-      </Modal>
     </div>
   );
 }
