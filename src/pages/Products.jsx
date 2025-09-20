@@ -38,6 +38,14 @@ const [groupItems, setGroupItems] = useState([{ name: "", price: "" }]);
 const [extrasGroups, setExtrasGroups] = useState([]);
 const [editIndex, setEditIndex] = useState(null); // for inline editing
 const { t } = useTranslation();
+const [availableIngredients, setAvailableIngredients] = useState([]);
+
+useEffect(() => {
+  fetch(`${API_URL}/api/suppliers/ingredients`)
+    .then(res => res.json())
+    .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
+    .catch(() => setAvailableIngredients([]));
+}, []);
 
 const [productCosts, setProductCosts] = useState({});
 // In Products.jsx
@@ -393,17 +401,30 @@ return (
               />
               {(group.items || []).map((item, itemIdx) => (
                 <div key={itemIdx} className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    placeholder={t("Extra name")}
-                    value={item.name}
-                    onChange={(e) => {
-                      const updated = [...extrasGroups];
-                      updated[groupIdx].items[itemIdx].name = e.target.value;
-                      setExtrasGroups(updated);
-                    }}
-                    className="flex-1 p-2 border rounded-xl"
-                  />
+                  <select
+  value={item.name}
+  onChange={(e) => {
+    const updated = [...extrasGroups];
+    updated[groupIdx].items[itemIdx].name = e.target.value;
+
+    // ✅ Auto-fill unit if match is found
+    const match = availableIngredients.find(ai => ai.name === e.target.value);
+    if (match) {
+      updated[groupIdx].items[itemIdx].unit = match.unit;
+    }
+
+    setExtrasGroups(updated);
+  }}
+  className="flex-1 p-2 border rounded-xl"
+>
+  <option value="">{t("Select Ingredient")}</option>
+  {availableIngredients.map((ing, idx) => (
+    <option key={idx} value={ing.name}>
+      {ing.name} ({ing.unit})
+    </option>
+  ))}
+</select>
+
                   <input
                     type={t("number")}
                     placeholder={t("₺ Price")}
