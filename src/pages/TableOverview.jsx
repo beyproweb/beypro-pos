@@ -48,13 +48,21 @@ const getDisplayTotal = (order) => {
 
   if (order.items?.some(i => !i.paid_at)) {
     return order.items.filter(i => !i.paid_at)
-      .reduce((sum, i) => sum + (i.price * i.quantity), 0);
+      .reduce((sum, i) => {
+        const base = i.price * i.quantity;
+        const extrasTotal = Array.isArray(i.extras)
+          ? i.extras.reduce((extraSum, ex) => {
+              const exQty = parseInt(ex.quantity || 1);
+              const exPrice = parseFloat(ex.price || 0);
+              return extraSum + exQty * exPrice;
+            }, 0) * i.quantity // extras apply per product quantity
+          : 0;
+        return sum + base + extrasTotal;
+      }, 0);
   }
 
   return parseFloat(order.total || 0);
 };
-
-
 
 
 
