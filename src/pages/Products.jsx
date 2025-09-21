@@ -530,7 +530,7 @@ return (
     >
       {t("Add Group")}
     </button>
-    <button
+<button
   onClick={async () => {
     try {
       await Promise.all(
@@ -541,16 +541,23 @@ return (
               .filter((i) => (i.name || "").trim() !== "")
               .map(i => ({
                 name: i.name,
-                amount: Number(i.amount) || 1,   // ✅ save amount
-                unit: i.unit || "",              // ✅ save unit
-                price: Number(i.price) || 0,     // ✅ keep price
+                amount: Number(i.amount) || 1,
+                unit: i.unit || "",
+                price: Number(i.price) || 0,
               })),
           };
 
           if (!cleaned.group_name || cleaned.items.length === 0) return;
 
-          await fetch(EXTRAS_GROUPS_API, {
-            method: "POST",
+          // ✅ Use PUT if group already has an id, POST if it's new
+          const url = group.id
+            ? `${EXTRAS_GROUPS_API}/${group.id}`
+            : EXTRAS_GROUPS_API;
+
+          const method = group.id ? "PUT" : "POST";
+
+          await fetch(url, {
+            method,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(cleaned),
           });
@@ -567,6 +574,7 @@ return (
 >
   💾 {t("Save All")}
 </button>
+
 
     <button
       onClick={() => setShowGroupModal(false)}
