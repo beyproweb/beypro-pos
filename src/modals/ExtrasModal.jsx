@@ -221,15 +221,17 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
             <button
               onClick={() => {
                 const productQty = selectedProduct.quantity || 1;
-                const validExtras = selectedExtras
+const validExtras = selectedExtras
   .filter((ex) => ex.quantity > 0)
   .map((ex) => ({
-    ...ex,
+    id: ex.id,
+    name: ex.name,
     quantity: Number(ex.quantity),
     price: Number(ex.price ?? ex.extraPrice ?? 0),
-    amount: Number(ex.amount) || 1,   // ✅ ensure amount is included
-    unit: ex.unit || ""               // ✅ ensure unit is included
+    amount: Number(ex.amount) || 1,   // ✅ always send amount
+    unit: ex.unit || ""               // ✅ always send unit
   }));
+
 
 
                 const itemPrice = Number(selectedProduct.price); // base price only
