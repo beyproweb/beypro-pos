@@ -541,23 +541,16 @@ return (
               .filter((i) => (i.name || "").trim() !== "")
               .map(i => ({
                 name: i.name,
-                amount: Number(i.amount) || 1,
-                unit: i.unit || "",
                 price: Number(i.price) || 0,
+                amount: Number(i.amount) || 1,   // ✅ include amount
+                unit: i.unit || ""               // ✅ include unit
               })),
           };
 
           if (!cleaned.group_name || cleaned.items.length === 0) return;
 
-          // ✅ Use PUT if group already has an id, POST if it's new
-          const url = group.id
-            ? `${EXTRAS_GROUPS_API}/${group.id}`
-            : EXTRAS_GROUPS_API;
-
-          const method = group.id ? "PUT" : "POST";
-
-          await fetch(url, {
-            method,
+          await fetch(EXTRAS_GROUPS_API, {
+            method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(cleaned),
           });
@@ -567,13 +560,14 @@ return (
       alert("✅ Groups saved!");
       setShowGroupModal(false);
     } catch (err) {
-      alert("Failed to save one or more groups.");
+      alert("❌ Failed to save one or more groups.");
     }
   }}
   className="bg-green-600 text-white px-4 py-2 rounded-xl"
 >
   💾 {t("Save All")}
 </button>
+
 
 
     <button
