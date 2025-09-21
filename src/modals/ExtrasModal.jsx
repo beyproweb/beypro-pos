@@ -27,10 +27,13 @@ export default function ExtrasModal({
     id: g.id,
     groupName: g.group_name ?? g.groupName ?? "",
     items: Array.isArray(g.items) ? g.items.map(it => ({
-      id: it.id,
-      name: it.name ?? it.ingredient_name ?? "",
-      price: Number(it.extraPrice ?? it.price ?? 0),
-    })) : [],
+  id: it.id,
+  name: it.name ?? it.ingredient_name ?? "",
+  price: Number(it.extraPrice ?? it.price ?? 0),
+  amount: Number(it.amount) || 1,     // ✅ include amount
+  unit: it.unit || ""                 // ✅ include unit
+})) : [],
+
   })) : [];
 
   // --- Build allowed set from product’s selectedExtrasGroup (IDs or names) ---
