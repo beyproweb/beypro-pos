@@ -388,6 +388,7 @@ return (
   <div className="max-h-[60vh] overflow-y-auto pr-2">
     {(extrasGroups || []).map((group, groupIdx) => (
       <div key={groupIdx} className="mb-6 border rounded-2xl p-4 bg-gray-50 relative">
+        {/* Group name */}
         <input
           type="text"
           placeholder={t("Enter Group Name")}
@@ -399,16 +400,18 @@ return (
           }}
           className="w-full font-bold text-lg mb-3 p-2 border rounded-xl"
         />
+
+        {/* Group items */}
         {(group.items || []).map((item, itemIdx) => (
-          <div key={itemIdx} className="flex gap-2 mb-2 items-center">
-            {/* ✅ Extra name dropdown */}
+          <div key={itemIdx} className="flex gap-2 mb-2">
+            {/* Ingredient Dropdown */}
             <select
               value={item.name}
               onChange={(e) => {
                 const updated = [...extrasGroups];
                 updated[groupIdx].items[itemIdx].name = e.target.value;
 
-                // Auto-fill unit if match is found
+                // ✅ Auto-fill unit if match is found
                 const match = availableIngredients.find(ai => ai.name === e.target.value);
                 if (match) {
                   updated[groupIdx].items[itemIdx].unit = match.unit;
@@ -426,20 +429,7 @@ return (
               ))}
             </select>
 
-            {/* ✅ Amount field */}
-            <input
-              type="number"
-              placeholder={t("Amount")}
-              value={item.amount || ""}
-              onChange={(e) => {
-                const updated = [...extrasGroups];
-                updated[groupIdx].items[itemIdx].amount = e.target.value;
-                setExtrasGroups(updated);
-              }}
-              className="w-24 p-2 border rounded-xl"
-            />
-
-            {/* Price field */}
+            {/* Price */}
             <input
               type="number"
               placeholder={t("₺ Price")}
@@ -449,10 +439,36 @@ return (
                 updated[groupIdx].items[itemIdx].price = e.target.value;
                 setExtrasGroups(updated);
               }}
-              className="w-24 p-2 border rounded-xl"
+              className="w-20 p-2 border rounded-xl"
             />
 
-            {/* Remove button */}
+            {/* Amount */}
+            <input
+              type="number"
+              placeholder={t("Amount")}
+              value={item.amount || 1}
+              onChange={(e) => {
+                const updated = [...extrasGroups];
+                updated[groupIdx].items[itemIdx].amount = e.target.value;
+                setExtrasGroups(updated);
+              }}
+              className="w-20 p-2 border rounded-xl"
+            />
+
+            {/* Unit */}
+            <input
+              type="text"
+              placeholder={t("Unit")}
+              value={item.unit || ""}
+              onChange={(e) => {
+                const updated = [...extrasGroups];
+                updated[groupIdx].items[itemIdx].unit = e.target.value;
+                setExtrasGroups(updated);
+              }}
+              className="w-20 p-2 border rounded-xl"
+            />
+
+            {/* Delete button */}
             <button
               onClick={async () => {
                 const itemId = item.id;
@@ -479,20 +495,18 @@ return (
 
         <div className="my-4" />
         <button
-  onClick={() => {
-    const updated = [...extrasGroups];
-    if (!Array.isArray(updated[groupIdx].items)) {
-      updated[groupIdx].items = [];
-    }
-    // initialize with all fields: name, amount, unit, price
-    updated[groupIdx].items.push({ name: "", amount: "", unit: "", price: "" });
-    setExtrasGroups(updated);
-  }}
-  className="text-sm text-blue-600"
->
-  {t("Add Extra to this group")}
-</button>
-
+          onClick={() => {
+            const updated = [...extrasGroups];
+            if (!Array.isArray(updated[groupIdx].items)) {
+              updated[groupIdx].items = [];
+            }
+            updated[groupIdx].items.push({ name: "", price: "", amount: 1, unit: "" });
+            setExtrasGroups(updated);
+          }}
+          className="text-sm text-blue-600"
+        >
+          {t("Add Extra to this group")}
+        </button>
 
         {/* Delete group */}
         <button
@@ -523,53 +537,47 @@ return (
       onClick={() => {
         setExtrasGroups((prev) => [
           ...prev,
-          { groupName: "", items: [{ name: "", amount: "", unit: "", price: "" }] }
+          { groupName: "", items: [{ name: "", price: "", amount: 1, unit: "" }] },
         ]);
       }}
       className="bg-blue-500 text-white px-4 py-2 rounded-xl"
     >
       {t("Add Group")}
     </button>
-<button
-  onClick={async () => {
-    try {
-      await Promise.all(
-        extrasGroups.map(async (group) => {
-          const cleaned = {
-            group_name: (group.groupName || "").trim(),
-            items: (group.items || [])
-              .filter((i) => (i.name || "").trim() !== "")
-              .map(i => ({
-                name: i.name,
-                price: Number(i.price) || 0,
-                amount: Number(i.amount) || 1,   // ✅ include amount
-                unit: i.unit || ""               // ✅ include unit
-              })),
-          };
-
-          if (!cleaned.group_name || cleaned.items.length === 0) return;
-
-          await fetch(EXTRAS_GROUPS_API, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(cleaned),
-          });
-        })
-      );
-
-      alert("✅ Groups saved!");
-      setShowGroupModal(false);
-    } catch (err) {
-      alert("❌ Failed to save one or more groups.");
-    }
-  }}
-  className="bg-green-600 text-white px-4 py-2 rounded-xl"
->
-  💾 {t("Save All")}
-</button>
-
-
-
+    <button
+      onClick={async () => {
+        try {
+          await Promise.all(
+            extrasGroups.map(async (group) => {
+              const cleaned = {
+                group_name: (group.groupName || "").trim(),
+                items: (group.items || [])
+                  .filter((i) => (i.name || "").trim() !== "")
+                  .map(i => ({
+                    name: i.name,
+                    price: Number(i.price) || 0,
+                    amount: Number(i.amount) || 1,   // ✅ include amount
+                    unit: i.unit || ""               // ✅ include unit
+                  })),
+              };
+              if (!cleaned.group_name || cleaned.items.length === 0) return;
+              await fetch(EXTRAS_GROUPS_API, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(cleaned),
+              });
+            })
+          );
+          alert("✅ Groups saved!");
+          setShowGroupModal(false);
+        } catch (err) {
+          alert("❌ Failed to save one or more groups.");
+        }
+      }}
+      className="bg-green-600 text-white px-4 py-2 rounded-xl"
+    >
+      💾 {t("Save All")}
+    </button>
     <button
       onClick={() => setShowGroupModal(false)}
       className="bg-gray-500 text-white px-4 py-2 rounded-xl"
@@ -578,6 +586,7 @@ return (
     </button>
   </div>
 </Modal>
+
 
     </div>
   );
