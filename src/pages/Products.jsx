@@ -544,40 +544,53 @@ return (
     >
       {t("Add Group")}
     </button>
-    <button
-      onClick={async () => {
-        try {
-          await Promise.all(
-            extrasGroups.map(async (group) => {
-              const cleaned = {
-                group_name: (group.groupName || "").trim(),
-                items: (group.items || [])
-                  .filter((i) => (i.name || "").trim() !== "")
-                  .map(i => ({
-                    name: i.name,
-                    price: Number(i.price) || 0,
-                    amount: Number(i.amount) || 1,   // ✅ include amount
-                    unit: i.unit || ""               // ✅ include unit
-                  })),
-              };
-              if (!cleaned.group_name || cleaned.items.length === 0) return;
-              await fetch(EXTRAS_GROUPS_API, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(cleaned),
-              });
-            })
-          );
-          alert("✅ Groups saved!");
-          setShowGroupModal(false);
-        } catch (err) {
-          alert("❌ Failed to save one or more groups.");
-        }
-      }}
-      className="bg-green-600 text-white px-4 py-2 rounded-xl"
-    >
-      💾 {t("Save All")}
-    </button>
+<button
+  onClick={async () => {
+    try {
+      await Promise.all(
+        extrasGroups.map(async (group) => {
+          const cleaned = {
+            group_name: (group.groupName || "").trim(),
+            items: (group.items || [])
+              .filter((i) => (i.name || "").trim() !== "")
+              .map((i) => ({
+                name: i.name,
+                price: Number(i.price) || 0,
+                amount: Number(i.amount) || 1,
+                unit: i.unit || ""
+              })),
+          };
+
+          if (!cleaned.group_name || cleaned.items.length === 0) return;
+
+          if (group.id) {
+            // ✅ Update existing group
+            await fetch(`${API_URL}/api/extras-groups/${group.id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(cleaned),
+            });
+          } else {
+            // ✅ Create new group
+            await fetch(`${API_URL}/api/extras-groups`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(cleaned),
+            });
+          }
+        })
+      );
+      alert("✅ Groups saved!");
+      setShowGroupModal(false);
+    } catch (err) {
+      alert("❌ Failed to save one or more groups.");
+    }
+  }}
+  className="bg-green-600 text-white px-4 py-2 rounded-xl"
+>
+  💾 {t("Save All")}
+</button>
+
     <button
       onClick={() => setShowGroupModal(false)}
       className="bg-gray-500 text-white px-4 py-2 rounded-xl"
@@ -586,7 +599,6 @@ return (
     </button>
   </div>
 </Modal>
-
 
     </div>
   );
