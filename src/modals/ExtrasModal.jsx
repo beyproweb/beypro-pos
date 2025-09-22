@@ -218,64 +218,63 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
             >
               ❌ {t("Cancel")}
             </button>
-            <button
-              onClick={() => {
-                const productQty = selectedProduct.quantity || 1;
-                const validExtras = selectedExtras
-  .filter((ex) => ex.quantity > 0)
-  .map((ex) => {
-    // Find the original item in activeGroup to get unit + amount
-    const original = activeGroup?.items.find(i => i.name === ex.name) || {};
-    return {
-      ...ex,
-      quantity: Number(ex.quantity),
-      price: Number(ex.price ?? ex.extraPrice ?? 0),
-      amount: Number(ex.amount || original.amount || 1),
-      unit: ex.unit || original.unit || ""   // ✅ ensures DB unit flows into order
-    };
-  });
+<button
+  onClick={() => {
+    const productQty = selectedProduct.quantity || 1;
 
-                const itemPrice = Number(selectedProduct.price); // base price only
-                const extrasKey = JSON.stringify(validExtras);
-                const uniqueId = `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
+    // ✅ Ensure extras always carry correct unit + amount
+    const validExtras = selectedExtras
+      .filter((ex) => ex.quantity > 0)
+      .map((ex) => ({
+        ...ex,
+        quantity: Number(ex.quantity),
+        price: Number(ex.price ?? ex.extraPrice ?? 0),
+        amount: Number(ex.amount) || 1,   // ✅ fallback to 1
+        unit: ex.unit && ex.unit.trim() !== "" ? ex.unit : "piece" // ✅ default if missing
+      }));
 
-                if (editingCartItemIndex !== null) {
-                  setCartItems((prev) => {
-                    const updated = [...prev];
-                    updated[editingCartItemIndex] = {
-                      ...updated[editingCartItemIndex],
-                      quantity: productQty,
-                      price: itemPrice,
-                      extras: validExtras,
-                      unique_id: uniqueId,
-                      note: note || null,
-                    };
-                    return updated;
-                  });
-                  setEditingCartItemIndex(null);
-                } else {
-                  setCartItems((prev) => [
-                    ...prev,
-                    {
-                      id: selectedProduct.id,
-                      name: selectedProduct.name,
-                      price: itemPrice,
-                      quantity: productQty,
-                      ingredients: selectedProduct.ingredients || [],
-                      extras: validExtras,
-                      unique_id: uniqueId,
-                      note: note || null,
-                    },
-                  ]);
-                }
+    const itemPrice = Number(selectedProduct.price); // base price only
+    const extrasKey = JSON.stringify(validExtras);
+    const uniqueId = `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
 
-                setShowExtrasModal(false);
-                setSelectedExtras([]);
-              }}
-              className="flex-1 py-2 bg-gradient-to-r from-green-500 via-blue-400 to-indigo-400 text-white rounded-xl font-bold shadow-lg hover:brightness-105 transition-all"
-            >
-              ✅ {t("Add to Cart")}
-            </button>
+    if (editingCartItemIndex !== null) {
+      setCartItems((prev) => {
+        const updated = [...prev];
+        updated[editingCartItemIndex] = {
+          ...updated[editingCartItemIndex],
+          quantity: productQty,
+          price: itemPrice,
+          extras: validExtras,    // ✅ carries unit + amount
+          unique_id: uniqueId,
+          note: note || null,
+        };
+        return updated;
+      });
+      setEditingCartItemIndex(null);
+    } else {
+      setCartItems((prev) => [
+        ...prev,
+        {
+          id: selectedProduct.id,
+          name: selectedProduct.name,
+          price: itemPrice,
+          quantity: productQty,
+          ingredients: selectedProduct.ingredients || [],
+          extras: validExtras,   // ✅ carries unit + amount
+          unique_id: uniqueId,
+          note: note || null,
+        },
+      ]);
+    }
+
+    setShowExtrasModal(false);
+    setSelectedExtras([]);
+  }}
+  className="flex-1 py-2 bg-gradient-to-r from-green-500 via-blue-400 to-indigo-400 text-white rounded-xl font-bold shadow-lg hover:brightness-105 transition-all"
+>
+  ✅ {t("Add to Cart")}
+</button>
+
           </div>
         </div>
       </div>
