@@ -59,7 +59,10 @@ export default function ExtrasModal({
           name: ex.name,
           price: Number(ex.extraPrice || ex.price || 0),
           unit: ex.unit || "",             // ✅ always keep unit
-          amount: Number(ex.amount) || 1   // ✅ always keep amount
+          amount:
+  ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
+    ? Number(ex.amount)
+    : 1,   // ✅ always keep amount
         })),
       },
     ];
@@ -247,7 +250,11 @@ export default function ExtrasModal({
                     ...ex,
                     quantity: Number(ex.quantity),
                     price: Number(ex.price ?? ex.extraPrice ?? 0),
-                    amount: Number(ex.amount) || 1,
+                    amount:
+  ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
+    ? Number(ex.amount)
+    : 1,
+
                     unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase(),
                   }));
 
