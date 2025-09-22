@@ -27,40 +27,40 @@ export default function ExtrasModal({
     id: g.id,
     groupName: g.group_name ?? g.groupName ?? "",
     items: Array.isArray(g.items) ? g.items.map(it => ({
-  id: it.id,
-  name: it.name ?? it.ingredient_name ?? "",
-  price: Number(it.extraPrice ?? it.price ?? 0),
-  amount: Number(it.amount) || 1,     // ✅ include amount
-  unit: it.unit || ""                 // ✅ include unit
-})) : [],
-
+      id: it.id,
+      name: it.name ?? it.ingredient_name ?? "",
+      price: Number(it.extraPrice ?? it.price ?? 0),
+      amount: Number(it.amount) || 1,
+      unit: it.unit || ""                 // ✅ include unit
+    })) : [],
   })) : [];
 
   // --- Build allowed set from product’s selectedExtrasGroup (IDs or names) ---
   const keys = Array.isArray(selectedProduct?.selectedExtrasGroup)
     ? selectedProduct.selectedExtrasGroup
     : [];
-const selectedGroupIds = new Set(
-  (selectedProduct?.selectedExtrasGroup || []).map(id => Number(id)).filter(Number.isFinite)
-);
+  const selectedGroupIds = new Set(
+    (selectedProduct?.selectedExtrasGroup || []).map(id => Number(id)).filter(Number.isFinite)
+  );
 
-let allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
+  let allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
 
-// If no selected groups, fallback to manual extras
-if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {
-  allowedGroups = [
-    {
-      id: "manual",
-      groupName: "Extras",
-      items: selectedProduct.extras.map((ex, idx) => ({
-        id: idx,
-        name: ex.name,
-        price: Number(ex.extraPrice || ex.price || 0),
-      })),
-    },
-  ];
-}
-
+  // If no selected groups, fallback to manual extras
+  if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {
+    allowedGroups = [
+      {
+        id: "manual",
+        groupName: "Extras",
+        items: selectedProduct.extras.map((ex, idx) => ({
+          id: idx,
+          name: ex.name,
+          price: Number(ex.extraPrice || ex.price || 0),
+          unit: ex.unit || "",             // ✅ always keep unit
+          amount: Number(ex.amount) || 1   // ✅ always keep amount
+        })),
+      },
+    ];
+  }
 
   // Keep tab index in bounds
   const safeIdx = allowedGroups.length === 0
@@ -130,7 +130,11 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
                         const cur = prev.find((ex) => ex.name === item.name);
                         if (!cur) return prev;
                         if (cur.quantity === 1) return prev.filter((ex) => ex.name !== item.name);
-                        return prev.map((ex) => ex.name === item.name ? {...ex, quantity: ex.quantity - 1} : ex);
+                        return prev.map((ex) =>
+                          ex.name === item.name
+                            ? { ...ex, quantity: ex.quantity - 1 }
+                            : ex
+                        );
                       });
                     }}
                   >➖</button>
@@ -141,8 +145,13 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
                       e.preventDefault();
                       setSelectedExtras((prev) => {
                         const cur = prev.find((ex) => ex.name === item.name);
-                        if (!cur) return [...prev, { ...item, quantity: 1 }];
-                        return prev.map((ex) => ex.name === item.name ? {...ex, quantity: cur.quantity + 1} : ex);
+                        if (!cur)
+                          return [...prev, { ...item, quantity: 1, unit: item.unit || "", amount: item.amount || 1 }];
+                        return prev.map((ex) =>
+                          ex.name === item.name
+                            ? { ...ex, quantity: cur.quantity + 1 }
+                            : ex
+                        );
                       });
                     }}
                   >➕</button>
@@ -160,7 +169,10 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
               <button
                 className="bg-gray-200 dark:bg-zinc-700 text-black dark:text-white px-4 py-2 rounded-full hover:bg-blue-200 dark:hover:bg-indigo-900 font-bold text-xl transition"
                 onClick={() =>
-                  setSelectedProduct((prev) => ({ ...prev, quantity: Math.max((prev.quantity || 1) - 1, 1) }))
+                  setSelectedProduct((prev) => ({
+                    ...prev,
+                    quantity: Math.max((prev.quantity || 1) - 1, 1),
+                  }))
                 }
               >➖</button>
               <span className="text-2xl font-semibold text-blue-900 dark:text-blue-200">
@@ -169,7 +181,10 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
               <button
                 className="bg-green-500 text-white px-4 py-2 rounded-full hover:bg-green-600 font-bold text-xl transition"
                 onClick={() =>
-                  setSelectedProduct((prev) => ({ ...prev, quantity: (prev.quantity || 1) + 1 }))
+                  setSelectedProduct((prev) => ({
+                    ...prev,
+                    quantity: (prev.quantity || 1) + 1,
+                  }))
                 }
               >➕</button>
             </div>
@@ -218,63 +233,62 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
             >
               ❌ {t("Cancel")}
             </button>
-<button
-  onClick={() => {
-    const productQty = selectedProduct.quantity || 1;
+            <button
+              onClick={() => {
+                const productQty = selectedProduct.quantity || 1;
 
-    // ✅ Ensure extras always carry correct unit + amount
-    const validExtras = selectedExtras
-      .filter((ex) => ex.quantity > 0)
-      .map((ex) => ({
-        ...ex,
-        quantity: Number(ex.quantity),
-        price: Number(ex.price ?? ex.extraPrice ?? 0),
-        amount: Number(ex.amount) || 1,   // ✅ fallback to 1
-        unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase() // ✅ default if missing
-      }));
+                // ✅ Ensure extras always carry correct unit + amount
+                const validExtras = selectedExtras
+                  .filter((ex) => ex.quantity > 0)
+                  .map((ex) => ({
+                    ...ex,
+                    quantity: Number(ex.quantity),
+                    price: Number(ex.price ?? ex.extraPrice ?? 0),
+                    amount: Number(ex.amount) || 1,
+                    unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase(),
+                  }));
 
-    const itemPrice = Number(selectedProduct.price); // base price only
-    const extrasKey = JSON.stringify(validExtras);
-    const uniqueId = `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
+                const itemPrice = Number(selectedProduct.price); // base price only
+                const extrasKey = JSON.stringify(validExtras);
+                const uniqueId = `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
 
-    if (editingCartItemIndex !== null) {
-      setCartItems((prev) => {
-        const updated = [...prev];
-        updated[editingCartItemIndex] = {
-          ...updated[editingCartItemIndex],
-          quantity: productQty,
-          price: itemPrice,
-          extras: validExtras,    // ✅ carries unit + amount
-          unique_id: uniqueId,
-          note: note || null,
-        };
-        return updated;
-      });
-      setEditingCartItemIndex(null);
-    } else {
-      setCartItems((prev) => [
-        ...prev,
-        {
-          id: selectedProduct.id,
-          name: selectedProduct.name,
-          price: itemPrice,
-          quantity: productQty,
-          ingredients: selectedProduct.ingredients || [],
-          extras: validExtras,   // ✅ carries unit + amount
-          unique_id: uniqueId,
-          note: note || null,
-        },
-      ]);
-    }
+                if (editingCartItemIndex !== null) {
+                  setCartItems((prev) => {
+                    const updated = [...prev];
+                    updated[editingCartItemIndex] = {
+                      ...updated[editingCartItemIndex],
+                      quantity: productQty,
+                      price: itemPrice,
+                      extras: validExtras,    // ✅ carries unit + amount
+                      unique_id: uniqueId,
+                      note: note || null,
+                    };
+                    return updated;
+                  });
+                  setEditingCartItemIndex(null);
+                } else {
+                  setCartItems((prev) => [
+                    ...prev,
+                    {
+                      id: selectedProduct.id,
+                      name: selectedProduct.name,
+                      price: itemPrice,
+                      quantity: productQty,
+                      ingredients: selectedProduct.ingredients || [],
+                      extras: validExtras,   // ✅ carries unit + amount
+                      unique_id: uniqueId,
+                      note: note || null,
+                    },
+                  ]);
+                }
 
-    setShowExtrasModal(false);
-    setSelectedExtras([]);
-  }}
-  className="flex-1 py-2 bg-gradient-to-r from-green-500 via-blue-400 to-indigo-400 text-white rounded-xl font-bold shadow-lg hover:brightness-105 transition-all"
->
-  ✅ {t("Add to Cart")}
-</button>
-
+                setShowExtrasModal(false);
+                setSelectedExtras([]);
+              }}
+              className="flex-1 py-2 bg-gradient-to-r from-green-500 via-blue-400 to-indigo-400 text-white rounded-xl font-bold shadow-lg hover:brightness-105 transition-all"
+            >
+              ✅ {t("Add to Cart")}
+            </button>
           </div>
         </div>
       </div>
