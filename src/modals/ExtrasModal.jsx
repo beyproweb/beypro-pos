@@ -230,7 +230,7 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
         quantity: Number(ex.quantity),
         price: Number(ex.price ?? ex.extraPrice ?? 0),
         amount: Number(ex.amount) || 1,   // ✅ fallback to 1
-        unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "piece").toLowerCase() // ✅ default if missing
+        unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase() // ✅ default if missing
       }));
 
     const itemPrice = Number(selectedProduct.price); // base price only
