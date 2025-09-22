@@ -116,13 +116,15 @@ useEffect(() => {
     id: g.id, // group id
     groupName: g.group_name || g.groupName,
     items: Array.isArray(g.items)
-      ? g.items.map(i => ({
-          ...i,
-          id: i.id, // item id
-          name: i.name,
-          price: i.price !== undefined ? i.price : i.extraPrice,
-        }))
-      : [],
+  ? g.items.map(i => ({
+      id: i.id,
+      name: i.name,
+      price: Number(i.price ?? i.extraPrice ?? 0),
+      amount: Number(i.amount ?? 1),
+      unit: i.unit || "",
+    }))
+  : [],
+
   }))
 );
 
