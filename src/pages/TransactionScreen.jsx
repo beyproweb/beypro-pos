@@ -310,7 +310,11 @@ const confirmPaymentWithSplits = async (splits) => {
       quantity: i.quantity,
       price: i.price,
       ingredients: i.ingredients,
-      extras: i.extras,
+      extras: (i.extras || []).map(ex => ({
+   ...ex,
+   amount: Number(ex.amount) || 1,
+   unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase()
+ })),
       unique_id: i.unique_id,
       payment_method: null,
       receipt_id: receiptId,
