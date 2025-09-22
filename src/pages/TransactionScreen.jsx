@@ -843,16 +843,21 @@ items: unconfirmedItems.map((i) => ({
   quantity: i.quantity,
   price: i.price,
   ingredients: i.ingredients,
-  extras: i.extras,
+  extras: (i.extras || []).map(ex => ({
+    ...ex,
+    amount: Number(ex.amount) || 1,
+    unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase()
+  })),
   unique_id: i.unique_id,
   note: i.note || null,
   confirmed: true,
-  kitchen_status: "new", // <-- THIS FIXES IT FOR ALL!
+  kitchen_status: "new",
   payment_method: null,
   receipt_id: null,
   discountType: discountValue > 0 ? discountType : null,
   discountValue: discountValue > 0 ? discountValue : 0,
 }))
+
 
 
         }),
