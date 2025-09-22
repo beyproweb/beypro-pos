@@ -221,18 +221,19 @@ if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && sele
             <button
               onClick={() => {
                 const productQty = selectedProduct.quantity || 1;
-const validExtras = selectedExtras
+                const validExtras = selectedExtras
   .filter((ex) => ex.quantity > 0)
-  .map((ex) => ({
-    id: ex.id,
-    name: ex.name,
-    quantity: Number(ex.quantity),
-    price: Number(ex.price ?? ex.extraPrice ?? 0),
-    amount: Number(ex.amount) || 1,   // ✅ always send amount
-    unit: ex.unit || ""               // ✅ always send unit
-  }));
-
-
+  .map((ex) => {
+    // Find the original item in activeGroup to get unit + amount
+    const original = activeGroup?.items.find(i => i.name === ex.name) || {};
+    return {
+      ...ex,
+      quantity: Number(ex.quantity),
+      price: Number(ex.price ?? ex.extraPrice ?? 0),
+      amount: Number(ex.amount || original.amount || 1),
+      unit: ex.unit || original.unit || ""   // ✅ ensures DB unit flows into order
+    };
+  });
 
                 const itemPrice = Number(selectedProduct.price); // base price only
                 const extrasKey = JSON.stringify(validExtras);
