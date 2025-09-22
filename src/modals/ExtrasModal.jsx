@@ -30,7 +30,10 @@ export default function ExtrasModal({
       id: it.id,
       name: it.name ?? it.ingredient_name ?? "",
       price: Number(it.extraPrice ?? it.price ?? 0),
-      amount: Number(it.amount) || 1,
+      amount:
+  it.amount !== undefined && it.amount !== null && it.amount !== ""
+    ? Number(it.amount)
+    : 1,
       unit: it.unit || ""                 // ✅ include unit
     })) : [],
   })) : [];
