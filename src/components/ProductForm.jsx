@@ -583,7 +583,6 @@ const recalcEstimatedCost = (ingredients) => {
   );
 })}
 
-
     <button
       type="button"
       onClick={addIngredient}
