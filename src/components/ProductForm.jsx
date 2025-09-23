@@ -113,7 +113,6 @@ useEffect(() => {
     .catch(() => {});
 }, [initialData, product.ingredients]);
 
-
   useEffect(() => {
     fetch(EXTRAS_GROUPS_API)
       .then(res => res.json())
