@@ -97,6 +97,20 @@ export default function ProductForm({ onSuccess, initialData = null }) {
       .catch(() => setIngredientPrices([]));
   }, []);
 
+  // fetch server-side product costs when editing
+useEffect(() => {
+  if (!initialData?.id) return;
+  fetch(`${API_URL}/api/products/costs`)
+    .then(res => res.json())
+    .then(data => {
+      if (data && data[initialData.id] !== undefined) {
+        setEstimatedCost(data[initialData.id]);
+      }
+    })
+    .catch(() => {});
+}, [initialData]);
+
+
   useEffect(() => {
     fetch(EXTRAS_GROUPS_API)
       .then(res => res.json())
@@ -357,11 +371,14 @@ useEffect(() => {
           <label className="font-semibold">{t("Price (₺)")}</label>
           <input type="number" name="price" value={product.price} onChange={handleChange}
                  className="w-full p-3 rounded-xl border mt-1 mb-2" required />
-          <div className="mt-4 text-sm font-bold text-gray-600">
-  Estimated Cost: <span className="text-rose-600">₺{estimatedCost.toFixed(2)}</span>
+<div className="my-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 shadow text-center">
+  <span className="text-lg font-extrabold text-gray-800">
+    {t("Estimated Cost per Product")}:
+  </span>
+  <span className="ml-2 text-2xl font-extrabold text-rose-700">
+    ₺{estimatedCost.toFixed(2)}
+  </span>
 </div>
-
-
           <label className="font-semibold">{t("Promotion Start Date")}</label>
           <input type="date" name="promo_start" value={product.promo_start} onChange={handleChange}
                  className="w-full p-3 rounded-xl border mt-1 mb-4" />
