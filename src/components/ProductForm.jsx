@@ -434,25 +434,31 @@ export default function ProductForm({ onSuccess, initialData = null }) {
       ))}
     </select>
 
-    {/* Quantity */}
-    <input
-      type="number"
-      name="quantity"
-      placeholder={t("Qty")}
-      value={ing.quantity}
-      onChange={e => handleIngredientChange(i, e)}
-      className="p-2 rounded-xl border w-20 min-w-[60px]"
-    />
+   {/* Quantity (free text, no increment arrows) */}
+<input
+  type="text"
+  name="quantity"
+  placeholder={t("Qty")}
+  value={ing.quantity}
+  onChange={e => handleIngredientChange(i, e)}
+  className="p-2 rounded-xl border w-20 min-w-[60px]"
+/>
 
-    {/* Unit (auto-filled but editable) */}
-    <input
-      type="text"
-      name="unit"
-      placeholder={t("Unit")}
-      value={ing.unit}
-      onChange={e => handleIngredientChange(i, e)}
-      className="p-2 rounded-xl border w-20 min-w-[60px]"
-    />
+{/* Unit (dropdown only) */}
+<select
+  name="unit"
+  value={ing.unit || ""}
+  onChange={e => handleIngredientChange(i, e)}
+  className="p-2 rounded-xl border w-24 min-w-[70px]"
+>
+  <option value="">{t("Select Unit")}</option>
+  <option value="kg">kg</option>
+  <option value="g">g</option>
+  <option value="piece">piece</option>
+  <option value="portion">portion</option>
+  <option value="ml">ml</option>
+  <option value="l">l</option>
+</select>
 
     {/* Remove button */}
     <button
