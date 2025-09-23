@@ -98,8 +98,11 @@ export default function ProductForm({ onSuccess, initialData = null }) {
   }, []);
 
   // fetch server-side product costs when editing
+// fetch server-side product costs when editing
 useEffect(() => {
   if (!initialData?.id) return;
+  if (!product.ingredients || product.ingredients.length === 0) return;
+
   fetch(`${API_URL}/api/products/costs`)
     .then(res => res.json())
     .then(data => {
@@ -108,7 +111,8 @@ useEffect(() => {
       }
     })
     .catch(() => {});
-}, [initialData]);
+}, [initialData, product.ingredients]);
+
 
 
   useEffect(() => {
