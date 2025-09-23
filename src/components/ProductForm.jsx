@@ -168,7 +168,7 @@ useEffect(() => {
     if (!match) return;
 
     const basePrice = match.price ?? match.price_per_unit ?? 0;
-  const converted = convertPrice(basePrice, match.unit, ing.unit);
+  const converted = convertPrice(basePrice, normalizeUnit(match.unit), normalizeUnit(ing.unit));
     if (converted !== null) {
       total += parseFloat(ing.quantity) * converted;
     }
@@ -482,90 +482,105 @@ const recalcEstimatedCost = (ingredients) => {
 <div className="bg-gray-50 dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
   <h3 className="font-bold mb-3">{t("Ingredients")}</h3>
   <div className="space-y-2">
-    {product.ingredients.map((ing, i) => {
-      // calculate per-ingredient cost
-      let cost = null;
-      if (ing.ingredient && ing.quantity && ing.unit) {
-        const match = availableIngredients.find(ai => ai.name === ing.ingredient);
-        if (match) {
-          const basePrice = match.price_per_unit ?? match.price ?? 0;
-          const converted = convertPrice(basePrice, match.unit, ing.unit);
-          if (converted !== null) {
-            cost = parseFloat(ing.quantity) * converted;
-          }
-        }
-      }
+{product.ingredients.map((ing, i) => {
+  let cost = null;
+  if (ing.ingredient && ing.quantity && ing.unit) {
+    const match = availableIngredients.find(
+      ai =>
+        ai.name.toLowerCase().trim() ===
+        ing.ingredient.toLowerCase().trim()
+    );
+    if (match) {
+      // ✅ Use correct field from backend
+      const basePrice = match.price_per_unit ?? match.price ?? 0;
 
-      return (
-        <div key={i} className="flex flex-wrap gap-2 items-center w-full">
-          {/* Ingredient Dropdown */}
-          <select
-            name="ingredient"
-            value={ing.ingredient}
-            onChange={e => {
-              handleIngredientChange(i, e);
-              const match = availableIngredients.find(ai => ai.name === e.target.value);
-              if (match) {
-                const list = [...product.ingredients];
-                list[i].unit = match.unit;
-                setProduct(prev => ({ ...prev, ingredients: list }));
-              }
-            }}
-            className="p-2 rounded-xl border flex-1 min-w-[120px]"
-          >
-            <option value="">{t("Select Ingredient")}</option>
-            {availableIngredients.map((item, idx) => (
-              <option key={idx} value={item.name}>
-                {item.name} ({item.unit})
-              </option>
-            ))}
-          </select>
-
-          {/* Quantity */}
-          <input
-            type="text"
-            name="quantity"
-            placeholder={t("Qty")}
-            value={ing.quantity}
-            onChange={e => handleIngredientChange(i, e)}
-            className="p-2 rounded-xl border w-20 min-w-[60px]"
-          />
-
-          {/* Unit */}
-          <select
-            name="unit"
-            value={ing.unit || ""}
-            onChange={e => handleIngredientChange(i, e)}
-            className="p-2 rounded-xl border w-24 min-w-[70px]"
-          >
-            <option value="">{t("Select Unit")}</option>
-            <option value="kg">kg</option>
-            <option value="g">g</option>
-            <option value="pieces">pieces</option>
-            <option value="portion">portion</option>
-            <option value="ml">ml</option>
-            <option value="l">l</option>
-          </select>
-
-          {/* ✅ Show individual cost */}
-          {cost !== null && (
-            <span className="ml-2 text-sm font-bold text-rose-600">
-              ₺{cost.toFixed(2)}
-            </span>
-          )}
-
-          {/* Remove button */}
-          <button
-            type="button"
-            onClick={() => removeIngredient(i)}
-            className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-xl"
-            title={t("Remove")}
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
+      // ✅ Normalize units before conversion
+      const converted = convertPrice(
+        basePrice,
+        normalizeUnit(match.unit),
+        normalizeUnit(ing.unit)
       );
-    })}
+
+      if (converted !== null) {
+        cost = parseFloat(ing.quantity) * converted;
+      }
+    }
+  }
+
+  return (
+    <div key={i} className="flex flex-wrap gap-2 items-center w-full">
+      {/* Ingredient dropdown */}
+      <select
+        name="ingredient"
+        value={ing.ingredient}
+        onChange={e => {
+          handleIngredientChange(i, e);
+          const match = availableIngredients.find(
+            ai =>
+              ai.name.toLowerCase().trim() ===
+              e.target.value.toLowerCase().trim()
+          );
+          if (match) {
+            const list = [...product.ingredients];
+            list[i].unit = match.unit;
+            setProduct(prev => ({ ...prev, ingredients: list }));
+          }
+        }}
+        className="p-2 rounded-xl border flex-1 min-w-[120px]"
+      >
+        <option value="">{t("Select Ingredient")}</option>
+        {availableIngredients.map((item, idx) => (
+          <option key={idx} value={item.name}>
+            {item.name} ({item.unit})
+          </option>
+        ))}
+      </select>
+
+      {/* Quantity */}
+      <input
+        type="text"
+        name="quantity"
+        placeholder={t("Qty")}
+        value={ing.quantity}
+        onChange={e => handleIngredientChange(i, e)}
+        className="p-2 rounded-xl border w-20 min-w-[60px]"
+      />
+
+      {/* Unit */}
+      <select
+        name="unit"
+        value={ing.unit || ""}
+        onChange={e => handleIngredientChange(i, e)}
+        className="p-2 rounded-xl border w-24 min-w-[70px]"
+      >
+        <option value="">{t("Select Unit")}</option>
+        <option value="kg">kg</option>
+        <option value="g">g</option>
+        <option value="pieces">pieces</option>
+        <option value="portion">portion</option>
+        <option value="ml">ml</option>
+        <option value="l">l</option>
+      </select>
+
+      {/* ✅ Show per-ingredient cost */}
+      {cost !== null && (
+        <span className="ml-2 text-sm font-bold text-rose-600">
+          ₺{cost.toFixed(2)}
+        </span>
+      )}
+
+      {/* Remove button */}
+      <button
+        type="button"
+        onClick={() => removeIngredient(i)}
+        className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-xl"
+        title={t("Remove")}
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+})}
 
     <button
       type="button"
