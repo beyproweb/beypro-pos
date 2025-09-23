@@ -137,10 +137,11 @@ export default function ProductForm({ onSuccess, initialData = null }) {
   }, [product.category]);
 
   // cost calc
+// cost calc
 useEffect(() => {
   let total = 0;
 
-  ingredients.forEach(ing => {
+  (product.ingredients || []).forEach((ing) => {
     if (!ing.ingredient || !ing.quantity || !ing.unit) return;
 
     // find latest supplier price for this ingredient
@@ -154,7 +155,8 @@ useEffect(() => {
   });
 
   setEstimatedCost(total);
-}, [ingredients, availableIngredients]);
+}, [product.ingredients, availableIngredients]);
+
 
 
   // hydrate initial data
