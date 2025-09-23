@@ -227,12 +227,34 @@ useEffect(() => {
       ingredients: [...prev.ingredients, { ingredient: "", quantity: "", unit: "" }],
     }));
 
-  const handleIngredientChange = (index, e) => {
-    const { name, value } = e.target;
-    const list = [...product.ingredients];
-    list[index][name] = value;
-    setProduct(prev => ({ ...prev, ingredients: list }));
-  };
+const handleIngredientChange = (index, e) => {
+  const { name, value } = e.target;
+  const list = [...product.ingredients];
+  list[index][name] = value;
+
+  setProduct(prev => ({ ...prev, ingredients: list }));
+
+  // 🧮 trigger cost update right after ingredient/unit/qty change
+  if (name === "ingredient" || name === "unit" || name === "quantity") {
+    recalcEstimatedCost(list);
+  }
+};
+
+// helper
+const recalcEstimatedCost = (ingredients) => {
+  let total = 0;
+  (ingredients || []).forEach(ing => {
+    if (!ing.ingredient || !ing.quantity || !ing.unit) return;
+    const match = availableIngredients.find(ai => ai.name === ing.ingredient);
+    if (!match) return;
+    const converted = convertPrice(match.price, match.unit, ing.unit);
+    if (converted !== null) {
+      total += parseFloat(ing.quantity) * converted;
+    }
+  });
+  setEstimatedCost(total);
+};
+
 
   const removeIngredient = (index) =>
     setProduct(prev => ({
