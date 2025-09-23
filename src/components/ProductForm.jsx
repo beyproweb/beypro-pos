@@ -8,20 +8,27 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-function convertPrice(pricePerUnit, supplierUnit, targetUnit) {
-  if (supplierUnit === targetUnit) return pricePerUnit;
 
-  // weight
-  if (supplierUnit === "kg" && targetUnit === "g") return pricePerUnit / 1000;
-  if (supplierUnit === "g" && targetUnit === "kg") return pricePerUnit * 1000;
+// --- Unit conversion helper (mirror backend) ---
+const convertPrice = (basePrice, supplierUnit, targetUnit) => {
+  if (!basePrice || !supplierUnit || !targetUnit) return null;
 
-  // volume
-  if (supplierUnit === "l" && targetUnit === "ml") return pricePerUnit / 1000;
-  if (supplierUnit === "ml" && targetUnit === "l") return pricePerUnit * 1000;
+  supplierUnit = supplierUnit.toLowerCase();
+  targetUnit = targetUnit.toLowerCase();
 
-  // pieces / portion → no standard conversion
+  if (supplierUnit === targetUnit) return basePrice;
+
+  if (supplierUnit === "kg" && targetUnit === "g") return basePrice / 1000;
+  if (supplierUnit === "g" && targetUnit === "kg") return basePrice * 1000;
+
+  if (supplierUnit === "l" && targetUnit === "ml") return basePrice / 1000;
+  if (supplierUnit === "ml" && targetUnit === "l") return basePrice * 1000;
+
+  if (supplierUnit === "piece" && targetUnit === "portion") return basePrice;
+  if (supplierUnit === "portion" && targetUnit === "piece") return basePrice;
+
   return null;
-}
+};
 
 export default function ProductForm({ onSuccess, initialData = null }) {
   const { t } = useTranslation();
@@ -45,6 +52,7 @@ export default function ProductForm({ onSuccess, initialData = null }) {
     // IMPORTANT: store group IDs here
     selectedExtrasGroup: [],
   });
+  const [estimatedCost, setEstimatedCost] = useState(0);
 
   const [ingredientPrices, setIngredientPrices] = useState([]);
   const [calculatedCost, setCalculatedCost] = useState(0);
@@ -129,22 +137,25 @@ export default function ProductForm({ onSuccess, initialData = null }) {
   }, [product.category]);
 
   // cost calc
-  useEffect(() => {
-    let total = 0;
-product.ingredients.forEach(ing => {
-   if (!ing.ingredient || !ing.quantity || !ing.unit) return;
-   const found = ingredientPrices.find(
-     i => i.name === ing.ingredient && i.unit === ing.unit
-   );
-   if (found) {
-     total += parseFloat(ing.quantity) * parseFloat(found.price_per_unit);
-   }
- });
-    product.extras.forEach(ex => {
-      if (ex.extraPrice) total += parseFloat(ex.extraPrice);
-    });
-    setCalculatedCost(total);
-  }, [product.ingredients, product.extras, ingredientPrices]);
+useEffect(() => {
+  let total = 0;
+
+  ingredients.forEach(ing => {
+    if (!ing.ingredient || !ing.quantity || !ing.unit) return;
+
+    // find latest supplier price for this ingredient
+    const match = availableIngredients.find(ai => ai.name === ing.ingredient);
+    if (!match) return;
+
+    const converted = convertPrice(match.price, match.unit, ing.unit);
+    if (converted !== null) {
+      total += parseFloat(ing.quantity) * converted;
+    }
+  });
+
+  setEstimatedCost(total);
+}, [ingredients, availableIngredients]);
+
 
   // hydrate initial data
   useEffect(() => {
@@ -343,9 +354,10 @@ product.ingredients.forEach(ing => {
           <label className="font-semibold">{t("Price (₺)")}</label>
           <input type="number" name="price" value={product.price} onChange={handleChange}
                  className="w-full p-3 rounded-xl border mt-1 mb-2" required />
-          <div className="text-xs text-gray-500 mb-3">
-            💰 {t("Estimated Cost")}: <span className="font-bold">₺{calculatedCost.toFixed(2)}</span>
-          </div>
+          <div className="mt-4 text-sm font-bold text-gray-600">
+  Estimated Cost: <span className="text-rose-600">₺{estimatedCost.toFixed(2)}</span>
+</div>
+
 
           <label className="font-semibold">{t("Promotion Start Date")}</label>
           <input type="date" name="promo_start" value={product.promo_start} onChange={handleChange}
