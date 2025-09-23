@@ -8,32 +8,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-
-function convertPrice(basePrice, supplierUnit, targetUnit) {
-  if (!basePrice || !supplierUnit || !targetUnit) return null;
-  supplierUnit = supplierUnit.toLowerCase();
-  targetUnit = targetUnit.toLowerCase();
-
-  if (supplierUnit === targetUnit) return basePrice;
-
-  if (supplierUnit === "kg" && targetUnit === "g") return basePrice / 1000;
-  if (supplierUnit === "g" && targetUnit === "kg") return basePrice * 1000;
-
-  if (supplierUnit === "l" && targetUnit === "ml") return basePrice / 1000;
-  if (supplierUnit === "ml" && targetUnit === "l") return basePrice * 1000;
-
-  if ((supplierUnit === "piece" || supplierUnit === "pieces") &&
-      (targetUnit === "piece" || targetUnit === "pieces")) return basePrice;
-
-  if ((supplierUnit === "portion" || supplierUnit === "portions") &&
-      (targetUnit === "portion" || targetUnit === "portions")) return basePrice;
-
-  return null;
-}
-
-export default function ProductForm({ onSuccess, initialData = null }) {
-  const { t } = useTranslation();
-  const normalizeUnit = (u) => {
+const normalizeUnit = (u) => {
   if (!u) return "";
   u = u.toLowerCase();
   if (u === "pieces") return "piece";
@@ -56,6 +31,10 @@ const convertPrice = (basePrice, supplierUnit, targetUnit) => {
 
   return null;
 };
+
+
+export default function ProductForm({ onSuccess, initialData = null }) {
+  const { t } = useTranslation();
 
   const [product, setProduct] = useState({
     name: "",
