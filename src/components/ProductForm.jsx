@@ -647,7 +647,7 @@ const recalcEstimatedCost = (ingredients) => {
       {/* Description / Discount */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
         <div>
-          <label className="font-semibold">/label>
+          <label className="font-semibold">{t("Description")}</label>
           <textarea name="description" value={product.description} onChange={handleChange}
                     className="w-full p-3 rounded-xl border mb-4" rows={3} />
           <label className="font-semibold">{t("Tags (comma separated)")}</label>
