@@ -378,7 +378,6 @@ return (
 )}
 
 
-      {/* EXTRAS GROUP MODAL (keep as is, style optional) */}
 {/* EXTRAS GROUP MODAL (keep as is, style optional) */}
 <Modal
   isOpen={showGroupModal}
