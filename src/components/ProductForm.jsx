@@ -399,6 +399,7 @@ return (
         <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 space-y-4">
           <h3 className="text-lg font-semibold">{t("Basic Information")}</h3>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Name */}
             <label className="block">
               <span className="font-medium">{t("Name")}</span>
               <input
@@ -411,17 +412,78 @@ return (
               />
             </label>
 
-            <label className="block">
-              <span className="font-medium">{t("Category")}</span>
-              <input
-                type="text"
-                name="category"
-                value={product.category}
-                onChange={handleChange}
-                className="w-full p-3 mt-1 rounded-xl border"
-              />
-            </label>
+            {/* Category */}
+            <div>
+              <label className="block">
+                <span className="font-medium">{t("Category")}</span>
+                <input
+                  type="text"
+                  name="category"
+                  value={product.category}
+                  onChange={handleChange}
+                  className="w-full p-3 mt-1 rounded-xl border"
+                />
+              </label>
 
+              {/* Category image upload */}
+              <label className="block mt-3">
+                <span className="font-medium">{t("Category Image")}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files[0];
+                    if (!file || !product.category) {
+                      toast.error(t("Category required first!"));
+                      return;
+                    }
+                    const fd = new FormData();
+                    fd.append("image", file);
+                    fd.append("category", product.category.trim().toLowerCase());
+
+                    try {
+                      const res = await fetch(`${API_URL}/api/category-images`, {
+                        method: "POST",
+                        body: fd,
+                      });
+                      if (!res.ok) {
+                        toast.error("Upload failed");
+                        return;
+                      }
+                      toast.success("Category image uploaded!");
+                      const cat = product.category.trim().toLowerCase();
+                      const resp = await fetch(
+                        `${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`
+                      );
+                      const data = await resp.json();
+                      if (data.length > 0 && data[0].image) {
+                        const img = data[0].image;
+                        setCategoryImagePreview(
+                          img.startsWith("http") ? img : `${API_URL}/uploads/${img}`
+                        );
+                      }
+                    } catch (err) {
+                      console.error("Category upload failed:", err);
+                      toast.error("Category upload failed!");
+                    }
+                  }}
+                  className="w-full mt-1"
+                />
+              </label>
+
+              {categoryImagePreview && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img
+                    src={categoryImagePreview}
+                    alt="Category"
+                    className="w-16 h-16 rounded-lg object-cover border shadow"
+                  />
+                  <span className="text-sm text-gray-500">{t("Category Preview")}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Price */}
             <label className="block">
               <span className="font-medium">{t("Price (₺)")}</span>
               <input
@@ -434,6 +496,7 @@ return (
               />
             </label>
 
+            {/* Prep Time */}
             <label className="block">
               <span className="font-medium">{t("Preparation Time (min)")}</span>
               <input
@@ -451,7 +514,7 @@ return (
             {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
           </p>
 
-          {/* Promotion + visibility */}
+          {/* Promotion + visible */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <label className="block">
               <span className="font-medium">{t("Promotion Start Date")}</span>
@@ -486,7 +549,7 @@ return (
             />
             <span>{t("Visible on Website")}</span>
           </div>
-
+        </section>
           {/* Category + Product Image */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {categoryImagePreview && (
@@ -784,7 +847,7 @@ return (
           </div>
         </section>
 
-        {/* PREVIEW (on mobile & laptop as collapsible) */}
+        {/* Mobile/Laptop Preview */}
         <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 xl:hidden">
           <details>
             <summary className="cursor-pointer text-lg font-semibold">
@@ -812,18 +875,13 @@ return (
                 <p className="text-xs text-rose-600 font-semibold">
                   {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
                 </p>
-                {product.description && (
-                  <p className="text-xs text-gray-500 line-clamp-3">
-                    {product.description}
-                  </p>
-                )}
               </div>
             </div>
           </details>
         </section>
       </div>
 
-      {/* RIGHT PREVIEW (only on XL desktop) */}
+      {/* RIGHT PREVIEW on XL screens */}
       <aside className="hidden xl:block w-80">
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 sticky top-4">
           <h3 className="text-lg font-semibold mb-4">{t("Live Preview")}</h3>
@@ -849,19 +907,14 @@ return (
               <p className="text-xs text-rose-600 font-semibold">
                 {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
               </p>
-              {product.description && (
-                <p className="text-xs text-gray-500 line-clamp-3">
-                  {product.description}
-                </p>
-              )}
             </div>
           </div>
         </div>
       </aside>
     </div>
 
-    {/* ACTIONS */}
-    <div className="flex flex-col sm:flex-row gap-3 justify-end pt-4 border-t">
+    {/* Sticky Actions */}
+    <div className="sticky bottom-0 bg-white dark:bg-gray-900 py-4 border-t flex flex-col sm:flex-row gap-3 justify-end">
       <button
         type="submit"
         className="flex-1 sm:flex-none bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-xl shadow"
@@ -873,14 +926,11 @@ return (
           type="button"
           className="flex-1 sm:flex-none bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-3 rounded-xl shadow"
           onClick={async () => {
-            if (
-              window.confirm(t("Are you sure you want to delete this product?"))
-            ) {
+            if (window.confirm(t("Are you sure you want to delete this product?"))) {
               try {
-                const res = await fetch(
-                  `${API_URL}/api/products/${initialData.id}`,
-                  { method: "DELETE" }
-                );
+                const res = await fetch(`${API_URL}/api/products/${initialData.id}`, {
+                  method: "DELETE",
+                });
                 if (!res.ok) throw new Error("Failed to delete product");
                 onSuccess && onSuccess();
               } catch {
