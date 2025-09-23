@@ -484,17 +484,18 @@ const recalcEstimatedCost = (ingredients) => {
   <div className="space-y-2">
 {product.ingredients.map((ing, i) => {
   let cost = null;
+
   if (ing.ingredient && ing.quantity && ing.unit) {
-    const match = availableIngredients.find(
+    // ✅ use ingredientPrices (fetched from INGREDIENT_PRICES_API)
+    const match = ingredientPrices.find(
       ai =>
         ai.name.toLowerCase().trim() ===
         ing.ingredient.toLowerCase().trim()
     );
-    if (match) {
-      // ✅ Use correct field from backend
-      const basePrice = match.price_per_unit ?? match.price ?? 0;
 
-      // ✅ Normalize units before conversion
+    if (match) {
+      const basePrice = match.price_per_unit ?? 0;
+
       const converted = convertPrice(
         basePrice,
         normalizeUnit(match.unit),
@@ -515,7 +516,7 @@ const recalcEstimatedCost = (ingredients) => {
         value={ing.ingredient}
         onChange={e => {
           handleIngredientChange(i, e);
-          const match = availableIngredients.find(
+          const match = ingredientPrices.find(
             ai =>
               ai.name.toLowerCase().trim() ===
               e.target.value.toLowerCase().trim()
@@ -529,7 +530,7 @@ const recalcEstimatedCost = (ingredients) => {
         className="p-2 rounded-xl border flex-1 min-w-[120px]"
       >
         <option value="">{t("Select Ingredient")}</option>
-        {availableIngredients.map((item, idx) => (
+        {ingredientPrices.map((item, idx) => (
           <option key={idx} value={item.name}>
             {item.name} ({item.unit})
           </option>
@@ -581,6 +582,7 @@ const recalcEstimatedCost = (ingredients) => {
     </div>
   );
 })}
+
 
     <button
       type="button"
