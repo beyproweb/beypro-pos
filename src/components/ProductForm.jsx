@@ -397,7 +397,7 @@ const recalcEstimatedCost = (ingredients) => {
                  className="w-full p-3 rounded-xl border mt-1 mb-2" required />
 <div className="my-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 shadow text-center">
   <span className="text-lg font-extrabold text-gray-800">
-    {t("Product cost")}:
+    {t("Product cost per unit")}:
   </span>
   <span className="ml-2 text-2xl font-extrabold text-rose-700">
     ₺{estimatedCost.toFixed(2)}
