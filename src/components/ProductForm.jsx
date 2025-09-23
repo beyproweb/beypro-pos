@@ -24,8 +24,8 @@ const convertPrice = (basePrice, supplierUnit, targetUnit) => {
   if (supplierUnit === "l" && targetUnit === "ml") return basePrice / 1000;
   if (supplierUnit === "ml" && targetUnit === "l") return basePrice * 1000;
 
-  if (supplierUnit === "piece" && targetUnit === "portion") return basePrice;
-  if (supplierUnit === "portion" && targetUnit === "piece") return basePrice;
+  if (supplierUnit === "pieces" && targetUnit === "portion") return basePrice;
+  if (supplierUnit === "portion" && targetUnit === "pieces") return basePrice;
 
   return null;
 };
@@ -136,7 +136,7 @@ export default function ProductForm({ onSuccess, initialData = null }) {
       .catch(() => setCategoryImagePreview(null));
   }, [product.category]);
 
-  // cost calc
+
 // cost calc
 useEffect(() => {
   let total = 0;
@@ -156,8 +156,6 @@ useEffect(() => {
 
   setEstimatedCost(total);
 }, [product.ingredients, availableIngredients]);
-
-
 
   // hydrate initial data
   useEffect(() => {
