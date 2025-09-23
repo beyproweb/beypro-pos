@@ -383,22 +383,22 @@ const recalcEstimatedCost = (ingredients) => {
 return (
   <form
     onSubmit={handleSubmit}
-    className="max-w-6xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8 lg:grid lg:grid-cols-3 lg:gap-8"
+    className="w-full max-w-4xl mx-auto p-4 sm:p-6 space-y-6"
     autoComplete="off"
   >
-    {/* MAIN FORM (2/3) */}
-    <div className="lg:col-span-2 space-y-8">
-      <h2 className="text-2xl font-bold text-indigo-700">
-        {initialData ? t("Edit Product") : t("Add Product")}
-      </h2>
+    {/* Header */}
+    <h2 className="text-2xl font-bold text-indigo-700">
+      {initialData ? t("Edit Product") : t("Add Product")}
+    </h2>
 
-      {/* BASIC INFO */}
-      <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-4 sm:p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
-          {t("Basic Information")}
-        </h3>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="space-y-4">
+    {/* MAIN LAYOUT */}
+    <div className="flex flex-col xl:flex-row gap-6">
+      {/* LEFT: FORM */}
+      <div className="flex-1 space-y-6">
+        {/* Basic Info */}
+        <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 space-y-4">
+          <h3 className="text-lg font-semibold">{t("Basic Information")}</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <label className="block">
               <span className="font-medium">{t("Name")}</span>
               <input
@@ -408,6 +408,17 @@ return (
                 onChange={handleChange}
                 className="w-full p-3 mt-1 rounded-xl border"
                 required
+              />
+            </label>
+
+            <label className="block">
+              <span className="font-medium">{t("Category")}</span>
+              <input
+                type="text"
+                name="category"
+                value={product.category}
+                onChange={handleChange}
+                className="w-full p-3 mt-1 rounded-xl border"
               />
             </label>
 
@@ -423,70 +434,31 @@ return (
               />
             </label>
 
-            {/* Cost Box (smaller) */}
-            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 shadow text-center">
-              <span className="block text-xs text-gray-600">
-                {t("Product cost per unit")}
-              </span>
-              <span className="text-lg font-bold text-rose-700">
-                ₺{estimatedCost.toFixed(2)}
-              </span>
-            </div>
-
-            <label className="block">
-              <span className="font-medium">{t("Promotion Start Date")}</span>
-              <input
-                type="date"
-                name="promo_start"
-                value={product.promo_start}
-                onChange={handleChange}
-                className="w-full p-3 mt-1 rounded-xl border"
-              />
-            </label>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="visible"
-                checked={product.visible}
-                onChange={handleChange}
-                className="w-5 h-5 rounded"
-              />
-              <span>{t("Visible on Website")}</span>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <label className="block">
-              <span className="font-medium">{t("Category")}</span>
-              <input
-                type="text"
-                name="category"
-                value={product.category}
-                onChange={handleChange}
-                className="w-full p-3 mt-1 rounded-xl border"
-              />
-            </label>
-
-            {categoryImagePreview && (
-              <div className="flex items-center gap-3">
-                <img
-                  src={categoryImagePreview}
-                  alt="Category"
-                  className="w-16 h-16 rounded-lg object-cover border shadow"
-                />
-                <span className="text-sm text-gray-500">
-                  {t("Category Preview")}
-                </span>
-              </div>
-            )}
-
             <label className="block">
               <span className="font-medium">{t("Preparation Time (min)")}</span>
               <input
                 type="number"
                 name="preparation_time"
                 value={product.preparation_time}
+                onChange={handleChange}
+                className="w-full p-3 mt-1 rounded-xl border"
+              />
+            </label>
+          </div>
+
+          {/* Cost per unit small */}
+          <p className="text-sm text-rose-600 font-semibold">
+            {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
+          </p>
+
+          {/* Promotion + visibility */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <label className="block">
+              <span className="font-medium">{t("Promotion Start Date")}</span>
+              <input
+                type="date"
+                name="promo_start"
+                value={product.promo_start}
                 onChange={handleChange}
                 className="w-full p-3 mt-1 rounded-xl border"
               />
@@ -502,10 +474,37 @@ return (
                 className="w-full p-3 mt-1 rounded-xl border"
               />
             </label>
+          </div>
 
-            <label className="block">
-              <span className="font-medium">{t("Product Image")}</span>
-              <input type="file" accept="image/*" onChange={handleImageChange} />
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              name="visible"
+              checked={product.visible}
+              onChange={handleChange}
+              className="w-5 h-5 rounded"
+            />
+            <span>{t("Visible on Website")}</span>
+          </div>
+
+          {/* Category + Product Image */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {categoryImagePreview && (
+              <div className="flex items-center gap-3">
+                <img
+                  src={categoryImagePreview}
+                  alt="Category"
+                  className="w-16 h-16 rounded-lg object-cover border shadow"
+                />
+                <span className="text-sm text-gray-500">{t("Category Preview")}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block">
+                <span className="font-medium">{t("Product Image")}</span>
+                <input type="file" accept="image/*" onChange={handleImageChange} />
+              </label>
               {getImageSource() && (
                 <img
                   src={getImageSource()}
@@ -513,17 +512,14 @@ return (
                   className="mt-2 w-24 h-24 rounded-xl object-cover border"
                 />
               )}
-            </label>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* INGREDIENTS & EXTRAS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Ingredients */}
-        <section className="bg-white dark:bg-gray-900 rounded-2xl shadow">
-          <details className="p-4 sm:p-6" open>
-            <summary className="cursor-pointer text-lg font-semibold mb-4">
+        <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5">
+          <details open>
+            <summary className="cursor-pointer text-lg font-semibold mb-3">
               {t("Ingredients")}
             </summary>
             <div className="space-y-3">
@@ -620,9 +616,9 @@ return (
         </section>
 
         {/* Extras */}
-        <section className="bg-white dark:bg-gray-900 rounded-2xl shadow">
-          <details className="p-4 sm:p-6" open>
-            <summary className="cursor-pointer text-lg font-semibold mb-4">
+        <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5">
+          <details open>
+            <summary className="cursor-pointer text-lg font-semibold mb-3">
               {t("Extras")}
             </summary>
             <label className="block font-semibold mb-2">
@@ -713,19 +709,16 @@ return (
               <ul className="list-disc list-inside text-sm space-y-1">
                 {product.extras.map((ex, idx) => (
                   <li key={idx}>
-                    {ex.name} — ₺
-                    {parseFloat(ex.extraPrice || 0).toFixed(2)}
+                    {ex.name} — ₺{parseFloat(ex.extraPrice || 0).toFixed(2)}
                   </li>
                 ))}
               </ul>
             )}
           </details>
         </section>
-      </div>
 
-      {/* DESCRIPTION / DISCOUNTS */}
-      <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-4">
+        {/* Description + Discounts */}
+        <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 space-y-4">
           <label className="block">
             <span className="font-medium">{t("Descriptions")}</span>
             <textarea
@@ -756,91 +749,133 @@ return (
               className="w-full p-3 mt-1 rounded-xl border"
             />
           </label>
-        </div>
 
-        <div>
-          <h4 className="font-semibold mb-3">{t("Discounts")}</h4>
-          <div className="flex flex-col gap-2">
-            {["none", "percentage", "fixed"].map((type) => (
-              <label key={type} className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="discount_type"
-                  value={type}
-                  checked={product.discount_type === type}
-                  onChange={handleChange}
-                />
-                {t(
-                  type === "none"
-                    ? "None"
-                    : type === "percentage"
-                    ? "Percentage"
-                    : "Fixed Price"
-                )}
-              </label>
-            ))}
-          </div>
-          {product.discount_type !== "none" && (
-            <input
-              type="number"
-              name="discount_value"
-              value={product.discount_value}
-              onChange={handleChange}
-              className="mt-3 w-40 p-2 border rounded-xl"
-            />
-          )}
-        </div>
-      </section>
-    </div>
-
-    {/* SIDEBAR PREVIEW (1/3) */}
-    <aside className="lg:col-span-1 space-y-6">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow p-4 sm:p-6 sticky top-4">
-        <h3 className="text-lg font-semibold mb-4">{t("Live Preview")}</h3>
-        <div className="border rounded-xl overflow-hidden shadow-sm">
-          {getImageSource() ? (
-            <img
-              src={getImageSource()}
-              alt="Preview"
-              className="w-full h-40 object-cover"
-            />
-          ) : (
-            <div className="w-full h-40 flex items-center justify-center text-gray-400 bg-gray-50">
-              {t("No Image")}
+          <div>
+            <h4 className="font-semibold mb-3">{t("Discounts")}</h4>
+            <div className="flex flex-col gap-2">
+              {["none", "percentage", "fixed"].map((type) => (
+                <label key={type} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="discount_type"
+                    value={type}
+                    checked={product.discount_type === type}
+                    onChange={handleChange}
+                  />
+                  {t(
+                    type === "none"
+                      ? "None"
+                      : type === "percentage"
+                      ? "Percentage"
+                      : "Fixed Price"
+                  )}
+                </label>
+              ))}
             </div>
-          )}
-          <div className="p-4 space-y-1">
-            <h4 className="text-lg font-bold">{product.name || t("Untitled")}</h4>
-            <p className="text-gray-600">
-              ₺{product.price ? Number(product.price).toFixed(2) : "0.00"}
-            </p>
-            <p className="text-sm text-rose-600 font-semibold">
-              {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
-            </p>
-            {product.description && (
-              <p className="text-sm text-gray-500 line-clamp-3">
-                {product.description}
-              </p>
+            {product.discount_type !== "none" && (
+              <input
+                type="number"
+                name="discount_value"
+                value={product.discount_value}
+                onChange={handleChange}
+                className="mt-3 w-40 p-2 border rounded-xl"
+              />
             )}
           </div>
-        </div>
-      </div>
-    </aside>
+        </section>
 
-    {/* Actions */}
-    <div className="sticky bottom-0 bg-white dark:bg-gray-900 py-4 border-t flex flex-wrap gap-4 justify-end lg:col-span-3">
+        {/* PREVIEW (on mobile & laptop as collapsible) */}
+        <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 xl:hidden">
+          <details>
+            <summary className="cursor-pointer text-lg font-semibold">
+              {t("Live Preview")}
+            </summary>
+            <div className="mt-3 border rounded-xl overflow-hidden">
+              {getImageSource() ? (
+                <img
+                  src={getImageSource()}
+                  alt="Preview"
+                  className="w-full h-40 object-cover"
+                />
+              ) : (
+                <div className="w-full h-40 flex items-center justify-center text-gray-400 bg-gray-50">
+                  {t("No Image")}
+                </div>
+              )}
+              <div className="p-4 space-y-1">
+                <h4 className="text-base font-bold">
+                  {product.name || t("Untitled")}
+                </h4>
+                <p className="text-gray-600 text-sm">
+                  ₺{product.price ? Number(product.price).toFixed(2) : "0.00"}
+                </p>
+                <p className="text-xs text-rose-600 font-semibold">
+                  {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
+                </p>
+                {product.description && (
+                  <p className="text-xs text-gray-500 line-clamp-3">
+                    {product.description}
+                  </p>
+                )}
+              </div>
+            </div>
+          </details>
+        </section>
+      </div>
+
+      {/* RIGHT PREVIEW (only on XL desktop) */}
+      <aside className="hidden xl:block w-80">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 sticky top-4">
+          <h3 className="text-lg font-semibold mb-4">{t("Live Preview")}</h3>
+          <div className="border rounded-xl overflow-hidden">
+            {getImageSource() ? (
+              <img
+                src={getImageSource()}
+                alt="Preview"
+                className="w-full h-40 object-cover"
+              />
+            ) : (
+              <div className="w-full h-40 flex items-center justify-center text-gray-400 bg-gray-50">
+                {t("No Image")}
+              </div>
+            )}
+            <div className="p-4 space-y-1">
+              <h4 className="text-base font-bold">
+                {product.name || t("Untitled")}
+              </h4>
+              <p className="text-gray-600 text-sm">
+                ₺{product.price ? Number(product.price).toFixed(2) : "0.00"}
+              </p>
+              <p className="text-xs text-rose-600 font-semibold">
+                {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
+              </p>
+              {product.description && (
+                <p className="text-xs text-gray-500 line-clamp-3">
+                  {product.description}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    {/* ACTIONS */}
+    <div className="flex flex-col sm:flex-row gap-3 justify-end pt-4 border-t">
       <button
         type="submit"
-        className="bg-gradient-to-r from-green-500 to-teal-500 hover:brightness-110 text-white font-bold px-8 py-3 rounded-2xl shadow-lg hover:scale-[1.04] transition"
+        className="flex-1 sm:flex-none bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-xl shadow"
       >
         {t("Save Product")}
       </button>
       {initialData?.id && (
         <button
           type="button"
-          className="bg-red-600 hover:bg-red-700 text-white font-bold px-8 py-3 rounded-2xl shadow-lg hover:scale-[1.03] transition"
+          className="flex-1 sm:flex-none bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-3 rounded-xl shadow"
           onClick={async () => {
-            if (window.confirm(t("Are you sure you want to delete this product?"))) {
+            if (
+              window.confirm(t("Are you sure you want to delete this product?"))
+            ) {
               try {
                 const res = await fetch(
                   `${API_URL}/api/products/${initialData.id}`,
