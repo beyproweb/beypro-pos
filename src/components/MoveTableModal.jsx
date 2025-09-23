@@ -9,7 +9,7 @@ export default function MoveTableModal({ open, onClose, onConfirm, currentTable,
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch("${API_URL}/api/orders")
+    fetch(`${API_URL}/api/orders`)
       .then(res => res.json())
       .then(data => {
         // Mark all tables 1-20, with info on whether occupied
