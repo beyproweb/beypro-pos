@@ -379,6 +379,7 @@ return (
 
 
       {/* EXTRAS GROUP MODAL (keep as is, style optional) */}
+{/* EXTRAS GROUP MODAL (keep as is, style optional) */}
 <Modal
   isOpen={showGroupModal}
   onRequestClose={() => setShowGroupModal(false)}
@@ -413,7 +414,7 @@ return (
                 const updated = [...extrasGroups];
                 updated[groupIdx].items[itemIdx].name = e.target.value;
 
-                // ✅ Auto-fill unit if match is found
+                // ✅ Auto-fill unit if match found
                 const match = availableIngredients.find(ai => ai.name === e.target.value);
                 if (match) {
                   updated[groupIdx].items[itemIdx].unit = match.unit;
@@ -444,11 +445,11 @@ return (
               className="w-20 p-2 border rounded-xl"
             />
 
-            {/* Amount */}
+            {/* Amount (free text, no increment arrows) */}
             <input
-              type="number"
+              type="text"
               placeholder={t("Amount")}
-              value={item.amount || 1}
+              value={item.amount || ""}
               onChange={(e) => {
                 const updated = [...extrasGroups];
                 updated[groupIdx].items[itemIdx].amount = e.target.value;
@@ -457,18 +458,24 @@ return (
               className="w-20 p-2 border rounded-xl"
             />
 
-            {/* Unit */}
-            <input
-              type="text"
-              placeholder={t("Unit")}
+            {/* Unit (dropdown only) */}
+            <select
               value={item.unit || ""}
               onChange={(e) => {
                 const updated = [...extrasGroups];
                 updated[groupIdx].items[itemIdx].unit = e.target.value;
                 setExtrasGroups(updated);
               }}
-              className="w-20 p-2 border rounded-xl"
-            />
+              className="w-24 p-2 border rounded-xl"
+            >
+              <option value="">{t("Select Unit")}</option>
+              <option value="kg">kg</option>
+              <option value="g">g</option>
+              <option value="piece">piece</option>
+              <option value="portion">portion</option>
+              <option value="ml">ml</option>
+              <option value="l">l</option>
+            </select>
 
             {/* Delete button */}
             <button
@@ -502,7 +509,7 @@ return (
             if (!Array.isArray(updated[groupIdx].items)) {
               updated[groupIdx].items = [];
             }
-            updated[groupIdx].items.push({ name: "", price: "", amount: 1, unit: "" });
+            updated[groupIdx].items.push({ name: "", price: "", amount: "", unit: "" });
             setExtrasGroups(updated);
           }}
           className="text-sm text-blue-600"
@@ -539,67 +546,64 @@ return (
       onClick={() => {
         setExtrasGroups((prev) => [
           ...prev,
-          { groupName: "", items: [{ name: "", price: "", amount: 1, unit: "" }] },
+          { groupName: "", items: [{ name: "", price: "", amount: "", unit: "" }] },
         ]);
       }}
       className="bg-blue-500 text-white px-4 py-2 rounded-xl"
     >
       {t("Add Group")}
     </button>
-<button
-  onClick={async () => {
-    try {
-      await Promise.all(
-        extrasGroups.map(async (group) => {
-          const cleaned = {
-            group_name: (group.groupName || "").trim(),
-            items: (group.items || [])
-  .filter((i) => (i.name || "").trim() !== "")
-  .map((i) => ({
-    name: i.name,
-    price: Number(i.price) || 0,
-    // ✅ Preserve decimals like 0.25 instead of defaulting to 1
-    amount:
-      i.amount !== undefined &&
-      i.amount !== null &&
-      i.amount !== ""
-        ? Number(i.amount)
-        : 1,
-    unit: i.unit || ""
-  })),
+    <button
+      onClick={async () => {
+        try {
+          await Promise.all(
+            extrasGroups.map(async (group) => {
+              const cleaned = {
+                group_name: (group.groupName || "").trim(),
+                items: (group.items || [])
+                  .filter((i) => (i.name || "").trim() !== "")
+                  .map((i) => ({
+                    name: i.name,
+                    price: Number(i.price) || 0,
+                    amount:
+                      i.amount !== undefined &&
+                      i.amount !== null &&
+                      i.amount !== ""
+                        ? Number(i.amount)
+                        : 1,
+                    unit: i.unit || "",
+                  })),
+              };
 
-          };
+              if (!cleaned.group_name || cleaned.items.length === 0) return;
 
-          if (!cleaned.group_name || cleaned.items.length === 0) return;
-
-          if (group.id) {
-            // ✅ Update existing group
-            await fetch(`${API_URL}/api/extras-groups/${group.id}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(cleaned),
-            });
-          } else {
-            // ✅ Create new group
-            await fetch(`${API_URL}/api/extras-groups`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(cleaned),
-            });
-          }
-        })
-      );
-      alert("✅ Groups saved!");
-      setShowGroupModal(false);
-    } catch (err) {
-      alert("❌ Failed to save one or more groups.");
-    }
-  }}
-  className="bg-green-600 text-white px-4 py-2 rounded-xl"
->
-  💾 {t("Save All")}
-</button>
-
+              if (group.id) {
+                // ✅ Update existing group
+                await fetch(`${API_URL}/api/extras-groups/${group.id}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(cleaned),
+                });
+              } else {
+                // ✅ Create new group
+                await fetch(`${API_URL}/api/extras-groups`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(cleaned),
+                });
+              }
+            })
+          );
+          alert("✅ Groups saved!");
+          setShowGroupModal(false);
+        } catch (err) {
+          alert("❌ Failed to save one or more groups.");
+        }
+      }}
+      className="bg-green-600 text-white px-4 py-2 rounded-xl"
+    >
+      💾 {t("Save All")}
+    </button>
     <button
       onClick={() => setShowGroupModal(false)}
       className="bg-gray-500 text-white px-4 py-2 rounded-xl"
