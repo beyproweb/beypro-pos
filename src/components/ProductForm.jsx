@@ -117,12 +117,15 @@ export default function ProductForm({ onSuccess, initialData = null }) {
   // cost calc
   useEffect(() => {
     let total = 0;
-    product.ingredients.forEach(ing => {
-      const found = ingredientPrices.find(i => i.name === ing.ingredient);
-      if (found && ing.quantity) {
-        total += parseFloat(ing.quantity) * parseFloat(found.price_per_unit);
-      }
-    });
+product.ingredients.forEach(ing => {
+   if (!ing.ingredient || !ing.quantity || !ing.unit) return;
+   const found = ingredientPrices.find(
+     i => i.name === ing.ingredient && i.unit === ing.unit
+   );
+   if (found) {
+     total += parseFloat(ing.quantity) * parseFloat(found.price_per_unit);
+   }
+ });
     product.extras.forEach(ex => {
       if (ex.extraPrice) total += parseFloat(ex.extraPrice);
     });
