@@ -9,10 +9,8 @@ import { toast } from "react-toastify";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-// --- Unit conversion helper (mirror backend) ---
-const convertPrice = (basePrice, supplierUnit, targetUnit) => {
+function convertPrice(basePrice, supplierUnit, targetUnit) {
   if (!basePrice || !supplierUnit || !targetUnit) return null;
-
   supplierUnit = supplierUnit.toLowerCase();
   targetUnit = targetUnit.toLowerCase();
 
@@ -24,14 +22,40 @@ const convertPrice = (basePrice, supplierUnit, targetUnit) => {
   if (supplierUnit === "l" && targetUnit === "ml") return basePrice / 1000;
   if (supplierUnit === "ml" && targetUnit === "l") return basePrice * 1000;
 
-  if (supplierUnit === "pieces" && targetUnit === "portion") return basePrice;
-  if (supplierUnit === "portion" && targetUnit === "pieces") return basePrice;
+  if ((supplierUnit === "piece" || supplierUnit === "pieces") &&
+      (targetUnit === "piece" || targetUnit === "pieces")) return basePrice;
+
+  if ((supplierUnit === "portion" || supplierUnit === "portions") &&
+      (targetUnit === "portion" || targetUnit === "portions")) return basePrice;
 
   return null;
-};
+}
 
 export default function ProductForm({ onSuccess, initialData = null }) {
   const { t } = useTranslation();
+  const normalizeUnit = (u) => {
+  if (!u) return "";
+  u = u.toLowerCase();
+  if (u === "pieces") return "piece";
+  if (u === "portion" || u === "portions") return "portion";
+  return u;
+};
+
+const convertPrice = (basePrice, supplierUnit, targetUnit) => {
+  if (!basePrice || !supplierUnit || !targetUnit) return null;
+  supplierUnit = normalizeUnit(supplierUnit);
+  targetUnit = normalizeUnit(targetUnit);
+
+  if (supplierUnit === targetUnit) return basePrice;
+
+  if (supplierUnit === "kg" && targetUnit === "g") return basePrice / 1000;
+  if (supplierUnit === "g" && targetUnit === "kg") return basePrice * 1000;
+
+  if (supplierUnit === "l" && targetUnit === "ml") return basePrice / 1000;
+  if (supplierUnit === "ml" && targetUnit === "l") return basePrice * 1000;
+
+  return null;
+};
 
   const [product, setProduct] = useState({
     name: "",
