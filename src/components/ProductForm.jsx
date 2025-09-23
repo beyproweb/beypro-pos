@@ -653,7 +653,7 @@ const recalcEstimatedCost = (ingredients) => {
           <label className="font-semibold">{t("Tags (comma separated)")}</label>
           <input type="text" name="tags" value={product.tags} onChange={handleChange}
                  className="w-full p-3 rounded-xl border mb-4" />
-          <label className="font-semibold">{t("Allergens")}</label>
+          <label className="font-semibold">{t("Allergenss")}</label>
           <input type="text" name="allergens" value={product.allergens} onChange={handleChange}
                  className="w-full p-3 rounded-xl border" />
         </div>
