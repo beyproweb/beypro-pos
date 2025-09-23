@@ -8,6 +8,20 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+function convertPrice(pricePerUnit, supplierUnit, targetUnit) {
+  if (supplierUnit === targetUnit) return pricePerUnit;
+
+  // weight
+  if (supplierUnit === "kg" && targetUnit === "g") return pricePerUnit / 1000;
+  if (supplierUnit === "g" && targetUnit === "kg") return pricePerUnit * 1000;
+
+  // volume
+  if (supplierUnit === "l" && targetUnit === "ml") return pricePerUnit / 1000;
+  if (supplierUnit === "ml" && targetUnit === "l") return pricePerUnit * 1000;
+
+  // pieces / portion → no standard conversion
+  return null;
+}
 
 export default function ProductForm({ onSuccess, initialData = null }) {
   const { t } = useTranslation();
