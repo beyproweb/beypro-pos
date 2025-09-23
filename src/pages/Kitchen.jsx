@@ -653,53 +653,88 @@ return (
           <h2 className="text-xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-400 text-transparent bg-clip-text flex items-center gap-2">
             🧮 {t("Compiled Control Center")}
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-2xl p-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 shadow-inner min-h-[100px]">
-              <div className="flex items-center gap-2 mb-2 text-indigo-700 dark:text-indigo-200 font-semibold">
-                📦 {t("Products")}
-              </div>
-              {compiled.productsByCategory && Object.keys(compiled.productsByCategory).length === 0 ? (
-                <div className="text-gray-500 dark:text-gray-400">{t("None")}</div>
-              ) : (
-                <div className="space-y-2">
-                  {Object.entries(compiled.productsByCategory).map(([category, products]) => (
-                    <div key={category}>
-                      <div className="font-bold text-md text-indigo-600 dark:text-indigo-200 mb-1">{category}</div>
-                      <ul className="ml-2 space-y-1">
-                        {Object.entries(products).map(([name, qty]) => (
-                          <li key={name} className="flex justify-between">
-                            <span>{name}</span>
-                            <span className="font-bold text-indigo-700 dark:text-indigo-200">{qty}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="rounded-2xl p-4 bg-pink-50 dark:bg-pink-900/30 border border-pink-200 dark:border-pink-800 shadow-inner min-h-[100px]">
-              <div className="flex items-center gap-2 mb-2 text-pink-700 dark:text-pink-200 font-semibold">
-                🥕 {t("Ingredients")}
-              </div>
-              
-              {Object.keys(compiled.ingredients).length === 0 ? (
-                <div className="text-gray-500 dark:text-gray-400">{t("None")}</div>
-              ) : (
-                <ul className="space-y-1">
-                  {Object.entries(compiled.ingredients).map(([name, qty]) => (
-                    <li key={name} className="flex justify-between">
-                      <span>{name}</span>
-                      <span className="font-bold text-pink-600 dark:text-pink-200">{qty}</span>
-                    </li>
-                  ))}
-                  
-                </ul>
-              )}
-              
-            </div>
-
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  {/* Products */}
+  <div className="rounded-2xl p-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 shadow-inner min-h-[100px]">
+    <div className="flex items-center gap-2 mb-2 text-indigo-700 dark:text-indigo-200 font-semibold">
+      📦 {t("Products")}
+    </div>
+    {compiled.productsByCategory && Object.keys(compiled.productsByCategory).length === 0 ? (
+      <div className="text-gray-500 dark:text-gray-400">{t("None")}</div>
+    ) : (
+      <div className="space-y-2">
+        {Object.entries(compiled.productsByCategory).map(([category, products]) => (
+          <div key={category}>
+            <div className="font-bold text-md text-indigo-600 dark:text-indigo-200 mb-1">{category}</div>
+            <ul className="ml-2 space-y-1">
+              {Object.entries(products).map(([name, qty]) => (
+                <li key={name} className="flex justify-between">
+                  <span>{name}</span>
+                  <span className="font-bold text-indigo-700 dark:text-indigo-200">{qty}</span>
+                </li>
+              ))}
+            </ul>
           </div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  {/* Ingredients */}
+  <div className="rounded-2xl p-4 bg-pink-50 dark:bg-pink-900/30 border border-pink-200 dark:border-pink-800 shadow-inner min-h-[100px]">
+    <div className="flex items-center gap-2 mb-2 text-pink-700 dark:text-pink-200 font-semibold">
+      🥕 {t("Ingredients")}
+    </div>
+    {Object.keys(compiled.ingredients).length === 0 ? (
+      <div className="text-gray-500 dark:text-gray-400">{t("None")}</div>
+    ) : (
+      <ul className="space-y-1">
+        {Object.entries(compiled.ingredients).map(([name, qty]) => (
+          <li key={name} className="flex justify-between">
+            <span>{name}</span>
+            <span className="font-bold text-pink-600 dark:text-pink-200">{qty}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+
+  {/* ✅ Extras */}
+  <div className="rounded-2xl p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 shadow-inner min-h-[100px]">
+    <div className="flex items-center gap-2 mb-2 text-green-700 dark:text-green-200 font-semibold">
+      ➕ {t("Extras")}
+    </div>
+    {Object.keys(compiled.extrasSummary).length === 0 ? (
+      <div className="text-gray-500 dark:text-gray-400">{t("None")}</div>
+    ) : (
+      <ul className="space-y-1">
+        {Object.entries(compiled.extrasSummary).map(([name, qty]) => (
+          <li key={name} className="flex justify-between">
+            <span>{name}</span>
+            <span className="font-bold text-green-700 dark:text-green-200">x{qty}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+
+  {/* ✅ Notes */}
+  <div className="rounded-2xl p-4 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 shadow-inner min-h-[100px]">
+    <div className="flex items-center gap-2 mb-2 text-yellow-700 dark:text-yellow-200 font-semibold">
+      📝 {t("Notes")}
+    </div>
+    {compiled.notesSummary.length === 0 ? (
+      <div className="text-gray-500 dark:text-gray-400">{t("None")}</div>
+    ) : (
+      <ul className="list-disc pl-5 space-y-1 text-sm">
+        {compiled.notesSummary.map((note, idx) => (
+          <li key={idx}>{note}</li>
+        ))}
+      </ul>
+    )}
+  </div>
+</div>
+
           
         
           <button
