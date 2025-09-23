@@ -152,7 +152,11 @@ export default function ExtrasModal({
                       setSelectedExtras((prev) => {
                         const cur = prev.find((ex) => ex.name === item.name);
                         if (!cur)
-                          return [...prev, { ...item, quantity: 1, unit: item.unit || "", amount: item.amount || 1 }];
+  return [
+    ...prev,
+    { ...item, quantity: 1, unit: item.unit || "", amount: item.amount }
+  ];
+
                         return prev.map((ex) =>
                           ex.name === item.name
                             ? { ...ex, quantity: cur.quantity + 1 }
