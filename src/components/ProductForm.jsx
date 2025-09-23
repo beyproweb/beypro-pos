@@ -488,7 +488,8 @@ const recalcEstimatedCost = (ingredients) => {
       if (ing.ingredient && ing.quantity && ing.unit) {
         const match = availableIngredients.find(ai => ai.name === ing.ingredient);
         if (match) {
-          const converted = convertPrice(match.price, match.unit, ing.unit);
+          const basePrice = match.price_per_unit ?? match.price ?? 0;
+          const converted = convertPrice(basePrice, match.unit, ing.unit);
           if (converted !== null) {
             cost = parseFloat(ing.quantity) * converted;
           }
