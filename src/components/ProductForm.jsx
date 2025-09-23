@@ -368,7 +368,7 @@ useEffect(() => {
           <input type="text" name="name" value={product.name} onChange={handleChange}
                  className="w-full p-3 rounded-xl border mt-1 mb-4" required />
 
-          <label className="font-semibold">{t("Price (₺)")}</label>
+         <label className="font-semibold">{t("Price (₺)")}</label>
           <input type="number" name="price" value={product.price} onChange={handleChange}
                  className="w-full p-3 rounded-xl border mt-1 mb-2" required />
 <div className="my-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 shadow text-center">
@@ -379,6 +379,7 @@ useEffect(() => {
     ₺{estimatedCost.toFixed(2)}
   </span>
 </div>
+
           <label className="font-semibold">{t("Promotion Start Date")}</label>
           <input type="date" name="promo_start" value={product.promo_start} onChange={handleChange}
                  className="w-full p-3 rounded-xl border mt-1 mb-4" />
