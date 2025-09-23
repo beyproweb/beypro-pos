@@ -286,51 +286,53 @@ const updateTimerInDB = async (timer) => {
 function compileTotals(selectedOrders) {
   const totalIngredients = {};
   const productsByCategory = {};
+  const extrasSummary = {};
+  const notesSummary = [];
 
-  // Lookup for category by product_id
   const productIdToCategory = {};
   products.forEach(p => {
     productIdToCategory[p.id] = p.category || "Uncategorized";
   });
 
   selectedOrders.forEach((item) => {
-    const category =
-      productIdToCategory[item.product_id] ||
-      item.product_category ||
-      item.category ||
-      "Uncategorized";
+    const category = productIdToCategory[item.product_id] || item.product_category || "Uncategorized";
     if (!productsByCategory[category]) productsByCategory[category] = {};
 
+    // Products
     if (item.product_name) {
       productsByCategory[category][item.product_name] =
-        (productsByCategory[category][item.product_name] || 0) +
-        (item.quantity || 1);
+        (productsByCategory[category][item.product_name] || 0) + (item.quantity || 1);
     }
 
-    // Ingredient logic stays as is...
+    // Ingredients
     let ingredients = [];
     try {
-      ingredients = Array.isArray(item.ingredients)
-        ? item.ingredients
-        : (typeof item.ingredients === "string" ? JSON.parse(item.ingredients) : []);
+      ingredients = Array.isArray(item.ingredients) ? item.ingredients : JSON.parse(item.ingredients || "[]");
     } catch { ingredients = []; }
-
-    ingredients.forEach((ing) => {
-      if (
-        !ing || typeof ing !== "object" || !ing.ingredient ||
-        excludedIngredients.includes(ing.ingredient)
-      ) return;
-
-      const key = ing.ingredient;
-      const qty = Number(ing.quantity) || 1;
-      totalIngredients[key] = (totalIngredients[key] || 0) + qty * (item.quantity || 1);
+    ingredients.forEach(ing => {
+      if (!ing?.ingredient || excludedIngredients.includes(ing.ingredient)) return;
+      totalIngredients[ing.ingredient] =
+        (totalIngredients[ing.ingredient] || 0) + (Number(ing.quantity) || 1) * (item.quantity || 1);
     });
+
+    // ✅ Extras
+    let extras = [];
+    try {
+      extras = Array.isArray(item.extras) ? item.extras : JSON.parse(item.extras || "[]");
+    } catch { extras = []; }
+    extras.forEach(ex => {
+      if (!ex?.name) return;
+      const key = ex.name;
+      extrasSummary[key] = (extrasSummary[key] || 0) + (Number(ex.quantity) || 1);
+    });
+
+    // ✅ Notes
+    if (item.note) {
+      notesSummary.push(`• ${item.product_name}: ${item.note}`);
+    }
   });
 
-  return {
-    ingredients: totalIngredients,
-    productsByCategory,
-  };
+  return { ingredients: totalIngredients, productsByCategory, extrasSummary, notesSummary };
 }
 
 
@@ -680,6 +682,7 @@ return (
               <div className="flex items-center gap-2 mb-2 text-pink-700 dark:text-pink-200 font-semibold">
                 🥕 {t("Ingredients")}
               </div>
+              
               {Object.keys(compiled.ingredients).length === 0 ? (
                 <div className="text-gray-500 dark:text-gray-400">{t("None")}</div>
               ) : (
@@ -690,10 +693,15 @@ return (
                       <span className="font-bold text-pink-600 dark:text-pink-200">{qty}</span>
                     </li>
                   ))}
+                  
                 </ul>
               )}
+              
             </div>
+
           </div>
+          
+        
           <button
             className="mt-2 px-6 py-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:brightness-110 text-white text-lg font-semibold rounded-2xl shadow-lg transition"
             onClick={closeCompileModal}
@@ -701,7 +709,9 @@ return (
             {t("Close")}
           </button>
         </div>
+        
       </div>
+      
     )}
 
     {/* Timer Modal */}
