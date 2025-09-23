@@ -167,7 +167,8 @@ useEffect(() => {
     const match = availableIngredients.find(ai => ai.name === ing.ingredient);
     if (!match) return;
 
-    const converted = convertPrice(match.price, match.unit, ing.unit);
+    const basePrice = match.price ?? match.price_per_unit ?? 0;
+  const converted = convertPrice(basePrice, match.unit, ing.unit);
     if (converted !== null) {
       total += parseFloat(ing.quantity) * converted;
     }
