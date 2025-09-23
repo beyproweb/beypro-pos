@@ -550,34 +550,6 @@ return (
             <span>{t("Visible on Website")}</span>
           </div>
         </section>
-          {/* Category + Product Image */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {categoryImagePreview && (
-              <div className="flex items-center gap-3">
-                <img
-                  src={categoryImagePreview}
-                  alt="Category"
-                  className="w-16 h-16 rounded-lg object-cover border shadow"
-                />
-                <span className="text-sm text-gray-500">{t("Category Preview")}</span>
-              </div>
-            )}
-
-            <div>
-              <label className="block">
-                <span className="font-medium">{t("Product Image")}</span>
-                <input type="file" accept="image/*" onChange={handleImageChange} />
-              </label>
-              {getImageSource() && (
-                <img
-                  src={getImageSource()}
-                  alt="Preview"
-                  className="mt-2 w-24 h-24 rounded-xl object-cover border"
-                />
-              )}
-            </div>
-          </div>
-        </section>
 
         {/* Ingredients */}
         <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5">
@@ -875,6 +847,11 @@ return (
                 <p className="text-xs text-rose-600 font-semibold">
                   {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
                 </p>
+                {product.description && (
+                  <p className="text-xs text-gray-500 line-clamp-3">
+                    {product.description}
+                  </p>
+                )}
               </div>
             </div>
           </details>
@@ -907,6 +884,11 @@ return (
               <p className="text-xs text-rose-600 font-semibold">
                 {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
               </p>
+              {product.description && (
+                <p className="text-xs text-gray-500 line-clamp-3">
+                  {product.description}
+                </p>
+              )}
             </div>
           </div>
         </div>
