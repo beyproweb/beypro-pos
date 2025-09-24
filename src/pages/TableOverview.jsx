@@ -1092,9 +1092,16 @@ onCreateOrder={() => {
       ) : (() => {
         // Summary content (register is open)
         const expected = Number(expectedCash || 0);
-        const expense = Number(dailyCashExpense || 0);
-        const opening = Number(openingCash || 0);
-        const netCash = opening + expected + registerEntries - expense;
+const expense = Number(dailyCashExpense || 0);
+const opening = Number(openingCash || 0);
+
+// ✅ calculate entries directly from combinedEvents
+const entryTotal = combinedEvents
+  .filter(ev => ev.type === "entry")
+  .reduce((sum, ev) => sum + parseFloat(ev.amount || 0), 0);
+
+const netCash = opening + expected + entryTotal - expense;
+
 
         return (
           <>
@@ -1114,9 +1121,12 @@ onCreateOrder={() => {
                   <span className="tabular-nums text-orange-800">₺{expense.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="flex items-center gap-2 text-lime-700"><span className="bg-lime-400 text-white rounded-full px-2 py-1">➕</span> {t('Cash Entries')}</span>
-                  <span className="tabular-nums text-lime-800">₺{registerEntries.toFixed(2)}</span>
-                </div>
+  <span className="flex items-center gap-2 text-lime-700">
+    <span className="bg-lime-400 text-white rounded-full px-2 py-1">➕</span> {t('Cash Entries')}
+  </span>
+  <span className="tabular-nums text-lime-800">₺{entryTotal.toFixed(2)}</span>
+</div>
+
                 <div className="h-[1px] w-full bg-gradient-to-r from-blue-200 to-fuchsia-200 rounded-full opacity-60 my-3" />
                 <div className="flex justify-between items-center text-lg">
                   <span className="flex items-center gap-2 text-blue-900 font-bold">
