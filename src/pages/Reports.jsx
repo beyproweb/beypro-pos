@@ -453,6 +453,8 @@ const toggleCategory = (cat) => {
 };
 
 // --- Totals by order type ---
+// --- Totals by order type ---
+
 const dineInTotal = closedOrders
   .filter(
     o =>
@@ -465,7 +467,7 @@ const dineInTotal = closedOrders
         (s, m) => s + parseFloat(m.amount || 0),
         0
       ) || 0;
-    const fallbackTotal = parseFloat(o.total || 0);
+    const fallbackTotal = calcOrderTotalWithExtras(o); // ✅ includes extras
     return sum + (receiptSum > 0 ? receiptSum : fallbackTotal);
   }, 0);
 
@@ -477,21 +479,20 @@ const onlineTotal = closedOrders
         (s, m) => s + parseFloat(m.amount || 0),
         0
       ) || 0;
-    const fallbackTotal = parseFloat(o.total || 0);
+    const fallbackTotal = calcOrderTotalWithExtras(o); // ✅ includes extras
     return sum + (receiptSum > 0 ? receiptSum : fallbackTotal);
   }, 0);
 
-// ✅ include both "phone" and "packet"
 const phoneTotal = closedOrders
   .filter(o => o.order_type === "phone")
   .reduce((sum, o) => {
     const receiptSum =
       o.receiptMethods?.reduce((s, m) => s + parseFloat(m.amount || 0), 0) || 0;
-    const itemsSum =
-      o.items?.reduce((s, i) => s + (parseFloat(i.price || 0) * parseInt(i.quantity || 0)), 0) || 0;
-    const fallbackTotal = parseFloat(o.total || 0);
-    return sum + (receiptSum > 0 ? receiptSum : fallbackTotal > 0 ? fallbackTotal : itemsSum);
+    const fallbackTotal = calcOrderTotalWithExtras(o); // ✅ includes extras
+    return sum + (receiptSum > 0 ? receiptSum : fallbackTotal);
   }, 0);
+
+
 
 
 
