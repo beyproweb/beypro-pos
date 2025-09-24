@@ -466,18 +466,16 @@ const onlineTotal = closedOrders
 
 // ✅ include both "phone" and "packet"
 const phoneTotal = closedOrders
-  .filter(o => o.order_type === "phone" || o.order_type === "packet" || !o.order_type)
+  .filter(o => o.order_type === "phone")
   .reduce((sum, o) => {
     const receiptSum =
       o.receiptMethods?.reduce((s, m) => s + parseFloat(m.amount || 0), 0) || 0;
-
     const itemsSum =
       o.items?.reduce((s, i) => s + (parseFloat(i.price || 0) * parseInt(i.quantity || 0)), 0) || 0;
-
     const fallbackTotal = parseFloat(o.total || 0);
-
     return sum + (receiptSum > 0 ? receiptSum : fallbackTotal > 0 ? fallbackTotal : itemsSum);
   }, 0);
+
 
 
 
@@ -1113,7 +1111,7 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
     <ul className="mt-1 space-y-1 text-xs">
       {Object.entries(
         closedOrders
-          .filter(o => o.order_type === "phone" || o.order_type === "packet")
+          .filter(o => o.order_type === "phone")   // ✅ ONLY phone orders
           .reduce((acc, order) => {
             if (order.receiptMethods?.length) {
               order.receiptMethods.forEach(m => {
@@ -1135,6 +1133,7 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
     </ul>
   </details>
 </div>
+
   </div>
 </Card>
 
