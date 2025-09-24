@@ -557,7 +557,22 @@ setCashAvailable(openingCash + sales - totalCashExpense);
 }, []);
 
 useEffect(() => {
-  fetch(`${API_URL}/api/reports/summary`)
+  let from = "", to = "";
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (dateRange === "today") {
+    from = to = today;
+  } else if (dateRange === "week") {
+    const first = new Date();
+    first.setDate(first.getDate() - 6);
+    from = first.toISOString().slice(0, 10);
+    to = today;
+  } else {
+    from = customStart || today;
+    to = customEnd || today;
+  }
+
+  fetch(`${API_URL}/api/reports/summary?from=${from}&to=${to}`)
     .then(r => r.json())
     .then(d => {
       const extraExpenses = (expensesData || []).reduce(
@@ -570,11 +585,10 @@ useEffect(() => {
       setNetSales(d.net_sales || 0);
       setExpensesToday(fullExpenses);
       setProfit((d.net_sales || 0) - fullExpenses);
-      setSummary(d); // keep full summary for avgOrderValue
+      setSummary(d);
     })
     .catch(err => console.error("❌ Failed to fetch summary:", err));
 }, [dateRange, customStart, customEnd, expensesData]);
-
 
 
 
