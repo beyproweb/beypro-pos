@@ -192,6 +192,29 @@ useEffect(() => {
 }, 0);
 
 const [cashRegisterHistory, setCashRegisterHistory] = useState([]);
+const [onlinePlatforms, setOnlinePlatforms] = useState({});
+
+useEffect(() => {
+  let from = "", to = "";
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (dateRange === "today") {
+    from = to = today;
+  } else if (dateRange === "week") {
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
+    from = start.toISOString().slice(0, 10);
+    to = today;
+  } else {
+    from = customStart || today;
+    to = customEnd || today;
+  }
+
+  fetch(`${API_URL}/api/reports/online-sales?from=${from}&to=${to}`)
+    .then(r => r.json())
+    .then(setOnlinePlatforms)
+    .catch(err => console.error("❌ Failed to load online sales", err));
+}, [dateRange, customStart, customEnd]);
 
 useEffect(() => {
   const from = "2024-01-01";
@@ -1001,13 +1024,35 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
 
 
 <Card className="p-4 space-y-2">
-  <h3 className="text-lg font-bold text-gray-800 dark:text-white">{t("Order Type Totals")}</h3>
-  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-    <div className="bg-blue-100 dark:bg-blue-900 rounded-lg p-3">🍽️ {t("Dine-in")}: <b>₺{dineInTotal.toLocaleString()}</b></div>
-    <div className="bg-green-100 dark:bg-green-900 rounded-lg p-3">📱 {t("Online")}: <b>₺{onlineTotal.toLocaleString()}</b></div>
-    <div className="bg-yellow-100 dark:bg-yellow-900 rounded-lg p-3">☎️ {t("Phone")}: <b>₺{phoneTotal.toLocaleString()}</b></div>
+  <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+    {t("Online Platforms Totals")}
+  </h3>
+
+  <div className="space-y-3">
+    {Object.entries(onlinePlatforms).map(([platform, data]) => (
+      <details key={platform} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+        <summary className="cursor-pointer font-semibold flex justify-between">
+          <span>
+            {platform === "packet" ? "Yemeksepeti" : platform === "online" ? "Trendyol" : platform}
+          </span>
+          <span className="text-blue-600 dark:text-blue-300 font-bold">
+            ₺{data.total.toLocaleString()}
+          </span>
+        </summary>
+
+        <ul className="mt-2 space-y-1 text-sm">
+          {data.payments.map((p, i) => (
+            <li key={i} className="flex justify-between px-2">
+              <span>{p.method}</span>
+              <span className="font-semibold">₺{p.total.toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    ))}
   </div>
 </Card>
+
 
 
     {/* Sales by Category */}
