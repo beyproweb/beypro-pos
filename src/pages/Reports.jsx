@@ -26,6 +26,7 @@ import { useHasPermission } from "../components/hooks/useHasPermission";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 
+
 // Helper to calculate order total including extras
 function calcOrderTotalWithExtras(order) {
   if (!order?.items) return 0;
@@ -664,7 +665,40 @@ useEffect(() => {
     .catch(err => console.error("❌ Failed to fetch summary:", err));
 }, [dateRange, customStart, customEnd, expensesData]);
 
+// ✅ New effect to calculate gross/net from closedOrders with extras
+useEffect(() => {
+  if (!closedOrders.length) {
+    setGrossSales(0);
+    setNetSales(0);
+    return;
+  }
 
+  const gross = closedOrders.reduce((sum, o) => {
+    const receiptSum =
+      o.receiptMethods?.reduce(
+        (s, m) => s + parseFloat(m.amount || 0),
+        0
+      ) || 0;
+    const fallback = calcOrderTotalWithExtras(o);
+    return sum + (receiptSum > 0 ? receiptSum : fallback);
+  }, 0);
+
+  setGrossSales(gross);
+
+  const net = closedOrders.reduce((sum, o) => {
+    const receiptSum =
+      o.receiptMethods?.reduce(
+        (s, m) => s + parseFloat(m.amount || 0),
+        0
+      ) || 0;
+    const fallback = calcOrderTotalWithExtras(o);
+    const base = receiptSum > 0 ? receiptSum : fallback;
+    // subtract discounts if any
+    return sum + base - (parseFloat(o.discountValue || 0) || 0);
+  }, 0);
+
+  setNetSales(net);
+}, [closedOrders])
 
 useEffect(() => {
   if (dateRange === "today") {
