@@ -272,11 +272,6 @@ setClosedOrders(
   )
 );
 
-
-      setClosedOrders(
-  enriched.filter(order => Array.isArray(order.items) && order.items.length > 0)
-);
-
     })
     .catch((err) => {
       console.error("❌ Failed to load order history:", err);
