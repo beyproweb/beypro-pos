@@ -571,7 +571,7 @@ const fetchPhoneOrder = async (id) => {
     }
 
     setOrder({ ...newOrder, status: correctedStatus });
-    setCartItems(newOrder.items || []);
+    await fetchOrderItems(newOrder.id);
     setLoading(false); // ✅ stop loading
   } catch (err) {
     console.error("❌ Error fetching phone/packet order:", err);
@@ -613,7 +613,7 @@ const createOrFetchTableOrder = async (tableNumber) => {
     }
 
     setOrder({ ...newOrder, status: correctedStatus });
-    setCartItems(newOrder.items || []);
+    await fetchOrderItems(newOrder.id);
     setLoading(false); // ✅ stop loading
   } catch (err) {
     console.error("❌ Error creating/fetching table order:", err);
