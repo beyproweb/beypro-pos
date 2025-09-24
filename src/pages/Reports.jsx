@@ -442,7 +442,11 @@ const onlineTotal = closedOrders
 
 // ✅ include both "phone" and "packet"
 const phoneTotal = closedOrders
-  .filter(o => o.order_type === "phone" || o.order_type === "packet")
+  .filter(o =>
+    o.order_type === "phone" ||
+    o.order_type === "packet" ||
+    !o.order_type // catch empty/null ones
+  )
   .reduce((sum, o) => {
     const receiptSum =
       o.receiptMethods?.reduce(
@@ -452,6 +456,7 @@ const phoneTotal = closedOrders
     const fallbackTotal = parseFloat(o.total || 0);
     return sum + (receiptSum > 0 ? receiptSum : fallbackTotal);
   }, 0);
+
 
 useEffect(() => {
   loadCategoryData();
