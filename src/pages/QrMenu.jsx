@@ -2081,7 +2081,7 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
     customer_name: customer?.name || null,
     customer_phone: customer?.phone || null,
     customer_address: customer?.address || null,
-    payment_method: null,
+    payment_method: paymentMethod || null,
   };
 }
 async function handleSubmitOrder() {
