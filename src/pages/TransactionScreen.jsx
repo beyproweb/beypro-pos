@@ -564,7 +564,7 @@ const fetchPhoneOrder = async (id) => {
 
     const newOrder = await res.json();
 
-    // Normalize status if paid online
+    // 🔑 Normalize status if paid online
     let correctedStatus = newOrder.status;
     if (newOrder.payment_method === "Online") {
       correctedStatus = "paid";
@@ -572,10 +572,13 @@ const fetchPhoneOrder = async (id) => {
 
     setOrder({ ...newOrder, status: correctedStatus });
     setCartItems(newOrder.items || []);
+    setLoading(false); // ✅ stop loading
   } catch (err) {
     console.error("❌ Error fetching phone/packet order:", err);
+    setLoading(false); // ✅ ensure loading stops on error too
   }
 };
+
 
 // ✅ Create or fetch table order
 const createOrFetchTableOrder = async (tableNumber) => {
@@ -603,7 +606,7 @@ const createOrFetchTableOrder = async (tableNumber) => {
       newOrder = await createRes.json();
     }
 
-    // Normalize status if paid online
+    // 🔑 Normalize status if paid online
     let correctedStatus = newOrder.status;
     if (newOrder.payment_method === "Online") {
       correctedStatus = "paid";
@@ -611,10 +614,13 @@ const createOrFetchTableOrder = async (tableNumber) => {
 
     setOrder({ ...newOrder, status: correctedStatus });
     setCartItems(newOrder.items || []);
+    setLoading(false); // ✅ stop loading
   } catch (err) {
     console.error("❌ Error creating/fetching table order:", err);
+    setLoading(false); // ✅ ensure loading stops on error too
   }
 };
+
 
 
   // 💡 If you pass orderId for phone, use that; if only tableId, use that logic
