@@ -443,20 +443,19 @@ const onlineTotal = closedOrders
 
 // ✅ include both "phone" and "packet"
 const phoneTotal = closedOrders
-  .filter(o =>
-    o.order_type === "phone" ||
-    o.order_type === "packet" ||
-    !o.order_type // catch empty/null ones
-  )
+  .filter(o => o.order_type === "phone" || o.order_type === "packet" || !o.order_type)
   .reduce((sum, o) => {
     const receiptSum =
-      o.receiptMethods?.reduce(
-        (s, m) => s + parseFloat(m.amount || 0),
-        0
-      ) || 0;
+      o.receiptMethods?.reduce((s, m) => s + parseFloat(m.amount || 0), 0) || 0;
+
+    const itemsSum =
+      o.items?.reduce((s, i) => s + (parseFloat(i.price || 0) * parseInt(i.quantity || 0)), 0) || 0;
+
     const fallbackTotal = parseFloat(o.total || 0);
-    return sum + (receiptSum > 0 ? receiptSum : fallbackTotal);
+
+    return sum + (receiptSum > 0 ? receiptSum : fallbackTotal > 0 ? fallbackTotal : itemsSum);
   }, 0);
+
 
 
 useEffect(() => {
