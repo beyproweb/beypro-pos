@@ -1626,7 +1626,7 @@ useEffect(() => {
 
 
 // === Always-mounted Order Status (portal) ===
-const statusPortal = (showStatus && orderId)
+const statusPortal = showStatus
   ? createPortal(
       <OrderStatusModal
         open={true}
