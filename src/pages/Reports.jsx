@@ -557,19 +557,23 @@ setCashAvailable(openingCash + sales - totalCashExpense);
 }, []);
 
 useEffect(() => {
+  fetch(`${API_URL}/api/reports/summary`)
+    .then(r => r.json())
+    .then(d => {
+      const extraExpenses = (expensesData || []).reduce(
+        (sum, e) => sum + parseFloat(e.amount || 0),
+        0
+      );
+      const fullExpenses = (d.expenses_today || 0) + extraExpenses;
 
-
-  fetch(`${API_URL}/api/reports/summary`).then(r => r.json()).then(d => {
-    const extraExpenses = expensesData.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-    const fullExpenses = d.expenses_today + extraExpenses;
-
-    setDailySales(d.daily_sales);
-    setGrossSales(d.gross_sales);
-    setNetSales(d.net_sales);
-    setExpensesToday(fullExpenses);
-    setProfit(d.net_sales - fullExpenses);
-  });
+      setDailySales(d.daily_sales || 0);
+      setGrossSales(d.gross_sales || 0);
+      setNetSales(d.net_sales || 0);
+      setExpensesToday(fullExpenses);
+      setProfit((d.net_sales || 0) - fullExpenses);
+    });
 }, [expensesData]);
+
 
 useEffect(() => {
   if (dateRange === "today") {
