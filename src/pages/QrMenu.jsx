@@ -1495,7 +1495,8 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
   orderId={orderId}
   table={orderType === "table" ? table : null}   // now safe
    onOrderAnother={onOrderAnother}   
-  onFinished={resetToTypePicker}
+  onFinished={onFinished}
+
   t={t}
 />
 
