@@ -411,19 +411,47 @@ const toggleCategory = (cat) => {
   }));
 };
 
+// --- Totals by order type ---
 const dineInTotal = closedOrders
-  .filter(o => (o.order_type === "table") || (!!o.table_number && o.order_type == null))
+  .filter(
+    o =>
+      o.order_type === "table" ||
+      (!!o.table_number && (o.order_type == null || o.order_type === "dinein"))
+  )
   .reduce((sum, o) => {
-    const receiptSum = o.receiptMethods?.reduce((s, m) => s + parseFloat(m.amount || 0), 0) || 0;
+    const receiptSum =
+      o.receiptMethods?.reduce(
+        (s, m) => s + parseFloat(m.amount || 0),
+        0
+      ) || 0;
     const fallbackTotal = parseFloat(o.total || 0);
     return sum + (receiptSum > 0 ? receiptSum : fallbackTotal);
   }, 0);
 
-const onlineTotal = closedOrders.filter(o => o.order_type === "online").reduce((sum, o) =>
-  sum + (o.receiptMethods?.reduce((s, m) => s + parseFloat(m.amount), 0) || parseFloat(o.total) || 0), 0);
+const onlineTotal = closedOrders
+  .filter(o => o.order_type === "online")
+  .reduce((sum, o) => {
+    const receiptSum =
+      o.receiptMethods?.reduce(
+        (s, m) => s + parseFloat(m.amount || 0),
+        0
+      ) || 0;
+    const fallbackTotal = parseFloat(o.total || 0);
+    return sum + (receiptSum > 0 ? receiptSum : fallbackTotal);
+  }, 0);
 
-const phoneTotal = closedOrders.filter(o => o.order_type === "phone").reduce((sum, o) =>
-  sum + (o.receiptMethods?.reduce((s, m) => s + parseFloat(m.amount), 0) || parseFloat(o.total) || 0), 0);
+// ✅ include both "phone" and "packet"
+const phoneTotal = closedOrders
+  .filter(o => o.order_type === "phone" || o.order_type === "packet")
+  .reduce((sum, o) => {
+    const receiptSum =
+      o.receiptMethods?.reduce(
+        (s, m) => s + parseFloat(m.amount || 0),
+        0
+      ) || 0;
+    const fallbackTotal = parseFloat(o.total || 0);
+    return sum + (receiptSum > 0 ? receiptSum : fallbackTotal);
+  }, 0);
 
 useEffect(() => {
   loadCategoryData();
