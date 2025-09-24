@@ -215,7 +215,7 @@ useEffect(() => {
     .then(setOnlinePlatforms)
     .catch(err => console.error("❌ Failed to load online sales", err));
 }, [dateRange, customStart, customEnd]);
-
+  
 useEffect(() => {
   const from = "2024-01-01";
   const to = new Date().toISOString().slice(0, 10);
@@ -1024,6 +1024,14 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
 
 
 <Card className="p-4 space-y-2">
+  <h3 className="text-lg font-bold text-gray-800 dark:text-white">{t("Order Type Totals")}</h3>
+  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+    <div className="bg-blue-100 dark:bg-blue-900 rounded-lg p-3">🍽️ {t("Dine-in")}: <b>₺{dineInTotal.toLocaleString()}</b></div>
+    <div className="bg-green-100 dark:bg-green-900 rounded-lg p-3">📱 {t("Online")}: <b>₺{onlineTotal.toLocaleString()}</b></div>
+    <div className="bg-yellow-100 dark:bg-yellow-900 rounded-lg p-3">☎️ {t("Phone")}: <b>₺{phoneTotal.toLocaleString()}</b></div>
+  </div>
+</Card>
+<Card className="p-4 space-y-2">
   <h3 className="text-lg font-bold text-gray-800 dark:text-white">
     {t("Online Platforms Totals")}
   </h3>
@@ -1052,7 +1060,6 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
     ))}
   </div>
 </Card>
-
 
 
     {/* Sales by Category */}
