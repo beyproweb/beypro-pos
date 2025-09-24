@@ -566,7 +566,7 @@ useEffect(() => {
       );
       const fullExpenses = (d.expenses_today || 0) + extraExpenses;
 
-      setDailySales(d.daily_sales || 0);
+      
       setGrossSales(d.gross_sales || 0);
       setNetSales(d.net_sales || 0);
       setExpensesToday(fullExpenses);
@@ -584,6 +584,11 @@ useEffect(() => {
     setCustomEnd(today);
   }
 }, []);
+
+useEffect(() => {
+  // Keep the KPI in sync with the payment tiles
+  setDailySales(totalPayments || 0);
+}, [totalPayments]);
 
 const salesTrendsRef = useRef(null);
 
