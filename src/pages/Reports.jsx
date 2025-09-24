@@ -263,8 +263,14 @@ const enriched = await Promise.all(
   })
 );
 
-// ✅ keep orders that actually have items
-setClosedOrders(enriched.filter(order => Array.isArray(order.items) && order.items.length > 0));
+// ✅ keep all phone/packet orders even if no items, others only if they have items
+setClosedOrders(
+  enriched.filter(order =>
+    order.order_type === "phone" ||
+    order.order_type === "packet" ||
+    (Array.isArray(order.items) && order.items.length > 0)
+  )
+);
 
 
       setClosedOrders(
