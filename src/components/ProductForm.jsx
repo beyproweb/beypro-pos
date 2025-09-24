@@ -383,14 +383,9 @@ const recalcEstimatedCost = (ingredients) => {
 return (
   <form
     onSubmit={handleSubmit}
-    className="w-full max-w-4xl mx-auto p-4 sm:p-6 space-y-6"
+    className="w-full max-w-5xl mx-auto p-4 sm:p-6 space-y-6"
     autoComplete="off"
   >
-    {/* Header */}
-    <h2 className="text-2xl font-bold text-indigo-700">
-      {initialData ? t("Edit Product") : t("Add Product")}
-    </h2>
-
     {/* MAIN LAYOUT */}
     <div className="flex flex-col xl:flex-row gap-6">
       {/* LEFT: FORM */}
@@ -412,7 +407,7 @@ return (
               />
             </label>
 
-            {/* Category */}
+            {/* Category + Image */}
             <div>
               <label className="block">
                 <span className="font-medium">{t("Category")}</span>
@@ -425,7 +420,6 @@ return (
                 />
               </label>
 
-              {/* Category image upload */}
               <label className="block mt-3">
                 <span className="font-medium">{t("Category Image")}</span>
                 <input
@@ -440,7 +434,6 @@ return (
                     const fd = new FormData();
                     fd.append("image", file);
                     fd.append("category", product.category.trim().toLowerCase());
-
                     try {
                       const res = await fetch(`${API_URL}/api/category-images`, {
                         method: "POST",
@@ -463,7 +456,6 @@ return (
                         );
                       }
                     } catch (err) {
-                      console.error("Category upload failed:", err);
                       toast.error("Category upload failed!");
                     }
                   }}
@@ -509,10 +501,24 @@ return (
             </label>
           </div>
 
-          {/* Cost per unit small */}
-          <p className="text-sm text-rose-600 font-semibold">
+          {/* Product Image Upload */}
+          <label className="block mt-3">
+            <span className="font-medium">{t("Product Image")}</span>
+            <input type="file" accept="image/*" onChange={handleImageChange} />
+          </label>
+          {getImageSource() && (
+            <img
+              src={getImageSource()}
+              alt="Preview"
+              className="mt-2 w-24 h-24 rounded-xl object-cover border"
+            />
+          )}
+
+          {/* Cost per unit */}
+          <p className="text-sm text-rose-600 font-semibold mt-2">
             {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
           </p>
+
 
           {/* Promotion + visible */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -847,11 +853,6 @@ return (
                 <p className="text-xs text-rose-600 font-semibold">
                   {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
                 </p>
-                {product.description && (
-                  <p className="text-xs text-gray-500 line-clamp-3">
-                    {product.description}
-                  </p>
-                )}
               </div>
             </div>
           </details>
@@ -859,7 +860,7 @@ return (
       </div>
 
       {/* RIGHT PREVIEW on XL screens */}
-      <aside className="hidden xl:block w-80">
+      <aside className="hidden xl:block w-64">
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 sticky top-4">
           <h3 className="text-lg font-semibold mb-4">{t("Live Preview")}</h3>
           <div className="border rounded-xl overflow-hidden">
@@ -867,10 +868,10 @@ return (
               <img
                 src={getImageSource()}
                 alt="Preview"
-                className="w-full h-40 object-cover"
+                className="w-full h-36 object-cover"
               />
             ) : (
-              <div className="w-full h-40 flex items-center justify-center text-gray-400 bg-gray-50">
+              <div className="w-full h-36 flex items-center justify-center text-gray-400 bg-gray-50">
                 {t("No Image")}
               </div>
             )}
