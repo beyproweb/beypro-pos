@@ -235,33 +235,37 @@ useEffect(() => {
       return orders;
     })
     .then(async (orders) => {
-      const enriched = await Promise.all(
-        orders.map(async (order) => {
-          const items = await fetch(`${API_URL}/api/orders/${order.id}/items`).then(r => r.json());
+const enriched = await Promise.all(
+  orders.map(async (order) => {
+    const items = await fetch(`${API_URL}/api/orders/${order.id}/items`).then(r => r.json());
+    const suborders = await fetch(`${API_URL}/api/orders/${order.id}/suborders`).then(r => r.json());
 
-          const suborders = await fetch(`${API_URL}/api/orders/${order.id}/suborders`).then(r => r.json());
+    const receiptIds = [
+      ...new Set([
+        ...items.map(i => i.receipt_id).filter(Boolean),
+        ...suborders.map(s => s.receipt_id).filter(Boolean),
+      ]),
+    ];
 
-          const receiptIds = [
-            ...new Set([
-              ...items.map(i => i.receipt_id).filter(Boolean),
-              ...suborders.map(s => s.receipt_id).filter(Boolean),
-            ]),
-          ];
+    let receiptMethods = [];
+    for (const receiptId of receiptIds) {
+      try {
+        const r = await fetch(`${API_URL}/api/reports/receipt-methods/${receiptId}`);
+        const methods = await r.json();
+        receiptMethods.push(...methods);
+      } catch (err) {
+        console.warn("❌ Receipt fetch failed for", receiptId);
+      }
+    }
 
-          let receiptMethods = [];
-          for (const receiptId of receiptIds) {
-            try {
-              const r = await fetch(`${API_URL}/api/reports/receipt-methods/${receiptId}`);
-              const methods = await r.json();
-              receiptMethods.push(...methods);
-            } catch (err) {
-              console.warn("❌ Receipt fetch failed for", receiptId);
-            }
-          }
+    // ✅ attach items and suborders
+    return { ...order, items, suborders, receiptMethods };
+  })
+);
 
-          return { ...order, receiptMethods };
-        })
-      );
+// ✅ keep orders that actually have items
+setClosedOrders(enriched.filter(order => Array.isArray(order.items) && order.items.length > 0));
+
 
       setClosedOrders(
   enriched.filter(order => Array.isArray(order.items) && order.items.length > 0)
