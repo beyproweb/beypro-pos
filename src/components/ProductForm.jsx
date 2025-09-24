@@ -515,10 +515,7 @@ return (
             />
           )}
 
-          {/* Cost per unit */}
-          <p className="text-sm text-rose-600 font-semibold mt-2">
-            {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
-          </p>
+        
 
 
           {/* Promotion + visible */}
@@ -654,6 +651,10 @@ return (
                 <Plus size={18} /> {t("Add Ingredient")}
               </button>
             </div>
+              {/* Cost per unit */}
+          <p className="text-sm text-rose-600 font-semibold mt-2">
+            {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
+          </p>
           </details>
         </section>
 
