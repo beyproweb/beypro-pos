@@ -2154,6 +2154,30 @@ async function handleSubmitOrder() {
       // If user chose Online, create/refresh a checkout session
       if (paymentMethod === "online") {
         await startOnlinePaymentSession(orderId);
+        try {
+         await fetch(`${API_URL}/api/orders/${orderId}/status`, {
+           method: "PUT",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({
+             status: "paid",
+             payment_method: "Online",
+             total: newItems.reduce(
+               (sum, i) =>
+                 sum +
+                 (parseFloat(i.price) +
+                   (i.extras || []).reduce(
+                     (s, ex) =>
+                     s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+                     0
+                   )) *
+                   (i.quantity || 1),
+               0
+             ),
+           }),
+         });
+       } catch (err) {
+         console.error("❌ Failed to mark existing online order as paid:", err);
+       }
       }
 
       // clear only NEW items
@@ -2213,6 +2237,21 @@ async function handleSubmitOrder() {
     // If Online, start a checkout session for this order
     if (paymentMethod === "online") {
       await startOnlinePaymentSession(newId);
+          // 🔑 Immediately mark order as Paid Online
+     try {
+       await fetch(`${API_URL}/api/orders/${newId}/status`, {
+         method: "PUT",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+           status: "paid",
+           payment_method: "Online",
+           total,
+         }),
+       });
+       console.log("✅ Order marked Paid Online");
+     } catch (err) {
+       console.error("❌ Failed to mark online order as paid:", err);
+     }
     }
 
     setOrderId(newId);
