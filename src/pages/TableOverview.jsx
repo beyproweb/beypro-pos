@@ -377,21 +377,31 @@ useEffect(() => {
       }
       
 
-      return fetch(`${API_URL}/api/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`);
-    
-    })
-    .then((res) => {
-      if (!res) return; // 🛑 Skip if no fetch
-      return res.json();
-    })
-    .then((data) => {
-      if (!data) return;
-      const expense = data[0]?.total_expense || 0;
-      console.log("📉 New Daily Cash Expense:", expense);
-      setDailyCashExpense(expense);
-      setCashDataLoaded(true);
-      console.log("✅ All cash data loaded");
-    })
+return fetch(`${API_URL}/api/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`);
+})
+.then((res) => {
+  if (!res) return;
+  return res.json();
+})
+.then(async (data) => {
+  if (!data) return;
+  const logExpense = parseFloat(data[0]?.total_expense || 0);
+
+  // 🔄 Fetch additional general expenses from /expenses for today
+  const today = new Date().toISOString().slice(0, 10);
+  const extraExpenses = await fetch(`${API_URL}/api/expenses?from=${today}&to=${today}`)
+    .then(r => r.json())
+    .then(rows => rows.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0))
+    .catch(() => 0);
+
+  const totalExpense = logExpense + extraExpenses;
+
+  console.log("📉 New Daily Cash Expense (log + expenses):", totalExpense);
+  setDailyCashExpense(totalExpense);
+  setCashDataLoaded(true);
+  console.log("✅ All cash data loaded");
+})
+
     .catch((err) => {
       console.error("❌ Error in modal init:", err);
       toast.error("Failed to load register data");
