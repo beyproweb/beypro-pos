@@ -1535,37 +1535,49 @@ return (
 </div>
 
 
-    {/* Badges */}
-    <div className="flex items-center gap-1 ml-2">
-      <span className={`px-2 py-0.5 rounded-full text-xs font-bold
-        ${item.paid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-        {item.paid
-   ? t(item.payment_method === "Online" ? "Paid Online" : "paid")
-   : t("DUE")}
+ {/* Badges */}
+<div className="flex items-center gap-1 ml-2">
+  <span
+    className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+      order?.payment_method === "Online" || item.paid
+        ? "bg-green-100 text-green-700"
+        : "bg-red-100 text-red-600"
+    }`}
+  >
+    {order?.payment_method === "Online"
+      ? t("Paid Online")
+      : item.paid
+      ? t("paid")
+      : t("DUE")}
+  </span>
+
+  {/* Payment method */}
+  {(order?.payment_method === "Online" || (item.paid && item.payment_method)) &&
+    item.payment_method !== "Unknown" && (
+      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold flex items-center gap-1">
+        {item.payment_method === "Cash" && <>💵{" "}</>}
+        {item.payment_method === "Credit Card" && <>💳{" "}</>}
+        {item.payment_method === "Sodexo" && <>🍽️{" "}</>}
+        {item.payment_method === "Multinet" && <>🪙{" "}</>}
+        {t(order?.payment_method === "Online" ? "Online" : item.payment_method)}
       </span>
-      {/* Payment method */}
-      {item.paid && item.payment_method && item.payment_method !== "Unknown" && (
-        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold flex items-center gap-1">
-          {item.payment_method === "Cash" && <>💵{" "}</>}
-          {item.payment_method === "Credit Card" && <>💳{" "}</>}
-          {item.payment_method === "Sodexo" && <>🍽️{" "}</>}
-          {item.payment_method === "Multinet" && <>🪙{" "}</>}
-          {t(item.payment_method)}
-        </span>
-      )}
-      {/* Kitchen status */}
-      {item.kitchen_status && !item.paid && (
-        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shadow-sm
-          ${item.kitchen_status === "preparing" ? "bg-orange-100 text-orange-600" : ""}
-          ${item.kitchen_status === "delivered" ? "bg-green-100 text-green-700" : ""}
-          ${item.kitchen_status === "cancelled" ? "bg-red-200 text-red-700" : ""}
-        `}>
-          {item.kitchen_status === "preparing" && t("Preparing")}
-          {item.kitchen_status === "delivered" && t("Delivered")}
-          {item.kitchen_status === "cancelled" && t("Cancelled")}
-        </span>
-      )}
-    </div>
+    )}
+
+  {/* Kitchen status */}
+  {item.kitchen_status && !item.paid && order?.payment_method !== "Online" && (
+    <span
+      className={`px-2 py-0.5 rounded-full text-xs font-semibold shadow-sm
+        ${item.kitchen_status === "preparing" ? "bg-orange-100 text-orange-600" : ""}
+        ${item.kitchen_status === "delivered" ? "bg-green-100 text-green-700" : ""}
+        ${item.kitchen_status === "cancelled" ? "bg-red-200 text-red-700" : ""}
+      `}
+    >
+      {item.kitchen_status === "preparing" && t("Preparing")}
+      {item.kitchen_status === "delivered" && t("Delivered")}
+      {item.kitchen_status === "cancelled" && t("Cancelled")}
+    </span>
+  )}
+</div>
 
     {/* Edit & Remove (only for unconfirmed, unpaid items) */}
     <div className="flex items-center gap-1 ml-2">
