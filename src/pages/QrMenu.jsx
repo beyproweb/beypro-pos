@@ -942,7 +942,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
 
   const basePrice = parseFloat(product.price) || 0;
 
+  // Normalize groups: keep both id + name
   const normalizedGroups = (extrasGroups || []).map((g) => ({
+    id: g.id,
     groupName: g.groupName || g.group_name,
     items: Array.isArray(g.items)
       ? g.items
@@ -956,12 +958,14 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
         })(),
   }));
 
-  const productGroupNames = Array.isArray(product?.selectedExtrasGroup)
-    ? product.selectedExtrasGroup
+  // Get allowed groups by product.selectedExtrasGroup (IDs)
+  const productGroupIds = Array.isArray(product?.selectedExtrasGroup)
+    ? product.selectedExtrasGroup.map(Number).filter((n) => Number.isFinite(n))
     : [];
+
   const availableGroups =
-    productGroupNames.length > 0
-      ? normalizedGroups.filter((g) => productGroupNames.includes(g.groupName))
+    productGroupIds.length > 0
+      ? normalizedGroups.filter((g) => productGroupIds.includes(Number(g.id)))
       : normalizedGroups;
 
   const priceOf = (exOrItem) =>
@@ -974,15 +978,24 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
   const lineTotal = (basePrice + extrasPerUnit) * quantity;
 
   const qtyOf = (groupName, itemName) =>
-    selectedExtras.find((ex) => ex.group === groupName && ex.name === itemName)?.quantity || 0;
+    selectedExtras.find(
+      (ex) => ex.group === groupName && ex.name === itemName
+    )?.quantity || 0;
 
   const incExtra = (group, item) => {
     setSelectedExtras((prev) => {
-      const idx = prev.findIndex((ex) => ex.group === group.groupName && ex.name === item.name);
+      const idx = prev.findIndex(
+        (ex) => ex.group === group.groupName && ex.name === item.name
+      );
       if (idx === -1) {
         return [
           ...prev,
-          { group: group.groupName, name: item.name, price: priceOf(item), quantity: 1 },
+          {
+            group: group.groupName,
+            name: item.name,
+            price: priceOf(item),
+            quantity: 1,
+          },
         ];
       }
       const copy = [...prev];
@@ -993,7 +1006,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
 
   const decExtra = (group, item) => {
     setSelectedExtras((prev) => {
-      const idx = prev.findIndex((ex) => ex.group === group.groupName && ex.name === item.name);
+      const idx = prev.findIndex(
+        (ex) => ex.group === group.groupName && ex.name === item.name
+      );
       if (idx === -1) return prev;
       const copy = [...prev];
       copy[idx].quantity = Math.max(0, (copy[idx].quantity || 0) - 1);
@@ -1001,9 +1016,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
       return copy;
     });
   };
-
-
-
 
   const handleBackdrop = (e) => {
     if (e.target.dataset.backdrop === "true") onClose?.();
@@ -1055,11 +1067,13 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
         <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
           {/* Groups rail */}
           <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r-2 border-blue-100 bg-white/80 p-3 overflow-x-auto sm:overflow-y-auto">
-            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">{t("Extras Groups")}</div>
+            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">
+              {t("Extras Groups")}
+            </div>
             <div className="flex sm:block gap-2 sm:gap-0">
               {availableGroups.map((g, idx) => (
                 <button
-                  key={g.groupName}
+                  key={g.id}
                   onClick={() => setActiveGroupIdx(idx)}
                   className={`px-3 py-2 rounded-xl text-sm font-bold mb-2 border transition ${
                     activeGroupIdx === idx
@@ -1075,7 +1089,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
 
           {/* Items + Quantity + Note */}
           <section className="flex-1 p-4 sm:p-5 overflow-y-auto">
-            {/* Items */}
             {availableGroups.length > 0 ? (
               <>
                 <div className="font-bold text-fuchsia-600 mb-2 text-base">
@@ -1083,47 +1096,37 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
                   {(availableGroups[activeGroupIdx].items || []).map((item) => {
-                    const unit = parseFloat(item?.price ?? item?.extraPrice ?? 0) || 0;
-                    const q = selectedExtras.find((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name)?.quantity || 0;
+                    const unit = priceOf(item);
+                    const q =
+                      selectedExtras.find(
+                        (ex) =>
+                          ex.group === availableGroups[activeGroupIdx].groupName &&
+                          ex.name === item.name
+                      )?.quantity || 0;
                     return (
                       <div
-                        key={item.name}
+                        key={item.id ?? item.name}
                         className="flex flex-col items-center bg-white/80 border border-blue-100 rounded-xl px-2 py-2 min-h-[92px] shadow-sm"
                       >
                         <div className="text-center text-sm font-bold text-blue-900 leading-tight line-clamp-2">
                           {item.name}
                         </div>
-                        <div className="text-[12px] text-indigo-700 font-semibold">₺{unit.toFixed(2)}</div>
+                        <div className="text-[12px] text-indigo-700 font-semibold">
+                          ₺{unit.toFixed(2)}
+                        </div>
                         <div className="mt-2 flex items-center justify-center gap-2">
                           <button
                             className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
-                            onClick={() => {
-                              setSelectedExtras((prev) => {
-                                const idx = prev.findIndex((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name);
-                                if (idx === -1) return prev;
-                                const copy = [...prev];
-                                copy[idx].quantity = Math.max(0, (copy[idx].quantity || 0) - 1);
-                                if (copy[idx].quantity === 0) copy.splice(idx, 1);
-                                return copy;
-                              });
-                            }}
+                            onClick={() => decExtra(availableGroups[activeGroupIdx], item)}
                           >
                             –
                           </button>
-                          <span className="min-w-[28px] text-center text-base font-extrabold">{q}</span>
+                          <span className="min-w-[28px] text-center text-base font-extrabold">
+                            {q}
+                          </span>
                           <button
                             className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
-                            onClick={() => {
-                              setSelectedExtras((prev) => {
-                                const idx = prev.findIndex((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name);
-                                if (idx === -1) {
-                                  return [...prev, { group: availableGroups[activeGroupIdx].groupName, name: item.name, price: unit, quantity: 1 }];
-                                }
-                                const copy = [...prev];
-                                copy[idx].quantity = (copy[idx].quantity || 0) + 1;
-                                return copy;
-                              });
-                            }}
+                            onClick={() => incExtra(availableGroups[activeGroupIdx], item)}
                           >
                             +
                           </button>
@@ -1139,7 +1142,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
 
             {/* Quantity */}
             <div className="mt-5 sm:mt-6">
-              <div className="text-sm font-bold text-blue-700 mb-2">{t("Quantity")}</div>
+              <div className="text-sm font-bold text-blue-700 mb-2">
+                {t("Quantity")}
+              </div>
               <div className="flex items-center justify-center gap-3">
                 <button
                   className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
@@ -1147,7 +1152,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
                 >
                   –
                 </button>
-                <span className="w-12 text-center text-2xl font-extrabold">{quantity}</span>
+                <span className="w-12 text-center text-2xl font-extrabold">
+                  {quantity}
+                </span>
                 <button
                   className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
                   onClick={() => setQuantity((q) => q + 1)}
@@ -1178,12 +1185,19 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
           <button
             className="py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
             onClick={() => {
-              const unique_id = `${product.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+              const unique_id = `${product.id}-${Date.now().toString(36)}-${Math.random()
+                .toString(36)
+                .slice(2, 8)}`;
               onAddToCart({
                 id: product.id,
                 name: product.name,
                 image: product.image,
-                price: basePrice + selectedExtras.reduce((s, ex) => s + (ex.price || 0) * (ex.quantity || 1), 0),
+                price:
+                  basePrice +
+                  selectedExtras.reduce(
+                    (s, ex) => s + (ex.price || 0) * (ex.quantity || 1),
+                    0
+                  ),
                 quantity,
                 extras: selectedExtras.filter((e) => e.quantity > 0),
                 note,
@@ -1199,6 +1213,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
     document.body
   );
 }
+
 
 function CartDrawer({
   cart,
