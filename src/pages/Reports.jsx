@@ -571,8 +571,10 @@ useEffect(() => {
       setNetSales(d.net_sales || 0);
       setExpensesToday(fullExpenses);
       setProfit((d.net_sales || 0) - fullExpenses);
-    });
-}, [expensesData]);
+    })
+    .catch(err => console.error("❌ Failed to fetch summary:", err));
+}, [dateRange, customStart, customEnd, expensesData]);
+
 
 
 useEffect(() => {
