@@ -963,10 +963,34 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
     ? product.selectedExtrasGroup.map(Number).filter((n) => Number.isFinite(n))
     : [];
 
-  const availableGroups =
-    productGroupIds.length > 0
-      ? normalizedGroups.filter((g) => productGroupIds.includes(Number(g.id)))
-      : normalizedGroups;
+ let availableGroups = [];
+ if (productGroupIds.length > 0) {
+   availableGroups = normalizedGroups.filter((g) =>
+     productGroupIds.includes(Number(g.id))
+   );
+ }
+
+ // ✅ Fallback: if no group IDs matched, but product.extras exists
+ if (availableGroups.length === 0 &&
+     Array.isArray(product?.extras) &&
+     product.extras.length > 0) {
+   availableGroups = [
+     {
+       id: "manual",
+       groupName: "Extras",
+       items: product.extras.map((ex, idx) => ({
+         id: idx,
+         name: ex.name,
+         price: Number(ex.extraPrice || ex.price || 0),
+         unit: ex.unit || "",
+         amount:
+           ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
+             ? Number(ex.amount)
+             : 1,
+       })),
+     },
+   ];
+ }
 
   const priceOf = (exOrItem) =>
     parseFloat(exOrItem?.price ?? exOrItem?.extraPrice ?? 0) || 0;
