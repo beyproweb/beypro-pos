@@ -392,114 +392,115 @@ return (
       <div className="flex-1 space-y-6">
         {/* Basic Info */}
         <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 space-y-4">
-          <h3 className="text-lg font-semibold">{t("Basic Information")}</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Name */}
-            <label className="block">
-              <span className="font-medium">{t("Name")}</span>
-              <input
-                type="text"
-                name="name"
-                value={product.name}
-                onChange={handleChange}
-                className="w-full p-3 mt-1 rounded-xl border"
-                required
-              />
-            </label>
+  <h3 className="text-lg font-semibold">{t("Basic Information")}</h3>
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    {/* Name always spans full width */}
+    <label className="block lg:col-span-2">
+      <span className="font-medium">{t("Name")}</span>
+      <input
+        type="text"
+        name="name"
+        value={product.name}
+        onChange={handleChange}
+        className="w-full p-3 mt-1 rounded-xl border"
+        required
+      />
+    </label>
 
-            {/* Category + Image */}
-            <div>
-              <label className="block">
-                <span className="font-medium">{t("Category")}</span>
-                <input
-                  type="text"
-                  name="category"
-                  value={product.category}
-                  onChange={handleChange}
-                  className="w-full p-3 mt-1 rounded-xl border"
-                />
-              </label>
+    {/* LEFT COLUMN: Category + Category Image */}
+    <div>
+      <label className="block">
+        <span className="font-medium">{t("Category")}</span>
+        <input
+          type="text"
+          name="category"
+          value={product.category}
+          onChange={handleChange}
+          className="w-full p-3 mt-1 rounded-xl border"
+        />
+      </label>
 
-              <label className="block mt-3">
-                <span className="font-medium">{t("Category Image")}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={async (e) => {
-                    const file = e.target.files[0];
-                    if (!file || !product.category) {
-                      toast.error(t("Category required first!"));
-                      return;
-                    }
-                    const fd = new FormData();
-                    fd.append("image", file);
-                    fd.append("category", product.category.trim().toLowerCase());
-                    try {
-                      const res = await fetch(`${API_URL}/api/category-images`, {
-                        method: "POST",
-                        body: fd,
-                      });
-                      if (!res.ok) {
-                        toast.error("Upload failed");
-                        return;
-                      }
-                      toast.success("Category image uploaded!");
-                      const cat = product.category.trim().toLowerCase();
-                      const resp = await fetch(
-                        `${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`
-                      );
-                      const data = await resp.json();
-                      if (data.length > 0 && data[0].image) {
-                        const img = data[0].image;
-                        setCategoryImagePreview(
-                          img.startsWith("http") ? img : `${API_URL}/uploads/${img}`
-                        );
-                      }
-                    } catch (err) {
-                      toast.error("Category upload failed!");
-                    }
-                  }}
-                  className="w-full mt-1"
-                />
-              </label>
+      <label className="block mt-3">
+        <span className="font-medium">{t("Category Image")}</span>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={async (e) => {
+            const file = e.target.files[0];
+            if (!file || !product.category) {
+              toast.error(t("Category required first!"));
+              return;
+            }
+            const fd = new FormData();
+            fd.append("image", file);
+            fd.append("category", product.category.trim().toLowerCase());
+            try {
+              const res = await fetch(`${API_URL}/api/category-images`, {
+                method: "POST",
+                body: fd,
+              });
+              if (!res.ok) {
+                toast.error("Upload failed");
+                return;
+              }
+              toast.success("Category image uploaded!");
+              const cat = product.category.trim().toLowerCase();
+              const resp = await fetch(
+                `${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`
+              );
+              const data = await resp.json();
+              if (data.length > 0 && data[0].image) {
+                const img = data[0].image;
+                setCategoryImagePreview(
+                  img.startsWith("http") ? img : `${API_URL}/uploads/${img}`
+                );
+              }
+            } catch (err) {
+              toast.error("Category upload failed!");
+            }
+          }}
+          className="w-full mt-1"
+        />
+      </label>
 
-              {categoryImagePreview && (
-                <div className="mt-2 flex items-center gap-3">
-                  <img
-                    src={categoryImagePreview}
-                    alt="Category"
-                    className="w-16 h-16 rounded-lg object-cover border shadow"
-                  />
-                  <span className="text-sm text-gray-500">{t("Category Preview")}</span>
-                </div>
-              )}
-            </div>
+      {categoryImagePreview && (
+        <div className="mt-2 flex items-center gap-3">
+          <img
+            src={categoryImagePreview}
+            alt="Category"
+            className="w-16 h-16 rounded-lg object-cover border shadow"
+          />
+          <span className="text-sm text-gray-500">{t("Category Preview")}</span>
+        </div>
+      )}
+    </div>
 
-            {/* Price */}
-            <label className="block">
-              <span className="font-medium">{t("Price (₺)")}</span>
-              <input
-                type="number"
-                name="price"
-                value={product.price}
-                onChange={handleChange}
-                className="w-full p-3 mt-1 rounded-xl border"
-                required
-              />
-            </label>
+    {/* RIGHT COLUMN: Price + Prep Time */}
+    <div>
+      <label className="block">
+        <span className="font-medium">{t("Price (₺)")}</span>
+        <input
+          type="number"
+          name="price"
+          value={product.price}
+          onChange={handleChange}
+          className="w-full p-3 mt-1 rounded-xl border"
+          required
+        />
+      </label>
 
-            {/* Prep Time */}
-            <label className="block">
-              <span className="font-medium">{t("Preparation Time (min)")}</span>
-              <input
-                type="number"
-                name="preparation_time"
-                value={product.preparation_time}
-                onChange={handleChange}
-                className="w-full p-3 mt-1 rounded-xl border"
-              />
-            </label>
-          </div>
+      <label className="block mt-3">
+        <span className="font-medium">{t("Preparation Time (min)")}</span>
+        <input
+          type="number"
+          name="preparation_time"
+          value={product.preparation_time}
+          onChange={handleChange}
+          className="w-full p-3 mt-1 rounded-xl border"
+        />
+      </label>
+    </div>
+  </div>
 
           {/* Product Image Upload */}
           <label className="block mt-3">
