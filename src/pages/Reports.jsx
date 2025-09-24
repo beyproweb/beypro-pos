@@ -24,6 +24,22 @@ import { Card, CardContent } from "../components/ui/card";
 import { toast } from "react-toastify";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 const API_URL = import.meta.env.VITE_API_URL || "";
+
+
+// Helper to calculate order total including extras
+function calcOrderTotalWithExtras(order) {
+  if (!order?.items) return 0;
+  return order.items.reduce((sum, item) => {
+    const base = (parseFloat(item.price) || 0) * item.quantity;
+    const extras = (item.extras || []).reduce(
+      (s, ex) =>
+        s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
+      0
+    ) * item.quantity;
+    return sum + base + extras;
+  }, 0);
+}
+
 export default function Reports() {
   const { t } = useTranslation();
    const hasDashboardAccess = useHasPermission("dashboard");
@@ -1026,44 +1042,48 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
     {t("Order Type Totals")}
   </h3>
   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-    {/* Dine-in */}
-<div className="bg-blue-100 dark:bg-blue-900 rounded-lg p-3">
-  🍽️ {t("Dine-in")}: <b>₺{dineInTotal.toLocaleString()}</b>
-  <details className="mt-2">
-    <summary className="cursor-pointer text-xs underline">
-      {t("Show Details")}
-    </summary>
-    <ul className="mt-1 space-y-1 text-xs">
-      {Object.entries(
-        closedOrders
-          .filter(
-            o =>
-              o.order_type === "table" ||
-              (!!o.table_number && (o.order_type == null || o.order_type === "dinein"))
-          )
-          .reduce((acc, order) => {
-            if (order.receiptMethods?.length) {
-              order.receiptMethods.forEach(m => {
-                const method = m.payment_method || "Unknown";
-                acc[method] = (acc[method] || 0) + parseFloat(m.amount || 0);
-              });
-            } else if (order.payment_method) {
-              acc[order.payment_method] =
-                (acc[order.payment_method] || 0) + parseFloat(order.total || 0);
-            }
-            return acc;
-          }, {})
-      ).map(([method, total], i) => (
-        <li key={i} className="flex justify-between">
-          <span>{method}</span>
-          <span>₺{total.toLocaleString()}</span>
-        </li>
-      ))}
-    </ul>
-  </details>
-</div>
 
-    {/* Online (all platforms summed) */}
+    {/* Dine-in */}
+    <div className="bg-blue-100 dark:bg-blue-900 rounded-lg p-3">
+      🍽️ {t("Dine-in")}: <b>₺{dineInTotal.toLocaleString()}</b>
+      <details className="mt-2">
+        <summary className="cursor-pointer text-xs underline">
+          {t("Show Details")}
+        </summary>
+        <ul className="mt-1 space-y-1 text-xs">
+          {Object.entries(
+            closedOrders
+              .filter(
+                o =>
+                  o.order_type === "table" ||
+                  (!!o.table_number &&
+                    (o.order_type == null || o.order_type === "dinein"))
+              )
+              .reduce((acc, order) => {
+                if (order.receiptMethods?.length) {
+                  order.receiptMethods.forEach(m => {
+                    const method = m.payment_method || "Unknown";
+                    acc[method] =
+                      (acc[method] || 0) + parseFloat(m.amount || 0);
+                  });
+                } else if (order.payment_method) {
+                  acc[order.payment_method] =
+                    (acc[order.payment_method] || 0) +
+                    calcOrderTotalWithExtras(order);
+                }
+                return acc;
+              }, {})
+          ).map(([method, total], i) => (
+            <li key={i} className="flex justify-between">
+              <span>{method}</span>
+              <span>₺{total.toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+
+    {/* Online */}
     <div className="bg-green-100 dark:bg-green-900 rounded-lg p-3">
       📱 {t("Online")}:{" "}
       <b>
@@ -1102,38 +1122,39 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
     </div>
 
     {/* Phone */}
-<div className="bg-yellow-100 dark:bg-yellow-900 rounded-lg p-3">
-  ☎️ {t("Phone")}: <b>₺{phoneTotal.toLocaleString()}</b>
-  <details className="mt-2">
-    <summary className="cursor-pointer text-xs underline">
-      {t("Show Details")}
-    </summary>
-    <ul className="mt-1 space-y-1 text-xs">
-      {Object.entries(
-        closedOrders
-          .filter(o => o.order_type === "phone")   // ✅ ONLY phone orders
-          .reduce((acc, order) => {
-            if (order.receiptMethods?.length) {
-              order.receiptMethods.forEach(m => {
-                const method = m.payment_method || "Unknown";
-                acc[method] = (acc[method] || 0) + parseFloat(m.amount || 0);
-              });
-            } else if (order.payment_method) {
-              acc[order.payment_method] =
-                (acc[order.payment_method] || 0) + parseFloat(order.total || 0);
-            }
-            return acc;
-          }, {})
-      ).map(([method, total], i) => (
-        <li key={i} className="flex justify-between">
-          <span>{method}</span>
-          <span>₺{total.toLocaleString()}</span>
-        </li>
-      ))}
-    </ul>
-  </details>
-</div>
-
+    <div className="bg-yellow-100 dark:bg-yellow-900 rounded-lg p-3">
+      ☎️ {t("Phone")}: <b>₺{phoneTotal.toLocaleString()}</b>
+      <details className="mt-2">
+        <summary className="cursor-pointer text-xs underline">
+          {t("Show Details")}
+        </summary>
+        <ul className="mt-1 space-y-1 text-xs">
+          {Object.entries(
+            closedOrders
+              .filter(o => o.order_type === "phone")
+              .reduce((acc, order) => {
+                if (order.receiptMethods?.length) {
+                  order.receiptMethods.forEach(m => {
+                    const method = m.payment_method || "Unknown";
+                    acc[method] =
+                      (acc[method] || 0) + parseFloat(m.amount || 0);
+                  });
+                } else if (order.payment_method) {
+                  acc[order.payment_method] =
+                    (acc[order.payment_method] || 0) +
+                    calcOrderTotalWithExtras(order);
+                }
+                return acc;
+              }, {})
+          ).map(([method, total], i) => (
+            <li key={i} className="flex justify-between">
+              <span>{method}</span>
+              <span>₺{total.toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
   </div>
 </Card>
 
