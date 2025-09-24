@@ -556,126 +556,66 @@ useEffect(() => {
 }, [tableId, orderId]);
 
 useEffect(() => {
-  const fetchPhoneOrder = async (orderId) => {
-    try {
-      const res = await fetch(`${API_URL}/api/orders/${orderId}`);
-      if (!res.ok) throw new Error("Failed to fetch phone order");
-      const newOrder = await res.json();
+// ✅ Fetch order for phone/packet (QRMenu online orders also land here)
+const fetchPhoneOrder = async (id) => {
+  try {
+    const res = await fetch(`${API_URL}/api/orders/${id}`);
+    if (!res.ok) throw new Error("Failed to fetch order");
 
-      // Fetch items for this phone order
-      const itemsRes = await fetch(`${API_URL}/api/orders/${newOrder.id}/items`);
-      const items = await itemsRes.json();
+    const newOrder = await res.json();
 
-      const parsedItems = items.map(item => {
-        const extras = safeParseExtras(item.extras);
-        return {
-          id: item.product_id,
-          name: item.name || item.order_item_name || item.product_name,
-          quantity: parseInt(item.quantity, 10),
-          price: parseFloat(item.price),
-ingredients: Array.isArray(item.ingredients)
-  ? item.ingredients
-  : (typeof item.ingredients === "string"
-      ? JSON.parse(item.ingredients || "[]")
-      : []),
+    // Normalize status if paid online
+    let correctedStatus = newOrder.status;
+    if (newOrder.payment_method === "Online") {
+      correctedStatus = "paid";
+    }
 
-          extras,
-          unique_id: item.unique_id || `${item.product_id}-${JSON.stringify(extras)}`,
-          confirmed: item.confirmed ?? true,
-          paid: !!item.paid_at,
-          payment_method: item.payment_method ?? "Unknown",
-          receipt_id: item.receipt_id || "❌ NO RECEIPT",
-          note: item.note || "",
-          kitchen_status: item.kitchen_status || ""
-        };
+    setOrder({ ...newOrder, status: correctedStatus });
+    setCartItems(newOrder.items || []);
+  } catch (err) {
+    console.error("❌ Error fetching phone/packet order:", err);
+  }
+};
+
+// ✅ Create or fetch table order
+const createOrFetchTableOrder = async (tableNumber) => {
+  try {
+    const res = await fetch(`${API_URL}/api/orders?table_number=${tableNumber}`);
+    if (!res.ok) throw new Error("Failed to fetch order");
+
+    const orders = await res.json();
+    let newOrder = orders[0];
+
+    if (!newOrder) {
+      // Create new if none exists
+      const createRes = await fetch(`${API_URL}/api/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table_number: tableNumber,
+          order_type: "table",
+          total: 0,
+          items: [],
+        }),
       });
 
-      setCartItems(parsedItems); // Show all items, paid and unpaid
-      setReceiptItems(parsedItems.filter(i => i.paid && i.receipt_id));
-
-      // Smart status override
-      let correctedStatus = newOrder.status;
-      if (parsedItems.some(i => !i.confirmed)) {
-        correctedStatus = "confirmed";
-      } else if (parsedItems.some(i => i.confirmed && !i.paid)) {
-        correctedStatus = "confirmed";
-      } else if (parsedItems.every(i => i.confirmed && i.paid)) {
-        correctedStatus = "paid";
-      }
-      setOrder({ ...newOrder, status: correctedStatus });
-    } catch (error) {
-      console.error("❌ Error fetching phone order:", error);
-    } finally {
-      setLoading(false);
+      if (!createRes.ok) throw new Error("Failed to create new order");
+      newOrder = await createRes.json();
     }
-  };
 
-  const createOrFetchTableOrder = async (tableId) => {
-    try {
-      let newOrder;
-      const res = await fetch(`${API_URL}/api/orders?table_number=${tableId}`);
-      if (!res.ok) throw new Error("Failed to fetch order");
-      const data = await res.json();
-
-      if (data.length > 0) {
-        newOrder = data[0];
-      } else {
-        const createRes = await fetch(`${API_URL}/api/orders`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ table_number: tableId, total: 0, order_type: "table" }),
-});
-
-        if (!createRes.ok) throw new Error("Failed to create order");
-        newOrder = await createRes.json();
-      }
-
-      // 🔄 Fetch items to verify real status
-      const itemsRes = await fetch(`${API_URL}/api/orders/${newOrder.id}/items`);
-      const items = await itemsRes.json();
-
-      const parsedItems = items.map(item => {
-        const extras = safeParseExtras(item.extras);
-        return {
-          id: item.product_id,
-          name: item.name || item.order_item_name || item.product_name,
-          quantity: parseInt(item.quantity, 10),
-          price: parseFloat(item.price),
-ingredients: Array.isArray(item.ingredients)
-  ? item.ingredients
-  : (typeof item.ingredients === "string"
-      ? JSON.parse(item.ingredients || "[]")
-      : []),
-
-          extras,
-          unique_id: item.unique_id || `${item.product_id}-${JSON.stringify(extras)}`,
-          confirmed: item.confirmed ?? false,
-          paid: !!item.paid_at,
-          payment_method: item.payment_method ?? "Unknown",
-          receipt_id: item.receipt_id || "❌ NO RECEIPT",
-          note: item.note || "",
-          kitchen_status: item.kitchen_status || ""
-        };
-      });
-
-      setCartItems(parsedItems);
-      setReceiptItems(parsedItems.filter(i => i.paid && i.receipt_id));
-
-      let correctedStatus = newOrder.status;
-      if (parsedItems.some(i => !i.confirmed)) {
-        correctedStatus = "confirmed";
-      } else if (parsedItems.some(i => i.confirmed && !i.paid)) {
-        correctedStatus = "confirmed";
-      } else if (parsedItems.every(i => i.confirmed && i.paid)) {
-        correctedStatus = "paid";
-      }
-      setOrder({ ...newOrder, status: correctedStatus });
-    } catch (error) {
-      console.error("❌ Error creating or fetching order:", error);
-    } finally {
-      setLoading(false);
+    // Normalize status if paid online
+    let correctedStatus = newOrder.status;
+    if (newOrder.payment_method === "Online") {
+      correctedStatus = "paid";
     }
-  };
+
+    setOrder({ ...newOrder, status: correctedStatus });
+    setCartItems(newOrder.items || []);
+  } catch (err) {
+    console.error("❌ Error creating/fetching table order:", err);
+  }
+};
+
 
   // 💡 If you pass orderId for phone, use that; if only tableId, use that logic
   if (orderId) {
@@ -1071,8 +1011,12 @@ await fetch(`${API_URL}/api/orders/receipt-methods`, {
 const getButtonLabel = () => {
   if (!order) return "Preparing..";
 
+  // 🔑 Force Close if already paid online
+  if (order.payment_method === "Online") {
+    return "Close";
+  }
+
   const hasUnconfirmed = cartItems.some((i) => !i.confirmed);
-  // Only show "Pay" if there are unpaid and confirmed items
   const hasUnpaid = cartItems.some((i) => !i.paid && i.confirmed);
 
   if (hasUnconfirmed) return "Confirm";
@@ -1589,7 +1533,9 @@ return (
     <div className="flex items-center gap-1 ml-2">
       <span className={`px-2 py-0.5 rounded-full text-xs font-bold
         ${item.paid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-        {item.paid ? t("paid") : t("DUE")}
+        {item.paid
+   ? t(item.payment_method === "Online" ? "Paid Online" : "paid")
+   : t("DUE")}
       </span>
       {/* Payment method */}
       {item.paid && item.payment_method && item.payment_method !== "Unknown" && (
