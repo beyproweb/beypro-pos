@@ -1459,10 +1459,15 @@ async function startOnlinePaymentSession(id) {
     const res = await fetch(`${API_URL}/api/payments/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order_id: id, method: "online" }) // backend should compute unpaid total
+      body: JSON.stringify({ order_id: id, method: "online" }),
     });
-    const text = await res.text();
-    const data = JSON.parse(text).pay_url ? JSON.parse(text) : {};
+
+    if (!res.ok) {
+      console.error("startOnlinePaymentSession failed:", res.status, await res.text());
+      return null;
+    }
+
+    const data = await res.json().catch(() => ({}));
     if (data.pay_url) {
       localStorage.setItem("qr_payment_url", data.pay_url);
       return data.pay_url;
@@ -1472,6 +1477,7 @@ async function startOnlinePaymentSession(id) {
   }
   return null;
 }
+
 
 
 /* ====================== ORDER STATUS MODAL ====================== */
@@ -1578,7 +1584,15 @@ const [showQrPrompt, setShowQrPrompt] = useState(() => {
 // === PWA INSTALL HANDLER ===
 const [deferredPrompt, setDeferredPrompt] = useState(null);
 const [canInstall, setCanInstall] = useState(false);
-
+  const resetToTypePicker = () => {
+    setShowStatus(false);
+    setOrderStatus("pending");
+    setOrderId(null);
+    setCart([]);
+    setCustomerInfo(null);
+    setTable(null);
+    setOrderType(null);
+  };
 useEffect(() => {
   const handler = (e) => {
     e.preventDefault();
