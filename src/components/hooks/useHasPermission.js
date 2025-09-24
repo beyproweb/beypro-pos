@@ -1,7 +1,7 @@
 // src/components/hooks/useHasPermission.js
 import { useAuth } from "../../context/AuthContext";
 
-export default function useHasPermission(perm) {
+export function useHasPermission(perm) {
   const { currentUser } = useAuth();
 
   if (!currentUser) return false;
