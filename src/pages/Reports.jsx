@@ -566,14 +566,15 @@ useEffect(() => {
       );
       const fullExpenses = (d.expenses_today || 0) + extraExpenses;
 
-      
       setGrossSales(d.gross_sales || 0);
       setNetSales(d.net_sales || 0);
       setExpensesToday(fullExpenses);
       setProfit((d.net_sales || 0) - fullExpenses);
+      setSummary(d); // keep full summary for avgOrderValue
     })
     .catch(err => console.error("❌ Failed to fetch summary:", err));
 }, [dateRange, customStart, customEnd, expensesData]);
+
 
 
 
@@ -610,10 +611,11 @@ const kpis = [
   { label: t("Cash Available"), value: cashAvailable, color: "from-yellow-500 to-yellow-700" },
   { label: t("Profit"), value: profit, color: "from-green-500 to-green-700" },
   {
-    label: t("Avg Order Value"),
-    value: closedOrders.length > 0 ? grossSales / closedOrders.length : 0,
-    color: "from-purple-500 to-purple-700",
-  },
+  label: t("Avg Order Value"),
+  value: summary?.average_order_value || 0,
+  color: "from-purple-500 to-purple-700",
+},
+
   {
     label: t("Total Items Sold"),
     value: totalItemsSold,
