@@ -1031,8 +1031,7 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
 
 {/* Sales by Payment Method */}
 <ChartCard title={t("Sales by Payment Method")}>
-  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
-    {paymentData.map(({ method, value }) => {
+  <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">    {paymentData.map(({ method, value }) => {
       const percent = (value / totalPayments) * 100;
 
       // Match emoji from TransactionScreen
@@ -1254,7 +1253,7 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
   }
 >
   {/* Category Grid */}
-  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+  <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
     {productSalesData.map((cat, i) => (
       <div
         key={i}
