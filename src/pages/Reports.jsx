@@ -666,6 +666,12 @@ useEffect(() => {
     .catch(err => console.error("❌ Failed to fetch summary:", err));
 }, [dateRange, customStart, customEnd, expensesData]);
 
+useEffect(() => {
+  fetch(`${API_URL}/api/reports/sales-by-payment-method-detailed?from=${from}&to=${to}`)
+    .then(res => res.json())
+    .then(data => setPaymentData(data));
+}, [from, to]);
+
 // ✅ New effect to calculate gross/net from closedOrders with extras
 useEffect(() => {
   if (!closedOrders.length) {
@@ -714,11 +720,6 @@ useEffect(() => {
   setDailySales(totalPayments || 0);
 }, [totalPayments]);
 
-useEffect(() => {
-  fetch(`${API_URL}/api/reports/sales-by-payment-method-detailed?from=${from}&to=${to}`)
-    .then(res => res.json())
-    .then(data => setPaymentData(data));
-}, [from, to]);
 
 const salesTrendsRef = useRef(null);
 
