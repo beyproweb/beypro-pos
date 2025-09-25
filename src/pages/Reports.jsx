@@ -760,7 +760,7 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
         <h3 className="font-semibold text-lg text-gray-700 dark:text-white">{title}</h3>
         {actions}
       </div>
-      <div className="h-[280px]">{children}</div>
+     <div>{children}</div> {/* ✅ auto height */}
     </div>
   );
 
@@ -1031,7 +1031,8 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
 
 {/* Sales by Payment Method */}
 <ChartCard title={t("Sales by Payment Method")}>
-  <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">    {paymentData.map(({ method, value }) => {
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4 items-stretch">
+   {paymentData.map(({ method, value }) => {
       const percent = (value / totalPayments) * 100;
 
       // Match emoji from TransactionScreen
@@ -1047,7 +1048,8 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
       return (
         <div
           key={method}
-          className="bg-gradient-to-br from-white/70 to-gray-100 dark:from-gray-800 dark:to-gray-900 p-4 rounded-xl shadow text-sm flex flex-col justify-between"
+          className="bg-gradient-to-br from-white/70 to-gray-100 dark:from-gray-800 dark:to-gray-900 
+             p-4 rounded-xl shadow text-sm flex flex-col justify-between min-h-[120px]"
         >
           <div className="font-semibold text-gray-700 dark:text-white truncate">
             {emoji} {method}
@@ -1253,11 +1255,13 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
   }
 >
   {/* Category Grid */}
-  <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 items-stretch">
+
     {productSalesData.map((cat, i) => (
       <div
         key={i}
-        className="p-4 bg-gradient-to-br from-indigo-100 to-blue-100 dark:from-gray-800 dark:to-gray-900 rounded-xl shadow text-gray-800 dark:text-white"
+        className="p-4 bg-gradient-to-br from-indigo-100 to-blue-100 dark:from-gray-800 dark:to-gray-900 
+             rounded-xl shadow text-gray-800 dark:text-white min-h-[160px] flex flex-col justify-between"
       >
         <div className="flex justify-between items-center">
           <h4 className="font-bold text-md truncate">
