@@ -21,6 +21,12 @@ export default function ProtectedRoute({ children, permission }) {
   console.log("   Current role:", currentUser.role);
   console.log("   Current permissions:", currentUser.permissions);
 
+  // ✅ Superuser rule: admins always have full access
+  if (currentUser.role === "admin") {
+    console.log("   Result: ✅ Admin superuser → access granted");
+    return children;
+  }
+
   const rolesConfig = window.beyproUserSettings?.roles || {};
   const allowed = hasPermission(permission, currentUser, rolesConfig);
 
