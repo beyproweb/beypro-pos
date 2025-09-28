@@ -1,31 +1,34 @@
 // src/components/ProtectedRoute.jsx
-import React from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { hasPermission } from "../utils/permissions";
 
-export default function ProtectedRoute({ permission, children }) {
+export default function ProtectedRoute({ children, permission }) {
   const { currentUser, loading } = useAuth();
-  const location = useLocation();
 
-  // ⏳ Wait for AuthContext to finish resolving (prevents false "unauthorized")
   if (loading) {
-    return null; // or a spinner/skeleton
+    return <div className="p-10 text-gray-500">Loading...</div>;
   }
 
-  // Not logged in → to login
   if (!currentUser) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    console.warn("🔒 No current user → redirecting to /login");
+    return <Navigate to="/login" replace />;
   }
 
-  // Load roles config that AuthContext persisted
-  let rolesConfig = {};
-  try {
-    const stored = JSON.parse(localStorage.getItem("beyproUserSettings") || "{}");
-    rolesConfig = stored.roles || {};
-  } catch {}
+  // Debug logs
+  console.log("🔐 ProtectedRoute check:");
+  console.log("   Required permission:", permission);
+  console.log("   Current role:", currentUser.role);
+  console.log("   Current permissions:", currentUser.permissions);
 
-  // ✅ Check permission now that everything is ready
+  const rolesConfig = window.beyproUserSettings?.roles || {};
   const allowed = hasPermission(permission, currentUser, rolesConfig);
-  return allowed ? children : <Navigate to="/unauthorized" replace />;
+
+  console.log("   Result:", allowed ? "✅ Access granted" : "❌ Access denied");
+
+  if (!allowed) {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  return children;
 }

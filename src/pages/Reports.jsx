@@ -666,12 +666,6 @@ useEffect(() => {
     .catch(err => console.error("❌ Failed to fetch summary:", err));
 }, [dateRange, customStart, customEnd, expensesData]);
 
-useEffect(() => {
-  fetch(`${API_URL}/api/reports/sales-by-payment-method-detailed?from=${from}&to=${to}`)
-    .then(res => res.json())
-    .then(data => setPaymentData(data));
-}, [from, to]);
-
 // ✅ New effect to calculate gross/net from closedOrders with extras
 useEffect(() => {
   if (!closedOrders.length) {
@@ -719,7 +713,6 @@ useEffect(() => {
   // Keep the KPI in sync with the payment tiles
   setDailySales(totalPayments || 0);
 }, [totalPayments]);
-
 
 const salesTrendsRef = useRef(null);
 
@@ -1039,28 +1032,35 @@ const groupedRegisterEvents = registerEvents.reduce((acc, ev) => {
 {/* Sales by Payment Method */}
 <ChartCard title={t("Sales by Payment Method")}>
     <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4 items-stretch">
-{paymentData.map(({ method, total, single, split }) => (
-  <div
-    key={method}
-    className="bg-gradient-to-br from-white/70 to-gray-100 dark:from-gray-800 dark:to-gray-900
-               p-4 rounded-xl shadow text-sm flex flex-col justify-between min-h-[140px]"
-  >
-    <div className="font-semibold">{emoji} {method}</div>
+   {paymentData.map(({ method, value }) => {
+      const percent = (value / totalPayments) * 100;
 
-    <div className="mt-2 text-lg font-bold text-blue-600">
-      ₺{total.toLocaleString()}
-    </div>
+      // Match emoji from TransactionScreen
+      const icons = {
+        "Cash": "💵",
+        "Credit Card": "💳",
+        "Sodexo": "🍽️",
+        "Multinet": "🪙",
+        "Unknown": "❓"
+      };
+      const emoji = icons[method] || "💰";
 
-    {/* Divider */}
-    <hr className="my-1 border-gray-300 dark:border-gray-700" />
-
-    <div className="text-xs text-gray-600 dark:text-gray-400">
-      <div>Single: ₺{single.toLocaleString()}</div>
-      <div>Split: ₺{split.toLocaleString()}</div>
-    </div>
-  </div>
-))}
-
+      return (
+        <div
+          key={method}
+          className="bg-gradient-to-br from-white/70 to-gray-100 dark:from-gray-800 dark:to-gray-900 
+             p-4 rounded-xl shadow text-sm flex flex-col justify-between min-h-[120px]"
+        >
+          <div className="font-semibold text-gray-700 dark:text-white truncate">
+            {emoji} {method}
+          </div>
+          <div className="mt-2 text-lg font-bold text-blue-600 dark:text-blue-400">
+            ₺{value.toLocaleString()}
+          </div>
+          <div className="text-xs text-gray-500">{percent.toFixed(1)}%</div>
+        </div>
+      );
+    })}
   </div>
 
   {/* Sticky-style total below grid */}

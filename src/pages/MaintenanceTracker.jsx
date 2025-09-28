@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Wrench, Plus, Loader, User, CheckCircle, Clock } from "lucide-react";
 import axios from "axios";
-
+import { useHasPermission } from "../components/hooks/useHasPermission";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+import { useTranslation } from "react-i18next";
 
 // Demo data loader — swap for your backend integration
 const fetchIssues = async () => [
@@ -15,10 +16,16 @@ export default function MaintenanceTracker() {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     title: "", description: "", assigned: "", photo: null,
   });
-
+ const canAccess = useHasPermission("maintenance");
+if (!canAccess) {
+  return <div className="p-12 text-2xl text-red-600 text-center">
+    {t("Access Denied: You do not have permission to view Maintenance Tracker.")}
+  </div>;
+}
   useEffect(() => {
     setLoading(true);
     fetchIssues().then(setIssues).finally(() => setLoading(false));

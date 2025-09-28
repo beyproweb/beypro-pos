@@ -13,7 +13,7 @@ export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [userSettings, setUserSettings] = useState({ roles: {} });
   const [loading, setLoading] = useState(true);
-  const [initializing, setInitializing] = useState(true); // 👈 tracks first load
+  const [initializing, setInitializing] = useState(true);
 
   useSetting("users", setUserSettings, { roles: {} });
 
@@ -22,14 +22,18 @@ export const AuthProvider = ({ children }) => {
     try {
       const cachedUser = JSON.parse(localStorage.getItem("beyproUser"));
       if (cachedUser) {
-        setCurrentUser(cachedUser);
+        setCurrentUser({
+          ...cachedUser,
+          role: cachedUser.role?.toLowerCase(),
+          permissions: cachedUser.permissions?.map((p) => p.toLowerCase()) || [],
+        });
       }
     } catch {}
-    setLoading(false); 
-    setInitializing(false); // ✅ finished first init check
+    setLoading(false);
+    setInitializing(false);
   }, []);
 
-  // ✅ Persist settings for later usage
+  // ✅ Persist settings
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -39,7 +43,7 @@ export const AuthProvider = ({ children }) => {
     } catch {}
   }, [userSettings]);
 
-  // ✅ Silent background refresh
+  // ✅ Background refresh
   useEffect(() => {
     const userFromStorage = JSON.parse(localStorage.getItem("beyproUser"));
     const email = userFromStorage?.email;
@@ -47,9 +51,13 @@ export const AuthProvider = ({ children }) => {
 
     const resolvePermissions = (user) => {
       const perms = user.permissions?.length
-        ? user.permissions
-        : userSettings.roles?.[user.role] || [];
-      return { ...user, permissions: perms };
+        ? user.permissions.map((p) => p.toLowerCase())
+        : userSettings.roles?.[user.role?.toLowerCase()] || [];
+      return {
+        ...user,
+        role: user.role?.toLowerCase(),
+        permissions: perms,
+      };
     };
 
     fetch(`${API_URL}/api/me?email=${encodeURIComponent(email)}`)
@@ -70,7 +78,6 @@ export const AuthProvider = ({ children }) => {
       });
   }, [userSettings]);
 
-  // 👇 Show splash only on *first load* when no cached user yet
   if (initializing && !currentUser) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 to-purple-700 text-white">

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Megaphone, Send, Users, Percent, BarChart, Mail } from "lucide-react";
 import axios from "axios";
-
+import { useHasPermission } from "../components/hooks/useHasPermission";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+import { useTranslation } from "react-i18next";
 
 const STATS_POLL_MS = 5000;   // poll every 5s
 const STATS_POLL_MAX = 12;    // for up to 60s
@@ -93,9 +94,17 @@ export default function EmailCampaignLanding() {
   // WhatsApp customer selection state
   const [customers, setCustomers] = useState([]);
   const [selectedPhones, setSelectedPhones] = useState([]);
+  const canAccess = useHasPermission("marketing");
+  const { t } = useTranslation();
+  if (!canAccess) {
+    return (
+      <div className="p-12 text-2xl text-red-600 text-center">
+        {t("Access Denied: You do not have permission to view Marketing Campaigns.")}
+      </div>
+    );
+  }
 
-
-  +  // Fetch + apply stats (prefers /by/:cid, falls back to /last)
+    // Fetch + apply stats (prefers /by/:cid, falls back to /last)
   async function fetchAndApplyStats(cid) {
     try {
       let payload = null;

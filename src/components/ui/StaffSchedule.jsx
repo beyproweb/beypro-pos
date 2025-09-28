@@ -35,6 +35,19 @@ const StaffSchedule = () => {
   const [staffSchedules, setStaffSchedules] = useState([]);
   const [copiedWeekShifts, setCopiedWeekShifts] = useState([]);
   const [isWeekCopied, setIsWeekCopied] = useState(false);
+  const [allSchedules, setAllSchedules] = useState([]);
+const [isAllSchedulesOpen, setIsAllSchedulesOpen] = useState(false);
+
+const fetchAllSchedules = async (staffId) => {
+  try {
+    const res = await axios.get(`${API_URL}/api/staff/${staffId}/schedule`);
+    setAllSchedules(res.data);
+    setIsAllSchedulesOpen(true);
+  } catch (err) {
+    toast.error("Failed to load schedules");
+  }
+};
+
 
   // --- PROFILE MODAL STATES ---
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -861,31 +874,44 @@ const handleDateChange = (direction) => {
 
       {/* Date Range Pickers */}
 
-      <LocalizationProvider dateAdapter={AdapterDateFns}>
-        <div className="flex gap-4 justify-center items-center">
+<LocalizationProvider dateAdapter={AdapterDateFns}>
+  <div className="flex gap-4 justify-center items-center relative z-0">
+    {/* Previous Week Button */}
+    <button
+      onClick={() => handleDateChange('prev')}
+      className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg shadow-md hover:shadow-lg transition-transform transform hover:-translate-y-0.5"
+    >
+      {t('Previous Week')}
+    </button>
 
-          <button onClick={() => handleDateChange('prev')} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg shadow-md hover:shadow-lg transition-transform transform hover:-translate-y-0.5">
-            {t('Previous Week')}
-          </button>
-          <DesktopDatePicker
-            label={t('Start Date')}
-            value={startDate}
-            onChange={(newValue) => handleCustomDateChange(newValue, endDate)}
-            renderInput={(params) => <TextField {...params} />}
-            disabled={isWeekView}
-          />
-          <DesktopDatePicker
-            label={t('End Date')}
-            value={endDate}
-            onChange={(newValue) => handleCustomDateChange(startDate, newValue)}
-            renderInput={(params) => <TextField {...params} />}
-            disabled={isWeekView}
-          />
-          <button onClick={() => handleDateChange('next')} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg shadow-md hover:shadow-lg transition-transform transform hover:-translate-y-0.5">
-            {t('Next Week')}
-          </button>
-        </div>
-      </LocalizationProvider>
+    {/* Start Date */}
+    <DesktopDatePicker
+      label={t('Start Date')}
+      value={startDate}
+      onChange={(newValue) => handleCustomDateChange(newValue, endDate)}
+      renderInput={(params) => <TextField {...params} />}
+      disabled={isWeekView}
+    />
+
+    {/* End Date */}
+    <DesktopDatePicker
+      label={t('End Date')}
+      value={endDate}
+      onChange={(newValue) => handleCustomDateChange(startDate, newValue)}
+      renderInput={(params) => <TextField {...params} />}
+      disabled={isWeekView}
+    />
+
+    {/* Next Week Button */}
+    <button
+      onClick={() => handleDateChange('next')}
+      className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg shadow-md hover:shadow-lg transition-transform transform hover:-translate-y-0.5"
+    >
+      {t('Next Week')}
+    </button>
+  </div>
+</LocalizationProvider>
+
 
 
       {/* VIEW + FILTER CONTROLS */}
@@ -1340,12 +1366,14 @@ const handleDateChange = (direction) => {
         </div>
       </Modal>
 
-      <Modal
+<Modal
   isOpen={isProfileModalOpen}
   onRequestClose={() => setIsProfileModalOpen(false)}
   className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-md"
 >
-  <div className="bg-white p-4 rounded-xl shadow-xl w-full max-w-md mx-auto overflow-y-auto max-h-screen transition-all">
+  <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md mx-auto 
+                  max-h-[75vh] overflow-y-auto transition-all">
+    {/* Header */}
     <div className="flex justify-between items-center mb-5">
       <h2 className="text-lg font-semibold text-gray-800">
         Edit Profile: {selectedStaffProfile?.name}
@@ -1357,8 +1385,17 @@ const handleDateChange = (direction) => {
         <X size={20} className="text-gray-600" />
       </button>
     </div>
+<div className="flex justify-end mb-4 gap-2">
+  <button
+    onClick={() => fetchAllSchedules(selectedStaffProfile.id)}
+    className="px-3 py-2 rounded bg-blue-600 text-white text-sm shadow hover:bg-blue-700"
+  >
+    View All Schedules
+  </button>
+</div>
 
-    <div className="space-y-4 text-sm">
+    {/* Form Fields */}
+    <div className="space-y-3 text-sm">
       {[
         ['Name', 'name'],
         ['Role', 'role'],
@@ -1379,6 +1416,7 @@ const handleDateChange = (direction) => {
         </div>
       ))}
 
+      {/* Payment Type */}
       <div>
         <label className="block font-medium text-gray-700">Payment Type:</label>
         <select
@@ -1388,12 +1426,13 @@ const handleDateChange = (direction) => {
           }
           className="w-full p-2 rounded-md border border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-400"
         >
-          <option value="daily">{t('daily')}</option>
-           <option value="week">{t("Weekly")}</option>
-          <option value="month">{t("Monthly")}</option>
+          <option value="daily">{t('Daily')}</option>
+          <option value="weekly">{t('Weekly')}</option>
+          <option value="monthly">{t('Monthly')}</option>
         </select>
       </div>
 
+      {/* Salary Model */}
       <div>
         <label className="block font-medium text-gray-700">Salary Model:</label>
         <select
@@ -1403,7 +1442,6 @@ const handleDateChange = (direction) => {
             setSelectedStaffProfile((prev) => ({
               ...prev,
               salary_model: value,
-              // move salary value into correct field
               hourly_rate: value === 'hourly' ? prev.salary || '' : '',
               salary: value === 'fixed' ? prev.salary || '' : '',
             }));
@@ -1415,6 +1453,7 @@ const handleDateChange = (direction) => {
         </select>
       </div>
 
+      {/* Salary / Hourly Rate */}
       <div>
         <label className="block font-medium text-gray-700">
           {selectedStaffProfile?.salary_model === 'hourly' ? 'Hourly Rate' : 'Salary'}:
@@ -1438,22 +1477,75 @@ const handleDateChange = (direction) => {
           className="w-full p-2 rounded-md border border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
       </div>
+    </div>
 
-      {/* Save / Cancel Buttons */}
-      <div className="flex justify-end gap-2 pt-4">
-        <button
-          onClick={() => setIsProfileModalOpen(false)}
-          className="px-4 py-2 rounded-md bg-gray-300 hover:bg-gray-400 text-sm"
-        >
-          {t('Cancel')}
-        </button>
-        <button
-          onClick={handleSaveProfile}
-          className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm"
-        >
-          {t('Save')}
-        </button>
-      </div>
+    {/* Footer Buttons */}
+    <div className="flex justify-end gap-2 pt-4">
+      <button
+        onClick={() => setIsProfileModalOpen(false)}
+        className="px-4 py-2 rounded-md bg-gray-300 hover:bg-gray-400 text-sm"
+      >
+        {t('Cancel')}
+      </button>
+      <button
+        onClick={handleSaveProfile}
+        className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm"
+      >
+        {t('Save')}
+      </button>
+    </div>
+  </div>
+</Modal>
+
+<Modal
+  isOpen={isAllSchedulesOpen}
+  onRequestClose={() => setIsAllSchedulesOpen(false)}
+  className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-50"
+>
+  <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+    <h2 className="text-xl font-bold mb-4">All Schedules</h2>
+    {allSchedules.length > 0 ? (
+      <table className="w-full border">
+        <thead>
+          <tr className="bg-gray-100">
+            <th className="p-2">Date</th>
+            <th className="p-2">Day(s)</th>
+            <th className="p-2">Shift</th>
+          </tr>
+        </thead>
+        <tbody>
+          {allSchedules.map((s) => (
+            <tr key={s.id} className="border-t">
+              <td className="p-2">{s.shift_date}</td>
+              <td className="p-2">{Array.isArray(s.days) ? s.days.join(', ') : s.days}</td>
+              <td className="p-2">{s.shift_start} - {s.shift_end}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : (
+      <p>No schedules found</p>
+    )}
+    <div className="flex justify-end gap-2 mt-4">
+      <button
+        onClick={() => setIsAllSchedulesOpen(false)}
+        className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400"
+      >
+        Close
+      </button>
+      <button
+        onClick={async () => {
+          if (window.confirm("Delete ALL schedules for this staff?")) {
+            await axios.delete(`${API_URL}/api/staff/${selectedStaffProfile.id}/schedule`);
+            toast.success("All schedules deleted");
+            setIsAllSchedulesOpen(false);
+            fetchStaffSchedules(); // refresh weekly grid
+          }
+        }}
+        className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+      >
+        Delete All
+      </button>
     </div>
   </div>
 </Modal>

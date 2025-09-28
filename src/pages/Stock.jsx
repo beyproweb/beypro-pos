@@ -13,14 +13,14 @@ const [selectedSupplier, setSelectedSupplier] = useState("__all__");
       const [ingredientPrices, setIngredientPrices] = useState([]);
 
 // Only allow users with "settings" permission
-  const hasSettingsAccess = useHasPermission("settings");
-  if (!hasSettingsAccess) {
-    return (
-      <div className="p-12 text-2xl text-red-600 text-center">
-        {t("Access Denied: You do not have permission to view Settings.")}
-      </div>
-    );
-  }
+const hasStockAccess = useHasPermission("stock");
+ if (!hasStockAccess) {
+   return (
+     <div className="p-12 text-2xl text-red-600 text-center">
+       {t("Access Denied: You do not have permission to view Stock.")}
+     </div>
+   );
+ }
     // Fetch stock and prices on mount
     useEffect(() => {
       fetchStock();

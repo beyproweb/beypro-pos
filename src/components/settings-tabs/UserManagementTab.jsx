@@ -51,8 +51,8 @@ const totalPages = Math.ceil(staffList.length / STAFF_PER_PAGE);
   const [usersConfig, setUsersConfig] = useState({
     roles: {
       Admin: ["all"],
-      Cashier: ["orders", "payments"],
-      Driver: ["delivery"],
+      cashier: ["orders", "payments"],
+      driver: ["delivery"],
     },
     pinRequired: true,
   });
@@ -70,7 +70,7 @@ const totalPages = Math.ceil(staffList.length / STAFF_PER_PAGE);
   });
 
 
-  const roles = Object.keys(usersConfig.roles);
+  const roles = Object.keys(usersConfig.roles).map(r => r.toLowerCase());
 
   useSetting("users", setUsersConfig, {
     roles: {
@@ -81,8 +81,8 @@ const totalPages = Math.ceil(staffList.length / STAFF_PER_PAGE);
     pinRequired: true,
   });
 const handleCreateRole = async () => {
-  const role = newRoleName.trim();
-  if (!role) return toast.error("Role name is required");
+ const role = newRoleName.trim().toLowerCase();
+ if (usersConfig.roles[role]) return toast.error("Role already exists");
   if (usersConfig.roles[role]) return toast.error("Role already exists");
 
   const newPermissions = copyFromRole ? usersConfig.roles[copyFromRole] : [];
@@ -229,6 +229,79 @@ const getAvatar = (url) => {
         />
         <div className="w-12 h-7 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
       </label>
+    </div>
+
+          {/* Add New Staff */}
+    <div className="mb-14">
+      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
+        ➕ {t("Add New Staff User")}
+      </h3>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        {[
+          { key: "id", label: t("ID") },
+          { key: "name", label: t("Full Name") },
+          { key: "email", label: t("Email") },
+          { key: "phone", label: t("Phone") },
+          { key: "address", label: t("Address") },
+        ].map(({ key, label }) => (
+          <input
+            key={key}
+            className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+            placeholder={label}
+            value={newUser[key]}
+            onChange={(e) => setNewUser({ ...newUser, [key]: e.target.value })}
+          />
+        ))}
+        <select
+          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+          value={newUser.role}
+          onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+        >
+          {roles.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+        <input
+          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+          type="password"
+          placeholder={t("PIN")}
+          value={newUser.pin}
+          onChange={(e) => setNewUser({ ...newUser, pin: e.target.value })}
+        />
+        <input
+          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+          placeholder={t("Salary (₺)")}
+          value={newUser.salary}
+          onChange={(e) => setNewUser({ ...newUser, salary: e.target.value })}
+        />
+      </div>
+      <button
+        onClick={handleAddUser}
+        className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition"
+      >
+     <input
+  type="file"
+  accept="image/*"
+  onChange={async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await axios.post(`${API_URL}/api/upload`, formData);
+      setNewUser((prev) => ({ ...prev, avatar: res.data.url }));
+    } catch (err) {
+      toast.error("❌ Image upload failed");
+    }
+  }}
+  className="p-2 border dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
+/>
+
+
+        ➕ {t("Add User")}
+      </button>
     </div>
 
     {/* Role Creation */}
@@ -449,25 +522,47 @@ const getAvatar = (url) => {
         🔐 {t("Roles & Permissions")}
       </h3>
       <div className="space-y-3">
-        {Object.entries(usersConfig.roles).map(([role, permissions]) => (
-          <div
-            key={role}
-            className="bg-gray-100 dark:bg-gray-800 border dark:border-gray-700 rounded-xl px-4 py-3 flex justify-between items-center hover:shadow transition"
-          >
-            <div>
-              <p className="font-semibold text-indigo-700 dark:text-indigo-300">{role}</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                {permissions.join(", ") || t("No permissions set")}
-              </p>
-            </div>
-            <button
-              onClick={() => setEditingRole(role)}
-              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
-            >
-              ⚙️ {t("Set Permissions")}
-            </button>
-          </div>
-        ))}
+{Object.entries(usersConfig.roles).map(([role, permissions]) => (
+  <div
+    key={role}
+    className="bg-gray-100 dark:bg-gray-800 border dark:border-gray-700 rounded-xl px-4 py-3 flex justify-between items-center hover:shadow transition"
+  >
+    <div>
+      <p className="font-semibold text-indigo-700 dark:text-indigo-300">{role}</p>
+      <p className="text-sm text-gray-600 dark:text-gray-400">
+        {permissions.join(", ") || t("No permissions set")}
+      </p>
+    </div>
+    <div className="flex gap-3">
+      <button
+        onClick={() => setEditingRole(role)}
+        className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+      >
+        ⚙️ {t("Set Permissions")}
+      </button>
+      <button
+        onClick={async () => {
+          if (!window.confirm(`Are you sure you want to delete role '${role}'?`)) return;
+          try {
+            
+            await axios.delete(`${API_URL}/api/settings/roles/${role.toLowerCase()}`);
+            const updated = { ...usersConfig };
+            delete updated.roles[role.toLowerCase()];
+            setUsersConfig(updated);
+            toast.success(`🗑️ Role '${role}' deleted`);
+          } catch (err) {
+            toast.error("❌ Failed to delete role");
+            console.error(err);
+          }
+        }}
+        className="text-sm text-red-600 dark:text-red-400 hover:underline"
+      >
+        🗑️ {t("Delete")}
+      </button>
+    </div>
+  </div>
+))}
+
       </div>
 
       <RolePermissionModal
@@ -475,91 +570,23 @@ const getAvatar = (url) => {
         isOpen={!!editingRole}
         initialPermissions={usersConfig.roles?.[editingRole] || []}
         onClose={() => setEditingRole(null)}
-        onSave={async (perms) => {
-  const updated = {
-    ...usersConfig,
-    roles: { ...usersConfig.roles, [editingRole]: perms },
-  };
-  setUsersConfig(updated);
-  await saveSetting("users", updated); // ← this saves to backend!
-  toast.success("✅ Role permissions updated!");
+        onSave={async (perms, roleKey) => {
+   const updated = {
+     ...usersConfig,
+     roles: { 
+       ...usersConfig.roles,
+       [roleKey]: perms, // ✅ always lowercase role
+     },
+   };
+   setUsersConfig(updated);
+   await saveSetting("users", updated);
+   toast.success(`✅ Permissions updated for ${roleKey}`);
 }}
 
       />
     </div>
 
-    {/* Add New Staff */}
-    <div className="mb-14">
-      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
-        ➕ {t("Add New Staff User")}
-      </h3>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        {[
-          { key: "id", label: t("ID") },
-          { key: "name", label: t("Full Name") },
-          { key: "email", label: t("Email") },
-          { key: "phone", label: t("Phone") },
-          { key: "address", label: t("Address") },
-        ].map(({ key, label }) => (
-          <input
-            key={key}
-            className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-            placeholder={label}
-            value={newUser[key]}
-            onChange={(e) => setNewUser({ ...newUser, [key]: e.target.value })}
-          />
-        ))}
-        <select
-          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-          value={newUser.role}
-          onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-        >
-          {roles.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-        <input
-          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-          type="password"
-          placeholder={t("PIN")}
-          value={newUser.pin}
-          onChange={(e) => setNewUser({ ...newUser, pin: e.target.value })}
-        />
-        <input
-          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-          placeholder={t("Salary (₺)")}
-          value={newUser.salary}
-          onChange={(e) => setNewUser({ ...newUser, salary: e.target.value })}
-        />
-      </div>
-      <button
-        onClick={handleAddUser}
-        className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition"
-      >
-     <input
-  type="file"
-  accept="image/*"
-  onChange={async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-      const res = await axios.post(`${API_URL}/api/upload`, formData);
-      setNewUser((prev) => ({ ...prev, avatar: res.data.url }));
-    } catch (err) {
-      toast.error("❌ Image upload failed");
-    }
-  }}
-  className="p-2 border dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
-/>
-
-
-        ➕ {t("Add User")}
-      </button>
-    </div>
+    
 
     {/* Save Button */}
     <div className="flex justify-end mt-8">

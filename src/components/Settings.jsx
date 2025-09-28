@@ -33,40 +33,46 @@ const tabComponents = {
 export default function SettingsPage() {
   const { t } = useTranslation();
 
-  // Only allow users with "settings" permission
- const anySettingsAccess = [
-  "settings",
-  "settings-appearance",
-  "settings-users",
-  "settings-notifications",
-  "settings-shop-hours",
-  "settings-localization",
-  "settings-subscription",
-  "settings-payments",
-  "settings-register",
-  "settings-integrations",
-  "settings-inventory",
-].some(useHasPermission);
+  // ✅ List of all valid settings permissions
+  const settingsPermissions = [
+    "settings",
+    "settings-appearance",
+    "settings-users",
+    "settings-notifications",
+    "settings-shop-hours",
+    "settings-localization",
+    "settings-subscription",
+    "settings-payments",
+    "settings-register",
+    "settings-integrations",
+    "settings-inventory",
+  ];
 
-if (!anySettingsAccess) {
-  return (
-    <div className="p-12 text-2xl text-red-600 text-center">
-      {t("Access Denied: You do not have permission to view Settings.")}
-    </div>
+  // ✅ Properly check each permission
+  const anySettingsAccess = settingsPermissions.some((perm) =>
+    useHasPermission(perm)
   );
-}
 
+  if (!anySettingsAccess) {
+    return (
+      <div className="p-12 text-2xl text-red-600 text-center">
+        {t("Access Denied: You do not have permission to view any Settings tabs.")}
+      </div>
+    );
+  }
 
-  // Only show tabs the user has permission for
-  const permittedTabs = settingsTabs.filter(tab => useHasPermission(tab.permission));
+  // ✅ Only show tabs the user actually has permission for
+  const permittedTabs = settingsTabs.filter((tab) =>
+    useHasPermission(tab.permission)
+  );
   const defaultTab = permittedTabs.length > 0 ? permittedTabs[0].key : null;
 
   // Set the first available tab as default
   const [activeTab, setActiveTab] = useState(defaultTab);
 
-  // Whenever permittedTabs change, ensure activeTab is still valid
+  // Keep activeTab valid when permittedTabs change
   useEffect(() => {
-    if (!permittedTabs.some(tab => tab.key === activeTab)) {
+    if (!permittedTabs.some((tab) => tab.key === activeTab)) {
       setActiveTab(defaultTab);
     }
     // eslint-disable-next-line
@@ -76,7 +82,6 @@ if (!anySettingsAccess) {
 
   return (
     <div className="p-6 max-w-7xl mx-auto text-base bg-transparent dark:bg-gray-900 text-gray-900 dark:text-white transition-colors">
-
       <div className="flex rounded-2xl shadow-2xl overflow-hidden border border-accent/20">
         {/* Sidebar Tabs */}
         <div className="w-72 bg-gradient-to-b from-indigo-100 to-white dark:from-gray-800 dark:to-gray-900 border-r border-accent/20">
@@ -97,7 +102,8 @@ if (!anySettingsAccess) {
 
         {/* Active Tab Content */}
         <div className="flex-1 bg-transparent dark:bg-gray-950 p-8 min-h-[600px] transition-colors">
-          {permittedTabs.some(tab => tab.key === activeTab) && ActiveComponent ? (
+          {permittedTabs.some((tab) => tab.key === activeTab) &&
+          ActiveComponent ? (
             <ActiveComponent />
           ) : (
             <div className="text-red-600 text-lg p-6">
