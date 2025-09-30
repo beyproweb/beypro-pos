@@ -1,8 +1,7 @@
-// src/context/AuthContext.jsx
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useSetting } from "../components/hooks/useSetting";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
+const API_URL = import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com";
 export const AuthContext = createContext();
 
 export function useAuth() {
@@ -17,7 +16,7 @@ export const AuthProvider = ({ children }) => {
 
   useSetting("users", setUserSettings, { roles: {} });
 
-  // ✅ Load cached user instantly
+  // ✅ Load cached user instantly on mount
   useEffect(() => {
     try {
       const cachedUser = JSON.parse(localStorage.getItem("beyproUser"));
@@ -28,26 +27,24 @@ export const AuthProvider = ({ children }) => {
           permissions: cachedUser.permissions?.map((p) => p.toLowerCase()) || [],
         });
       }
-    } catch {}
+    } catch (err) {
+      console.warn("⚠️ Failed to parse cached user:", err);
+    }
     setLoading(false);
     setInitializing(false);
   }, []);
 
-  // ✅ Persist settings
+  // ✅ Persist role settings for permission hooks
   useEffect(() => {
     try {
-      localStorage.setItem(
-        "beyproUserSettings",
-        JSON.stringify(userSettings || { roles: {} })
-      );
+      localStorage.setItem("beyproUserSettings", JSON.stringify(userSettings || { roles: {} }));
     } catch {}
   }, [userSettings]);
 
-  // ✅ Background refresh
+  // ✅ Background refresh (runs once, token-based)
   useEffect(() => {
-    const userFromStorage = JSON.parse(localStorage.getItem("beyproUser"));
-    const email = userFromStorage?.email;
-    if (!email) return;
+    const token = localStorage.getItem("token");
+    if (!token) return;
 
     const resolvePermissions = (user) => {
       const perms = user.permissions?.length
@@ -60,21 +57,37 @@ export const AuthProvider = ({ children }) => {
       };
     };
 
-    fetch(`${API_URL}/api/me?email=${encodeURIComponent(email)}`)
-      .then((res) => res.json())
+    fetch(`${API_URL}/api/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => {
+        if (res.status === 401) {
+          console.warn("🔒 Token expired or invalid — logging out");
+          localStorage.removeItem("token");
+          localStorage.removeItem("beyproUser");
+          setCurrentUser(null);
+          if (!window.location.pathname.includes("/login")) {
+            window.location.href = "/login";
+          }
+          return null;
+        }
+        return res.json();
+      })
+      .then((res) => {
+        if (!res) return;
         const user = res.user || res.staff;
         if (user) {
           const fullUser = resolvePermissions(user);
           setCurrentUser(fullUser);
           localStorage.setItem("beyproUser", JSON.stringify(fullUser));
         } else {
+          console.warn("⚠️ No valid user returned from /me");
           setCurrentUser(null);
           localStorage.removeItem("beyproUser");
         }
       })
-      .catch(() => {
-        console.warn("Backend not reachable, using cached user.");
+      .catch((err) => {
+        console.warn("⚠️ Backend not reachable, using cached user:", err.message);
       });
   }, [userSettings]);
 

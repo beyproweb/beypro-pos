@@ -41,7 +41,12 @@ import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 
 import QrMenuSettings from "./pages/QrMenuSettings";
-const API_URL = (import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com").replace(/\/+$/, "");
+// ✅ choose automatically based on environment
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === "development"
+    ? "http://localhost:5000/api"
+    : "https://beypro-backend.onrender.com/api");
 
 const isAuthenticated = () => !!localStorage.getItem("beyproUser");
 

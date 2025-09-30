@@ -1,26 +1,31 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
-export default defineConfig(({ mode }) => ({
-  plugins: [react()],
-  // Use relative paths in production so Electron (file://) can resolve them
-  base: mode === 'production' ? './' : '/',
+export default defineConfig(({ mode }) => {
+  const isDev = mode === "development";
+  const backendURL = isDev
+    ? "http://localhost:5000"
+    : "https://beypro-backend.onrender.com";
 
+  return {
+    plugins: [react()],
+    base: mode === "production" ? "./" : "/",
 
-  build: {
-    outDir: 'dist',
-    assetsDir: '',        // <-- FLATTEN: put hashed JS/CSS directly in dist/
-    // OPTIONAL: raise chunk warning threshold for large apps
-    chunkSizeWarningLimit: 3000
-  },
+    build: {
+      outDir: "dist",
+      assetsDir: "",
+      chunkSizeWarningLimit: 3000,
+    },
 
-  server: {
-    host: '0.0.0.0',
-    proxy: {
-      '/api': {
-        target: 'https://hurrypos-backend.onrender.com',
-        changeOrigin: true
-      }
-    }
-  }
-}));
+    server: {
+      host: "0.0.0.0",
+      proxy: {
+        "/api": {
+          target: backendURL,
+          changeOrigin: true,
+          secure: false,
+        },
+      },
+    },
+  };
+});

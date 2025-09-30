@@ -6,7 +6,7 @@ import {
 } from "../utils/api";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
-
+import secureFetch from "../utils/secureFetch";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const normalizeUnit = (u) => {
   if (!u) return "";
@@ -328,55 +328,57 @@ const recalcEstimatedCost = (ingredients) => {
       selectedExtrasGroup: groupIds, // <-- IDs to backend
     };
 
-    try {
-      const isEdit = !!initialData?.id;
-      const method = isEdit ? "PUT" : "POST";
-      const endpoint = isEdit
-        ? `${API_URL}/api/products/${initialData.id}`
-        : `${API_URL}/api/products`;
+try {
+  const isEdit = !!initialData?.id;
+  const method = isEdit ? "PUT" : "POST";
+  const endpoint = isEdit
+    ? `/products/${initialData.id}`
+    : `/products`;
 
-      const res = await fetch(endpoint, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+  // secureFetch already returns parsed JSON data
+  const data = await secureFetch(endpoint, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || "Failed to save product");
-        return;
-      }
+  if (data?.error) {
+    toast.error(data.error || "Failed to save product");
+    return;
+  }
 
-      toast.success(isEdit ? "Product updated!" : "Product saved!");
+  toast.success(isEdit ? "✅ Product updated!" : "✅ Product saved!");
 
-      // reset
-      setProduct({
-        name: "",
-        price: "",
-        category: "",
-        preparation_time: "",
-        description: "",
-        image: null,
-        ingredients: [],
-        extras: [],
-        discount_type: "none",
-        discount_value: "",
-        visible: true,
-        tags: "",
-        allergens: "",
-        promo_start: "",
-        promo_end: "",
-        selectedExtrasGroup: [],
-      });
-      setImageFile(null);
-      setImageUrl("");
-      setImagePreview(null);
+  // reset form
+  setProduct({
+    name: "",
+    price: "",
+    category: "",
+    preparation_time: "",
+    description: "",
+    image: null,
+    ingredients: [],
+    extras: [],
+    discount_type: "none",
+    discount_value: "",
+    visible: true,
+    tags: "",
+    allergens: "",
+    promo_start: "",
+    promo_end: "",
+    selectedExtrasGroup: [],
+  });
+  setImageFile(null);
+  setImageUrl("");
+  setImagePreview(null);
 
-      onSuccess && onSuccess();
-    } catch (err) {
-      console.error("❌ Product save error:", err);
-      toast.error("Product save error");
-    }
+  onSuccess && onSuccess();
+} catch (err) {
+  console.error("❌ Product save error:", err);
+  toast.error("Product save error");
+}
+
+
   };
 
   // ---------- UI ----------
