@@ -10,38 +10,37 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
-
 const handleLogin = async (e) => {
   e.preventDefault();
   setError("");
   setLoading(true);
 
   try {
-    // ✅ Use same backend detection as App.jsx
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.MODE === "development"
-    ? "http://localhost:5000"
-    : "https://beypro-backend.onrender.com");
+    // ✅ Use the same API base as App.jsx
+    const API_BASE =
+      import.meta.env.VITE_API_URL ||
+      (import.meta.env.MODE === "development"
+        ? "http://localhost:5000/api"
+        : "https://beypro-backend.onrender.com/api");
 
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
+    // ✅ Always call the correct login route
+    const res = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
 
     const data = await res.json();
+    console.log("🔑 Login response:", data); // Debug
 
-    if (!res.ok || data.status === "error") {
-      throw new Error(data.message || "Invalid credentials");
+    if (!res.ok || !data.token) {
+      throw new Error(data.error || data.message || "Invalid credentials");
     }
 
-    // ✅ Save the token
-    if (data.token) {
-      localStorage.setItem("token", data.token);
-    }
+    // ✅ Save JWT for secureFetch
+    localStorage.setItem("token", data.token);
 
-    // ✅ Save user data
+    // ✅ Save user for isAuthenticated()
     localStorage.setItem("beyproUser", JSON.stringify(data.user));
     setCurrentUser(data.user);
 
@@ -53,6 +52,7 @@ const API_BASE =
     setLoading(false);
   }
 };
+
 
   return (
     <div className="flex flex-col lg:flex-row h-screen w-screen bg-gray-50">
