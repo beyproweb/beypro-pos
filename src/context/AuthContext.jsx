@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useSetting } from "../components/hooks/useSetting";
+import { normalizeUser } from "../utils/normalizeUser";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com";
 export const AuthContext = createContext();
@@ -16,16 +17,14 @@ export const AuthProvider = ({ children }) => {
 
   useSetting("users", setUserSettings, { roles: {} });
 
-  // ✅ Load cached user instantly on mount
+  // ✅ Load cached user instantly on mount and normalize it
   useEffect(() => {
     try {
       const cachedUser = JSON.parse(localStorage.getItem("beyproUser"));
       if (cachedUser) {
-        setCurrentUser({
-          ...cachedUser,
-          role: cachedUser.role?.toLowerCase(),
-          permissions: cachedUser.permissions?.map((p) => p.toLowerCase()) || [],
-        });
+        const normalized = normalizeUser(cachedUser, userSettings);
+        setCurrentUser(normalized);
+        localStorage.setItem("beyproUser", JSON.stringify(normalized));
       }
     } catch (err) {
       console.warn("⚠️ Failed to parse cached user:", err);
@@ -47,14 +46,8 @@ export const AuthProvider = ({ children }) => {
     if (!token) return;
 
     const resolvePermissions = (user) => {
-      const perms = user.permissions?.length
-        ? user.permissions.map((p) => p.toLowerCase())
-        : userSettings.roles?.[user.role?.toLowerCase()] || [];
-      return {
-        ...user,
-        role: user.role?.toLowerCase(),
-        permissions: perms,
-      };
+      const normalized = normalizeUser(user, userSettings);
+      return normalized;
     };
 
     fetch(`${API_URL}/api/me`, {

@@ -1,4 +1,3 @@
-// src/components/ProtectedRoute.jsx
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { hasPermission } from "../utils/permissions";
@@ -21,8 +20,8 @@ export default function ProtectedRoute({ children, permission }) {
   console.log("   Current role:", currentUser.role);
   console.log("   Current permissions:", currentUser.permissions);
 
-  // ✅ Superuser rule: admins always have full access
-  if (currentUser.role === "admin") {
+  // ✅ Superuser rule: admins always have full access (case-insensitive)
+  if (currentUser.role?.toLowerCase() === "admin") {
     console.log("   Result: ✅ Admin superuser → access granted");
     return children;
   }

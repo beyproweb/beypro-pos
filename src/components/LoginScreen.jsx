@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { LogIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-
+import { normalizeUser } from "../utils/normalizeUser";
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -10,7 +10,7 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
-
+  
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
@@ -48,14 +48,31 @@ export default function LoginScreen() {
       }
 
       // ✅ Save JWT for secureFetch
-      localStorage.setItem("token", data.token);
-      console.log("💾 Token saved to localStorage:", data.token);
+  // ✅ Save JWT for secureFetch
+localStorage.setItem("token", data.token);
+console.log("💾 Token saved to localStorage:", data.token);
 
-      // ✅ Save user for isAuthenticated()
-      localStorage.setItem("beyproUser", JSON.stringify(data.user));
-      console.log("💾 User saved to localStorage:", data.user);
+// ✅ Normalize user like AuthContext does
+let role = data.user.role?.toLowerCase() || "staff";
+let permissions = data.user.permissions?.map((p) => p.toLowerCase()) || [];
 
-      setCurrentUser(data.user);
+// ⚡ Admin superuser fix
+if (role === "admin") {
+  permissions = ["all"];
+}
+
+const normalizedUser = {
+  ...data.user,
+  role,
+  permissions,
+};
+
+// ✅ Save normalized user
+localStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
+console.log("💾 Normalized user saved:", normalizedUser);
+
+setCurrentUser(normalizedUser);
+
       console.info("✅ Login success, navigating to /dashboard");
       navigate("/dashboard");
     } catch (err) {

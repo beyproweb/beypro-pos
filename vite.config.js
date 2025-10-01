@@ -5,7 +5,7 @@ export default defineConfig(({ mode }) => {
   const isDev = mode === "development";
   const backendURL = isDev
     ? "http://localhost:5000"
-    : "https://beypro-backend.onrender.com";
+    : "https://hurrypos-backend.onrender.com/api"
 
   return {
     plugins: [react()],

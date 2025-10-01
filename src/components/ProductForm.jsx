@@ -314,19 +314,21 @@ const recalcEstimatedCost = (ingredients) => {
       .map(n => Number(n))
       .filter(n => Number.isFinite(n));
 
-    const payload = {
-      ...product,
-      image: uploadedImageUrl || product.image || "",
-      price: product.price ? Number(product.price) : 0,
-      preparation_time: product.preparation_time ? Number(product.preparation_time) : null,
-      discount_value:
-        product.discount_value !== undefined && product.discount_value !== ""
-          ? Number(product.discount_value)
-          : 0,
-      ingredients: product.ingredients || [],
-      extras: product.extras || [],
-      selectedExtrasGroup: groupIds, // <-- IDs to backend
-    };
+const payload = {
+  ...product,
+  image: uploadedImageUrl || product.image || "",
+  price: product.price ? Number(product.price) : 0,
+  preparation_time: product.preparation_time ? Number(product.preparation_time) : null,
+  discount_value:
+    product.discount_value !== undefined && product.discount_value !== ""
+      ? Number(product.discount_value)
+      : 0,
+  ingredients: product.ingredients || [],
+  extras: product.extras || [],
+  selected_extras_group: groupIds, // ✅ use snake_case for DB
+};
+
+
 
 try {
   const isEdit = !!initialData?.id;
@@ -350,24 +352,25 @@ try {
   toast.success(isEdit ? "✅ Product updated!" : "✅ Product saved!");
 
   // reset form
-  setProduct({
-    name: "",
-    price: "",
-    category: "",
-    preparation_time: "",
-    description: "",
-    image: null,
-    ingredients: [],
-    extras: [],
-    discount_type: "none",
-    discount_value: "",
-    visible: true,
-    tags: "",
-    allergens: "",
-    promo_start: "",
-    promo_end: "",
-    selectedExtrasGroup: [],
-  });
+setProduct({
+  name: "",
+  price: "",
+  category: "",
+  preparation_time: "",
+  description: "",
+  image: null,
+  ingredients: [],
+  extras: [],
+  discount_type: "none",
+  discount_value: "",
+  visible: true,
+  tags: "",
+  allergens: "",
+  promo_start: "",
+  promo_end: "",
+  selected_extras_group: [], // ✅ match DB
+});
+
   setImageFile(null);
   setImageUrl("");
   setImagePreview(null);
