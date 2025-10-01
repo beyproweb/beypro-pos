@@ -10,49 +10,61 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
-const handleLogin = async (e) => {
-  e.preventDefault();
-  setError("");
-  setLoading(true);
 
-  try {
-    // ✅ Use the same API base as App.jsx
-    const API_BASE =
-      import.meta.env.VITE_API_URL ||
-      (import.meta.env.MODE === "development"
-        ? "http://localhost:5000/api"
-        : "https://beypro-backend.onrender.com/api");
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    // ✅ Always call the correct login route
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      const API_BASE =
+        import.meta.env.VITE_API_URL ||
+        (import.meta.env.MODE === "development"
+          ? "http://localhost:5000/api"
+          : "https://beypro-backend.onrender.com/api");
 
-    const data = await res.json();
-    console.log("🔑 Login response:", data); // Debug
+      console.groupCollapsed("🔑 Login Debug");
+      console.log("➡️ Using API_BASE:", API_BASE);
 
-    if (!res.ok || !data.token) {
-      throw new Error(data.error || data.message || "Invalid credentials");
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      console.log("⬅️ Raw Response:", res.status, res.statusText);
+
+      let data;
+      try {
+        data = await res.json();
+        console.log("⬅️ Parsed JSON:", data);
+      } catch (err) {
+        console.error("❌ Failed to parse login response JSON:", err);
+      }
+      console.groupEnd();
+
+      if (!res.ok || !data?.token) {
+        throw new Error(data?.error || data?.message || "Invalid credentials");
+      }
+
+      // ✅ Save JWT for secureFetch
+      localStorage.setItem("token", data.token);
+      console.log("💾 Token saved to localStorage:", data.token);
+
+      // ✅ Save user for isAuthenticated()
+      localStorage.setItem("beyproUser", JSON.stringify(data.user));
+      console.log("💾 User saved to localStorage:", data.user);
+
+      setCurrentUser(data.user);
+      console.info("✅ Login success, navigating to /dashboard");
+      navigate("/dashboard");
+    } catch (err) {
+      console.error("❌ Login failed:", err);
+      setError(err.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
-
-    // ✅ Save JWT for secureFetch
-    localStorage.setItem("token", data.token);
-
-    // ✅ Save user for isAuthenticated()
-    localStorage.setItem("beyproUser", JSON.stringify(data.user));
-    setCurrentUser(data.user);
-
-    navigate("/dashboard");
-  } catch (err) {
-    console.error("Login failed:", err);
-    setError(err.message || "Login failed");
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   return (
     <div className="flex flex-col lg:flex-row h-screen w-screen bg-gray-50">
