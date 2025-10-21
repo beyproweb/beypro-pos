@@ -5,6 +5,7 @@ import RecipeModal from '../modals/RecipeModal';
 import StockConfirmModal from '../modals/StockConfirmModal';
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
+import secureFetch from "../utils/secureFetch";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -21,7 +22,7 @@ export default function Production() {
   const { t } = useTranslation();
 
   useEffect(() => {
-    fetch(`${API_URL}/api/production/recipes`)
+    secureFetch("production/recipes")
       .then((res) => res.json())
       .then((data) => {
         setRecipes(data);
@@ -31,7 +32,7 @@ export default function Production() {
 
         // history for each product
         data.forEach((recipe) => {
-          fetch(`${API_URL}/api/production/production-log/history?product=${encodeURIComponent(recipe.name)}&limit=5`)
+          secureFetch("production/production-log/history?product=${encodeURIComponent(recipe.name)}&limit=5")
             .then((res) => res.json())
             .then((history) => {
               setHistoryMap((prev) => ({ ...prev, [recipe.name]: history }));
@@ -41,7 +42,7 @@ export default function Production() {
 
         // mark cards as ready if there’s unstocked production
         data.forEach((recipe) => {
-          fetch(`${API_URL}/api/production/production-log/unstocked?product=${encodeURIComponent(recipe.name)}&limit=1`)
+          secureFetch("production/production-log/unstocked?product=${encodeURIComponent(recipe.name)}&limit=1")
             .then((res) => res.json())
             .then((unstockedLogs) => {
               if (Array.isArray(unstockedLogs) && unstockedLogs.length > 0) {
@@ -62,7 +63,7 @@ export default function Production() {
   };
 
   const fetchProductHistory = (productName) => {
-    fetch(`${API_URL}/api/production/production-log/history?product=${encodeURIComponent(productName)}&limit=5`)
+    secureFetch("production/production-log/history?product=${encodeURIComponent(productName)}&limit=5")
       .then((res) => res.json())
       .then((history) => {
         setHistoryMap((prev) => ({ ...prev, [productName]: history }));
@@ -93,7 +94,7 @@ export default function Production() {
         product_unit: product.output_unit
       };
 
-      const res = await fetch(`${API_URL}/api/production/production-log`, {
+      const res = await secureFetch("production/production-log", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -142,7 +143,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit, productObj,
     };
 
     console.log("🧾 Calling /production-log with:", payloadLog);
-    const prodRes = await fetch(`${API_URL}/api/production/production-log`, {
+    const prodRes = await secureFetch("production/production-log", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payloadLog)
@@ -158,7 +159,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit, productObj,
     const payloadStock = { supplier_id, name, quantity, unit, from_production: true };
     console.log("📤 Sending final stock payload:", payloadStock);
 
-    const res = await fetch(`${API_URL}/api/stock`, {
+    const res = await secureFetch("stock", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payloadStock)
@@ -192,7 +193,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit, productObj,
     });
 
     if (res.ok) {
-      const updated = await fetch(`${API_URL}/api/production/recipes`).then(res => res.json());
+      const updated = await secureFetch("production/recipes").then(res => res.json());
       setRecipes(updated);
       const q = {};
       updated.forEach((r) => (q[r.name] = 1));
@@ -204,7 +205,7 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit, productObj,
   const handleDeleteRecipe = async (recipeName) => {
     const recipe = recipes.find(r => r.name === recipeName);
     if (!recipe) return;
-    const res = await fetch(`${API_URL}/api/production/recipes/${recipe.id}`, { method: 'DELETE' });
+    const res = await secureFetch("production/recipes/${recipe.id}", { method: 'DELETE' });
     if (res.ok) {
       setRecipes((prev) => prev.filter((r) => r.name !== recipeName));
       setQuantities((prev) => {

@@ -387,12 +387,12 @@ useEffect(() => {
     // 2) Try to sync with backend (best-effort)
     try {
       // find existing customer
-      let res = await fetch(`${API_URL}/api/customers/by-phone/${phone}`);
+      let res = await secureFetch('customers/by-phone/${phone}`);
       let customer = await res.json();
 
       // create if not exists
       if (!customer) {
-        const cr = await fetch(`${API_URL}/api/customers`, {
+        const cr = await secureFetch('customers`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, phone }),
@@ -410,14 +410,14 @@ useEffect(() => {
 
         if (existing) {
           if (!existing.is_default) {
-            await fetch(`${API_URL}/api/customer-addresses/${existing.id}`, {
+            await secureFetch('customer-addresses/${existing.id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ is_default: true }),
             });
           }
         } else {
-          await fetch(`${API_URL}/api/customers/${cid}/addresses`, {
+          await secureFetch('customers/${cid}/addresses`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ label: "Default", address, is_default: true }),
@@ -443,7 +443,7 @@ useEffect(() => {
   (async () => {
     try {
       // exact match + addresses in one call
-      const res = await fetch(`${API_URL}/api/customers/by-phone/${form.phone}`);
+      const res = await secureFetch('customers/by-phone/${form.phone}`);
       const match = await res.json();
       if (!match) return;
 
@@ -1374,7 +1374,7 @@ useEffect(() => {
 
 
   useEffect(() => {
-    fetch(`${API_URL}/api/category-images`)
+    secureFetch('category-images`)
       .then((res) => res.json())
       .then((data) => {
         const dict = {};
@@ -1391,7 +1391,7 @@ useEffect(() => {
   }, [cart]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/products`)
+    secureFetch('products`)
       .then((res) => res.json())
       .then((data) => {
         setProducts(data);
@@ -1400,7 +1400,7 @@ useEffect(() => {
         setActiveCategory(cats[0] || "");
       });
 
-    fetch(`${API_URL}/api/extras-groups`)
+    secureFetch('extras-groups`)
       .then((res) => res.json())
       .then((data) =>
         setExtrasGroups(
@@ -1411,7 +1411,7 @@ useEffect(() => {
         )
       );
 
-    fetch(`${API_URL}/api/orders`)
+    secureFetch('orders`)
       .then((res) => res.json())
       .then((orders) => {
         const occupied = orders
@@ -1568,7 +1568,7 @@ if (orderType === "table" && orderId) {
 
   // (optional) refresh full order so status shows all items
   try {
-    const full = await (await fetch(`${API_URL}/api/orders/${orderId}`)).json();
+    const full = await (await secureFetch('orders/${orderId}`)).json();
     setActiveOrder?.(full);
   } catch {}
 
@@ -1580,7 +1580,7 @@ if (orderType === "table" && orderId) {
     let customerId = null;
     if (orderType === "online" && customerInfo?.phone) {
       try {
-        const searchRes = await fetch(`${API_URL}/api/customers?search=${customerInfo.phone}`);
+        const searchRes = await secureFetch('customers?search=${customerInfo.phone}`);
         const candidates = await searchRes.json();
         const norm = (s) => (s || "").replace(/\D/g, "");
         const exact = (Array.isArray(candidates) ? candidates : []).find(

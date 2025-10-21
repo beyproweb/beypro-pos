@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from "react-i18next";
 const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../utils/secureFetch";
 
 export default function StockConfirmModal({
   isOpen,
@@ -17,7 +18,7 @@ export default function StockConfirmModal({
      const { t, i18n } = useTranslation();
   useEffect(() => {
     if (!isOpen) return;
-    fetch(`${API_URL}/api/suppliers`)
+    secureFetch("suppliers")
       .then((res) => res.json())
       .then((data) => setSuppliers(data))
       .catch((err) => console.error('❌ Failed to load suppliers:', err));

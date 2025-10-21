@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import axios from "axios";
+import secureFetch from "../../utils/secureFetch";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 export default function SubscriptionTab() {
@@ -77,13 +78,17 @@ export default function SubscriptionTab() {
 
     try {
       // First: Register the user
-      const registerRes = await axios.post(`${API_URL}/api/register`, {
-        email: form.email,
-        password: form.password,
-        fullName: form.fullName,
-        businessName: form.businessName,
-        subscriptionPlan: form.activePlan
-      });
+    const registerRes = await secureFetch("/register", {
+  method: "POST",
+  body: JSON.stringify({
+    email: form.email,
+    password: form.password,
+    fullName: form.fullName,
+    businessName: form.businessName,
+    subscriptionPlan: form.activePlan,
+  }),
+});
+
 
       if (!registerRes.data.success) {
         toast.error(t("Registration failed. Please try again."));
@@ -91,19 +96,27 @@ export default function SubscriptionTab() {
       }
 
       // Then: Save the subscription
-      const subscriptionRes = await axios.post(`${API_URL}/api/subscribe`, form);
-     if (subscriptionRes.data.success) {
+const subscriptionRes = await secureFetch("/subscribe", {
+  method: "POST",
+  body: JSON.stringify(form),
+});
+
+if (subscriptionRes.success) {
   // ✅ Store user in localStorage to keep authenticated
-  localStorage.setItem("beyproUser", JSON.stringify({
-    email: form.email,
-    fullName: form.fullName,
-  }));
+  localStorage.setItem(
+    "beyproUser",
+    JSON.stringify({
+      email: form.email,
+      fullName: form.fullName,
+    })
+  );
 
   toast.success(t("🎉 Subscription registered! Welcome to Beypro."));
   setTimeout(() => {
     window.location.href = "/";
   }, 1500);
 }
+
 
  else {
         toast.error(t("❌ All fields required."));

@@ -1,5 +1,6 @@
 // src/components/OrderStatusScreen.jsx
 import React, { useState, useEffect, useRef } from "react";
+import secureFetch from "../utils/secureFetch";
 
 import { io } from "socket.io-client";
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -78,7 +79,7 @@ const pmLabel = (m) => {
 };
 async function requestPaymentLink() {
   try {
-    const res = await fetch(`${API_URL}/api/payments/start`, {
+    const res = await secureFetch("payments/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ order_id: orderId, method: "online" }),
@@ -107,7 +108,7 @@ async function requestPaymentLink() {
 
     async function load() {
       try {
-        const res = await fetch(`${API_URL}/api/orders/${orderId}`, { headers: { Accept: "application/json" } });
+        const res = await secureFetch("orders/${orderId}", { headers: { Accept: "application/json" } });
 
         if (!res.ok) {
           if (res.status === 404 && !abort) {
@@ -137,7 +138,7 @@ async function requestPaymentLink() {
   const fetchOrder = async () => {
     if (!orderId) return;
     try {
-      const orderRes = await fetch(`${API_URL}/api/orders/${orderId}`);
+      const orderRes = await secureFetch("orders/${orderId}");
       if (orderRes.ok) {
         const orderData = await safeJSON(orderRes);
         setOrder(orderData);
@@ -151,7 +152,7 @@ async function requestPaymentLink() {
     }
 
     try {
-      const itemsRes = await fetch(`${API_URL}/api/orders/${orderId}/items`);
+      const itemsRes = await secureFetch("orders/${orderId}/items");
       if (!itemsRes.ok) throw new Error(`Items for order ${orderId} not found`);
       const raw = await safeJSON(itemsRes);
       const normalized = toArray(raw).map(normItem);

@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next";
-import { saveSetting } from "../hooks/useSetting";
 import { useAppearance } from "../../context/AppearanceContext";
 import { useAuth } from "../../context/AuthContext";
 import React, { useEffect } from "react";
-const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../../utils/secureFetch"; // ✅ Add this import
+
 // Theme options
 const themes = [
   { key: "light", label: "Light", icon: "🌞" },
@@ -23,41 +23,45 @@ const accentPreviewMap = {
   "sky-500": "#0ea5e9",
 };
 
-
 // Build accent list
 const accentColors = Object.keys(accentPreviewMap).map((value) => ({
   name: value.replace("-", " ").toUpperCase(),
   value,
 }));
-// Helper
-async function fetchUserAppearance(userId) {
-  const res = await fetch(`${API_URL}/api/user-settings/${userId}/appearance`);
-  return res.json();
+
+// ✅ Helpers
+async function fetchUserAppearance() {
+  return await secureFetch(`/settings/appearance`);
 }
-async function saveUserAppearance(userId, appearance) {
-  await fetch(`${API_URL}/api/user-settings/${userId}/appearance`, {
+
+async function saveUserAppearance(appearance) {
+  await secureFetch(`/settings/appearance`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(appearance),
   });
 }
+
+
 export default function AppearanceTab() {
   const { t } = useTranslation();
   const { appearance, setAppearance } = useAppearance();
-const { currentUser } = useAuth();
-
-
-  const handleSave = async () => {
-  await saveUserAppearance(currentUser.id, appearance);
-  alert("💾 " + t("Settings saved"));
-};
+  const { currentUser } = useAuth();
 
 useEffect(() => {
-  if (!currentUser?.id) return;
-  fetchUserAppearance(currentUser.id).then((appr) => {
-    if (appr) setAppearance(appr);
-  });
-}, [currentUser?.id]);
+  fetchUserAppearance()
+    .then((appr) => appr && setAppearance(appr))
+    .catch((err) => console.error("❌ Failed to fetch appearance settings:", err));
+}, []);
+
+const handleSave = async () => {
+  try {
+    await saveUserAppearance(appearance);
+    alert("💾 " + t("Settings saved"));
+  } catch (err) {
+    console.error("❌ Failed to save appearance settings:", err);
+    alert(t("Failed to save settings"));
+  }
+};
 
   return (
     <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-white rounded-xl shadow p-6 max-w-4xl mx-auto transition-colors">
@@ -70,29 +74,28 @@ useEffect(() => {
         <label className="block text-lg font-semibold mb-3">{t("App Theme")}</label>
         <div className="flex gap-3">
           {themes.map((th) => (
-  <button
-    key={th.key}
-    onClick={() =>
-      setAppearance((prev) => ({
-        ...prev,
-        theme: th.key,
-        accent: th.key === "system" ? "indigo-600" : prev.accent, // ✅ reset on Auto
-      }))
-    }
-    className={`flex flex-col items-center px-4 py-3 rounded-xl border transition-all duration-200 ${
-      appearance.theme === th.key
-        ? "bg-accent text-white border-accent shadow"
-        : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-accent/10 border"
-    }`}
-  >
-    <span className="text-2xl">{th.icon}</span>
-    <span className="text-sm mt-1">{t(th.label)}</span>
-    {th.key === "system" && (
-      <span className="text-[10px] mt-1 text-gray-400">{t("System Default")}</span>
-    )}
-  </button>
-))}
-
+            <button
+              key={th.key}
+              onClick={() =>
+                setAppearance((prev) => ({
+                  ...prev,
+                  theme: th.key,
+                  accent: th.key === "system" ? "indigo-600" : prev.accent ?? "indigo-600",
+                }))
+              }
+              className={`flex flex-col items-center px-4 py-3 rounded-xl border transition-all duration-200 ${
+                appearance?.theme === th.key
+                  ? "bg-accent text-white border-accent shadow"
+                  : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-accent/10 border"
+              }`}
+            >
+              <span className="text-2xl">{th.icon}</span>
+              <span className="text-sm mt-1">{t(th.label)}</span>
+              {th.key === "system" && (
+                <span className="text-[10px] mt-1 text-gray-400">{t("System Default")}</span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -108,7 +111,10 @@ useEffect(() => {
           type="range"
           min="0"
           max="2"
-          value={["small", "medium", "large"].indexOf(appearance.fontSize)}
+          value={Math.max(
+            0,
+            ["small", "medium", "large"].indexOf(appearance?.fontSize ?? "medium")
+          )}
           onChange={(e) =>
             setAppearance((prev) => ({
               ...prev,
@@ -124,33 +130,31 @@ useEffect(() => {
         <label className="block text-lg font-semibold mb-3">{t("Accent Color")}</label>
         <div className="flex flex-wrap gap-4">
           {accentColors.map((c) => {
-  const isSelected =
-    (c.value === "default" && appearance.accent === "indigo-600") ||
-    appearance.accent === c.value;
+            const isSelected =
+              (c.value === "default" && appearance?.accent === "indigo-600") ||
+              appearance?.accent === c.value;
 
-  return (
-    <div key={c.value} className="flex flex-col items-center">
-      <button
-        onClick={() =>
-          setAppearance((prev) => ({
-            ...prev,
-            accent: c.value === "default" ? "indigo-600" : c.value,
-          }))
-        }
-        className={`h-10 w-10 rounded-full shadow-md transition-all duration-300 border-2 ${
-          isSelected ? "ring-2 ring-offset-2 ring-accent" : "border-white"
-        }`}
-        style={{ backgroundColor: accentPreviewMap[c.value] }}
-        title={c.name}
-      />
-      {c.value === "default" && (
-        <span className="text-[10px] text-gray-400 mt-1">Default</span>
-      )}
-    </div>
-  );
-})}
-
-
+            return (
+              <div key={c.value} className="flex flex-col items-center">
+                <button
+                  onClick={() =>
+                    setAppearance((prev) => ({
+                      ...prev,
+                      accent: c.value === "default" ? "indigo-600" : c.value,
+                    }))
+                  }
+                  className={`h-10 w-10 rounded-full shadow-md transition-all duration-300 border-2 ${
+                    isSelected ? "ring-2 ring-offset-2 ring-accent" : "border-white"
+                  }`}
+                  style={{ backgroundColor: accentPreviewMap[c.value] }}
+                  title={c.name}
+                />
+                {c.value === "default" && (
+                  <span className="text-[10px] text-gray-400 mt-1">Default</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -160,7 +164,7 @@ useEffect(() => {
         <label className="relative inline-flex items-center cursor-pointer">
           <input
             type="checkbox"
-            checked={appearance.highContrast}
+            checked={!!appearance?.highContrast}
             onChange={() =>
               setAppearance((prev) => ({ ...prev, highContrast: !prev.highContrast }))
             }

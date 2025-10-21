@@ -5,14 +5,152 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
+const QR_PREFIX = "qr_";
+
+function computeTenantSuffix() {
+  if (typeof window === "undefined") return "";
+  try {
+    const native = window.localStorage;
+    if (!native) return "";
+    const storedId = native.getItem("restaurant_id");
+    if (storedId && storedId !== "undefined" && storedId !== "null") {
+      return `${storedId}_`;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const queryTenant =
+      params.get("tenant_id") ||
+      params.get("tenant") ||
+      params.get("restaurant_id") ||
+      params.get("restaurant");
+
+    if (queryTenant && queryTenant !== "undefined" && queryTenant !== "null") {
+      // Don't persist query-derived tenant; just scope storage while URL has it
+      return `${queryTenant}_`;
+    }
+  } catch {
+    // ignore – fall back to legacy global storage keys
+  }
+  return "";
+}
+
+function resolveQrKey(key) {
+  if (!key?.startsWith?.(QR_PREFIX)) return key;
+  const suffix = computeTenantSuffix();
+  if (!suffix) return key;
+  const base = key.slice(QR_PREFIX.length);
+  return `${QR_PREFIX}${suffix}${base}`;
+}
+
+function getQrKeyVariants(key) {
+  if (!key?.startsWith?.(QR_PREFIX)) return [key];
+  const scoped = resolveQrKey(key);
+  if (scoped === key) return [key];
+  return [scoped, key];
+}
+
+const storage = {
+  getItem(key) {
+    if (typeof window === "undefined") return null;
+    const native = window.localStorage;
+    if (!native) return null;
+    if (!key?.startsWith?.(QR_PREFIX)) {
+      try {
+        return native.getItem(key);
+      } catch {
+        return null;
+      }
+    }
+    try {
+      const variants = getQrKeyVariants(key);
+      for (const candidate of variants) {
+        const value = native.getItem(candidate);
+        if (value !== null && value !== undefined) {
+          return value;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  },
+  setItem(key, value) {
+    if (typeof window === "undefined") return;
+    const native = window.localStorage;
+    if (!native) return;
+    if (!key?.startsWith?.(QR_PREFIX)) {
+      try {
+        native.setItem(key, value);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    try {
+      const variants = getQrKeyVariants(key);
+      const [primary, ...rest] = variants;
+      native.setItem(primary, value);
+      for (const legacy of rest) {
+        if (legacy !== primary) {
+          native.removeItem(legacy);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  },
+  removeItem(key) {
+    if (typeof window === "undefined") return;
+    const native = window.localStorage;
+    if (!native) return;
+    if (!key?.startsWith?.(QR_PREFIX)) {
+      try {
+        native.removeItem(key);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    try {
+      const variants = getQrKeyVariants(key);
+      const seen = new Set();
+      for (const candidate of variants) {
+        if (!candidate || seen.has(candidate)) continue;
+        seen.add(candidate);
+        native.removeItem(candidate);
+      }
+    } catch {
+      // ignore
+    }
+  },
+};
+
+const toArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.data)) return value.data;
+  return [];
+};
 
 // --- TABLE PERSISTENCE HELPERS ---
 const TABLE_KEY = "qr_selected_table";
 
+function getStoredToken() {
+  try {
+    const direct = storage.getItem("token");
+    if (direct && direct !== "null" && direct !== "undefined") return direct;
+    const stored = storage.getItem("beyproUser");
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    return parsed?.token || parsed?.accessToken || null;
+  } catch {
+    return null;
+  }
+}
+
 
 function saveSelectedTable(tableNo) {
   if (tableNo !== undefined && tableNo !== null && `${tableNo}`.trim() !== "") {
-    localStorage.setItem(TABLE_KEY, String(tableNo));
+    storage.setItem(TABLE_KEY, String(tableNo));
   }
 }
 
@@ -25,13 +163,13 @@ function getPlatform() {
 }
 
 function getSavedTable() {
-  const v = localStorage.getItem(TABLE_KEY);
+  const v = storage.getItem(TABLE_KEY);
   return v && v !== "null" ? v : "";
 }
 
 function clearSavedTable() {
   // call this only when order is COMPLETED/CLOSED – NOT when user backs out
-  localStorage.removeItem(TABLE_KEY);
+  storage.removeItem(TABLE_KEY);
 }
 
 /* ====================== SMALL HELPERS ====================== */
@@ -474,7 +612,7 @@ const [savedOnce, setSavedOnce] = useState(false);
 // Prefill from local device storage on first open
 useEffect(() => {
   try {
-    const saved = JSON.parse(localStorage.getItem("qr_delivery_info") || "null");
+    const saved = JSON.parse(storage.getItem("qr_delivery_info") || "null");
     if (saved && typeof saved === "object") {
       setForm((f) => ({
         ...f,
@@ -499,7 +637,7 @@ useEffect(() => {
       return;
     }
     try {
-      const store = JSON.parse(localStorage.getItem("qr_saved_cards") || "{}");
+      const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
       const arr = Array.isArray(store[form.phone]) ? store[form.phone] : [];
       setSavedCard(arr[0] || null);
       setUseSaved(!!arr[0]); // default to saved only if one exists
@@ -521,7 +659,7 @@ useEffect(() => {
   setSaving(true);
   try {
     // 1) Save locally so it's there on next open
-    localStorage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
+    storage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
 
     // 2) Try to sync with backend (best-effort)
     try {
@@ -621,11 +759,11 @@ useEffect(() => {
   function persistCardIfRequested(meta) {
     if (!saveCard) return;
     try {
-      const store = JSON.parse(localStorage.getItem("qr_saved_cards") || "{}");
+      const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
       const list = Array.isArray(store[form.phone]) ? store[form.phone] : [];
       if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) list.unshift(meta);
       store[form.phone] = list.slice(0, 3);
-      localStorage.setItem("qr_saved_cards", JSON.stringify(store));
+      storage.setItem("qr_saved_cards", JSON.stringify(store));
     } catch {}
   }
 
@@ -812,16 +950,18 @@ useEffect(() => {
 
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
+  const categoryList = toArray(categories);
   return (
     <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 dark:border-zinc-800 z-50">
       <div className="px-3 py-2">
         <div className="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory">
-          {categories.map((cat) => {
-            const imgSrc = categoryImages[cat.trim().toLowerCase()];
+          {categoryList.map((cat) => {
+            const key = typeof cat === "string" ? cat.trim().toLowerCase() : "";
+            const imgSrc = key ? categoryImages[key] : undefined;
             const isActive = activeCategory === cat;
             return (
               <button
-                key={cat}
+                key={String(cat)}
                 onClick={() => setActiveCategory(cat)}
                 className={[
                   "flex-none w-20 h-20 rounded-2xl border-2 shadow-sm overflow-hidden transition snap-start",
@@ -862,14 +1002,15 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
 
 /* ====================== PRODUCT GRID ====================== */
 function ProductGrid({ products, onProductClick, t }) {
+  const productList = toArray(products);
   return (
     <main className="w-full max-w-full pt-3 pb-28 px-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 overflow-hidden">
-      {products.length === 0 && (
+      {productList.length === 0 && (
         <div className="col-span-full text-center text-gray-400 font-bold text-lg py-8">
           {t("No products.")}
         </div>
       )}
-      {products.map((product) => (
+      {productList.map((product) => (
         <div
           key={product.id}
           onClick={() => onProductClick(product)}
@@ -925,7 +1066,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
   const basePrice = parseFloat(product.price) || 0;
 
   // Normalize groups: keep both id + name
-  const normalizedGroups = (extrasGroups || []).map((g) => ({
+  const normalizedGroups = toArray(extrasGroups).map((g) => ({
     id: g.id,
     groupName: g.groupName || g.group_name,
     items: Array.isArray(g.items)
@@ -941,13 +1082,13 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
   }));
 
   // Get allowed groups by product.selectedExtrasGroup (IDs)
-  const productGroupIds = Array.isArray(product?.selectedExtrasGroup)
-    ? product.selectedExtrasGroup.map(Number).filter((n) => Number.isFinite(n))
-    : [];
+  const productGroupIds = toArray(product?.selectedExtrasGroup)
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
 
  let availableGroups = [];
  if (productGroupIds.length > 0) {
-   availableGroups = normalizedGroups.filter((g) =>
+   availableGroups = toArray(normalizedGroups).filter((g) =>
      productGroupIds.includes(Number(g.id))
    );
  }
@@ -1194,18 +1335,19 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
               const unique_id = `${product.id}-${Date.now().toString(36)}-${Math.random()
                 .toString(36)
                 .slice(2, 8)}`;
+              const extrasList = toArray(selectedExtras);
               onAddToCart({
                 id: product.id,
                 name: product.name,
                 image: product.image,
                 price:
                   basePrice +
-                  selectedExtras.reduce(
+                  extrasList.reduce(
                     (s, ex) => s + (ex.price || 0) * (ex.quantity || 1),
                     0
                   ),
                 quantity,
-                extras: selectedExtras.filter((e) => e.quantity > 0),
+                extras: extrasList.filter((e) => e.quantity > 0),
                 note,
                 unique_id,
               });
@@ -1234,8 +1376,10 @@ function CartDrawer({
 }) {
   const [show, setShow] = useState(false);
 
-  const prevItems = cart.filter(i => i.locked);
-  const newItems  = cart.filter(i => !i.locked);
+  const cartArray = toArray(cart);
+  const cartLength = cartArray.length;
+  const prevItems = cartArray.filter((i) => i.locked);
+  const newItems  = cartArray.filter((i) => !i.locked);
 
   const lineTotal = (item) => {
     const extrasTotal = (item.extras || []).reduce(
@@ -1255,29 +1399,29 @@ function CartDrawer({
 
   // 🚪 auto-open only if allowed
   useEffect(() => {
-    const auto = localStorage.getItem("qr_cart_auto_open") !== "0";
-    if (auto) setShow(cart.length > 0);
-  }, [cart.length]);
+    const auto = storage.getItem("qr_cart_auto_open") !== "0";
+    if (auto) setShow(cartLength > 0);
+  }, [cartLength]);
 
   function removeItem(idx, isNew) {
     if (!isNew) return; // don't remove locked (read-only)
     setCart((prev) => {
       let n = -1;
-      return prev.filter((it) => (it.locked ? true : (++n !== idx)));
+      return toArray(prev).filter((it) => (it.locked ? true : (++n !== idx)));
     });
   }
 
   return (
     <>
-      {!show && cart.length > 0 && (
+      {!show && cartLength > 0 && (
         <button
           className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-7 rounded-3xl shadow-xl z-50"
           onClick={() => {
-            localStorage.setItem("qr_cart_auto_open", "1");
+            storage.setItem("qr_cart_auto_open", "1");
             setShow(true);
           }}
         >
-          🛒 {t("View Cart")} ({cart.length})
+          🛒 {t("View Cart")} ({cartLength})
         </button>
       )}
 
@@ -1290,7 +1434,7 @@ function CartDrawer({
             </div>
 
             <div className="flex-1 overflow-y-auto max-h-[48vh]">
-              {cart.length === 0 ? (
+              {cartLength === 0 ? (
                 <div className="text-gray-400 text-center py-8">{t("Cart is empty.")}</div>
               ) : (
                 <div className="flex flex-col gap-4">
@@ -1368,7 +1512,7 @@ function CartDrawer({
             </div>
 
             {/* Footer */}
-            {cart.length > 0 && (
+            {cartLength > 0 && (
               <>
                 <div className="flex justify-between text-base font-bold mt-5 mb-3">
                   <span>{t("Total")}:</span>
@@ -1421,8 +1565,9 @@ function CartDrawer({
                   className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
                   onClick={() => {
                     // Clear only NEW items; keep locked items visible
-                    setCart((prev) => prev.filter(i => i.locked));
-                    localStorage.setItem("qr_cart", JSON.stringify(cart.filter(i => i.locked)));
+                    const lockedOnly = cartArray.filter((i) => i.locked);
+                    setCart(lockedOnly);
+                    storage.setItem("qr_cart", JSON.stringify(lockedOnly));
                   }}
                 >
                   Clear New Items
@@ -1451,7 +1596,7 @@ async function startOnlinePaymentSession(id) {
 
     const data = await res.json().catch(() => ({}));
     if (data.pay_url) {
-      localStorage.setItem("qr_payment_url", data.pay_url);
+      storage.setItem("qr_payment_url", data.pay_url);
       return data.pay_url;
     }
   } catch (e) {
@@ -1526,8 +1671,8 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
   // persist language
-  const [lang, setLang] = useState(() => localStorage.getItem("qr_lang") || "en");
-  useEffect(() => { localStorage.setItem("qr_lang", lang); }, [lang]);
+  const [lang, setLang] = useState(() => storage.getItem("qr_lang") || "en");
+  useEffect(() => { storage.setItem("qr_lang", lang); }, [lang]);
   const t = useMemo(() => makeT(lang), [lang]);
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -1540,7 +1685,12 @@ const [platform, setPlatform] = useState(getPlatform());
   const [extrasGroups, setExtrasGroups] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
   const [cart, setCart] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("qr_cart") || "[]"); } catch { return []; }
+    try {
+      const parsed = JSON.parse(storage.getItem("qr_cart") || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   });
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1554,15 +1704,30 @@ const [platform, setPlatform] = useState(getPlatform());
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState(
-  () => localStorage.getItem("qr_payment_method") || "online"
+  () => storage.getItem("qr_payment_method") || "online"
 );
   const [orderType, setOrderType] = useState(
-  () => localStorage.getItem("qr_orderType") || null
+  () => storage.getItem("qr_orderType") || null
 );
+
+  const safeProducts = useMemo(() => toArray(products), [products]);
+  const safeCategories = useMemo(() => toArray(categories), [categories]);
+  const safeExtrasGroups = useMemo(() => toArray(extrasGroups), [extrasGroups]);
+  const safeCart = useMemo(() => toArray(cart), [cart]);
+  const safeOccupiedTables = useMemo(() => toArray(occupiedTables), [occupiedTables]);
+  const productsInActiveCategory = useMemo(
+    () =>
+      safeProducts.filter(
+        (p) =>
+          (p?.category || "").trim().toLowerCase() ===
+          (activeCategory || "").trim().toLowerCase()
+      ),
+    [safeProducts, activeCategory]
+  );
 
 // at the top of QrMenu component
 const [showQrPrompt, setShowQrPrompt] = useState(() => {
-  return !localStorage.getItem("qr_saved");
+  return !storage.getItem("qr_saved");
 });
 // === PWA INSTALL HANDLER ===
 const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -1606,7 +1771,7 @@ window.location.href = "https://pos.beypro.com/qr-menu";
 
 
   // Remember that user saved it
-  localStorage.setItem("qr_saved", "1");
+  storage.setItem("qr_saved", "1");
   setShowQrPrompt(false);
 }
 
@@ -1621,7 +1786,7 @@ useEffect(() => {
 }, [orderType]);
 
 useEffect(() => {
-  localStorage.setItem("qr_payment_method", paymentMethod);
+  storage.setItem("qr_payment_method", paymentMethod);
 }, [paymentMethod]);
 
 
@@ -1646,7 +1811,7 @@ const statusPortal = showStatus
 // show Delivery Info form only when starting a brand-new online order
 const [showDeliveryForm, setShowDeliveryForm] = useState(false);
 useEffect(() => {
-  const hasActive = !!(orderId || localStorage.getItem("qr_active_order_id"));
+  const hasActive = !!(orderId || storage.getItem("qr_active_order_id"));
   if (orderType === "online" && !hasActive) {
     setShowDeliveryForm(true);
   }
@@ -1659,13 +1824,13 @@ useEffect(() => {
 
 // -- clear saved table ONLY when no items in cart and no active order
 function resetTableIfEmptyCart() {
-  const count = Array.isArray(cart) ? cart.length : 0;
-  const hasActive = !!(orderId || localStorage.getItem("qr_active_order_id"));
+  const count = safeCart.length;
+  const hasActive = !!(orderId || storage.getItem("qr_active_order_id"));
   if (count === 0 && !hasActive) {
     try {
-      localStorage.removeItem("qr_table");
-      localStorage.removeItem("qr_selected_table");
-      localStorage.removeItem("qr_orderType");
+      storage.removeItem("qr_table");
+      storage.removeItem("qr_selected_table");
+      storage.removeItem("qr_orderType");
     } catch {}
     // let any listeners react instantly (if you add one later)
     window.dispatchEvent(new Event("qr:table-reset"));
@@ -1675,7 +1840,7 @@ function resetTableIfEmptyCart() {
 // when user taps the header “×”
 function handleCloseOrderPage() {
   // If there’s an active order, keep showing status (don’t go back to type)
-  const activeId = orderId || Number(localStorage.getItem("qr_active_order_id")) || null;
+  const activeId = orderId || Number(storage.getItem("qr_active_order_id")) || null;
   if (activeId) {
     setShowStatus(true);
     setOrderStatus("success");
@@ -1694,23 +1859,36 @@ function handleCloseOrderPage() {
 useEffect(() => {
   (async () => {
     try {
-      const activeId = localStorage.getItem("qr_active_order_id");
+      const activeId = storage.getItem("qr_active_order_id");
 
       // helper: true if ALL items are delivered
       async function allItemsDelivered(id) {
         try {
-          const ir = await fetch(`${API_URL}/api/orders/${id}/items`);
+          const token = getStoredToken();
+          if (!token) return false;
+          const ir = await fetch(`${API_URL}/api/orders/${id}/items`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
           if (!ir.ok) return false;
           const raw = await ir.json();
           const arr = Array.isArray(raw) ? raw : [];
           return arr.length > 0 && arr.every(it => (it.kitchen_status || "").toLowerCase() === "delivered");
-        } catch { return false; }
+        } catch {
+          return false;
+        }
       }
 
       // 1) If we have a saved active order id, prefer that
       if (activeId) {
-        const res = await fetch(`${API_URL}/api/orders/${activeId}`);
-        if (res.ok) {
+        const token = getStoredToken();
+        const res = token
+          ? await fetch(`${API_URL}/api/orders/${activeId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          : null;
+        if (res?.ok) {
           const order = await res.json();
           const status = (order?.status || "").toLowerCase();
 
@@ -1738,36 +1916,41 @@ useEffect(() => {
 
       // 2) Fallback: see if a saved table has an open (non-closed) order
       const savedTable = Number(
-        localStorage.getItem("qr_table") ||
-        localStorage.getItem("qr_selected_table") ||
+        storage.getItem("qr_table") ||
+        storage.getItem("qr_selected_table") ||
         "0"
       ) || null;
 
       if (savedTable) {
-        const q = await fetch(`${API_URL}/api/orders?table_number=${savedTable}`);
-        if (q.ok) {
-          const raw = await q.json();
-          const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
-          const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
+        const token = getStoredToken();
+        if (token) {
+          const q = await fetch(`${API_URL}/api/orders?table_number=${savedTable}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (q.ok) {
+            const raw = await q.json();
+            const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+            const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
 
-          if (openOrder) {
-            // all delivered? → reset
-            if (await allItemsDelivered(openOrder.id)) {
-              resetToTypePicker();
+            if (openOrder) {
+              // all delivered? → reset
+              if (await allItemsDelivered(openOrder.id)) {
+                resetToTypePicker();
+                return;
+              }
+
+              // restore
+              setOrderType("table");
+              setTable(savedTable);
+              setOrderId(openOrder.id);
+              setOrderStatus("success");
+              setShowStatus(true);
+
+              storage.setItem("qr_active_order_id", String(openOrder.id));
+              storage.setItem("qr_orderType", "table");
+              storage.setItem("qr_show_status", "1");
               return;
             }
-
-            // restore
-            setOrderType("table");
-            setTable(savedTable);
-            setOrderId(openOrder.id);
-            setOrderStatus("success");
-            setShowStatus(true);
-
-            localStorage.setItem("qr_active_order_id", String(openOrder.id));
-            localStorage.setItem("qr_orderType", "table");
-            localStorage.setItem("qr_show_status", "1");
-            return;
           }
         }
       }
@@ -1786,57 +1969,121 @@ useEffect(() => {
 
 
   // QrMenu.jsx
-useEffect(() => {
-  fetch(`${API_URL}/api/category-images`)
-    .then(res => res.json())
-    .then(data => {
-      const dict = {};
-      (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
-        const key = (category || "").trim().toLowerCase();
-        if (!key || !image) return;
-        dict[key] = image; // <-- keep full Cloudinary URL (or relative) as-is
-      });
-      setCategoryImages(dict);
-    })
-    .catch(() => setCategoryImages({}));
-}, []);
+  useEffect(() => {
+    fetch(`${API_URL}/api/category-images`)
+      .then(res => res.json())
+      .then(data => {
+        const dict = {};
+        (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
+          const key = (category || "").trim().toLowerCase();
+          if (!key || !image) return;
+          dict[key] = image; // <-- keep full Cloudinary URL (or relative) as-is
+        });
+        setCategoryImages(dict);
+      })
+      .catch(() => setCategoryImages({}));
+  }, []);
 
 
   useEffect(() => {
-    localStorage.setItem("qr_cart", JSON.stringify(cart));
-  }, [cart]);
+    const storedCart = safeCart;
+    storage.setItem("qr_cart", JSON.stringify(storedCart));
+  }, [safeCart]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/products`)
-      .then((res) => res.json())
-      .then((data) => {
-        setProducts(data);
-        const cats = [...new Set(data.map((p) => p.category))].filter(Boolean);
+    let cancelled = false;
+
+    const parseArray = (raw) =>
+      Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+
+    const tryJSON = (value) => {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const loadProducts = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/products`);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch products (${res.status})`);
+        }
+        const payload = await res.json();
+        const list = parseArray(payload);
+        if (cancelled) return;
+        const listArray = toArray(list);
+        setProducts(listArray);
+        const cats = [...new Set(listArray.map((p) => p.category))].filter(Boolean);
         setCategories(cats);
         setActiveCategory(cats[0] || "");
-      });
+      } catch (err) {
+        console.warn("⚠️ Failed to fetch products:", err);
+        if (cancelled) return;
+        setProducts([]);
+        setCategories([]);
+        setActiveCategory("");
+      }
+    };
 
-    fetch(`${API_URL}/api/extras-groups`)
-      .then((res) => res.json())
-      .then((data) =>
+    const loadExtras = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/extras-groups`);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch extras groups (${res.status})`);
+        }
+        const payload = await res.json();
+        const list = parseArray(payload);
+        if (cancelled) return;
+        const listArray = toArray(list);
         setExtrasGroups(
-          (data || []).map((g) => ({
+          listArray.map((g) => ({
             groupName: g.groupName || g.group_name,
             items: typeof g.items === "string" ? tryJSON(g.items) : g.items || [],
           }))
-        )
-      );
+        );
+      } catch (err) {
+        console.warn("⚠️ Failed to fetch extras groups:", err);
+        if (cancelled) return;
+        setExtrasGroups([]);
+      }
+    };
 
-    fetch(`${API_URL}/api/orders`)
-      .then((res) => res.json())
-      .then((orders) => {
-        const occupied = orders
-          .filter((order) => order.table_number && order.status !== "closed")
-          .map((order) => Number(order.table_number));
-        setOccupiedTables(occupied);
-      });
+    loadProducts();
+    loadExtras();
 
-    function tryJSON(v) { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
+    const token = getStoredToken();
+    if (token) {
+      fetch(`${API_URL}/api/orders`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`Failed to fetch orders (${res.status})`);
+          return res.json();
+        })
+        .then((orders) => {
+          if (cancelled) return;
+          const list = parseArray(orders);
+          const occupied = toArray(list)
+            .filter((order) => order?.table_number && order?.status !== "closed")
+            .map((order) => Number(order.table_number));
+         setOccupiedTables(occupied);
+        })
+        .catch((err) => {
+          console.warn("⚠️ Failed to fetch orders:", err);
+          if (!cancelled) setOccupiedTables([]);
+        });
+    } else {
+      setOccupiedTables([]);
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
 
@@ -1873,52 +2120,60 @@ if (!orderType)
 // --- Table select (let THIS device re-open its own occupied table) ---
 if (orderType === "table" && !table) {
   const myTable = Number(
-    localStorage.getItem("qr_table") ||
-    localStorage.getItem("qr_selected_table") ||
+    storage.getItem("qr_table") ||
+    storage.getItem("qr_selected_table") ||
     "0"
   ) || null;
 
   const filteredOccupied = myTable
-    ? occupiedTables.filter((n) => n !== myTable)
-    : occupiedTables;
+    ? safeOccupiedTables.filter((n) => n !== myTable)
+    : safeOccupiedTables;
 
   return (
     <>
       <TableSelectModal
         onSelectTable={async (n) => {
           // Try to jump straight to an existing open order on this table
-          try {
-            const res = await fetch(`${API_URL}/api/orders?table_number=${n}`);
-            if (res.ok) {
-              const raw = await res.json();
-              const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
-              // backend often excludes closed already; be defensive
-              const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || list[0] || null;
+          const token = getStoredToken();
+          if (token) {
+            try {
+              const res = await fetch(`${API_URL}/api/orders?table_number=${n}`, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+              if (res.ok) {
+                const raw = await res.json();
+                const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+                // backend often excludes closed already; be defensive
+                const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || list[0] || null;
 
-              if (openOrder) {
-                setOrderType("table");
-                setTable(n);
-                setOrderId(openOrder.id);
-                setActiveOrder(openOrder);
-                setShowStatus(true);
-                setOrderStatus("success");
+                if (openOrder) {
+                  setOrderType("table");
+                  setTable(n);
+                  setOrderId(openOrder.id);
+                  setActiveOrder(openOrder);
+                  setShowStatus(true);
+                  setOrderStatus("success");
 
-                localStorage.setItem("qr_active_order", JSON.stringify({ orderId: openOrder.id, orderType: "table", table: n }));
-                localStorage.setItem("qr_active_order_id", String(openOrder.id));
-                localStorage.setItem("qr_orderType", "table");
-                localStorage.setItem("qr_table", String(n));
-                localStorage.setItem("qr_show_status", "1");
-                return; // <- IMPORTANT: stop here so status opens
+                  storage.setItem("qr_active_order", JSON.stringify({ orderId: openOrder.id, orderType: "table", table: n }));
+                  storage.setItem("qr_active_order_id", String(openOrder.id));
+                  storage.setItem("qr_orderType", "table");
+                  storage.setItem("qr_table", String(n));
+                  storage.setItem("qr_show_status", "1");
+                  return; // <- IMPORTANT: stop here so status opens
+                }
               }
+            } catch (err) {
+              console.warn("⚠️ Failed to fetch orders for table:", err);
+              // fall through
             }
-          } catch {
-            // fall through
           }
 
           // No open order -> proceed like a fresh selection
           setTable(n);
-          localStorage.setItem("qr_table", String(n));
-          localStorage.setItem("qr_orderType", "table");
+          storage.setItem("qr_table", String(n));
+          storage.setItem("qr_orderType", "table");
         }}
         occupiedTables={filteredOccupied}
         onClose={() => setOrderType(null)}
@@ -1934,7 +2189,16 @@ if (orderType === "table" && !table) {
 // ---- Rehydrate cart from current order, but mark them as locked (read-only) ----
 async function rehydrateCartFromOrder(orderId) {
   try {
-    const res = await fetch(`${API_URL}/api/orders/${orderId}/items`);
+    const token = getStoredToken();
+    if (!token) {
+      console.info("ℹ️ Skipping cart rehydrate (no auth token)");
+      return;
+    }
+    const res = await fetch(`${API_URL}/api/orders/${orderId}/items`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
     if (!res.ok) throw new Error("Failed to load order items");
     const raw = await res.json();
 
@@ -1968,30 +2232,38 @@ async function handleOrderAnother() {
     setOrderStatus("pending");
 
     // keep drawer closed; user opens if needed
-    localStorage.setItem("qr_cart_auto_open", "0");
+    storage.setItem("qr_cart_auto_open", "0");
     window.dispatchEvent(new Event("qr:cart-close"));
 
     // resolve existing order
-    let id = orderId || Number(localStorage.getItem("qr_active_order_id")) || null;
-    let type = orderType || localStorage.getItem("qr_orderType") || (table ? "table" : null);
+    let id = orderId || Number(storage.getItem("qr_active_order_id")) || null;
+    let type = orderType || storage.getItem("qr_orderType") || (table ? "table" : null);
 
     // If table known but no id, fetch open order for that table
     if (!id && (type === "table" || table)) {
-      const tNo = table || Number(localStorage.getItem("qr_table")) || null;
+      const tNo = table || Number(storage.getItem("qr_table")) || null;
       if (tNo) {
-        try {
-          const q = await fetch(`${API_URL}/api/orders?table_number=${tNo}`);
-          if (q.ok) {
-            const list = await q.json();
-            const open = Array.isArray(list) ? list.find(o => (o.status || "").toLowerCase() !== "closed") : null;
-            if (open) {
-              id = open.id;
-              type = "table";
-              setOrderId(id);
-              setOrderType("table");
+        const token = getStoredToken();
+        if (token) {
+          try {
+            const q = await fetch(`${API_URL}/api/orders?table_number=${tNo}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (q.ok) {
+              const list = await q.json();
+              const arr = Array.isArray(list) ? list : (Array.isArray(list?.data) ? list.data : []);
+              const open = arr.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
+              if (open) {
+                id = open.id;
+                type = "table";
+                setOrderId(id);
+                setOrderType("table");
+              }
             }
+          } catch (err) {
+            console.warn("⚠️ Failed to fetch open table order:", err);
           }
-        } catch {}
+        }
       }
     }
 
@@ -1999,9 +2271,9 @@ async function handleOrderAnother() {
     if (type === "online" && id) {
       await rehydrateCartFromOrder(id); // sets locked: true items
       setOrderType("online");
-      localStorage.setItem("qr_active_order_id", String(id));
-      localStorage.setItem("qr_orderType", "online");
-      localStorage.setItem("qr_show_status", "0");
+      storage.setItem("qr_active_order_id", String(id));
+      storage.setItem("qr_orderType", "online");
+      storage.setItem("qr_show_status", "0");
       setShowDeliveryForm(false); // don’t ask details again
       return;
     }
@@ -2009,17 +2281,17 @@ async function handleOrderAnother() {
     // TABLE branch (unchanged)
     if (type === "table" && id) {
       await rehydrateCartFromOrder(id); // sets locked: true items
-      localStorage.setItem("qr_active_order_id", String(id));
-      localStorage.setItem("qr_orderType", "table");
-      if (table) localStorage.setItem("qr_table", String(table));
-      localStorage.setItem("qr_show_status", "0");
+      storage.setItem("qr_active_order_id", String(id));
+      storage.setItem("qr_orderType", "table");
+      if (table) storage.setItem("qr_table", String(table));
+      storage.setItem("qr_show_status", "0");
       return;
     }
 
     // nothing to restore → clean cart
     setCart([]);
-    localStorage.setItem("qr_cart", "[]");
-    localStorage.setItem("qr_show_status", "0");
+    storage.setItem("qr_cart", "[]");
+    storage.setItem("qr_show_status", "0");
   } catch (e) {
     console.error("handleOrderAnother failed:", e);
   }
@@ -2093,7 +2365,7 @@ async function handleSubmitOrder() {
     // Require delivery details only when starting a brand-new ONLINE order
     const hasActiveOnline =
       orderType === "online" &&
-      (orderId || localStorage.getItem("qr_active_order_id"));
+      (orderId || storage.getItem("qr_active_order_id"));
     if (orderType === "online" && !hasActiveOnline && !customerInfo) {
       setShowDeliveryForm(true);
       return;
@@ -2108,7 +2380,7 @@ async function handleSubmitOrder() {
       return;
     }
 
-    const newItems = (Array.isArray(cart) ? cart : []).filter((i) => !i.locked);
+    const newItems = toArray(cart).filter((i) => !i.locked);
     if (newItems.length === 0) {
       setOrderStatus("success");
       setShowStatus(true);
@@ -2179,9 +2451,9 @@ async function handleSubmitOrder() {
       }
 
       // clear only NEW items
-      setCart((prev) => prev.filter((i) => i.locked));
+      setCart((prev) => toArray(prev).filter((i) => i.locked));
 
-      localStorage.setItem(
+      storage.setItem(
         "qr_active_order",
         JSON.stringify({
           orderId,
@@ -2189,12 +2461,12 @@ async function handleSubmitOrder() {
           table: orderType === "table" ? table : null,
         })
       );
-      localStorage.setItem("qr_active_order_id", String(orderId));
+      storage.setItem("qr_active_order_id", String(orderId));
       if (orderType === "table" && table)
-        localStorage.setItem("qr_table", String(table));
-      localStorage.setItem("qr_orderType", orderType);
-      localStorage.setItem("qr_payment_method", paymentMethod);
-      localStorage.setItem("qr_show_status", "1");
+        storage.setItem("qr_table", String(table));
+      storage.setItem("qr_orderType", orderType);
+      storage.setItem("qr_payment_method", paymentMethod);
+      storage.setItem("qr_show_status", "1");
 
       setOrderStatus("success");
       setShowStatus(true);
@@ -2253,7 +2525,7 @@ async function handleSubmitOrder() {
     }
 
     setOrderId(newId);
-    localStorage.setItem(
+    storage.setItem(
       "qr_active_order",
       JSON.stringify({
         orderId: newId,
@@ -2261,12 +2533,12 @@ async function handleSubmitOrder() {
         table: orderType === "table" ? table : null,
       })
     );
-    localStorage.setItem("qr_active_order_id", String(newId));
+    storage.setItem("qr_active_order_id", String(newId));
     if (orderType === "table" && table)
-      localStorage.setItem("qr_table", String(table));
-    localStorage.setItem("qr_orderType", orderType);
-    localStorage.setItem("qr_payment_method", paymentMethod);
-    localStorage.setItem("qr_show_status", "1");
+      storage.setItem("qr_table", String(table));
+    storage.setItem("qr_orderType", orderType);
+    storage.setItem("qr_payment_method", paymentMethod);
+    storage.setItem("qr_show_status", "1");
 
     setCart([]); // fresh order → empty cart
     setOrderStatus("success");
@@ -2285,8 +2557,8 @@ function handleReset() {
   setShowStatus(false);
   setOrderStatus("pending");
   setCart([]);
-  localStorage.removeItem("qr_cart");
-  localStorage.setItem("qr_show_status", "0");
+  storage.removeItem("qr_cart");
+  storage.setItem("qr_show_status", "0");
 
   if (orderType === "table") {
     // Stay on same table & keep orderId for sub-orders
@@ -2298,7 +2570,7 @@ function handleReset() {
   setOrderId(null);
   setOrderType(null);
   setCustomerInfo(null);
-  localStorage.removeItem("qr_active_order");
+  storage.removeItem("qr_active_order");
 }
 
 
@@ -2315,7 +2587,7 @@ return (
 
     <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
       <ProductGrid
-        products={products.filter((p) => p.category === activeCategory)}
+        products={productsInActiveCategory}
         onProductClick={(product) => {
           setSelectedProduct(product);
           setShowAddModal(true);
@@ -2325,14 +2597,14 @@ return (
     </div>
 
     <CategoryBar
-      categories={categories}
+      categories={safeCategories}
       activeCategory={activeCategory}
       setActiveCategory={setActiveCategory}
       categoryImages={categoryImages}
     />
 
     <CartDrawer
-  cart={cart}
+  cart={safeCart}
   setCart={setCart}
   onSubmitOrder={handleSubmitOrder}
   orderType={orderType}                 // ✅ add this
@@ -2347,10 +2619,10 @@ return (
     <AddToCartModal
       open={showAddModal}
       product={selectedProduct}
-      extrasGroups={extrasGroups}
+      extrasGroups={safeExtrasGroups}
       onClose={() => setShowAddModal(false)}
       onAddToCart={(item) => {
-  localStorage.setItem("qr_cart_auto_open", "1");
+  storage.setItem("qr_cart_auto_open", "1");
   setCart((prev) => [...prev, item]);   // always append new line
   setShowAddModal(false);
 }}
@@ -2390,9 +2662,3 @@ return (
 );
 
 }
-
-
-
-
-
-

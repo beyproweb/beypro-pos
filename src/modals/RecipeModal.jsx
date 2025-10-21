@@ -6,6 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrend
 
 // For fetch fallback and badge style
 const BADGE_STYLE = "ml-2 px-2 py-1 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 text-sm font-bold";
+import secureFetch from "../utils/secureFetch";
 
 export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = null, onDelete }) {
   const [productName, setProductName] = useState('');
@@ -22,7 +23,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
 
   // Fetch latest ingredient prices
   useEffect(() => {
-    fetch(`${API_URL}/api/ingredient-prices`)
+    secureFetch("ingredient-prices")
       .then(res => res.json())
       .then(data => setIngredientPrices(Array.isArray(data) ? data : []))
       .catch(() => setIngredientPrices([]));
@@ -30,7 +31,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
 
   // Fetch distinct units from stock
   useEffect(() => {
-    fetch(`${API_URL}/api/stock`)
+    secureFetch("stock")
       .then(res => res.json())
       .then(data => {
         const units = Array.from(new Set(data.map(item => item.unit))).sort();
@@ -41,7 +42,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
 
   // ✅ Fetch distinct ingredients (with unit) from suppliers/stock
 useEffect(() => {
-  fetch(`${API_URL}/api/suppliers/ingredients`)
+  secureFetch("suppliers/ingredients")
     .then(res => res.json())
     .then(data => {
       console.log("✅ Ingredients fetched for dropdown:", data);

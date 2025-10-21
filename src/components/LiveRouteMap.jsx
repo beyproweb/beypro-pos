@@ -4,6 +4,7 @@ import L from "leaflet";
 import polyline from "@mapbox/polyline";
 import "leaflet/dist/leaflet.css";
 import { useTranslation } from "react-i18next";
+import secureFetch from "../utils/secureFetch";
 
 export default function LiveRouteMap({ stopsOverride, driverNameOverride, driverId }) {
   const [driverPos, setDriverPos] = useState(null);
@@ -58,7 +59,7 @@ useEffect(() => {
     });
 
     try {
-      const res = await fetch(`${API_URL}/api/google-directions?${params.toString()}`);
+      const res = await secureFetch("google-directions?${params.toString()}");
       const data = await res.json();
       if (data.routes && data.routes[0] && data.routes[0].overview_polyline) {
         const points = polyline.decode(data.routes[0].overview_polyline.points);
@@ -81,7 +82,7 @@ useEffect(() => {
     let isMounted = true;
     async function fetchLocation() {
       try {
-        const res = await fetch(`${API_URL}/api/drivers/location/${driverId}`);
+        const res = await secureFetch("drivers/location/${driverId}");
         if (!res.ok) throw new Error("Not found");
         const data = await res.json();
         if (isMounted) setDriverPos({ lat: data.lat, lng: data.lng });
@@ -116,7 +117,7 @@ useEffect(() => {
       ...(waypoints ? { waypoints } : {})
     });
 
-    fetch(`${API_URL}/api/google-directions?${params.toString()}`)
+    secureFetch("google-directions?${params.toString()}")
       .then(res => res.json())
       .then(data => {
         console.log("Google Directions API data:", data);

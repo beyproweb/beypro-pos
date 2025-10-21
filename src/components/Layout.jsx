@@ -19,7 +19,10 @@ export default function Layout({
   hideBell = false,
   onClearNotifications,
 }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.innerWidth >= 1024;
+  });
   const [now, setNow] = useState(new Date());
   const location = useLocation();
   const { title, subtitle, tableNav } = useHeader();
@@ -54,6 +57,12 @@ export default function Layout({
     "/": "Dashboard",
     "/dashboard": "Dashboard",
     "/tables": "Orders",
+    "/tableoverview": "Orders",
+    "/orders": "Orders",
+    "/payments": "Payments",
+    "/transaction": "Transaction",
+    "/transaction/phone": "Phone Order",
+    "/suppliers": "Suppliers",
     "/products": "Products",
     "/stock": "Stock",
     "/kitchen": "Kitchen",
@@ -68,7 +77,69 @@ export default function Layout({
     "/integrations":"Integrations"
     // Add more as needed...
   };
- const currentTitle = (typeof title === "undefined" ? (pageTitles[location.pathname] || "Beypro") : title);
+  const normalizedPath = location.pathname.replace(/\/+$/, "") || "/";
+  const searchParams = new URLSearchParams(location.search);
+
+  let computedTitle;
+
+  if (typeof title === "string" && title.trim() !== "") {
+    computedTitle = title;
+  } else if (typeof title === "number") {
+    computedTitle = String(title);
+  } else if (title !== undefined && title !== null && title !== "") {
+    computedTitle = title;
+  } else {
+    if (normalizedPath === "/tableoverview") {
+      const tab = searchParams.get("tab");
+      const tabTitles = {
+        packet: "Packet",
+        phone: "Phone",
+        history: "History",
+        kitchen: "Kitchen",
+        register: "Register",
+        tables: "Orders",
+      };
+      if (tab && tabTitles[tab]) {
+        computedTitle = tabTitles[tab];
+      }
+    }
+
+    if (!computedTitle) {
+      const candidates = [];
+      let cursor = normalizedPath;
+      while (true) {
+        candidates.push(cursor);
+        if (cursor === "/" || cursor === "") break;
+        const idx = cursor.lastIndexOf("/");
+        if (idx <= 0) {
+          cursor = "/";
+        } else {
+          cursor = cursor.slice(0, idx);
+        }
+      }
+
+      for (const candidate of candidates) {
+        if (pageTitles[candidate]) {
+          computedTitle = pageTitles[candidate];
+          break;
+        }
+      }
+    }
+
+    if (!computedTitle && normalizedPath !== "/") {
+      const segments = normalizedPath.split("/").filter(Boolean);
+      if (segments.length) {
+        const lastSegment = segments[segments.length - 1];
+        computedTitle = lastSegment
+          .split(/[-_]/)
+          .filter(Boolean)
+          .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+          .join(" ");
+      }
+    }
+  }
+
+  const currentTitle = computedTitle || "Beypro";
 
 
   // Right content for ModernHeader (welcome, clock, bell)
@@ -84,6 +155,18 @@ export default function Layout({
 
     </div>
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setIsSidebarOpen(false);
+      }
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   return (
     <div className="w-screen h-screen overflow-hidden flex bg-slate-50 dark:bg-zinc-950 transition-colors">
@@ -112,7 +195,6 @@ export default function Layout({
         />
 
         {/* Global order alert and notifications */}
-        <GlobalOrderAlert />
 
         {/* Page content */}
         <main className="flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors overflow-y-auto">
@@ -122,9 +204,10 @@ export default function Layout({
           </div>
         </main>
 
+
         {/* Toast notifications */}
         <ToastContainer
-          position="bottom-right"
+          position="bottom-center"
           autoClose={2600}
           hideProgressBar
           newestOnTop
@@ -135,6 +218,9 @@ export default function Layout({
           pauseOnHover
           theme="colored"
         />
+        {/* Global order alert and notifications */}
+<GlobalOrderAlert />
+
       </div>
 {bellOpen && (
   <div className="

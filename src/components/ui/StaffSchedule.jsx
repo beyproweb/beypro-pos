@@ -12,6 +12,7 @@ import 'react-clock/dist/Clock.css';
 import { DesktopTimePicker } from '@mui/x-date-pickers/DesktopTimePicker';
 import { DesktopDatePicker } from '@mui/x-date-pickers/DesktopDatePicker';
 import { useTranslation } from "react-i18next";
+import secureFetch from "../../utils/secureFetch";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -40,7 +41,7 @@ const [isAllSchedulesOpen, setIsAllSchedulesOpen] = useState(false);
 
 const fetchAllSchedules = async (staffId) => {
   try {
-    const res = await axios.get(`${API_URL}/api/staff/${staffId}/schedule`);
+    const res = await secureFetch(`/staff/${staffId}/schedule`);
     setAllSchedules(res.data);
     setIsAllSchedulesOpen(true);
   } catch (err) {
@@ -140,14 +141,16 @@ const handleClearWeek = async () => {
       }
       return false;
     });
+// Loop through each schedule and send a delete request
+for (const schedule of schedulesToClear) {
+  await secureFetch(`/staff/schedule/${schedule.id}`, {
+    method: "DELETE",
+  });
+}
 
-    // Loop through each schedule and send a delete request
-    for (const schedule of schedulesToClear) {
-      await axios.delete(`${API_URL}/api/staff/schedule/${schedule.id}`);
-    }
+// Refresh the schedule list
+await fetchStaffSchedules();
 
-    // Refresh the schedule list
-    await fetchStaffSchedules();
     toast.success("Weekly schedule cleared successfully!");
   } catch (error) {
     console.error("Error clearing weekly schedule:", error.message);
@@ -159,11 +162,12 @@ const handleClearWeek = async () => {
   // Fetch staff list
   const fetchStaff = async () => {
   try {
-    const response = await axios.get(`${API_URL}/api/staff`);
-    const staffData = response.data.map((staff) => ({
-      ...staff,
-      email: staff.email || '',
-    }));
+const response = await secureFetch("/staff");
+const staffData = response.map((staff) => ({
+  ...staff,
+  email: staff.email || '',
+}));
+
     setStaffList(staffData);
 
     // Extract unique roles from the staffData
@@ -179,14 +183,16 @@ const handleClearWeek = async () => {
   // Fetch staff schedules
   const fetchStaffSchedules = async () => {
   try {
-    const response = await axios.get(`${API_URL}/api/staff/schedule`);
-    setStaffSchedules(
-      response.data.map((schedule) => ({
-        ...schedule,
-        // Directly use days as an array, no need to split
-        days: Array.isArray(schedule.days) ? schedule.days : (schedule.days || '').split(',').map((d) => d.trim()),
-      }))
-    );
+const response = await secureFetch("/staff/schedule");
+setStaffSchedules(
+  response.map((schedule) => ({
+    ...schedule,
+    days: Array.isArray(schedule.days)
+      ? schedule.days
+      : (schedule.days || '').split(',').map((d) => d.trim()),
+  }))
+);
+
   } catch (err) {
     console.error('Error fetching staff schedules:', err);
     toast.error('Error fetching staff schedules');
@@ -325,7 +331,7 @@ const handleSaveShift = async () => {
 
     /* ---------- days & base date ---------- */
     const pickedDays    = selectedDays.length ? selectedDays : [selectedShift.day];
-    const baseDateObj   = new Date(selectedShift.shift_date);           // date you clicked
+    const baseDateObj   = new Date(selectedShift.shift_date);
     if (isNaN(baseDateObj)) {
       toast.error('Invalid shift date');
       return;
@@ -342,7 +348,7 @@ const handleSaveShift = async () => {
       shift_end:   newShiftEnd,
       shift_date:  dateObj.toISOString().split('T')[0],
       salary,
-      days:        [dayAbbrev],             // store just that day
+      days:        [dayAbbrev],
     });
 
     /* ---------- EDIT EXISTING RECORD ---------- */
@@ -351,18 +357,20 @@ const handleSaveShift = async () => {
         ? formatDays(selectedShift.originalDays)
         : formatDays(selectedShift.days);
 
-      /* remove edited days from the original row if it held >1 day */
       if (originalDays.length > 1) {
         const remainingDays = originalDays.filter(
           d => !pickedDays.map(p => p.toLowerCase()).includes(d.toLowerCase())
         );
 
-        await axios.put(`${API_URL}/api/staff/schedule/${selectedShift.id}`, {
-          shift_start: selectedShift.shift_start,
-          shift_end:   selectedShift.shift_end,
-          status:      selectedShift.status || 'Scheduled',
-          salary,
-          days:        remainingDays,
+        await secureFetch(`/staff/schedule/${selectedShift.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            shift_start: selectedShift.shift_start,
+            shift_end:   selectedShift.shift_end,
+            status:      selectedShift.status || 'Scheduled',
+            salary,
+            days:        remainingDays,
+          }),
         });
 
         setStaffSchedules(prev =>
@@ -374,7 +382,6 @@ const handleSaveShift = async () => {
         );
       }
 
-      /* create / update a row for *each* picked day */
       for (const day of pickedDays) {
         const offset =
           (weekdayIdx[day] - baseDateObj.getDay() + 7) % 7;
@@ -383,13 +390,16 @@ const handleSaveShift = async () => {
 
         const payload = makePayload(day, exactDate);
 
-        const res = await axios.post(`${API_URL}/api/staff/schedule`, payload);
-        setStaffSchedules(prev => [...prev, res.data.schedule]);
+        const res = await secureFetch("/staff/schedule", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setStaffSchedules(prev => [...prev, res.schedule]);
       }
 
       toast.success(`Shift updated for ${selectedShift.staff.name}`);
 
-    /* ---------- BRAND‑NEW SHIFT ---------- */
+    /* ---------- BRAND-NEW SHIFT ---------- */
     } else {
       for (const day of pickedDays) {
         const offset =
@@ -399,8 +409,11 @@ const handleSaveShift = async () => {
 
         const payload = makePayload(day, exactDate);
 
-        const res = await axios.post(`${API_URL}/api/staff/schedule`, payload);
-        setStaffSchedules(prev => [...prev, res.data.schedule]);
+        const res = await secureFetch("/staff/schedule", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setStaffSchedules(prev => [...prev, res.schedule]);
       }
 
       toast.success(`Shift created for ${selectedShift.staff.name}`);
@@ -415,6 +428,7 @@ const handleSaveShift = async () => {
     toast.error('Failed to save shift');
   }
 };
+
 
 
 
@@ -469,10 +483,14 @@ const handleSaveShift = async () => {
       toast.success('Shift day updated successfully');
     } else {
       // Delete the entire shift if only one day exists
-      await axios.delete(`${API_URL}/api/staff/schedule/${schedule.id}`);
-      setStaffSchedules((prev) =>
-        prev.filter((sched) => sched.id !== schedule.id)
-      );
+   await secureFetch(`/staff/schedule/${schedule.id}`, {
+  method: "DELETE",
+});
+
+setStaffSchedules((prev) =>
+  prev.filter((sched) => sched.id !== schedule.id)
+);
+
       toast.success('Shift deleted successfully');
     }
 
@@ -511,10 +529,14 @@ const handleSaveShift = async () => {
       );
       toast.success('Shift day removed successfully');
     } else {
-      await axios.delete(`${API_URL}/api/staff/schedule/${shiftId}`);
-      setStaffSchedules((prev) =>
-        prev.filter((sched) => sched.id !== shiftId)
-      );
+await secureFetch(`/staff/schedule/${shiftId}`, {
+  method: "DELETE",
+});
+
+setStaffSchedules((prev) =>
+  prev.filter((sched) => sched.id !== shiftId)
+);
+
       toast.success('Shift deleted successfully');
     }
   } catch (err) {
@@ -585,10 +607,13 @@ const payload = {
 
 
 
-    const response = await axios.put(`${API_URL}/api/staff/${selectedStaffProfile.id}`, payload);
+   const response = await secureFetch(`/staff/${selectedStaffProfile.id}`, {
+  method: "PUT",
+  body: JSON.stringify(payload),
+});
 
+const updatedStaff = response.staff;
 
-    const updatedStaff = response.data.staff;
 
     setStaffList((prevStaff) =>
       prevStaff.map((staff) =>
@@ -726,26 +751,30 @@ const handleCopyOrPasteWeek = async () => {
         const nextWeekEndDate = addDays(endDate, 7);
         const nextWeekDates = getDatesInRange(nextWeekStartDate, nextWeekEndDate);
 
-        for (const copiedShift of copiedWeekShifts) {
-          for (const date of nextWeekDates) {
-            const shiftDate = date.toISOString().split('T')[0];
-            const dayAbbrev = date.toLocaleDateString('en-US', { weekday: 'short' });
+for (const copiedShift of copiedWeekShifts) {
+  for (const date of nextWeekDates) {
+    const shiftDate = date.toISOString().split("T")[0];
+    const dayAbbrev = date.toLocaleDateString("en-US", { weekday: "short" });
 
-            if (formatDays(copiedShift.days).includes(dayAbbrev)) {
-              const payload = {
-                staff_id: copiedShift.staff_id,
-                role: copiedShift.role,
-                shift_start: copiedShift.shift_start,
-                shift_end: copiedShift.shift_end,
-                shift_date: shiftDate,
-                days: [dayAbbrev],
-                salary: copiedShift.salary || 0,
-              };
+    if (formatDays(copiedShift.days).includes(dayAbbrev)) {
+      const payload = {
+        staff_id: copiedShift.staff_id,
+        role: copiedShift.role,
+        shift_start: copiedShift.shift_start,
+        shift_end: copiedShift.shift_end,
+        shift_date: shiftDate,
+        days: [dayAbbrev],
+        salary: copiedShift.salary || 0,
+      };
 
-              await axios.post(`${API_URL}/api/staff/schedule`, payload);
-            }
-          }
-        }
+      await secureFetch("/staff/schedule", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
+  }
+}
+
 
         toast.success('Week pasted successfully');
         await fetchStaffSchedules();
@@ -776,12 +805,17 @@ const handleCopyOrPasteWeek = async () => {
     days: day.toLocaleDateString('en-US', { weekday: 'short' }),
     salary: staff.salary,
   };
-  try {
-    const response = await axios.post(`${API_URL}/api/staff/schedule`, payload);
-    setStaffSchedules((prev) => [...prev, response.data.schedule]);
-    toast.success(`Shift pasted for ${staff.name}`);
-    setCopiedShift(null);
-  } catch (err) {
+ try {
+  const response = await secureFetch("/staff/schedule", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  setStaffSchedules((prev) => [...prev, response.schedule]);
+  toast.success(`Shift pasted for ${staff.name}`);
+  setCopiedShift(null);
+}
+ catch (err) {
     console.error('Error pasting shift:', err.message);
     toast.error('Failed to paste shift');
   }
@@ -830,16 +864,22 @@ const handleCopyOrPasteWeek = async () => {
     }, {});
   };
 
-  const handleDeleteShiftById = async (shiftId) => {
-    try {
-      await axios.delete(`${API_URL}/api/staff/schedule/${shiftId}`);
-      setStaffSchedules((prev) => prev.filter((sched) => sched.id !== shiftId));
-      toast.success('Shift deleted');
-    } catch (err) {
-      console.error('Error deleting shift:', err.message);
-      toast.error('Failed to delete shift');
-    }
-  };
+const handleDeleteShiftById = async (shiftId) => {
+  try {
+    await secureFetch(`/staff/schedule/${shiftId}`, {
+      method: "DELETE",
+    });
+
+    setStaffSchedules((prev) =>
+      prev.filter((sched) => sched.id !== shiftId)
+    );
+    toast.success("Shift deleted");
+  } catch (err) {
+    console.error("Error deleting shift:", err.message);
+    toast.error("Failed to delete shift");
+  }
+};
+
 
   // Move Date Range by One Week (Monday to Sunday)
 const handleDateChange = (direction) => {
@@ -885,22 +925,24 @@ const handleDateChange = (direction) => {
     </button>
 
     {/* Start Date */}
-    <DesktopDatePicker
-      label={t('Start Date')}
-      value={startDate}
-      onChange={(newValue) => handleCustomDateChange(newValue, endDate)}
-      renderInput={(params) => <TextField {...params} />}
-      disabled={isWeekView}
-    />
+<DesktopDatePicker
+  label={t('Start Date')}
+  value={startDate}
+  onChange={(newValue) => handleCustomDateChange(newValue, endDate)}
+  slotProps={{ textField: { fullWidth: true } }}
+/>
+
+
 
     {/* End Date */}
-    <DesktopDatePicker
-      label={t('End Date')}
-      value={endDate}
-      onChange={(newValue) => handleCustomDateChange(startDate, newValue)}
-      renderInput={(params) => <TextField {...params} />}
-      disabled={isWeekView}
-    />
+<DesktopDatePicker
+  label={t('End Date')}
+  value={endDate}
+  onChange={(newValue) => handleCustomDateChange(startDate, newValue)}
+  slotProps={{ textField: { fullWidth: true } }}
+  disabled={isWeekView}
+/>
+
 
     {/* Next Week Button */}
     <button
@@ -1310,20 +1352,13 @@ const handleDateChange = (direction) => {
 </label>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DesktopTimePicker
-                label={t('Start Time')}
-                value={timeStringToDate(startTime)}
-                onChange={(newValue) => handleTimeChange(newValue, setStartTime)}
-                ampm={false}
-                inputFormat="HH:mm"
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    fullWidth
-                    InputLabelProps={{ shrink: true }}
-                    inputProps={{ ...params.inputProps, placeholder: "HH:mm" }}
-                  />
-                )}
-              />
+  label={t('Start Time')}
+  value={timeStringToDate(startTime)}
+  onChange={(newValue) => handleTimeChange(newValue, setStartTime)}
+  ampm={false}
+  slotProps={{ textField: { fullWidth: true } }}
+/>
+
             </LocalizationProvider>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DesktopTimePicker
@@ -1534,16 +1569,19 @@ const handleDateChange = (direction) => {
         Close
       </button>
       <button
-        onClick={async () => {
-          if (window.confirm("Delete ALL schedules for this staff?")) {
-            await axios.delete(`${API_URL}/api/staff/${selectedStaffProfile.id}/schedule`);
-            toast.success("All schedules deleted");
-            setIsAllSchedulesOpen(false);
-            fetchStaffSchedules(); // refresh weekly grid
-          }
-        }}
-        className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-      >
+    onClick={async () => {
+  if (window.confirm("Delete ALL schedules for this staff?")) {
+    await secureFetch(`/staff/${selectedStaffProfile.id}/schedule`, {
+      method: "DELETE",
+    });
+    toast.success("All schedules deleted");
+    setIsAllSchedulesOpen(false);
+    fetchStaffSchedules(); // refresh weekly grid
+  }
+}}
+className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+>
+
         Delete All
       </button>
     </div>

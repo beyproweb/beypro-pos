@@ -1,56 +1,78 @@
+// src/components/UserManagementTab.jsx
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import axios from "axios";
 import { toast } from "react-toastify";
-import { useSetting, saveSetting } from "../hooks/useSetting";
 import RolePermissionModal from "../settings-tabs/RolePermissionModal";
 import ConfirmModal from "../ui/ConfirmModal";
-const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../../utils/secureFetch";
+
 export default function UserManagementTab() {
   const { t } = useTranslation();
- const [editingRole, setEditingRole] = useState(null);
-const [newRoleName, setNewRoleName] = useState("");
-const [copyFromRole, setCopyFromRole] = useState("");
-const [selectedStaffId, setSelectedStaffId] = useState("");
-const [showConfirm, setShowConfirm] = useState(false);
-const [staffList, setStaffList] = useState([]);
-const [editingStaffId, setEditingStaffId] = useState(null);
-const [editedStaff, setEditedStaff] = useState({
-  name: "",
-  email: "",
-  role: "",
-  pin: "",
-  phone: "",
-  address: "",
-  salary: "",
-  avatar: "",
-});
+  const [editingRole, setEditingRole] = useState(null);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [copyFromRole, setCopyFromRole] = useState("");
+  const [roleToDelete, setRoleToDelete] = useState("");
+  const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [staffList, setStaffList] = useState([]);
+  const [editingStaffId, setEditingStaffId] = useState(null);
+  const [editedStaff, setEditedStaff] = useState({
+    name: "",
+    email: "",
+    role: "",
+    pin: "",
+    phone: "",
+    address: "",
+    salary: "",
+    avatar: "",
+  });
 
-const [currentPage, setCurrentPage] = useState(0);
-const STAFF_PER_PAGE = 5;
+  const [currentPage, setCurrentPage] = useState(0);
+  const STAFF_PER_PAGE = 5;
+  useEffect(() => {
+  const fetchRoles = async () => {
+    try {
+      const res = await secureFetch("/settings/users");
+      if (res?.roles) {
+        setUsersConfig(res);
+        console.log("✅ Loaded roles from DB:", res.roles);
+      } else {
+        console.warn("⚠️ No roles found in DB, using defaults");
+      }
+    } catch (err) {
+      console.error("❌ Failed to fetch roles:", err);
+    }
+  };
+  fetchRoles();
+}, []);
 
+  useEffect(() => {
+    if (editingStaffId) {
+      const user = staffList.find((u) => u.id === editingStaffId);
+      if (user) {
+        setEditedStaff({
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          pin: user.pin || "",
+          phone: user.phone || "",
+          address: user.address || "",
+          salary: user.salary || "",
+          avatar: user.avatar || "",
+        });
+      }
+    }
+  }, [editingStaffId, staffList]);
 
-useEffect(() => {
-  if (editingStaffId) {
-    const user = staffList.find((u) => u.id === editingStaffId);
-    setEditedStaff({
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      pin: user.pin || "",
-    });
-  }
-}, [editingStaffId]);
-
-const paginatedStaff = staffList.slice(
-  currentPage * STAFF_PER_PAGE,
-  currentPage * STAFF_PER_PAGE + STAFF_PER_PAGE
-);
-const totalPages = Math.ceil(staffList.length / STAFF_PER_PAGE);
+  const paginatedStaff = staffList.slice(
+    currentPage * STAFF_PER_PAGE,
+    currentPage * STAFF_PER_PAGE + STAFF_PER_PAGE
+  );
+  const totalPages = Math.ceil(staffList.length / STAFF_PER_PAGE);
 
   const [usersConfig, setUsersConfig] = useState({
     roles: {
-      Admin: ["all"],
+      admin: ["all"],
       cashier: ["orders", "payments"],
       driver: ["delivery"],
     },
@@ -63,71 +85,30 @@ const totalPages = Math.ceil(staffList.length / STAFF_PER_PAGE);
     email: "",
     phone: "",
     address: "",
-    role: "Cashier",
+    role: "cashier",
     pin: "",
     salary: "",
-     avatar: "",
+    avatar: "",
   });
 
+  const roles = Object.keys(usersConfig.roles).map((r) => r.toLowerCase());
+  const deletableRoles = roles.filter((role) => role !== "admin");
 
-  const roles = Object.keys(usersConfig.roles).map(r => r.toLowerCase());
+  const DEFAULT_AVATAR =
+    "https://www.pngkey.com/png/full/115-1150152_default-profile-picture-avatar-png-green.png";
 
-  useSetting("users", setUsersConfig, {
-    roles: {
-      Admin: ["all"],
-      Cashier: ["orders"],
-      Driver: ["delivery"],
-    },
-    pinRequired: true,
-  });
-const handleCreateRole = async () => {
- const role = newRoleName.trim().toLowerCase();
- if (usersConfig.roles[role]) return toast.error("Role already exists");
-  if (usersConfig.roles[role]) return toast.error("Role already exists");
-
-  const newPermissions = copyFromRole ? usersConfig.roles[copyFromRole] : [];
-
-  // Save role to settings
-  const updated = {
-    ...usersConfig,
-    roles: {
-      ...usersConfig.roles,
-      [role]: newPermissions,
-    },
+  const getAvatar = (url) => {
+    if (!url) return DEFAULT_AVATAR;
+    if (url.startsWith("http://localhost") || url.startsWith("/uploads/"))
+      return DEFAULT_AVATAR;
+    if (url.startsWith("http")) return url;
+    return DEFAULT_AVATAR;
   };
-
-  setUsersConfig(updated);
-  await saveSetting("users", updated);
-  toast.success(`✅ Role '${role}' created`);
-
-  // Optionally assign to staff
-  if (selectedStaffId) {
-    await axios.put(`${API_URL}/api/staff/${selectedStaffId}/role`, { role });
-    toast.success(`👤 Assigned ${role} to staff ID ${selectedStaffId}`);
-    fetchStaff();
-  }
-
-  // Reset form
-  setNewRoleName("");
-  setCopyFromRole("");
-  setSelectedStaffId("");
-};
-const DEFAULT_AVATAR = 'https://www.pngkey.com/png/full/115-1150152_default-profile-picture-avatar-png-green.png';
-
-const getAvatar = (url) => {
-  if (!url) return DEFAULT_AVATAR;
-  if (url.startsWith('http://localhost') || url.startsWith('/uploads/')) return DEFAULT_AVATAR;
-  if (url.startsWith('http')) return url;
-  return DEFAULT_AVATAR;
-};
-
-
-
 
   const fetchStaff = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/staff`);
-      setStaffList(response.data);
+      const data = await secureFetch("/staff");
+      setStaffList(data);
     } catch (err) {
       console.error("Error fetching staff:", err);
       toast.error("Error fetching staff list.");
@@ -138,16 +119,92 @@ const getAvatar = (url) => {
     fetchStaff();
   }, []);
 
+  // ✅ FIXED: Save to /settings/users instead of user_settings
+  const saveRolesToSettings = async (data) => {
+    try {
+      await secureFetch("/settings/users", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    } catch (err) {
+      console.error("❌ Failed to save roles:", err);
+      toast.error("Failed to save roles to settings.");
+    }
+  };
+
+  const handleCreateRole = async () => {
+    const role = newRoleName.trim().toLowerCase();
+    if (usersConfig.roles[role]) return toast.error("Role already exists");
+
+    const newPermissions = copyFromRole
+      ? usersConfig.roles[copyFromRole]
+      : [];
+
+    const updated = {
+      ...usersConfig,
+      roles: {
+        ...usersConfig.roles,
+        [role]: newPermissions,
+      },
+    };
+
+    setUsersConfig(updated);
+    await saveRolesToSettings(updated);
+    toast.success(`✅ Role '${role}' created`);
+
+    if (selectedStaffId) {
+      await secureFetch(`/staff/${selectedStaffId}/role`, {
+        method: "PUT",
+        body: JSON.stringify({ role }),
+      });
+      toast.success(`👤 Assigned ${role} to staff ID ${selectedStaffId}`);
+      fetchStaff();
+    }
+
+    setNewRoleName("");
+    setCopyFromRole("");
+    setSelectedStaffId("");
+  };
+
+  const handleDeleteRole = async () => {
+    if (!roleToDelete) {
+      toast.error(t("Please select a role to delete."));
+      return;
+    }
+
+    if (roleToDelete === "admin") {
+      toast.error(t("Default roles cannot be deleted."));
+      return;
+    }
+
+    const isAssigned = staffList.some(
+      (staff) => staff.role?.toLowerCase() === roleToDelete
+    );
+
+    if (isAssigned) {
+      toast.error(t("Role is assigned to staff members. Reassign before deleting."));
+      return;
+    }
+
+    const updatedRoles = { ...usersConfig.roles };
+    delete updatedRoles[roleToDelete];
+
+    const updated = { ...usersConfig, roles: updatedRoles };
+
+    setUsersConfig(updated);
+    await saveRolesToSettings(updated);
+    toast.success(t("Role deleted successfully."));
+    setRoleToDelete("");
+  };
+
   const handleSaveSettings = async () => {
-    await saveSetting("users", usersConfig);
+    await saveRolesToSettings(usersConfig);
     toast.success("✅ Role settings saved!");
   };
 
-
-
   const handleAddUser = async () => {
-   const { id, name, role, phone, address, email, pin, salary, avatar } = newUser;
-
+    const { id, name, role, phone, address, email, pin, salary, avatar } =
+      newUser;
 
     if (!id || !name || !email || !phone || !address || !role || !pin || !salary) {
       toast.error("❌ All fields are required");
@@ -155,19 +212,22 @@ const getAvatar = (url) => {
     }
 
     try {
-      await axios.post(`${API_URL}/api/staff`, {
-        id: parseInt(id),
-        name,
-        email,
-        phone,
-        address,
-        role,
-        pin,
-        salary: parseFloat(salary),
-        avatar: newUser.avatar,
-        salary_model: "fixed",
-        payment_type: "monthly",
-        monthly_salary: parseFloat(salary),
+      await secureFetch("/staff", {
+        method: "POST",
+        body: JSON.stringify({
+          id: parseInt(id),
+          name,
+          email,
+          phone,
+          address,
+          role,
+          pin,
+          salary: parseFloat(salary),
+          avatar,
+          salary_model: "fixed",
+          payment_type: "monthly",
+          monthly_salary: parseFloat(salary),
+        }),
       });
 
       toast.success("✅ Staff member added!");
@@ -179,10 +239,10 @@ const getAvatar = (url) => {
         email: "",
         phone: "",
         address: "",
-        role: "Cashier",
+        role: "cashier",
         pin: "",
         salary: "",
-        avatar: ""
+        avatar: "",
       });
     } catch (err) {
       console.error("❌ Error adding user:", err);
@@ -191,45 +251,47 @@ const getAvatar = (url) => {
   };
 
   const handleDeleteStaff = async () => {
-  if (!selectedStaffId) return;
-  const confirmDelete = window.confirm("Are you sure?");
-  if (!confirmDelete) return;
+    if (!selectedStaffId) return;
+    const confirmDelete = window.confirm("Are you sure?");
+    if (!confirmDelete) return;
 
-  try {
-    await axios.delete(`${API_URL}/api/staff/${selectedStaffId}`);
-    toast.success("🗑️ Staff deleted");
-    fetchStaff();
-    setSelectedStaffId("");
-  } catch (err) {
-    console.error("❌ Error deleting staff:", err);
-    toast.error("Failed to delete staff");
-  }
-};
+    try {
+      await secureFetch(`/staff/${selectedStaffId}`, { method: "DELETE" });
+      toast.success("🗑️ Staff deleted");
+      fetchStaff();
+      setSelectedStaffId("");
+    } catch (err) {
+      console.error("❌ Error deleting staff:", err);
+      toast.error("Failed to delete staff");
+    }
+  };
 
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-8 max-w-6xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
+      <h2 className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-300 mb-10">
+        👥 {t("User Management")}
+      </h2>
 
- return (
-  <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-8 max-w-6xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
-    <h2 className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-300 mb-10">
-      👥 {t("User Management")}
-    </h2>
-
-    {/* Require PIN */}
-    <div className="flex items-center justify-between mb-12 border-b pb-6 border-indigo-100 dark:border-indigo-800">
-      <span className="text-lg font-medium text-gray-800 dark:text-white">
-        {t("Require PIN to Login or Close Register")}
-      </span>
-      <label className="relative inline-flex items-center cursor-pointer">
-        <input
-          type="checkbox"
-          checked={usersConfig.pinRequired}
-          onChange={() =>
-            setUsersConfig((prev) => ({ ...prev, pinRequired: !prev.pinRequired }))
-          }
-          className="sr-only peer"
-        />
-        <div className="w-12 h-7 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
-      </label>
-    </div>
+      {/* PIN toggle */}
+      <div className="flex items-center justify-between mb-12 border-b pb-6 border-indigo-100 dark:border-indigo-800">
+        <span className="text-lg font-medium text-gray-800 dark:text-white">
+          {t("Require PIN to Login or Close Register")}
+        </span>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={usersConfig.pinRequired}
+            onChange={() =>
+              setUsersConfig((prev) => ({
+                ...prev,
+                pinRequired: !prev.pinRequired,
+              }))
+            }
+            className="sr-only peer"
+          />
+          <div className="w-12 h-7 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+        </label>
+      </div>
 
           {/* Add New Staff */}
     <div className="mb-14">
@@ -277,31 +339,41 @@ const getAvatar = (url) => {
           onChange={(e) => setNewUser({ ...newUser, salary: e.target.value })}
         />
       </div>
-      <button
-        onClick={handleAddUser}
-        className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition"
-      >
-     <input
-  type="file"
-  accept="image/*"
-  onChange={async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-      const res = await axios.post(`${API_URL}/api/upload`, formData);
-      setNewUser((prev) => ({ ...prev, avatar: res.data.url }));
-    } catch (err) {
-      toast.error("❌ Image upload failed");
-    }
-  }}
-  className="p-2 border dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
-/>
+      <div className="flex flex-col gap-3 sm:max-w-sm">
+        <div>
+          <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
+            {t("Upload Avatar")}
+          </label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={async (e) => {
+              const file = e.target.files[0];
+              if (!file) return;
+              const formData = new FormData();
+              formData.append("file", file);
+              try {
+                const res = await secureFetch("/upload", {
+                  method: "POST",
+                  body: formData,
+                });
+                setNewUser((prev) => ({ ...prev, avatar: res.url }));
+                toast.success(t("Avatar uploaded successfully"));
+              } catch (err) {
+                toast.error("❌ Image upload failed");
+              }
+            }}
+            className="w-full p-3 border rounded-xl dark:border-gray-600 dark:bg-gray-800 dark:text-white cursor-pointer"
+          />
+        </div>
 
-
-        ➕ {t("Add User")}
-      </button>
+        <button
+          onClick={handleAddUser}
+          className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition self-start"
+        >
+          ➕ {t("Add User")}
+        </button>
+      </div>
     </div>
 
     {/* Role Creation */}
@@ -322,6 +394,40 @@ const getAvatar = (url) => {
           {t("Create Role")}
         </button>
       </div>
+    </div>
+
+    {/* Delete Role */}
+    <div className="mb-10">
+      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
+        🗑️ {t("Delete Role")}
+      </h3>
+      {deletableRoles.length ? (
+        <div className="sm:max-w-md flex flex-col sm:flex-row gap-3">
+          <select
+            value={roleToDelete}
+            onChange={(e) => setRoleToDelete(e.target.value)}
+            className="p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
+          >
+            <option value="">{t("Select Role to Delete")}</option>
+            {deletableRoles.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleDeleteRole}
+            disabled={!roleToDelete}
+            className="px-5 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {t("Delete Role")}
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          {t("No deletable roles available.")}
+        </p>
+      )}
     </div>
 
     {/* Staff Role Assignment */}
@@ -355,13 +461,17 @@ const getAvatar = (url) => {
         <div className="flex gap-2">
           <button
             disabled={!selectedStaffId || !copyFromRole}
-            onClick={async () => {
-              await axios.put(`${API_URL}/api/staff/${selectedStaffId}/role`, { role: copyFromRole });
-              toast.success(`✅ Assigned ${copyFromRole} to staff ID ${selectedStaffId}`);
-              fetchStaff();
-              setSelectedStaffId("");
-              setCopyFromRole("");
-            }}
+       onClick={async () => {
+  await secureFetch(`/staff/${selectedStaffId}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ role: copyFromRole }),
+  });
+  toast.success(`✅ Assigned ${copyFromRole} to staff ID ${selectedStaffId}`);
+  fetchStaff();
+  setSelectedStaffId("");
+  setCopyFromRole("");
+}}
+
             className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition"
           >
             {t("Assign")}
@@ -409,13 +519,18 @@ const getAvatar = (url) => {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await axios.post(`${API_URL}/api/upload`, formData);
-      // Set avatar in both editedStaff (form state) and staffList (UI)
-      setEditedStaff((prev) => ({ ...prev, avatar: res.data.url }));
-      setStaffList((list) => list.map(
-        s => s.id === editingStaffId ? { ...s, avatar: res.data.url } : s
-      ));
-    } catch (err) {
+  const res = await secureFetch("/upload", {
+    method: "POST",
+    body: formData, // secureFetch auto-handles FormData with token
+  });
+  // Update both form and UI with uploaded image URL
+  setEditedStaff((prev) => ({ ...prev, avatar: res.url }));
+  setStaffList((list) =>
+    list.map((s) =>
+      s.id === editingStaffId ? { ...s, avatar: res.url } : s
+    )
+  );
+}  catch (err) {
       toast.error("❌ Image upload failed");
     }
   }}
@@ -475,21 +590,30 @@ const getAvatar = (url) => {
                 >
                   {t("Cancel")}
                 </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      await axios.put(`${API_URL}/api/staff/${staff.id}`, editedStaff);
-                      toast.success("✅ Staff updated");
-                      fetchStaff();
-                      setEditingStaffId(null);
-                    } catch {
-                      toast.error("❌ Failed to update staff");
-                    }
-                  }}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold"
-                >
-                  {t("Save")}
-                </button>
+<button
+  onClick={async () => {
+    try {
+     await secureFetch(`/staff/${parseInt(staff.id)}`, {
+  method: "PUT",
+  body: JSON.stringify({
+    ...editedStaff,
+    id: undefined, // prevent sending wrong id field
+  }),
+});
+
+      toast.success("✅ Staff updated");
+      fetchStaff();
+      setEditingStaffId(null);
+    } catch (err) {
+      console.error("❌ Update failed:", err);
+      toast.error("❌ Failed to update staff");
+    }
+  }}
+  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold"
+>
+  {t("Save")}
+</button>
+
               </div>
             </div>
           )}
@@ -543,14 +667,16 @@ const getAvatar = (url) => {
       <button
         onClick={async () => {
           if (!window.confirm(`Are you sure you want to delete role '${role}'?`)) return;
-          try {
-            
-            await axios.delete(`${API_URL}/api/settings/roles/${role.toLowerCase()}`);
-            const updated = { ...usersConfig };
-            delete updated.roles[role.toLowerCase()];
-            setUsersConfig(updated);
-            toast.success(`🗑️ Role '${role}' deleted`);
-          } catch (err) {
+try {
+  await secureFetch(`/settings/roles/${role.toLowerCase()}`, {
+    method: "DELETE",
+  });
+  const updated = { ...usersConfig };
+  delete updated.roles[role.toLowerCase()];
+  setUsersConfig(updated);
+  toast.success(`🗑️ Role '${role}' deleted`);
+}
+ catch (err) {
             toast.error("❌ Failed to delete role");
             console.error(err);
           }
@@ -586,41 +712,58 @@ const getAvatar = (url) => {
       />
     </div>
 
-    
+  
 
-    {/* Save Button */}
-    <div className="flex justify-end mt-8">
-      <button
-        onClick={handleSaveSettings}
-        className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold shadow hover:brightness-110 transition"
-      >
-        💾 {t("Save Role Settings")}
-      </button>
+
+    {/* Permissions modal */}
+      <RolePermissionModal
+        role={editingRole}
+        isOpen={!!editingRole}
+        initialPermissions={usersConfig.roles?.[editingRole] || []}
+        onClose={() => setEditingRole(null)}
+        onSave={async (perms, roleKey) => {
+          const updated = {
+            ...usersConfig,
+            roles: {
+              ...usersConfig.roles,
+              [roleKey]: perms,
+            },
+          };
+          setUsersConfig(updated);
+          await saveRolesToSettings(updated);
+          toast.success(`✅ Permissions updated for ${roleKey}`);
+        }}
+      />
+
+      {/* Save button */}
+      <div className="flex justify-end mt-8">
+        <button
+          onClick={handleSaveSettings}
+          className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold shadow hover:brightness-110 transition"
+        >
+          💾 {t("Save Role Settings")}
+        </button>
+      </div>
+
+      <ConfirmModal
+        isOpen={showConfirm}
+        title="Delete Staff Member"
+        message="Are you sure you want to delete this staff member? This cannot be undone."
+        onCancel={() => setShowConfirm(false)}
+        onConfirm={async () => {
+          try {
+            await secureFetch(`/staff/${selectedStaffId}`, { method: "DELETE" });
+            toast.success("🗑️ Staff deleted");
+            fetchStaff();
+            setSelectedStaffId("");
+          } catch (err) {
+            console.error("❌ Delete failed:", err);
+            toast.error("Failed to delete staff");
+          } finally {
+            setShowConfirm(false);
+          }
+        }}
+      />
     </div>
-
-    <ConfirmModal
-      isOpen={showConfirm}
-      title="Delete Staff Member"
-      message="Are you sure you want to delete this staff member? This cannot be undone."
-      onCancel={() => setShowConfirm(false)}
-      onConfirm={async () => {
-        try {
-          await axios.delete(`${API_URL}/api/staff/${selectedStaffId}`);
-          toast.success("🗑️ Staff deleted");
-          fetchStaff();
-          setSelectedStaffId("");
-        } catch (err) {
-          console.error("❌ Delete failed:", err);
-          toast.error("Failed to delete staff");
-        } finally {
-          setShowConfirm(false);
-        }
-      }}
-    />
-  </div>
-);
-
-
-
-
+  );
 }

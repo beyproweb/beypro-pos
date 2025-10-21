@@ -11,8 +11,14 @@ import { useAuth } from "../context/AuthContext";
 import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import OrderHistory from "../components/OrderHistory";
+import { useHeader } from "../context/HeaderContext";
 const TOTAL_TABLES = 20;
- const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../utils/secureFetch";
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === "development"
+    ? "http://localhost:5000/api"
+    : "https://beypro-backend.onrender.com/api");
 const isDelayed = (order) => {
   if (!order || order.status !== "confirmed" || !order.created_at) return false;
   const created = new Date(order.created_at);
@@ -21,20 +27,24 @@ const isDelayed = (order) => {
   return diffMins > 1;
 };
 
+// ✅ Improved color logic for moved/paid tables
 const getTableColor = (order) => {
   if (!order) return "bg-gray-300 text-black";
 
-  // Confirmed but not yet paid
-  if (order.status === "confirmed") return "bg-red-500 text-white";
-
-  // Paid orders
-  if (order.status === "paid") {
-    const allDelivered = order.suborders?.every(sub => sub.kitchen_status === "delivered");
+  // 🟢 Paid orders (even if backend resets status to "confirmed")
+  if (order.is_paid || order.status === "paid") {
+    const allDelivered = order.suborders?.every(
+      (sub) => sub.kitchen_status === "delivered"
+    );
     return allDelivered
-      ? "bg-green-500 text-white"
-      : "bg-yellow-400 text-black"; // paid but not fully delivered
+      ? "bg-green-500 text-white" // fully delivered & paid
+      : "bg-yellow-400 text-black"; // partially delivered but paid
   }
 
+  // 🔴 Confirmed but unpaid
+  if (order.status === "confirmed") return "bg-red-500 text-white";
+
+  // ⚪ Default fallback
   return "bg-gray-300 text-black";
 };
 
@@ -99,26 +109,39 @@ const [entryAmount, setEntryAmount] = useState("");
 const [entryReason, setEntryReason] = useState("");
   const { currentUser } = useAuth();
   const { t } = useTranslation();
+  const { setHeader } = useHeader();
   const [registerEntries, setRegisterEntries] = useState(0);
   const [showRegisterLog, setShowRegisterLog] = useState(false);
  
   const [todayRegisterEvents, setTodayRegisterEvents] = useState([]);
 const [todayExpenses, setTodayExpenses] = useState([]);
+
+const handleCloseTable = async (orderId) => {
+  try {
+    await secureFetch(`/orders/${orderId}/close`, { method: "POST" });
+    toast.success("Table closed successfully!");
+    await fetchOrders(); // refresh tables after closing
+  } catch (err) {
+    console.error("❌ Failed to close table:", err);
+    toast.error("Failed to close table");
+  }
+};
+
 useEffect(() => {
   if (!showRegisterModal) return;
   const today = new Date().toISOString().slice(0, 10);
-  fetch(`${API_URL}/api/reports/expenses?from=${today}&to=${today}`)
-    .then(res => res.json())
-    .then(setTodayExpenses)
+secureFetch(`/reports/expenses?from=${today}&to=${today}`)
+  .then(setTodayExpenses)
+
     .catch(() => setTodayExpenses([]));
 }, [showRegisterModal]);
 
 useEffect(() => {
   if (!showRegisterModal) return;
   const today = new Date().toISOString().slice(0, 10);
-  fetch(`${API_URL}/api/reports/cash-register-events?from=${today}&to=${today}`)
-    .then(res => res.json())
-    .then(setTodayRegisterEvents)
+secureFetch(`/reports/cash-register-events?from=${today}&to=${today}`)
+  .then(setTodayRegisterEvents)
+
     .catch(() => setTodayRegisterEvents([]));
 }, [showRegisterModal]);
 
@@ -129,14 +152,13 @@ useEffect(() => {
   if (!showRegisterModal) return;
   const today = new Date().toISOString().slice(0, 10);
 
-  fetch(`${API_URL}/api/reports/supplier-cash-payments?from=${today}&to=${today}`)
-    .then(res => res.json())
-    .then(setSupplierCashPayments)
+ secureFetch(`/reports/supplier-cash-payments?from=${today}&to=${today}`)
+  .then(setSupplierCashPayments)
     .catch(() => setSupplierCashPayments([]));
 
-  fetch(`${API_URL}/api/reports/staff-cash-payments?from=${today}&to=${today}`)
-    .then(res => res.json())
-    .then(setStaffCashPayments)
+ secureFetch(`/reports/staff-cash-payments?from=${today}&to=${today}`)
+  .then(setStaffCashPayments)
+
     .catch(() => setStaffCashPayments([]));
 }, [showRegisterModal]);
 
@@ -149,15 +171,7 @@ const groupByDate = (orders) => {
     return acc;
   }, {});
 };
-  // Only allow users with "settings" permission
-  const hasSettingsAccess = useHasPermission("settings");
-  if (!hasSettingsAccess) {
-    return (
-      <div className="p-12 text-2xl text-red-600 text-center">
-        {t("Access Denied: You do not have permission to view Settings.")}
-      </div>
-    );
-  }
+
 const TAB_LIST = [
   { id: "tables", label: "Tables", icon: "🍽️" },
   { id: "kitchen", label: "Kitchen", icon: "👨‍🍳" },
@@ -166,11 +180,39 @@ const TAB_LIST = [
   { id: "phone", label: "Phone", icon: "📞" },
   { id: "register", label: "Register", icon: "💵" }
 ];
-const visibleTabs = TAB_LIST.filter(tab =>
-  tab.id === "register"
-    ? useHasPermission("table-register")
-    : useHasPermission(tab.id)
-);
+const visibleTabs = TAB_LIST.filter(tab => {
+  const map = {
+    phone: "phone-orders",
+    packet: "packet-orders",
+    kitchen: "kitchen",
+    tables: "tables",
+    history: "history",
+    register: "register"
+  };
+  const key = map[tab.id] || tab.id;
+  return useHasPermission(key);
+});
+
+useEffect(() => {
+  const titlesByTab = {
+    tables: t("Tables"),
+    kitchen: t("Kitchen"),
+    history: t("History"),
+    packet: t("Packet"),
+    phone: t("Phone"),
+    register: t("Register"),
+  };
+  const headerTitle = titlesByTab[activeTab] || t("Orders");
+  setHeader(prev => ({
+    ...prev,
+    title: headerTitle,
+    subtitle: undefined,
+    tableNav: null,
+  }));
+}, [activeTab, setHeader, t]);
+
+useEffect(() => () => setHeader({}), [setHeader]);
+
 
 const combinedEvents = [
   ...(todayRegisterEvents || []),
@@ -187,12 +229,8 @@ const combinedEvents = [
 
 
 const refreshRegisterState = () => {
-  fetch(`${API_URL}/api/reports/cash-register-status`)
-    .then(async (res) => {
-      if (!res.ok) throw new Error("Bad response from /cash-register-status");
-      return await res.json();
-    })
-    .then((data) => {
+ secureFetch("/reports/cash-register-status")
+   .then((data) => {
       console.log("📥 /cash-register-status response:", data);
 
       setRegisterState(data.status);
@@ -219,50 +257,55 @@ const refreshRegisterState = () => {
 
 const fetchPacketOrders = async () => {
   try {
-    // Fetch both packet and phone orders
     const [resPacket, resPhone] = await Promise.all([
-      fetch(`${API_URL}/api/orders?type=packet`),
-      fetch(`${API_URL}/api/orders?type=phone`),
-    ]);
-    const packet = await resPacket.json();
-    const phone = await resPhone.json();
-    const data = [...packet, ...phone];
+     secureFetch(`/orders?type=packet`),
+secureFetch(`/orders?type=phone`),
 
-    // Only keep orders that are not closed
-    const ordersWithItems = await Promise.all(
-      data.filter((o) => o.status !== "closed").map(async (order) => {
-        const itemRes = await fetch(`${API_URL}/api/orders/${order.id}/items`);
-        const itemsRaw = await itemRes.json();
-        const items = itemsRaw.map(item => ({
-          ...item,
-          discount_type: item.discount_type || item.discountType || null,
-          discount_value: item.discount_value != null
+    ]);
+
+    const [packet, phone] = await Promise.all([
+  secureFetch(`/orders?type=packet`),
+  secureFetch(`/orders?type=phone`),
+]);
+
+const packetArray = Array.isArray(packet) ? packet : [];
+const phoneArray = Array.isArray(phone) ? phone : [];
+
+const data = [...packetArray, ...phoneArray];
+
+const ordersWithItems = await Promise.all(
+  data
+    .filter((o) => o.status !== "closed")
+    .map(async (order) => {
+      const items = (await secureFetch(`/orders/${order.id}/items`)).map((item) => ({
+        ...item,
+        discount_type: item.discount_type || item.discountType || null,
+        discount_value:
+          item.discount_value != null
             ? parseFloat(item.discount_value)
             : item.discountValue != null
             ? parseFloat(item.discountValue)
             : 0,
-        }));
+      }));
 
-        // Fetch receipt methods for split payments
-        let receiptMethods = [];
-        if (order.receipt_id) {
-          try {
-            const res = await fetch(`${API_URL}/api/orders/receipt-methods/${order.receipt_id}`);
-            if (res.ok) {
-              receiptMethods = await res.json();
-            }
-          } catch (e) {
-            console.warn("Failed to fetch receipt methods for order", order.id);
-          }
+      let receiptMethods = [];
+      if (order.receipt_id) {
+        try {
+          receiptMethods = await secureFetch(`/orders/receipt-methods/${order.receipt_id}`);
+        } catch (e) {
+          console.warn("⚠️ Failed to fetch receipt methods for order", order.id, e);
         }
+      }
 
-        return { ...order, items, receiptMethods };
-      })
-    );
+      return { ...order, items, receiptMethods };
+    })
+);
+
 
     setPacketOrders(ordersWithItems);
   } catch (err) {
-    console.error("Fetch packet orders failed:", err);
+    console.error("❌ Fetch packet orders failed:", err);
+    toast.error("Could not load packet orders");
   }
 };
 
@@ -293,13 +336,12 @@ useEffect(() => {
   if (!showRegisterModal) return;
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  fetch(`${API_URL}/api/reports/cash-register-history?from=${todayStr}&to=${todayStr}`)
-    .then(res => res.json())
-    .then(data => {
-      // Find today’s row
-      const todayRow = data.find(row => row.date === todayStr);
-      setRegisterEntries(todayRow?.register_entries ? Number(todayRow.register_entries) : 0);
-    })
+secureFetch(`/reports/cash-register-history?from=${todayStr}&to=${todayStr}`)
+  .then(data => {
+    const todayRow = data.find(row => row.date === todayStr);
+    setRegisterEntries(todayRow?.register_entries ? Number(todayRow.register_entries) : 0);
+  })
+
     .catch(err => {
       console.error("❌ Failed to fetch register entries:", err);
       setRegisterEntries(0);
@@ -307,10 +349,8 @@ useEffect(() => {
 }, [showRegisterModal]);
 
 useEffect(() => {
-  fetch(`${API_URL}/api/reports/cash-register-status`)
-    .then(async (res) => {
-      if (!res.ok) throw new Error("Bad response from /cash-register-status");
-      const data = await res.json();
+secureFetch("/reports/cash-register-status")
+  .then(data => {
 
       setRegisterState(data.status);
       setYesterdayCloseCash(data.yesterday_close ?? null);
@@ -345,9 +385,9 @@ useEffect(() => {
 
   
 
-  fetch(`${API_URL}/api/reports/cash-register-status`)
-    .then((res) => res.json())
-    .then((data) => {
+secureFetch("/reports/cash-register-status")
+  .then(data => {
+
       setRegisterState(data.status);
       setYesterdayCloseCash(data.yesterday_close ?? null);
       setLastOpenAt(data.last_open_at || null);
@@ -361,27 +401,8 @@ useEffect(() => {
         setOpeningCash(opening);
       }
 
-      return fetch(`${API_URL}/api/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`);
+return secureFetch(`/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`)
 
-    })
-    .then((res) => res.json())
-    .then((data) => {
-      console.log("💰 New Expected Cash:", data.cash_total);
-      setExpectedCash(data.cash_total || 0);
-
-      if (!openTime) {
-        console.log("ℹ️ Skipping expense fetch - no open timestamp yet");
-        setDailyCashExpense(0);
-        setCashDataLoaded(true);
-        return null; // 💡 FIX: stop the chain properly
-      }
-      
-
-return fetch(`${API_URL}/api/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`);
-})
-.then((res) => {
-  if (!res) return;
-  return res.json();
 })
 .then(async (data) => {
   if (!data) return;
@@ -389,8 +410,8 @@ return fetch(`${API_URL}/api/reports/daily-cash-expenses?openTime=${encodeURICom
 
   // 🔄 Fetch additional general expenses from /expenses for today
   const today = new Date().toISOString().slice(0, 10);
-  const extraExpenses = await fetch(`${API_URL}/api/expenses?from=${today}&to=${today}`)
-    .then(r => r.json())
+ const extraExpenses = await secureFetch(`/expenses?from=${today}&to=${today}`)
+
     .then(rows => rows.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0))
     .catch(() => 0);
 
@@ -435,32 +456,36 @@ useEffect(() => {
 
 const fetchOrders = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/orders`)
-;
-    const data = await res.json();
+    // Always use secureFetch → tenant_id + auth included
+    const data = await secureFetch("/orders");
+
+    if (!Array.isArray(data)) {
+      console.error("❌ Unexpected orders response:", data);
+      toast.error("Failed to load orders");
+      return;
+    }
 
     const openOrders = data
       .filter((o) => o.status !== "closed")
       .map((order) => ({
         ...order,
-        total: order.status === "paid" ? 0 : parseFloat(order.total || 0)
+        total: order.status === "paid" ? 0 : parseFloat(order.total || 0),
       }));
 
     const ordersWithItems = await Promise.all(
       openOrders.map(async (order) => {
-        const itemRes = await fetch(`${API_URL}/api/orders/${order.id}/items`);
-        const itemsRaw = await itemRes.json();
-const items = itemsRaw.map(item => ({
-  ...item,
-  discount_type: item.discount_type || item.discountType || null,
-  discount_value:
-    item.discount_value != null
-      ? parseFloat(item.discount_value)
-      : item.discountValue != null
-      ? parseFloat(item.discountValue)
-      : 0,
-}));
+        const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
 
+        const items = itemsRaw.map((item) => ({
+          ...item,
+          discount_type: item.discount_type || item.discountType || null,
+          discount_value:
+            item.discount_value != null
+              ? parseFloat(item.discount_value)
+              : item.discountValue != null
+              ? parseFloat(item.discountValue)
+              : 0,
+        }));
 
         return { ...order, items };
       })
@@ -468,9 +493,11 @@ const items = itemsRaw.map(item => ({
 
     setOrders(ordersWithItems);
   } catch (err) {
-    console.error("Fetch open orders failed:", err);
+    console.error("❌ Fetch open orders failed:", err);
+    toast.error("Could not load open orders");
   }
 };
+
 
 
 
@@ -490,13 +517,12 @@ const fetchClosedOrders = async () => {
   if (toDate) query.append("to", toDate);
 
   try {
-    const res = await fetch(`${API_URL}/api/reports/history?${query.toString()}`);
-    const data = await res.json();
+    const data = await secureFetch(`/reports/history?${query.toString()}`);
 
     const enriched = await Promise.all(
       data.map(async (order) => {
-        const itemRes = await fetch(`${API_URL}/api/orders/${order.id}/items`);
-        const itemsRaw = await itemRes.json();
+        const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+
      const items = itemsRaw.map(item => ({
   ...item,
   discount_type: item.discount_type || null,
@@ -504,8 +530,7 @@ const fetchClosedOrders = async () => {
   name: item.product_name || item.order_item_name || item.external_product_name || "Unnamed"
 }));
 
-        const subRes = await fetch(`${API_URL}/api/orders/${order.id}/suborders`);
-        const suborders = await subRes.json();
+        const suborders = await secureFetch(`/orders/${order.id}/suborders`);
 
         const receiptIds = [
           ...new Set([
@@ -517,8 +542,7 @@ const fetchClosedOrders = async () => {
 
         let receiptMethods = [];
         for (const receiptId of receiptIds) {
-          const r = await fetch(`${API_URL}/api/reports/receipt-methods/${receiptId}`);
-          const methods = await r.json();
+          const methods = await secureFetch(`/reports/receipt-methods/${receiptId}`);
           receiptMethods.push(...methods);
         }
 
@@ -548,8 +572,8 @@ const fetchClosedOrders = async () => {
 
    const fetchKitchenOrders = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/kitchen-orders`);
-    const data = await res.json();
+    const data = await secureFetch("/kitchen-orders");
+
 
     const active = data.filter(
       (item) =>
@@ -601,8 +625,8 @@ const fetchClosedOrders = async () => {
 
 const fetchPhoneOrders = async () => {
   try {
-    const res = await fetch(`${API_URL}/orders?type=phone`);
-    const data = await res.json();
+    const data = await secureFetch("/orders?type=phone");
+
     // Filter for open phone orders (not closed)
     setPhoneOrders(data.filter((o) => o.order_type === "phone" && o.status !== "closed"));
   } catch (err) {
@@ -620,8 +644,8 @@ const fetchPhoneOrders = async () => {
 
 const handleTableClick = async (table) => {
   // Always check register state before allowing navigation
-  const res = await fetch(`${API_URL}/api/reports/cash-register-status`);
-  const data = await res.json();
+  const data = await secureFetch("/reports/cash-register-status");
+
 
   if (data.status === "closed" || data.status === "unopened") {
     toast.error("Register must be open to access tables!", {
@@ -637,30 +661,27 @@ const handleTableClick = async (table) => {
   // ... existing logic:
 if (!table.order) {
   try {
-    const res = await fetch(`${API_URL}/api/orders`, {
+    const orderData = {
+      table_number: table.tableNumber,
+      order_type: "table",
+      total: 0,
+      items: [],
+    };
+
+    const newOrder = await secureFetch("/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        table_number: table.tableNumber,
-        total: 0,
-        order_type: "table", // ✅ ALWAYS INCLUDE THIS!
-      }),
+      body: JSON.stringify(orderData),
     });
 
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || "Order creation failed");
-        return;
-      }
-
-      const newOrder = await res.json();
-      navigate(`/transaction/${table.tableNumber}`, { state: { order: newOrder } });
-    } catch (err) {
-      console.error("Create order failed:", err);
-    }
-  } else {
-    navigate(`/transaction/${table.tableNumber}`, { state: { order: table.order } });
+    navigate(`/transaction/${table.tableNumber}`, { state: { order: newOrder } });
+  } catch (err) {
+    console.error("Create order failed:", err);
+    toast.error("Failed to create order");
   }
+} else {
+  navigate(`/transaction/${table.tableNumber}`, { state: { order: table.order } });
+}
+
 };
 
 
@@ -691,11 +712,10 @@ if (!table.order) {
 };
 
 useEffect(() => {
-  fetch(`${API_URL}/api/reports/cash-register-status`)
-    .then(res => res.json())
-    .then(data => {
+  secureFetch("/reports/cash-register-status")
+    .then((data) => {
       setRegisterState(data.status);
-       setOpeningCash("");
+      setOpeningCash("");
       if (
         (location.pathname.startsWith("/tableoverview") ||
          location.pathname.startsWith("/transaction")) &&
@@ -708,8 +728,12 @@ useEffect(() => {
         });
         navigate("/Dashboard"); // or any safe page
       }
+    })
+    .catch((err) => {
+      console.error("❌ Failed to refresh register state:", err);
     });
 }, [location.pathname, navigate]);
+
 
 
 
@@ -852,17 +876,32 @@ useEffect(() => {
 
 
   {/* Bottom Row: Total and "Over 1 min" alert */}
-  <div className="flex items-end justify-between mt-2">
-    {isDelayed(table.order) && (
-      <span className="text-yellow-500 font-bold animate-pulse drop-shadow">
-        ⚠️
-      </span>
-    )}
- <span className="text-lg font-bold text-indigo-700 dark:text-indigo-200 tracking-wide ml-auto">
-  ₺{getDisplayTotal(table.order).toFixed(2)}
-</span>
+<div className="flex items-end justify-between mt-2">
+  {isDelayed(table.order) && (
+    <span className="text-yellow-500 font-bold animate-pulse drop-shadow">⚠️</span>
+  )}
 
-     </div>
+  <div className="flex items-center gap-3 ml-auto">
+    <span className="text-lg font-bold text-indigo-700 dark:text-indigo-200 tracking-wide">
+      ₺{getDisplayTotal(table.order).toFixed(2)}
+    </span>
+
+    {/* ✅ Show Close button only when order is paid */}
+    {table.order?.status === "paid" && (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          handleCloseTable(table.order.id);
+        }}
+        className="px-3 py-1.5 bg-gradient-to-r from-green-400 via-blue-400 to-indigo-400 text-white font-bold rounded-full shadow hover:scale-105 transition"
+        title="Close Table"
+      >
+        🔒 {t("Close")}
+      </button>
+    )}
+  </div>
+</div>
+
               </div>
             );
           })}
@@ -1190,15 +1229,28 @@ const netCash = opening + expected + entryTotal - expense;
             toast.error("Enter a valid amount");
             return;
           }
-          const res = await fetch(`${API_URL}/api/reports/cash-register-log`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              type: "entry",
-              amount: Number(entryAmount),
-              note: entryReason || undefined
-            }),
-          });
+try {
+  const data = await secureFetch("/reports/cash-register-log", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "entry",
+      amount: Number(entryAmount),
+      note: entryReason || undefined,
+    }),
+  });
+
+  toast.success("Cash entry added!");
+  setEntryAmount("");
+  setEntryReason("");
+  setShowEntryForm(false);
+  setShowRegisterModal(false);
+  setTimeout(() => setShowRegisterModal(true), 350);
+} catch (err) {
+  console.error("❌ Failed to add cash entry:", err);
+  toast.error(err.message || "Failed to add cash entry");
+}
+
+
           if (res.ok) {
             toast.success("Cash entry added!");
             setEntryAmount("");
@@ -1316,55 +1368,40 @@ const netCash = opening + expected + entryTotal - expense;
       {/* Action Buttons */}
       <div className="flex justify-end gap-3 pt-4 border-t mt-7">
         <button
-          onClick={() => {
-            const type =
-              registerState === "unopened" || registerState === "closed"
-                ? "open"
-                : "close";
+        onClick={async () => {
+  const type =
+    registerState === "unopened" || registerState === "closed"
+      ? "open"
+      : "close";
 
-            const amount = parseFloat(
-              registerState === "unopened" || registerState === "closed"
-                ? openingCash
-                : actualCash
-            );
+  const amount = parseFloat(
+    registerState === "unopened" || registerState === "closed"
+      ? openingCash
+      : actualCash
+  );
 
-            if (!amount) return toast.error(t('Missing amount'));
+  if (!amount) return toast.error(t("Missing amount"));
 
-            fetch(`${API_URL}/api/reports/cash-register-log`, {
+  try {
+    const result = await secureFetch("/reports/cash-register-log", {
+      method: "POST",
+      body: JSON.stringify({ type, amount }),
+    });
 
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ type, amount }),
-            })
-              .then(async res => {
-                if (!res.ok) {
-                  const err = await res.json();
-                  toast.error(err.error || t('Register action failed'));
-                  return;
-                }
-                toast.success(type === "open"
-                  ? t("Register opened successfully.")
-                  : t("Register closed successfully."));
+    toast.success(
+      type === "open"
+        ? t("Register opened successfully.")
+        : t("Register closed successfully.")
+    );
 
-                refreshRegisterState();
-                setShowRegisterModal(false);
-              })
-              .catch(err => {
-                console.error(`❌ Failed to ${type} register:`, err);
-                toast.error(`${t('Register')} ${type} failed`);
-              });
-          }}
-          disabled={
-            ((registerState === "unopened" || registerState === "closed") && !openingCash) ||
-            (registerState === "open" && !actualCash)
-          }
-          className={`
-            px-8 py-3 rounded-2xl text-white font-bold text-lg transition-all
-            ${registerState === "unopened" || registerState === "closed"
-              ? "bg-green-600 hover:bg-green-700"
-              : "bg-indigo-600 hover:bg-blue-700"}
-            disabled:opacity-50 shadow-lg
-          `}
+    refreshRegisterState();
+    setShowRegisterModal(false);
+  } catch (err) {
+    console.error(`❌ Failed to ${type} register:`, err);
+    toast.error(err.message || `${t("Register")} ${type} failed`);
+  }
+}}
+
         >
           {(registerState === "unopened" || registerState === "closed")
             ? t('Open Register')

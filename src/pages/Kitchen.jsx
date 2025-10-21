@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import socket from "../utils/socket"; // adjust path as needed!
+import secureFetch from "../utils/secureFetch";
 
 import { useHasPermission } from "../components/hooks/useHasPermission";
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -26,17 +27,82 @@ const [newTimerName, setNewTimerName] = useState("");
 const [newTimerSeconds, setNewTimerSeconds] = useState(60);
 const [excludedCategories, setExcludedCategories] = useState([]);
 const [excludedItems, setExcludedItems] = useState([]);
+const [prepStart, setPrepStart] = useState(null);
+// 🕒 Track when each order first arrived in the kitchen (to start timer immediately)
+const [orderTimers, setOrderTimers] = useState({});
+
+// 🕒 Always start timers as soon as the order appears in kitchen
+useEffect(() => {
+  if (!orders || orders.length === 0) return;
+
+  setOrderTimers(prev => {
+    const updated = { ...prev };
+    const now = Date.now();
+
+    orders.forEach(o => {
+      if (!updated[o.order_id]) {
+        // Convert backend UTC -> local timestamp safely
+        let createdAt = now;
+        try {
+          if (o.created_at) {
+            // ❌ remove timezone math — Date() already converts correctly to local time
+            createdAt = new Date(o.created_at).getTime();
+          }
+        } catch {
+          createdAt = now;
+        }
+
+        updated[o.order_id] = createdAt;
+      }
+    });
+
+    // remove old timers
+    for (const id of Object.keys(updated)) {
+      if (!orders.some(o => o.order_id == id)) delete updated[id];
+    }
+
+    console.log("⏱ Final fixed orderTimers:", updated);
+    return updated;
+  });
+}, [orders]);
+
+
+
+
+
+useEffect(() => {
+  if (orders.length) {
+    console.log("🕒 First order created_at:", orders[0]?.created_at);
+  }
+}, [orders]);
+
+useEffect(() => {
+  let timer;
+  if (prepStart) {
+    timer = setInterval(() => {
+      // Trigger rerender every second
+      setPrepStart((prev) => (prev ? new Date(prev) : null));
+    }, 1000);
+  }
+  return () => clearInterval(timer);
+}, [prepStart]);
+
+// Live refresh for header timers every second
+// ⏱ re-render once per second so header timers update live
+useEffect(() => {
+  const i = setInterval(() => {
+    // lightweight state bump to trigger render
+    setOrders((o) => o);
+  }, 1000);
+  return () => clearInterval(i);
+}, []);
+
+
+
 // List any ingredients to always exclude from compile (empty means include all)
 const [excludedIngredients, setExcludedIngredients] = useState([]);
   // Only allow users with "settings" permission
-  const hasSettingsAccess = useHasPermission("settings");
-  if (!hasSettingsAccess) {
-    return (
-      <div className="p-12 text-2xl text-red-600 text-center">
-        {t("Access Denied: You do not have permission to view Settings.")}
-      </div>
-    );
-  }
+
 
 const productIdToCategory = {};
 products.forEach(p => {
@@ -45,27 +111,31 @@ products.forEach(p => {
 
 // Fetch all 3 on mount
 useEffect(() => {
-  fetch(`${API_URL}/api/kitchen/compile-settings`)
-    .then(res => res.json())
-    .then(data => {
+  (async () => {
+    try {
+      const data = await secureFetch("kitchen/compile-settings");
       setExcludedIngredients(data.excludedIngredients || []);
       setExcludedCategories(data.excludedCategories || []);
       setExcludedItems(data.excludedItems || []);
-    })
-    .catch(() => {
+    } catch {
       setExcludedIngredients([]);
       setExcludedCategories([]);
       setExcludedItems([]);
-    });
+    }
+  })();
 }, []);
+
 useEffect(() => {
-  fetch(`${API_URL}/api/kitchen/compile-settings`)
-    .then(res => res.json())
-    .then(data => {
+  (async () => {
+    try {
+      const data = await secureFetch("kitchen/compile-settings");
       setExcludedIngredients(data.excludedIngredients || []);
-    })
-    .catch(() => setExcludedIngredients([]));
+    } catch {
+      setExcludedIngredients([]);
+    }
+  })();
 }, []);
+
 
 // 2. Any time selectedIds changes, update localStorage
 useEffect(() => {
@@ -84,41 +154,37 @@ useEffect(() => {
     setTimers(prev =>
       prev.map(timer =>
         timer.running && timer.secondsLeft > 0
-  ? (() => {
-      const newSeconds = timer.secondsLeft - 1;
-      // If finished, reset to total and pause
-      if (newSeconds === 0) {
-        // Update DB with reset and paused state
-        fetch(`${API_URL}/api/kitchen-timers`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: timer.id,
-            name: timer.name,
-            secondsLeft: timer.total, // Reset to original time
-            total: timer.total,
-            running: false, // Pause
-          }),
-        });
-        return { ...timer, secondsLeft: timer.total, running: false };
-      } else {
-        // Usual tick-down logic
-        fetch(`${API_URL}/api/kitchen-timers`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: timer.id,
-            name: timer.name,
-            secondsLeft: newSeconds,
-            total: timer.total,
-            running: timer.running,
-          }),
-        });
-        return { ...timer, secondsLeft: newSeconds };
-      }
-    })()
-  : timer
-
+          ? (() => {
+              const newSeconds = timer.secondsLeft - 1;
+              // If finished, reset to total and pause
+              if (newSeconds === 0) {
+                secureFetch("/kitchen-timers", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    id: timer.id,
+                    name: timer.name,
+                    secondsLeft: timer.total, // Reset to original time
+                    total: timer.total,
+                    running: false, // Pause
+                  }),
+                });
+                return { ...timer, secondsLeft: timer.total, running: false };
+              } else {
+                // Usual tick-down logic
+                secureFetch("/kitchen-timers", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    id: timer.id,
+                    name: timer.name,
+                    secondsLeft: newSeconds,
+                    total: timer.total,
+                    running: timer.running,
+                  }),
+                });
+                return { ...timer, secondsLeft: newSeconds };
+              }
+            })()
+          : timer
       )
     );
   }, 1000);
@@ -126,21 +192,6 @@ useEffect(() => {
 }, [showTimerModal, timers]);
 
 
-
-useEffect(() => {
-  if (showTimerModal) {
-    fetch(`${API_URL}/api/kitchen-timers`)
-      .then(res => res.json())
-      .then(timers => setTimers(timers.map(timer => ({
-        ...timer,
-        secondsLeft: timer.seconds_left,
-        total: timer.total_seconds,
-        running: timer.running,
-        id: timer.id
-      }))))
-      .catch(() => setTimers([]));
-  }
-}, [showTimerModal]);
 
 // Inside useEffect:
 useEffect(() => {
@@ -164,38 +215,36 @@ useEffect(() => {
 }, []);
 
 const updateTimerInDB = async (timer) => {
-  await fetch(`${API_URL}/api/kitchen-timers`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      id: timer.id,
-      name: timer.name,
-      secondsLeft: timer.secondsLeft,
-      total: timer.total,
-      running: timer.running,
-    }),
-  });
-};
-
-  // Always use full URL for backend fetches!
-  const fetchKitchenOrders = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/kitchen-orders`);
-      const data = await res.json();
-      const filtered = data.filter((item) => {
-  // Keep showing if:
-  // - NOT delivered yet
-  // - OR delivered but NOT paid/closed
-  const isDelivered = item.kitchen_status === "delivered";
-  const isPaid = item.status === "paid" || item.transaction_closed; // adjust field as needed
-  return !(isDelivered && isPaid); // Only hide if delivered AND paid/closed
+await secureFetch("/kitchen/kitchen-timers", {
+  method: "POST",
+  body: JSON.stringify({
+    id: timer.id,
+    name: timer.name,
+    secondsLeft: timer.secondsLeft,
+    total: timer.total,
+    running: timer.running,
+  }),
 });
 
-      setOrders(filtered);
-    } catch (err) {
-      console.error("❌ Kitchen route failed:", err);
-    }
-  };
+};
+
+
+  // Always use full URL for backend fetches!
+const fetchKitchenOrders = async () => {
+  try {
+    const data = await secureFetch("kitchen-orders");
+    const filtered = data.filter((item) => {
+      const isDelivered = item.kitchen_status === "delivered";
+      const isPaid = item.status === "paid" || item.transaction_closed; // adjust field as needed
+      return !(isDelivered && isPaid); // Only hide if delivered AND paid/closed
+    });
+
+    setOrders(filtered);
+  } catch (err) {
+    console.error("❌ Kitchen route failed:", err);
+  }
+};
+
 
   useEffect(() => {
     fetchKitchenOrders();
@@ -211,12 +260,17 @@ const updateTimerInDB = async (timer) => {
 
 
   // Fetch all products at mount (always use full URL)
-  useEffect(() => {
-    fetch(`${API_URL}/api/products`)
-      .then(res => res.json())
-      .then(setProducts)
-      .catch(() => setProducts([]));
-  }, []);
+useEffect(() => {
+  (async () => {
+    try {
+      const data = await secureFetch("products");
+      setProducts(data);
+    } catch {
+      setProducts([]);
+    }
+  })();
+}, []);
+
 
   // Parse all ingredient names, robust for any data
   const allIngredients = Array.from(
@@ -254,33 +308,46 @@ const updateTimerInDB = async (timer) => {
     });
   };
 
-  const updateKitchenStatus = async (status) => {
-    try {
-      const idsToUpdate = selectedIds.filter(id => {
+const updateKitchenStatus = async (status) => {
+  try {
+    const idsToUpdate = selectedIds.filter(id => {
+      const item = orders.find(o => o.item_id === id);
+      return item && item.kitchen_status !== status;
+    });
+
+    if (idsToUpdate.length === 0) return;
+
+    console.log(`🟢 ${status.toUpperCase()} button clicked`, {
+      selectedIds,
+      ordersCount: orders.length,
+    });
+
+    // ✅ correct endpoint
+const res = await secureFetch("/order-items/kitchen-status", {
+  method: "PUT",
+  body: JSON.stringify({ ids: idsToUpdate, status }),
+});
+
+
+
+
+    console.log("✅ Kitchen status update response:", res);
+
+    // Refresh data
+    await fetchKitchenOrders();
+
+    // Unselect updated items
+    setSelectedIds(prev =>
+      prev.filter(id => {
         const item = orders.find(o => o.item_id === id);
         return item && item.kitchen_status !== status;
-      });
+      })
+    );
+  } catch (err) {
+    console.error("❌ Failed to update kitchen status:", err);
+  }
+};
 
-      if (idsToUpdate.length === 0) return;
-
-      await fetch(`${API_URL}/api/order-items/kitchen-status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: idsToUpdate, status }),
-      });
-
-      fetchKitchenOrders();
-
-      setSelectedIds(prev =>
-        prev.filter(id => {
-          const item = orders.find(o => o.item_id === id);
-          return item && item.kitchen_status !== status;
-        })
-      );
-    } catch (err) {
-      console.error("❌ Failed to update kitchen status:", err);
-    }
-  };
 
   // --- Compile Ingredients Logic ---
 function compileTotals(selectedOrders) {
@@ -428,35 +495,51 @@ return (
     </section>
 
     {/* Action Buttons */}
-    <section className="grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:justify-center sm:items-center mb-1 w-full">
-      <button
-        onClick={() => updateKitchenStatus("preparing")}
-        disabled={selectedIds.length === 0}
-        className="py-3 w-full rounded-xl shadow bg-yellow-400 hover:bg-yellow-500 text-white font-bold text-base transition disabled:opacity-50"
-      >
-        {t("Preparing")}
-      </button>
-      <button
-        onClick={() => updateKitchenStatus("delivered")}
-        disabled={selectedIds.length === 0}
-        className="py-3 w-full rounded-xl shadow bg-gray-800 hover:bg-gray-900 text-white font-bold text-base transition disabled:opacity-50"
-      >
-        {t("Delivered")}
-      </button>
-      <button
-        onClick={openCompileModal}
-        disabled={selectedIds.length === 0}
-        className="py-3 w-full rounded-xl shadow bg-green-600 hover:bg-green-700 text-white font-bold text-base transition disabled:opacity-50"
-      >
-        {t("Compile")}
-      </button>
-      <button
-        onClick={() => setShowTimerModal(true)}
-        className="py-3 w-full rounded-xl shadow bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold text-base transition"
-      >
-        ⏱ {t("Timer")}
-      </button>
-    </section>
+ <section className="grid grid-cols-2 gap-3 sm:flex sm:flex-row sm:justify-center sm:items-center mb-1 w-full">
+  <button
+    onClick={() => {
+      console.debug("🟡 Preparing button clicked", {
+        selectedIds,
+        ordersCount: orders.length,
+      });
+      updateKitchenStatus("preparing");
+    }}
+    disabled={selectedIds.length === 0}
+    className="py-3 w-full rounded-xl shadow bg-yellow-400 hover:bg-yellow-500 text-white font-bold text-base transition disabled:opacity-50"
+  >
+    {t("Preparing")}
+  </button>
+
+  <button
+    onClick={() => {
+      console.debug("🟢 Delivered button clicked", {
+        selectedIds,
+        ordersCount: orders.length,
+      });
+      updateKitchenStatus("delivered");
+    }}
+    disabled={selectedIds.length === 0}
+    className="py-3 w-full rounded-xl shadow bg-gray-800 hover:bg-gray-900 text-white font-bold text-base transition disabled:opacity-50"
+  >
+    {t("Delivered")}
+  </button>
+
+  <button
+    onClick={openCompileModal}
+    disabled={selectedIds.length === 0}
+    className="py-3 w-full rounded-xl shadow bg-green-600 hover:bg-green-700 text-white font-bold text-base transition disabled:opacity-50"
+  >
+    {t("Compile")}
+  </button>
+
+  <button
+    onClick={() => setShowTimerModal(true)}
+    className="py-3 w-full rounded-xl shadow bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold text-base transition"
+  >
+    ⏱ {t("Timer")}
+  </button>
+</section>
+
 
     {/* Orders */}
     <section className="flex-1">
@@ -531,10 +614,15 @@ return (
   </span>
 
   {/* Info */}
-  <span className="flex flex-col gap-0.5 flex-1 min-w-0">
+{/* Info + Live Timer */}
+<span className="flex items-center justify-between flex-1 min-w-0">
+  <div className="flex flex-col min-w-0">
     {group.type === "table" && (
-      <span className="font-black text-lg truncate">{t("Table")} {first.table_number}</span>
+      <span className="font-black text-lg truncate">
+        {t("Table")} {first.table_number}
+      </span>
     )}
+
     {(group.type === "phone" || group.type === "packet") && (
       <>
         <span className="truncate max-w-[160px]">
@@ -544,11 +632,61 @@ return (
           <span className="text-xs text-blue-100">{first.customer_phone}</span>
         )}
         {first.customer_address && (
-          <span className="text-xs text-green-100 truncate max-w-[180px]">📍 {first.customer_address}</span>
+          <span className="text-xs text-green-100 truncate max-w-[180px]">
+            📍 {first.customer_address}
+          </span>
         )}
       </>
     )}
-  </span>
+  </div>
+
+  {/* 🕒 Live 180s countdown starting at arrival */}
+  {(() => {
+    const arrival = orderTimers[first.order_id] || Date.now();
+    const elapsed = Math.floor((Date.now() - arrival) / 1000);
+
+    let text = "";
+    let colorClass = "";
+
+    if (first.kitchen_status === "new") {
+      const remaining = Math.max(0, 180 - elapsed);
+      const mins = Math.floor(remaining / 60);
+      const secs = remaining % 60;
+      text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+
+      colorClass =
+        remaining === 0
+          ? "bg-red-600/80 animate-pulse"
+          : remaining <= 60
+          ? "bg-orange-500/80"
+          : "bg-green-600/70";
+    } else {
+      // show elapsed after "preparing" or later
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+      colorClass =
+        elapsed >= 1200
+          ? "bg-red-500/80"
+          : elapsed >= 600
+          ? "bg-orange-500/80"
+          : "bg-green-600/70";
+    }
+
+    return (
+      <span
+        className={`ml-2 shrink-0 text-xs font-mono px-2 py-0.5 rounded-lg shadow text-white backdrop-blur-md border border-white/20 ${colorClass}`}
+      >
+        {text}
+      </span>
+    );
+  })()}
+
+
+</span>
+
+
+
 
   {/* Platform Badges */}
   {group.type === "packet" && first.external_id && (
@@ -737,12 +875,86 @@ return (
 
           
         
-          <button
-            className="mt-2 px-6 py-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:brightness-110 text-white text-lg font-semibold rounded-2xl shadow-lg transition"
-            onClick={closeCompileModal}
+<div className="grid grid-cols-2 gap-3">
+  <button
+    onClick={() => {
+      updateKitchenStatus("preparing");
+      setPrepStart(new Date()); // start timer
+    }}
+    className="py-3 w-full rounded-xl shadow bg-yellow-400 hover:bg-yellow-500 text-white font-bold text-base transition disabled:opacity-50"
+    disabled={selectedIds.length === 0}
+  >
+    {t("Preparing")}
+  </button>
+
+  <button
+    onClick={() => {
+      updateKitchenStatus("delivered");
+      setPrepStart(null); // reset timer on delivered
+    }}
+    className="py-3 w-full rounded-xl shadow bg-gray-800 hover:bg-gray-900 text-white font-bold text-base transition disabled:opacity-50"
+    disabled={selectedIds.length === 0}
+  >
+    {t("Delivered")}
+  </button>
+</div>
+
+{/* 🧾 Show currently preparing orders */}
+<div className="bg-yellow-50 dark:bg-yellow-900/30 rounded-2xl p-3 border border-yellow-200 dark:border-yellow-700 shadow-inner">
+  <div className="font-semibold text-yellow-700 dark:text-yellow-200 mb-2">
+    {t("Currently Preparing")}
+  </div>
+  {orders.filter(o => o.kitchen_status === "preparing").length === 0 ? (
+    <div className="text-gray-500 dark:text-gray-400 text-sm">
+      {t("No active preparing orders.")}
+    </div>
+  ) : (
+    <ul className="text-sm space-y-1 max-h-32 overflow-y-auto">
+      {orders
+        .filter(o => o.kitchen_status === "preparing")
+        .map((o, i) => (
+          <li
+            key={i}
+            className="flex justify-between border-b border-yellow-200/50 pb-0.5"
           >
-            {t("Close")}
-          </button>
+            <span>
+              {o.order_type === "table"
+                ? `🍽️ Table ${o.table_number}`
+                : o.order_type === "packet"
+                ? `🛵 Packet ${o.customer_name || o.customer_phone || ""}`
+                : `📞 Phone ${o.customer_name || ""}`}
+            </span>
+            <span className="text-yellow-700 dark:text-yellow-300 font-bold text-xs uppercase">
+              {t("PREPARING")}
+            </span>
+          </li>
+        ))}
+    </ul>
+  )}
+</div>
+
+{/* ⏱ Improved timer */}
+{prepStart && (
+  <div className="flex flex-col items-center text-gray-700 dark:text-gray-300 mt-3">
+    <div className="flex items-center gap-2 text-lg font-semibold">
+      ⏱ {t("Elapsed Time")}
+      <span className="px-3 py-1 rounded-lg bg-gray-800 text-white text-base font-mono shadow-inner">
+        {(() => {
+          const diff = Math.floor((new Date() - prepStart) / 1000);
+          const mins = Math.floor(diff / 60);
+          const secs = diff % 60;
+          return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+        })()}
+      </span>
+    </div>
+    <div className="text-xs text-gray-500 mt-1">
+      {t("Timer resets when order is delivered")}
+    </div>
+  </div>
+)}
+
+
+
         </div>
         
       </div>
@@ -775,17 +987,17 @@ return (
               className="px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold hover:brightness-110 transition"
               onClick={async () => {
                 if (!newTimerName || newTimerSeconds < 1) return;
-                const res = await fetch(`${API_URL}/api/kitchen-timers`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    name: newTimerName,
-                    secondsLeft: newTimerSeconds,
-                    total: newTimerSeconds,
-                    running: false,
-                  }),
-                });
-                const saved = await res.json();
+              const res = await secureFetch("kitchen-timers", {
+  method: "POST",
+  body: JSON.stringify({
+    name: newTimerName,
+    secondsLeft: newTimerSeconds,
+    total: newTimerSeconds,
+    running: false,
+  }),
+});
+
+                const saved = res
                 setTimers(prev => [...prev, { ...saved, secondsLeft: saved.seconds_left, total: saved.total_seconds }]);
                 setNewTimerName("");
                 setNewTimerSeconds(60);
@@ -832,17 +1044,17 @@ return (
                     title={t("Pause")}
                     onClick={async () => {
                       setTimers(timers => timers.map(t => t.id === timer.id ? { ...t, running: false } : t));
-                      await fetch(`${API_URL}/api/kitchen-timers`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          id: timer.id,
-                          name: timer.name,
-                          secondsLeft: timer.secondsLeft,
-                          total: timer.total,
-                          running: false,
-                        }),
-                      });
+                      await secureFetch("kitchen-timers", {
+  method: "POST",
+  body: JSON.stringify({
+    id: timer.id,
+    name: timer.name,
+    secondsLeft: timer.secondsLeft,
+    total: timer.total,
+    running: false,
+  }),
+});
+
                     }}
                   >
                     ⏸
@@ -853,17 +1065,17 @@ return (
                     title={t("Resume")}
                     onClick={async () => {
                       setTimers(timers => timers.map(t => t.id === timer.id ? { ...t, running: true } : t));
-                      await fetch(`${API_URL}/api/kitchen-timers`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          id: timer.id,
-                          name: timer.name,
-                          secondsLeft: timer.secondsLeft,
-                          total: timer.total,
-                          running: true,
-                        }),
-                      });
+                    await secureFetch("/kitchen-timers", {
+  method: "POST",
+  body: JSON.stringify({
+    id: timer.id,
+    name: timer.name,
+    secondsLeft: timer.secondsLeft,
+    total: timer.total,
+    running: true,
+  }),
+});
+
                     }}
                   >
                     ▶️
@@ -872,10 +1084,11 @@ return (
                 <button
                   className="text-red-500 hover:text-red-700 px-1"
                   title="Delete"
-                  onClick={async () => {
-                    await fetch(`${API_URL}/api/kitchen-timers/${timer.id}`, { method: "DELETE" });
-                    setTimers(timers => timers.filter(t => t.id !== timer.id));
-                  }}
+                 onClick={async () => {
+  await secureFetch(`/kitchen/kitchen-timers/${timer.id}`, { method: "DELETE" });
+  setTimers(timers => timers.filter(t => t.id !== timer.id));
+}}
+
                 >
                   ✕
                 </button>
@@ -935,15 +1148,16 @@ return (
                       updated = prev.includes(ingredient)
                         ? prev.filter(ing => ing !== ingredient)
                         : [...prev, ingredient];
-                      fetch(`${API_URL}/api/kitchen/compile-settings`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          excludedCategories,
-                          excludedItems,
-                          excludedIngredients: updated
-                        }),
-                      });
+secureFetch("kitchen/compile-settings", {
+  method: "POST",
+  body: JSON.stringify({
+    excludedCategories,
+    excludedItems,
+    excludedIngredients: updated,
+  }),
+});
+
+
                       return updated;
                     });
                   }}
@@ -979,15 +1193,15 @@ return (
                       const updated = allChecked
                         ? prev.filter(id => !catProducts.includes(id))
                         : Array.from(new Set([...prev, ...catProducts]));
-                      fetch(`${API_URL}/api/kitchen/compile-settings`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          excludedCategories,
-                          excludedItems: updated,
-                          excludedIngredients
-                        }),
-                      });
+                   secureFetch("/kitchen/compile-settings", {
+  method: "POST",
+  body: JSON.stringify({
+    excludedCategories,
+    excludedItems: updated,
+    excludedIngredients,
+  }),
+});
+
                       return updated;
                     });
                   }}
@@ -1011,15 +1225,16 @@ return (
                           const updated = prev.includes(product.id)
                             ? prev.filter(id => id !== product.id)
                             : [...prev, product.id];
-                          fetch(`${API_URL}/api/kitchen/compile-settings`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              excludedCategories,
-                              excludedItems: updated,
-                              excludedIngredients
-                            }),
-                          });
+secureFetch("kitchen/compile-settings", {
+  method: "POST",
+  body: JSON.stringify({
+    excludedCategories,
+    excludedItems,
+    excludedIngredients: updated,
+  }),
+});
+
+
                           return updated;
                         });
                       }}

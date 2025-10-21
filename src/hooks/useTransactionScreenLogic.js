@@ -66,7 +66,7 @@ export default function useTransactionScreenLogic() {
 
   // Effects
   useEffect(() => {
-    fetch(`${API_URL}/api/category-images`)
+    secureFetch('category-images`)
       .then(res => res.json())
       .then(data => {
         const dict = {};
@@ -78,7 +78,7 @@ export default function useTransactionScreenLogic() {
   }, []);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/kitchen/compile-settings`)
+    secureFetch('kitchen/compile-settings`)
       .then(res => res.json())
       .then(data => {
         setExcludedItems(data.excludedItems || []);
@@ -98,7 +98,7 @@ export default function useTransactionScreenLogic() {
   }, []);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/extras-groups`)
+    secureFetch('extras-groups`)
       .then(res => res.json())
       .then(data => {
         setExtrasGroups(data.map(g => ({
@@ -146,11 +146,11 @@ export default function useTransactionScreenLogic() {
   useEffect(() => {
     const fetchPhoneOrder = async (orderId) => {
       try {
-        const res = await fetch(`${API_URL}/api/${orderId}`);
+        const res = await secureFetch('${orderId}`);
         if (!res.ok) throw new Error("Failed to fetch phone order");
         const newOrder = await res.json();
 
-        const itemsRes = await fetch(`${API_URL}/api/${newOrder.id}/items`);
+        const itemsRes = await secureFetch('${newOrder.id}/items`);
         const items = await itemsRes.json();
 
         const parsedItems = items.map(item => ({
@@ -195,14 +195,14 @@ export default function useTransactionScreenLogic() {
     const createOrFetchTableOrder = async (tableId) => {
       try {
         let newOrder;
-        const res = await fetch(`${API_URL}/api/orders?table_number=${tableId}`);
+        const res = await secureFetch('orders?table_number=${tableId}`);
         if (!res.ok) throw new Error("Failed to fetch order");
         const data = await res.json();
 
         if (data.length > 0) {
           newOrder = data[0];
         } else {
-          const createRes = await fetch(`${API_URL}/api/orders`, {
+          const createRes = await secureFetch('orders`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ table_number: tableId, total: 0 }),
@@ -211,7 +211,7 @@ export default function useTransactionScreenLogic() {
           newOrder = await createRes.json();
         }
 
-        const itemsRes = await fetch(`${API_URL}/api/${newOrder.id}/items`);
+        const itemsRes = await secureFetch('${newOrder.id}/items`);
         const items = await itemsRes.json();
 
         const parsedItems = items.map(item => ({

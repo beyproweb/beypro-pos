@@ -35,11 +35,12 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import NotificationBell from "./components/NotificationBell";
 import { HeaderProvider } from "./context/HeaderContext";
 import socket from "./utils/socket";
+import { attachGlobalSoundHandlers } from "./utils/soundManager";
 import QrMenu from "./pages/QrMenu";
 import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
-
+import secureFetch from "./utils/secureFetch";
 import QrMenuSettings from "./pages/QrMenuSettings";
 // ✅ choose automatically based on environment
 const API_URL =
@@ -69,31 +70,29 @@ export default function App() {
   }, [lowStockAlerts]);
 
   useEffect(() => {
-    // Named handler for alert_event
-    const handler = (payload) => {
-      console.log("[BELL DEBUG] Received alert_event:", payload);
-      const { message, time, type, stockId } = payload;
-      const detectedType =
-        type ||
-        (/Stock Low:/i.test(message) ? "stock" :
-          /Price (up|down|decreased|drop):?/i.test(message) ? "ingredient" : "other");
-      const globalNotif = { message, time, type: detectedType, stockId };
-      setLowStockAlerts((prev) => [...prev, globalNotif]);
-    };
-
-    socket.on("alert_event", handler);
-    return () => socket.off("alert_event", handler);
+const loadSettings = async () => {
+  try {
+    const data = await secureFetch("/settings/notifications");
+    window.notificationSettings = data;
+  } catch (err) {
+    console.warn("⚠️ Failed to load notification settings", err);
+  }
+};
+    loadSettings();
   }, []);
 
+  useEffect(() => attachGlobalSoundHandlers(), []);
+
+
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/settings/notifications`);
-        window.notificationSettings = await res.json();
-      } catch (err) {
-        console.warn("⚠️ Failed to load notification settings", err);
-      }
-    };
+const loadSettings = async () => {
+  try {
+    const data = await secureFetch("/settings/notifications");
+    window.notificationSettings = data;
+  } catch (err) {
+    console.warn("⚠️ Failed to load notification settings", err);
+  }
+};
     loadSettings();
   }, []);
 
@@ -157,7 +156,35 @@ export default function App() {
                 path="marketing-campaigns"
                 element={<ProtectedRoute permission="dashboard"><MarketingCampaigns /></ProtectedRoute>}
               />
-              <Route path="orders" element={<Navigate to="/tables?tab=packet" replace />} />
+              {/* ORDERS (packet/phone) */}
+<Route
+  path="orders"
+  element={
+    <ProtectedRoute permission="orders">
+      <Orders />
+    </ProtectedRoute>
+  }
+/>
+
+{/* PAYMENTS (if you have a separate payments page) */}
+<Route
+  path="payments"
+  element={
+    <ProtectedRoute permission="payments">
+      <TransactionScreen />
+    </ProtectedRoute>
+  }
+/>
+
+{/* CASH REGISTER */}
+<Route
+  path="cash-register"
+  element={
+    <ProtectedRoute permission="register">
+      <CashRegisterHistory />
+    </ProtectedRoute>
+  }
+/>
               <Route path="products" element={<ProtectedRoute permission="products"><Products /></ProtectedRoute>} />
               <Route path="kitchen" element={<ProtectedRoute permission="kitchen"><Kitchen /></ProtectedRoute>} />
               <Route path="suppliers" element={<ProtectedRoute permission="suppliers"><Suppliers /></ProtectedRoute>} />
@@ -194,9 +221,7 @@ export default function App() {
           </Routes>
         </div>
 
-        {/* Toasts and global order alerts */}
-        <ToastContainer position="bottom-center" autoClose={2000} hideProgressBar />
-        <GlobalOrderAlert />
+     
       </AppearanceProvider>
     </AuthProvider>
   );

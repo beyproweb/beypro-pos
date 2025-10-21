@@ -15,6 +15,8 @@ import {
   TRANSACTIONS_API,
 } from "../utils/api";
 import socket from "../utils/socket";
+import secureFetch from "../utils/secureFetch";
+import { useHeader } from "../context/HeaderContext";
 const API_URL = import.meta.env.VITE_API_URL || "";
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
@@ -46,6 +48,7 @@ export default function Suppliers() {
   });
   const [cartHistory, setCartHistory] = useState([]);
    const { t, i18n } = useTranslation();
+  const { setHeader } = useHeader();
   const [cartItems, setCartItems] = useState([]); // cart items
   const [showCartModal, setShowCartModal] = useState(false); // cart modal visibility
   const [cartId, setCartId] = useState(null);
@@ -63,6 +66,17 @@ const [previewImage, setPreviewImage] = useState(null);
   const socketRef = useRef();
   const { fetchStock } = useStock();
   const [receiptFile, setReceiptFile] = useState(null);
+
+  useEffect(() => {
+    setHeader(prev => ({
+      ...prev,
+      title: t("Suppliers"),
+      subtitle: undefined,
+      tableNav: null,
+    }));
+  }, [setHeader, t]);
+
+  useEffect(() => () => setHeader({}), [setHeader]);
 
 
 useEffect(() => {
@@ -105,118 +119,115 @@ useEffect(() => {
     };
   }, [fetchStock, cartId]);
 
-const openSupplierCart = async (supplierId) => {
+
+// ✅ Open supplier cart
+const openSupplierCart = async (cartIdArg, supplierId) => {
   try {
-    setSelectedSupplier(suppliers.find((s) => s.id === supplierId));
+    const supplier = suppliers.find((s) => s.id === supplierId);
+    setSelectedSupplier(supplier);
 
-    // Try to fetch unconfirmed cart first
-    let res = await fetch(`${SUPPLIER_CARTS_API}/items?supplier_id=${supplierId}`);
-    let data = await res.json();
+    let data;
 
-    // If not found, try scheduled one
-    if (!res.ok || !data?.items?.length) {
-      res = await fetch(`${SUPPLIER_CARTS_API}/scheduled?supplier_id=${supplierId}`);
-      data = await res.json();
+    if (cartIdArg) {
+      // Explicit open by id (useful for history)
+      data = await secureFetch(`/supplier-carts/items?cart_id=${cartIdArg}`);
+    } else {
+      // 🔑 Always prefer scheduled cart for modal
+      const scheduled = await secureFetch(`/supplier-carts/scheduled?supplier_id=${supplierId}`);
 
-      if (!res.ok || !data?.items?.length) {
-        alert("⚠️ No scheduled or open cart found for this supplier.");
-        return;
+      if (scheduled) {
+        // Also fetch items explicitly for this cart
+        const itemsRes = await secureFetch(`/supplier-carts/items?cart_id=${scheduled.cart_id}`);
+        data = { ...scheduled, items: itemsRes.items || [] };
       }
     }
 
-    // ✅ Set current cart state
-    setCartItems(data.items);
-    setCartId(data.cart_id || null);
+    if (!data) return;
 
-    // ⚠️ Only override schedule fields if present
-    if (data.scheduled_at !== null && data.scheduled_at !== undefined) {
-      setScheduledAt(data.scheduled_at);
-    }
-
-    if (data.repeat_type !== undefined) {
-      setRepeatType(data.repeat_type);
-    }
-
+    // ✅ Sync state
+    setScheduledAt(data.scheduled_at || null);
+    setRepeatType(data.repeat_type || "none");
     setRepeatDays(Array.isArray(data.repeat_days) ? data.repeat_days : []);
+    setAutoOrder(!!data.auto_confirm);
+    setCartItems(data.items || []);
 
-
-    if (data.auto_confirm !== undefined) {
-      setAutoOrder(data.auto_confirm);
-    }
-
+    setCartId(data.cart_id || null);
     setShowCartModal(true);
-
-    // ✅ Fetch history for skipped info
-    const historyRes = await fetch(`${SUPPLIER_CARTS_API}/history?supplier_id=${supplierId}`);
-    const historyData = await historyRes.json();
-    if (historyRes.ok) {
-      setCartHistory(historyData.history || []);
-    } else {
-      console.warn("⚠️ Could not load cart history.");
-      setCartHistory([]);
-    }
-
   } catch (err) {
     console.error("❌ Error opening supplier cart:", err);
-    alert("Something went wrong while loading the cart.");
+  }
+};
+
+
+// ✅ Fetch cart items
+const fetchCartItems = async (cartId) => {
+  try {
+    const data = await secureFetch(`/supplier-carts/items?cart_id=${cartId}`);
+    setCartItems(Array.isArray(data?.items) ? data.items : []);
+
+console.log("🔗 fetch from:", API_URL, "repeat_days:", data.repeat_days);
+
+    // ✅ Only update repeatDays if backend actually has them
+    if (Array.isArray(data.repeat_days) && data.repeat_days.length > 0) {
+      setRepeatDays(data.repeat_days);
+    } else {
+      console.log("⚠️ Skipping repeatDays update, keeping local:", repeatDays);
+    }
+
+    if (data.repeat_type) {
+      setRepeatType(data.repeat_type);
+    }
+    if (typeof data.auto_confirm === "boolean") {
+      setAutoOrder(data.auto_confirm);
+    }
+    if (data.scheduled_at) {
+      setScheduledAt(data.scheduled_at);
+    }
+  } catch (error) {
+    console.error("❌ Error fetching cart items:", error);
+    setCartItems([]);
   }
 };
 
 
 
-
-
-
-  const fetchCartItems = async (cartId) => {
-    try {
-      const res = await fetch(`${SUPPLIER_CART_ITEMS_API}?cart_id=${cartId}`);
-      const data = await res.json();
-      if (res.ok) {
-        setCartItems(data.items);
-      } else {
-        setCartItems([]);
-      }
-    } catch (error) {
-      console.error("Error fetching cart items:", error);
-      setCartItems([]);
-    }
-  };
-
-  const confirmSupplierCart = async (cartId) => {
-  if (!scheduledAt) {
-    toast.error("❗ Please select a schedule date and time.");
-    return;
-  }
+// ✅ Confirm supplier cart
+const confirmSupplierCart = async (cartId) => {
+  if (!cartId || !selectedSupplier?.id) return;
 
   try {
-    const payload = { scheduled_at: scheduledAt };
-
-    if (repeatType && repeatType !== "none") payload.repeat_type = repeatType;
-    if (repeatDays?.length > 0) payload.repeat_days = repeatDays;
-    if (typeof autoOrder === "boolean") payload.auto_confirm = autoOrder;
-
-    const res = await fetch(`${API_URL}/api/supplier-carts/${cartId}/confirm`, {
+    const res = await secureFetch(`/supplier-carts/${cartId}/confirm`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        scheduled_at: scheduledAt,
+        repeat_type: repeatType,
+        repeat_days: repeatDays,
+        auto_confirm: autoOrder,
+      }),
     });
 
-    const data = await res.json();
-    if (res.ok) {
-      toast.success("✅ Cart confirmed with schedule!");
-    } else {
-      toast.error(data.error || "Failed to confirm cart.");
-    }
+    if (!res.cart) return;
+    const confirmedCart = res.cart;
+
+    // Reload using the confirmed cart id
+const latest = await secureFetch(
+     `/supplier-carts/scheduled?supplier_id=${selectedSupplier.id}`
+   );
+
+    if (latest.scheduled_at) setScheduledAt(latest.scheduled_at);
+    if (latest.repeat_type) setRepeatType(latest.repeat_type);
+    if (Array.isArray(latest.repeat_days)) setRepeatDays(latest.repeat_days);
+    if (typeof latest.auto_confirm === "boolean") setAutoOrder(latest.auto_confirm);
+    setCartItems(latest.items || []);
   } catch (err) {
     console.error("❌ Error confirming cart:", err);
-    toast.error("❌ Network error confirming cart.");
   }
 };
 
 
 
-
-  const sendSupplierCart = async (cartId) => {
+// ✅ Send supplier cart
+const sendSupplierCart = async (cartId) => {
   if (!scheduledAt) {
     toast.error("❌ Please select a schedule date and time first!");
     return;
@@ -225,42 +236,36 @@ const openSupplierCart = async (supplierId) => {
   try {
     setSending(true);
 
-    // ✅ Auto-confirm only if enabled
+    // Auto-confirm if enabled
     if (autoOrder) {
       const payload = { scheduled_at: scheduledAt };
-
       if (repeatType && repeatType !== "none") payload.repeat_type = repeatType;
       if (repeatDays?.length > 0) payload.repeat_days = repeatDays;
       if (typeof autoOrder === "boolean") payload.auto_confirm = autoOrder;
 
-      const confirmRes = await fetch(`${SUPPLIER_CARTS_API}/${cartId}/confirm`, {
+      const confirmRes = await secureFetch(`/supplier-carts/${cartId}/confirm`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const confirmData = await confirmRes.json();
-      if (!confirmRes.ok) {
-        toast.error(confirmData.error || "❌ Failed to confirm cart before sending.");
+      if (!confirmRes?.cart) {
+        toast.error(confirmRes?.error || "❌ Failed to confirm cart before sending.");
         return;
       }
     }
 
     // ✅ Send the cart
-    const res = await fetch(`${SUPPLIER_CARTS_API}/${cartId}/send`, {
+    const sendRes = await secureFetch(`/supplier-carts/${cartId}/send`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scheduled_at: scheduledAt }),
     });
 
-    const data = await res.json();
-
-    if (res.ok) {
+    if (sendRes?.success) {
       toast.success("✅ Order sent successfully!");
       setShowCartModal(false);
       await fetchStock(); // 🔄 Refresh stock
     } else {
-      toast.error(data.error || "❌ Failed to send order.");
+      toast.error(sendRes?.error || "❌ Failed to send order.");
     }
   } catch (error) {
     console.error("❌ Error sending cart:", error);
@@ -283,9 +288,12 @@ const openSupplierCart = async (supplierId) => {
     });
   };
 
-
   useEffect(() => {
-    fetchSuppliers();
+    secureFetch("/suppliers")
+      .then((data) => {
+        if (Array.isArray(data)) setSuppliers(data);
+      })
+      .catch((err) => console.error("❌ Error fetching suppliers:", err));
   }, []);
 
   // Calculate unit price for the new transaction
@@ -301,44 +309,35 @@ const openSupplierCart = async (supplierId) => {
     return "0.00";
   };
 
-  const fetchSuppliers = async () => {
+const fetchSuppliers = async () => {
     try {
-      const response = await fetch(SUPPLIERS_API);
-      if (!response.ok) throw new Error("Failed to fetch suppliers");
-      const data = await response.json();
-      setSuppliers(data);
+      const data = await secureFetch("/suppliers");
+      if (Array.isArray(data)) setSuppliers(data);
+      else setSuppliers([]);
     } catch (error) {
-      console.error("Error fetching suppliers:", error);
+      console.error("❌ Error fetching suppliers:", error);
+      setSuppliers([]);
     }
   };
 
   const fetchTransactions = async (supplierId) => {
     try {
-      const response = await fetch(`${SUPPLIERS_API}/${supplierId}/transactions`);
-      if (!response.ok) throw new Error("Failed to fetch transactions");
-      const data = await response.json();
-      setTransactions(data);
+      const data = await secureFetch(`/suppliers/${supplierId}/transactions`);
+      setTransactions(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("Error fetching transactions:", error);
+      console.error("❌ Error fetching transactions:", error);
+      setTransactions([]);
     }
   };
 
-  const fetchSupplierDetails = async (supplierId, retries = 3) => {
+  const fetchSupplierDetails = async (supplierId) => {
     try {
       if (!supplierId) return;
-      const response = await fetch(`${SUPPLIERS_API}/${supplierId}`);
-      if (!response.ok) {
-        if (retries > 0) {
-          setTimeout(() => fetchSupplierDetails(supplierId, retries - 1), 500);
-          return;
-        }
-        throw new Error("Supplier still not found after retry.");
-      }
-      const data = await response.json();
+      const data = await secureFetch(`/suppliers/${supplierId}`);
+      if (!data?.id) throw new Error("Supplier not found");
       setSelectedSupplier(data);
     } catch (error) {
-      console.error("Error fetching supplier details:", error);
-      alert("Supplier not found. It may have been deleted.");
+      console.error("❌ Error fetching supplier details:", error);
       setSelectedSupplier(null);
     }
   };
@@ -363,22 +362,19 @@ const handleAddTransaction = async (e) => {
     return;
   }
 
-  const { ingredient, quantity, unit, total_cost, paymentStatus, paymentMethod } = newTransaction;
+  const { ingredient, quantity, unit, total_cost, paymentMethod } = newTransaction;
   if (!ingredient || !quantity || !total_cost) {
     alert("Please enter all required fields.");
     return;
   }
 
   let pricePerUnit = 0;
-  if (unit === "kg" || unit === "lt") {
+  if (unit === "kg" || unit === "lt" || unit === "piece") {
     pricePerUnit = total_cost / quantity;
   } else if (unit === "g" || unit === "ml") {
     pricePerUnit = (total_cost / quantity) * 1000;
-  } else if (unit === "piece") {
-    pricePerUnit = total_cost / quantity;
   }
 
-  // ✅ Use FormData to include file
   const formData = new FormData();
   formData.append("supplier_id", selectedSupplier.id);
   formData.append("ingredient", ingredient);
@@ -394,20 +390,17 @@ const handleAddTransaction = async (e) => {
   }
 
   try {
-    const response = await fetch(TRANSACTIONS_API, {
+    const result = await secureFetch("/suppliers/transactions", {
       method: "POST",
-      body: formData,
+      body: formData, // ✅ FormData, not JSON
     });
 
-    const result = await response.json();
-
-    if (response.ok) {
-      alert("Order added successfully!");
+    if (result?.success) {
+      toast.success("✅ Order added successfully!");
       await fetchTransactions(selectedSupplier.id);
       await fetchSupplierDetails(selectedSupplier.id);
       await fetchSuppliers();
 
-      // ✅ Reset form
       setNewTransaction({
         ingredient: "",
         quantity: "",
@@ -416,96 +409,52 @@ const handleAddTransaction = async (e) => {
         paymentStatus: "Due",
         paymentMethod: "Cash",
       });
-      setReceiptFile(null); // reset uploaded file
+      setReceiptFile(null);
     } else {
-      alert("Error adding transaction.");
+      toast.error(result?.error || "❌ Error adding transaction.");
     }
   } catch (error) {
-    console.error("Error adding transaction:", error);
-    alert("Network error. Please try again.");
+    console.error("❌ Error adding transaction:", error);
+    toast.error("❌ Network error. Please try again.");
   }
 };
 
 
-  const handlePayment = async () => {
-  if (!selectedSupplier || !paymentAmount || !paymentMethod) {
-    alert("Please enter a payment amount and select a payment method.");
-    return;
-  }
-
-  const amountToPay = parseFloat(paymentAmount);
-  const totalDue = parseFloat(selectedSupplier.total_due);
-
-  if (isNaN(amountToPay) || amountToPay <= 0) {
-    alert("Please enter a valid payment amount.");
-    return;
-  }
-
-  // ✅ Prevent overpayment
-  if (amountToPay > totalDue) {
-    alert(`You cannot pay more than the total due (${totalDue.toFixed(2)}₺).`);
-    return;
-  }
-
-  try {
-    const response = await fetch(`${SUPPLIERS_API}/${selectedSupplier.id}/pay`, {
-
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        payment: amountToPay,
-        payment_method: paymentMethod,
-      }),
-    });
-
-    if (!response.ok) {
-      const data = await response.json();
-      alert(`Error: ${data.error || "Failed to update payment"}`);
-      return;
+const handlePayment = async () => {
+    if (!selectedSupplier?.id || !paymentAmount) return;
+    try {
+      const res = await secureFetch(`/suppliers/${selectedSupplier.id}/pay`, {
+        method: "PUT",
+        body: JSON.stringify({
+          payment: parseFloat(paymentAmount),
+          payment_method: paymentMethod,
+        }),
+      });
+      if (res?.message) {
+        toast.success("💳 Payment updated!");
+        await fetchTransactions(selectedSupplier.id);
+        await fetchSupplierDetails(selectedSupplier.id);
+        await fetchSuppliers();
+      } else {
+        toast.error(res?.error || "❌ Payment failed");
+      }
+    } catch (err) {
+      console.error("❌ Error processing payment:", err);
+      toast.error("❌ Payment failed");
     }
-
-    alert("Payment updated successfully!");
-
-    // ✅ Fetch updated supplier info
-    const updatedSupplierResponse = await fetch(`${SUPPLIERS_API}/${selectedSupplier.id}`);
-    const updatedSupplier = await updatedSupplierResponse.json();
-
-    setSelectedSupplier((prev) => ({
-      ...prev,
-      total_due: updatedSupplier.total_due,
-    }));
-
-    await fetchTransactions(selectedSupplier.id);
-    await fetchSuppliers();
-
-    // ✅ Reset payment form
-    setPaymentAmount("");
-    setPaymentMethod("Cash");
-
-    // ✅ Auto-close if fully paid!
-    if (updatedSupplier.total_due <= 0) {
-      setPaymentModalOpen(false);
-    }
-
-  } catch (error) {
-    console.error("Network or server error:", error);
-    alert("Network error. Please try again.");
-  }
-};
+  };  
 
 
 
   const handleAddSupplier = async () => {
     try {
-      const response = await fetch(SUPPLIERS_API, {
+      const created = await secureFetch("/suppliers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newSupplier),
       });
-      if (!response.ok) throw new Error("Failed to add supplier");
-      const createdSupplier = await response.json();
-      if (!createdSupplier.id) throw new Error("Supplier ID is missing!");
-      await fetchSupplierDetails(createdSupplier.id);
+      if (!created?.id) throw new Error("Supplier create failed");
+
+      await fetchSupplierDetails(created.id);
       await fetchSuppliers();
       setTransactions([]);
       setNewSupplier({
@@ -519,29 +468,24 @@ const handleAddTransaction = async (e) => {
       });
       setSupplierModalOpen(false);
     } catch (error) {
-      console.error("Error adding supplier:", error);
+      console.error("❌ Error adding supplier:", error);
       alert("Something went wrong. Please refresh and try again.");
     }
   };
 
   const handleUpdateSupplier = async () => {
-    if (!selectedSupplier || !selectedSupplier.id) {
-      alert("Missing Supplier ID. Please refresh and try again.");
-      return;
-    }
+    if (!selectedSupplier?.id) return;
     try {
-      const response = await fetch(`${SUPPLIERS_API}/${selectedSupplier.id}`, {
+      await secureFetch(`/suppliers/${selectedSupplier.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(selectedSupplier),
       });
-      if (!response.ok) throw new Error("Failed to update supplier.");
-      alert("Supplier updated successfully!");
+      toast.success("✅ Supplier updated successfully!");
       await fetchSuppliers();
       setEditModalOpen(false);
     } catch (error) {
-      console.error("Error updating supplier:", error);
-      alert("Failed to update supplier. Please try again.");
+      console.error("❌ Error updating supplier:", error);
+      toast.error("❌ Failed to update supplier.");
     }
   };
 
@@ -568,43 +512,38 @@ const handleAddTransaction = async (e) => {
   };
 
   const handleClearTransactions = async () => {
-    if (!selectedSupplier) return;
-    const confirm = window.confirm("Are you sure you want to delete ALL transactions for this supplier?");
-    if (!confirm) return;
+    if (!selectedSupplier?.id) return;
+    if (!window.confirm("Are you sure you want to clear all transactions?")) return;
     try {
-      const response = await fetch(`${SUPPLIERS_API}/${selectedSupplier.id}/transactions`, {
+      await secureFetch(`/suppliers/${selectedSupplier.id}/transactions`, {
         method: "DELETE",
       });
-      if (!response.ok) throw new Error("Failed to clear transactions.");
-      alert("All transactions cleared.");
-      fetchTransactions(selectedSupplier.id);
-      fetchSupplierDetails(selectedSupplier.id);
+      toast.success("🧹 All transactions cleared.");
+      await fetchTransactions(selectedSupplier.id);
+      await fetchSupplierDetails(selectedSupplier.id);
     } catch (err) {
-      console.error(err);
-      alert("Something went wrong while clearing transactions.");
+      console.error("❌ Error clearing transactions:", err);
+      toast.error("❌ Failed to clear transactions.");
     }
   };
-
   const handleDeleteSupplier = async () => {
-  if (!selectedSupplier?.id) return;
-
-  try {
-    const res = await fetch(`${SUPPLIERS_API}/${selectedSupplier.id}`, {
-      method: "DELETE",
-    });
-
-    if (res.ok) {
-      toast.success("🚮 Supplier deleted successfully!");
-      setEditModalOpen(false);
-      fetchSuppliers(); // Refresh supplier list if you have this
-    } else {
-      toast.error("❌ Failed to delete supplier.");
+    if (!selectedSupplier?.id) return;
+    try {
+      const res = await secureFetch(`/suppliers/${selectedSupplier.id}`, {
+        method: "DELETE",
+      });
+      if (res?.message) {
+        toast.success("🚮 Supplier deleted successfully!");
+        setEditModalOpen(false);
+        fetchSuppliers();
+      } else {
+        toast.error("❌ Failed to delete supplier.");
+      }
+    } catch (err) {
+      console.error("❌ Error deleting supplier:", err);
+      toast.error("❌ Server error while deleting supplier.");
     }
-  } catch (err) {
-    console.error("Error deleting supplier:", err);
-    toast.error("❌ Server error while deleting supplier.");
-  }
-};
+  };
 
 
   return (
@@ -1284,6 +1223,8 @@ const handleAddTransaction = async (e) => {
     {/* --- Supplier Cart Modal --- */}
     {showCartModal && (
       <SupplierCartModal
+        supplierId={selectedSupplier?.id}
+        cartId={cartId}
         show={showCartModal}
         cartItems={cartItems}
         onClose={() => setShowCartModal(false)}
@@ -1291,7 +1232,7 @@ const handleAddTransaction = async (e) => {
         scheduledAt={scheduledAt}
         setScheduledAt={setScheduledAt}
         sending={sending}
-        onConfirm={() => confirmSupplierCart(cartId, scheduledAt)}
+        onConfirm={() => confirmSupplierCart(cartId)}
         onSend={() => sendSupplierCart(cartId)}
         autoOrder={autoOrder}
         setAutoOrder={setAutoOrder}

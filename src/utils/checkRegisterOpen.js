@@ -1,10 +1,9 @@
-const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../utils/secureFetch";
 
 export const checkRegisterOpen = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/reports/cash-register-status`);
-    const json = await res.json();
-    return json.status === "open";
+    const data = await secureFetch(`/reports/cash-register-status`);
+    return data.status === "open";
   } catch (err) {
     console.error("❌ Failed to check register status:", err);
     return false;

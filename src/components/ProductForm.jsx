@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  INGREDIENT_PRICES_API,
-  EXTRAS_GROUPS_API,
-} from "../utils/api";
+import { INGREDIENT_PRICES_API } from "../utils/api";
+
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import secureFetch from "../utils/secureFetch";
@@ -53,7 +51,7 @@ export default function ProductForm({ onSuccess, initialData = null }) {
     promo_start: "",
     promo_end: "",
     // IMPORTANT: store group IDs here
-    selectedExtrasGroup: [],
+    selected_extras_group: [],
   });
   const [estimatedCost, setEstimatedCost] = useState(0);
 
@@ -65,18 +63,18 @@ export default function ProductForm({ onSuccess, initialData = null }) {
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [availableIngredients, setAvailableIngredients] = useState([]);
-  useEffect(() => {
-  fetch(`${API_URL}/api/suppliers/ingredients`)
-    .then(res => res.json())
+useEffect(() => {
+  secureFetch("/suppliers/ingredients")
     .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
     .catch(() => setAvailableIngredients([]));
 }, []);
+
   // ---------- helpers ----------
   const handleUpload = async () => {
     if (!imageFile) return "";
     const formData = new FormData();
     formData.append("file", imageFile);
-    const res = await fetch(`${API_URL}/api/upload`, { method: "POST", body: formData });
+    const res = await fetch(`${API_URL}/upload`, { method: "POST", body: formData });
     const data = await res.json();
     if (!res.ok || !data.url) {
       toast.error("Image upload failed!");
@@ -90,21 +88,52 @@ export default function ProductForm({ onSuccess, initialData = null }) {
   const getImageSource = () => imageUrl || imagePreview || null;
 
   // ---------- effects ----------
-  useEffect(() => {
-    fetch(INGREDIENT_PRICES_API)
-      .then(res => res.json())
-      .then(data => setIngredientPrices(Array.isArray(data) ? data : []))
-      .catch(() => setIngredientPrices([]));
-  }, []);
-
-  // fetch server-side product costs when editing
-// fetch server-side product costs when editing
+// ✅ Fetch tenant-safe ingredients, merge duplicates, and format names nicely
 useEffect(() => {
-  if (!initialData?.id) return;
-  if (!product.ingredients || product.ingredients.length === 0) return;
+  secureFetch("/suppliers/ingredients")
+    .then(data => {
+      if (!Array.isArray(data)) return setIngredientPrices([]);
 
-  fetch(`${API_URL}/api/products/costs`)
-    .then(res => res.json())
+      // Step 1: normalize all
+      const normalized = data.map(item => ({
+        name: item.name?.trim(),
+        lower: item.name?.trim().toLowerCase(),
+        unit: item.unit?.trim(),
+        price_per_unit: item.price_per_unit ?? 0,
+      }));
+
+      // Step 2: merge duplicates (case-insensitive)
+      const mergedMap = new Map();
+      for (const ing of normalized) {
+        if (!ing.lower) continue;
+        if (!mergedMap.has(ing.lower)) {
+          mergedMap.set(ing.lower, {
+            name:
+              ing.name.charAt(0).toUpperCase() + ing.name.slice(1).toLowerCase(), // Title Case
+            unit: ing.unit,
+            price_per_unit: ing.price_per_unit,
+          });
+        } else {
+          const existing = mergedMap.get(ing.lower);
+          if (!existing.unit && ing.unit) existing.unit = ing.unit;
+        }
+      }
+
+      const mergedList = Array.from(mergedMap.values()).sort((a, b) =>
+        a.name.localeCompare(b.name, "en", { sensitivity: "base" })
+      );
+
+      setIngredientPrices(mergedList);
+    })
+    .catch(() => setIngredientPrices([]));
+}, []);
+
+
+
+
+useEffect(() => {
+  if (!initialData?.id || !product.ingredients?.length) return;
+  secureFetch("/products/costs")
     .then(data => {
       if (data && data[initialData.id] !== undefined) {
         setEstimatedCost(data[initialData.id]);
@@ -112,14 +141,12 @@ useEffect(() => {
     })
     .catch(() => {});
 }, [initialData, product.ingredients]);
-
   useEffect(() => {
-    fetch(EXTRAS_GROUPS_API)
-      .then(res => res.json())
-      .then(data => {
+secureFetch("/products/extras-group")
+    .then(data => {
         const normalized = (Array.isArray(data) ? data : []).map(g => ({
           ...g,
-          group_name: g.group_name || g.groupName,
+          group_name: g.name || g.group_name || g.groupName,
           items: Array.isArray(g.items)
             ? g.items.map(i => ({
                 ...i,
@@ -140,7 +167,8 @@ useEffect(() => {
   useEffect(() => {
     if (!product.category) return;
     const cat = product.category.trim().toLowerCase();
-    fetch(`${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`)
+    fetch(`${API_URL}/category-images?category=${encodeURIComponent(cat)}`)
+
       .then(res => res.json())
       .then(data => {
         if (data.length > 0 && data[0].image) {
@@ -163,55 +191,72 @@ useEffect(() => {
   (product.ingredients || []).forEach((ing) => {
     if (!ing.ingredient || !ing.quantity || !ing.unit) return;
 
-    // find latest supplier price for this ingredient
-    const match = availableIngredients.find(ai => ai.name === ing.ingredient);
+    // ✅ Case-insensitive match
+    const match = ingredientPrices.find(
+      ai => ai.name?.trim().toLowerCase() === ing.ingredient?.trim().toLowerCase()
+    );
     if (!match) return;
 
     const basePrice = match.price ?? match.price_per_unit ?? 0;
-  const converted = convertPrice(basePrice, normalizeUnit(match.unit), normalizeUnit(ing.unit));
+    const converted = convertPrice(
+      basePrice,
+      normalizeUnit(match.unit),
+      normalizeUnit(ing.unit)
+    );
     if (converted !== null) {
       total += parseFloat(ing.quantity) * converted;
     }
   });
 
   setEstimatedCost(total);
-}, [product.ingredients, availableIngredients]);
+}, [product.ingredients, ingredientPrices]);
+
+
+
 
   // hydrate initial data
-  useEffect(() => {
-    if (!initialData) return;
+useEffect(() => {
+  if (!initialData) return;
 
-    // normalize image field for preview
-    const normalized = {
-      ...initialData,
-      image: initialData.image || initialData.image_url || null,
-    };
+  const normalizedExtras = Array.isArray(initialData.extras)
+    ? initialData.extras.map((e) => {
+        if (typeof e === "string") {
+          try { e = JSON.parse(e); } catch { return null; }
+        }
+        return { name: e?.name || "", extraPrice: Number(e?.extraPrice ?? e?.price) || 0 };
+      }).filter(Boolean)
+    : [];
 
-    // Convert selectedExtrasGroup possibly coming as names → to IDs
-    // (happens if older records saved strings)  (Old code saved names: )
-    const currentGroups = Array.isArray(normalized.selectedExtrasGroup)
-      ? normalized.selectedExtrasGroup
-      : [];
+  const normalized = {
+    ...initialData,
+    image: initialData.image || initialData.image_url || null,
+    ingredients: Array.isArray(initialData.ingredients) ? initialData.ingredients : [],
+    extras: normalizedExtras,
+  };
 
-    const mappedToIds = currentGroups.map(g => {
-      // if it's already a number, keep it
-      if (typeof g === "number") return g;
-      // if it's a string (old data), find group by title
-      const byName = extrasGroups.find(x => x.group_name === g);
-      return byName ? byName.id : null;
-    }).filter(x => Number.isFinite(x));
+  const currentGroups = Array.isArray(normalized.selected_extras_group)
+    ? normalized.selected_extras_group
+    : [];
 
-    setProduct(prev => ({
-      ...prev,
-      ...normalized,
-      selectedExtrasGroup: mappedToIds,
-    }));
+  const mappedToIds = currentGroups.map(g => {
+    if (typeof g === "number") return g;
+    const byName = extrasGroups.find(x => x.group_name === g);
+    return byName ? byName.id : null;
+  }).filter(x => Number.isFinite(x));
 
-    if (normalized.image) {
-      setImagePreview(normalized.image);
-      setImageUrl(normalized.image);
-    }
-  }, [initialData, extrasGroups]);
+  setProduct(prev => ({
+    ...prev,
+    ...normalized,
+    selected_extras_group: mappedToIds,
+  }));
+
+  if (normalized.image) {
+    setImagePreview(normalized.image);
+    setImageUrl(normalized.image);
+  }
+}, [initialData, extrasGroups]);
+
+
 
   // ---------- handlers ----------
   const handleChange = (e) => {
@@ -291,98 +336,114 @@ const recalcEstimatedCost = (ingredients) => {
   }, [extrasGroups]);
 
   // ---------- submit ----------
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+// ---------- submit ----------
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-    if (!product.name.trim() || !product.price || Number(product.price) <= 0) {
-      toast.error("Product name and price required");
-      return;
-    }
-
-    // upload if needed
-    let uploadedImageUrl = imageUrl;
-    if (imageFile) {
-      uploadedImageUrl = await handleUpload();
-      if (!uploadedImageUrl) {
-        toast.error("Image upload failed!");
-        return;
-      }
-    }
-
-    // ensure group IDs are numeric
-    const groupIds = (product.selectedExtrasGroup || [])
-      .map(n => Number(n))
-      .filter(n => Number.isFinite(n));
-
-const payload = {
-  ...product,
-  image: uploadedImageUrl || product.image || "",
-  price: product.price ? Number(product.price) : 0,
-  preparation_time: product.preparation_time ? Number(product.preparation_time) : null,
-  discount_value:
-    product.discount_value !== undefined && product.discount_value !== ""
-      ? Number(product.discount_value)
-      : 0,
-  ingredients: product.ingredients || [],
-  extras: product.extras || [],
-  selected_extras_group: groupIds, // ✅ use snake_case for DB
-};
-
-
-
-try {
-  const isEdit = !!initialData?.id;
-  const method = isEdit ? "PUT" : "POST";
-  const endpoint = isEdit
-    ? `/products/${initialData.id}`
-    : `/products`;
-
-  // secureFetch already returns parsed JSON data
-  const data = await secureFetch(endpoint, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (data?.error) {
-    toast.error(data.error || "Failed to save product");
+  if (!product.name.trim() || !product.price || Number(product.price) <= 0) {
+    toast.error("Product name and price required");
     return;
   }
 
-  toast.success(isEdit ? "✅ Product updated!" : "✅ Product saved!");
+  // upload if needed
+  let uploadedImageUrl = imageUrl;
+  if (imageFile) {
+    uploadedImageUrl = await handleUpload();
+    if (!uploadedImageUrl) {
+      toast.error("Image upload failed!");
+      return;
+    }
+  }
 
-  // reset form
-setProduct({
-  name: "",
-  price: "",
-  category: "",
-  preparation_time: "",
-  description: "",
-  image: null,
-  ingredients: [],
-  extras: [],
-  discount_type: "none",
-  discount_value: "",
-  visible: true,
-  tags: "",
-  allergens: "",
-  promo_start: "",
-  promo_end: "",
-  selected_extras_group: [], // ✅ match DB
-});
+  // ensure group IDs are numeric
+  const groupIds = (product.selected_extras_group || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
 
-  setImageFile(null);
-  setImageUrl("");
-  setImagePreview(null);
-
-  onSuccess && onSuccess();
-} catch (err) {
-  console.error("❌ Product save error:", err);
-  toast.error("Product save error");
-}
-
-
+  const payload = {
+    ...product,
+    image: uploadedImageUrl || product.image || "",
+    price: product.price ? Number(product.price) : 0,
+    preparation_time: product.preparation_time
+      ? Number(product.preparation_time)
+      : null,
+    discount_value:
+      product.discount_value !== undefined && product.discount_value !== ""
+        ? Number(product.discount_value)
+        : 0,
+    ingredients: Array.isArray(product.ingredients)
+      ? product.ingredients
+      : [],
+    extras: (product.extras || [])
+      .map((e) => {
+        // normalize strings to objects
+        if (typeof e === "string") {
+          try {
+            e = JSON.parse(e);
+          } catch {
+            return null;
+          }
+        }
+        return {
+          name: e?.name || "",
+          extraPrice: Number(e?.extraPrice ?? e?.price) || 0,
+          amount: Number(e?.amount ?? 1),
+          unit: e?.unit || "",
+        };
+      })
+      .filter(Boolean),
+    selected_extras_group: groupIds,
   };
+
+  try {
+    const isEdit = !!initialData?.id;
+    const method = isEdit ? "PUT" : "POST";
+    const endpoint = isEdit ? `/products/${initialData.id}` : `/products`;
+
+    const data = await secureFetch(endpoint, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (data?.error) {
+      toast.error(data.error || "Failed to save product");
+      return;
+    }
+
+    toast.success(isEdit ? "✅ Product updated!" : "✅ Product saved!");
+
+    // reset form
+    setProduct({
+      name: "",
+      price: "",
+      category: "",
+      preparation_time: "",
+      description: "",
+      image: null,
+      ingredients: [],
+      extras: [],
+      discount_type: "none",
+      discount_value: "",
+      visible: true,
+      tags: "",
+      allergens: "",
+      promo_start: "",
+      promo_end: "",
+      selected_extras_group: [],
+    });
+
+    setImageFile(null);
+    setImageUrl("");
+    setImagePreview(null);
+
+    onSuccess && onSuccess();
+  } catch (err) {
+    console.error("❌ Product save error:", err);
+    toast.error("Product save error");
+  }
+};
+
 
   // ---------- UI ----------
 return (
@@ -397,115 +458,115 @@ return (
       <div className="flex-1 space-y-6">
         {/* Basic Info */}
         <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 space-y-4">
-  <h3 className="text-lg font-semibold">{t("Basic Information")}</h3>
-  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-    {/* Name always spans full width */}
-    <label className="block lg:col-span-2">
-      <span className="font-medium">{t("Name")}</span>
-      <input
-        type="text"
-        name="name"
-        value={product.name}
-        onChange={handleChange}
-        className="w-full p-3 mt-1 rounded-xl border"
-        required
-      />
-    </label>
+          <h3 className="text-lg font-semibold">{t("Basic Information")}</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Name always spans full width */}
+            <label className="block lg:col-span-2">
+              <span className="font-medium">{t("Name")}</span>
+              <input
+                type="text"
+                name="name"
+                value={product.name ?? ""}
+                onChange={handleChange}
+                className="w-full p-3 mt-1 rounded-xl border"
+                required
+              />
+            </label>
 
-    {/* LEFT COLUMN: Category + Category Image */}
-    <div>
-      <label className="block">
-        <span className="font-medium">{t("Category")}</span>
-        <input
-          type="text"
-          name="category"
-          value={product.category}
-          onChange={handleChange}
-          className="w-full p-3 mt-1 rounded-xl border"
-        />
-      </label>
+            {/* LEFT COLUMN: Category + Category Image */}
+            <div>
+              <label className="block">
+                <span className="font-medium">{t("Category")}</span>
+                <input
+                  type="text"
+                  name="category"
+                  value={product.category ?? ""}
+                  onChange={handleChange}
+                  className="w-full p-3 mt-1 rounded-xl border"
+                />
+              </label>
 
-      <label className="block mt-3">
-        <span className="font-medium">{t("Category Image")}</span>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={async (e) => {
-            const file = e.target.files[0];
-            if (!file || !product.category) {
-              toast.error(t("Category required first!"));
-              return;
-            }
-            const fd = new FormData();
-            fd.append("image", file);
-            fd.append("category", product.category.trim().toLowerCase());
-            try {
-              const res = await fetch(`${API_URL}/api/category-images`, {
-                method: "POST",
-                body: fd,
-              });
-              if (!res.ok) {
-                toast.error("Upload failed");
-                return;
-              }
-              toast.success("Category image uploaded!");
-              const cat = product.category.trim().toLowerCase();
-              const resp = await fetch(
-                `${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`
-              );
-              const data = await resp.json();
-              if (data.length > 0 && data[0].image) {
-                const img = data[0].image;
-                setCategoryImagePreview(
-                  img.startsWith("http") ? img : `${API_URL}/uploads/${img}`
-                );
-              }
-            } catch (err) {
-              toast.error("Category upload failed!");
-            }
-          }}
-          className="w-full mt-1"
-        />
-      </label>
+              <label className="block mt-3">
+                <span className="font-medium">{t("Category Image")}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files[0];
+                    if (!file || !product.category) {
+                      toast.error(t("Category required first!"));
+                      return;
+                    }
+                    const fd = new FormData();
+                    fd.append("image", file);
+                    fd.append("category", product.category.trim().toLowerCase());
+                    try {
+                      const res = await fetch(`${API_URL}/category-images`, {
+                        method: "POST",
+                        body: fd,
+                      });
+                      if (!res.ok) {
+                        toast.error("Upload failed");
+                        return;
+                      }
+                      toast.success("Category image uploaded!");
+                      const cat = product.category.trim().toLowerCase();
+                      const resp = await fetch(
+                        `${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`
+                      );
+                      const data = await resp.json();
+                      if (data.length > 0 && data[0].image) {
+                        const img = data[0].image;
+                        setCategoryImagePreview(
+                          img.startsWith("http") ? img : `${API_URL}/uploads/${img}`
+                        );
+                      }
+                    } catch (err) {
+                      toast.error("Category upload failed!");
+                    }
+                  }}
+                  className="w-full mt-1"
+                />
+              </label>
 
-      {categoryImagePreview && (
-        <div className="mt-2 flex items-center gap-3">
-          <img
-            src={categoryImagePreview}
-            alt="Category"
-            className="w-16 h-16 rounded-lg object-cover border shadow"
-          />
-          <span className="text-sm text-gray-500">{t("Category Preview")}</span>
-        </div>
-      )}
-    </div>
+              {categoryImagePreview && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img
+                    src={categoryImagePreview}
+                    alt="Category"
+                    className="w-16 h-16 rounded-lg object-cover border shadow"
+                  />
+                  <span className="text-sm text-gray-500">{t("Category Preview")}</span>
+                </div>
+              )}
+            </div>
 
-    {/* RIGHT COLUMN: Price + Prep Time */}
-    <div>
-      <label className="block">
-        <span className="font-medium">{t("Price (₺)")}</span>
-        <input
-          type="number"
-          name="price"
-          value={product.price}
-          onChange={handleChange}
-          className="w-full p-3 mt-1 rounded-xl border"
-          required
-        />
-      </label>
+            {/* RIGHT COLUMN: Price + Prep Time */}
+            <div>
+              <label className="block">
+                <span className="font-medium">{t("Price (₺)")}</span>
+                <input
+                  type="number"
+                  name="price"
+                  value={product.price ?? ""}
+                  onChange={handleChange}
+                  className="w-full p-3 mt-1 rounded-xl border"
+                  required
+                />
+              </label>
 
-      <label className="block mt-3">
-        <span className="font-medium">{t("Preparation Time (min)")}</span>
-        <input
-          type="number"
-          name="preparation_time"
-          value={product.preparation_time}
-          onChange={handleChange}
-          className="w-full p-3 mt-1 rounded-xl border"
-        />
-      </label>
-    </div>
-  </div>
+              <label className="block mt-3">
+                <span className="font-medium">{t("Preparation Time (min)")}</span>
+                <input
+                  type="number"
+                  name="preparation_time"
+                  value={product.preparation_time ?? ""}
+                  onChange={handleChange}
+                  className="w-full p-3 mt-1 rounded-xl border"
+                />
+              </label>
+            </div>
+          </div>
 
           {/* Product Image Upload */}
           <label className="block mt-3">
@@ -524,13 +585,14 @@ return (
 
 
           {/* Promotion + visible */}
+ {/* Promotion + visible */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <label className="block">
               <span className="font-medium">{t("Promotion Start Date")}</span>
               <input
                 type="date"
                 name="promo_start"
-                value={product.promo_start}
+                value={product.promo_start ?? ""}
                 onChange={handleChange}
                 className="w-full p-3 mt-1 rounded-xl border"
               />
@@ -541,7 +603,7 @@ return (
               <input
                 type="date"
                 name="promo_end"
-                value={product.promo_end}
+                value={product.promo_end ?? ""}
                 onChange={handleChange}
                 className="w-full p-3 mt-1 rounded-xl border"
               />
@@ -552,7 +614,7 @@ return (
             <input
               type="checkbox"
               name="visible"
-              checked={product.visible}
+              checked={!!product.visible}
               onChange={handleChange}
               className="w-5 h-5 rounded"
             />
@@ -593,43 +655,52 @@ return (
                     key={i}
                     className="flex flex-wrap items-center gap-2 bg-gray-50 dark:bg-gray-800 p-3 rounded-xl border"
                   >
-                    <select
-                      name="ingredient"
-                      value={ing.ingredient}
-                      onChange={(e) => handleIngredientChange(i, e)}
-                      className="p-2 rounded-xl border flex-1 min-w-[120px]"
-                    >
-                      <option value="">{t("Select Ingredient")}</option>
-                      {ingredientPrices.map((item, idx) => (
-                        <option key={idx} value={item.name}>
-                          {item.name} ({item.unit})
-                        </option>
-                      ))}
-                    </select>
+<select
+  name="ingredient"
+  value={ing.ingredient ?? ""}
+  onChange={(e) => handleIngredientChange(i, e)}
+  className="p-2 rounded-xl border flex-1 min-w-[120px]"
+>
+  <option value="">{t("Select Ingredient")}</option>
+{ingredientPrices.map((item, idx) => {
+  let icon = "⚪";
+  if (item.trend === "up") icon = "🔺";
+  else if (item.trend === "down") icon = "🟢";
 
-                    <input
-                      type="text"
-                      name="quantity"
-                      placeholder={t("Qty")}
-                      value={ing.quantity}
-                      onChange={(e) => handleIngredientChange(i, e)}
-                      className="p-2 rounded-xl border w-20"
-                    />
+  return (
+    <option key={idx} value={item.name}>
+      {icon} {item.name.charAt(0).toUpperCase() + item.name.slice(1).toLowerCase()} ({item.unit})
+    </option>
+  );
+})}
 
-                    <select
-                      name="unit"
-                      value={ing.unit || ""}
-                      onChange={(e) => handleIngredientChange(i, e)}
-                      className="p-2 rounded-xl border w-24"
-                    >
-                      <option value="">{t("Select Unit")}</option>
-                      <option value="kg">kg</option>
-                      <option value="g">g</option>
-                      <option value="pieces">pieces</option>
-                      <option value="portion">portion</option>
-                      <option value="ml">ml</option>
-                      <option value="l">l</option>
-                    </select>
+</select>
+
+
+<input
+  type="text"
+  name="quantity"
+  placeholder={t("Qty")}
+  value={ing.quantity ?? ""}  // ✅ always a string
+  onChange={(e) => handleIngredientChange(i, e)}
+  className="p-2 rounded-xl border w-20"
+/>
+
+<select
+  name="unit"
+  value={ing.unit ?? ""}  // ✅ default to empty string
+  onChange={(e) => handleIngredientChange(i, e)}
+  className="p-2 rounded-xl border w-24"
+>
+  <option value="">{t("Select Unit")}</option>
+  <option value="kg">kg</option>
+  <option value="g">g</option>
+  <option value="pieces">pieces</option>
+  <option value="portion">portion</option>
+  <option value="ml">ml</option>
+  <option value="l">l</option>
+</select>
+
 
                     {cost !== null && (
                       <span className="ml-2 text-sm font-bold text-rose-600">
@@ -677,27 +748,30 @@ return (
               onChange={(e) => {
                 const groupId = Number(e.target.value);
                 if (!groupId) return;
-                if (product.selectedExtrasGroup?.includes(groupId)) return;
+                if (product.selected_extras_group?.includes(groupId)) return;
                 const selected = groupById.get(groupId);
                 if (!selected) return;
 
                 setProduct((prev) => {
                   const updatedGroupIds = [
-                    ...(prev.selectedExtrasGroup || []),
+                    ...(prev.selected_extras_group || []),
                     groupId,
                   ];
-                  const newExtras = updatedGroupIds.flatMap((id) => {
-                    const group = groupById.get(id);
-                    return (
-                      group?.items?.map((item) => ({
-                        name: item.name,
-                        extraPrice: item.extraPrice,
-                      })) || []
-                    );
-                  });
+                 const newExtras = updatedGroupIds.flatMap((id) => {
+  const group = groupById.get(id);
+  return (
+    group?.items?.map((item) => ({
+      name: item.name,
+      extraPrice: Number(item.extraPrice ?? item.price) || 0,
+      amount: Number(item.amount ?? 1),
+      unit: item.unit || "",
+    })) || []
+  );
+});
+
                   return {
                     ...prev,
-                    selectedExtrasGroup: updatedGroupIds,
+                    selected_extras_group: updatedGroupIds,
                     extras: newExtras,
                   };
                 });
@@ -713,7 +787,7 @@ return (
             </select>
 
             <div className="flex flex-wrap gap-2 mb-3">
-              {(product.selectedExtrasGroup || []).map((groupId, idx) => {
+              {(product.selected_extras_group || []).map((groupId, idx) => {
                 const group = groupById.get(groupId);
                 if (!group) return null;
                 return (
@@ -726,7 +800,7 @@ return (
                       type="button"
                       onClick={() => {
                         const updatedGroups =
-                          product.selectedExtrasGroup.filter(
+                          product.selected_extras_group.filter(
                             (id) => id !== groupId
                           );
                         const updatedExtras = updatedGroups.flatMap((id) => {
@@ -740,7 +814,7 @@ return (
                         });
                         setProduct((prev) => ({
                           ...prev,
-                          selectedExtrasGroup: updatedGroups,
+                          selected_extras_group: updatedGroups,
                           extras: updatedExtras,
                         }));
                       }}
@@ -766,12 +840,12 @@ return (
         </section>
 
         {/* Description + Discounts */}
-        <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 space-y-4">
+          <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 space-y-4">
           <label className="block">
             <span className="font-medium">{t("Descriptions")}</span>
             <textarea
               name="description"
-              value={product.description}
+              value={product.description ?? ""}
               onChange={handleChange}
               rows={3}
               className="w-full p-3 mt-1 rounded-xl border"
@@ -782,7 +856,7 @@ return (
             <input
               type="text"
               name="tags"
-              value={product.tags}
+              value={product.tags ?? ""}
               onChange={handleChange}
               className="w-full p-3 mt-1 rounded-xl border"
             />
@@ -792,7 +866,7 @@ return (
             <input
               type="text"
               name="allergens"
-              value={product.allergens}
+              value={product.allergens ?? ""}
               onChange={handleChange}
               className="w-full p-3 mt-1 rounded-xl border"
             />
@@ -824,14 +898,13 @@ return (
               <input
                 type="number"
                 name="discount_value"
-                value={product.discount_value}
+                value={product.discount_value ?? ""}
                 onChange={handleChange}
                 className="mt-3 w-40 p-2 border rounded-xl"
               />
             )}
           </div>
         </section>
-
         {/* Mobile/Laptop Preview */}
         <section className="bg-white dark:bg-gray-900 rounded-2xl shadow p-5 xl:hidden">
           <details>
@@ -918,13 +991,17 @@ return (
           onClick={async () => {
             if (window.confirm(t("Are you sure you want to delete this product?"))) {
               try {
-                const res = await fetch(`${API_URL}/api/products/${initialData.id}`, {
+                const res = await secureFetch(`/products/${initialData.id}`, {
                   method: "DELETE",
                 });
-                if (!res.ok) throw new Error("Failed to delete product");
+                if (res?.status !== "success") {
+                  throw new Error(res?.message || "Failed to delete product");
+                }
+                toast.success("✅ Product deleted!");
                 onSuccess && onSuccess();
-              } catch {
-                alert(t("Failed to delete product."));
+              } catch (err) {
+                console.error("❌ Delete failed:", err);
+                toast.error("Failed to delete product.");
               }
             }
           }}
@@ -935,5 +1012,6 @@ return (
     </div>
   </form>
 );
+
 
 }

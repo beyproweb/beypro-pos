@@ -117,21 +117,128 @@ if (!settingsLoaded || !notifications) return <p>Loading settings...</p>;
       </h2>
 
       <div className="space-y-8">
-        {/* Enable Notifications */}
-        <div className="flex items-center justify-between">
-          <span className="text-lg font-medium">{t("Enable Notifications")}</span>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={notifications.enabled}
-              onChange={() =>
-                setNotifications((prev) => ({ ...prev, enabled: !prev.enabled }))
-              }
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
-          </label>
-        </div>
+{/* 🔔 Enable Notifications (Global) */}
+<div className="flex items-center justify-between mb-6">
+  <span className="text-lg font-medium">{t("Enable Notifications")}</span>
+  <label className="relative inline-flex items-center cursor-pointer">
+    <input
+      type="checkbox"
+      checked={notifications.enabled}
+      onChange={() => {
+        if (window.__toastLock) return; // 🧠 Prevent duplicate toasts
+        window.__toastLock = true;
+        setTimeout(() => (window.__toastLock = false), 300);
+
+        setNotifications((prev) => {
+          const newState = !prev.enabled;
+          toast.dismiss();
+          toast[newState ? "success" : "info"](
+            newState
+              ? "🔔 Notifications enabled"
+              : "🔕 Notifications disabled"
+          );
+
+          const updated = { ...prev, enabled: newState };
+          saveSetting("notifications", updated)
+  .then(() => {
+    console.log("✅ Notifications state saved:", newState);
+    window.notificationSettings = updated;
+    window.dispatchEvent(new Event("notification_settings_updated"));
+  })
+  .catch((err) =>
+    console.warn("⚠️ Failed to save notifications state", err)
+  );
+
+          return updated;
+        });
+      }}
+      className="sr-only peer"
+    />
+    <div className="w-11 h-6 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+  </label>
+</div>
+
+{/* 💬 Enable Toast Popups */}
+<div className="flex items-center justify-between mb-6">
+  <span className="text-lg font-medium">{t("Enable Toast Popups")}</span>
+  <label className="relative inline-flex items-center cursor-pointer">
+    <input
+      type="checkbox"
+      checked={notifications.enableToasts ?? true}
+      onChange={() => {
+        if (window.__toastLock) return;
+        window.__toastLock = true;
+        setTimeout(() => (window.__toastLock = false), 300);
+
+        setNotifications((prev) => {
+          const newState = !prev.enableToasts;
+          toast.dismiss();
+          toast[newState ? "success" : "info"](
+            newState
+              ? "✅ Toast popups enabled"
+              : "🚫 Toast popups disabled"
+          );
+          const updated = { ...prev, enableToasts: newState };
+          saveSetting("notifications", updated)
+  .then(() => {
+    console.log("✅ Toast popup state saved:", newState);
+    window.notificationSettings = updated;
+    window.dispatchEvent(new Event("notification_settings_updated"));
+  })
+  .catch((err) =>
+    console.warn("⚠️ Failed to save toast popup state", err)
+  );
+
+          return updated;
+        });
+      }}
+      className="sr-only peer"
+    />
+    <div className="w-11 h-6 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+  </label>
+</div>
+
+{/* 🔊 Enable Sound Alerts */}
+<div className="flex items-center justify-between mb-8">
+  <span className="text-lg font-medium">{t("Enable Sound Alerts")}</span>
+  <label className="relative inline-flex items-center cursor-pointer">
+    <input
+      type="checkbox"
+      checked={notifications.enableSounds ?? true}
+      onChange={() => {
+        if (window.__toastLock) return;
+        window.__toastLock = true;
+        setTimeout(() => (window.__toastLock = false), 300);
+
+        setNotifications((prev) => {
+          const newState = !prev.enableSounds;
+          toast.dismiss();
+          toast[newState ? "success" : "info"](
+            newState
+              ? "🔊 Sound alerts enabled"
+              : "🔇 Sound alerts disabled"
+          );
+          const updated = { ...prev, enableSounds: newState };
+         saveSetting("notifications", updated)
+  .then(() => {
+    console.log("✅ Sound alert state saved:", newState);
+    window.notificationSettings = updated;
+    window.dispatchEvent(new Event("notification_settings_updated"));
+  })
+  .catch((err) =>
+    console.warn("⚠️ Failed to save sound alert state", err)
+  );
+
+          return updated;
+        });
+      }}
+      className="sr-only peer"
+    />
+    <div className="w-11 h-6 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+  </label>
+</div>
+
+
 {/* Volume Slider */}
 <div className="mb-6">
   <label className="block font-medium mb-2">{t("Volume")}: {(volume * 100).toFixed(0)}%</label>
@@ -331,7 +438,9 @@ if (!settingsLoaded || !notifications) return <p>Loading settings...</p>;
 
 const audio = audioRefs.current[eventKey];
 audio.pause();
-audio.src = `/${soundFile}`;
+audio.src = soundFile.startsWith("/sounds/")
+  ? soundFile
+  : `/sounds/${soundFile}`;
 audio.volume = volume;
 audio.play().catch(console.warn);
 

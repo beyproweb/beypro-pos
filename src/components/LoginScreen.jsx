@@ -47,31 +47,50 @@ export default function LoginScreen() {
         throw new Error(data?.error || data?.message || "Invalid credentials");
       }
 
-      // ✅ Save JWT for secureFetch
-  // ✅ Save JWT for secureFetch
+// ✅ Save JWT for secureFetch
+// ✅ Save JWT for secureFetch
 localStorage.setItem("token", data.token);
 console.log("💾 Token saved to localStorage:", data.token);
 
-// ✅ Normalize user like AuthContext does
-let role = data.user.role?.toLowerCase() || "staff";
-let permissions = data.user.permissions?.map((p) => p.toLowerCase()) || [];
+// ✅ Extract user safely (handles both { user } and { user: { user } })
+const userData = data.user?.user || data.user || {};
+console.log("👤 Normalizing user from payload:", userData);
 
-// ⚡ Admin superuser fix
+// ✅ Save tenant/restaurant_id
+if (userData.restaurant_id) {
+  localStorage.setItem("restaurant_id", userData.restaurant_id);
+  console.log("💾 Tenant restaurant_id saved:", userData.restaurant_id);
+}
+
+// ✅ Normalize user data and permissions
+const role = userData.role?.toLowerCase() || "staff";
+let permissions = Array.isArray(userData.permissions)
+  ? userData.permissions.map((p) => p.toLowerCase())
+  : [];
+
 if (role === "admin") {
   permissions = ["all"];
 }
 
 const normalizedUser = {
-  ...data.user,
+  id: userData.id,
+  name: userData.name,
+  email: userData.email,
   role,
+  restaurant_id: userData.restaurant_id,
   permissions,
+  token: data.token,
 };
 
-// ✅ Save normalized user
+// ✅ Save normalized user locally
 localStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
 console.log("💾 Normalized user saved:", normalizedUser);
 
 setCurrentUser(normalizedUser);
+console.info("✅ Login success, navigating to /dashboard");
+navigate("/dashboard");
+
+
 
       console.info("✅ Login success, navigating to /dashboard");
       navigate("/dashboard");

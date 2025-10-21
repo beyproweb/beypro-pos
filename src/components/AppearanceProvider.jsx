@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { AppearanceContext } from "../context/AppearanceContext";
 import axios from "axios";
+import secureFetch from "../utils/secureFetch";
+
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 const DEFAULT_APPEARANCE = {
@@ -16,24 +18,28 @@ export default function AppearanceProvider({ children }) {
   const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    if (!currentUser?.id) {
+useEffect(() => {
+  if (!currentUser?.id) {
+    setLoaded(true);
+    setAppearance(DEFAULT_APPEARANCE);
+    return;
+  }
+
+  setLoaded(false); // reset loaded when user changes
+
+  secureFetch(`/settings/appearance`)
+    .then((data) => {
+      setAppearance({ ...DEFAULT_APPEARANCE, ...data });
       setLoaded(true);
+    })
+    .catch((err) => {
+      console.warn("⚠️ Failed to load appearance:", err);
       setAppearance(DEFAULT_APPEARANCE);
-      return;
-    }
-    setLoaded(false); // reset loaded when user changes
-    axios
-      .get(`${API_URL}/api/user-settings/${currentUser.id}/appearance`)
-      .then((res) => {
-        setAppearance({ ...DEFAULT_APPEARANCE, ...res.data });
-        setLoaded(true);
-      })
-      .catch(() => {
-        setAppearance(DEFAULT_APPEARANCE);
-        setLoaded(true);
-      });
-  }, [currentUser]);
+      setLoaded(true);
+    });
+}, [currentUser]);
+
+
 
   useEffect(() => {
     if (!loaded || !appearance) return;
@@ -42,11 +48,16 @@ export default function AppearanceProvider({ children }) {
     const appliedTheme =
       appearance.theme === "system" ? (dark ? "dark" : "light") : appearance.theme;
     document.body.classList.toggle("dark", appliedTheme === "dark");
-    root.style.setProperty("--font-size", {
-      small: "14px",
-      medium: "16px",
-      large: "18px",
-    }[appearance.fontSize]);
+
+    root.style.setProperty(
+      "--font-size",
+      {
+        small: "14px",
+        medium: "16px",
+        large: "18px",
+      }[appearance.fontSize]
+    );
+
     const tailwindColorMap = {
       default: "79 70 229",
       "emerald-500": "16 185 129",

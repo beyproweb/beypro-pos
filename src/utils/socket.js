@@ -1,38 +1,92 @@
+// src/utils/socket.js
 import { io } from "socket.io-client";
 
-// Use Vite env variable or default to your Render backend
+// 🧩 Choose backend automatically
 const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL || "https://hurrypos-backend.onrender.com";
+  import.meta.env.VITE_SOCKET_URL ||
+  (import.meta.env.MODE === "development"
+    ? "http://localhost:5000"
+    : "https://beypro-backend.onrender.com");
 
+// Initialize socket
 const socket = io(SOCKET_URL, {
   transports: ["websocket", "polling"],
   reconnection: true,
-  reconnectionAttempts: 10,
+  reconnectionAttempts: 20,
   reconnectionDelay: 2000,
+  withCredentials: true,
+  autoConnect: true,
 });
 
-// Debug logs
-socket.on("connect", () => {
-  console.log("[SOCKET] Connected:", socket.id);
-
-  // 🔑 Join the restaurant room after connect
+// 🧠 Helper to safely get restaurant ID
+function getRestaurantId() {
   try {
-    const user = JSON.parse(localStorage.getItem("beyproUser"));
-    if (user?.restaurant_id) {
-      socket.emit("join_restaurant", user.restaurant_id);
-      console.log(`[SOCKET] Joined restaurant_${user.restaurant_id}`);
+    const user = JSON.parse(localStorage.getItem("beyproUser") || "{}");
+    return user?.restaurant_id || null;
+  } catch {
+    return null;
+  }
+}
+
+// 🟢 On first connect
+socket.on("connect", () => {
+  console.log(`[SOCKET] ✅ Connected: ${socket.id}`);
+  const restaurantId = getRestaurantId();
+  if (restaurantId) {
+    socket.emit("join_restaurant", restaurantId);
+    console.log(`[SOCKET] 👥 Joined restaurant_${restaurantId}`);
+  } else {
+    console.warn("[SOCKET] ⚠️ No restaurant_id found in localStorage on connect");
+  }
+
+  // 🧩 Safety rejoin few seconds after connect (handles slow logins)
+  setTimeout(() => {
+    const rid = getRestaurantId();
+    if (rid) {
+      socket.emit("join_restaurant", rid);
+      console.log(`[SOCKET] 🧠 Safety rejoin restaurant_${rid}`);
     }
-  } catch (err) {
-    console.warn("[SOCKET] Failed to join restaurant room:", err.message);
+  }, 3000);
+});
+
+// ♻️ Auto-rejoin on reconnect attempts
+socket.io.on("reconnect_attempt", (attempt) => {
+  console.log(`[SOCKET] 🔄 Reconnect attempt #${attempt}`);
+  const restaurantId = getRestaurantId();
+  if (restaurantId) {
+    socket.emit("join_restaurant", restaurantId);
+    console.log(`[SOCKET] 🔁 Rejoined restaurant_${restaurantId}`);
   }
 });
 
-socket.on("disconnect", () => {
-  console.warn("[SOCKET] Disconnected");
+// 🔁 Rejoin whenever app reloads or localStorage changes
+window.addEventListener("storage", () => {
+  const user = JSON.parse(localStorage.getItem("beyproUser") || "{}");
+  if (user?.restaurant_id) {
+    socket.emit("join_restaurant", user.restaurant_id);
+    console.log(`[SOCKET] 🧩 Auto rejoined restaurant_${user.restaurant_id} from storage change`);
+  }
 });
 
-socket.on("connect_error", (err) => {
-  console.error("[SOCKET] Connection error:", err?.message || err);
+// 🔌 On disconnect
+socket.on("disconnect", (reason) => {
+  console.warn(`[SOCKET] ❌ Disconnected: ${reason}`);
 });
+
+// ⚠️ Connection errors
+socket.on("connect_error", (err) => {
+  console.error("[SOCKET] 🚫 Connection error:", err?.message || err);
+});
+
+// 🔄 Public helper to manually rejoin (used in GlobalOrderAlert)
+export function joinRestaurantRoom() {
+  const restaurantId = getRestaurantId();
+  if (restaurantId && socket.connected) {
+    socket.emit("join_restaurant", restaurantId);
+    console.log(`[SOCKET] ✅ Manually joined restaurant_${restaurantId}`);
+  } else if (!socket.connected) {
+    console.warn("[SOCKET] ⚠️ Socket not connected yet, will join on connect");
+  }
+}
 
 export default socket;

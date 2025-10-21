@@ -8,14 +8,12 @@ import React, {
   Fragment,
 } from "react";
 import { toast } from "react-toastify";
-import secureFetch from "../utils/secureFetch"; // 🔐 tenant-safe fetch (adds Bearer + handles 401)
-import socket from "../utils/socket"; // your initialized socket.io client (already tenant aware)
-import { useSetting } from "../components/hooks/useSetting";
+import secureFetch from "../utils/secureFetch";
+import socket, { joinRestaurantRoom } from "../utils/socket";
 
 /* ------------------------------------------
- * Helpers: sound files, playback, utilities
+ * Helpers: sounds, cooldowns, defaults
  * ------------------------------------------ */
-
 const DEFAULT_SOUNDS = {
   new_order: "new_order.mp3",
   order_preparing: "prepare.mp3",
@@ -33,13 +31,9 @@ const DEFAULT_NOTIFICATIONS = {
   enableSounds: true,
 };
 
-const soundPath = (name) => {
-  // Serve from public; adjust if you use CDN
-  if (!name) return "/sounds/ding.mp3";
-  return name.startsWith("/") ? name : `/sounds/${name}`;
-};
+const soundPath = (name) =>
+  name ? (name.startsWith("/") ? name : `/sounds/${name}`) : "/sounds/ding.mp3";
 
-// Simple cooldown memory (avoid sound spam)
 const cooldownMillis = {
   new_order: 4000,
   order_preparing: 3000,
@@ -51,9 +45,8 @@ const cooldownMillis = {
 };
 
 /* ------------------------------------------
- * Receipt layout (printer) defaults
+ * Receipt layout defaults
  * ------------------------------------------ */
-
 const defaultLayout = {
   fontSize: 14,
   lineHeight: 1.3,
@@ -75,15 +68,11 @@ const defaultLayout = {
 };
 
 /* ------------------------------------------
- * Receipt rendering
+ * Receipt generation
  * ------------------------------------------ */
-
 function renderReceiptText(order, layout = defaultLayout) {
   const items =
-    order?.suborders?.flatMap((so) => so.items || []) ||
-    order?.items ||
-    [];
-
+    order?.suborders?.flatMap((so) => so.items || []) || order?.items || [];
   const lines = [];
   const add = (l = "") => lines.push(String(l));
 
@@ -95,17 +84,11 @@ function renderReceiptText(order, layout = defaultLayout) {
   if (layout.showPacketCustomerInfo && (order.customer || order.customer_name)) {
     add(`Cust: ${order.customer || order.customer_name}`);
     if (order.customer_phone) add(`Phone: ${order.customer_phone}`);
-    if (order.address || order.customer_address) {
-      add(
-        `Addr: ${(order.address || order.customer_address)
-          .replace(/\s+/g, " ")
-          .trim()}`
-      );
-    }
+    if (order.address || order.customer_address)
+      add(`Addr: ${(order.address || order.customer_address).replace(/\s+/g, " ").trim()}`);
   }
 
   add("--------------------------------");
-
   let total = 0;
   let tax = 0;
   const addMoney = (n) => (isNaN(n) ? 0 : Number(n));
@@ -116,8 +99,8 @@ function renderReceiptText(order, layout = defaultLayout) {
     const price = addMoney(it.price ?? 0);
     const lineTotal = qty * price;
     total += lineTotal;
-
     add(`${qty} x ${name}  ${price.toFixed(2)} = ${lineTotal.toFixed(2)}`);
+
     if (Array.isArray(it.extras)) {
       for (const ex of it.extras) {
         const exName = ex.name || "extra";
@@ -138,7 +121,8 @@ function renderReceiptText(order, layout = defaultLayout) {
 
   add("--------------------------------");
   add(`TOTAL: ${(total + tax).toFixed(2)} TL`);
-  if (order.payment_method) add(`PAYMENT: ${String(order.payment_method).toUpperCase()}`);
+  if (order.payment_method)
+    add(`PAYMENT: ${String(order.payment_method).toUpperCase()}`);
 
   if (layout.showFooter && layout.footerText) {
     add("--------------------------------");
@@ -148,9 +132,8 @@ function renderReceiptText(order, layout = defaultLayout) {
 }
 
 /* ------------------------------------------
- * Print via Beypro Bridge (Electron, USB)
+ * Printing helpers
  * ------------------------------------------ */
-
 function printViaBridge(text) {
   try {
     if (window?.beypro?.printText) {
@@ -165,10 +148,6 @@ function printViaBridge(text) {
   }
 }
 
-/* ------------------------------------------
- * De-dupe printing per order id
- * ------------------------------------------ */
-
 function shouldPrintNow(orderId, windowMs = 10000) {
   if (!orderId) return false;
   const key = String(orderId);
@@ -182,23 +161,15 @@ function shouldPrintNow(orderId, windowMs = 10000) {
 /* ------------------------------------------
  * MAIN COMPONENT
  * ------------------------------------------ */
-
 export default function GlobalOrderAlert() {
-  /* ----------------- settings / layout ----------------- */
   const [notif, setNotif] = useState(DEFAULT_NOTIFICATIONS);
   const [layout, setLayout] = useState(defaultLayout);
 
-  // global user-managed settings (optional; keeps consistency with the rest of app)
-  useSetting("printer", (val) => {
-    if (val?.layout) setLayout({ ...defaultLayout, ...val.layout });
-  });
-
-  /* ---------------------- audio ------------------------ */
   const audioRefs = useRef({});
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [soundQueue, setSoundQueue] = useState([]);
   const soundPlayingRef = useRef(false);
-  const lastSoundAtRef = useRef({}); // key => timestamp
+  const lastSoundAtRef = useRef({});
 
   const eventKeys = useMemo(
     () => [
@@ -213,12 +184,24 @@ export default function GlobalOrderAlert() {
     []
   );
 
-  // register refs
+  /* Auto rejoin socket room */
   useEffect(() => {
-    eventKeys.forEach((k) => (audioRefs.current[k] ||= React.createRef()));
-  }, [eventKeys]);
+    const handleConnect = () => {
+      joinRestaurantRoom();
+      console.log("[SOCKET] 🎯 Ensured restaurant room join from GlobalOrderAlert");
+    };
+    socket.on("connect", handleConnect);
+    return () => socket.off("connect", handleConnect);
+  }, []);
 
-  // unlock iOS/Chrome audio AFTER user input
+  /* Register audio refs */
+  useEffect(() => {
+    eventKeys.forEach((k) => {
+      audioRefs.current[k] = React.createRef();
+    });
+  }, [eventKeys, notif]);
+
+  /* Unlock browser audio */
   useEffect(() => {
     const unlock = () => {
       document.querySelectorAll("audio").forEach((a) => {
@@ -241,25 +224,21 @@ export default function GlobalOrderAlert() {
     };
   }, []);
 
-  // play queued sounds (serialized)
+  /* Sequential sound queue playback */
   useEffect(() => {
-    if (!notif.enableSounds || !audioUnlocked) return;
-    if (soundPlayingRef.current) return;
-    if (!soundQueue.length) return;
+  if (!notif.enabled || !notif.enableSounds || !audioUnlocked) return;
+  if (soundPlayingRef.current) return;
+  if (!soundQueue.length) return;
 
     const key = soundQueue[0];
     const now = Date.now();
     const cool = cooldownMillis[key] || 2000;
     if (now - (lastSoundAtRef.current[key] || 0) < cool) {
-      // skip due to cooldown; dequeue and continue
       setSoundQueue((q) => q.slice(1));
       return;
     }
 
     const ref = audioRefs.current[key]?.current;
-    const chosen =
-      notif.eventSounds?.[key] || notif.defaultSound || DEFAULT_NOTIFICATIONS.defaultSound;
-
     if (!ref) {
       console.warn("No audio ref for", key);
       setSoundQueue((q) => q.slice(1));
@@ -269,9 +248,7 @@ export default function GlobalOrderAlert() {
     soundPlayingRef.current = true;
     ref
       .play()
-      .then(() => {
-        lastSoundAtRef.current[key] = Date.now();
-      })
+      .then(() => (lastSoundAtRef.current[key] = Date.now()))
       .catch(() => {})
       .finally(() => {
         setTimeout(() => {
@@ -279,11 +256,9 @@ export default function GlobalOrderAlert() {
           setSoundQueue((q) => q.slice(1));
         }, 250);
       });
-  }, [soundQueue, notif.enableSounds, audioUnlocked]);
+  }, [soundQueue, notif.enabled, notif.enableSounds, audioUnlocked]);
 
-  /* ------------------- load config --------------------- */
-
-  // load notification config (tenant-safe)
+  /* Load notification config */
   useEffect(() => {
     (async () => {
       try {
@@ -296,53 +271,63 @@ export default function GlobalOrderAlert() {
         }));
       } catch (err) {
         console.warn("Notifications settings load failed:", err?.message || err);
-        // keep defaults
       }
     })();
   }, []);
 
-  // load printer layout (tenant-safe)
+  /* ✅ Listen for settings changes (from NotificationsTab) */
+useEffect(() => {
+  const handler = () => {
+    const updated = window.notificationSettings;
+    if (updated) {
+      setNotif({
+  ...DEFAULT_NOTIFICATIONS,
+  ...updated,
+  eventSounds: { ...DEFAULT_SOUNDS, ...(updated.eventSounds || {}) },
+});
+
+      console.log("🔄 Notification settings refreshed in GlobalOrderAlert");
+    }
+  };
+  window.addEventListener("notification_settings_updated", handler);
+  return () => window.removeEventListener("notification_settings_updated", handler);
+}, []);
+
+  /* Load printer layout */
   useEffect(() => {
     (async () => {
       try {
         const printer = await secureFetch("/printer-settings/1");
-        if (printer?.layout) {
-          setLayout((old) => ({ ...old, ...printer.layout }));
-        }
+        if (printer?.layout) setLayout((old) => ({ ...old, ...printer.layout }));
       } catch {
         /* ignore */
       }
     })();
   }, []);
 
-  /* ----------------- SOCKET INTEGRATION ---------------- */
+  /* Toast + sound helper */
+const notify = useCallback(
+  (key, msg) => {
+    if (!notif.enabled) return; // master off
+    if (notif.enableToasts && msg) toast.info(msg);
+    if (notif.enableSounds) setSoundQueue((q) => q.concat(key));
+  },
+  [notif.enabled, notif.enableToasts, notif.enableSounds]
+);
 
-  // helper: enqueue sound + toast
-  const notify = useCallback(
-    (key, msg) => {
-      if (notif.enableToasts && msg) toast.info(msg);
-      if (notif.enableSounds) setSoundQueue((q) => q.concat(key));
-    },
-    [notif.enableToasts, notif.enableSounds]
-  );
 
-  // print helper
+
+  /* Print helper */
   const printOrder = useCallback(
     async (orderId) => {
       if (!orderId) return false;
       try {
         const order = await secureFetch(`/orders/${orderId}`);
-        if (!order?.id) return false;
-
-        if (!shouldPrintNow(order.id)) return false;
-
+        if (!order?.id || !shouldPrintNow(order.id)) return false;
         const text = renderReceiptText(order, layout);
         const ok = printViaBridge(text);
-        if (!ok) {
-          toast.warn("🖨️ Beypro Bridge not connected");
-          return false;
-        }
-        toast.success(`🧾 Printed order #${order.id}`);
+        if (!ok) toast.warn("🖨️ Beypro Bridge not connected");
+        else toast.success(`🧾 Printed order #${order.id}`);
         return true;
       } catch (err) {
         console.error("Print fetch error:", err);
@@ -352,19 +337,20 @@ export default function GlobalOrderAlert() {
     [layout]
   );
 
-  // Socket listeners (tenant-safe events)
+  /* SOCKET EVENTS (main trigger) */
   useEffect(() => {
-    const onNewOrder = async (payload) => {
-      // payload may include order id or full order
-      const id = payload?.order?.id || payload?.id;
+    const onNewOrder = async (p) => {
+      const id = p?.order?.id || p?.orderId || p?.id;
       notify("new_order", "🔔 New order received");
       if (id) await printOrder(id);
     };
-
     const onPreparing = () => notify("order_preparing", "👩‍🍳 Order set to preparing");
     const onReady = () => notify("order_ready", "✅ Order ready");
     const onDelivered = () => notify("order_delivered", "🚚 Order delivered");
-    const onPaid = () => notify("payment_made", "💸 Payment made");
+const onPaid = (p) => {
+  console.log("💰 [Socket] payment_made event received:", p);
+  notify("payment_made", "💸 Payment made");
+};
     const onStockLow = () => notify("stock_low", "⚠️ Stock critical");
     const onRestocked = () => notify("stock_restocked", "📦 Stock replenished");
 
@@ -387,9 +373,7 @@ export default function GlobalOrderAlert() {
     };
   }, [notify, printOrder]);
 
-  /* ---------------- POLLING (FALLBACK) ------------------ */
-
-  // keeps last snapshot ids to detect new entities
+  /* POLLING (fallback only if socket disconnected) */
   const prevSetRef = useRef({
     preparingIds: new Set(),
     kitchenIds: new Set(),
@@ -398,7 +382,7 @@ export default function GlobalOrderAlert() {
   });
 
   const pollAll = useCallback(async () => {
-    // Poll these endpoints only as a fallback to ensure events are never missed.
+    if (socket.connected) return; // 🔇 disable when socket alive
     const endpoints = [
       { key: "order_preparing", path: "/order-items/preparing", field: "preparingIds" },
       { key: "order_ready", path: "/kitchen-orders", field: "kitchenIds" },
@@ -410,66 +394,50 @@ export default function GlobalOrderAlert() {
       try {
         const data = await secureFetch(ep.path);
         if (!Array.isArray(data)) continue;
-
-        // Build current set of ids
-        const fresh = new Set(
-          data.map((row) => row.id || row.item_id || row.order_id).filter(Boolean)
-        );
+        const fresh = new Set(data.map((r) => r.id || r.item_id || r.order_id).filter(Boolean));
         const prev = prevSetRef.current[ep.field] || new Set();
-
-        // Detect newly appeared ids
         let newCount = 0;
         for (const id of fresh) if (!prev.has(id)) newCount++;
-
-        if (newCount > 0) {
-          notify(ep.key, `🔔 ${ep.key.replace("_", " ")} (${newCount})`);
-        }
-
+        if (newCount > 0)
+          console.debug(`[poll] ${ep.key} new items (${newCount}) - socket offline`);
         prevSetRef.current[ep.field] = fresh;
       } catch (err) {
-        // If unauthorized (expired token), secureFetch already navigates to /login.
-        // Here we just log softly to avoid noisy console.
         console.debug("Poll error:", ep.path, err?.message || err);
       }
     }
-  }, [notify]);
+  }, []);
 
-  // Poll every 12 seconds
   useEffect(() => {
     pollAll();
     const int = setInterval(pollAll, 12000);
     return () => clearInterval(int);
   }, [pollAll]);
 
-  /* --------------- STOCK CHANGE WATCHER ----------------- */
-  // If you want to play sound when a specific stock qty crosses threshold,
-  // keep a map of last seen qty per item_id.
+  /* STOCK WATCHER (disabled when socket online) */
   const lastQtyRef = useRef({});
   const watchStockChanges = useCallback(async () => {
+    if (socket.connected) return; // 🔇 skip duplicate
     try {
-      const rows = await secureFetch("/stock"); // expects array [{id, qty, min_qty}, ...]
+      const rows = await secureFetch("/stock");
       if (!Array.isArray(rows)) return;
-
       for (const r of rows) {
         const id = r.id || r.item_id;
         if (!id) continue;
         const prevQty = lastQtyRef.current[id];
         const q = Number(r.qty ?? 0);
         const min = Number(r.min_qty ?? 0);
-
         if (typeof prevQty === "number") {
-          // went below threshold
-          if (prevQty >= min && q < min) notify("stock_low", `⚠️ ${r.name || "Item"} low`);
-          // restocked above threshold
+          if (prevQty >= min && q < min)
+            console.debug(`[watchStock] ${r.name} low (socket offline)`);
           if (prevQty < min && q >= min)
-            notify("stock_restocked", `📦 ${r.name || "Item"} restocked`);
+            console.debug(`[watchStock] ${r.name} restocked (socket offline)`);
         }
         lastQtyRef.current[id] = q;
       }
     } catch {
       /* ignore */
     }
-  }, [notify]);
+  }, []);
 
   useEffect(() => {
     watchStockChanges();
@@ -477,17 +445,17 @@ export default function GlobalOrderAlert() {
     return () => clearInterval(int);
   }, [watchStockChanges]);
 
-  /* ------------------ UI / AUDIO TAGS ------------------- */
-
+  /* Render hidden audio tags */
   return (
     <Fragment>
-      {/* Invisible audio tags (preloaded) */}
       {eventKeys.map((key) => {
-        const src =
-          soundPath(notif.eventSounds?.[key]) || soundPath(notif.defaultSound);
-        return (
-          <audio key={key} ref={audioRefs.current[key]} src={src} preload="auto" />
-        );
+        const fileName =
+          notif.eventSounds?.[key] ||
+          DEFAULT_SOUNDS[key] ||
+          notif.defaultSound ||
+          DEFAULT_NOTIFICATIONS.defaultSound;
+        const src = soundPath(fileName);
+        return <audio key={key} ref={audioRefs.current[key]} src={src} preload="auto" />;
       })}
     </Fragment>
   );

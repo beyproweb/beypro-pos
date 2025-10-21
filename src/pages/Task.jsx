@@ -1,15 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppearance } from "../context/AppearanceContext";
-import axios from "axios";
 import socket from "../utils/socket"; // adjust path as needed!
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import i18n from "i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
-const API_URL = import.meta.env.VITE_API_URL || "";
-
-
+import secureFetch from "../utils/secureFetch";
 export default function Task() {
   const { t } = useTranslation();
   const { darkMode, fontSize, fontFamily } = useAppearance();
@@ -27,6 +24,12 @@ export default function Task() {
   const [manualDueAt, setManualDueAt] = useState("");
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editedTask, setEditedTask] = useState({});
+  const [activeStaffId, setActiveStaffId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [showOverdueOnly, setShowOverdueOnly] = useState(false);
    // Only allow users with "settings" permission
 const hasDashboardAccess = useHasPermission("dashboard");
 if (!hasDashboardAccess) {
@@ -83,20 +86,6 @@ const currentLang = i18n.language || "en";
 const langVoiceCode = getLangVoiceCode(currentLang);
 
 
-
-  // Speech setup
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const recognition = SpeechRecognition ? new SpeechRecognition() : null;
-  if (recognition) {
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = "en-US";
-  }
-
-  const extractName = (text) => {
-    const m = text.match(/to\s+(.+?)($|\s+at)/i);
-    return m ? m[1].trim() : text.trim();
-  };
 
 // Helper to pad numbers like 4 → "04"
 const pad = (n) => String(n).padStart(2, "0");
@@ -202,52 +191,180 @@ const extractTimeFromText = (text, lang = "en") => {
   return toLocalISOString(now);
 };
 
+  const recognitionRef = useRef(null);
+  const listeningRef = useRef(false);
+  const currentUtteranceRef = useRef(null);
+  const voiceRef = useRef(null);
+  const lastTranscriptRef = useRef("");
 
+  const cancelSpeech = useCallback(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
+    currentUtteranceRef.current = null;
+  }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
 
-  const speak = (text, cb, lang = "en-US") => {
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang;
-  u.rate = 0.85;          // ✅ Slower (0.5–2.0 range, default = 1)
-  u.pitch = 1;            // Optional: you can set 0.9 for deeper tone
-  u.volume = 1;           // Max volume
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognitionRef.current = recognition;
 
-  // Optional: pick a non-default voice
-  const voices = speechSynthesis.getVoices();
-  const match = voices.find(v => v.lang === lang);
-  if (match) u.voice = match;
+    return () => {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onstart = null;
+      recognition.onend = null;
+      try {
+        recognition.stop();
+      } catch (err) {
+        // ignore
+      }
+      recognitionRef.current = null;
+    };
+  }, []);
 
-  if (cb) u.onend = cb;
-  speechSynthesis.speak(u);
-};
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    let mounted = true;
 
+    const assignVoice = () => {
+      if (!mounted) return;
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices.length) return;
+      const exact = voices.find((v) => v.lang === langVoiceCode);
+      const baseMatch = voices.find((v) =>
+        v.lang.toLowerCase().startsWith(langVoiceCode.split("-")[0].toLowerCase())
+      );
+      voiceRef.current = exact || baseMatch || voices[0];
+    };
 
-const speakAndRestart = (text, lang = "en-US") => {
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang;
-  u.onend = () => {
+    assignVoice();
+    window.speechSynthesis.addEventListener("voiceschanged", assignVoice);
+    return () => {
+      mounted = false;
+      window.speechSynthesis.removeEventListener("voiceschanged", assignVoice);
+    };
+  }, [langVoiceCode]);
+
+  const speakText = useCallback(
+    (text, { lang, rate = 0.9, onComplete } = {}) => {
+      if (!text) {
+        onComplete?.();
+        return;
+      }
+
+      if (typeof window === "undefined" || !window.speechSynthesis) {
+        onComplete?.();
+        return;
+      }
+
+      cancelSpeech();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang || langVoiceCode;
+      utterance.rate = rate;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+
+      if (voiceRef.current) {
+        utterance.voice = voiceRef.current;
+      }
+
+      utterance.onend = () => {
+        currentUtteranceRef.current = null;
+        onComplete?.();
+      };
+      utterance.onerror = () => {
+        currentUtteranceRef.current = null;
+        onComplete?.();
+      };
+
+      currentUtteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+    },
+    [cancelSpeech, langVoiceCode]
+  );
+
+  const stopListening = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
     try {
+      recognition.stop();
+    } catch (err) {
+      // ignore
+    }
+    listeningRef.current = false;
+  }, []);
+
+  const startListening = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+    try {
+      if (listeningRef.current && typeof recognition.abort === "function") {
+        recognition.abort();
+      }
+      recognition.lang = langVoiceCode;
       recognition.start();
     } catch (err) {
-      console.error("❌ Failed to restart mic:", err);
+      console.error("🎤 Could not start mic:", err);
+      setIsProcessingVoice(false);
     }
-  };
-  speechSynthesis.speak(u);
-};
+  }, [langVoiceCode]);
 
-
-
+  const promptAndListen = useCallback(
+    (text, lang = langVoiceCode) => {
+      setIsProcessingVoice(true);
+      speakText(text, {
+        lang,
+        onComplete: () => {
+          startListening();
+        },
+      });
+    },
+    [speakText, startListening, langVoiceCode, setIsProcessingVoice]
+  );
 
   // Initial load
   useEffect(() => {
-    axios.get(`${API_URL}/api/tasks`)
-      .then(res => setTasks(res.data))
-      .catch(() => toast.error('Error fetching tasks'))
-      .finally(() => setLoading(false));
-    axios.get(`${API_URL}/api/staff`)
-      .then(res => setStaffList(res.data))
-      .catch(() => toast.error('Error fetching staff'));
-  }, []);
+    let isMounted = true;
+
+    const load = async () => {
+      try {
+        const [tasksData, staffData] = await Promise.all([
+          secureFetch("/tasks").catch((err) => {
+            console.error("❌ Failed to fetch tasks", err);
+            throw err;
+          }),
+          secureFetch("/staff").catch((err) => {
+            console.error("❌ Failed to fetch staff", err);
+            throw err;
+          }),
+        ]);
+
+        if (!isMounted) return;
+        setTasks(Array.isArray(tasksData) ? tasksData : []);
+        setStaffList(Array.isArray(staffData) ? staffData : []);
+      } catch (err) {
+        if (isMounted) {
+          toast.error(t("Failed to load tasks or staff"));
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, [t]);
 
   // Socket updates
   useEffect(() => {
@@ -266,157 +383,235 @@ const speakAndRestart = (text, lang = "en-US") => {
   return () => socket.off("tasks_cleared_completed");
 }, []);
 
+  useEffect(() => {
+    if (!selectedTask) return;
+    const latest = tasks.find((t) => t.id === selectedTask.id);
+    if (!latest) {
+      setSelectedTask(null);
+    } else if (latest !== selectedTask) {
+      setSelectedTask(latest);
+    }
+  }, [tasks, selectedTask]);
 
   // Handle initial speech result
-const handleRecognition = async (event) => {
-  const text = event.results[0][0].transcript.trim();
-  console.log("🎙️ Recognized:", text);
+  const handleRecognition = useCallback(
+    async (event) => {
+      const transcript = event?.results?.[0]?.[0]?.transcript?.trim();
+      listeningRef.current = false;
 
-  const currentLang = i18n.language || "en";
-  const langVoiceCode = currentLang === "tr" ? "tr-TR"
-                        : currentLang === "de" ? "de-DE"
-                        : currentLang === "fr" ? "fr-FR"
-                        : "en-US";
-
-  setIsProcessingVoice(true);
-  try {
-    const res = await axios.post(`${API_URL}/api/voice-command`, {
-      message: text,
-      created_by: 425425,
-    }, {
-      headers: {
-        "x-client-lang": currentLang
+      if (!transcript) {
+        promptAndListen(getSpeechText("start", currentLang), langVoiceCode);
+        return;
       }
-    });
 
-    const { status, parsed } = res.data;
+      if (lastTranscriptRef.current === transcript) {
+        startListening();
+        return;
+      }
 
-    if (status === "saved") {
-      speak(getSpeechText("saved", currentLang), null, langVoiceCode);
-} else if (status === "missing_fields") {
-  // 👇 Try to manually complete missing fields
-  const dueISO = extractTimeFromText(text, currentLang);
-  const staffGuess = staffList.find(s => text.toLowerCase().includes(s.name.toLowerCase()));
-  const assignedName = staffGuess?.name;
+      lastTranscriptRef.current = transcript;
+      let handedOff = false;
+      setIsProcessingVoice(true);
 
-  if (parsed?.title && dueISO && assignedName) {
-    const taskPayload = {
-      title: parsed.title,
-      description: parsed.description || "",
-      assigned_to_name: assignedName,
-      due_at: dueISO, // ✅ override with frontend-parsed time
-      created_by: 425425,
-      input_method: "voice",
-      voice_response: true,
+      try {
+        const res = await secureFetch("/voice-command", {
+          method: "POST",
+          headers: {
+            "x-client-lang": currentLang,
+          },
+          body: JSON.stringify({
+            message: transcript,
+            created_by: 425425,
+          }),
+        });
+
+        const { status, parsed } = res || {};
+
+        if (status === "saved") {
+          handedOff = true;
+          speakText(getSpeechText("saved", currentLang), {
+            lang: langVoiceCode,
+            onComplete: () => setIsProcessingVoice(false),
+          });
+          lastTranscriptRef.current = "";
+          return;
+        }
+
+        if (status === "missing_fields") {
+          const dueISO = extractTimeFromText(transcript, currentLang);
+          const staffGuess = staffList.find((s) =>
+            transcript.toLowerCase().includes(s.name.toLowerCase())
+          );
+          const assignedName = staffGuess?.name;
+
+          if (parsed?.title && dueISO && assignedName) {
+            try {
+              const created = await secureFetch("/tasks", {
+                method: "POST",
+                body: JSON.stringify({
+                  title: parsed.title,
+                  description: parsed.description || "",
+                  assigned_to_name: assignedName,
+                  due_at: dueISO,
+                  created_by: 425425,
+                  input_method: "voice",
+                  voice_response: true,
+                }),
+              });
+              setTasks((prev) => [created, ...prev]);
+              handedOff = true;
+              speakText(getSpeechText("saved", currentLang), {
+                lang: langVoiceCode,
+                onComplete: () => setIsProcessingVoice(false),
+              });
+              lastTranscriptRef.current = "";
+            } catch (manualErr) {
+              console.error("❌ Failed to save manually completed task", manualErr);
+              toast.error("Failed to save manually completed task.");
+              handedOff = true;
+              promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
+            }
+          } else {
+            handedOff = true;
+            promptAndListen(
+              `${getSpeechText("missing_fields", currentLang)}. ${getSpeechText(
+                "missing_fields_example",
+                currentLang
+              )}`,
+              langVoiceCode
+            );
+            lastTranscriptRef.current = "";
+          }
+          return;
+        }
+
+        handedOff = true;
+        promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
+      } catch (err) {
+        console.error("❌ Voice-task error:", err);
+        toast.error("Failed to process speech.");
+        handedOff = true;
+        promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
+      } finally {
+        if (!handedOff) {
+          setIsProcessingVoice(false);
+        }
+      }
+    },
+    [
+      langVoiceCode,
+      promptAndListen,
+      speakText,
+      staffList,
+      startListening,
+      setTasks,
+      secureFetch,
+    ]
+  );
+
+  useEffect(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+
+    recognition.onresult = handleRecognition;
+    recognition.onstart = () => {
+      listeningRef.current = true;
+    };
+    recognition.onend = () => {
+      listeningRef.current = false;
+      setIsProcessingVoice(false);
+    };
+    recognition.onerror = (event) => {
+      listeningRef.current = false;
+      if (event?.error && event.error !== "aborted") {
+        console.error("🎤 Mic error:", event.error);
+        promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
+      } else {
+        setIsProcessingVoice(false);
+      }
     };
 
-    try {
-      const r = await axios.post(`${API_URL}/api/tasks`, taskPayload);
-      setTasks(t => [r.data, ...t]);
-      speak(getSpeechText("saved", currentLang), null, langVoiceCode);
-    } catch (e) {
-      console.error("❌ Failed to save manually completed task", e);
-      toast.error("Failed to save manually completed task.");
-      speak(getSpeechText("error", currentLang), null, langVoiceCode);
+    return () => {
+      recognition.onresult = null;
+      recognition.onstart = null;
+      recognition.onend = null;
+      recognition.onerror = null;
+    };
+  }, [handleRecognition, langVoiceCode, promptAndListen, currentLang]);
+
+
+  const startVoiceRecognition = useCallback(() => {
+    if (!recognitionRef.current) {
+      toast.warn("Speech recognition is not available on this device.");
+      return;
     }
 
-    return;
-  }
-
-  // ❌ Still incomplete → retry mic
-  speakAndRestart(
-    `${getSpeechText("missing_fields", currentLang)}. ${getSpeechText("missing_fields_example", currentLang)}`,
-    langVoiceCode
-);
-
-} else {
-  speak(getSpeechText("error", currentLang), null, langVoiceCode);
-}
-
-  } catch (err) {
-    console.error("❌ Voice-task error:", err);
-    toast.error("Failed to process speech.");
-    speak(getSpeechText("error", currentLang), null, langVoiceCode);
-  } finally {
-    setIsProcessingVoice(false);
-  }
-};
-
-
-const startVoiceRecognition = () => {
-  if (!recognition) return;
-
-  const currentLang = i18n.language || "en";
-  const langVoiceCode = currentLang === "tr" ? "tr-TR"
-                        : currentLang === "de" ? "de-DE"
-                        : currentLang === "fr" ? "fr-FR"
-                        : "en-US";
-  recognition.lang = langVoiceCode;
-  setIsProcessingVoice(true);
-  speak(getSpeechText("start", currentLang), () => {
-    try {
-      recognition.onresult = handleRecognition;
-      recognition.onerror = (e) => {
-        console.error("🎤 Mic error:", e.error);
-        setIsProcessingVoice(false);
-        speak(getSpeechText("error", currentLang), null, langVoiceCode);
-      };
-      recognition.start();
-    } catch (e) {
-      console.warn("❌ Could not start mic:", e);
-      setIsProcessingVoice(false);
-    }
-  }, langVoiceCode);
-};
+    lastTranscriptRef.current = "";
+    setIsProcessingVoice(true);
+    stopListening();
+    cancelSpeech();
+    promptAndListen(getSpeechText("start", currentLang), langVoiceCode);
+  }, [
+    cancelSpeech,
+    currentLang,
+    langVoiceCode,
+    promptAndListen,
+    stopListening,
+  ]);
 
 
 
 
   // Manual submit
   const handleManualSubmit = async () => {
-  if (!manualTitle || !manualAssignedTo || !manualDueAt) {
-    return toast.warn('Please fill title, assignee, and due date');
-  }
+    if (!manualTitle || !manualAssignedTo || !manualDueAt) {
+      return toast.warn("Please fill title, assignee, and due date");
+    }
 
-  try {
-    const isoDue = new Date(manualDueAt).toISOString();
-    await axios.post(`${API_URL}/api/tasks`, {
-      title: manualTitle,
-      description: manualDescription,
-      assigned_to_name: staffList.find(s => s.id === +manualAssignedTo)?.name,
-      due_at: isoDue,
-      created_by: 425425,
-      input_method: 'manual'
-    });
+    try {
+      const isoDue = new Date(manualDueAt).toISOString();
+      await secureFetch("/tasks", {
+        method: "POST",
+        body: JSON.stringify({
+          title: manualTitle,
+          description: manualDescription,
+          assigned_to_name: staffList.find((s) => s.id === Number(manualAssignedTo))?.name,
+          due_at: isoDue,
+          created_by: 425425,
+          input_method: "manual",
+        }),
+      });
 
-    // ✅ Let socket handle adding the task — no duplication
-    toast.success('Task added');
-    setManualTitle("");
-    setManualDescription("");
-    setManualAssignedTo("");
-    setManualDueAt("");
-  } catch (e) {
-    console.error(e);
-    toast.error('Could not add task');
-  }
-};
+      // ✅ Let socket handle adding the task — no duplication
+      toast.success("Task added");
+      setManualTitle("");
+      setManualDescription("");
+      setManualAssignedTo("");
+      setManualDueAt("");
+    } catch (e) {
+      console.error("❌ Could not add task", e);
+      toast.error("Could not add task");
+    }
+  };
 
 
   const handleStartTask = async (id) => {
     try {
-      const r = await axios.patch(`${API_URL}/api/tasks/${id}/start`);
+      const updated = await secureFetch(`/tasks/${id}/start`, { method: "PATCH" });
       toast.success("Task started!");
-      setTasks(p => p.map(t => t.id === id ? r.data : t));
-    } catch {
+      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    } catch (err) {
+      console.error("❌ Failed to start task", err);
       toast.error("Failed to start task");
     }
   };
   const handleCompleteTask = async (id) => {
     try {
-      const r = await axios.patch(`${API_URL}/api/tasks/${id}/complete`);
+      const updated = await secureFetch(`/tasks/${id}/complete`, { method: "PATCH" });
       toast.success("Task completed!");
-      setTasks(p => p.map(t => t.id === id ? r.data : t));
-    } catch {
+      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    } catch (err) {
+      console.error("❌ Failed to complete task", err);
       toast.error("Failed to complete task");
     }
   };
@@ -426,22 +621,20 @@ const startVoiceRecognition = () => {
   };
 
   const clearTasks = async () => {
-  try {
-    const res = await axios.delete(`${API_URL}/api/tasks/clear-completed`);
-    const count = res.data.count || 0;
+    try {
+      const res = await secureFetch("/tasks/clear-completed", { method: "DELETE" });
+      const count = res?.count || 0;
 
-    setTasks(prev =>
-      Array.isArray(prev)
-        ? prev.filter(task => task && task.status !== "completed")
-        : []
-    );
+      setTasks((prev) =>
+        Array.isArray(prev) ? prev.filter((task) => task && task.status !== "completed") : []
+      );
 
-    toast.success(`✅ Cleared ${count} completed task${count === 1 ? "" : "s"}.`);
-  } catch (err) {
-    console.error("❌ Failed to clear completed tasks", err);
-    toast.error("Failed to clear completed tasks");
-  }
-};
+      toast.success(`✅ Cleared ${count} completed task${count === 1 ? "" : "s"}.`);
+    } catch (err) {
+      console.error("❌ Failed to clear completed tasks", err);
+      toast.error("Failed to clear completed tasks");
+    }
+  };
 
 
 
@@ -452,7 +645,7 @@ const startVoiceRecognition = () => {
     const payload = {
       title: editedTask.title?.trim(),
       description: editedTask.description?.trim() || "",
-      assigned_to: editedTask.assigned_to || null,
+      assigned_to: editedTask.assigned_to ? Number(editedTask.assigned_to) : null,
       due_at: editedTask.due_at || null,
       priority: editedTask.priority || "medium",
       station: editedTask.station || null,
@@ -464,13 +657,16 @@ const startVoiceRecognition = () => {
       return;
     }
 
-    const res = await axios.put(`${API_URL}/api/tasks/${taskId}`, payload);
-    const updatedTask = res.data;
+    const updatedTask = await secureFetch(`/tasks/${taskId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
 
     const updated = tasks.map((t) =>
       t.id === taskId ? updatedTask : t
     );
     setTasks(updated);
+    setSelectedTask((prev) => (prev?.id === taskId ? updatedTask : prev));
     setEditingTaskId(null);
     setEditedTask({});
     toast.success(t("Task updated!"));
@@ -480,269 +676,897 @@ const startVoiceRecognition = () => {
   }
 };
 
+  const now = new Date();
+  const searchValue = searchTerm.trim().toLowerCase();
 
+  const statusOptions = [
+    { key: "all", label: t("All statuses") },
+    { key: "todo", label: t("Planned") },
+    { key: "progress", label: t("In Progress") },
+    { key: "done", label: t("Completed") },
+  ];
 
-  return (
-  <div
-    className={`min-h-screen px-4 py-4 ${
-      darkMode ? "bg-black text-white" : "bg-gradient-to-br from-white-100 to-white text-black"
-    }`}
-    style={{
-      fontSize: fontSize || "0.95rem",
-      fontFamily: fontFamily || "Inter, sans-serif",
-    }}
-  >
+  const priorityOptions = [
+    { key: "all", label: t("All priorities") },
+    { key: "high", label: t("High") },
+    { key: "medium", label: t("Medium") },
+    { key: "low", label: t("Low") },
+  ];
 
+  const bucketForTask = (task) => {
+    if (task.status === "completed") return "done";
+    if (task.status === "in_progress") return "progress";
+    return "todo";
+  };
 
-    {/* Controls */}
-    <div className="flex flex-wrap justify-center gap-4 mb-10">
-      <button
-        onClick={startVoiceRecognition}
-        disabled={isProcessingVoice}
-        className="px-5 py-2.5 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 text-white text-base font-medium shadow-md hover:scale-105 transition-all disabled:opacity-50"
-      >
-        🎤 {t("Speak Task")}
-      </button>
-      <button
-        onClick={() => setShowManualModal(true)}
-        className="px-5 py-2.5 rounded-full bg-gradient-to-br from-green-500 to-teal-600 text-white text-base font-medium shadow-md hover:scale-105 transition-all"
-      >
-        ➕ {t("Add Task")}
-      </button>
-      <button
-        onClick={clearTasks}
-        className="px-4 py-2 rounded-full bg-red-500 text-white text-sm font-semibold shadow hover:bg-red-600"
-      >
-        🧹 {t("Clear Tasks")}
-      </button>
-    </div>
+  const isOverdue = (task) =>
+    task.status !== "completed" && task.due_at && new Date(task.due_at) < now;
 
-    {/* Task List */}
-    {loading ? (
-      <p className="text-center text-sm text-gray-500 animate-pulse">{t("Loading tasks...")}</p>
-    ) : (
-      <div className="grid gap-5 max-w-4xl mx-auto">
-        {tasks.map((task, idx) => {
-  const staff = staffList.find((s) => s.id === task.assigned_to);
-  const isEditing = editingTaskId === task.id;
-  const completed = task.status === "completed";
-  const inProgress = task.status === "in_progress";
+  const filteredTasks = tasks.filter((task) => {
+    const matchesStaff =
+      activeStaffId === null ||
+      (activeStaffId === "unassigned" && !task.assigned_to) ||
+      task.assigned_to === activeStaffId;
+    const haystack = `${task.title || ""} ${task.description || ""}`.toLowerCase();
+    const matchesSearch = !searchValue || haystack.includes(searchValue);
+    const matchesStatus = statusFilter === "all" || bucketForTask(task) === statusFilter;
+    const taskPriority = (task.priority || "medium").toLowerCase();
+    const matchesPriority =
+      priorityFilter === "all" || taskPriority === priorityFilter;
+    const matchesOverdue = !showOverdueOnly || isOverdue(task);
+    return matchesStaff && matchesSearch && matchesStatus && matchesPriority && matchesOverdue;
+  });
+
+  const boardColumns = [
+    {
+      key: "todo",
+      title: t("Planned"),
+      badge: "bg-slate-100 text-slate-600",
+      ring: "ring-slate-200/70",
+    },
+    {
+      key: "progress",
+      title: t("In Progress"),
+      badge: "bg-blue-100 text-blue-700",
+      ring: "ring-blue-200/60",
+    },
+    {
+      key: "done",
+      title: t("Completed"),
+      badge: "bg-emerald-100 text-emerald-700",
+      ring: "ring-emerald-200/60",
+    },
+  ];
+
+  const groupedTasks = boardColumns.reduce(
+    (acc, column) => ({ ...acc, [column.key]: [] }),
+    {}
+  );
+  filteredTasks.forEach((task) => {
+    const bucket = bucketForTask(task);
+    if (!groupedTasks[bucket]) groupedTasks[bucket] = [];
+    groupedTasks[bucket].push(task);
+  });
+
+  const totalCount = tasks.length;
+  const inProgressCount = tasks.filter((task) => task.status === "in_progress").length;
+  const completedCount = tasks.filter((task) => task.status === "completed").length;
+  const overdueCount = tasks.filter(isOverdue).length;
+  const completionRate = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  const summaryCards = [
+    {
+      title: t("Total Tasks"),
+      value: totalCount,
+      meta: `${completedCount}/${totalCount || 1} ${t("completed")}`,
+      badge: "bg-indigo-500/15 text-indigo-600",
+      icon: "🗂️",
+      progress: completionRate,
+    },
+    {
+      title: t("In Progress"),
+      value: inProgressCount,
+      meta: t("Being worked on"),
+      badge: "bg-blue-500/15 text-blue-600",
+      icon: "⚙️",
+    },
+    {
+      title: t("Completed"),
+      value: completedCount,
+      meta: t("Done this cycle"),
+      badge: "bg-emerald-500/15 text-emerald-600",
+      icon: "✅",
+    },
+    {
+      title: t("Overdue"),
+      value: overdueCount,
+      meta: t("Require attention"),
+      badge: "bg-rose-500/15 text-rose-600",
+      icon: "⏰",
+    },
+  ];
+
+  const staffInsights = staffList.map((staff) => {
+    const assigned = tasks.filter((task) => task.assigned_to === staff.id);
+    const active = assigned.filter((task) => task.status !== "completed");
+    const completed = assigned.filter((task) => task.status === "completed").length;
+    const nextDue = active
+      .filter((task) => task.due_at)
+      .map((task) => new Date(task.due_at))
+      .sort((a, b) => a - b)[0];
+
+    return {
+      id: staff.id,
+      name: staff.name,
+      role: staff.role || "",
+      active: active.length,
+      completed,
+      total: assigned.length,
+      nextDue,
+    };
+  });
+
+  const unassignedActive = tasks.filter(
+    (task) => !task.assigned_to && task.status !== "completed"
+  );
+  const unassignedCompleted = tasks.filter(
+    (task) => !task.assigned_to && task.status === "completed"
+  );
+
+  const staffPanelItems = [
+    ...(unassignedActive.length || unassignedCompleted.length
+      ? [
+          {
+            id: "unassigned",
+            name: t("Unassigned"),
+            role: t("Needs attention"),
+            active: unassignedActive.length,
+            completed: unassignedCompleted.length,
+            total: unassignedActive.length + unassignedCompleted.length,
+            nextDue: unassignedActive
+              .filter((task) => task.due_at)
+              .map((task) => new Date(task.due_at))
+              .sort((a, b) => a - b)[0],
+          },
+        ]
+      : []),
+    ...staffInsights.sort((a, b) => b.active - a.active || b.total - a.total),
+  ];
+
+  const formatDueDate = (value) => {
+    if (!value) return t("No due date");
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return value;
+    return dt.toLocaleString(i18n.language || "en", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const handleSelectTask = (task) => {
+    setSelectedTask(task);
+    setEditingTaskId(null);
+    setEditedTask({});
+  };
+
+  const voiceButtonLabel = isProcessingVoice ? t("Listening...") : t("Speak Task");
+  const isTaskSelectedEditing = selectedTask && editingTaskId === selectedTask.id;
+  const selectedStaffMember = selectedTask
+    ? staffList.find((s) => s.id === selectedTask.assigned_to)
+    : null;
+  const selectedIsCompleted = selectedTask?.status === "completed";
+  const selectedInProgress = selectedTask?.status === "in_progress";
+  const showDetailPanel = Boolean(selectedTask);
+
+  const beginEditTask = (task) => {
+    setEditingTaskId(task.id);
+    setEditedTask({
+      title: task.title || "",
+      description: task.description || "",
+      due_at: task.due_at ? task.due_at.slice(0, 16) : "",
+      assigned_to: task.assigned_to ?? "",
+      priority: task.priority || "medium",
+      station: task.station || "",
+    });
+  };
+
+  const panelBase = darkMode
+    ? "bg-white/5 border border-white/10"
+    : "bg-white border border-slate-200";
+  const dividerClass = darkMode ? "border-white/10" : "border-slate-100";
+  const priorityPills = darkMode
+    ? {
+        high: "bg-rose-500/20 text-rose-200",
+        medium: "bg-amber-500/20 text-amber-200",
+        low: "bg-emerald-500/20 text-emerald-200",
+      }
+    : {
+        high: "bg-rose-100 text-rose-600",
+        medium: "bg-amber-100 text-amber-600",
+        low: "bg-emerald-100 text-emerald-700",
+      };
 
   return (
     <div
-      key={`${task.id}-${idx}`}
-      className={`rounded-xl shadow border p-4 transition-all ${
-        completed
-          ? "bg-green-100 dark:bg-green-900 border-green-400"
-          : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700"
+      className={`min-h-screen transition-colors duration-300 ${
+        darkMode ? "bg-[#0b1220] text-slate-100" : "bg-[#f7f9fc] text-slate-900"
       }`}
+      style={{
+        fontSize: fontSize || "0.95rem",
+        fontFamily: fontFamily || "Inter, sans-serif",
+      }}
     >
-      {/* Title */}
-      {isEditing ? (
-        <input
-          className="w-full text-lg font-bold mb-1 p-1 rounded border bg-white dark:bg-black"
-          value={editedTask.title}
-          onChange={(e) =>
-            setEditedTask((prev) => ({ ...prev, title: e.target.value }))
-          }
-        />
-      ) : (
-        <h2 className="text-lg font-bold mb-1">{task.title}</h2>
-      )}
-
-      {/* Description */}
-      {isEditing ? (
-        <textarea
-          className="w-full text-sm mb-2 p-1 rounded border bg-white dark:bg-black"
-          value={editedTask.description}
-          onChange={(e) =>
-            setEditedTask((prev) => ({ ...prev, description: e.target.value }))
-          }
-        />
-      ) : (
-        task.description && (
-          <p className="text-sm opacity-70 mb-1">{task.description}</p>
-        )
-      )}
-
-      {/* Due Date */}
-   <p className="text-xs mb-1">
-  ⏰ {t("Due")}:{" "}
-  {isEditing ? (
-    <input
-      type="datetime-local"
-      value={editedTask.due_at}
-      onChange={(e) =>
-        setEditedTask((prev) => ({ ...prev, due_at: e.target.value }))
-      }
-      className="p-1 text-xs border rounded bg-white dark:bg-black"
-    />
-  ) : (
-    new Date(task.due_at).toLocaleString("tr-TR", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-})
-
-  )}
-</p>
-
-      {/* Assigned To */}
-      <p className="text-xs mb-1">
-        🙋 {t("Assigned to")}:{" "}
-        {isEditing ? (
-          <select
-            value={editedTask.assigned_to}
-            onChange={(e) =>
-              setEditedTask((prev) => ({
-                ...prev,
-                assigned_to: e.target.value,
-              }))
-            }
-            className="text-xs p-1 border rounded bg-white dark:bg-black"
-          >
-            <option value="">{t("Assign to...")}</option>
-            {staffList.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          staff?.name || "-"
-        )}
-      </p>
-
-      <p className="text-xs">🔁 {t("Status")}: {t(task.status)}</p>
-
-      {inProgress && task.started_at && !completed && (
-        <p className="text-xs text-yellow-500 mt-1">
-          ⏱️ {t("Elapsed")}: {formatDuration(task.started_at)}
-        </p>
-      )}
-
-      <div className="flex gap-2 mt-3 flex-wrap">
-        {!completed && !isEditing && (
-          <>
-            {!inProgress ? (
-              <button
-                onClick={() => handleStartTask(task.id)}
-                className="px-3 py-1 rounded bg-yellow-500 hover:bg-yellow-600 text-black text-sm font-bold"
-              >
-                ✅ {t("Accept Task")}
-              </button>
-            ) : (
-              <button
-                onClick={() => handleCompleteTask(task.id)}
-                className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-sm font-bold"
-              >
-                ✔️ {t("Complete Task")}
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setEditingTaskId(task.id);
-                setEditedTask({
-                  title: task.title,
-                  description: task.description,
-                  due_at: task.due_at?.slice(0, 16), // trim for datetime-local
-                  assigned_to: task.assigned_to,
-                });
-              }}
-              className="px-3 py-1 rounded bg-blue-500 hover:bg-blue-600 text-white text-sm"
-            >
-              ✏️ {t("Edit")}
-            </button>
-          </>
-        )}
-
-        {isEditing && (
-          <>
-            <button
-              onClick={() => handleSaveEdit(task.id)}
-              className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-sm"
-            >
-              💾 {t("Save")}
-            </button>
-            <button
-              onClick={() => setEditingTaskId(null)}
-              className="px-3 py-1 rounded bg-gray-400 hover:bg-gray-500 text-white text-sm"
-            >
-              ❌ {t("Cancel")}
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-})}
-
-      </div>
-    )}
-
-    {/* Modal for Manual Task */}
-    {showManualModal && (
-      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-        <div className={`w-full max-w-xl p-6 rounded-2xl shadow-lg relative border ${darkMode ? "bg-white/10 border-white/20 text-white" : "bg-white text-black"}`}>
-          <button
-            onClick={() => setShowManualModal(false)}
-            className="absolute top-3 right-3 text-xl font-bold hover:text-red-500"
-          >
-            ✖
-          </button>
-          <h2 className="text-2xl font-bold mb-4 text-center">{t("Add Task Manually")}</h2>
-          <div className="space-y-3">
-            <input
-              type="text"
-              placeholder={t("Task Title")}
-              value={manualTitle}
-              onChange={(e) => setManualTitle(e.target.value)}
-              className="w-full p-2.5 border rounded-lg bg-gray-100 dark:bg-white/10 dark:border-gray-600"
-            />
-            <textarea
-              placeholder={t("Description (optional)")}
-              value={manualDescription}
-              onChange={(e) => setManualDescription(e.target.value)}
-              className="w-full p-2.5 border rounded-lg h-20 bg-gray-100 dark:bg-white/10 dark:border-gray-600"
-            />
-            <div className="flex gap-3 flex-col md:flex-row">
-              <select
-                value={manualAssignedTo}
-                onChange={(e) => setManualAssignedTo(e.target.value)}
-                className="flex-1 p-2.5 border rounded-lg bg-gray-100 dark:bg-white/10 dark:border-gray-600"
-              >
-                <option value="">{t("Assign to...")}</option>
-                {staffList.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="datetime-local"
-                value={manualDueAt}
-                onChange={(e) => setManualDueAt(e.target.value)}
-                className="flex-1 p-2.5 border rounded-lg bg-gray-100 dark:bg-white/10 dark:border-gray-600"
-              />
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        <header className={`${panelBase} rounded-3xl p-6 shadow-lg transition-all`}>
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] opacity-60">
+                {t("Task workspace")}
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold">{t("Team Task Hub")}</h1>
+              <p className="mt-2 text-sm opacity-70 max-w-xl">
+                {t("Plan, track, and celebrate progress in a Monday-inspired light view.")}
+              </p>
             </div>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <button
+                onClick={startVoiceRecognition}
+                disabled={isProcessingVoice}
+                className={`px-4 py-2.5 rounded-2xl text-sm font-semibold shadow transition ${
+                  isProcessingVoice
+                    ? "opacity-70 cursor-not-allowed"
+                    : "hover:-translate-y-0.5 hover:shadow-md"
+                } ${darkMode ? "bg-indigo-500/90 text-white" : "bg-indigo-500 text-white"}`}
+              >
+                🎤 {voiceButtonLabel}
+              </button>
+              <button
+                onClick={() => setShowManualModal(true)}
+                className={`px-4 py-2.5 rounded-2xl text-sm font-semibold shadow hover:-translate-y-0.5 hover:shadow-md transition ${
+                  darkMode ? "bg-emerald-500/90 text-white" : "bg-emerald-500 text-white"
+                }`}
+              >
+                ➕ {t("Add Task")}
+              </button>
+              <button
+                onClick={clearTasks}
+                className={`px-4 py-2.5 rounded-2xl text-sm font-semibold transition hover:-translate-y-0.5 hover:shadow-md ${
+                  darkMode
+                    ? "bg-white/5 text-rose-200 hover:bg-white/10"
+                    : "bg-rose-50 text-rose-600 hover:bg-rose-100"
+                }`}
+              >
+                🧹 {t("Clear Completed")}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {loading ? (
+          <div className={`${panelBase} rounded-3xl p-8 text-center text-sm opacity-80`}>
+            {t("Loading tasks...")}
+          </div>
+        ) : (
+          <>
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {summaryCards.map((card) => (
+                <div
+                  key={card.title}
+                  className={`${panelBase} rounded-3xl p-5 shadow-sm hover:shadow-md transition-transform hover:-translate-y-0.5`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl">{card.icon}</span>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${card.badge}`}>
+                      {card.meta}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs uppercase tracking-wide opacity-60 font-semibold">
+                    {card.title}
+                  </p>
+                  <p className="text-3xl font-semibold mt-2">{card.value}</p>
+                  {typeof card.progress === "number" && (
+                    <div className="mt-4">
+                      <div className={`${darkMode ? "bg-white/10" : "bg-slate-100"} h-2 rounded-full`}>
+                        <div
+                          className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-sky-500"
+                          style={{ width: `${card.progress}%` }}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs opacity-60">
+                        {card.progress}% {t("completion")}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </section>
+
+            <section className={`${panelBase} rounded-3xl p-5 shadow-sm`}>
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="relative flex-1 min-w-[220px]">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+                  <input
+                    type="search"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder={t("Search by title or description")}
+                    className={`w-full pl-10 pr-4 py-2.5 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-sky-400 ${
+                      darkMode ? "bg-white/5 border-white/10" : "bg-white border-slate-200"
+                    }`}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {statusOptions.map((option) => {
+                    const active = statusFilter === option.key;
+                    return (
+                      <button
+                        key={option.key}
+                        onClick={() => setStatusFilter(option.key)}
+                        className={`px-3 py-1.5 rounded-2xl text-sm font-medium transition ${
+                          active
+                            ? "bg-sky-500 text-white shadow"
+                            : darkMode
+                            ? "bg-white/5 text-slate-200 hover:bg-white/10"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {priorityOptions.map((option) => {
+                    const active = priorityFilter === option.key;
+                    return (
+                      <button
+                        key={option.key}
+                        onClick={() => setPriorityFilter(option.key)}
+                        className={`px-3 py-1.5 rounded-2xl text-sm font-medium transition ${
+                          active
+                            ? "bg-amber-500 text-white shadow"
+                            : darkMode
+                            ? "bg-white/5 text-slate-200 hover:bg-white/10"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowOverdueOnly((prev) => !prev)}
+                    className={`px-3 py-1.5 rounded-2xl text-sm font-semibold transition ${
+                      showOverdueOnly
+                        ? "bg-rose-500 text-white shadow"
+                        : darkMode
+                        ? "bg-white/5 text-slate-200 hover:bg-white/10"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    ⏰ {t("Overdue")}
+                  </button>
+                  {(statusFilter !== "all" ||
+                    priorityFilter !== "all" ||
+                    showOverdueOnly ||
+                    activeStaffId !== null) && (
+                    <button
+                      onClick={() => {
+                        setStatusFilter("all");
+                        setPriorityFilter("all");
+                        setShowOverdueOnly(false);
+                        setActiveStaffId(null);
+                      }}
+                      className={`px-3 py-1.5 rounded-2xl text-sm font-medium transition ${
+                        darkMode
+                          ? "bg-white/5 text-slate-200 hover:bg-white/10"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      ✨ {t("Clear filters")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <div className="grid gap-6 xl:grid-cols-[260px_1fr_320px]">
+              <aside className={`${panelBase} rounded-3xl p-5 shadow-sm space-y-5`}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide">{t("Team focus")}</h3>
+                  {activeStaffId !== null && (
+                    <button
+                      onClick={() => setActiveStaffId(null)}
+                      className="text-xs font-semibold text-sky-500 hover:underline"
+                    >
+                      {t("Show all")}
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setActiveStaffId(null)}
+                    className={`w-full text-left px-4 py-3 rounded-2xl border transition ${
+                      activeStaffId === null
+                        ? "border-sky-400 bg-sky-50 text-sky-700 shadow"
+                        : darkMode
+                        ? "border-white/5 bg-white/5 hover:bg-white/10"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{t("All teammates")}</span>
+                      <span className="text-xs opacity-60">{tasks.length}</span>
+                    </div>
+                    <p className="text-xs opacity-70 mt-1">{t("Every task across the team")}</p>
+                  </button>
+                  {staffPanelItems.length === 0 && (
+                    <p className="text-xs opacity-60">{t("No staff assigned yet.")}</p>
+                  )}
+                  {staffPanelItems.map((member) => {
+                    const isActive = activeStaffId === member.id;
+                    const nextDueLabel = member.nextDue
+                      ? new Date(member.nextDue).toLocaleString(i18n.language || "en", {
+                          month: "short",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : t("No upcoming due");
+                    return (
+                      <button
+                        key={member.id}
+                        onClick={() =>
+                          setActiveStaffId((prev) => (prev === member.id ? null : member.id))
+                        }
+                        className={`w-full text-left px-4 py-3 rounded-2xl border transition ${
+                          isActive
+                            ? "border-sky-400 bg-sky-50 text-sky-700 shadow"
+                            : darkMode
+                            ? "border-white/5 bg-white/5 hover:bg-white/10"
+                            : "border-slate-200 bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">{member.name}</p>
+                            {member.role && <p className="text-xs opacity-60">{member.role}</p>}
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
+                            {member.active}/{member.total}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-xs opacity-70">
+                          <span>
+                            {t("Completed")}: {member.completed}
+                          </span>
+                          <span>{nextDueLabel}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </aside>
+
+              <section className="space-y-5 overflow-x-auto pb-2">
+                <div className="flex gap-5 min-w-[720px]">
+                  {boardColumns.map((column) => {
+                    const columnTasks = groupedTasks[column.key] || [];
+                    return (
+                      <div
+                        key={column.key}
+                        className={`${panelBase} ${column.ring || ""} ring-1 rounded-3xl p-4 w-full max-w-[340px] flex-shrink-0 shadow-sm`}
+                      >
+                        <div className={`flex items-center justify-between pb-3 border-b ${dividerClass}`}>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold tracking-wide uppercase">
+                              {column.title}
+                            </h3>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${column.badge}`}>
+                              {columnTasks.length}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="pt-4 space-y-3">
+                          {columnTasks.length === 0 ? (
+                            <p className="text-xs opacity-60 rounded-2xl border border-dashed border-slate-300/70 p-4 text-center">
+                              {t("No tasks here yet.")}
+                            </p>
+                          ) : (
+                            columnTasks.map((task) => {
+                              const assigned = staffList.find((s) => s.id === task.assigned_to);
+                              const priorityKey = (task.priority || "medium").toLowerCase();
+                              const priorityClass = priorityPills[priorityKey] || priorityPills.medium;
+                              const overdue = isOverdue(task);
+                              const isSelected = selectedTask?.id === task.id;
+                              return (
+                                <button
+                                  key={task.id}
+                                  type="button"
+                                  onClick={() => handleSelectTask(task)}
+                                  className={`w-full text-left rounded-2xl border p-4 transition-all ${
+                                    isSelected
+                                      ? "ring-2 ring-sky-400 border-transparent"
+                                      : "hover:-translate-y-0.5"
+                                  } ${
+                                    darkMode
+                                      ? "bg-slate-900/70 border-white/10 hover:bg-slate-900"
+                                      : "bg-white border-slate-200 hover:border-sky-200 hover:bg-sky-50/40"
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-semibold leading-tight">{task.title}</p>
+                                      {task.description && (
+                                        <p className="mt-1 text-xs opacity-70 line-clamp-2">
+                                          {task.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${priorityClass}`}>
+                                      {t(
+                                        (task.priority || "medium")
+                                          .charAt(0)
+                                          .toUpperCase() + (task.priority || "medium").slice(1)
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide opacity-70">
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full ${
+                                        overdue
+                                          ? darkMode
+                                            ? "bg-rose-500/20 text-rose-200"
+                                            : "bg-rose-100 text-rose-600"
+                                          : darkMode
+                                          ? "bg-emerald-500/15 text-emerald-200"
+                                          : "bg-emerald-100 text-emerald-600"
+                                      }`}
+                                    >
+                                      {overdue ? t("Overdue") : t("On track")}
+                                    </span>
+                                    <span className={darkMode ? "text-slate-300" : "text-slate-600"}>
+                                      {formatDueDate(task.due_at)}
+                                    </span>
+                                    {assigned && (
+                                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                        {assigned.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {task.status !== "completed" && task.status !== "in_progress" && (
+                                      <button
+                                        type="button"
+                                        onClick={async (event) => {
+                                          event.stopPropagation();
+                                          handleSelectTask(task);
+                                          await handleStartTask(task.id);
+                                        }}
+                                        className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-400/90 text-slate-900 hover:bg-amber-400"
+                                      >
+                                        ✅ {t("Start")}
+                                      </button>
+                                    )}
+                                    {task.status === "in_progress" && (
+                                      <button
+                                        type="button"
+                                        onClick={async (event) => {
+                                          event.stopPropagation();
+                                          handleSelectTask(task);
+                                          await handleCompleteTask(task.id);
+                                        }}
+                                        className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/90 text-white hover:bg-emerald-500"
+                                      >
+                                        ✔️ {t("Complete")}
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleSelectTask(task);
+                                        beginEditTask(task);
+                                      }}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
+                                        darkMode
+                                          ? "bg-white/10 text-slate-100 hover:bg-white/20"
+                                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                      }`}
+                                    >
+                                      ✏️ {t("Edit")}
+                                    </button>
+                                  </div>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <aside className={`${panelBase} rounded-3xl p-6 shadow-sm space-y-5`}>
+                {showDetailPanel ? (
+                  <>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide opacity-60">
+                          {t("Task ID")}: {selectedTask.id}
+                        </p>
+                        {isTaskSelectedEditing ? (
+                          <input
+                            value={editedTask.title}
+                            onChange={(e) =>
+                              setEditedTask((prev) => ({ ...prev, title: e.target.value }))
+                            }
+                            className={`mt-2 w-full rounded-2xl border px-3 py-2 font-semibold ${
+                              darkMode ? "bg-white/5 border-white/10" : "bg-white border-slate-200"
+                            }`}
+                          />
+                        ) : (
+                          <h2 className="mt-2 text-xl font-semibold">{selectedTask.title}</h2>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setSelectedTask(null)}
+                        className="text-xs font-semibold text-slate-400 hover:text-slate-600"
+                      >
+                        ✖
+                      </button>
+                    </div>
+
+                    {isTaskSelectedEditing ? (
+                      <div className="space-y-4">
+                        <textarea
+                          value={editedTask.description}
+                          onChange={(e) =>
+                            setEditedTask((prev) => ({ ...prev, description: e.target.value }))
+                          }
+                          placeholder={t("Description")}
+                          className={`w-full min-h-[100px] rounded-2xl border px-3 py-2 ${
+                            darkMode ? "bg-white/5 border-white/10" : "bg-white border-slate-200"
+                          }`}
+                        />
+                        <div className="grid grid-cols-1 gap-3">
+                          <label className="space-y-1 text-xs uppercase tracking-wide opacity-70">
+                            <span>{t("Due date")}</span>
+                            <input
+                              type="datetime-local"
+                              value={editedTask.due_at}
+                              onChange={(e) =>
+                                setEditedTask((prev) => ({ ...prev, due_at: e.target.value }))
+                              }
+                              className={`w-full rounded-2xl border px-3 py-2 ${
+                                darkMode ? "bg-white/5 border-white/10" : "bg-white border-slate-200"
+                              }`}
+                            />
+                          </label>
+                          <label className="space-y-1 text-xs uppercase tracking-wide opacity-70">
+                            <span>{t("Assignee")}</span>
+                            <select
+                              value={editedTask.assigned_to ?? ""}
+                              onChange={(e) =>
+                                setEditedTask((prev) => ({
+                                  ...prev,
+                                  assigned_to: e.target.value ? Number(e.target.value) : "",
+                                }))
+                              }
+                              className={`w-full rounded-2xl border px-3 py-2 ${
+                                darkMode ? "bg-white/5 border-white/10" : "bg-white border-slate-200"
+                              }`}
+                            >
+                              <option value="">{t("Unassigned")}</option>
+                              {staffList.map((staff) => (
+                                <option key={staff.id} value={staff.id}>
+                                  {staff.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="space-y-1 text-xs uppercase tracking-wide opacity-70">
+                            <span>{t("Priority")}</span>
+                            <select
+                              value={editedTask.priority || "medium"}
+                              onChange={(e) =>
+                                setEditedTask((prev) => ({ ...prev, priority: e.target.value }))
+                              }
+                              className={`w-full rounded-2xl border px-3 py-2 ${
+                                darkMode ? "bg-white/5 border-white/10" : "bg-white border-slate-200"
+                              }`}
+                            >
+                              <option value="high">{t("High")}</option>
+                              <option value="medium">{t("Medium")}</option>
+                              <option value="low">{t("Low")}</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleSaveEdit(selectedTask.id)}
+                            className="px-4 py-2 rounded-2xl bg-emerald-500 text-white font-semibold hover:bg-emerald-400"
+                          >
+                            💾 {t("Save")}
+                          </button>
+                          <button
+                            onClick={() => setEditingTaskId(null)}
+                            className={`px-4 py-2 rounded-2xl font-semibold ${
+                              darkMode
+                                ? "bg-white/10 text-slate-100 hover:bg-white/20"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            }`}
+                          >
+                            ❌ {t("Cancel")}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {selectedTask.description && (
+                          <p className="text-sm leading-relaxed opacity-80">
+                            {selectedTask.description}
+                          </p>
+                        )}
+                        <div
+                          className={`rounded-2xl border px-4 py-3 ${
+                            darkMode ? "border-white/10 bg-white/5" : "border-slate-200 bg-slate-50"
+                          }`}
+                        >
+                          <p className="text-xs uppercase tracking-wide opacity-60">{t("Due")}</p>
+                          <p className="text-sm font-medium">{formatDueDate(selectedTask.due_at)}</p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="opacity-70">{t("Status")}</span>
+                            <span className="font-semibold uppercase">
+                              {t(selectedTask.status || "Planned")}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="opacity-70">{t("Priority")}</span>
+                            <span className="font-semibold">
+                              {t(
+                                (selectedTask.priority || "medium")
+                                  .charAt(0)
+                                  .toUpperCase() + (selectedTask.priority || "medium").slice(1)
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="opacity-70">{t("Assignee")}</span>
+                            <span className="font-semibold">
+                              {selectedStaffMember ? selectedStaffMember.name : t("Unassigned")}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {!selectedIsCompleted && !selectedInProgress && (
+                            <button
+                              onClick={() => handleStartTask(selectedTask.id)}
+                              className="px-4 py-2 rounded-2xl bg-amber-400 text-slate-900 font-semibold hover:bg-amber-300"
+                            >
+                              ✅ {t("Mark as in progress")}
+                            </button>
+                          )}
+                          {selectedInProgress && (
+                            <button
+                              onClick={() => handleCompleteTask(selectedTask.id)}
+                              className="px-4 py-2 rounded-2xl bg-emerald-500 text-white font-semibold hover:bg-emerald-400"
+                            >
+                              ✔️ {t("Mark complete")}
+                            </button>
+                          )}
+                          {!isTaskSelectedEditing && (
+                            <button
+                              onClick={() => beginEditTask(selectedTask)}
+                              className={`px-4 py-2 rounded-2xl font-semibold ${
+                                darkMode
+                                  ? "bg-white/10 text-slate-100 hover:bg-white/20"
+                                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              }`}
+                            >
+                              ✏️ {t("Edit")}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center text-center space-y-3">
+                    <span className="text-4xl">🗂️</span>
+                    <p className="text-sm opacity-70">
+                      {t("Select a task from the board to see the full context.")}
+                    </p>
+                  </div>
+                )}
+              </aside>
+            </div>
+          </>
+        )}
+      </div>
+
+      {showManualModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4">
+          <div
+            className={`w-full max-w-xl p-6 rounded-3xl shadow-2xl relative border ${
+              darkMode ? "bg-[#121b2f] border-white/20 text-white" : "bg-white border-slate-100"
+            }`}
+          >
             <button
-              onClick={() => {
-                handleManualSubmit();
-                setShowManualModal(false);
-              }}
-              className="w-full py-2.5 mt-2 bg-gradient-to-br from-green-500 to-teal-600 text-white rounded-full font-semibold shadow hover:scale-[1.03] transition"
+              onClick={() => setShowManualModal(false)}
+              className="absolute top-4 right-4 text-xl font-bold hover:text-rose-500"
             >
-              ➕ {t("Add Task")}
+              ✖
             </button>
+            <h2 className="text-2xl font-semibold mb-4 text-center">{t("Add Task Manually")}</h2>
+            <div className="space-y-3">
+              <input
+                type="text"
+                placeholder={t("Task Title")}
+                value={manualTitle}
+                onChange={(e) => setManualTitle(e.target.value)}
+                className={`w-full p-2.5 rounded-2xl border ${
+                  darkMode ? "bg-white/5 border-white/10" : "bg-slate-50 border-slate-200"
+                }`}
+              />
+              <textarea
+                placeholder={t("Description (optional)")}
+                value={manualDescription}
+                onChange={(e) => setManualDescription(e.target.value)}
+                className={`w-full h-20 p-2.5 rounded-2xl border ${
+                  darkMode ? "bg-white/5 border-white/10" : "bg-slate-50 border-slate-200"
+                }`}
+              />
+              <div className="flex gap-3 flex-col md:flex-row">
+                <select
+                  value={manualAssignedTo}
+                  onChange={(e) => setManualAssignedTo(e.target.value)}
+                  className={`flex-1 p-2.5 rounded-2xl border ${
+                    darkMode ? "bg-white/5 border-white/10" : "bg-slate-50 border-slate-200"
+                  }`}
+                >
+                  <option value="">{t("Assign to...")}</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="datetime-local"
+                  value={manualDueAt}
+                  onChange={(e) => setManualDueAt(e.target.value)}
+                  className={`flex-1 p-2.5 rounded-2xl border ${
+                    darkMode ? "bg-white/5 border-white/10" : "bg-slate-50 border-slate-200"
+                  }`}
+                />
+              </div>
+              <button
+                onClick={() => {
+                  handleManualSubmit();
+                  setShowManualModal(false);
+                }}
+                className={`w-full py-2.5 mt-2 rounded-2xl font-semibold shadow hover:-translate-y-0.5 transition ${
+                  darkMode ? "bg-emerald-500/90 text-white" : "bg-emerald-500 text-white"
+                }`}
+              >
+                ➕ {t("Add Task")}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
-  </div>
-);
+      )}
+    </div>
+  );
+
 
 
 

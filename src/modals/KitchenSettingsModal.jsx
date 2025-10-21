@@ -51,7 +51,7 @@ export default function KitchenSettingsModal({
                         updated = prev.includes(ingredient)
                           ? prev.filter(ing => ing !== ingredient)
                           : [...prev, ingredient];
-                        fetch(`${API_URL}/api/kitchen/compile-settings`, {
+                        secureFetch('kitchen/compile-settings`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
@@ -95,7 +95,7 @@ export default function KitchenSettingsModal({
                         const updated = allChecked
                           ? prev.filter(id => !catProducts.includes(id))
                           : Array.from(new Set([...prev, ...catProducts]));
-                        fetch(`${API_URL}/api/kitchen/compile-settings`, {
+                        secureFetch('kitchen/compile-settings`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
@@ -127,7 +127,7 @@ export default function KitchenSettingsModal({
                             const updated = prev.includes(product.id)
                               ? prev.filter(id => id !== product.id)
                               : [...prev, product.id];
-                            fetch(`${API_URL}/api/kitchen/compile-settings`, {
+                            secureFetch('kitchen/compile-settings`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify({

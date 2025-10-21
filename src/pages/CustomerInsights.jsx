@@ -1,10 +1,9 @@
 // src/pages/CustomerInsights.jsx
-import React, { useEffect, useState, useMemo } from "react";
-import { Search, User, Gift, Phone, Calendar, Repeat, Star } from "lucide-react";
-import axios from "axios";
+import React, { useEffect, useState } from "react";
+import { Search, User, Gift, Phone, Repeat, Star } from "lucide-react";
 import { useHasPermission } from "../components/hooks/useHasPermission";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 import { useTranslation } from "react-i18next";
+import secureFetch from "../utils/secureFetch";
 
 export default function CustomerInsights() {
   const [customers, setCustomers] = useState([]);
@@ -13,17 +12,20 @@ export default function CustomerInsights() {
   const [birthdayCustomers, setBirthdayCustomers] = useState([]);
   const { t } = useTranslation();
   const canAccess = useHasPermission("customer");
-if (!canAccess) {
-  return <div className="p-12 text-2xl text-red-600 text-center">
-    {t("Access Denied: You do not have permission to view Customer Insights.")}
-  </div>;
-}
-useEffect(() => {
-  fetch(`${API_URL}/api/customers/birthdays`)
-    .then(res => res.json())
-    .then(setBirthdayCustomers)
-    .catch(console.error);
-}, []);
+
+  if (!canAccess) {
+    return (
+      <div className="p-12 text-2xl text-red-600 text-center">
+        {t("Access Denied: You do not have permission to view Customer Insights.")}
+      </div>
+    );
+  }
+
+  useEffect(() => {
+    secureFetch("/customers/birthdays")
+      .then(setBirthdayCustomers)
+      .catch(console.error);
+  }, []);
 
   const [stats, setStats] = useState({
     total: 0,
@@ -38,20 +40,19 @@ useEffect(() => {
     async function fetchCustomers() {
       setLoading(true);
       try {
-        const res = await axios.get(`${API_URL}/api/customers`, {
-          params: { search },
-        });
+        const query = search ? `?search=${encodeURIComponent(search)}` : "";
+        const res = await secureFetch(`/customers${query}`);
         if (ignore) return;
-        setCustomers(res.data);
+        setCustomers(res);
         // You can compute stats here or fetch from backend
         setStats(s => ({
           ...s,
-          total: res.data.length,
-          repeat: res.data.filter(c => c.visit_count && c.visit_count > 1).length,
-          birthdays: res.data.filter(c => isThisWeekBirthday(c.birthday)).length,
-top: [...res.data]
-  .sort((a, b) => (b.visit_count || 0) - (a.visit_count || 0))
-  .slice(0, 3),
+          total: res.length,
+          repeat: res.filter(c => c.visit_count && c.visit_count > 1).length,
+          birthdays: res.filter(c => isThisWeekBirthday(c.birthday)).length,
+          top: [...res]
+            .sort((a, b) => (b.visit_count || 0) - (a.visit_count || 0))
+            .slice(0, 3),
         }));
       } catch (e) {
         setCustomers([]);

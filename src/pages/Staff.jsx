@@ -3,11 +3,11 @@ import StaffCheckIn from '../components/ui/StaffCheckIn';
 import StaffSchedule from '../components/ui/StaffSchedule';
 import Payroll from '../components/ui/Payroll';
 
-import axios from 'axios';
 import Modal from 'react-modal';
 import { Toaster, toast } from 'react-hot-toast';
 import { Plus, Save } from 'lucide-react';
 import { useTranslation } from "react-i18next";
+import secureFetch from "../utils/secureFetch";
 const API_URL = import.meta.env.VITE_API_URL || "";
 Modal.setAppElement('#root');
 
@@ -43,8 +43,6 @@ const Staff = () => {
   });
   const [sendToEveryone, setSendToEveryone] = useState(true);
   const [selectedRecipients, setSelectedRecipients] = useState([]);
-  const [sending, setSending] = useState(false);
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStaffForPayment, setSelectedStaffForPayment] = useState('');
   const [staffHistory, setStaffHistory] = useState({});
@@ -56,117 +54,129 @@ const Staff = () => {
   const [repeatType, setRepeatType] = useState('none');
   const [repeatTime, setRepeatTime] = useState('09:00');
 
+  // ✅ Load staff
   useEffect(() => {
     let isMounted = true;
     const fetchStaff = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/staff`);
-        if (isMounted) setStaffList(response.data);
+        const response = await secureFetch("/staff");
+        if (isMounted) setStaffList(response);
       } catch (err) {
-        console.error('Error fetching staff:', err);
-        toast.error('Error fetching staff');
+        console.error("Error fetching staff:", err);
+        toast.error("Error fetching staff");
       }
     };
     fetchStaff();
     return () => { isMounted = false; };
   }, []);
 
+  // ✅ Fetch payroll + payment history
   const fetchStaffHistory = async (staffId) => {
     setSelectedStaffForPayment(staffId);
     if (!staffId) { setStaffHistory({}); return; }
     try {
       const [payroll, payments] = await Promise.all([
-        axios.get(`${API_URL}/api/staff/${staffId}/payroll`),
-        axios.get(`${API_URL}/api/staff/${staffId}/payments`)
+        secureFetch(`/staff/${staffId}/payroll`),
+        secureFetch(`/staff/${staffId}/payments`)
       ]);
       setStaffHistory({
-        ...payroll.data.payroll,
-        paymentHistory: payments.data
+        ...payroll.payroll,
+        paymentHistory: payments
       });
     } catch (err) {
-      toast.error(t('Failed to fetch payroll data'));
+      toast.error(t("Failed to fetch payroll data"));
     }
   };
 
+  // ✅ Add new staff
   const addStaff = async () => {
     if (!name || !role || !phone || !id || !address || !salary || !email) {
-      toast.error('All fields are required');
+      toast.error("All fields are required");
       return;
     }
     try {
-      await axios.post(`${API_URL}/api/staff`, {
-        id,
-        name,
-        role,
-        phone,
-        address,
-        email,
-        salary: parseFloat(salary),
-        salary_model: salaryModel,
-        payment_type: paymentType,
-        hourly_rate: salaryModel === 'hourly' ? parseFloat(hourlyRate) : null,
-        weekly_salary: salaryModel === 'fixed' && paymentType === 'weekly' ? parseFloat(salary) : null,
-        monthly_salary: salaryModel === 'fixed' && paymentType === 'monthly' ? parseFloat(salary) : null,
+      await secureFetch("/staff", {
+        method: "POST",
+        body: JSON.stringify({
+          id,
+          name,
+          role,
+          phone,
+          address,
+          email,
+          salary: parseFloat(salary),
+          salary_model: salaryModel,
+          payment_type: paymentType,
+          hourly_rate: salaryModel === "hourly" ? parseFloat(hourlyRate) : null,
+          weekly_salary: salaryModel === "fixed" && paymentType === "weekly" ? parseFloat(salary) : null,
+          monthly_salary: salaryModel === "fixed" && paymentType === "monthly" ? parseFloat(salary) : null,
+        }),
       });
       toast.success(t("Staff added successfully"));
-      setName(''); setRole(''); setPhone(''); setId(''); setAddress('');
-      setSalary(''); setEmail(''); setPaymentType('daily'); setSalaryModel('fixed'); setHourlyRate('');
+      setName(""); setRole(""); setPhone(""); setId(""); setAddress("");
+      setSalary(""); setEmail(""); setPaymentType("daily"); setSalaryModel("fixed"); setHourlyRate("");
       setShowAddStaff(false);
-      const res = await axios.get(`${API_URL}/api/staff`);
-      setStaffList(res.data);
+      const res = await secureFetch("/staff");
+      setStaffList(res);
     } catch (err) {
-      toast.error('Please enter a valid numeric ID');
+      toast.error("Please enter a valid numeric ID");
     }
   };
 
+  // ✅ Send shift schedule
   const handleSendShift = async () => {
     try {
-      const period = shiftDetails.period || 'week';
+      const period = shiftDetails.period || "week";
       const recipients = sendToEveryone ? staffList.map((staff) => staff.id) : selectedRecipients;
-      await axios.post(`${API_URL}/api/staff/send-schedule`, { period, recipients });
-      toast.success('Shift schedule sent successfully');
+      await secureFetch("/staff/send-schedule", {
+        method: "POST",
+        body: JSON.stringify({ period, recipients }),
+      });
+      toast.success("Shift schedule sent successfully");
       setIsSendShiftModalOpen(false);
     } catch (err) {
-      toast.error('Failed to send shift schedule');
+      toast.error("Failed to send shift schedule");
     }
   };
 
+  // ✅ Handle payment
   const handlePayment = async () => {
-    if (!selectedStaffForPayment) return toast.error('Select staff');
+    if (!selectedStaffForPayment) return toast.error("Select staff");
     const amt = parseFloat(paymentAmount);
-    if (!amt && !autoPaymentEnabled) return toast.error('Enter amount or enable auto');
+    if (!amt && !autoPaymentEnabled) return toast.error("Enter amount or enable auto");
     try {
-      await axios.post(`${API_URL}/api/staff/${selectedStaffForPayment}/payments`, {
-        amount: amt,
-        date: new Date().toISOString().slice(0,10),
-        note,
-        payment_method: paymentMethod,
-        auto: autoPaymentEnabled,
-        scheduled_date: autoPaymentEnabled ? autoPaymentDate : null,
-        repeat_type: repeatType,
-        repeat_time: repeatTime
+      await secureFetch(`/staff/${selectedStaffForPayment}/payments`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount: amt,
+          date: new Date().toISOString().slice(0, 10),
+          note,
+          payment_method: paymentMethod,
+          auto: autoPaymentEnabled,
+          scheduled_date: autoPaymentEnabled ? autoPaymentDate : null,
+          repeat_type: repeatType,
+          repeat_time: repeatTime,
+        }),
       });
-      toast.success('Payment saved!');
+      toast.success("Payment saved!");
       setIsModalOpen(false);
-      setPaymentAmount('');
-      setNote('');
+      setPaymentAmount("");
+      setNote("");
       setAutoPaymentEnabled(false);
-      setAutoPaymentDate('');
-      setRepeatType('none');
-      setRepeatTime('09:00');
-      setSelectedStaffForPayment('');
+      setAutoPaymentDate("");
+      setRepeatType("none");
+      setRepeatTime("09:00");
+      setSelectedStaffForPayment("");
       setStaffHistory({});
     } catch {
-      toast.error('Failed to save payment');
+      toast.error("Failed to save payment");
     }
   };
 
-  // Tabs
   const tabs = [
     { title: t("Check-In/Check-Out"), component: <StaffCheckIn /> },
     { title: t("Staff Schedule"), component: <StaffSchedule /> },
-    { title: t("Payroll"), component: <Payroll /> }
-    // If you want to keep Payroll tab, add: { title: t("Payroll"), component: <Payroll /> },
+    { title: t("Payroll"), component: <Payroll /> },
   ];
 
   return (

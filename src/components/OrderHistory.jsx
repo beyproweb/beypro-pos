@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
 const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../utils/secureFetch";
 
 const PAYMENT_OPTIONS = [
   "Cash", "Credit Card", "Sodexo", "Multinet"
@@ -38,32 +39,29 @@ const fetchClosedOrders = async () => {
   if (toDate) query.append("to", toDate);
 
   try {
-    const res = await fetch(`${API_URL}/api/reports/history?${query.toString()}`);
-    const data = await res.json();
+    const data = await secureFetch(`/reports/history?${query.toString()}`);
 
-    const enriched = await Promise.all(
-      data.map(async (order) => {
-        const itemRes = await fetch(`${API_URL}/api/orders/${order.id}/items`);
-        const itemsRaw = await itemRes.json();
-        const items = itemsRaw.map(item => ({
-          ...item,
-          discount_type: item.discount_type || null,
-          discount_value: item.discount_value ? parseFloat(item.discount_value) : 0,
-          name: item.product_name || item.order_item_name || item.external_product_name || "Unnamed"
-        }));
-        
-        // ALWAYS fetch all splits for every order with a receipt_id
-        let receiptMethods = [];
-        if (order.receipt_id) {
-          const methodsRes = await fetch(`${API_URL}/api/reports/receipt-methods/${order.receipt_id}`);
-          if (methodsRes.ok) {
-            receiptMethods = await methodsRes.json();
-          }
-        }
 
-        return { ...order, items, receiptMethods };
-      })
-    );
+ const enriched = await Promise.all(
+  data.map(async (order) => {
+    const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+    const items = itemsRaw.map(item => ({
+      ...item,
+      discount_type: item.discount_type || null,
+      discount_value: item.discount_value ? parseFloat(item.discount_value) : 0,
+      name: item.product_name || item.order_item_name || item.external_product_name || "Unnamed"
+    }));
+
+    let receiptMethods = [];
+    if (order.receipt_id) {
+      const methodsRes = await secureFetch(`/reports/receipt-methods/${order.receipt_id}`);
+      receiptMethods = Array.isArray(methodsRes) ? methodsRes : [];
+    }
+
+    return { ...order, items, receiptMethods };
+  })
+);
+
 
     const nonEmptyOrders = enriched.filter(order => Array.isArray(order.items) && order.items.length > 0);
 
@@ -386,7 +384,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 methodsObj[pm.payment_method] = Number(pm.amount);
               }
             });
-            await fetch(`${API_URL}/api/orders/receipt-methods`, {
+            await secureFetch(`/orders/receipt-methods`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -532,7 +530,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                   methodsObj[pm.payment_method] = Number(pm.amount);
                 }
               });
-              await fetch(`${API_URL}/api/orders/receipt-methods`, {
+              await secureFetch(`/orders/receipt-methods`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -540,7 +538,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                   receipt_id: order.receipt_id,
                   methods: methodsObj
                 }),
-              });
+              }); 
               toast.success("Payment methods updated!");
               setEditingPaymentOrderId(null);
               setTimeout(fetchClosedOrders, 350);
@@ -578,16 +576,44 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
           >➕ Add Split</button>
           <button
             className="px-2 py-1 bg-blue-500 text-white rounded text-base"
-            onClick={async () => {
-              await fetch(`${API_URL}/api/orders/${order.id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ payment_method: paymentMethodDraft[order.id] }),
-              });
-              setEditingPaymentOrderId(null);
-              setTimeout(fetchClosedOrders, 350);
-              toast.success("Payment method updated!");
-            }}
+           onClick={async () => {
+  try {
+    const draft = paymentMethodDraft[order.id];
+    // ✅ Determine main payment method string
+    const mainMethod =
+      Array.isArray(draft) && draft.length > 0
+        ? draft[0].payment_method
+        : typeof draft === "string"
+        ? draft
+        : order.payment_method || "Cash";
+
+    // ✅ Authenticated tenant-safe update
+await secureFetch(`/orders/${order.id}`, {
+  method: "PUT",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    payment_method:
+      typeof paymentMethodDraft[order.id] === "string"
+        ? paymentMethodDraft[order.id]
+        : paymentMethodDraft[order.id]?.payment_method ||
+          (Array.isArray(paymentMethodDraft[order.id])
+            ? paymentMethodDraft[order.id][0]?.payment_method
+            : order.payment_method || "Cash"),
+  }),
+});
+
+
+
+    toast.success("Payment method updated!");
+    setEditingPaymentOrderId(null);
+    setTimeout(fetchClosedOrders, 350);
+  } catch (err) {
+    console.error("❌ Failed to update payment method:", err);
+    toast.error("Failed to update payment method");
+  }
+}}
+
+
           >💾</button>
           <button
             className="ml-1 px-2 py-1 bg-gray-200 rounded text-base"

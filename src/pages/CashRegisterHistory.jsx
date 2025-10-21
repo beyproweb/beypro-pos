@@ -12,7 +12,7 @@ export default function CashRegisterHistory() {
 
   const fetchHistory = () => {
     if (!from || !to) return;
-    fetch(`${API_URL}/api/reports/cash-register-history?from=${from}&to=${to}`)
+    secureFetch("reports/cash-register-history?from=${from}&to=${to}")
       .then(res => res.json())
       .then(setHistory)
       .catch(err => console.error("❌ Failed to fetch register history:", err));

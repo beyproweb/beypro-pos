@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { MapPin, User, Plus, Pencil, Trash2, Gift } from "lucide-react";
+import secureFetch from "../utils/secureFetch";
+
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 const paymentMethods = ["Cash", "Credit Card", "Multinet", "Sodexo"];
@@ -31,55 +33,71 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
     setSearch(val);
     if (val.length < 2) return setMatches([]);
     setLoading(true);
-    const res = await fetch(`${API_URL}/api/customers?search=${encodeURIComponent(val)}`);
-    const data = await res.json();
+    const data = await secureFetch(`/customers?search=${encodeURIComponent(val)}`);
+
     setMatches(data);
     setLoading(false);
   };
 
-  // ---- Address CRUD ----
-  const fetchAddresses = async (customerId) => {
-    if (!customerId) return setAddresses([]);
-    const res = await fetch(`${API_URL}/api/customers/${customerId}/addresses`);
-    const data = await res.json();
-    setAddresses(data || []);
-    // Auto-select default if exists
-    const def = data.find(a => a.is_default) || data[0];
-    setSelectedAddressId(def?.id || null);
-  };
-  const handleAddAddress = async () => {
-    if (!addrForm.address) return alert("Address required!");
-    const res = await fetch(`${API_URL}/api/customers/${selected.id}/addresses`, {
+// ---- Address CRUD ----
+const fetchAddresses = async (customerId) => {
+  if (!customerId) return setAddresses([]);
+  const data = await secureFetch(`/customerAddresses/customers/${customerId}/addresses`);
+  setAddresses(data || []);
+
+  // Auto-select default if exists
+  const def = data.find((a) => a.is_default) || data[0];
+  setSelectedAddressId(def?.id || null);
+};
+
+const handleAddAddress = async () => {
+  if (!addrForm.address) return alert("Address required!");
+  try {
+    const added = await secureFetch(`/customerAddresses/customers/${selected.id}/addresses`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(addrForm)
+      body: JSON.stringify(addrForm),
     });
-    if (res.ok) {
+    if (added && added.id) {
       setAddrForm({ label: "", address: "" });
       setEditAddrId(null);
       await fetchAddresses(selected.id);
     }
-  };
-  const handleEditAddress = async (id) => {
-    if (!addrForm.address) return;
-    const res = await fetch(`${API_URL}/customer-addresses/${id}`, {
+  } catch (err) {
+    alert("❌ Failed to add address: " + err.message);
+  }
+};
+
+const handleEditAddress = async (id) => {
+  if (!addrForm.address) return;
+  try {
+    const updated = await secureFetch(`/customerAddresses/customer-addresses/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(addrForm)
+      body: JSON.stringify(addrForm),
     });
-    if (res.ok) {
+    if (updated && updated.id) {
       setEditAddrId(null);
       setAddrForm({ label: "", address: "" });
       await fetchAddresses(selected.id);
     }
-  };
-  const handleDeleteAddress = async (id) => {
-    if (!window.confirm("Delete this address?")) return;
-    const res = await fetch(`${API_URL}/customer-addresses/${id}`, { method: "DELETE" });
-    if (res.ok) {
+  } catch (err) {
+    alert("❌ Failed to update address: " + err.message);
+  }
+};
+
+const handleDeleteAddress = async (id) => {
+  if (!window.confirm("Delete this address?")) return;
+  try {
+    const del = await secureFetch(`/customerAddresses/customer-addresses/${id}`, {
+      method: "DELETE",
+    });
+    if (del && del.success) {
       await fetchAddresses(selected.id);
     }
-  };
+  } catch (err) {
+    alert("❌ Failed to delete address: " + err.message);
+  }
+};
+
 
   // ---- Add New Customer ----
   const handleAddCustomer = async () => {
@@ -89,30 +107,34 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
     }
     try {
       // Save customer
-     const res = await fetch(`${API_URL}/api/customers`, {
+const customer = await secureFetch(`/customers`, {
   method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ name: form.name, phone: form.phone, birthday: form.birthday || null, email: form.email || null })
+  body: JSON.stringify({
+    name: form.name,
+    phone: form.phone,
+    birthday: form.birthday || null,
+    email: form.email || null,
+  }),
 });
 
-      if (!res.ok) {
-        const error = await res.json();
-        alert("Error saving customer: " + (error.error || "Unknown error"));
-        return;
-      }
-      const customer = await res.json();
+if (!customer || customer.error) {
+  alert("Error saving customer: " + (customer?.error || "Unknown error"));
+  return;
+}
+
 
       // If address field is filled, save as first address
       if (form.address && customer?.id) {
-        await fetch(`${API_URL}/customers/${customer.id}/addresses`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            label: "Home",
-            address: form.address,
-            is_default: true
-          })
-        });
+await secureFetch(`/customerAddresses/customers/${customer.id}/addresses`, {
+  method: "POST",
+  body: JSON.stringify({
+    label: "Home",
+    address: form.address,
+    is_default: true,
+  }),
+});
+
+
       }
 
       setSelected(customer);
@@ -125,22 +147,29 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
     }
   };
 
-  // ---- Edit Customer ----
-  const handleEditCustomer = async (id) => {
-const res = await fetch(`${API_URL}/api/customers/${id}`, {
-  method: "PATCH",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(editForm)
-});
-    if (res.ok) {
-      setMatches(prev =>
-        prev.map(m => m.id === id ? { ...m, ...editForm } : m)
+
+ // ---- Edit Customer ----
+const handleEditCustomer = async (id) => {
+  try {
+    const updated = await secureFetch(`/customers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(editForm),
+    });
+
+    if (updated && updated.id) {
+      setMatches((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, ...editForm } : m))
       );
       setEditId(null);
-    } else {
-      alert("Failed to update!");
+      toast?.success?.("✅ Customer updated successfully!");
+    } else if (updated?.error) {
+      alert("❌ Failed to update customer: " + updated.error);
     }
-  };
+  } catch (err) {
+    alert("❌ Network error while updating customer: " + err.message);
+  }
+};
+
 
   // ---- Select Customer & Load Addresses ----
   const handleCustomerClick = async (c) => {
@@ -151,51 +180,47 @@ const res = await fetch(`${API_URL}/api/customers/${id}`, {
   };
 
   // ---- Start Order ----
-  const handleStartOrder = async () => {
-    const customer = selected;
-    const addrObj = addresses.find(a => a.id === selectedAddressId);
-    if (!customer || !addrObj) return alert("Select customer and address!");
+const handleStartOrder = async () => {
+  const customer = selected;
+  const addrObj = addresses.find(a => a.id === selectedAddressId);
+  if (!customer || !addrObj) return alert("Select customer and address!");
 
-    try {
-      const isOpen = await checkRegisterOpen();
-      if (!isOpen) {
-        alert("❌ Register is closed. Please open the register before placing a phone order.");
-        return;
-      }
-
-      const body = {
-        order_type: "phone",
-        customer_name: customer.name,
-        customer_phone: customer.phone,
-        customer_address: addrObj.address,
-        payment_method: paymentMethod,
-        total: 0,
-      };
-
-      const res2 = await fetch(`${API_URL}/api/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-
-      if (!res2.ok) {
-        const err = await res2.json();
-        alert(err.error || "Failed to create order");
-        return;
-      }
-
-      const order = await res2.json();
-
-      if (order && order.id) {
-        navigate(`/transaction/phone/${order.id}`, { state: { order } });
-        if (onCreateOrder) onCreateOrder(order);
-        if (onClose) onClose();
-      }
-
-    } catch (err) {
-      alert("Failed to start order: " + err.message);
+  try {
+    const isOpen = await checkRegisterOpen();
+    if (!isOpen) {
+      alert("❌ Register is closed. Please open the register before placing a phone order.");
+      return;
     }
-  };
+
+    const body = {
+      order_type: "phone",
+      customer_name: customer.name,
+      customer_phone: customer.phone,
+      customer_address: addrObj.address,
+      payment_method: paymentMethod,
+      total: 0,
+    };
+
+    const order = await secureFetch(`/orders`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!order || !order.id) {
+      alert("❌ Failed to create order");
+      return;
+    }
+
+    navigate(`/transaction/phone/${order.id}`, { state: { order } });
+    if (onCreateOrder) onCreateOrder(order);
+    if (onClose) onClose();
+
+  } catch (err) {
+    alert("❌ Failed to start order: " + (err.message || "Unknown error"));
+    console.error("❌ handleStartOrder error:", err);
+  }
+};
+
 
   // ---- Modal Closed: reset ----
   useEffect(() => {

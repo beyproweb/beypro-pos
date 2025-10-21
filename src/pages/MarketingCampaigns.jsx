@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Megaphone, Send, Users, Percent, BarChart, Mail } from "lucide-react";
 import axios from "axios";
-import { useHasPermission } from "../components/hooks/useHasPermission";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 import { useTranslation } from "react-i18next";
+import secureFetch from "../utils/secureFetch";
 
 const STATS_POLL_MS = 5000;   // poll every 5s
 const STATS_POLL_MAX = 12;    // for up to 60s
@@ -94,15 +94,7 @@ export default function EmailCampaignLanding() {
   // WhatsApp customer selection state
   const [customers, setCustomers] = useState([]);
   const [selectedPhones, setSelectedPhones] = useState([]);
-  const canAccess = useHasPermission("marketing");
   const { t } = useTranslation();
-  if (!canAccess) {
-    return (
-      <div className="p-12 text-2xl text-red-600 text-center">
-        {t("Access Denied: You do not have permission to view Marketing Campaigns.")}
-      </div>
-    );
-  }
 
     // Fetch + apply stats (prefers /by/:cid, falls back to /last)
   async function fetchAndApplyStats(cid) {
@@ -213,60 +205,59 @@ function stickyMergeHistory(prev, incoming) {
 }
 
 useEffect(() => {
-  // Top counters
-  fetchCustomerCount().then(count =>
-    setStats(s => ({ ...s, totalCustomers: count }))
-  );
-
-  // Keep top cards in sync with "last"
-  fetch(`${API_URL}/api/campaigns/stats/last`)
-    .then(res => res.json())
-    .then(data => {
-      setStats(s => ({
-        ...s,
-        lastOpen: data.openRate ?? s.lastOpen,
-        lastClick: data.clickRate ?? s.lastClick
-      }));
-    })
+  // ✅ Top counters
+  fetchCustomerCount()
+    .then((count) => setStats((s) => ({ ...s, totalCustomers: count })))
     .catch(() => {});
 
-  // Load customers for WhatsApp selector
+  // ✅ Keep top cards in sync with "last" campaign stats
+  secureFetch("/campaigns/stats/last")
+    .then((data) => {
+      setStats((s) => ({
+        ...s,
+        lastOpen: data.openRate ?? s.lastOpen,
+        lastClick: data.clickRate ?? s.lastClick,
+      }));
+    })
+    .catch((err) => console.warn("⚠️ Failed to fetch last campaign stats:", err));
+
+  // ✅ Load customers for WhatsApp selector
   fetchCustomers().catch(() => {});
 
-  // Load recent campaigns (with rates)
-axios.get(`${API_URL}/api/campaigns/list`)
-  .then(res => {
-    if (res.data?.ok && Array.isArray(res.data.campaigns)) {
-      const rows = res.data.campaigns
-        .filter(c => c && c.id)
-        .map(c => ({
-          date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
-          type: "Email",
-          subject: c.subject || "",
-          message: c.message || "",
-          openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
-          clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-          _id: String(c.id),
-        }));
+  // ✅ Load recent campaigns (with rates)
+  axios
+    .get(`${API_URL}/api/campaigns/list`)
+    .then((res) => {
+      if (res.data?.ok && Array.isArray(res.data.campaigns)) {
+        const rows = res.data.campaigns
+          .filter((c) => c && c.id)
+          .map((c) => ({
+            date: c.sent_at ? String(c.sent_at).slice(0, 10) : "",
+            type: "Email",
+            subject: c.subject || "",
+            message: c.message || "",
+            openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+            clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+            _id: String(c.id),
+          }));
 
-      // merge into table
-      const merged = stickyMergeHistory([], rows); // or: setHistory(prev => stickyMergeHistory(prev, rows));
-      setHistory(prev => stickyMergeHistory(prev, rows));
+        // ✅ Merge into table
+        setHistory((prev) => stickyMergeHistory(prev, rows));
 
-      // 🔝 bump the top cards from the latest visible campaign
-      const latest = merged[0];
-      if (latest) {
-        setStats(s => ({
-          ...s,
-          lastOpen: Number.isFinite(latest.openRate) ? latest.openRate : 0,
-          lastClick: Number.isFinite(latest.clickRate) ? latest.clickRate : 0,
-        }));
+        // ✅ Update top cards from latest campaign
+        const latest = rows[0];
+        if (latest) {
+          setStats((s) => ({
+            ...s,
+            lastOpen: Number.isFinite(latest.openRate) ? latest.openRate : 0,
+            lastClick: Number.isFinite(latest.clickRate) ? latest.clickRate : 0,
+          }));
+        }
       }
-    }
-  })
-  .catch(() => {});
-
+    })
+    .catch(() => {});
 }, []);
+
 
 
 

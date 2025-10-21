@@ -36,7 +36,7 @@ useEffect(() => {
 
   const timer = setInterval(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
+      const res = await secureFetch('orders/${orderId}`, {
         headers: { Accept: "application/json" },
       });
 

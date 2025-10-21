@@ -81,29 +81,33 @@ export default function SettingsPage() {
   const ActiveComponent = tabComponents[activeTab];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto text-base bg-transparent dark:bg-gray-900 text-gray-900 dark:text-white transition-colors">
-      <div className="flex rounded-2xl shadow-2xl overflow-hidden border border-accent/20">
-        {/* Sidebar Tabs */}
-        <div className="w-72 bg-gradient-to-b from-indigo-100 to-white dark:from-gray-800 dark:to-gray-900 border-r border-accent/20">
-          {permittedTabs.map(({ key, label, emoji }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={`w-full text-left px-5 py-4 font-semibold text-lg transition-all duration-200 ${
-                activeTab === key
-                  ? "bg-accent text-white shadow-inner"
-                  : "text-accent hover:bg-accent/10"
-              }`}
-            >
-              {emoji} {t(label)}
-            </button>
-          ))}
+    <div className="p-4 md:p-6 max-w-7xl mx-auto text-base bg-transparent dark:bg-gray-900 text-gray-900 dark:text-white transition-colors">
+      <div className="flex flex-col md:flex-row rounded-2xl shadow-2xl overflow-hidden border border-accent/20 backdrop-blur-sm">
+        {/* Tabs rail */}
+        <div className="w-full md:w-72 bg-gradient-to-b from-indigo-100 to-white dark:from-gray-800 dark:to-gray-900 border-b md:border-b-0 md:border-r border-accent/20">
+          <div className="flex md:flex-col gap-2 md:gap-0 overflow-x-auto md:overflow-visible px-3 py-3 md:px-0 md:py-0">
+            {permittedTabs.map(({ key, label, emoji }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`flex-shrink-0 md:flex-none text-left px-4 md:px-6 py-3 md:py-4 font-semibold text-sm md:text-lg rounded-xl md:rounded-none transition-all duration-200 ${
+                  activeTab === key
+                    ? "bg-accent text-white shadow-lg md:shadow-inner"
+                    : "text-accent hover:bg-accent/10"
+                }`}
+                title={t(label)}
+              >
+                <span className="whitespace-nowrap">
+                  {emoji} {t(label)}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Active Tab Content */}
-        <div className="flex-1 bg-transparent dark:bg-gray-950 p-8 min-h-[600px] transition-colors">
-          {permittedTabs.some((tab) => tab.key === activeTab) &&
-          ActiveComponent ? (
+        <div className="flex-1 bg-transparent dark:bg-gray-950 p-4 md:p-8 min-h-[480px] transition-colors">
+          {permittedTabs.some((tab) => tab.key === activeTab) && ActiveComponent ? (
             <ActiveComponent />
           ) : (
             <div className="text-red-600 text-lg p-6">

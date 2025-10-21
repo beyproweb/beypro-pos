@@ -12,7 +12,8 @@ import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import MoveTableModal from "../components/MoveTableModal";
 import MergeTableModal from "../components/MergeTableModal";
 import { toCategorySlug } from "../utils/slugCategory"; 
-
+import secureFetch from "../utils/secureFetch";
+import socket from "../utils/socket";
 const paymentMethods = ["Cash", "Credit Card", "Sodexo", "Multinet"];
 const categoryIcons = {
   Meat: "🍔",
@@ -26,6 +27,7 @@ const categoryIcons = {
   // Default:
   default: "🍔"
 };
+
 export default function TransactionScreen({ isSidebarOpen }) {
   useRegisterGuard();
   const { tableId, orderId } = useParams();
@@ -55,12 +57,18 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [activeSplitMethod, setActiveSplitMethod] = useState(null);
   const [note, setNote] = useState("");
   const [toast, setToast] = useState({ show: false, message: "" });
-  const orderType = orderId ? "phone" : "table";
-  const categories = [...new Set(products.map((p) => p.category))].filter(Boolean);
-  const [excludedItems, setExcludedItems] = useState([]);
+const orderType = order?.order_type || (orderId ? "phone" : "table");
+  const safeProducts = Array.isArray(products) ? products : [];
+  const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
+const [excludedItems, setExcludedItems] = useState([]);
 const [excludedCategories, setExcludedCategories] = useState([]);
 const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
 const activeCategory = categories[currentCategoryIndex] || "";
+const productsInActiveCategory = safeProducts.filter(
+  (p) =>
+    (p.category || "").trim().toLowerCase() ===
+    (activeCategory || "").trim().toLowerCase()
+);
 const hasExtras = (item) => Array.isArray(item.extras) && item.extras.length > 0;
 const [categoryImages, setCategoryImages] = useState({});
 // Calculate extras total and final price in the Add to Cart modal
@@ -79,11 +87,28 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const [showMoveTableModal, setShowMoveTableModal] = useState(false);
 // 1. Add drinksList state at the top
 const [drinksList, setDrinksList] = useState([]);
+
 useEffect(() => {
-  fetch(`${API_URL}/api/drinks`)
-    .then(res => res.json())
-    .then(data => setDrinksList(data.map(d => d.name)))
-    .catch(() => setDrinksList([]));
+  if (!order?.id) return;
+
+  const onMerged = (payload) => {
+    if (payload?.order?.id === order.id) {
+      // re-fetch suborders/history for this order
+      fetchSubOrders(order.id);   // <-- your existing loader
+      // (Optional) also refresh header/total if you don’t already
+      fetchOrder(order.id);
+    }
+  };
+
+  socket.on("order_merged", onMerged);
+  return () => socket.off("order_merged", onMerged);
+}, [order?.id]);
+
+useEffect(() => {
+ secureFetch("/drinks")
+  .then(data => setDrinksList(data.map(d => d.name)))
+  .catch(() => setDrinksList([]));
+
 }, []);
 
 // 2. Utility to split drink extras
@@ -118,7 +143,7 @@ const handleAddProductWithExtras = (product, selectedExtras) => {
   }
   if (drinkExtras.length > 0) {
     drinkExtras.forEach(drink => {
-      const matchedDrink = products.find(p =>
+      const matchedDrink = safeProducts.find(p =>
         p.name.trim().toLowerCase() === drink.name.trim().toLowerCase()
       );
       if (!matchedDrink) return;
@@ -136,17 +161,32 @@ const handleAddProductWithExtras = (product, selectedExtras) => {
 };
 
 useEffect(() => {
+  if (!order) return;
+
+  const name = order.customer_name?.trim() || "";
+  const phone = order.customer_phone?.trim() || "";
+  const address = order.customer_address?.trim() || "";
+
+  const status = (order.status || "").toLowerCase();
+  const showCustomerInfo =
+    !!orderId && ["confirmed", "paid", "closed"].includes(status);
+
+  // ✅ Combine cleanly and safely
+  const subtitleText = showCustomerInfo
+    ? [name, phone ? `📞 ${phone}` : null, address ? `📍 ${address}` : null]
+        .filter(Boolean)
+        .join("   ")
+    : "";
+
+  const headerTitle = orderId
+    ? order.order_type === "packet"
+      ? t("Packet")
+      : order.customer_name || order.customer_phone || t("Phone Order")
+    : `${t("Table")} ${tableId}`;
+
   setHeader({
-    title: orderId
-      ? order?.customer_name || order?.customer_phone || t("Phone Order")
-      : `${t("Table")} ${tableId}`,
-    subtitle: orderId
-      ? [
-          order?.customer_phone ? `📞 ${order.customer_phone}` : null,
-          order?.customer_address ? `📍 ${order.customer_address}` : null,
-        ].filter(Boolean).join("   ")
-      : undefined,
-    // tableNav: Show only for table orders, not phone
+    title: headerTitle,
+    subtitle: subtitleText || undefined,
     tableNav: !orderId ? (
       <TableNavigationRow
         tableId={tableId}
@@ -156,13 +196,14 @@ useEffect(() => {
       />
     ) : null,
   });
-  // Optionally clean up when unmounting
+
   return () => setHeader({});
 }, [orderId, order, tableId, t, navigate, setHeader]);
+
+
 useEffect(() => {
-  fetch(`${API_URL}/api/category-images`)
-    .then((res) => res.json())
-    .then((data) => {
+secureFetch("/category-images")
+  .then((data) => {
       const dict = {};
       (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
         const key = (category || "").trim().toLowerCase();
@@ -228,12 +269,12 @@ useEffect(() => {
   if (categories.length > 0) {
     setCurrentCategoryIndex(0);
   }
-}, [products]);
+}, [categories.length]);
 
 useEffect(() => {
-  fetch(`${API_URL}/api/kitchen/compile-settings`)
-    .then(res => res.json())
-    .then(data => {
+ secureFetch("/kitchen/compile-settings")
+  .then(data => {
+
       setExcludedItems(data.excludedItems || []);
       setExcludedCategories(data.excludedCategories || []);
     });
@@ -263,26 +304,31 @@ useEffect(() => {
       return [];
     }
   };
-
 useEffect(() => {
   const fetchExtrasGroups = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/extras-groups`);
-      const data = await res.json();
-      setExtrasGroups(
-  data.map(g => ({
-    groupName: g.groupName || g.group_name,
-    items: typeof g.items === "string" ? JSON.parse(g.items) : g.items || []
-  }))
-);
+      const data = await secureFetch("/extras-groups");
 
-      console.log("Fetched extras groups:", data); // <--- Add this
+
+
+      setExtrasGroups(
+        data.map(g => ({
+          id: g.id,  // ✅ Preserve ID
+          group_name: g.group_name || g.groupName,
+          groupName: g.group_name || g.groupName,
+          items: typeof g.items === "string" ? JSON.parse(g.items) : g.items || []
+        }))
+      );
+
+      console.log("✅ Loaded extras groups:", data);
     } catch (err) {
       console.error("❌ Failed to load extras:", err);
     }
   };
   fetchExtrasGroups();
 }, []);
+
+
 
 
     // --- New split payment state ---
@@ -324,18 +370,23 @@ const confirmPaymentWithSplits = async (splits) => {
     }));
 
     // 4) Create the sub-order and mark items paid (server’s default mark_paid = true)
-    const rSub = await fetch(`${API_URL}/api/orders/sub-orders`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        order_id: order.id,
-        total: totalDue,
-        payment_method: "Split",
-        receipt_id: receiptId,
-        items: enhancedItems,
-      }),
-    });
-    if (!rSub.ok) throw new Error("Sub-order creation failed");
+const rSub = await secureFetch("/orders/sub-orders", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    order_id: order.id,
+    total: totalDue,
+    payment_method: "Split",
+    receipt_id: receiptId,
+    items: enhancedItems,
+  }),
+});
+
+// ✅ secureFetch already throws if not OK — no need to recheck
+if (!rSub?.sub_order_id) {
+  throw new Error("Sub-order creation failed: Missing sub_order_id");
+}
+
 
     // 5) Clean the splits payload (REMOVE undefined/empty/zero)
     const cleanedSplits = Object.fromEntries(
@@ -352,16 +403,16 @@ const confirmPaymentWithSplits = async (splits) => {
     }
 
     // 6) Save receipt methods ONCE (remove the earlier { [method]: total } post)
-    const rMethods = await fetch(`${API_URL}/api/orders/receipt-methods`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        order_id: order.id,
-        receipt_id: receiptId,
-        methods: cleanedSplits, // e.g., { "Cash": "100", "Credit Card": "50" }
-      }),
-    });
-    if (!rMethods.ok) throw new Error("Failed to save receipt methods");
+const rMethods = await secureFetch("/orders/receipt-methods", {
+  method: "POST",
+  body: JSON.stringify({
+    order_id: order.id,
+    receipt_id: receiptId,
+    methods: cleanedSplits,
+  }),
+});
+if (!rMethods) throw new Error("Failed to save receipt methods");
+
 
     // 7) UI updates
     await new Promise((r) => setTimeout(r, 100));
@@ -374,22 +425,20 @@ const confirmPaymentWithSplits = async (splits) => {
     setShowPaymentModal(false);
 
     // 8) If all items are paid, mark order as paid
-    const res = await fetch(`${API_URL}/api/orders/${order.id}/items`);
-    const allItems = await res.json();
-    const isFullyPaid = allItems.every((item) => item.paid_at);
+const allItems = await secureFetch(`/orders/${order.id}/items`);
 
-    if (isFullyPaid) {
-      await fetch(`${API_URL}/api/orders/${order.id}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "paid",
-          total: totalDue,
-          payment_method: Object.keys(cleanedSplits).join("+"),
-        }),
-      });
-      setOrder((prev) => ({ ...prev, status: "paid" }));
-    }
+if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
+  await secureFetch(`/orders/${order.id}/status`, {
+    method: "PUT",
+    body: JSON.stringify({
+      status: "paid",
+      total: totalDue,
+      payment_method: Object.keys(cleanedSplits).join("+"),
+    }),
+  });
+  setOrder((prev) => ({ ...prev, status: "paid" }));
+}
+
   } catch (err) {
     console.error("❌ confirmPaymentWithSplits failed:", err);
     // optionally toast
@@ -514,19 +563,24 @@ function allItemsDelivered(items) {
 
 
 
+
   const calculateSubTotal = () =>
     cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
 useEffect(() => {
   const fetchProducts = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/products`); // ✅ use relative path
-      const data = await res.json();
+     const data = await secureFetch("/products");
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.data)
+        ? data.data
+        : [];
 
-      console.log("Fetched products in TransactionScreen:", data);  // Debug
-      setProducts(data);
+      console.log("Fetched products in TransactionScreen:", list);  // Debug
+      setProducts(list);
 
-      const categories = [...new Set(products.map((p) => p.category))].filter(Boolean);
+      const categories = [...new Set(list.map((p) => p.category))].filter(Boolean);
       console.log("Categories found in TransactionScreen:", categories);  // Debug
 
       if (categories.length > 0) setCurrentCategoryIndex(0);
@@ -541,7 +595,7 @@ useEffect(() => {
 useEffect(() => {
   return () => {
     if (order?.id && cartItems.length === 0) {
-     fetch(`${API_URL}/api/orders/${order.id}/reset-if-empty`, { method: "PATCH" });
+     secureFetch(`/orders/${order.id}/reset-if-empty`, { method: "PATCH" });
     }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -556,44 +610,48 @@ useEffect(() => {
 }, [tableId, orderId]);
 
 useEffect(() => {
-// ✅ Fetch order for phone/packet (QRMenu online orders also land here)
-const fetchPhoneOrder = async (id) => {
-  try {
-    const res = await fetch(`${API_URL}/api/orders/${id}`);
-    if (!res.ok) throw new Error("Failed to fetch order");
+  // 🧹 1️⃣ Clear previous table state instantly when switching tables
+  setOrder(null);
+  setCartItems([]);
+  setReceiptItems([]);
+  setLoading(true);
 
-    const newOrder = await res.json();
+  // ✅ Fetch order for phone/packet (QRMenu online orders also land here)
+  const fetchPhoneOrder = async (id) => {
+    try {
+     const newOrder = await secureFetch(`/orders/${id}`);
+let correctedStatus = newOrder.status;
 
-    // 🔑 Normalize status if paid online
-    let correctedStatus = newOrder.status;
-    if (newOrder.payment_method === "Online") {
-      correctedStatus = "paid";
+// 🧩 FIX: if phone order has no items, treat as "occupied" (not "confirmed")
+const items = await secureFetch(`/orders/${id}/items`);
+if ((!items || items.length === 0) && newOrder.order_type === "phone") {
+  correctedStatus = "occupied";
+}
+
+if (newOrder.payment_method === "Online") correctedStatus = "paid";
+
+setOrder({ ...newOrder, status: correctedStatus });
+await fetchOrderItems(newOrder.id);
+
+      await fetchOrderItems(newOrder.id);
+      setLoading(false);
+    } catch (err) {
+      console.error("❌ Error fetching phone/packet order:", err);
+      setLoading(false);
     }
+  };
 
-    setOrder({ ...newOrder, status: correctedStatus });
-    await fetchOrderItems(newOrder.id);
-    setLoading(false); // ✅ stop loading
-  } catch (err) {
-    console.error("❌ Error fetching phone/packet order:", err);
-    setLoading(false); // ✅ ensure loading stops on error too
-  }
-};
-
-
-// ✅ Create or fetch table order
+  // ✅ Create or fetch table order
 const createOrFetchTableOrder = async (tableNumber) => {
   try {
-    const res = await fetch(`${API_URL}/api/orders?table_number=${tableNumber}`);
-    if (!res.ok) throw new Error("Failed to fetch order");
+    const orders = await secureFetch(`/orders?table_number=${tableNumber}`);
+    // 🧩 Only keep non-closed, non-paid orders
+let newOrder = orders.find(o => o.status !== "closed" && o.status !== "paid");
 
-    const orders = await res.json();
-    let newOrder = orders[0];
-
+    // 🟢 FIXED: Do NOT discard paid orders — fetch their items!
     if (!newOrder) {
-      // Create new if none exists
-      const createRes = await fetch(`${API_URL}/api/orders`, {
+      newOrder = await secureFetch("/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           table_number: tableNumber,
           order_type: "table",
@@ -601,79 +659,76 @@ const createOrFetchTableOrder = async (tableNumber) => {
           items: [],
         }),
       });
-
-      if (!createRes.ok) throw new Error("Failed to create new order");
-      newOrder = await createRes.json();
     }
 
-    // 🔑 Normalize status if paid online
+    // 🧠 If it’s paid, we still show it — don’t reset immediately
     let correctedStatus = newOrder.status;
-    if (newOrder.payment_method === "Online") {
-      correctedStatus = "paid";
-    }
+    if (newOrder.payment_method === "Online") correctedStatus = "paid";
 
     setOrder({ ...newOrder, status: correctedStatus });
+
+    // ✅ Always fetch items (even for paid)
     await fetchOrderItems(newOrder.id);
-    setLoading(false); // ✅ stop loading
+
+    setLoading(false);
   } catch (err) {
     console.error("❌ Error creating/fetching table order:", err);
-    setLoading(false); // ✅ ensure loading stops on error too
+    setLoading(false);
   }
 };
 
 
-
-  // 💡 If you pass orderId for phone, use that; if only tableId, use that logic
-  if (orderId) {
-    fetchPhoneOrder(orderId);
-  } else if (tableId) {
-    createOrFetchTableOrder(tableId);
-  }
+  // 💡 3️⃣ Choose proper loader based on params
+  if (orderId) fetchPhoneOrder(orderId);
+  else if (tableId) createOrFetchTableOrder(tableId);
 }, [tableId, orderId]);
 
 
-  const fetchOrderItems = async (orderId) => {
-  try {
-    const response = await fetch(`${API_URL}/api/orders/${orderId}/items`);
-const items = await response.json();
-if (!Array.isArray(items)) {
-  console.error("❌ Expected items to be an array but got:", items);
-  return;
-}
 
+const fetchOrderItems = async (orderId) => {
+  try {
+    const items = await secureFetch(`/orders/${orderId}/items`);
+
+    if (!Array.isArray(items)) {
+      console.error("❌ Expected items to be an array but got:", items);
+      return;
+    }
 
     const formatted = items.map((item) => {
       const extras = safeParseExtras(item.extras);
       return {
-        id:        item.product_id,
-        name: item.name || item.order_item_name || item.product_name,
-        quantity:  parseInt(item.quantity, 10),
-        price:     parseFloat(item.price),
+        id: item.product_id,
+        name: item.name || item.order_item_name || item.product_name || "Unnamed",
+        quantity: parseInt(item.quantity, 10) || 1,
+        price: parseFloat(item.price) || 0,
         ingredients: Array.isArray(item.ingredients)
-  ? item.ingredients
-  : (typeof item.ingredients === "string"
-      ? JSON.parse(item.ingredients || "[]")
-      : []),
-
+          ? item.ingredients
+          : typeof item.ingredients === "string"
+          ? JSON.parse(item.ingredients || "[]")
+          : [],
         extras,
         unique_id: item.unique_id,
-        // ⚠️ keep confirmed if you need it elsewhere, but…
         confirmed: item.confirmed ?? true,
-        // ✅ paid_at drives the split now:
-        paid:      !!item.paid_at,
+        paid: !!item.paid_at,
         payment_method: item.payment_method ?? "Unknown",
         note: item.note || "",
-         kitchen_status: item.kitchen_status || ""// ✅ ensures note persists after refresh or sub-order
-
+        kitchen_status: item.kitchen_status || "",
       };
     });
 
-    // ONLY unpaid (paid === false) go into cart
+    // 🟢 NEW LOGIC:
+    // - Always show all items in cart when reopening (paid + unpaid)
+    // - If you want to distinguish visually, use item.paid later in render
     setCartItems(formatted);
-    // ONLY paid (paid === true) go into receipt
-    setReceiptItems( formatted.filter(i =>  i.paid) );
+
+    // ✅ Keep paid items separately for receipts/history
+    setReceiptItems(formatted.filter((i) => i.paid));
+
+    console.log(
+      `📦 Loaded ${formatted.length} items (${formatted.filter(i => i.paid).length} paid)`
+    );
   } catch (err) {
-    console.error("Failed to fetch items", err);
+    console.error("❌ Failed to fetch items:", err);
   }
 };
 
@@ -681,20 +736,26 @@ if (!Array.isArray(items)) {
     cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
 const updateOrderStatus = async (newStatus, total = null, payment_method = null) => {
+  if (!order?.id) {
+    console.error("❌ No order.id available, cannot update status:", order);
+    showToast("Invalid order ID");
+    return null;
+  }
   try {
-    const res = await fetch(`${API_URL}/api/orders/${order.id}/status`, {
+    const updated = await secureFetch(`/orders/${order.id}/status`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus, total, payment_method }), // <-- ensure total
+      body: JSON.stringify({ status: newStatus, total, payment_method }),
     });
-    const updated = await res.json();
     setOrder(updated);
     return updated;
   } catch (error) {
     console.error("❌ Error updating order status:", error);
+    showToast(error.message || "Failed to update order status");
     return null;
   }
 };
+
+
 
 
 function getPaymentMethodSummaryWithIcon(items) {
@@ -743,7 +804,11 @@ function hasPreparingItems(orderItems) {
 
 
 const handleMultifunction = async () => {
+   console.log("🧩 ENTERED handleMultifunction()");
+  console.log("🧩 order before any checks →", order);
+
   if (!order || !order.status) return;
+  
 
   const total = cartItems
     .filter(i => selectedForPayment.includes(i.unique_id))
@@ -751,10 +816,22 @@ const handleMultifunction = async () => {
   const receiptId = uuidv4();
   const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
 
-  // If cart is empty, go back to TableOverview
+  // ✅ Allow phone orders to close even if empty
   if (cartItems.length === 0) {
-    navigate("/tables");
-    return;
+    if (orderType === "phone") {
+      try {
+        await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
+        navigate("/tableoverview");
+        return;
+      } catch (err) {
+        console.error("❌ Failed to close empty phone order:", err);
+        showToast("Failed to close phone order");
+        return;
+      }
+    } else {
+      navigate("/tables");
+      return;
+    }
   }
 
   // 1️⃣ If closing, block if any item is preparing
@@ -766,62 +843,63 @@ const handleMultifunction = async () => {
     return;
   }
 
-  // 🟢 Step 2: Confirm order (and save items)
-  if (cartItems.some(i => !i.confirmed)) {
-    const updated = await updateOrderStatus("confirmed", total);
-    if (!updated) return;
+  // 2️⃣ Confirm unconfirmed items first
+ if (cartItems.some(i => !i.confirmed)) {
+  const updated = await updateOrderStatus("confirmed", total);
+  if (!updated) return;
 
-    if (window && window.playNewOrderSound) {
-      window.playNewOrderSound();
-    }
+  if (window && window.playNewOrderSound) window.playNewOrderSound();
 
-    const unconfirmedItems = safeCartItems.filter(i => !i.confirmed);
-
-    if (unconfirmedItems.length > 0) {
-      await fetch(`${API_URL}/api/orders/order-items`, {  
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order_id: updated.id,
-          receipt_id: null, // not paid yet
-items: unconfirmedItems.map((i) => ({
-  product_id: i.id,
-  quantity: i.quantity,
-  price: i.price,
-  ingredients: i.ingredients,
-  extras: (i.extras || []).map(ex => ({
-    ...ex,
-    amount: Number(ex.amount) || 1,
-    unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase()
-  })),
-  unique_id: i.unique_id,
-  note: i.note || null,
-  confirmed: true,
-  kitchen_status: "new",
-  payment_method: null,
-  receipt_id: null,
-  discountType: discountValue > 0 ? discountType : null,
-  discountValue: discountValue > 0 ? discountValue : 0,
-}))
-
-
-
-        }),
-      });
-    }
-
-    setOrder((prev) => ({ ...prev, status: "confirmed" }));
-    await fetchOrderItems(updated.id); // refresh from DB
-
-    // For phone orders, go back to main after confirm!
-    if (orderId) {
-      navigate("/orders");
-      return;
-    }
-    return; // Don't continue to pay/close logic in this run!
+  const unconfirmedItems = safeCartItems.filter(i => !i.confirmed);
+  if (unconfirmedItems.length > 0) {
+    await secureFetch("/orders/order-items", {
+      method: "POST",
+      body: JSON.stringify({
+        order_id: updated.id,
+        receipt_id: null,
+        items: unconfirmedItems.map((i) => ({
+          product_id: i.id,
+          quantity: i.quantity,
+          price: i.price,
+          ingredients: i.ingredients,
+          extras: (i.extras || []).map(ex => ({
+            ...ex,
+            amount: Number(ex.amount) || 1,
+            unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase()
+          })),
+          unique_id: i.unique_id,
+          note: i.note || null,
+          confirmed: true,
+          kitchen_status: "new",
+          payment_method: null,
+          receipt_id: null,
+          discountType: discountValue > 0 ? discountType : null,
+          discountValue: discountValue > 0 ? discountValue : 0,
+        }))
+      }),
+    });
   }
 
-  // 🟡 Step 3: Open payment modal ONLY for table orders if there are unpaid, confirmed items
+  setOrder((prev) => ({ ...prev, status: "confirmed" }));
+  await fetchOrderItems(updated.id);
+
+  if (orderId && getButtonLabel() === "Confirm") {
+    await fetchOrderItems(order.id);
+    setOrder((prev) => ({ ...prev, status: "confirmed" }));
+
+    // ✅ CLEAR HEADER SUBTITLE IMMEDIATELY AFTER CONFIRM
+    setHeader(prev => ({ ...prev, subtitle: "" }));
+
+    // ✅ show toast + navigate back to orders after short delay
+    showToast("✅ Phone order confirmed and sent to kitchen");
+    setTimeout(() => navigate("/orders"), 400);
+    return;
+  }
+  return;
+}
+
+
+  // 3️⃣ Open payment modal only for table orders
   if (
     order.status === "confirmed" &&
     !orderId &&
@@ -831,28 +909,26 @@ items: unconfirmedItems.map((i) => ({
     return;
   }
 
-  // 🔵 Step 4: Try to close if all paid
-  const allPaid = safeCartItems.every((i) => i.paid);
+// 4️⃣ Try to close if all items are paid — OR any phone order ready to close
+const allPaid = safeCartItems.every((i) => i.paid);
 
-if ((order.status === "paid" || allPaid) && safeCartItems.length > 0) {
-  // PATCH: Only allow close if ALL items are delivered!
-  if (!allItemsDelivered(safeCartItems)) {
-    showToast("⚠️ Table cannot be closed: Not all items delivered!");
-    setTimeout(() => navigate("/tables"), 1000);
-    return;
+if (
+  (orderType === "phone" && order.status !== "closed") || // ✅ always allow close for phone
+  (order.status === "paid" || allPaid)
+) {
+  try {
+    await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
+
+    if (orderType === "phone" || orderId) navigate("/orders");
+    else navigate("/tables");
+
+    setDiscountValue(0);
+    setDiscountType("percent");
+    showToast("✅ Order closed successfully");
+  } catch (err) {
+    console.error("❌ Close failed:", err);
+    showToast("❌ Failed to close order");
   }
-
-  await fetch(`${API_URL}/api/orders/${order.id}/close`, { method: "POST" });
-
-
-  if (order.order_type === "phone" || orderId) {
-    navigate("/orders");
-  } else {
-    navigate("/tables");
-  }
-  // 🔵 ADD THIS AFTER CLOSE + NAVIGATE
-  setDiscountValue(0);
-  setDiscountType("percent");
 }
 
 
@@ -863,11 +939,11 @@ if ((order.status === "paid" || allPaid) && safeCartItems.length > 0) {
 
 
 
+
 const refreshReceiptAfterPayment = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/orders/${order.id}/items`);
-    if (!res.ok) throw new Error("Failed to refresh receipt");
-    const data = await res.json();
+  const data = await secureFetch(`/orders/${order.id}/items`);
+
 
     const fetchedItems = data.map((item) => {
       const extras = safeParseExtras(item.extras);
@@ -949,7 +1025,7 @@ if (discountValue > 0) {
       confirmed: true
     }));
 
-    await fetch(`${API_URL}/api/orders/sub-orders`, {
+    await secureFetch("/orders/sub-orders", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -960,21 +1036,22 @@ if (discountValue > 0) {
         items: enhancedItems
       })
     });
-// Before calling fetch(`${API_URL}/api/orders/receipt-methods`, ...)
+// Before calling secureFetch('orders/receipt-methods`, ...)
 const cleanedSplits = {};
 Object.entries(splits).forEach(([method, amt]) => {
   const val = parseFloat(amt);
   if (val > 0) cleanedSplits[method] = val;
 });
-await fetch(`${API_URL}/api/orders/receipt-methods`, {
+await secureFetch("/orders/receipt-methods", {
   method: "POST",
-  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    order_id: order.id,        // <-- make sure this is included!
-    receipt_id: receiptId,     // (if you already have it; else backend creates)
-    methods: cleanedSplits
+    order_id: order.id,
+    receipt_id: receiptId,
+    methods: cleanedSplits,
   }),
 });
+
+
 
 
 
@@ -995,9 +1072,16 @@ await fetch(`${API_URL}/api/orders/receipt-methods`, {
     await refreshReceiptAfterPayment();
 
     // Now check if fully paid etc
-    const itemsRes2 = await fetch(`${API_URL}/api/orders/${order.id}/items`);
-    const allItems2 = await itemsRes2.json();
-    const isFullyPaid2 = allItems2.every(item => item.paid_at);
+    // ✅ Use secureFetch so the Bearer token is automatically included
+const allItems2 = await secureFetch(`/orders/${order.id}/items`);
+
+if (!Array.isArray(allItems2)) {
+  console.error("❌ Unexpected items response:", allItems2);
+  return;
+}
+
+const isFullyPaid2 = allItems2.every((item) => item.paid_at);
+
     if (isFullyPaid2) {
       await updateOrderStatus('paid', total, method);
       setOrder(prev => ({ ...prev, status: 'paid' }));
@@ -1045,8 +1129,23 @@ const selectedForPaymentTotal = cartItems
 const addToCart = async (product) => {
   if (!order) return;
 
-  // If product has extras, open modal (keep existing logic)
-  if (product?.selectedExtrasGroup?.length) {
+  // ✅ Normalize and resolve extras
+  const extrasGroupIds =
+    product.selectedExtrasGroup ||
+    product.selected_extras_group ||
+    [];
+
+  if (Array.isArray(extrasGroupIds) && extrasGroupIds.length > 0) {
+    // ✅ Match regardless of string/number mismatch
+    const attachedGroups = extrasGroups.filter((g) =>
+      extrasGroupIds.some((id) => String(id) === String(g.id))
+    );
+
+    // ✅ Attach the full extras group list
+    product.selectedExtrasGroup = attachedGroups;
+
+    console.log("🧩 Matched extras groups:", attachedGroups);
+
     setNote("");
     setSelectedProduct(product);
     setSelectedExtras([]);
@@ -1054,7 +1153,7 @@ const addToCart = async (product) => {
     return;
   }
 
-  // NO EXTRAS: handle unique_id correctly
+  // 🔹 No extras → normal add
   const uniqueId = `${product.id}-NO_EXTRAS`;
   const hasOld = cartItems.some(
     (item) =>
@@ -1063,7 +1162,6 @@ const addToCart = async (product) => {
   );
   const finalUniqueId = hasOld ? `${product.id}-NO_EXTRAS-${uuidv4()}` : uniqueId;
 
-  // ---- 1. Optimistically update UI (keep this) ----
   setCartItems((prev) => [
     ...prev,
     {
@@ -1075,15 +1173,15 @@ const addToCart = async (product) => {
       ingredients: product.ingredients || [],
       extras: [],
       unique_id: finalUniqueId,
-      confirmed: false,         // changed from false to true
+      confirmed: false,
       paid: false,
     },
   ]);
 
-
-
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
 };
+
+
 
 
 
@@ -1118,8 +1216,8 @@ const clearUnconfirmedCartItems = () => {
   const fetchSubOrders = async () => {
     if (!order?.id) return;
     try {
-      const res = await fetch(`${API_URL}/api/orders/${order.id}/suborders`);
-      const data = await res.json();
+    const data = await secureFetch(`/orders/${order.id}/suborders`);
+
       setSubOrders(data);
     } catch (e) {
       console.error(e);
@@ -1158,36 +1256,36 @@ function ReceiptGroup({ receiptId, items, groupIdx }) {
   const initialGuess = items[0]?.payment_method || "Unknown";
   const [methodLabel, setMethodLabel] = useState(`${icons[initialGuess]} ${initialGuess}`);
 
-  useEffect(() => {
-    const fetchMethods = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/orders/receipt-methods/${receiptId}`);
-        const methods = await res.json();
+useEffect(() => {
+  const fetchMethods = async () => {
+    try {
+      const methods = await secureFetch(`/orders/receipt-methods/${receiptId}`);
 
-        if (!methods.length) {
-          const fallback = items[0]?.payment_method || "Unknown";
-          setMethodLabel(`${icons[fallback] || "❓"} ${fallback}`);
-          return;
-        }
-
-        const label = methods
-          .filter((m) => m.payment_method && m.payment_method !== "Split")
-          .map((m) => {
-            const icon = icons[m.payment_method] || "❓";
-            const amount = parseFloat(m.amount).toFixed(2);
-            return `${icon} ${m.payment_method} ₺${amount}`;
-          })
-          .join(" + ");
-
-        setMethodLabel(label);
-      } catch (err) {
-        console.error("❌ Failed to fetch receipt methods:", err);
-        setMethodLabel("❓ Unknown");
+      if (!methods.length) {
+        const fallback = items[0]?.payment_method || "Unknown";
+        setMethodLabel(`${icons[fallback] || "❓"} ${fallback}`);
+        return;
       }
-    };
 
-    fetchMethods();
-  }, [receiptId]);
+      const label = methods
+        .filter((m) => m.payment_method && m.payment_method !== "Split")
+        .map((m) => {
+          const icon = icons[m.payment_method] || "❓";
+          const amount = parseFloat(m.amount).toFixed(2);
+          return `${icon} ${m.payment_method} ₺${amount}`;
+        })
+        .join(" + ");
+
+      setMethodLabel(label);
+    } catch (err) {
+      console.error("❌ Failed to fetch receipt methods:", err);
+      setMethodLabel("❓ Unknown");
+    }
+  };
+
+  fetchMethods();
+}, [receiptId]);
+
 
 
 return (
@@ -1277,14 +1375,7 @@ return (
 }
 
   // Responsive helper
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  // Mobile cart drawer
+  // Mobile cart drawer (reserved for future collapsible cart)
   const [cartOpen, setCartOpen] = useState(false);
 
 
@@ -1292,38 +1383,68 @@ return (
 
 return (
 <div
-  className="flex-1 flex flex-col h-screen transition-all duration-300 ease-in-out"
-  style={{
-    minWidth: 0,
-    width: "110%",
-  }}
+  className="flex-1 flex flex-col h-screen transition-all duration-300 ease-in-out w-full"
+  style={{ minWidth: 0 }}
 >
 
     {/* --- Main Content: Category Rail, Products, Cart --- */}
-    <div className="flex flex-1 h-full overflow-hidden pr-1  md:pr-[450px]">
+    <div className="flex flex-1 flex-col lg:flex-row h-full overflow-hidden">
   {/* --- Categories Sidebar: 2 Columns --- */}
 <aside
-  className={`w-full md:min-w-[40px] md:max-w-[300px] md:pl-[10px] px-4 py-8 transition-all duration-300 ${
-    isMobile ? "block" : "flex justify-center items-start"
-  }`}
-
+  className="w-full lg:w-auto px-4 py-4 lg:py-8 lg:pl-6 transition-all duration-300"
 >
-<div
-  className="
-    grid grid-cols-2 gap-x-[14px] gap-y-[14px]
-    bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-200 dark:from-blue-950 dark:via-blue-900 dark:to-indigo-950
-    backdrop-blur-xl rounded-3xl
-    p-3 shadow-2xl border-2 border-blue-200/40 dark:border-indigo-900/60
-    overflow-y-auto custom-scrollbar
-    w-[260px] md:w-[320px] lg:w-[360px]
-    min-h-[420px] md:min-h-[480px] lg:min-h-[520px]
-    ml-4
-  "
->
+  {/* Mobile: Horizontal category scroller */}
+  <div className="lg:hidden overflow-x-auto hide-scrollbar -mx-2 px-2 py-2 bg-white/70 dark:bg-zinc-900/80 rounded-2xl shadow flex gap-3">
+    {categories.map((cat, idx) => {
+      const slug = (cat || "").trim().toLowerCase();
+      const catSrc = categoryImages[slug] || "";
+      const hasImg = !!catSrc;
 
+      return (
+        <button
+          key={`mobile-${cat}`}
+          onClick={() => setCurrentCategoryIndex(idx)}
+          className={`
+            flex-shrink-0 w-24 h-28
+            flex flex-col items-center justify-center gap-2
+            rounded-2xl border border-blue-200/60 dark:border-indigo-900/40
+            bg-white/90 dark:bg-blue-900/40
+            shadow-md px-3 transition
+            ${currentCategoryIndex === idx ? "ring-2 ring-fuchsia-400 scale-105" : "opacity-90"}
+          `}
+        >
+          {hasImg ? (
+            <img
+              src={catSrc}
+              alt={cat}
+              className="w-12 h-12 rounded-xl object-cover border shadow"
+            />
+          ) : (
+            <span className="text-3xl">
+              {categoryIcons[cat] || categoryIcons.default}
+            </span>
+          )}
+          <span className="text-xs font-semibold text-center leading-tight break-words">
+            {t(cat)}
+          </span>
+        </button>
+      );
+    })}
+  </div>
 
-
-
+  {/* Desktop: Category grid */}
+  <div
+    className="
+      hidden lg:grid
+      grid-cols-2 gap-x-4 gap-y-4
+      bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-200 dark:from-blue-950 dark:via-blue-900 dark:to-indigo-950
+      backdrop-blur-xl rounded-3xl
+      p-4 shadow-2xl border-2 border-blue-200/40 dark:border-indigo-900/60
+      overflow-y-auto custom-scrollbar
+      w-[320px] xl:w-[360px]
+      min-h-[520px]
+    "
+  >
     {categories.map((cat, idx) => {
   const slug = (cat || "").trim().toLowerCase();
   const catSrc = categoryImages[slug] || "";
@@ -1331,10 +1452,10 @@ return (
 
   return (
     <button
-      key={cat}
+      key={`desktop-${cat}`}
       onClick={() => setCurrentCategoryIndex(idx)}
       className={`
-        aspect-square w-full max-w-[110px]
+        aspect-square w-full max-w-[120px]
         flex flex-col items-center justify-center
         rounded-2xl border-2
         bg-white/20 dark:bg-blue-900/30 backdrop-blur-xl
@@ -1369,50 +1490,58 @@ return (
 
 
   {/* --- Center: Product Grid --- */}
-  <main className="flex-1 overflow-y-auto py-8  transition md:pr-[60px] md:pl-[2px]">
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-x-12 gap-y-4">
+  <main className="flex-1 overflow-y-auto py-6 px-4 lg:px-6 transition">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
 
-      {products
-        .filter((p) =>
-          (p.category || "").trim().toLowerCase() === (activeCategory || "").trim().toLowerCase()
-        )
-        .map((product) => (
+      {productsInActiveCategory.map((product) => (
+          (() => {
+            const description =
+              product.description ||
+              product.desc ||
+              product.product_description ||
+              product.productDescription ||
+              "";
+
+            return (
           <div
             key={product.id}
             onClick={() => addToCart(product)}
-            className="cursor-pointer group bg-white/80 dark:bg-zinc-900 border-2 border-blue-100/60 dark:border-zinc-800/60 rounded-2xl shadow-md hover:shadow-2xl transition hover:scale-105 flex flex-col items-center p-2 aspect-[3/4] min-h-[150px] max-w-[120px] mx-auto relative"
+            className="cursor-pointer group bg-white/80 dark:bg-zinc-900 border-2 border-blue-100/60 dark:border-zinc-800/60 rounded-2xl shadow-md hover:shadow-2xl transition hover:scale-105 flex flex-col items-center p-3 aspect-[3/4] min-h-[170px] w-full relative"
           >
           <img
-  src={
-    product.image
-      ? product.image
-      : "https://via.placeholder.com/100?text=🍽️"
-  }
-  alt={product.name}
-  className="w-20 h-20 object-cover rounded-xl mb-1 border shadow"
-/>
-
+            src={
+              product.image
+                ? product.image
+                : "https://via.placeholder.com/100?text=🍽️"
+            }
+            alt={product.name}
+            className="w-20 h-20 object-cover rounded-xl mb-2 border shadow"
+          />
 
             {product.discountType !== "none" && product.discountValue > 0 && (
               <span className="absolute top-2 right-2 bg-gradient-to-r from-yellow-300 to-pink-200 text-xs text-amber-800 font-bold px-2 py-0.5 rounded-full shadow">
                 % {product.discountValue} {t(product.discountType)}
               </span>
             )}
-            <div className="font-bold text-blue-900 dark:text-blue-200 text-xs truncate w-full text-center">
+            <div className="font-bold text-blue-900 dark:text-blue-200 text-xs text-center leading-snug line-clamp-2 w-full">
               {product.name}
             </div>
 
+            {description && (
+              <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 text-center leading-snug line-clamp-2 w-full">
+                {description}
+              </p>
+            )}
 
-
-            <div className="mt-auto text-indigo-700 dark:text-indigo-300 font-extrabold text-lg text-center w-full">
+            <div className="mt-2 text-indigo-700 dark:text-indigo-300 font-extrabold text-lg text-center w-full">
               ₺{parseFloat(product.price).toFixed(2)}
             </div>
 
           </div>
+            );
+          })()
         ))}
-      {products.filter((p) =>
-        (p.category || "").trim().toLowerCase() === (activeCategory || "").trim().toLowerCase()
-      ).length === 0 && (
+      {productsInActiveCategory.length === 0 && (
         <div className="col-span-full text-center text-gray-400 text-lg font-semibold py-10">
           {t("No products in this category.")}
         </div>
@@ -1425,11 +1554,12 @@ return (
       {/* --- Right: Cart Sidebar (always visible on desktop) --- */}
 <aside
   className="
-    fixed top-16 right-0 z-50
-    w-full md:w-[350px] md:max-w-[410px]
-    h-[calc(100vh-64px)] md:h-[calc(100vh-64px)]
+    w-full lg:w-[350px] lg:max-w-[410px] lg:ml-6
     bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl shadow-2xl flex flex-col
     transition-all duration-300 ease-in-out
+    lg:fixed lg:top-16 lg:right-0 lg:z-50
+    lg:h-[calc(100vh-64px)]
+    mt-6 lg:mt-0
   "
 >
 
@@ -1481,9 +1611,15 @@ return (
 </span>
     </div>
     {/* Price */}
-    <span className="font-extrabold text-indigo-700 dark:text-indigo-200 text-base ml-2">
-      ₺{(parseFloat(item.price) * item.quantity).toFixed(2)}
-    </span>
+<span className="font-extrabold text-indigo-700 dark:text-indigo-200 text-base ml-2">
+ ₺{(
+   (parseFloat(item.price) * item.quantity) +
+   ((item.extras || []).reduce(
+     (s, ex) => s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
+     0
+   ) * item.quantity)
+ ).toFixed(2)}
+</span>
   </div>
 
   {/* --- Extras as Chips --- */}
@@ -1591,7 +1727,7 @@ return (
           <button
             onClick={() => {
               setEditingCartItemIndex(idx);
-              const fullProduct = products.find((p) => p.id === item.id);
+              const fullProduct = safeProducts.find((p) => p.id === item.id);
               setSelectedProduct({
                 ...item,
                 quantity: item.quantity,
@@ -1676,12 +1812,12 @@ return (
   </button>
 </div>
 
-      <button
+<button
   onClick={handleMultifunction}
-  disabled={order?.status === "closed" || !getButtonLabel()}
+  disabled={order?.status === "closed" ? true : false}
   className={`
     w-full py-3 mt-2 rounded-xl text-lg font-extrabold shadow-xl flex items-center justify-center gap-2 transition
-    ${(order?.status === "closed" || !getButtonLabel())
+    ${order?.status === "closed"
       ? "bg-gray-300 text-white cursor-not-allowed"
       : "bg-gradient-to-r from-green-400 via-blue-400 to-indigo-400 text-white hover:brightness-105"
     }`}
@@ -1691,6 +1827,7 @@ return (
     {getButtonLabel() ? t(getButtonLabel()) : "—"}
   </span>
 </button>
+
 
         </div>
       </aside>
@@ -1790,18 +1927,17 @@ return (
   t={t}
   onConfirm={async (newTable) => {
     if (!order?.id) return;
-    const res = await fetch(`${API_URL}/api/orders/${order.id}/move-table`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ new_table_number: newTable }),
-    });
-    if (res.ok) {
+    try {
+      await secureFetch(`/orders/${order.id}/move-table`, {
+        method: "PATCH",
+        body: JSON.stringify({ new_table_number: newTable }),
+      });
       setShowMoveTableModal(false);
       navigate(`/transaction/${newTable}`);
-    } else {
-      const data = await res.json();
+    } catch (err) {
+      console.error("❌ Move table failed:", err);
       setShowMoveTableModal(false);
-      alert(data.error || "Failed to move table");
+      alert(err.message || "Failed to move table");
     }
   }}
 />
@@ -1811,23 +1947,47 @@ return (
   onClose={() => setShowMergeTableModal(false)}
   currentTable={tableId}
   t={t}
-  onConfirm={async (destTable) => {
-    if (!order?.id) return;
-    const res = await fetch(`${API_URL}/api/orders/${order.id}/merge-table`, {
+onConfirm={async (destTable) => {
+  if (!order?.id) return;
+  try {
+    console.log("🧩 Merging table...");
+    await secureFetch(`/orders/${order.id}/merge-table`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target_table_number: destTable }),
+      body: JSON.stringify({ target_table_number: destTable.tableNum }),
     });
-    if (res.ok) {
+
+    // ✅ Wait for socket confirmation or fallback reload
+    const handleMerged = (payload) => {
+      if (payload?.order?.table_number === Number(destTable.tableNum)) {
+        console.log("✅ Merge confirmed by socket:", payload);
+        socket.off("order_merged", handleMerged);
+        setShowMergeTableModal(false);
+        navigate(`/transaction/${destTable.tableNum}`, {
+          replace: true,
+          state: { order: payload.order },
+        });
+      }
+    };
+
+    socket.on("order_merged", handleMerged);
+
+    // Fallback in 1.5s if socket doesn't arrive
+    setTimeout(() => {
+      socket.off("order_merged", handleMerged);
+      console.warn("⏳ Merge socket timeout — forcing reload");
       setShowMergeTableModal(false);
-      navigate(`/transaction/${destTable}`);
-    } else {
-      const data = await res.json();
-      setShowMergeTableModal(false);
-      alert(data.error || "Failed to merge table");
-    }
-  }}
+      navigate(`/transaction/${destTable.tableNum}`, { replace: true });
+    }, 1500);
+  } catch (err) {
+    console.error("❌ Merge table failed:", err);
+    alert(err.message || "Failed to merge table");
+    setShowMergeTableModal(false);
+  }
+}}
+
 />
+
+
 
   </div>
 );

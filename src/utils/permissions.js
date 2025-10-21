@@ -1,17 +1,13 @@
 // src/utils/permissions.js
-export function hasPermission(perm, currentUser, rolesConfig) {
+export function hasPermission(perm, currentUser) {
   if (!currentUser || !currentUser.role) return false;
 
   const role = currentUser.role.toLowerCase();
+  const permissions = (currentUser.permissions || []).map((p) => p.toLowerCase());
+  const target = perm?.toLowerCase();
 
   // ✅ Admin bypass (case-insensitive)
-  if (role === "admin") return true;
+  if (role === "admin" || permissions.includes("all")) return true;
 
-  // ✅ Normalize permissions to lowercase
-  const allowed = currentUser.permissions?.map((p) => p.toLowerCase())?.length
-    ? currentUser.permissions.map((p) => p.toLowerCase())
-    : rolesConfig?.[role] || [];
-
-  if (allowed.includes("all")) return true;
-  return allowed.includes(perm.toLowerCase());
+  return permissions.includes(target);
 }

@@ -2,7 +2,13 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { useSetting } from "../components/hooks/useSetting";
 import { normalizeUser } from "../utils/normalizeUser";
 
-const API_URL = import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com";
+// Always point to the API base (ending in /api)
+const RAW_API =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === "development"
+    ? "http://localhost:5000/api"
+    : "https://hurrypos-backend.onrender.com/api");
+const API_BASE = String(RAW_API).replace(/\/+$/, "");
 export const AuthContext = createContext();
 
 export function useAuth() {
@@ -18,20 +24,27 @@ export const AuthProvider = ({ children }) => {
   useSetting("users", setUserSettings, { roles: {} });
 
   // ✅ Load cached user instantly on mount and normalize it
-  useEffect(() => {
-    try {
-      const cachedUser = JSON.parse(localStorage.getItem("beyproUser"));
-      if (cachedUser) {
-        const normalized = normalizeUser(cachedUser, userSettings);
-        setCurrentUser(normalized);
-        localStorage.setItem("beyproUser", JSON.stringify(normalized));
+// ✅ Load cached user instantly on mount and normalize it
+useEffect(() => {
+  try {
+    const cachedUser = JSON.parse(localStorage.getItem("beyproUser"));
+    if (cachedUser) {
+      const normalized = normalizeUser(cachedUser, userSettings);
+      setCurrentUser(normalized);
+      localStorage.setItem("beyproUser", JSON.stringify(normalized));
+
+      // ✅ Ensure restaurant_id is always in localStorage
+      if (normalized.restaurant_id) {
+        localStorage.setItem("restaurant_id", normalized.restaurant_id);
       }
-    } catch (err) {
-      console.warn("⚠️ Failed to parse cached user:", err);
     }
-    setLoading(false);
-    setInitializing(false);
-  }, []);
+  } catch (err) {
+    console.warn("⚠️ Failed to parse cached user:", err);
+  }
+  setLoading(false);
+  setInitializing(false);
+}, []);
+
 
   // ✅ Persist role settings for permission hooks
   useEffect(() => {
@@ -50,9 +63,10 @@ export const AuthProvider = ({ children }) => {
       return normalized;
     };
 
-    fetch(`${API_URL}/api/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(`${API_BASE}/me`, {
+  headers: { Authorization: `Bearer ${token}` },
+})
+
       .then((res) => {
         if (res.status === 401) {
           console.warn("🔒 Token expired or invalid — logging out");

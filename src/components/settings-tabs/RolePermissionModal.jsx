@@ -3,44 +3,54 @@ import React, { useState, useEffect } from "react";
 
 // ✅ Keep all permission keys lowercase
 const PERMISSION_LABELS = {
+  // === DASHBOARD & MAIN NAVIGATION ===
   dashboard: "Dashboard",
+  tables: "Table Overview",
+  orders: "Orders",
+  kitchen: "Kitchen",
   products: "Products",
   suppliers: "Suppliers",
   stock: "Stock",
   production: "Production",
   staff: "Staff",
-  task: "Task",
+  task: "Task Manager",
   reports: "Reports",
   expenses: "Expenses",
   "ingredient-prices": "Ingredient Prices",
   "cash-register-history": "Cash Register History",
   integrations: "Integrations",
-  settings: "Settings (Main)",
-  "settings-shop-hours": "Shop Hours",
+  settings: "Settings",
+  "qr-menu-settings": "QR Menu",
+  "customer-insights": "Customer Insights",
+  "marketing-campaigns": "Marketing Campaigns",
+  maintenance: "Maintenance",
+
+  // === ORDERS & PHONE PACKET ===
+  "phone-orders": "Phone Orders",
+  "packet-orders": "Packet Orders",
+  delivery: "Delivery",
+  "driver-report": "Driver Report",
+  "drinks-settings": "Drink Settings",
+  "payment-modal": "Payment Modal",
+
+  // === SETTINGS SUB-SECTIONS ===
+  "settings-appearance": "Appearance",
   "settings-localization": "Localization",
   "settings-notifications": "Notifications",
-  "settings-subscription": "Subscription",
   "settings-payments": "Payments",
   "settings-register": "Register Settings",
-  "settings-users": "User Management",
   "settings-integrations": "Integrations (Settings)",
-  "settings-inventory": "Inventory Logs",
-  "settings-appearance": "Appearance",
-  orders: "Orders",
-  kitchen: "Kitchen",
-  delivery: "Delivery",
-  register: "Register",
+  "settings-users": "User Management",
+  "settings-subscription": "Subscription",
+  "settings-shop-hours": "Shop Hours",
+  "settings-log-files": "Log Files",
+
+  // === OTHERS ===
+  register: "Cash Register",
   payments: "Payments",
-  tables: "Table Overview",
   history: "Order History",
-  packet: "Packet Orders",
-  phone: "Phone Orders",
-  customer: "Customer Insights",
-  maintenance:"Maintenance",
-  marketing: "Marketing Campaigns",
-  "table-register": "Register Modal",
-  "settings-register-summary": "Register Summary Modal",
 };
+
 
 const ALL_PERMISSIONS = Object.keys(PERMISSION_LABELS);
 

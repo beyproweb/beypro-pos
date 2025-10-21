@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
+import secureFetch from "../../utils/secureFetch";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -11,16 +12,17 @@ export default function ShopHoursTab() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/settings/shop-hours/all`)
-      .then((res) => res.json())
+    secureFetch("/settings/shop-hours/all")
       .then((data) => {
         const hoursMap = {};
-        data.forEach((row) => {
-          hoursMap[row.day] = {
-            open: row.open_time,
-            close: row.close_time,
-          };
-        });
+        if (Array.isArray(data)) {
+          data.forEach((row) => {
+            hoursMap[row.day] = {
+              open: row.open_time,
+              close: row.close_time,
+            };
+          });
+        }
         setShopHours(hoursMap);
         setLoading(false);
       })
@@ -29,6 +31,7 @@ export default function ShopHoursTab() {
         toast.error("Failed to load settings");
       });
   }, []);
+
 
   const handleTimeChange = (day, field, value) => {
     setShopHours((prev) => ({
@@ -40,23 +43,19 @@ export default function ShopHoursTab() {
     }));
   };
 
-  const handleSave = () => {
-    fetch(`${API_URL}/api/settings/shop-hours/all`, {
+const handleSave = async () => {
+  try {
+    const res = await secureFetch("/settings/shop-hours/all", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hours: shopHours }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Save failed");
-        return res.json();
-      })
-      .then(() => {
-        toast.success("✅ Shop hours saved successfully!");
-      })
-      .catch(() => {
-        toast.error("Save failed");
-      });
-  };
+    });
+    toast.success("✅ Shop hours saved successfully!");
+  } catch (err) {
+    console.error("❌ Save failed:", err);
+    toast.error("Save failed");
+  }
+};
+
 
   return (
   <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 transition-colors duration-300">

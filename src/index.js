@@ -9,7 +9,7 @@ import { StockProvider } from './context/StockContext';
 import AppearanceProvider from './components/AppearanceProvider';
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-fetch(`${API_URL}/api/settings/localization`) // ✅ USE PROXY `/api` for backend in Vite
+secureFetch('settings/localization`) // ✅ USE PROXY `/api` for backend in Vite
   .then(res => res.json())
   .then(data => {
     const lang = data.language || "English";

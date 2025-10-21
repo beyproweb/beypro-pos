@@ -3,7 +3,6 @@ import ProductForm from "../components/ProductForm"; // Import ProductForm
 import Modal from "react-modal";
 import { useTranslation } from "react-i18next";
 import { Plus, Trash2, Filter, Edit3, Layers } from "lucide-react";
-import { useHasPermission } from "../components/hooks/useHasPermission";
 import secureFetch from "../utils/secureFetch";
 
 const API_URL =
@@ -39,8 +38,7 @@ export default function Products() {
   const [selectedCategoryToDelete, setSelectedCategoryToDelete] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Permissions
-  const hasSettingsAccess = useHasPermission("settings");
+
 
   // ---------- Derived ----------
   const categories = [...new Set(products.map((p) => p.category))].filter(Boolean);
@@ -54,16 +52,25 @@ export default function Products() {
       .includes(searchTerm.toLowerCase());
     return matchesCategory && matchesSearch;
   });
+ 
+// 🔑 Track tenant id from localStorage
+const [tenantId, setTenantId] = useState(localStorage.getItem("restaurant_id"));
 
-  // ---------- Effects ----------
-  // Ingredients (tenant-protected)
-  useEffect(() => {
-    secureFetch("/suppliers/ingredients")
-      .then((data) => {
-        setAvailableIngredients(Array.isArray(data) ? data : []);
-      })
-      .catch(() => setAvailableIngredients([]));
-  }, []);
+// Ingredients (tenant-protected)
+useEffect(() => {
+  if (!tenantId) {
+    setAvailableIngredients([]);
+    return;
+  }
+
+  secureFetch("/suppliers/ingredients")
+    .then((data) => {
+      console.log("🔎 Ingredients for tenant", tenantId, data);
+      setAvailableIngredients(Array.isArray(data) ? data : []);
+    })
+    .catch(() => setAvailableIngredients([]));
+}, [tenantId]);
+
 
   // Products (tenant-protected)
 const fetchProducts = async () => {
@@ -96,28 +103,25 @@ useEffect(() => {
 
 
   // Costs (tenant-protected) — stores as map by id for easy lookups
-  useEffect(() => {
-    secureFetch("/products/costs")
-      .then((data) => {
-        if (!Array.isArray(data)) {
-          setProductCostsById({});
-          return;
-        }
-        const map = {};
-        for (const row of data) {
-          // prefer ingredient_cost if present; otherwise fall back to row.cost
-          const costNum =
-            typeof row.ingredient_cost === "number"
-              ? row.ingredient_cost
-              : typeof row.cost === "number"
-              ? row.cost
-              : 0;
-          map[row.id] = costNum;
-        }
-        setProductCostsById(map);
-      })
-      .catch(() => setProductCostsById({}));
-  }, [products]);
+useEffect(() => {
+  secureFetch("/products/costs")
+    .then((data) => {
+      if (!Array.isArray(data)) {
+        setProductCostsById({});
+        return;
+      }
+      const map = {};
+      for (const row of data) {
+        const rawCost =
+          row.ingredient_cost ?? row.cost ?? 0;
+        const costNum = parseFloat(rawCost) || 0;
+        map[row.id] = costNum;
+      }
+      setProductCostsById(map);
+    })
+    .catch(() => setProductCostsById({}));
+}, [products]);
+
 
   // Extras Groups (tenant-protected) under /api/products/extras-group
   const fetchExtrasGroups = async () => {
@@ -149,14 +153,7 @@ useEffect(() => {
     fetchExtrasGroups();
   }, []);
 
-  // ---------- Permission Gate ----------
-  if (!hasSettingsAccess) {
-    return (
-      <div className="p-12 text-2xl text-red-600 text-center">
-        {t("Access Denied: You do not have permission to view Settings.")}
-      </div>
-    );
-  }
+
 
   // ---------- Handlers ----------
   const handleCategoryToggle = (category) => {
@@ -369,14 +366,72 @@ useEffect(() => {
               </div>
 
               {/* Cost (if available) */}
-              {productCostsById[product.id] !== undefined && (
-                <div className="text-xs font-bold text-gray-500 mt-2">
-                  {t("Cost Price")}:{" "}
-                  <span className="text-rose-700">
-                    ₺{Number(productCostsById[product.id]).toFixed(2)}
-                  </span>
-                </div>
-              )}
+{productCostsById[product.id] !== undefined && (() => {
+  const cost = Number(productCostsById[product.id]) || 0;
+  const price = Number(product.price) || 0;
+  const profit = price - cost;
+  const margin = price > 0 ? (profit / price) * 100 : 0;
+
+  const isLoss = profit < 0;
+  const marginColor = isLoss
+    ? "bg-red-500"
+    : margin > 40
+    ? "bg-green-500"
+    : margin > 20
+    ? "bg-yellow-400"
+    : "bg-orange-400";
+
+  const profitLabel = isLoss ? "Loss" : "Profit";
+
+  return (
+    <div className="mt-2 text-xs font-semibold space-y-1">
+      <div className="text-gray-500">
+        {t("Cost Price")}:{" "}
+        <span className="text-rose-700">₺{cost.toFixed(2)}</span>
+      </div>
+      <div className="text-gray-500">
+        {t(profitLabel)}:{" "}
+        <span className={isLoss ? "text-red-600" : "text-blue-700"}>
+          {isLoss ? "-₺" : "₺"}
+          {Math.abs(profit).toFixed(2)}
+        </span>
+      </div>
+      <div className="text-gray-500 flex items-center gap-2">
+        {t("Margin")}:{" "}
+        <span
+          className={
+            isLoss
+              ? "text-red-600"
+              : margin > 40
+              ? "text-green-600"
+              : margin > 20
+              ? "text-yellow-600"
+              : "text-orange-600"
+          }
+        >
+          {margin.toFixed(1)}%
+        </span>
+      </div>
+
+      {/* --- margin bar --- */}
+      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden mt-1">
+        <div
+          className={`${marginColor} h-2 rounded-full transition-all duration-300`}
+          style={{
+            width:
+              margin <= 0
+                ? "5%"
+                : margin >= 100
+                ? "100%"
+                : `${Math.min(margin, 100)}%`,
+          }}
+        ></div>
+      </div>
+    </div>
+  );
+})()}
+
+
             </div>
           ))
         ) : (
@@ -597,7 +652,7 @@ useEffect(() => {
                 await Promise.all(
                   (extrasGroups || []).map(async (group) => {
                     const payload = {
-                      group_name: (group.groupName || "").trim(),
+                      name: (group.groupName || "").trim(),
                       items: (group.items || [])
                         .filter((i) => (i.name || "").trim() !== "")
                         .map((i) => ({
@@ -613,14 +668,15 @@ useEffect(() => {
                         })),
                     };
 
-                    if (!payload.group_name || payload.items.length === 0) return;
+                    if (!payload.name || payload.items.length === 0) return;
+
 
                     if (group.id) {
                       // Update existing group
                       await secureFetch(`/products/extras-group/${group.id}`, {
                         method: "PUT",
                         body: JSON.stringify({
-                          name: payload.group_name,
+                          name: payload.name,
                           required: group.required || false,
                           max_selection: group.max_selection || 1,
                           items: payload.items,
@@ -631,7 +687,7 @@ useEffect(() => {
                       await secureFetch(`/products/extras-group`, {
                         method: "POST",
                         body: JSON.stringify({
-                          name: payload.group_name,
+                          name: payload.name,
                           required: false,
                           max_selection: 1,
                           items: payload.items,

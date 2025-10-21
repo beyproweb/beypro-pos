@@ -1,30 +1,38 @@
 import React, { useEffect, useState } from "react";
 const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../utils/secureFetch";
 
 export default function MoveTableModal({ open, onClose, onConfirm, currentTable, t }) {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
 
-  useEffect(() => {
-    if (!open) return;
-    setLoading(true);
-    fetch(`${API_URL}/api/orders`)
-      .then(res => res.json())
-      .then(data => {
-        // Mark all tables 1-20, with info on whether occupied
-        const all = Array.from({ length: 20 }, (_, i) => {
-          const tableNum = i + 1;
-          const order = data.find(o => o.table_number === tableNum && o.status !== "closed");
-          return {
-            tableNum,
-            occupied: !!order,
-          };
-        });
-        setTables(all);
-        setLoading(false);
+useEffect(() => {
+  if (!open) return;
+  setLoading(true);
+
+  secureFetch("/orders")
+    .then((data) => {
+      // Mark all tables 1–20, with info on whether occupied
+      const all = Array.from({ length: 20 }, (_, i) => {
+        const tableNum = i + 1;
+        const order = data.find(
+          (o) => o.table_number === tableNum && o.status !== "closed"
+        );
+        return {
+          tableNum,
+          occupied: !!order,
+        };
       });
-  }, [open]);
+      setTables(all);
+      setLoading(false);
+    })
+    .catch((err) => {
+      console.error("❌ Failed to fetch orders:", err);
+      setLoading(false);
+    });
+}, [open]);
+
 
   if (!open) return null;
 

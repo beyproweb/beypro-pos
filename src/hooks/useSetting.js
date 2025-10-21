@@ -1,7 +1,6 @@
 import { useEffect } from "react";
-import secureFetch from "../../utils/secureFetch";
-const API_URL = import.meta.env.VITE_API_URL || "";
-// ✅ Load settings with DEEP fallback
+import secureFetch from "../utils/secureFetch";
+
 // ✅ Load settings with DEEP fallback
 export const useSetting = (section, setState, defaults = {}) => {
   useEffect(() => {
@@ -11,6 +10,7 @@ export const useSetting = (section, setState, defaults = {}) => {
       .then((data) => {
         if (!mounted) return;
 
+        // 🧠 Deep merge defaults
         const merged = {
           ...defaults,
           ...data,
@@ -36,14 +36,14 @@ export const useSetting = (section, setState, defaults = {}) => {
   }, [section]);
 };
 
-// ✅ Save setting
+// ✅ Save setting (fixed)
 export const saveSetting = async (section, data) => {
   try {
     const json = await secureFetch(`/settings/${section}`, {
       method: "POST",
       body: JSON.stringify(data),
     });
-    return json;
+    return json; // already parsed JSON
   } catch (err) {
     console.error(`❌ Failed to save setting "${section}"`, err);
     return null;
