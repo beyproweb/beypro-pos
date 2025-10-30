@@ -18,10 +18,11 @@ export default function LoginScreen() {
 
     try {
       const API_BASE =
-        import.meta.env.VITE_API_URL ||
-        (import.meta.env.MODE === "development"
-          ? "http://localhost:5000/api"
-          : "https://beypro-backend.onrender.com/api");
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === "development"
+    ? "http://localhost:5000/api"
+    : "https://hurrypos-backend.onrender.com/api");
+
 
       console.groupCollapsed("🔑 Login Debug");
       console.log("➡️ Using API_BASE:", API_BASE);
