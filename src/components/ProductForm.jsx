@@ -157,16 +157,20 @@ useEffect(() => {
 
 
 useEffect(() => {
-  if (!initialData?.id || !product.ingredients?.length) return;
+  if (!initialData?.id) return;
+
   secureFetch("/products/costs")
     .then(data => {
-      if (data && data[initialData.id] !== undefined) {
-        setEstimatedCost(data[initialData.id]);
-      }
+      if (!Array.isArray(data)) return;
+
+      const match = data.find(p => p.id === initialData.id);
+      const costNum = parseFloat(match?.ingredient_cost ?? 0);
+      setEstimatedCost(isNaN(costNum) ? 0 : costNum);
     })
-    .catch(() => {});
-}, [initialData, product.ingredients]);
-  useEffect(() => {
+    .catch(() => setEstimatedCost(0));
+}, [initialData]);
+
+useEffect(() => {
 secureFetch("/products/extras-group")
     .then(data => {
         const normalized = (Array.isArray(data) ? data : []).map(g => ({

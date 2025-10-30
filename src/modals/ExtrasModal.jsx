@@ -75,11 +75,37 @@ const selectedGroupNames = new Set(
 );
 
 
-  let allowedGroups = groups.filter(g => {
-    const groupId = Number(g.id);
-    const groupNameKey = normalizeGroupKey(g.groupName);
-    return selectedGroupIds.has(groupId) || (groupNameKey && selectedGroupNames.has(groupNameKey));
-  });
+ let allowedGroups = groups.filter(g => {
+  const groupId = Number(g.id);
+  const groupNameKey = normalizeGroupKey(g.groupName);
+  return selectedGroupIds.has(groupId) || (groupNameKey && selectedGroupNames.has(groupNameKey));
+});
+
+// 🧩 FIX: if no selection, show all available extras groups for this product
+if (allowedGroups.length === 0) {
+  if (Array.isArray(groups) && groups.length > 0) {
+    allowedGroups = groups; // ✅ show all groups as fallback
+  } else if (Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {
+    // ✅ fallback manual extras display
+    allowedGroups = [
+      {
+        id: "manual",
+        groupName: "Extras",
+        items: selectedProduct.extras.map((ex, idx) => ({
+          id: idx,
+          name: ex.name,
+          price: Number(ex.extraPrice || ex.price || 0),
+          unit: ex.unit || "",
+          amount:
+            ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
+              ? Number(ex.amount)
+              : 1,
+        })),
+      },
+    ];
+  }
+}
+
 
   // If no selected groups, fallback to manual extras
   if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {

@@ -1425,8 +1425,6 @@ const addToCart = async (product) => {
         modalExtrasGroups: match.matchedGroups,
       };
 
-      console.log("🧩 Resolved extras groups:", idsForModal);
-
       setNote("");
       setSelectedProduct(productForModal);
       setSelectedExtras([]);
@@ -1435,7 +1433,14 @@ const addToCart = async (product) => {
     }
   }
 
-  // 🔹 No extras → merge identical items by quantity
+  // 🧩 FIX: even when no extras are selected, keep reference for future edit
+  const productGroups = normalizeExtrasGroupSelection([
+    product.extrasGroupRefs,
+    product.selectedExtrasGroup,
+    product.selected_extras_group,
+    product.selectedExtrasGroupNames,
+  ]);
+
   const baseUniqueId = `${product.id}-NO_EXTRAS`;
 
   setCartItems((prev) => {
@@ -1477,20 +1482,18 @@ const addToCart = async (product) => {
         unique_id: finalUniqueId,
         confirmed: false,
         paid: false,
+
+        // ✅ store product’s extras reference for later editing
+        extrasGroupRefs: productGroups,
+        selectedExtrasGroup: productGroups.ids,
+        selected_extras_group: productGroups.ids,
+        selectedExtrasGroupNames: productGroups.names,
       },
     ];
   });
 
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
 };
-
-
-
-
-
-
-
-
 
 
 
@@ -1865,19 +1868,68 @@ return (
                         {isEditable && (
   <div className="flex items-center gap-2">
     {/* ✏️ Edit button */}
-    <button
-      onClick={() => {
-        setSelectedProduct(item);
-        setSelectedExtras(safeParseExtras(item.extras));
-        setEditingCartItemIndex(idx);
-        setShowExtrasModal(true);
-      }}
-      className="text-xs font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1"
-      title={t("Edit item")}
-    >
-      🖊️
-      <span>{t("Edit")}</span>
-    </button>
+<button
+onClick={async () => {
+  const parsedExtras = safeParseExtras(item.extras);
+
+  // Try to determine which extras groups belong to this product
+  let selection = normalizeExtrasGroupSelection([
+    item.extrasGroupRefs,
+    item.selectedExtrasGroup,
+    item.selected_extras_group,
+    item.selectedExtrasGroupNames,
+  ]);
+
+  // 🧩 If still empty, use the product’s definition from `products` state
+  if ((!selection.ids.length && !selection.names.length) && item.id) {
+    const matchedProduct = products.find(p => p.id === item.id);
+    if (matchedProduct) {
+      selection = normalizeExtrasGroupSelection([
+        matchedProduct.extrasGroupRefs,
+        matchedProduct.selectedExtrasGroup,
+        matchedProduct.selected_extras_group,
+        matchedProduct.selectedExtrasGroupNames,
+      ]);
+    }
+  }
+
+  // 🔁 Always fetch from backend if possible (ensures we have actual group items)
+  let groupsData = [];
+  if (selection.ids.length > 0 || selection.names.length > 0) {
+    const match = await getMatchedExtrasGroups(selection);
+    groupsData = match?.matchedGroups || [];
+  }
+
+  // 🧠 If nothing came back, double-check via product ID → /extras-groups endpoint
+  if ((!groupsData || groupsData.length === 0) && item.id) {
+    try {
+      const allGroups = await ensureExtrasGroups();
+      const related = allGroups.filter(g =>
+        (g.products || []).some(pid => String(pid) === String(item.id))
+      );
+      if (related.length > 0) groupsData = related;
+    } catch (err) {
+      console.error("❌ Fallback fetch extras-groups failed:", err);
+    }
+  }
+
+  setSelectedProduct({
+    ...item,
+    modalExtrasGroups: groupsData,
+  });
+  setSelectedExtras(parsedExtras || []);
+  setEditingCartItemIndex(idx);
+  setShowExtrasModal(true);
+}}
+
+  className="text-xs font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1"
+  title={t("Edit item")}
+>
+  🖊️
+  <span>{t("Edit")}</span>
+</button>
+
+
 
     {/* 🗑 Remove button */}
     <button
