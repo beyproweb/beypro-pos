@@ -52,19 +52,20 @@ export const AuthProvider = ({ children }) => {
     } catch {}
   }, [userSettings]);
 
-  // ✅ Background refresh (runs once, token-based)
-  useEffect(() => {
-    const rawToken = getAuthToken();
-    if (!rawToken) return;
+ // ✅ Background refresh (runs once, token-based)
+useEffect(() => {
+  const rawToken = getAuthToken();
+  if (!rawToken) return;
 
-    const authHeader = rawToken.startsWith("Bearer ")
-      ? rawToken
-      : `Bearer ${rawToken}`;
+  const authHeader = rawToken.startsWith("Bearer ")
+    ? rawToken
+    : `Bearer ${rawToken}`;
 
+  // 🕒 Small delay ensures token & localStorage are ready before request
+  const timer = setTimeout(() => {
     fetch(`${API_BASE}/me`, {
       headers: { Authorization: authHeader },
     })
-
       .then((res) => {
         if (res.status === 401) {
           console.warn("🔒 Token expired or invalid — logging out");
@@ -97,9 +98,7 @@ export const AuthProvider = ({ children }) => {
                   if (Array.isArray(cached?.permissions) && cached.permissions.length) {
                     nextUser.permissions = cached.permissions;
                   }
-                } catch {
-                  /* ignore */
-                }
+                } catch {}
               }
             }
 
@@ -119,9 +118,7 @@ export const AuthProvider = ({ children }) => {
               if (nextUser.restaurant_id) {
                 localStorage.setItem("restaurant_id", nextUser.restaurant_id);
               }
-            } catch {
-              /* ignore */
-            }
+            } catch {}
 
             return nextUser;
           });
@@ -134,7 +131,11 @@ export const AuthProvider = ({ children }) => {
       .catch((err) => {
         console.warn("⚠️ Backend not reachable, using cached user:", err.message);
       });
-  }, [userSettings]);
+  }, 250); // 👈 delay (adjust if needed)
+
+  return () => clearTimeout(timer);
+}, [userSettings]);
+
 
   if (initializing && !currentUser) {
     return (
