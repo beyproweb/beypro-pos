@@ -11,97 +11,96 @@ export default function LoginScreen() {
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
   
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+const handleLogin = async (e) => {
+  e.preventDefault();
+  setError("");
+  setLoading(true);
 
+  try {
+    // ✅ Always normalize API base to end with /api
+    const RAW_BASE =
+      import.meta.env.VITE_API_URL ||
+      (import.meta.env.MODE === "development"
+        ? "http://localhost:5000/api"
+        : "https://hurrypos-backend.onrender.com/api");
+
+    const API_BASE = String(RAW_BASE)
+      .replace(/\/api\/?$/, "")
+      .replace(/\/+$/, "") + "/api";
+
+    console.groupCollapsed("🔑 Login Debug");
+    console.log("➡️ Using API_BASE:", API_BASE);
+
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+
+    console.log("⬅️ Raw Response:", res.status, res.statusText);
+
+    let data;
     try {
-      const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.MODE === "development"
-    ? "http://localhost:5000/api"
-    : "https://hurrypos-backend.onrender.com/api");
+      data = await res.json();
+      console.log("⬅️ Parsed JSON:", data);
+    } catch (err) {
+      console.error("❌ Failed to parse login response JSON:", err);
+    }
+    console.groupEnd();
 
+    if (!res.ok || !data?.token) {
+      throw new Error(data?.error || data?.message || "Invalid credentials");
+    }
 
-      console.groupCollapsed("🔑 Login Debug");
-      console.log("➡️ Using API_BASE:", API_BASE);
+    // ✅ Save JWT for secureFetch
+    localStorage.setItem("token", data.token);
+    console.log("💾 Token saved to localStorage:", data.token);
 
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+    // ✅ Extract user safely
+    const userData = data.user?.user || data.user || {};
+    console.log("👤 Normalizing user from payload:", userData);
 
-      console.log("⬅️ Raw Response:", res.status, res.statusText);
+    // ✅ Save tenant/restaurant_id
+    if (userData.restaurant_id) {
+      localStorage.setItem("restaurant_id", userData.restaurant_id);
+      console.log("💾 Tenant restaurant_id saved:", userData.restaurant_id);
+    }
 
-      let data;
-      try {
-        data = await res.json();
-        console.log("⬅️ Parsed JSON:", data);
-      } catch (err) {
-        console.error("❌ Failed to parse login response JSON:", err);
-      }
-      console.groupEnd();
+    // ✅ Normalize user data
+    const role = userData.role?.toLowerCase() || "staff";
+    let permissions = Array.isArray(userData.permissions)
+      ? userData.permissions.map((p) => p.toLowerCase())
+      : [];
 
-      if (!res.ok || !data?.token) {
-        throw new Error(data?.error || data?.message || "Invalid credentials");
-      }
+    if (role === "admin") {
+      permissions = ["all"];
+    }
 
-// ✅ Save JWT for secureFetch
-// ✅ Save JWT for secureFetch
-localStorage.setItem("token", data.token);
-console.log("💾 Token saved to localStorage:", data.token);
+    const normalizedUser = {
+      id: userData.id,
+      name: userData.name,
+      email: userData.email,
+      role,
+      restaurant_id: userData.restaurant_id,
+      permissions,
+      token: data.token,
+    };
 
-// ✅ Extract user safely (handles both { user } and { user: { user } })
-const userData = data.user?.user || data.user || {};
-console.log("👤 Normalizing user from payload:", userData);
+    // ✅ Save normalized user
+    localStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
+    console.log("💾 Normalized user saved:", normalizedUser);
 
-// ✅ Save tenant/restaurant_id
-if (userData.restaurant_id) {
-  localStorage.setItem("restaurant_id", userData.restaurant_id);
-  console.log("💾 Tenant restaurant_id saved:", userData.restaurant_id);
-}
-
-// ✅ Normalize user data and permissions
-const role = userData.role?.toLowerCase() || "staff";
-let permissions = Array.isArray(userData.permissions)
-  ? userData.permissions.map((p) => p.toLowerCase())
-  : [];
-
-if (role === "admin") {
-  permissions = ["all"];
-}
-
-const normalizedUser = {
-  id: userData.id,
-  name: userData.name,
-  email: userData.email,
-  role,
-  restaurant_id: userData.restaurant_id,
-  permissions,
-  token: data.token,
+    setCurrentUser(normalizedUser);
+    console.info("✅ Login success, navigating to /dashboard");
+    navigate("/dashboard");
+  } catch (err) {
+    console.error("❌ Login failed:", err);
+    setError(err.message || "Login failed");
+  } finally {
+    setLoading(false);
+  }
 };
 
-// ✅ Save normalized user locally
-localStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
-console.log("💾 Normalized user saved:", normalizedUser);
-
-setCurrentUser(normalizedUser);
-console.info("✅ Login success, navigating to /dashboard");
-navigate("/dashboard");
-
-
-
-      console.info("✅ Login success, navigating to /dashboard");
-      navigate("/dashboard");
-    } catch (err) {
-      console.error("❌ Login failed:", err);
-      setError(err.message || "Login failed");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="flex flex-col lg:flex-row h-screen w-screen bg-gray-50">
