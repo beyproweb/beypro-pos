@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import Sidebar from "./Sidebar";
+import Sidebar, { SIDEBAR_WIDTH_OPEN, SIDEBAR_WIDTH_COLLAPSED } from "./Sidebar";
 import GlobalOrderAlert from "./GlobalOrderAlert";
 import ModernHeader from "./ModernHeader";
 import NotificationBell from "./NotificationBell";
@@ -168,6 +168,8 @@ export default function Layout({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const sidebarOffset = isSidebarOpen ? SIDEBAR_WIDTH_OPEN : SIDEBAR_WIDTH_COLLAPSED;
+
   return (
     <div className="w-screen h-screen overflow-hidden flex bg-slate-50 dark:bg-zinc-950 transition-colors">
       {/* Sidebar */}
@@ -175,13 +177,11 @@ export default function Layout({
 
       {/* Main content area */}
       <div
-        className={`
-          flex-1 flex flex-col h-screen transition-all duration-300 ease-in-out
-          ${isSidebarOpen ? "ml-[94px] md:ml-[160px]" : "ml-[64px] md:ml-[56px]"}
-        `}
+        className="flex-1 flex flex-col h-screen transition-all duration-300 ease-in-out"
         style={{
+          marginLeft: sidebarOffset,
+          width: `calc(100% - ${sidebarOffset}px)`,
           minWidth: 0,
-          width: "100%",
         }}
       >
         {/* ModernHeader with notification bell in rightContent */}

@@ -1,5 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import secureFetch from "../utils/secureFetch";
+
 const API_URL = import.meta.env.VITE_API_URL || "";
 // Accept all your existing state and handlers as props!
 export default function KitchenSettingsModal({
@@ -11,6 +13,32 @@ export default function KitchenSettingsModal({
   onClose,
 }) {
   const { t } = useTranslation();
+  const restaurantIdentifier =
+    typeof window !== "undefined"
+      ? window.localStorage.getItem("restaurant_slug") ||
+        window.localStorage.getItem("restaurant_id") ||
+        ""
+      : "";
+  const identifierSuffix = restaurantIdentifier
+    ? `?identifier=${encodeURIComponent(restaurantIdentifier)}`
+    : "";
+
+  const persistSettings = async (overrides = {}) => {
+    try {
+      await secureFetch(`/kitchen/compile-settings${identifierSuffix}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          excludedIngredients,
+          excludedItems,
+          excludedCategories,
+          ...overrides,
+        }),
+      });
+    } catch (err) {
+      console.error("❌ Failed to persist kitchen settings:", err);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -46,20 +74,11 @@ export default function KitchenSettingsModal({
                     type="checkbox"
                     checked={excludedIngredients.includes(ingredient)}
                     onChange={() => {
-                      let updated;
-                      setExcludedIngredients(prev => {
-                        updated = prev.includes(ingredient)
-                          ? prev.filter(ing => ing !== ingredient)
+                      setExcludedIngredients((prev) => {
+                        const updated = prev.includes(ingredient)
+                          ? prev.filter((ing) => ing !== ingredient)
                           : [...prev, ingredient];
-                        secureFetch('kitchen/compile-settings`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            excludedCategories,
-                            excludedItems,
-                            excludedIngredients: updated
-                          }),
-                        });
+                        persistSettings({ excludedIngredients: updated });
                         return updated;
                       });
                     }}
@@ -89,21 +108,15 @@ export default function KitchenSettingsModal({
                     className="w-5 h-5 accent-accent transition-all"
                     checked={products.filter(p => p.category === category).every(p => excludedItems?.includes(p.id))}
                     onChange={() => {
-                      const catProducts = products.filter(p => p.category === category).map(p => p.id);
-                      setExcludedItems(prev => {
-                        const allChecked = catProducts.every(id => prev.includes(id));
+                      const catProducts = products
+                        .filter((p) => p.category === category)
+                        .map((p) => p.id);
+                      setExcludedItems((prev) => {
+                        const allChecked = catProducts.every((id) => prev.includes(id));
                         const updated = allChecked
-                          ? prev.filter(id => !catProducts.includes(id))
+                          ? prev.filter((id) => !catProducts.includes(id))
                           : Array.from(new Set([...prev, ...catProducts]));
-                        secureFetch('kitchen/compile-settings`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            excludedCategories,
-                            excludedItems: updated,
-                            excludedIngredients
-                          }),
-                        });
+                        persistSettings({ excludedItems: updated });
                         return updated;
                       });
                     }}
@@ -123,19 +136,11 @@ export default function KitchenSettingsModal({
                         className="w-4 h-4 accent-purple-600"
                         checked={excludedItems?.includes(product.id)}
                         onChange={() => {
-                          setExcludedItems(prev => {
+                          setExcludedItems((prev) => {
                             const updated = prev.includes(product.id)
-                              ? prev.filter(id => id !== product.id)
+                              ? prev.filter((id) => id !== product.id)
                               : [...prev, product.id];
-                            secureFetch('kitchen/compile-settings`, {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                excludedCategories,
-                                excludedItems: updated,
-                                excludedIngredients
-                              }),
-                            });
+                            persistSettings({ excludedItems: updated });
                             return updated;
                           });
                         }}

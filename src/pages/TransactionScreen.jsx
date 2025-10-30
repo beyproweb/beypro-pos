@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import { useTranslation } from "react-i18next";
@@ -7,13 +7,101 @@ import ExtrasModal from "../modals/ExtrasModal";
 import DiscountModal from "../modals/DiscountModal";
 import PaymentModal from "../modals/PaymentModal";
 import { useHeader } from "../context/HeaderContext";
-import { useOutletContext } from "react-router-dom";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import MoveTableModal from "../components/MoveTableModal";
 import MergeTableModal from "../components/MergeTableModal";
 import { toCategorySlug } from "../utils/slugCategory"; 
 import secureFetch from "../utils/secureFetch";
 import socket from "../utils/socket";
+import { useAuth } from "../context/AuthContext";
+
+const normalizeGroupKey = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim().toLowerCase().replace(/\s+/g, " ");
+};
+
+const normalizeExtrasGroupSelection = (raw) => {
+  const ids = new Set();
+  const names = new Set();
+
+  const addId = (value) => {
+    const num = Number(value);
+    if (Number.isFinite(num)) ids.add(num);
+  };
+
+  const addName = (value) => {
+    const norm = normalizeGroupKey(value);
+    if (norm) names.add(norm);
+  };
+
+  const process = (entry) => {
+    if (entry === null || entry === undefined) return;
+
+    if (Array.isArray(entry)) {
+      entry.forEach(process);
+      return;
+    }
+
+    if (typeof entry === "object") {
+      if (Array.isArray(entry.ids) || Array.isArray(entry.names)) {
+        if (Array.isArray(entry.ids)) entry.ids.forEach(addId);
+        if (Array.isArray(entry.names)) entry.names.forEach(addName);
+      } else {
+        if (entry.id !== undefined) addId(entry.id);
+        addName(entry.group_name ?? entry.groupName ?? entry.name ?? entry.slug ?? entry.label ?? entry.title);
+      }
+      return;
+    }
+
+    if (typeof entry === "string") {
+      const trimmed = entry.trim();
+      if (!trimmed) return;
+
+      if (
+        (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+        (trimmed.startsWith("{") && trimmed.endsWith("}"))
+      ) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          process(parsed);
+          return;
+        } catch {
+          // fallthrough
+        }
+      }
+
+      if (trimmed.includes(",") || trimmed.includes(";")) {
+        trimmed
+          .split(/[;,]/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .forEach(process);
+        return;
+      }
+
+      addId(trimmed);
+      addName(trimmed);
+      return;
+    }
+
+    if (typeof entry === "number") {
+      addId(entry);
+      return;
+    }
+
+    const asString = String(entry).trim();
+    if (!asString) return;
+    addId(asString);
+    addName(asString);
+  };
+
+  process(raw);
+
+  return {
+    ids: Array.from(ids),
+    names: Array.from(names),
+  };
+};
 const paymentMethods = ["Cash", "Credit Card", "Sodexo", "Multinet"];
 const categoryIcons = {
   Meat: "🍔",
@@ -28,13 +116,17 @@ const categoryIcons = {
   default: "🍔"
 };
 
-export default function TransactionScreen({ isSidebarOpen }) {
+export default function TransactionScreen() {
   useRegisterGuard();
   const { tableId, orderId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const initialOrder = location.state?.order || null;
     const { t } = useTranslation(); // ✅ Enable translations
+  const restaurantSlug = typeof window !== "undefined"
+    ? localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id")
+    : null;
+  const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
   const [products, setProducts] = useState([]);
  const [selectedForPayment, setSelectedForPayment] = useState([]);
 const [showDiscountModal, setShowDiscountModal] = useState(false);
@@ -52,6 +144,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [extrasGroups, setExtrasGroups] = useState([]);
+  const extrasGroupsPromiseRef = useRef(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [subOrders, setSubOrders] = useState([]);
   const [activeSplitMethod, setActiveSplitMethod] = useState(null);
@@ -81,12 +174,106 @@ const basePrice = selectedProduct ? parseFloat(selectedProduct.price) || 0 : 0;
 const quantity = selectedProduct ? selectedProduct.quantity || 1 : 1;
 const perItemTotal = basePrice + extrasPricePerProduct;
 const fullTotal = perItemTotal * quantity;
-const { setHeader } = useHeader();
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const { setHeader } = useHeader();
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-const [showMoveTableModal, setShowMoveTableModal] = useState(false);
+  const [showMoveTableModal, setShowMoveTableModal] = useState(false);
+  const { currentUser } = useAuth();
 // 1. Add drinksList state at the top
 const [drinksList, setDrinksList] = useState([]);
+
+  const fetchExtrasGroupsOnce = useCallback(async () => {
+    const data = await secureFetch(`/extras-groups${identifier}`);
+    const normalized = (Array.isArray(data) ? data : []).map((g) => ({
+      id: g.id,
+      group_name: g.group_name || g.groupName,
+      groupName: g.group_name || g.groupName,
+      items:
+        typeof g.items === "string"
+          ? (() => {
+              try {
+                return JSON.parse(g.items);
+              } catch {
+                return [];
+              }
+            })()
+          : g.items || [],
+    }));
+    setExtrasGroups(normalized);
+    return normalized;
+  }, [identifier]);
+
+  const ensureExtrasGroups = useCallback(async () => {
+    if (extrasGroups.length > 0) return extrasGroups;
+    if (extrasGroupsPromiseRef.current) return extrasGroupsPromiseRef.current;
+
+    const loadPromise = fetchExtrasGroupsOnce()
+      .then((result) => {
+        extrasGroupsPromiseRef.current = null;
+        return result;
+      })
+      .catch((err) => {
+        extrasGroupsPromiseRef.current = null;
+        throw err;
+      });
+
+    extrasGroupsPromiseRef.current = loadPromise;
+    return loadPromise;
+  }, [extrasGroups, fetchExtrasGroupsOnce]);
+
+  const getMatchedExtrasGroups = useCallback(
+    async (selection) => {
+      if (!selection || (selection.ids.length === 0 && selection.names.length === 0)) {
+        return null;
+      }
+
+      let groupsSource = extrasGroups;
+      if (!Array.isArray(groupsSource) || groupsSource.length === 0) {
+        try {
+          groupsSource = await ensureExtrasGroups();
+        } catch (err) {
+          console.error("❌ Failed to ensure extras groups:", err);
+          groupsSource = extrasGroups;
+        }
+      }
+
+      const safeGroups = Array.isArray(groupsSource) ? groupsSource : [];
+      const matchedGroups = safeGroups
+        .filter((group) => {
+          const groupId = Number(group.id);
+          const groupNameKey = normalizeGroupKey(group.group_name ?? group.groupName ?? group.name);
+          const idMatch = selection.ids.some((id) => Number(id) === groupId);
+          const nameMatch = groupNameKey && selection.names.includes(groupNameKey);
+          return idMatch || nameMatch;
+        })
+        .map((group) => ({
+          ...group,
+          items: Array.isArray(group.items)
+            ? group.items.map((item) => ({
+                ...item,
+              }))
+            : [],
+        }));
+
+      if (matchedGroups.length === 0) {
+        return null;
+      }
+
+      const matchedIds = matchedGroups
+        .map((group) => Number(group.id))
+        .filter((id) => Number.isFinite(id));
+      const matchedNames = matchedGroups
+        .map((group) => normalizeGroupKey(group.group_name ?? group.groupName ?? group.name))
+        .filter(Boolean);
+
+      return {
+        matchedGroups,
+        matchedIds,
+        matchedNames,
+      };
+    },
+    [extrasGroups, ensureExtrasGroups]
+  );
 
 useEffect(() => {
   if (!order?.id) return;
@@ -110,6 +297,12 @@ useEffect(() => {
   .catch(() => setDrinksList([]));
 
 }, []);
+
+  useEffect(() => {
+    ensureExtrasGroups().catch((err) => {
+      console.error("❌ Failed to load extras groups:", err);
+    });
+  }, [ensureExtrasGroups]);
 
 // 2. Utility to split drink extras
 function splitDrinkExtras(extras, drinksList) {
@@ -202,13 +395,16 @@ useEffect(() => {
 
 
 useEffect(() => {
-secureFetch("/category-images")
-  .then((data) => {
+  const restaurantSlug =
+    localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
+  const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
+
+  secureFetch(`/category-images${identifier}`)
+    .then((data) => {
       const dict = {};
       (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
         const key = (category || "").trim().toLowerCase();
         if (!key || !image) return;
-        // Backend already returns a full Cloudinary URL; keep it as-is
         dict[key] = image;
       });
       setCategoryImages(dict);
@@ -218,6 +414,7 @@ secureFetch("/category-images")
       setCategoryImages({});
     });
 }, []);
+
 
 
 // At the top inside TransactionScreen()
@@ -272,7 +469,7 @@ useEffect(() => {
 }, [categories.length]);
 
 useEffect(() => {
- secureFetch("/kitchen/compile-settings")
+ secureFetch(`/kitchen/compile-settings${identifier}`)
   .then(data => {
 
       setExcludedItems(data.excludedItems || []);
@@ -304,33 +501,6 @@ useEffect(() => {
       return [];
     }
   };
-useEffect(() => {
-  const fetchExtrasGroups = async () => {
-    try {
-      const data = await secureFetch("/extras-groups");
-
-
-
-      setExtrasGroups(
-        data.map(g => ({
-          id: g.id,  // ✅ Preserve ID
-          group_name: g.group_name || g.groupName,
-          groupName: g.group_name || g.groupName,
-          items: typeof g.items === "string" ? JSON.parse(g.items) : g.items || []
-        }))
-      );
-
-      console.log("✅ Loaded extras groups:", data);
-    } catch (err) {
-      console.error("❌ Failed to load extras:", err);
-    }
-  };
-  fetchExtrasGroups();
-}, []);
-
-
-
-
     // --- New split payment state ---
   const [splits, setSplits] = useState({
     Cash: 0,
@@ -370,7 +540,7 @@ const confirmPaymentWithSplits = async (splits) => {
     }));
 
     // 4) Create the sub-order and mark items paid (server’s default mark_paid = true)
-const rSub = await secureFetch("/orders/sub-orders", {
+const rSub = await secureFetch(`/orders/sub-orders${identifier}`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -403,7 +573,7 @@ if (!rSub?.sub_order_id) {
     }
 
     // 6) Save receipt methods ONCE (remove the earlier { [method]: total } post)
-const rMethods = await secureFetch("/orders/receipt-methods", {
+const rMethods = await secureFetch(`/orders/receipt-methods${identifier}`, {
   method: "POST",
   body: JSON.stringify({
     order_id: order.id,
@@ -425,10 +595,10 @@ if (!rMethods) throw new Error("Failed to save receipt methods");
     setShowPaymentModal(false);
 
     // 8) If all items are paid, mark order as paid
-const allItems = await secureFetch(`/orders/${order.id}/items`);
+const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
 
 if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
-  await secureFetch(`/orders/${order.id}/status`, {
+ await secureFetch(`/orders/${order.id}/status${identifier}`, {
     method: "PUT",
     body: JSON.stringify({
       status: "paid",
@@ -499,17 +669,19 @@ function TableNavigationRow({ tableId, navigate, t, cartMode }) {
         </svg>
       </button>
       <button
-  onClick={() => setShowMoveTableModal(true)}
-  className="ml-2 px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-white font-bold"
->
-  🔀 {t("Move Table")}
-</button>
-<button
-  onClick={() => setShowMergeTableModal(true)}
-  className="ml-2 px-3 py-1 rounded bg-fuchsia-500 hover:bg-fuchsia-600 text-white font-bold"
->
-  🧩 {t("Merge Table")}
-</button>
+        onClick={() => setShowMoveTableModal(true)}
+        className="ml-2 flex items-center gap-2 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-400 to-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-emerald-500 hover:to-teal-500"
+      >
+        <span className="text-base">🔀</span>
+        <span className="tracking-wide">{t("Move Table")}</span>
+      </button>
+      <button
+        onClick={() => setShowMergeTableModal(true)}
+        className="ml-2 flex items-center gap-2 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-400 to-orange-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-amber-500 hover:to-orange-500"
+      >
+        <span className="text-base">🧩</span>
+        <span className="tracking-wide">{t("Merge Table")}</span>
+      </button>
 
     </div>
   );
@@ -570,32 +742,63 @@ function allItemsDelivered(items) {
 useEffect(() => {
   const fetchProducts = async () => {
     try {
-     const data = await secureFetch("/products");
-      const list = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.data)
-        ? data.data
+      const identifierCandidates = [
+        currentUser?.tenant_id,
+        currentUser?.restaurant_slug,
+        currentUser?.restaurant_id,
+        restaurantSlug,
+      ];
+
+      const rawIdentifier =
+        identifierCandidates
+          .map((value) => {
+            if (value === null || value === undefined) return "";
+            const str = String(value).trim();
+            if (!str || str === "null" || str === "undefined") return "";
+            return str;
+          })
+          .find(Boolean) || "";
+
+      const query = rawIdentifier
+        ? `?identifier=${encodeURIComponent(rawIdentifier)}`
+        : "";
+
+      const data = await secureFetch(`/products${query}`);
+
+      const normalized = Array.isArray(data)
+        ? data.map((product) => {
+            const selection = normalizeExtrasGroupSelection(
+              product.selectedExtrasGroup ?? product.selected_extras_group ?? product.extrasGroupRefs
+            );
+            return {
+              ...product,
+              extrasGroupRefs: selection,
+              selectedExtrasGroup: selection.ids,
+              selected_extras_group: selection.ids,
+              selectedExtrasGroupNames: selection.names,
+            };
+          })
         : [];
 
-      console.log("Fetched products in TransactionScreen:", list);  // Debug
-      setProducts(list);
-
-      const categories = [...new Set(list.map((p) => p.category))].filter(Boolean);
-      console.log("Categories found in TransactionScreen:", categories);  // Debug
-
-      if (categories.length > 0) setCurrentCategoryIndex(0);
-    } catch (error) {
-      console.error("❌ Error fetching products:", error);
+      setProducts(normalized);
+    } catch (err) {
+      console.error("❌ Error fetching products:", err);
     }
   };
+
   fetchProducts();
-}, []);
+}, [
+  currentUser?.tenant_id,
+  currentUser?.restaurant_slug,
+  currentUser?.restaurant_id,
+  restaurantSlug,
+]);
 
 
 useEffect(() => {
   return () => {
     if (order?.id && cartItems.length === 0) {
-     secureFetch(`/orders/${order.id}/reset-if-empty`, { method: "PATCH" });
+     secureFetch(`/orders/${order.id}/reset-if-empty${identifier}`, { method: "PATCH" });
     }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -617,13 +820,17 @@ useEffect(() => {
   setLoading(true);
 
   // ✅ Fetch order for phone/packet (QRMenu online orders also land here)
-  const fetchPhoneOrder = async (id) => {
-    try {
-     const newOrder = await secureFetch(`/orders/${id}`);
-let correctedStatus = newOrder.status;
+const fetchPhoneOrder = async (id) => {
+  try {
+    const restaurantSlug =
+      localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
+    const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
+
+    const newOrder = await secureFetch(`/orders/${id}${identifier}`);
+    let correctedStatus = newOrder.status;
 
 // 🧩 FIX: if phone order has no items, treat as "occupied" (not "confirmed")
-const items = await secureFetch(`/orders/${id}/items`);
+const items = await secureFetch(`/orders/${id}/items${identifier}`);
 if ((!items || items.length === 0) && newOrder.order_type === "phone") {
   correctedStatus = "occupied";
 }
@@ -644,13 +851,18 @@ await fetchOrderItems(newOrder.id);
   // ✅ Create or fetch table order
 const createOrFetchTableOrder = async (tableNumber) => {
   try {
-    const orders = await secureFetch(`/orders?table_number=${tableNumber}`);
-    // 🧩 Only keep non-closed, non-paid orders
-let newOrder = orders.find(o => o.status !== "closed" && o.status !== "paid");
+    const orders = await secureFetch(
+      identifier
+        ? `/orders?table_number=${tableNumber}&identifier=${restaurantSlug}`
+        : `/orders?table_number=${tableNumber}`
+    );
 
-    // 🟢 FIXED: Do NOT discard paid orders — fetch their items!
+    // 🧩 Prefer any non-closed order; if none, fall back to the latest paid one
+    let newOrder = orders.find((o) => o.status !== "closed") || orders[0];
+
     if (!newOrder) {
-      newOrder = await secureFetch("/orders", {
+      // No prior order for this table — create a fresh one
+      newOrder = await secureFetch(`/orders${identifier}`, {
         method: "POST",
         body: JSON.stringify({
           table_number: tableNumber,
@@ -687,7 +899,7 @@ let newOrder = orders.find(o => o.status !== "closed" && o.status !== "paid");
 
 const fetchOrderItems = async (orderId) => {
   try {
-    const items = await secureFetch(`/orders/${orderId}/items`);
+    const items = await secureFetch(`/orders/${orderId}/items${identifier}`);
 
     if (!Array.isArray(items)) {
       console.error("❌ Expected items to be an array but got:", items);
@@ -695,11 +907,23 @@ const fetchOrderItems = async (orderId) => {
     }
 
     const formatted = items.map((item) => {
-      const extras = safeParseExtras(item.extras);
+      let extras = safeParseExtras(item.extras);
+      const qty = parseInt(item.quantity, 10) || 1;
+
+      // 🧩 FIX for QRMenu overcounted addons
+      // When extras were pre-multiplied for each quantity (e.g., total 100 instead of 50)
+      // divide each extra’s price by product quantity once to normalize
+      if (order?.order_type === "table" && order?.source === "qr" && qty > 1) {
+        extras = extras.map((ex) => ({
+          ...ex,
+          price: (parseFloat(ex.price || ex.extraPrice || 0) / qty).toFixed(2),
+        }));
+      }
+
       return {
         id: item.product_id,
         name: item.name || item.order_item_name || item.product_name || "Unnamed",
-        quantity: parseInt(item.quantity, 10) || 1,
+        quantity: qty,
         price: parseFloat(item.price) || 0,
         ingredients: Array.isArray(item.ingredients)
           ? item.ingredients
@@ -707,7 +931,7 @@ const fetchOrderItems = async (orderId) => {
           ? JSON.parse(item.ingredients || "[]")
           : [],
         extras,
-        unique_id: item.unique_id,
+        unique_id: item.unique_id || `${item.product_id}-${JSON.stringify(extras || [])}-${uuidv4()}`,
         confirmed: item.confirmed ?? true,
         paid: !!item.paid_at,
         payment_method: item.payment_method ?? "Unknown",
@@ -716,9 +940,6 @@ const fetchOrderItems = async (orderId) => {
       };
     });
 
-    // 🟢 NEW LOGIC:
-    // - Always show all items in cart when reopening (paid + unpaid)
-    // - If you want to distinguish visually, use item.paid later in render
     setCartItems(formatted);
 
     // ✅ Keep paid items separately for receipts/history
@@ -735,18 +956,32 @@ const fetchOrderItems = async (orderId) => {
   const calculateTotal = () =>
     cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-const updateOrderStatus = async (newStatus, total = null, payment_method = null) => {
-  if (!order?.id) {
-    console.error("❌ No order.id available, cannot update status:", order);
+const updateOrderStatus = async (newStatus = null, total = null, method = null) => {
+  const targetId = order?.id || orderId || tableId;
+  if (!targetId) {
+    console.error("❌ No order ID found.");
     showToast("Invalid order ID");
     return null;
   }
+
   try {
-    const updated = await secureFetch(`/orders/${order.id}/status`, {
+    const body = {
+      status: newStatus || undefined,
+      payment_status: newStatus === "paid" ? "paid" : undefined,
+      total: total ?? order?.total ?? undefined,
+      payment_method: method || selectedPaymentMethod || order?.payment_method || "Unknown",
+    };
+
+    const updated = await secureFetch(`/orders/${targetId}/status`, {
       method: "PUT",
-      body: JSON.stringify({ status: newStatus, total, payment_method }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
+
+    if (!updated || updated.error) throw new Error(updated?.error || "Failed to update order status");
+
     setOrder(updated);
+    console.log("✅ Order status updated:", updated.status, updated.payment_status);
     return updated;
   } catch (error) {
     console.error("❌ Error updating order status:", error);
@@ -754,6 +989,7 @@ const updateOrderStatus = async (newStatus, total = null, payment_method = null)
     return null;
   }
 };
+
 
 
 
@@ -820,7 +1056,7 @@ const handleMultifunction = async () => {
   if (cartItems.length === 0) {
     if (orderType === "phone") {
       try {
-        await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
+        await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
         navigate("/tableoverview");
         return;
       } catch (err) {
@@ -852,7 +1088,7 @@ const handleMultifunction = async () => {
 
   const unconfirmedItems = safeCartItems.filter(i => !i.confirmed);
   if (unconfirmedItems.length > 0) {
-    await secureFetch("/orders/order-items", {
+    await secureFetch(`/orders/order-items${identifier}`, {
       method: "POST",
       body: JSON.stringify({
         order_id: updated.id,
@@ -912,24 +1148,49 @@ const handleMultifunction = async () => {
 // 4️⃣ Try to close if all items are paid — OR any phone order ready to close
 const allPaid = safeCartItems.every((i) => i.paid);
 
-if (
-  (orderType === "phone" && order.status !== "closed") || // ✅ always allow close for phone
-  (order.status === "paid" || allPaid)
-) {
+if (orderType === "phone" && order.status !== "closed") {
+  // ✅ Allow phone orders to close after payment
   try {
-    await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
+    await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+    navigate("/orders");
+    showToast("✅ Phone order closed successfully");
+  } catch (err) {
+    console.error("❌ Failed to close phone order:", err);
+    showToast("❌ Failed to close phone order");
+  }
+  return;
+}
 
-    if (orderType === "phone" || orderId) navigate("/orders");
-    else navigate("/tables");
+// 🧠 For table orders → close ONLY when user manually presses “Close”
+// 🧠 For table orders → close ONLY when all items are delivered
+if (getButtonLabel() === "Close" && (order.status === "paid" || allPaid)) {
+  // 🚫 Prevent closing if any item not delivered
+  const allDelivered = cartItems.every(
+    (i) =>
+      i.kitchen_status === "delivered" ||
+      !i.kitchen_status || // no kitchen process (e.g., drinks)
+      excludedItems.includes(i.id) ||
+      excludedCategories.includes(i.category)
+  );
 
+  if (!allDelivered) {
+    showToast("⚠️ Cannot close table: not all items delivered!");
+    return;
+  }
+
+  try {
+    await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+    navigate("/tables");
     setDiscountValue(0);
     setDiscountType("percent");
-    showToast("✅ Order closed successfully");
+    showToast("✅ Table closed successfully");
   } catch (err) {
     console.error("❌ Close failed:", err);
-    showToast("❌ Failed to close order");
+    showToast("❌ Failed to close table");
   }
 }
+
+
 
 
 };
@@ -942,11 +1203,22 @@ if (
 
 const refreshReceiptAfterPayment = async () => {
   try {
-  const data = await secureFetch(`/orders/${order.id}/items`);
+  const data = await secureFetch(`/orders/${order.id}/items${identifier}`);
 
 
     const fetchedItems = data.map((item) => {
-      const extras = safeParseExtras(item.extras);
+      let extras = safeParseExtras(item.extras);
+
+// 🧩 FIX for QRMenu duplicates — divide quantities if they look pre-multiplied
+if (order?.order_type === "table" && order?.source === "qr") {
+  const qty = parseInt(item.quantity, 10) || 1;
+  extras = extras.map(ex => ({
+    ...ex,
+    // prevent QR double count: if quantity matches product qty, normalize
+    quantity: Math.max(1, Math.round((ex.quantity || 1) / qty))
+  }));
+}
+
       return {
         id:          item.product_id,
         name: item.name || item.order_item_name || item.product_name,
@@ -1025,7 +1297,7 @@ if (discountValue > 0) {
       confirmed: true
     }));
 
-    await secureFetch("/orders/sub-orders", {
+    await secureFetch(`/orders/sub-orders${identifier}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1042,7 +1314,7 @@ Object.entries(splits).forEach(([method, amt]) => {
   const val = parseFloat(amt);
   if (val > 0) cleanedSplits[method] = val;
 });
-await secureFetch("/orders/receipt-methods", {
+await secureFetch(`/orders/receipt-methods${identifier}`, {
   method: "POST",
   body: JSON.stringify({
     order_id: order.id,
@@ -1073,7 +1345,7 @@ await secureFetch("/orders/receipt-methods", {
 
     // Now check if fully paid etc
     // ✅ Use secureFetch so the Bearer token is automatically included
-const allItems2 = await secureFetch(`/orders/${order.id}/items`);
+const allItems2 = await secureFetch(`/orders/${order.id}/items${identifier}`);
 
 if (!Array.isArray(allItems2)) {
   console.error("❌ Unexpected items response:", allItems2);
@@ -1129,54 +1401,85 @@ const selectedForPaymentTotal = cartItems
 const addToCart = async (product) => {
   if (!order) return;
 
-  // ✅ Normalize and resolve extras
-  const extrasGroupIds =
-    product.selectedExtrasGroup ||
-    product.selected_extras_group ||
-    [];
+  const selection = normalizeExtrasGroupSelection([
+    product.extrasGroupRefs,
+    product.selectedExtrasGroup,
+    product.selected_extras_group,
+    product.selectedExtrasGroupNames,
+  ]);
 
-  if (Array.isArray(extrasGroupIds) && extrasGroupIds.length > 0) {
-    // ✅ Match regardless of string/number mismatch
-    const attachedGroups = extrasGroups.filter((g) =>
-      extrasGroupIds.some((id) => String(id) === String(g.id))
-    );
+  if (selection.ids.length > 0 || selection.names.length > 0) {
+    const match = await getMatchedExtrasGroups(selection);
 
-    // ✅ Attach the full extras group list
-    product.selectedExtrasGroup = attachedGroups;
+    if (match) {
+      const idsForModal = match.matchedIds.length > 0 ? match.matchedIds : selection.ids;
+      const namesForModal = Array.from(new Set([...selection.names, ...match.matchedNames]));
 
-    console.log("🧩 Matched extras groups:", attachedGroups);
+      const productForModal = {
+        ...product,
+        quantity: 1,
+        extrasGroupRefs: { ids: idsForModal, names: namesForModal },
+        selectedExtrasGroup: idsForModal,
+        selected_extras_group: idsForModal,
+        selectedExtrasGroupNames: namesForModal,
+        modalExtrasGroups: match.matchedGroups,
+      };
 
-    setNote("");
-    setSelectedProduct(product);
-    setSelectedExtras([]);
-    setShowExtrasModal(true);
-    return;
+      console.log("🧩 Resolved extras groups:", idsForModal);
+
+      setNote("");
+      setSelectedProduct(productForModal);
+      setSelectedExtras([]);
+      setShowExtrasModal(true);
+      return;
+    }
   }
 
-  // 🔹 No extras → normal add
-  const uniqueId = `${product.id}-NO_EXTRAS`;
-  const hasOld = cartItems.some(
-    (item) =>
-      item.unique_id === uniqueId &&
-      (item.confirmed === true || item.paid)
-  );
-  const finalUniqueId = hasOld ? `${product.id}-NO_EXTRAS-${uuidv4()}` : uniqueId;
+  // 🔹 No extras → merge identical items by quantity
+  const baseUniqueId = `${product.id}-NO_EXTRAS`;
 
-  setCartItems((prev) => [
-    ...prev,
-    {
-      id: product.id,
-      name: product.name,
-      note: "",
-      price: parseFloat(product.price),
-      quantity: 1,
-      ingredients: product.ingredients || [],
-      extras: [],
-      unique_id: finalUniqueId,
-      confirmed: false,
-      paid: false,
-    },
-  ]);
+  setCartItems((prev) => {
+    const existingIndex = prev.findIndex(
+      (item) =>
+        item.unique_id === baseUniqueId &&
+        !item.confirmed &&
+        !item.paid
+    );
+
+    if (existingIndex !== -1) {
+      return prev.map((item, idx) =>
+        idx === existingIndex
+          ? { ...item, quantity: item.quantity + 1 }
+          : item
+      );
+    }
+
+    const hasLockedInstance = prev.some(
+      (item) =>
+        item.unique_id === baseUniqueId &&
+        (item.confirmed === true || item.paid)
+    );
+
+    const finalUniqueId = hasLockedInstance
+      ? `${baseUniqueId}-${uuidv4()}`
+      : baseUniqueId;
+
+    return [
+      ...prev,
+      {
+        id: product.id,
+        name: product.name,
+        note: "",
+        price: parseFloat(product.price),
+        quantity: 1,
+        ingredients: product.ingredients || [],
+        extras: [],
+        unique_id: finalUniqueId,
+        confirmed: false,
+        paid: false,
+      },
+    ];
+  });
 
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
 };
@@ -1200,6 +1503,7 @@ const displayTotal = cartItems
     setCartItems((prev) =>
       prev.filter((item) => item.unique_id !== uniqueId || item.confirmed)
     );
+    setSelectedForPayment((prev) => prev.filter((id) => id !== uniqueId));
   };
 
 // Clears only UNCONFIRMED items from the cart
@@ -1216,7 +1520,7 @@ const clearUnconfirmedCartItems = () => {
   const fetchSubOrders = async () => {
     if (!order?.id) return;
     try {
-    const data = await secureFetch(`/orders/${order.id}/suborders`);
+    const data = await secureFetch(`/orders/${order.id}/suborders${identifier}`);
 
       setSubOrders(data);
     } catch (e) {
@@ -1254,12 +1558,12 @@ function ReceiptGroup({ receiptId, items, groupIdx }) {
   };
 
   const initialGuess = items[0]?.payment_method || "Unknown";
-  const [methodLabel, setMethodLabel] = useState(`${icons[initialGuess]} ${initialGuess}`);
+const [methodLabel, setMethodLabel] = useState(`${icons[initialGuess]} ${initialGuess}`);
 
 useEffect(() => {
   const fetchMethods = async () => {
     try {
-      const methods = await secureFetch(`/orders/receipt-methods/${receiptId}`);
+      const methods = await secureFetch(`/orders/receipt-methods/${receiptId}${identifier}`);
 
       if (!methods.length) {
         const fallback = items[0]?.payment_method || "Unknown";
@@ -1289,7 +1593,7 @@ useEffect(() => {
 
 
 return (
-<div className={`relative flex flex-col h-screen transition-all duration-300 ${isSidebarOpen ? "pl-[180px]" : "pl-[120px]"}`}>
+<div className="relative flex min-h-full flex-col gap-4 transition-all duration-300 ease-in-out">
     {/* --- RECEIPT PREVIEW HEADER --- */}
     <div className="bg-white dark:bg-zinc-800 shadow-md rounded-b-3xl p-4 sticky top-0 z-30">
       <h1 className="text-xl font-bold text-blue-700 dark:text-blue-300 flex items-center gap-2">
@@ -1374,464 +1678,353 @@ return (
 );
 }
 
-  // Responsive helper
-  // Mobile cart drawer (reserved for future collapsible cart)
-  const [cartOpen, setCartOpen] = useState(false);
-
-
   if (loading) return <p className="p-4 text-center">{t("Loading...")}</p>;
 
 return (
-<div
-  className="flex-1 flex flex-col h-screen transition-all duration-300 ease-in-out w-full"
-  style={{ minWidth: 0 }}
->
-
-    {/* --- Main Content: Category Rail, Products, Cart --- */}
-    <div className="flex flex-1 flex-col lg:flex-row h-full overflow-hidden">
-  {/* --- Categories Sidebar: 2 Columns --- */}
-<aside
-  className="w-full lg:w-auto px-4 py-4 lg:py-8 lg:pl-6 transition-all duration-300"
->
-  {/* Mobile: Horizontal category scroller */}
-  <div className="lg:hidden overflow-x-auto hide-scrollbar -mx-2 px-2 py-2 bg-white/70 dark:bg-zinc-900/80 rounded-2xl shadow flex gap-3">
-    {categories.map((cat, idx) => {
-      const slug = (cat || "").trim().toLowerCase();
-      const catSrc = categoryImages[slug] || "";
-      const hasImg = !!catSrc;
-
-      return (
-        <button
-          key={`mobile-${cat}`}
-          onClick={() => setCurrentCategoryIndex(idx)}
-          className={`
-            flex-shrink-0 w-24 h-28
-            flex flex-col items-center justify-center gap-2
-            rounded-2xl border border-blue-200/60 dark:border-indigo-900/40
-            bg-white/90 dark:bg-blue-900/40
-            shadow-md px-3 transition
-            ${currentCategoryIndex === idx ? "ring-2 ring-fuchsia-400 scale-105" : "opacity-90"}
-          `}
-        >
-          {hasImg ? (
-            <img
-              src={catSrc}
-              alt={cat}
-              className="w-12 h-12 rounded-xl object-cover border shadow"
-            />
-          ) : (
-            <span className="text-3xl">
-              {categoryIcons[cat] || categoryIcons.default}
-            </span>
-          )}
-          <span className="text-xs font-semibold text-center leading-tight break-words">
-            {t(cat)}
-          </span>
-        </button>
-      );
-    })}
+  <div className="h-screen w-full bg-slate-50 overflow-hidden">
+    <div className="mx-auto flex h-full w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-hidden">
+      <section
+        className="grid flex-1 min-h-0 gap-6 items-stretch overflow-hidden pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]"
+        style={{ paddingBottom: "2cm" }}
+      >
+        {/* === Left: Categories + Products === */}
+        <div className="flex min-h-0 gap-4 overflow-hidden">
+{/* Categories */}
+<aside className="flex w-full max-w-[230px] flex-col rounded-3xl p-5 shadow-md border border-blue-200 bg-transparent backdrop-blur-sm">
+  <div className="flex items-center justify-between gap-3">
+    <h2 className="text-xl font-semibold text-indigo-700">
+      {t("Categories")}
+    </h2>
+    <span className="rounded-full bg-white px-1 py-1 text-sm font-semibold text-indigo-700 shadow">
+      {categories.length} {t("Total")}
+    </span>
   </div>
 
-  {/* Desktop: Category grid */}
-  <div
-    className="
-      hidden lg:grid
-      grid-cols-2 gap-x-4 gap-y-4
-      bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-200 dark:from-blue-950 dark:via-blue-900 dark:to-indigo-950
-      backdrop-blur-xl rounded-3xl
-      p-4 shadow-2xl border-2 border-blue-200/40 dark:border-indigo-900/60
-      overflow-y-auto custom-scrollbar
-      w-[320px] xl:w-[360px]
-      min-h-[520px]
-    "
-  >
-    {categories.map((cat, idx) => {
-  const slug = (cat || "").trim().toLowerCase();
-  const catSrc = categoryImages[slug] || "";
-  const hasImg = !!catSrc;
-
-  return (
-    <button
-      key={`desktop-${cat}`}
-      onClick={() => setCurrentCategoryIndex(idx)}
-      className={`
-        aspect-square w-full max-w-[120px]
-        flex flex-col items-center justify-center
-        rounded-2xl border-2
-        bg-white/20 dark:bg-blue-900/30 backdrop-blur-xl
-        shadow-2xl hover:shadow-3xl
-        border-blue-200/30
-        transition
-        ${currentCategoryIndex === idx ? "ring-2 ring-fuchsia-400 scale-105" : "opacity-90 hover:opacity-100"}
-      `}
-    >
-      {hasImg ? (
-        <img
-          src={catSrc}
-          alt={cat}
-          className="w-14 h-14 rounded-2xl object-cover border shadow"
-        />
-      ) : (
-        <span className="text-4xl">
-          {categoryIcons[cat] || categoryIcons.default}
-        </span>
-      )}
-
-      <span className="mt-1 text-[13px] font-bold text-center leading-tight break-all whitespace-pre-line">
-        {t(cat).split(" ").join("\n")}
-      </span>
-    </button>
-  );
-})}
-
+  {/* Category buttons */}
+<div className="mt-3 flex-1 overflow-y-auto pr-1 scrollbar-hide hover:scrollbar-thin hover:scrollbar-thumb-blue-400">
+    <div className="grid grid-cols-2 gap-2">
+      {categories.map((cat, idx) => {
+        const slug = (cat || "").trim().toLowerCase();
+        const catSrc = categoryImages[slug] || "";
+        const hasImg = !!catSrc;
+        return (
+          <button
+            key={cat}
+            onClick={() => setCurrentCategoryIndex(idx)}
+            className={`flex flex-col items-center justify-center rounded-xl border text-center py-3 transition ${
+              currentCategoryIndex === idx
+                ? "border-indigo-500 bg-white shadow-md"
+                : "border-blue-100 hover:border-indigo-200 hover:bg-blue-50"
+            }`}
+          >
+            {hasImg ? (
+              <img
+                src={catSrc}
+                alt={cat}
+                className="mb-1 h-10 w-10 rounded-lg border object-cover shadow-sm"
+              />
+            ) : (
+              <span className="mb-1 text-xl">
+                {categoryIcons[cat] || categoryIcons.default}
+              </span>
+            )}
+            <span className="text-[12px] font-semibold text-slate-800">
+              {t(cat)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   </div>
 </aside>
 
 
 
-  {/* --- Center: Product Grid --- */}
-  <main className="flex-1 overflow-y-auto py-6 px-4 lg:px-6 transition">
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
-
-      {productsInActiveCategory.map((product) => (
-          (() => {
-            const description =
-              product.description ||
-              product.desc ||
-              product.product_description ||
-              product.productDescription ||
-              "";
-
-            return (
-          <div
-            key={product.id}
-            onClick={() => addToCart(product)}
-            className="cursor-pointer group bg-white/80 dark:bg-zinc-900 border-2 border-blue-100/60 dark:border-zinc-800/60 rounded-2xl shadow-md hover:shadow-2xl transition hover:scale-105 flex flex-col items-center p-3 aspect-[3/4] min-h-[170px] w-full relative"
-          >
-          <img
-            src={
-              product.image
-                ? product.image
-                : "https://via.placeholder.com/100?text=🍽️"
-            }
-            alt={product.name}
-            className="w-20 h-20 object-cover rounded-xl mb-2 border shadow"
-          />
-
-            {product.discountType !== "none" && product.discountValue > 0 && (
-              <span className="absolute top-2 right-2 bg-gradient-to-r from-yellow-300 to-pink-200 text-xs text-amber-800 font-bold px-2 py-0.5 rounded-full shadow">
-                % {product.discountValue} {t(product.discountType)}
+          {/* Products */}
+          <article className="flex min-h-0 flex-1 flex-col rounded-3xl bg-white p-5 shadow-lg ring-1 ring-slate-200">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-800">
+                {activeCategory ? t(activeCategory) : t("Products")}
+              </h2>
+              <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700">
+                {productsInActiveCategory.length} {t("Products")}
               </span>
-            )}
-            <div className="font-bold text-blue-900 dark:text-blue-200 text-xs text-center leading-snug line-clamp-2 w-full">
-              {product.name}
             </div>
 
-            {description && (
-              <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 text-center leading-snug line-clamp-2 w-full">
-                {description}
+            <div className="mt-4 flex-1 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-200 via-slate-100 to-white p-3">
+              <div className="h-full overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 gap-3 pb-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
+                  {productsInActiveCategory.length > 0 ? (
+                    productsInActiveCategory.map((product) => (
+                      <button
+                        key={product.id}
+                        onClick={() => addToCart(product)}
+                        className="flex flex-col items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 p-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md"
+                      >
+                        <img
+                          src={
+                            product.image ||
+                            "https://via.placeholder.com/100?text=🍔"
+                          }
+                          alt={product.name}
+                          className="mb-2 h-20 w-20 rounded-xl border object-cover shadow"
+                        />
+                        <p className="text-sm font-semibold text-slate-700 line-clamp-2 text-center">
+                          {product.name}
+                        </p>
+                        <span className="mt-1 text-base font-bold text-indigo-600">
+                          ₺{parseFloat(product.price).toFixed(2)}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="col-span-full rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm font-semibold text-slate-400">
+                      {t("No products in this category.")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        {/* === Right Section: Cart === */}
+        <aside className="flex min-h-0 flex-col rounded-3xl bg-white shadow-xl ring-1 ring-slate-200">
+          <header className="flex items-center justify-between border-b border-slate-200 px-5 pt-5 pb-3 flex-shrink-0">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-800">{t("Cart")}</h2>
+              <p className="text-sm text-slate-500">
+                {orderId ? t("Phone Order") : `${t("Table")} ${tableId}`}
               </p>
-            )}
-
-            <div className="mt-2 text-indigo-700 dark:text-indigo-300 font-extrabold text-lg text-center w-full">
-              ₺{parseFloat(product.price).toFixed(2)}
             </div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
+              {cartItems.filter((i) => !i.paid).length} {t("Items")}
+            </span>
+          </header>
+          {/* Cart items */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 space-y-3">
+            {cartItems.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm font-medium text-slate-400">
+                {t("Cart is empty.")}
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {cartItems.map((item, idx) => {
+                  const extrasList = safeParseExtras(item.extras);
+                  const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
+                  const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
+                    const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                    const qty = Number(ex.quantity) || 1;
+                    return sum + price * qty;
+                  }, 0);
+                  const basePrice = parseFloat(item.price) || 0;
+                  const quantity = Number(item.quantity) || 1;
+                  const lineTotal = (basePrice + perItemExtrasTotal) * quantity;
+                  const showNote =
+                    typeof item.note === "string"
+                      ? item.note.trim() !== ""
+                      : !!item.note;
+                  const isEditable = !item.confirmed && !item.paid;
 
-          </div>
-            );
-          })()
-        ))}
-      {productsInActiveCategory.length === 0 && (
-        <div className="col-span-full text-center text-gray-400 text-lg font-semibold py-10">
-          {t("No products in this category.")}
-        </div>
-      )}
-    </div>
-  </main>
+                  const cardGradient = item.paid
+                    ? "bg-gradient-to-br from-emerald-200 via-emerald-100 to-emerald-300"
+                    : item.confirmed
+                    ? "bg-gradient-to-br from-indigo-200 via-indigo-100 to-indigo-300"
+                    : "bg-gradient-to-br from-amber-200 via-amber-100 to-amber-300";
 
-
-
-      {/* --- Right: Cart Sidebar (always visible on desktop) --- */}
-<aside
-  className="
-    w-full lg:w-[350px] lg:max-w-[410px] lg:ml-6
-    bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl shadow-2xl flex flex-col
-    transition-all duration-300 ease-in-out
-    lg:fixed lg:top-16 lg:right-0 lg:z-50
-    lg:h-[calc(100vh-64px)]
-    mt-6 lg:mt-0
-  "
->
-
-        {/* --- Cart Items List --- */}
-        <div className="flex-1 overflow-y-auto pt-2 pr-4 pb-4 pl-4">
-
-
-
-          {cartItems.length === 0 ? (
-            <div className="text-gray-400 font-semibold text-center py-8">{t("Cart is empty.")}</div>
-          ) : (
-            <ul className="flex flex-col gap-3">
-
-              {cartItems.map((item, idx) => (
-              <li key={`${item.id}-${idx}`} className="flex flex-col gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-indigo-100/60 dark:border-zinc-800/60 shadow p-3">
-
-  {/* --- Top: Product Name, Total, Status --- */}
-  <div className="flex items-start justify-between">
-    <div className="flex items-center gap-2 flex-1 min-w-0">
-      {/* Select for Payment */}
-      <input
-        type="checkbox"
-        checked={selectedForPayment.includes(item.unique_id)}
-        onChange={(e) => {
-          setSelectedForPayment((prev) =>
-            e.target.checked
-              ? [...prev, item.unique_id]
-              : prev.filter((id) => id !== item.unique_id)
-          );
-        }}
-        disabled={item.paid || item.confirmed === false}
-        className="accent-indigo-500 w-5 h-5 rounded-md border"
-      />
-<span
-  className="
-    font-bold text-base leading-tight
-    break-words
-    max-w-[160px] md:max-w-[220px]
-    text-gray-900 dark:text-white
-    text-left
-    block
-    "
-  style={{
-    wordBreak: "break-word",
-    whiteSpace: "normal",
-  }}
->
-  {item.name}
-</span>
-    </div>
-    {/* Price */}
-<span className="font-extrabold text-indigo-700 dark:text-indigo-200 text-base ml-2">
- ₺{(
-   (parseFloat(item.price) * item.quantity) +
-   ((item.extras || []).reduce(
-     (s, ex) => s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
-     0
-   ) * item.quantity)
- ).toFixed(2)}
-</span>
-  </div>
-
-  {/* --- Extras as Chips --- */}
-  {item.extras?.length > 0 && (
-    <div className="flex flex-wrap gap-2 ml-7 mt-1">
-      {item.extras.map((ex, exIdx) => (
-        <span key={exIdx} className="flex items-center gap-1 px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-800 dark:text-indigo-200 rounded-full text-xs font-semibold shadow-sm">
-          <span>{ex.name}</span>
-          <span className="opacity-80">×{ex.quantity || 1}</span>
-          <span className="font-normal text-[11px] text-indigo-600">
-            ₺{(parseFloat(ex.price || ex.extraPrice) * (ex.quantity || 1)).toFixed(2)}
-          </span>
-        </span>
-      ))}
-    </div>
-  )}
-
-  {/* --- Notes as colored pill --- */}
-  {item.note?.trim() && (
-    <div className="flex items-center gap-2 ml-7 mt-1">
-      <span className="bg-yellow-50 dark:bg-yellow-900/70 text-yellow-800 dark:text-yellow-200 px-2 py-0.5 rounded-full text-xs font-medium shadow-sm">
-        📝 {item.note}
-      </span>
-    </div>
-  )}
-
-  {/* --- Bottom: Quantity, Status, Edit/Remove --- */}
-  <div className="flex items-center justify-between mt-2 ml-7">
-
-    {/* Quantity Controls */}
- <div className="flex items-center gap-2">
-  <button
-    onClick={() => decrementCartItem(item.unique_id)}
-    disabled={
-      item.quantity <= 1 ||
-      item.paid ||
-      item.confirmed
-    }
-    className="w-7 h-7 rounded-full bg-gray-200 hover:bg-indigo-200 dark:bg-zinc-700 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-200 font-bold flex items-center justify-center shadow transition"
-    type="button"
-  >–</button>
-  <span className="font-extrabold text-base text-gray-800 dark:text-gray-200 min-w-[20px] text-center">{item.quantity}</span>
-  <button
-    onClick={() => incrementCartItem(item.unique_id)}
-    disabled={item.paid || item.confirmed}
-    className="w-7 h-7 rounded-full bg-gray-200 hover:bg-green-200 dark:bg-zinc-700 dark:hover:bg-green-800 text-green-700 dark:text-green-200 font-bold flex items-center justify-center shadow transition"
-    type="button"
-  >+</button>
-</div>
-
-
- {/* Badges */}
-<div className="flex items-center gap-1 ml-2">
-  <span
-    className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-      order?.payment_method === "Online" || item.paid
-        ? "bg-green-100 text-green-700"
-        : "bg-red-100 text-red-600"
-    }`}
-  >
-    {order?.payment_method === "Online"
-      ? t("Paid Online")
-      : item.paid
-      ? t("paid")
-      : t("DUE")}
-  </span>
-
-  {/* Payment method */}
-  {(order?.payment_method === "Online" || (item.paid && item.payment_method)) &&
-    item.payment_method !== "Unknown" && (
-      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold flex items-center gap-1">
-        {item.payment_method === "Cash" && <>💵{" "}</>}
-        {item.payment_method === "Credit Card" && <>💳{" "}</>}
-        {item.payment_method === "Sodexo" && <>🍽️{" "}</>}
-        {item.payment_method === "Multinet" && <>🪙{" "}</>}
-        {t(order?.payment_method === "Online" ? "Online" : item.payment_method)}
-      </span>
-    )}
-
-  {/* Kitchen status */}
-  {item.kitchen_status && !item.paid && order?.payment_method !== "Online" && (
-    <span
-      className={`px-2 py-0.5 rounded-full text-xs font-semibold shadow-sm
-        ${item.kitchen_status === "preparing" ? "bg-orange-100 text-orange-600" : ""}
-        ${item.kitchen_status === "delivered" ? "bg-green-100 text-green-700" : ""}
-        ${item.kitchen_status === "cancelled" ? "bg-red-200 text-red-700" : ""}
-      `}
+                  return (
+                    <li
+                      key={item.unique_id || `${item.id}-${idx}`}
+                      className={`relative flex flex-col gap-2 overflow-hidden rounded-2xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition ${cardGradient}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <span className="block font-semibold text-slate-800 break-words">
+                            {item.name}
+                          </span>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                            <span>
+                              ₺{basePrice.toFixed(2)} × {quantity}
+                            </span>
+                            {perItemExtrasTotal > 0 && (
+                              <span>
+                                + ₺{(perItemExtrasTotal * quantity).toFixed(2)} {t("Extras")}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          {item.paid && (
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
+                              {t("paid")}
+                            </span>
+                          )}
+                          <span className="font-bold text-indigo-600 whitespace-nowrap">
+                            ₺{lineTotal.toFixed(2)}
+                          </span>
+                        {isEditable && (
+  <div className="flex items-center gap-2">
+    {/* ✏️ Edit button */}
+    <button
+      onClick={() => {
+        setSelectedProduct(item);
+        setSelectedExtras(safeParseExtras(item.extras));
+        setEditingCartItemIndex(idx);
+        setShowExtrasModal(true);
+      }}
+      className="text-xs font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1"
+      title={t("Edit item")}
     >
-      {item.kitchen_status === "preparing" && t("Preparing")}
-      {item.kitchen_status === "delivered" && t("Delivered")}
-      {item.kitchen_status === "cancelled" && t("Cancelled")}
-    </span>
-  )}
-</div>
+      🖊️
+      <span>{t("Edit")}</span>
+    </button>
 
-    {/* Edit & Remove (only for unconfirmed, unpaid items) */}
-    <div className="flex items-center gap-1 ml-2">
-      {!item.confirmed && (
-        <>
-          <button
-            onClick={() => removeItem(item.unique_id)}
-            className="rounded-full w-7 h-7 flex items-center justify-center bg-red-500/90 hover:bg-red-600/95 text-white text-base shadow transition"
-            title={t("Remove")}
-          >✖</button>
-          <button
-            onClick={() => {
-              setEditingCartItemIndex(idx);
-              const fullProduct = safeProducts.find((p) => p.id === item.id);
-              setSelectedProduct({
-                ...item,
-                quantity: item.quantity,
-                price: fullProduct
-                  ? parseFloat(fullProduct.price)
-                  : item.price,
-                selectedExtrasGroup: fullProduct?.selectedExtrasGroup || [],
-                ingredients: fullProduct?.ingredients || [],
-              });
-              setSelectedExtras(item.extras && Array.isArray(item.extras)
-                ? item.extras.map(ex => ({ ...ex }))
-                : []
-              );
-              setShowExtrasModal(true);
-            }}
-            className="rounded-full w-7 h-7 flex items-center justify-center bg-yellow-400 hover:bg-yellow-500 text-white text-base shadow transition"
-            title={t("Edit")}
-          >✎</button>
-        </>
-      )}
-    </div>
+    {/* 🗑 Remove button */}
+    <button
+      onClick={() => removeItem(item.unique_id)}
+      className="text-xs font-semibold text-red-500 hover:text-red-600 flex items-center gap-1"
+      title={t("Remove item")}
+    >
+      🗑
+      <span>{t("Remove")}</span>
+    </button>
   </div>
-</li>
+)}
 
-              ))}
-            </ul>
-          )}
-        </div>
-        {/* --- Cart Footer --- */}
-        <div className="border-t border-blue-100 dark:border-zinc-800 p-4 bg-white/95 dark:bg-zinc-900/95 flex flex-col gap-2 shadow-t">
-          <div className="flex justify-between text-base">
-            <span className="text-gray-700">{t("Subtotal")}:</span>
-            <span className="text-gray-900 font-bold">
-  ₺{cartItems.filter(i => !i.paid).reduce((sum, i) => {
-    // base price
-    const base = i.price * i.quantity;
-    // extras price (each extra: price * quantity * product quantity)
-    const extras = (i.extras || []).reduce((s, ex) => s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)), 0) * i.quantity;
-    return sum + base + extras;
-  }, 0).toFixed(2)}
-</span>
+                        </div>
+                      </div>
 
+                      {normalizedExtras.length > 0 && (
+                        <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                          {normalizedExtras.map((ex, extraIdx) => {
+                            const extraQty = Number(ex.quantity) || 1;
+                            const extraTotal =
+                              (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
+                              extraQty;
+                            return (
+                              <li key={`${item.unique_id}-extra-${extraIdx}`}>
+                                {ex.name} ×{extraQty} – ₺{extraTotal.toFixed(2)}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+
+                      {showNote && (
+                        <div className="mt-2 bg-yellow-50 border-l-4 border-yellow-400 px-3 py-2 text-xs text-yellow-900 rounded">
+                          <div className="flex items-center gap-2 font-medium">
+                            <span className="text-base leading-none">📝</span>
+                            <span>{t("Notes")}:</span>
+                          </div>
+                          <div className="mt-1 whitespace-pre-wrap leading-snug">
+                            {item.note}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center text-sm text-slate-500 pt-1">
+                        <span>
+                          {t("Qty")}: {quantity}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => decrementCartItem(item.unique_id)}
+                            className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled={!isEditable}
+                          >
+                            –
+                          </button>
+                          <button
+                            onClick={() => incrementCartItem(item.unique_id)}
+                            className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled={!isEditable}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
-          {discountValue > 0 && (
-            <div className="flex justify-between text-base font-bold text-pink-700">
-              <span>🎁 {t("Discount")}{discountType === "percent" ? ` (${discountValue}%)` : ` (-₺${discountValue})`}</span>
-              <span>
-                -{discountType === "percent"
-                  ? `₺${(cartItems.filter(i => !i.paid).reduce((sum, i) => {
-  const base = i.price * i.quantity;
-  const extras = (i.extras || []).reduce((s, ex) => s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)), 0) * i.quantity;
-  return sum + base + extras;
-}, 0)
- * (discountValue / 100)).toFixed(2)}`
-                  : `₺${discountValue}`}
+
+          {/* Footer */}
+          <footer className="space-y-3 border-t border-slate-200 bg-slate-50 px-5 py-5 shadow-inner">
+            <div className="flex justify-between text-sm font-medium text-slate-600">
+              <span>{t("Subtotal")}:</span>
+              <span className="text-slate-900">
+                ₺{calculateDiscountedTotal().toFixed(2)}
               </span>
             </div>
-          )}
-     <div className="flex justify-between items-center text-lg font-bold">
-  <span>{t("Total")}:</span>
-  <span className="text-indigo-800 dark:text-indigo-200 font-extrabold text-2xl">
-    ₺{calculateDiscountedTotal().toFixed(2)}
-  </span>
-  <button onClick={clearUnconfirmedCartItems} className="ml-2 px-3 py-1 bg-gray-900 text-white text-xs rounded-full shadow hover:bg-gray-700">{t("Clear")}</button>
+
+            {discountValue > 0 && (
+              <div className="flex justify-between text-sm font-semibold text-fuchsia-600">
+                <span>
+                  🎁 {t("Discount")}{" "}
+                  {discountType === "percent"
+                    ? `(${discountValue}%)`
+                    : `(-₺${discountValue})`}
+                </span>
+                <span>-₺{discountValue}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center rounded-2xl bg-white px-3 py-3 text-lg font-bold text-indigo-700 shadow-sm">
+              <span>{t("Total")}:</span>
+              <span>₺{calculateDiscountedTotal().toFixed(2)}</span>
+            </div>
+
+           <div className="flex gap-3 items-center">
+  {/* 🧹 Clear button */}
+  <button
+    onClick={clearUnconfirmedCartItems}
+    className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
+  >
+    {t("Clear")}
+  </button>
+
+  {/* 💸 Main multifunction button */}
+  <button
+    onClick={handleMultifunction}
+    className="flex-1 rounded-lg bg-gradient-to-r from-emerald-400 via-blue-400 to-indigo-400 py-3 text-lg font-extrabold text-white shadow-lg hover:brightness-105"
+  >
+    💸 {t(getButtonLabel())}
+  </button>
+
+  {/* 🖨️ Print button (to be wired later) */}
+  <button
+    onClick={() => console.log('🖨️ Print clicked - wire later')}
+    className="rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 p-3 shadow hover:brightness-105 border border-slate-300"
+    title={t("Print Receipt")}
+  >
+    🖨️
+  </button>
 </div>
 
-{/* --- NEW BUTTON ROW BELOW TOTAL --- */}
-<div className="flex gap-2 mt-2 w-full">
-  <button
-    onClick={() => setShowDiscountModal(true)}
-    className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg bg-gradient-to-br from-fuchsia-500 via-indigo-500 to-blue-500 text-white font-bold shadow-sm text-xs md:text-sm hover:scale-105 transition min-w-[80px]"
-    style={{ minHeight: 32, maxHeight: 36 }}
-  >
-    🎁 <span className="ml-1">{t("Discount")}</span>
-  </button>
-  <button
-    onClick={handleOpenCashRegister}
-    className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg bg-gradient-to-br from-blue-400 via-indigo-400 to-fuchsia-400 text-white font-bold shadow-sm text-xs md:text-sm hover:scale-105 transition min-w-[80px]"
-    style={{ minHeight: 32, maxHeight: 36 }}
-  >
-    🗄️ <span className="ml-1">{t("Register")}</span>
-  </button>
-</div>
-
-<button
-  onClick={handleMultifunction}
-  disabled={order?.status === "closed" ? true : false}
-  className={`
-    w-full py-3 mt-2 rounded-xl text-lg font-extrabold shadow-xl flex items-center justify-center gap-2 transition
-    ${order?.status === "closed"
-      ? "bg-gray-300 text-white cursor-not-allowed"
-      : "bg-gradient-to-r from-green-400 via-blue-400 to-indigo-400 text-white hover:brightness-105"
-    }`}
->
-  <span className="text-2xl">💸</span>
-  <span className="text-xl font-bold leading-tight">
-    {getButtonLabel() ? t(getButtonLabel()) : "—"}
-  </span>
-</button>
-
-
-        </div>
-      </aside>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowDiscountModal(true)}
+                className="flex-1 rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:scale-105 transition"
+              >
+                🎁 {t("Discount")}
+              </button>
+              <button
+                onClick={handleOpenCashRegister}
+                className="flex-1 rounded-lg bg-gradient-to-r from-blue-400 to-emerald-400 px-3 py-2 text-xs font-semibold text-white hover:scale-105 transition"
+              >
+                🗄️ {t("Register")}
+              </button>
+            </div>
+          </footer>
+        </aside>
+      </section>
     </div>
+  
+
+
+ 
 
     {/* --- TOAST NOTIFICATION --- */}
     {toast.show && (
@@ -1839,32 +2032,6 @@ return (
         {t(toast.message)}
       </div>
     )}
-
-    {/* Hide scrollbars for aesthetic */}
-    <style>{`
-      .hide-scrollbar::-webkit-scrollbar { display: none; }
-      .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    `}</style>
-
-
-<style>{`
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: rgba(100, 116, 139, 0.4); /* slate-500 */
-    border-radius: 10px;
-  }
-  .custom-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
-  }
-`}</style>
-
-
 
 <PaymentModal
   show={showPaymentModal}
@@ -1928,7 +2095,7 @@ return (
   onConfirm={async (newTable) => {
     if (!order?.id) return;
     try {
-      await secureFetch(`/orders/${order.id}/move-table`, {
+      await secureFetch(`/orders/${order.id}/move-table${identifier}`, {
         method: "PATCH",
         body: JSON.stringify({ new_table_number: newTable }),
       });
@@ -1951,7 +2118,7 @@ onConfirm={async (destTable) => {
   if (!order?.id) return;
   try {
     console.log("🧩 Merging table...");
-    await secureFetch(`/orders/${order.id}/merge-table`, {
+    await secureFetch(`/orders/${order.id}/merge-table${identifier}`, {
       method: "PATCH",
       body: JSON.stringify({ target_table_number: destTable.tableNum }),
     });

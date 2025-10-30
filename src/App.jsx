@@ -42,6 +42,7 @@ import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 import secureFetch from "./utils/secureFetch";
 import QrMenuSettings from "./pages/QrMenuSettings";
+
 // ✅ choose automatically based on environment
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -115,7 +116,7 @@ const loadSettings = async () => {
         <div className="flex h-screen">
           <Routes>
             {/* PUBLIC: QR Menu */}
-            <Route path="/qr-menu" element={<QrMenu />} />
+            <Route path="/qr-menu/:restaurantIdOrSlug" element={<QrMenu />} />
 
             {/* PUBLIC: Login */}
             <Route

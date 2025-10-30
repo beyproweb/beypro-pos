@@ -31,17 +31,26 @@ export default function Products() {
 
   const [showModal, setShowModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
 
   const [showGroupModal, setShowGroupModal] = useState(false);
 
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedCategoryToDelete, setSelectedCategoryToDelete] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [categories, setCategories] = useState([]);
 
+  const collectCategories = (list) =>
+    Array.from(
+      new Set(
+        (Array.isArray(list) ? list : [])
+          .map((item) => item?.category)
+          .filter(Boolean)
+      )
+    );
 
-
-  // ---------- Derived ----------
-  const categories = [...new Set(products.map((p) => p.category))].filter(Boolean);
+  const deriveCategoriesFromProducts = () => collectCategories(products);
 
   const filteredProducts = products.filter((product) => {
     const matchesCategory =
@@ -77,20 +86,28 @@ const fetchProducts = async () => {
   try {
     const data = await secureFetch("/products");
 
+    let normalizedProducts = [];
+
     // 🧠 Normalize backend responses
     if (Array.isArray(data)) {
       // ✅ Backend already returns an array
-      setProducts(data);
+      normalizedProducts = data;
     } else if (data && Array.isArray(data.products)) {
       // ✅ Some endpoints return { products: [...] }
-      setProducts(data.products);
+      normalizedProducts = data.products;
     } else if (data && data.product) {
       // ✅ Single product object (e.g. after add/update)
-      setProducts([data.product]);
+      normalizedProducts = [data.product];
     } else {
       console.warn("⚠️ Unexpected products response:", data);
-      setProducts([]);
+      normalizedProducts = [];
     }
+
+    setProducts(normalizedProducts);
+    const derivedFromResponse = collectCategories(normalizedProducts);
+    setCategories((prev) =>
+      Array.from(new Set([...(prev || []), ...derivedFromResponse])).filter(Boolean)
+    );
   } catch (err) {
     console.error("❌ Failed to fetch products:", err);
     setProducts([]);
@@ -99,6 +116,21 @@ const fetchProducts = async () => {
 
 useEffect(() => {
   fetchProducts();
+}, []);
+
+const fetchCategories = async () => {
+  try {
+    const data = await secureFetch("/products/categories");
+    const list = Array.isArray(data) ? data : [];
+    setCategories(Array.from(new Set([...list, ...deriveCategoriesFromProducts()])).filter(Boolean));
+  } catch (err) {
+    console.error("❌ Failed to fetch categories:", err);
+    setCategories(deriveCategoriesFromProducts());
+  }
+};
+
+useEffect(() => {
+  fetchCategories();
 }, []);
 
 
@@ -164,6 +196,11 @@ useEffect(() => {
     );
   };
 
+  const closeCategoryModal = () => {
+    setShowCategoryModal(false);
+    setNewCategoryName("");
+  };
+
   const handleCategoryDelete = async () => {
     if (!selectedCategoryToDelete) return;
 
@@ -193,8 +230,27 @@ useEffect(() => {
 
   const handleProductUpdate = () => {
     fetchProducts();
+    fetchCategories();
     setShowModal(false);
     setSelectedProduct(null);
+  };
+
+  const handleAddCategory = async (event) => {
+    event.preventDefault();
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    try {
+      await secureFetch("/products/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: trimmed }),
+      });
+      fetchCategories();
+      closeCategoryModal();
+    } catch (err) {
+      console.error("❌ Failed to add category:", err);
+      alert(t("Failed to add category"));
+    }
   };
 
   // ---------- Render ----------
@@ -244,16 +300,23 @@ useEffect(() => {
             <Trash2 size={18} /> {t("Delete")}
           </button>
 
-          {/* Add Product */}
-          <button
-            onClick={() => {
-              setSelectedProduct(null);
-              setShowModal(true);
-            }}
-            className="flex items-center gap-1 px-5 py-2 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold shadow hover:scale-[1.05] transition-all"
-          >
-            <Plus size={20} /> {t("Add Product")}
-          </button>
+        {/* Add Product */}
+        <button
+          onClick={() => {
+            setSelectedProduct(null);
+            setShowModal(true);
+          }}
+          className="flex items-center gap-1 px-5 py-2 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold shadow hover:scale-[1.05] transition-all"
+        >
+          <Plus size={20} /> {t("Add Product")}
+        </button>
+
+        <button
+          onClick={() => setShowCategoryModal(true)}
+          className="flex items-center gap-1 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold shadow hover:scale-[1.05] transition-all"
+        >
+          <Plus size={18} /> {t("Add Category")}
+        </button>
 
           {/* Manage Extras Group button */}
           <button
@@ -461,8 +524,65 @@ useEffect(() => {
             </div>
             {/* Scrollable form area */}
             <div className="px-8 pb-8 max-h-[75vh] overflow-y-auto">
-              <ProductForm initialData={selectedProduct} onSuccess={handleProductUpdate} />
+              <ProductForm
+                initialData={selectedProduct}
+                onSuccess={handleProductUpdate}
+                categories={categories}
+              />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CATEGORY MODAL */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative">
+            <div className="flex justify-between items-center px-6 pt-6 pb-2">
+              <h2 className="text-xl font-bold">{t("Add Category")}</h2>
+              <button
+                onClick={closeCategoryModal}
+                className="text-gray-500 text-2xl font-bold hover:text-accent transition"
+                aria-label={t("Close")}
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleAddCategory} className="px-6 pb-6 space-y-4">
+              <label className="block">
+                <span className="font-medium">{t("Category Name")}</span>
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className="w-full p-3 mt-1 rounded-xl border"
+                  placeholder={t("e.g. Burgers")}
+                  autoFocus
+                />
+              </label>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeCategoryModal}
+                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                >
+                  {t("Cancel")}
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newCategoryName.trim()}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-white font-semibold transition ${
+                    newCategoryName.trim()
+                      ? "bg-gradient-to-r from-emerald-500 to-teal-500 hover:scale-[1.02]"
+                      : "bg-gray-300 cursor-not-allowed"
+                  }`}
+                >
+                  <Plus size={18} />
+                  {t("Save Category")}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -1,7 +1,6 @@
 // 📁 RecipeModal.jsx
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from "react-i18next";
-const API_URL = import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com";
 
 
 // For fetch fallback and badge style
@@ -23,35 +22,59 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
 
   // Fetch latest ingredient prices
   useEffect(() => {
-    secureFetch("ingredient-prices")
-      .then(res => res.json())
-      .then(data => setIngredientPrices(Array.isArray(data) ? data : []))
-      .catch(() => setIngredientPrices([]));
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await secureFetch("/ingredient-prices");
+        if (mounted) {
+          setIngredientPrices(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (mounted) setIngredientPrices([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Fetch distinct units from stock
   useEffect(() => {
-    secureFetch("stock")
-      .then(res => res.json())
-      .then(data => {
-        const units = Array.from(new Set(data.map(item => item.unit))).sort();
-        setAvailableUnits(units);
-      })
-      .catch(() => setAvailableUnits([]));
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await secureFetch("/stock");
+        if (mounted && Array.isArray(data)) {
+          const units = Array.from(new Set(data.map((item) => item.unit))).sort();
+          setAvailableUnits(units);
+        }
+      } catch {
+        if (mounted) setAvailableUnits([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // ✅ Fetch distinct ingredients (with unit) from suppliers/stock
 useEffect(() => {
-  secureFetch("suppliers/ingredients")
-    .then(res => res.json())
-    .then(data => {
+  let mounted = true;
+  (async () => {
+    try {
+      const data = await secureFetch("/suppliers/ingredients");
+      if (!mounted) return;
       console.log("✅ Ingredients fetched for dropdown:", data);
       setAvailableIngredients(Array.isArray(data) ? data : []);
-    })
-    .catch((err) => {
+    } catch (err) {
+      if (!mounted) return;
       console.error("❌ Error fetching ingredients:", err);
       setAvailableIngredients([]);
-    });
+    }
+  })();
+  return () => {
+    mounted = false;
+  };
 }, []);
 
 

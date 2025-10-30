@@ -1,6 +1,5 @@
 // src/components/OrderStatusScreen.jsx
-import React, { useState, useEffect, useRef } from "react";
-import secureFetch from "../utils/secureFetch";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 import { io } from "socket.io-client";
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -27,10 +26,6 @@ export function useSocketIO(onOrderUpdate, orderId) {
 }
 
 /* ---------- HELPERS ---------- */
-async function safeJSON(res) {
-  const text = await res.text();
-  try { return JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
-}
 const toArray = (val) => (Array.isArray(val) ? val : []);
 const parseMaybeJSON = (v) => {
   if (!v) return [];
@@ -54,6 +49,8 @@ const OrderStatusScreen = ({
   onOrderAnother,
   onFinished,           // call this ONLY when truly finished (closed/completed/paid/delivered/canceled)
   t = (str) => str,
+  buildUrl = (path) => path,
+  appendIdentifier,
 }) => {
   const [order, setOrder] = useState(null);
   const [items, setItems] = useState([]);
@@ -62,7 +59,8 @@ const OrderStatusScreen = ({
   const intervalRef = useRef(null);
 
   // States considered finished by backend
-  const FINISHED_STATES = ["closed", "completed", "paid", "delivered", "canceled"];
+// Only close when POS closes the table
+const FINISHED_STATES = ["closed", "completed", "canceled"];
   
   // Helpers near top of component:
 const pm = (order?.payment_method || localStorage.getItem("qr_payment_method") || "").toLowerCase();
@@ -79,13 +77,11 @@ const pmLabel = (m) => {
 };
 async function requestPaymentLink() {
   try {
-    const res = await secureFetch("payments/start", {
+    const { res, data } = await fetchJSON("/payments/start", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ order_id: orderId, method: "online" }),
     });
-    const data = await safeJSON(res);
-    if (data?.pay_url) {
+    if (res.ok && data?.pay_url) {
       localStorage.setItem("qr_payment_url", data.pay_url);
       fetchOrder(); // refresh to pick up order.payment_url if backend stores it
     }
@@ -93,6 +89,28 @@ async function requestPaymentLink() {
     console.error("requestPaymentLink failed:", e);
   }
 }
+
+  const fetchJSON = useCallback(
+    async (path, options = {}) => {
+      const url = appendIdentifier ? appendIdentifier(buildUrl(path)) : buildUrl(path);
+      const headers = {
+        Accept: "application/json",
+        ...(options.headers || {}),
+      };
+      if (options.body && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+      const res = await fetch(url, { ...options, headers });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      return { res, data };
+    },
+    [buildUrl]
+  );
 
   // If backend says it's finished, then (and only then) close
   useEffect(() => {
@@ -108,7 +126,7 @@ async function requestPaymentLink() {
 
     async function load() {
       try {
-        const res = await secureFetch("orders/${orderId}", { headers: { Accept: "application/json" } });
+        const { res, data } = await fetchJSON(`/orders/${orderId}`);
 
         if (!res.ok) {
           if (res.status === 404 && !abort) {
@@ -119,7 +137,6 @@ async function requestPaymentLink() {
           return;
         }
 
-        const data = await safeJSON(res);
         if (!abort) {
           setOrder(data);
           setOrder404(false);
@@ -138,12 +155,11 @@ async function requestPaymentLink() {
   const fetchOrder = async () => {
     if (!orderId) return;
     try {
-      const orderRes = await secureFetch("orders/${orderId}");
-      if (orderRes.ok) {
-        const orderData = await safeJSON(orderRes);
-        setOrder(orderData);
+      const { res, data } = await fetchJSON(`/orders/${orderId}`);
+      if (res.ok) {
+        setOrder(data);
         setOrder404(false);
-      } else if (orderRes.status === 404) {
+      } else if (res.status === 404) {
         setOrder(null);
         setOrder404(true);
       }
@@ -152,9 +168,9 @@ async function requestPaymentLink() {
     }
 
     try {
-      const itemsRes = await secureFetch("orders/${orderId}/items");
-      if (!itemsRes.ok) throw new Error(`Items for order ${orderId} not found`);
-      const raw = await safeJSON(itemsRes);
+      const { res, data } = await fetchJSON(`/orders/${orderId}/items`);
+      if (!res.ok) throw new Error(`Items for order ${orderId} not found`);
+      const raw = data ?? [];
       const normalized = toArray(raw).map(normItem);
       setItems(normalized);
     } catch {
@@ -253,35 +269,112 @@ async function requestPaymentLink() {
         {items.length > 0 && (
           <div className="w-full mb-4">
             <div className="font-bold text-indigo-700 mb-2">🛍️ {t("Items Ordered")}</div>
-            <ul className="flex flex-col gap-2">
-              {items.map((item) => {
-                const lineTotal = (item.price || 0) * (item.quantity || 1);
-                return (
-                  <li key={item.id} className="flex flex-col bg-white border border-blue-100 rounded-xl p-3 shadow-sm">
-                    <div className="flex justify-between items-center font-bold text-blue-900">
-                      <span>{item.name ?? item.order_item_name ?? item.product_name ?? t("Item")}</span>
-                      <span className="text-xs">x{item.quantity}</span>
-                    </div>
-                    <div className="mt-1 text-sm flex justify-between text-indigo-700 font-semibold">
-                      <span>{t("Price")}: ₺{(item.price || 0).toFixed(2)}</span>
-                      <span>{t("Total")}: ₺{lineTotal.toFixed(2)}</span>
-                    </div>
-                    {item.extras?.length > 0 && (
-                      <div className="mt-1 text-xs text-gray-500">
-                        {t("Extras")}: {item.extras.map(ex => `${ex.name} ×${ex.quantity || 1}`).join(", ")}
-                      </div>
-                    )}
-                    {item.note && (
-                      <div className="mt-1 text-xs text-yellow-700 italic">
-                        {t("Note")}: {item.note}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+<ul className="flex flex-col divide-y divide-blue-100 bg-white rounded-2xl shadow-sm overflow-hidden">
+  {items.map((item) => (
+    <li key={item.id} className="p-4">
+      {/* Header: Item name and qty */}
+      <div className="flex justify-between items-center font-bold text-gray-800">
+        <span className="text-base sm:text-lg">{item.name}</span>
+        <span className="text-sm text-indigo-700 font-semibold">×{item.quantity}</span>
+      </div>
+
+      {/* Item base price */}
+      <div className="mt-1 flex justify-between text-sm text-gray-600">
+        <span>{t("Unit Price")}</span>
+        <span className="font-semibold text-gray-800">
+          ₺{(item.price || 0).toFixed(2)}
+        </span>
+      </div>
+
+      {/* Extras */}
+      {item.extras?.length > 0 && (
+        <div className="mt-2 text-sm text-gray-700">
+          <div className="font-semibold text-indigo-700 mb-1">
+            ➕ {t("Extras")}
+          </div>
+          <div className="flex flex-col gap-0.5 ml-2">
+            {item.extras.map((ex, idx) => (
+              <div key={idx} className="flex justify-between text-xs sm:text-sm">
+                <span>
+                  {ex.name} ×{ex.quantity || 1}
+                </span>
+                <span className="text-gray-800">
+                  ₺{(parseFloat(ex.price ?? ex.extraPrice ?? 0) * (ex.quantity || 1)).toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Note */}
+      {item.note && (
+        <div className="mt-2 text-xs italic text-yellow-700 bg-yellow-50 border-l-4 border-yellow-400 px-3 py-1 rounded">
+          📝 {t("Note")}: {item.note}
+        </div>
+      )}
+    </li>
+  ))}
+</ul>
+
+{/* --- Totals Section --- */}
+<div className="mt-6 bg-gradient-to-r from-indigo-50 via-pink-50 to-fuchsia-50 rounded-2xl p-4 shadow-inner border border-indigo-100">
+  <div className="flex justify-between text-sm font-semibold text-gray-700">
+    <span>{t("Items Subtotal")}:</span>
+    <span>
+      ₺
+      {items
+        .reduce((sum, it) => sum + (it.price || 0) * (it.quantity || 1), 0)
+        .toFixed(2)}
+    </span>
+  </div>
+
+  <div className="flex justify-between text-sm font-semibold text-fuchsia-700 mt-1">
+    <span>{t("Extras Subtotal")}:</span>
+    <span>
+      ₺
+      {items
+        .reduce(
+          (sum, it) =>
+            sum +
+            (it.extras || []).reduce(
+              (s, ex) =>
+                s +
+                (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
+                  (ex.quantity || 1) *
+                  (it.quantity || 1),
+              0
+            ),
+          0
+        )
+        .toFixed(2)}
+    </span>
+  </div>
+
+  <div className="border-t border-indigo-200 mt-2 pt-2 flex justify-between text-lg font-extrabold text-pink-700">
+    <span>{t("Grand Total")}:</span>
+    <span>
+      ₺
+      {items
+        .reduce((sum, it) => {
+          const extras = (it.extras || []).reduce(
+            (s, ex) =>
+              s +
+              (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
+                (ex.quantity || 1),
+            0
+          );
+          return sum + ((it.price || 0) + extras) * (it.quantity || 1);
+        }, 0)
+        .toFixed(2)}
+    </span>
+  </div>
+</div>
+
+
           </div>
         )}
+
 
         {/* Preparing */}
         {preparing.length > 0 && (

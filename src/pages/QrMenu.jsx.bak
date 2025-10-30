@@ -1,10 +1,193 @@
 // src/pages/QrMenu.jsx
-import React, { useState, useEffect, useMemo } from "react";
+// src/pages/QrMenu.jsx
+import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
-import useOrderAutoClose from "@/hooks/useOrderAutoClose";
-const API_URL = import.meta.env.VITE_API_URL || "";
+import { useNavigate, useParams } from "react-router-dom";
+import secureFetch from "../utils/secureFetch"; // ← NEW
+
+const RAW_API = import.meta.env.VITE_API_URL || "";
+const API_ROOT = RAW_API.replace(/\/+$/, "");
+const API_BASE = API_ROOT.endsWith("/api")
+  ? API_ROOT.slice(0, -4)
+  : API_ROOT || "";
+const API_URL = API_BASE ? `${API_BASE}/api` : "/api";
+const apiUrl = (path) =>
+  `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
+const QR_PREFIX = "qr_";
+
+function computeTenantSuffix() {
+  if (typeof window === "undefined") return "";
+  try {
+    const native = window.localStorage;
+    if (!native) return "";
+    const storedId = native.getItem("restaurant_id");
+    if (storedId && storedId !== "undefined" && storedId !== "null") {
+      return `${storedId}_`;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const queryTenant =
+      params.get("tenant_id") ||
+      params.get("tenant") ||
+      params.get("restaurant_id") ||
+      params.get("restaurant");
+
+    if (queryTenant && queryTenant !== "undefined" && queryTenant !== "null") {
+      // Don't persist query-derived tenant; just scope storage while URL has it
+      return `${queryTenant}_`;
+    }
+
+    const pathSegments = (window.location.pathname || "")
+      .split("/")
+      .filter(Boolean);
+    const qrIndex = pathSegments.indexOf("qr-menu");
+    if (qrIndex !== -1 && pathSegments[qrIndex + 1]) {
+      return `${pathSegments[qrIndex + 1]}_`;
+    }
+  } catch {
+    // ignore – fall back to legacy global storage keys
+  }
+  return "";
+}
+
+function resolveQrKey(key) {
+  if (!key?.startsWith?.(QR_PREFIX)) return key;
+  const suffix = computeTenantSuffix();
+  if (!suffix) return key;
+  const base = key.slice(QR_PREFIX.length);
+  return `${QR_PREFIX}${suffix}${base}`;
+}
+
+function getQrKeyVariants(key) {
+  if (!key?.startsWith?.(QR_PREFIX)) return [key];
+  const scoped = resolveQrKey(key);
+  if (scoped === key) return [key];
+  return [scoped, key];
+}
+
+const storage = {
+  getItem(key) {
+    if (typeof window === "undefined") return null;
+    const native = window.localStorage;
+    if (!native) return null;
+    if (!key?.startsWith?.(QR_PREFIX)) {
+      try {
+        return native.getItem(key);
+      } catch {
+        return null;
+      }
+    }
+    try {
+      const variants = getQrKeyVariants(key);
+      for (const candidate of variants) {
+        const value = native.getItem(candidate);
+        if (value !== null && value !== undefined) {
+          return value;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  },
+  setItem(key, value) {
+    if (typeof window === "undefined") return;
+    const native = window.localStorage;
+    if (!native) return;
+    if (!key?.startsWith?.(QR_PREFIX)) {
+      try {
+        native.setItem(key, value);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    try {
+      const variants = getQrKeyVariants(key);
+      const [primary, ...rest] = variants;
+      native.setItem(primary, value);
+      for (const legacy of rest) {
+        if (legacy !== primary) {
+          native.removeItem(legacy);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  },
+  removeItem(key) {
+    if (typeof window === "undefined") return;
+    const native = window.localStorage;
+    if (!native) return;
+    if (!key?.startsWith?.(QR_PREFIX)) {
+      try {
+        native.removeItem(key);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    try {
+      const variants = getQrKeyVariants(key);
+      const seen = new Set();
+      for (const candidate of variants) {
+        if (!candidate || seen.has(candidate)) continue;
+        seen.add(candidate);
+        native.removeItem(candidate);
+      }
+    } catch {
+      // ignore
+    }
+  },
+};
+
+const toArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.data)) return value.data;
+  return [];
+};
+
+// --- TABLE PERSISTENCE HELPERS ---
+const TABLE_KEY = "qr_selected_table";
+
+function getStoredToken() {
+  try {
+    const direct = storage.getItem("token");
+    if (direct && direct !== "null" && direct !== "undefined") return direct;
+    const stored = storage.getItem("beyproUser");
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    return parsed?.token || parsed?.accessToken || null;
+  } catch {
+    return null;
+  }
+}
+
+
+function saveSelectedTable(tableNo) {
+  if (tableNo !== undefined && tableNo !== null && `${tableNo}`.trim() !== "") {
+    storage.setItem(TABLE_KEY, String(tableNo));
+  }
+}
+
+
+function getPlatform() {
+  const ua = navigator.userAgent || navigator.vendor || window.opera;
+  if (/android/i.test(ua)) return "android";
+  if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return "ios";
+  return "other";
+}
+
+function getSavedTable() {
+  const v = storage.getItem(TABLE_KEY);
+  return v && v !== "null" ? v : "";
+}
+
+function clearSavedTable() {
+  // call this only when order is COMPLETED/CLOSED – NOT when user backs out
+  storage.removeItem(TABLE_KEY);
+}
 
 /* ====================== SMALL HELPERS ====================== */
 function detectBrand(num) {
@@ -111,6 +294,12 @@ const DICT = {
     "Use saved card": "Use saved card",
     "Use a new card": "Use a new card",
     "Saved card": "Saved card",
+    "Please select a payment method before continuing.": "Please select a payment method before continuing.",
+    // ✅ Added translations
+    "Share QR Menu": "Share QR Menu",
+    "Save QR Menu to Phone": "Save QR Menu to Phone",
+    "Tap here to install the menu as an app": "Tap here to install the menu as an app",
+    "Add to Home Screen": "Add to Home Screen",
   },
   tr: {
     "Order Type": "Sipariş Türü",
@@ -170,10 +359,27 @@ const DICT = {
     "Use saved card": "Kayıtlı kartı kullan",
     "Use a new card": "Yeni kart kullan",
     "Saved card": "Kayıtlı kart",
+    "Please select a payment method before continuing.": "Lütfen devam etmeden önce bir ödeme yöntemi seçin.",
+    // ✅ Added translations
+    "Share QR Menu": "QR Menüyü Paylaş",
+    "Save QR Menu to Phone": "QR Menüyü Telefona Kaydet",
+    "Tap here to install the menu as an app": "Menüyü uygulama olarak yüklemek için buraya dokunun",
+    "Add to Home Screen": "Ana Ekrana Ekle",
   },
-  de: {}, // new keys fall back to en
-  fr: {}, // new keys fall back to en
+  de: {
+    "Share QR Menu": "QR-Menü teilen",
+    "Save QR Menu to Phone": "QR-Menü auf dem Handy speichern",
+    "Tap here to install the menu as an app": "Tippen Sie hier, um das Menü als App zu installieren",
+    "Add to Home Screen": "Zum Startbildschirm hinzufügen",
+  },
+  fr: {
+    "Share QR Menu": "Partager le menu QR",
+    "Save QR Menu to Phone": "Enregistrer le menu QR sur le téléphone",
+    "Tap here to install the menu as an app": "Appuyez ici pour installer le menu comme une application",
+    "Add to Home Screen": "Ajouter à l'écran d'accueil",
+  },
 };
+
 function makeT(lang) {
   const base = DICT.en;
   return (key) => (DICT[lang]?.[key] ?? base[key] ?? key);
@@ -213,34 +419,121 @@ function QrHeader({ orderType, table, onClose, t }) {
 }
 
 /* ====================== ORDER TYPE MODAL ====================== */
-function OrderTypeSelect({ onSelect, lang, setLang, t }) {
+function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstall, showHelp, setShowHelp, platform }) {
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-[340px] text-center flex flex-col items-center">
         <h2 className="text-2xl font-extrabold mb-6 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
           {t("Order Type")}
         </h2>
+
+        {/* Table Order */}
         <button
           className="py-4 w-full mb-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl hover:scale-105 transition"
           onClick={() => onSelect("table")}
         >
           🍽️ {t("Table Order")}
         </button>
+
+        {/* Delivery */}
         <button
           className="py-4 w-full rounded-2xl font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-xl hover:scale-105 transition"
           onClick={() => onSelect("online")}
         >
           🏠 {t("Delivery")}
         </button>
+
+<div className="w-full mt-6 flex flex-col gap-3">
+  {/* Share */}
+  <button
+    onClick={() => {
+      if (navigator.share) {
+        navigator.share({
+          title: "Beypro QR Menu",
+          text: "Check out our menu!",
+          url: shareUrl,
+        }).catch((err) => console.error("Share failed:", err));
+      } else {
+        navigator.clipboard.writeText(shareUrl).then(() => {
+          alert("Link copied! You can paste it into WhatsApp or any app.");
+        });
+      }
+    }}
+    className="w-full py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:scale-105 transition"
+  >
+    🔗 {t("Share QR Menu")}
+  </button>
+
+  {/* Save / Install */}
+  <button
+    onClick={() => {
+      if (canInstall) {
+        onInstallClick();
+      } else {
+        setShowHelp(true); // show help instructions
+      }
+    }}
+    className="w-full py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
+  >
+    📲 {t("Save QR Menu to Phone")}
+  </button>
+</div>
+
+
+  
+
+{showHelp && (
+  <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50">
+    <div className="bg-white rounded-2xl shadow-xl p-6 w-[90%] max-w-sm text-center">
+      <h2 className="text-xl font-bold mb-3 text-blue-600">📲 {t("Add to Home Screen")}</h2>
+      
+      {platform === "ios" && (
+        <div className="text-gray-700 text-sm space-y-2">
+          <p>1. Tap the <span className="font-bold">Share</span> button in Safari (⬆️).</p>
+          <p>2. Scroll and tap <span className="font-bold">Add to Home Screen</span>.</p>
+        </div>
+      )}
+
+      {platform === "android" && (
+        <div className="text-gray-700 text-sm space-y-2">
+          <p>1. Tap the <span className="font-bold">⋮ menu</span> in Chrome.</p>
+          <p>2. Tap <span className="font-bold">Add to Home Screen</span>.</p>
+        </div>
+      )}
+
+      {platform === "other" && (
+        <div className="text-gray-700 text-sm">
+          {t("Open in your mobile browser to save this app.")}
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowHelp(false)}
+        className="w-full mt-4 py-2 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600"
+      >
+        OK
+      </button>
+    </div>
+  </div>
+)}
+
+
+
+        {/* Language picker */}
         <div className="w-full mt-8 flex flex-col items-center">
-          <label className="text-sm font-bold mb-1 text-blue-600">🌐 {t("Language")}</label>
+          <label className="text-sm font-bold mb-1 text-blue-600">
+            🌐 {t("Language")}
+          </label>
           <select
             value={lang}
             onChange={(e) => setLang(e.target.value)}
             className="rounded-xl px-4 py-2 bg-white border border-blue-200 text-base font-semibold shadow"
           >
             {LANGS.map((l) => (
-              <option key={l.code} value={l.code}>{l.label}</option>
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
             ))}
           </select>
         </div>
@@ -248,6 +541,7 @@ function OrderTypeSelect({ onSelect, lang, setLang, t }) {
     </div>
   );
 }
+
 
 /* ====================== TABLE SELECT ====================== */
 function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTables = [], t }) {
@@ -335,7 +629,7 @@ const [savedOnce, setSavedOnce] = useState(false);
 // Prefill from local device storage on first open
 useEffect(() => {
   try {
-    const saved = JSON.parse(localStorage.getItem("qr_delivery_info") || "null");
+    const saved = JSON.parse(storage.getItem("qr_delivery_info") || "null");
     if (saved && typeof saved === "object") {
       setForm((f) => ({
         ...f,
@@ -345,7 +639,7 @@ useEffect(() => {
       }));
     }
   } catch {}
-}, []);
+}, [appendIdentifier]);
 
 
 
@@ -360,7 +654,7 @@ useEffect(() => {
       return;
     }
     try {
-      const store = JSON.parse(localStorage.getItem("qr_saved_cards") || "{}");
+      const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
       const arr = Array.isArray(store[form.phone]) ? store[form.phone] : [];
       setSavedCard(arr[0] || null);
       setUseSaved(!!arr[0]); // default to saved only if one exists
@@ -382,17 +676,17 @@ useEffect(() => {
   setSaving(true);
   try {
     // 1) Save locally so it's there on next open
-    localStorage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
+    storage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
 
     // 2) Try to sync with backend (best-effort)
     try {
       // find existing customer
-      let res = await secureFetch('customers/by-phone/${phone}`);
+      let res = await fetch(appendIdentifier(apiUrl(`/customers/by-phone/${phone}`)));
       let customer = await res.json();
 
       // create if not exists
-      if (!customer) {
-        const cr = await secureFetch('customers`, {
+      if (!customer || !customer.id) {
+        const cr = await fetch(appendIdentifier(apiUrl("/customers")), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, phone }),
@@ -410,14 +704,14 @@ useEffect(() => {
 
         if (existing) {
           if (!existing.is_default) {
-            await secureFetch('customer-addresses/${existing.id}`, {
+            await fetch(appendIdentifier(apiUrl(`/customer-addresses/${existing.id}`)), {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ is_default: true }),
             });
           }
         } else {
-          await secureFetch('customers/${cid}/addresses`, {
+          await fetch(appendIdentifier(apiUrl(`/customers/${cid}/addresses`)), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ label: "Default", address, is_default: true }),
@@ -443,7 +737,7 @@ useEffect(() => {
   (async () => {
     try {
       // exact match + addresses in one call
-      const res = await secureFetch('customers/by-phone/${form.phone}`);
+      const res = await fetch(appendIdentifier(apiUrl(`/customers/by-phone/${form.phone}`)));
       const match = await res.json();
       if (!match) return;
 
@@ -482,11 +776,11 @@ useEffect(() => {
   function persistCardIfRequested(meta) {
     if (!saveCard) return;
     try {
-      const store = JSON.parse(localStorage.getItem("qr_saved_cards") || "{}");
+      const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
       const list = Array.isArray(store[form.phone]) ? store[form.phone] : [];
       if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) list.unshift(meta);
       store[form.phone] = list.slice(0, 3);
-      localStorage.setItem("qr_saved_cards", JSON.stringify(store));
+      storage.setItem("qr_saved_cards", JSON.stringify(store));
     } catch {}
   }
 
@@ -670,18 +964,21 @@ useEffect(() => {
 }
 
 
+
 /* ====================== CATEGORY BAR ====================== */
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
+  const categoryList = toArray(categories);
   return (
     <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 dark:border-zinc-800 z-50">
       <div className="px-3 py-2">
         <div className="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory">
-          {categories.map((cat) => {
-            const imgSrc = categoryImages[cat.trim().toLowerCase()];
+          {categoryList.map((cat) => {
+            const key = typeof cat === "string" ? cat.trim().toLowerCase() : "";
+            const imgSrc = key ? categoryImages[key] : undefined;
             const isActive = activeCategory === cat;
             return (
               <button
-                key={cat}
+                key={String(cat)}
                 onClick={() => setActiveCategory(cat)}
                 className={[
                   "flex-none w-20 h-20 rounded-2xl border-2 shadow-sm overflow-hidden transition snap-start",
@@ -722,14 +1019,15 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
 
 /* ====================== PRODUCT GRID ====================== */
 function ProductGrid({ products, onProductClick, t }) {
+  const productList = toArray(products);
   return (
     <main className="w-full max-w-full pt-3 pb-28 px-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 overflow-hidden">
-      {products.length === 0 && (
+      {productList.length === 0 && (
         <div className="col-span-full text-center text-gray-400 font-bold text-lg py-8">
           {t("No products.")}
         </div>
       )}
-      {products.map((product) => (
+      {productList.map((product) => (
         <div
           key={product.id}
           onClick={() => onProductClick(product)}
@@ -784,7 +1082,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
 
   const basePrice = parseFloat(product.price) || 0;
 
-  const normalizedGroups = (extrasGroups || []).map((g) => ({
+  // Normalize groups: keep both id + name
+  const normalizedGroups = toArray(extrasGroups).map((g) => ({
+    id: g.id,
     groupName: g.groupName || g.group_name,
     items: Array.isArray(g.items)
       ? g.items
@@ -798,13 +1098,39 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
         })(),
   }));
 
-  const productGroupNames = Array.isArray(product?.selectedExtrasGroup)
-    ? product.selectedExtrasGroup
-    : [];
-  const availableGroups =
-    productGroupNames.length > 0
-      ? normalizedGroups.filter((g) => productGroupNames.includes(g.groupName))
-      : normalizedGroups;
+  // Get allowed groups by product.selectedExtrasGroup (IDs)
+  const productGroupIds = toArray(product?.selectedExtrasGroup)
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
+
+ let availableGroups = [];
+ if (productGroupIds.length > 0) {
+   availableGroups = toArray(normalizedGroups).filter((g) =>
+     productGroupIds.includes(Number(g.id))
+   );
+ }
+
+ // ✅ Fallback: if no group IDs matched, but product.extras exists
+ if (availableGroups.length === 0 &&
+     Array.isArray(product?.extras) &&
+     product.extras.length > 0) {
+   availableGroups = [
+     {
+       id: "manual",
+       groupName: "Extras",
+       items: product.extras.map((ex, idx) => ({
+         id: idx,
+         name: ex.name,
+         price: Number(ex.extraPrice || ex.price || 0),
+         unit: ex.unit || "",
+         amount:
+           ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
+             ? Number(ex.amount)
+             : 1,
+       })),
+     },
+   ];
+ }
 
   const priceOf = (exOrItem) =>
     parseFloat(exOrItem?.price ?? exOrItem?.extraPrice ?? 0) || 0;
@@ -816,15 +1142,24 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
   const lineTotal = (basePrice + extrasPerUnit) * quantity;
 
   const qtyOf = (groupName, itemName) =>
-    selectedExtras.find((ex) => ex.group === groupName && ex.name === itemName)?.quantity || 0;
+    selectedExtras.find(
+      (ex) => ex.group === groupName && ex.name === itemName
+    )?.quantity || 0;
 
   const incExtra = (group, item) => {
     setSelectedExtras((prev) => {
-      const idx = prev.findIndex((ex) => ex.group === group.groupName && ex.name === item.name);
+      const idx = prev.findIndex(
+        (ex) => ex.group === group.groupName && ex.name === item.name
+      );
       if (idx === -1) {
         return [
           ...prev,
-          { group: group.groupName, name: item.name, price: priceOf(item), quantity: 1 },
+          {
+            group: group.groupName,
+            name: item.name,
+            price: priceOf(item),
+            quantity: 1,
+          },
         ];
       }
       const copy = [...prev];
@@ -835,7 +1170,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
 
   const decExtra = (group, item) => {
     setSelectedExtras((prev) => {
-      const idx = prev.findIndex((ex) => ex.group === group.groupName && ex.name === item.name);
+      const idx = prev.findIndex(
+        (ex) => ex.group === group.groupName && ex.name === item.name
+      );
       if (idx === -1) return prev;
       const copy = [...prev];
       copy[idx].quantity = Math.max(0, (copy[idx].quantity || 0) - 1);
@@ -894,11 +1231,13 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
         <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
           {/* Groups rail */}
           <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r-2 border-blue-100 bg-white/80 p-3 overflow-x-auto sm:overflow-y-auto">
-            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">{t("Extras Groups")}</div>
+            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">
+              {t("Extras Groups")}
+            </div>
             <div className="flex sm:block gap-2 sm:gap-0">
               {availableGroups.map((g, idx) => (
                 <button
-                  key={g.groupName}
+                  key={g.id}
                   onClick={() => setActiveGroupIdx(idx)}
                   className={`px-3 py-2 rounded-xl text-sm font-bold mb-2 border transition ${
                     activeGroupIdx === idx
@@ -914,7 +1253,6 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
 
           {/* Items + Quantity + Note */}
           <section className="flex-1 p-4 sm:p-5 overflow-y-auto">
-            {/* Items */}
             {availableGroups.length > 0 ? (
               <>
                 <div className="font-bold text-fuchsia-600 mb-2 text-base">
@@ -922,47 +1260,37 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
                   {(availableGroups[activeGroupIdx].items || []).map((item) => {
-                    const unit = parseFloat(item?.price ?? item?.extraPrice ?? 0) || 0;
-                    const q = selectedExtras.find((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name)?.quantity || 0;
+                    const unit = priceOf(item);
+                    const q =
+                      selectedExtras.find(
+                        (ex) =>
+                          ex.group === availableGroups[activeGroupIdx].groupName &&
+                          ex.name === item.name
+                      )?.quantity || 0;
                     return (
                       <div
-                        key={item.name}
+                        key={item.id ?? item.name}
                         className="flex flex-col items-center bg-white/80 border border-blue-100 rounded-xl px-2 py-2 min-h-[92px] shadow-sm"
                       >
                         <div className="text-center text-sm font-bold text-blue-900 leading-tight line-clamp-2">
                           {item.name}
                         </div>
-                        <div className="text-[12px] text-indigo-700 font-semibold">₺{unit.toFixed(2)}</div>
+                        <div className="text-[12px] text-indigo-700 font-semibold">
+                          ₺{unit.toFixed(2)}
+                        </div>
                         <div className="mt-2 flex items-center justify-center gap-2">
                           <button
                             className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
-                            onClick={() => {
-                              setSelectedExtras((prev) => {
-                                const idx = prev.findIndex((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name);
-                                if (idx === -1) return prev;
-                                const copy = [...prev];
-                                copy[idx].quantity = Math.max(0, (copy[idx].quantity || 0) - 1);
-                                if (copy[idx].quantity === 0) copy.splice(idx, 1);
-                                return copy;
-                              });
-                            }}
+                            onClick={() => decExtra(availableGroups[activeGroupIdx], item)}
                           >
                             –
                           </button>
-                          <span className="min-w-[28px] text-center text-base font-extrabold">{q}</span>
+                          <span className="min-w-[28px] text-center text-base font-extrabold">
+                            {q}
+                          </span>
                           <button
                             className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
-                            onClick={() => {
-                              setSelectedExtras((prev) => {
-                                const idx = prev.findIndex((ex) => ex.group === availableGroups[activeGroupIdx].groupName && ex.name === item.name);
-                                if (idx === -1) {
-                                  return [...prev, { group: availableGroups[activeGroupIdx].groupName, name: item.name, price: unit, quantity: 1 }];
-                                }
-                                const copy = [...prev];
-                                copy[idx].quantity = (copy[idx].quantity || 0) + 1;
-                                return copy;
-                              });
-                            }}
+                            onClick={() => incExtra(availableGroups[activeGroupIdx], item)}
                           >
                             +
                           </button>
@@ -978,7 +1306,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
 
             {/* Quantity */}
             <div className="mt-5 sm:mt-6">
-              <div className="text-sm font-bold text-blue-700 mb-2">{t("Quantity")}</div>
+              <div className="text-sm font-bold text-blue-700 mb-2">
+                {t("Quantity")}
+              </div>
               <div className="flex items-center justify-center gap-3">
                 <button
                   className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
@@ -986,7 +1316,9 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
                 >
                   –
                 </button>
-                <span className="w-12 text-center text-2xl font-extrabold">{quantity}</span>
+                <span className="w-12 text-center text-2xl font-extrabold">
+                  {quantity}
+                </span>
                 <button
                   className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
                   onClick={() => setQuantity((q) => q + 1)}
@@ -1017,14 +1349,22 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
           <button
             className="py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
             onClick={() => {
-              const unique_id = product.id + "-" + btoa(JSON.stringify(selectedExtras) + (note || ""));
+              const unique_id = `${product.id}-${Date.now().toString(36)}-${Math.random()
+                .toString(36)
+                .slice(2, 8)}`;
+              const extrasList = toArray(selectedExtras);
               onAddToCart({
                 id: product.id,
                 name: product.name,
                 image: product.image,
-                price: basePrice + selectedExtras.reduce((s, ex) => s + (ex.price || 0) * (ex.quantity || 1), 0),
+                price:
+                  basePrice +
+                  extrasList.reduce(
+                    (s, ex) => s + (ex.price || 0) * (ex.quantity || 1),
+                    0
+                  ),
                 quantity,
-                extras: selectedExtras.filter((e) => e.quantity > 0),
+                extras: extrasList.filter((e) => e.quantity > 0),
                 note,
                 unique_id,
               });
@@ -1039,7 +1379,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
   );
 }
 
-/* ====================== CART DRAWER ====================== */
+
 function CartDrawer({
   cart,
   setCart,
@@ -1048,131 +1388,206 @@ function CartDrawer({
   paymentMethod,
   setPaymentMethod,
   submitting,
+  onOrderAnother,
   t,
 }) {
   const [show, setShow] = useState(false);
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+  const cartArray = toArray(cart);
+  const cartLength = cartArray.length;
+  const prevItems = cartArray.filter((i) => i.locked);
+  const newItems  = cartArray.filter((i) => !i.locked);
+
+  const lineTotal = (item) => {
+    const extrasTotal = (item.extras || []).reduce(
+      (s, ex) => s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+      0
+    );
+    return (parseFloat(item.price) || 0 + extrasTotal) * (item.quantity || 1);
+  };
+  const total = newItems.reduce((sum, i) => sum + lineTotal(i), 0);
+
+  // 👂 close by global event
   useEffect(() => {
-    setShow(cart.length > 0);
-  }, [cart.length]);
+    const handler = () => setShow(false);
+    window.addEventListener("qr:cart-close", handler);
+    return () => window.removeEventListener("qr:cart-close", handler);
+  }, []);
 
-  function removeItem(idx) {
-    setCart((prev) => prev.filter((_, i) => i !== idx));
+  // 🚪 auto-open only if allowed
+  useEffect(() => {
+    const auto = storage.getItem("qr_cart_auto_open") !== "0";
+    if (auto) setShow(cartLength > 0);
+  }, [cartLength]);
+
+  function removeItem(idx, isNew) {
+    if (!isNew) return; // don't remove locked (read-only)
+    setCart((prev) => {
+      let n = -1;
+      return toArray(prev).filter((it) => (it.locked ? true : (++n !== idx)));
+    });
   }
 
   return (
     <>
-      {!show && cart.length > 0 && (
+      {!show && cartLength > 0 && (
         <button
           className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-7 rounded-3xl shadow-xl z-50"
-          onClick={() => setShow(true)}
+          onClick={() => {
+            storage.setItem("qr_cart_auto_open", "1");
+            setShow(true);
+          }}
         >
-          🛒 {t("View Cart")} ({cart.length})
+          🛒 {t("View Cart")} ({cartLength})
         </button>
       )}
+
       {show && (
         <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/30">
           <div className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl shadow-2xl p-5 flex flex-col">
             <div className="flex justify-between items-center mb-3">
               <span className="text-lg font-bold text-blue-800">🛒 {t("Your Order")}</span>
-              <button
-                className="text-2xl text-gray-400 hover:text-red-500"
-                onClick={() => setShow(false)}
-                aria-label={t("Close")}
-              >
-                ×
-              </button>
+              <button className="text-2xl text-gray-400 hover:text-red-500" onClick={() => setShow(false)} aria-label={t("Close")}>×</button>
             </div>
+
             <div className="flex-1 overflow-y-auto max-h-[48vh]">
-              {cart.length === 0 ? (
+              {cartLength === 0 ? (
                 <div className="text-gray-400 text-center py-8">{t("Cart is empty.")}</div>
               ) : (
-                <ul className="flex flex-col gap-3">
-                  {cart.map((item, i) => (
-                    <li
-                      key={i}
-                      className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className="font-bold block">
-                          {item.name}{" "}
-                          <span className="text-xs text-gray-500">x{item.quantity}</span>
-                        </span>
+                <div className="flex flex-col gap-4">
+                  {/* Previously ordered (locked) */}
+                  {prevItems.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-gray-500 mb-1">Previously in this order (won’t be added again)</div>
+                      <ul className="flex flex-col gap-2">
+                        {prevItems.map((item, i) => (
+                          <li key={`prev-${i}`} className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2 opacity-70">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-bold block">{item.name} <span className="text-xs text-gray-500">x{item.quantity}</span></span>
+                              {item.extras?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.extras.map((ex, j) => {
+                                    const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                                    const line = unit * (ex.quantity || 1);
+                                    return (
+                                      <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-xs rounded-full">
+                                        <span>{ex.name}</span><span>×{ex.quantity || 1}</span><span className="font-semibold">₺{line.toFixed(2)}</span>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {item.note && <div className="text-xs text-yellow-700 mt-1">📝 {t("Note")}: {item.note}</div>}
+                            </div>
+                            <div className="flex flex-col items-end shrink-0">
+                              <span className="font-bold text-indigo-700">₺{lineTotal(item).toFixed(2)}</span>
+                              <span className="text-[10px] text-gray-400 mt-1">locked</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
-                        {item.extras && item.extras.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {item.extras.map((ex, j) => {
-                              const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0);
-                              const line = unit * (ex.quantity || 1);
-                              return (
-                                <span
-                                  key={j}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-xs rounded-full"
-                                >
-                                  <span>{ex.name}</span>
-                                  <span>×{ex.quantity || 1}</span>
-                                  <span className="font-semibold">₺{line.toFixed(2)}</span>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {item.note && (
-                          <div className="text-xs text-yellow-700 mt-1">
-                            📝 {t("Note")}: {item.note}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end shrink-0">
-                        <span className="font-bold text-indigo-700">
-                          ₺{(item.price * item.quantity).toFixed(2)}
-                        </span>
-                        <button
-                          className="text-xs text-red-400 hover:text-red-700 mt-1"
-                          onClick={() => removeItem(i)}
-                        >
-                          {t("Remove")}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                  {/* New items */}
+                  <div>
+                    <div className="text-xs font-bold text-blue-600 mb-1">New items to add</div>
+                    {newItems.length === 0 ? (
+                      <div className="text-gray-400 text-sm">No new items yet</div>
+                    ) : (
+                      <ul className="flex flex-col gap-2">
+                        {newItems.map((item, i) => (
+                          <li key={`new-${i}`} className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-bold block">{item.name} <span className="text-xs text-gray-500">x{item.quantity}</span></span>
+                              {item.extras?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.extras.map((ex, j) => {
+                                    const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                                    const line = unit * (ex.quantity || 1);
+                                    return (
+                                      <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-xs rounded-full">
+                                        <span>{ex.name}</span><span>×{ex.quantity || 1}</span><span className="font-semibold">₺{line.toFixed(2)}</span>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {item.note && <div className="text-xs text-yellow-700 mt-1">📝 {t("Note")}: {item.note}</div>}
+                            </div>
+                            <div className="flex flex-col items-end shrink-0">
+                              <span className="font-bold text-indigo-700">₺{lineTotal(item).toFixed(2)}</span>
+                              <button className="text-xs text-red-400 hover:text-red-700 mt-1" onClick={() => removeItem(i, true)}>{t("Remove")}</button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-            {cart.length > 0 && (
+
+            {/* Footer */}
+            {cartLength > 0 && (
               <>
                 <div className="flex justify-between text-base font-bold mt-5 mb-3">
                   <span>{t("Total")}:</span>
                   <span className="text-indigo-700 text-xl">₺{total.toFixed(2)}</span>
                 </div>
-                {orderType === "online" && (
-                  <div className="flex flex-col gap-2 mb-2">
-                    <label className="font-bold text-blue-900">{t("Payment:")}</label>
-                    <select
-                      className="rounded-xl px-2 py-1 border"
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                    >
-                      <option value="cash">💵 {t("Cash")}</option>
-                      <option value="card">💳 {t("Credit Card")}</option>
-                      <option value="online">🌐 {t("Online Payment")}</option>
-                    </select>
-                  </div>
-                )}
+
+                {/* Payment choice */}
+<div className="flex flex-col gap-2 mb-2">
+  <label className="font-bold text-blue-900">{t("Payment:")}</label>
+  <select
+    className="rounded-xl px-2 py-1 border"
+    value={paymentMethod}
+    onChange={(e) => setPaymentMethod(e.target.value)}
+  >
+    {orderType === "table" ? (
+      <>
+        <option value="online">🌐 {t("Pay Online Now")}</option>
+        <option value="card">💳 {t("Card at Table")}</option>
+        <option value="sodexo">🍽️ Sodexo</option>
+        <option value="multinet">🍽️ Multinet</option>
+        <option value="cash">💵 {t("Cash at Table")}</option>
+      </>
+    ) : (
+      <>
+        <option value="cash">💵 {t("Cash")}</option>
+        <option value="card">💳 {t("Credit Card")}</option>
+        <option value="online">🌐 {t("Online Payment")}</option>
+      </>
+    )}
+  </select>
+</div>
+
+
                 <button
                   className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
                   onClick={onSubmitOrder}
-                  disabled={submitting}
+                  disabled={submitting || newItems.length === 0}
                 >
                   {submitting ? t("Please wait...") : t("Submit Order")}
                 </button>
+
+                <button
+                  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
+                  onClick={() => setShow(false)}
+                >
+                  {t("Order Another")}
+                </button>
+
                 <button
                   className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
-                  onClick={() => setCart([])}
+                  onClick={() => {
+                    // Clear only NEW items; keep locked items visible
+                    const lockedOnly = cartArray.filter((i) => i.locked);
+                    setCart(lockedOnly);
+                    storage.setItem("qr_cart", JSON.stringify(lockedOnly));
+                  }}
                 >
-                  {t("Clear Cart")}
+                  Clear New Items
                 </button>
               </>
             )}
@@ -1183,8 +1598,34 @@ function CartDrawer({
   );
 }
 
+async function startOnlinePaymentSession(id) {
+  try {
+    const res = await fetch(appendIdentifier(apiUrl('/payments/start')), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_id: id, method: "online" }),
+    });
+
+    if (!res.ok) {
+      console.error("startOnlinePaymentSession failed:", res.status, await res.text());
+      return null;
+    }
+
+    const data = await res.json().catch(() => ({}));
+    if (data.pay_url) {
+      storage.setItem("qr_payment_url", data.pay_url);
+      return data.pay_url;
+    }
+  } catch (e) {
+    console.error("startOnlinePaymentSession failed:", e);
+  }
+  return null;
+}
+
+
+
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClose, onFinished, t }) {
+function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier }) {
   if (!open) return null;
 
   const title =
@@ -1210,17 +1651,22 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
         </div>
 
         {/* Scrollable content */}
-        <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
-          {orderId && open && (
-            <OrderStatusScreen
-              orderId={orderId}
-              table={table}
-              onOrderAnother={onOrderAnother}
-              onFinished={onFinished}  // keeps QR flow reset when order closes
-              t={t}
-            />
-          )}
-        </div>
+       <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
+  {orderId ? (
+<OrderStatusScreen
+  orderId={orderId}
+  table={orderType === "table" ? table : null}   // now safe
+   onOrderAnother={onOrderAnother}   
+  onFinished={onFinished}
+
+  t={t}
+  buildUrl={(path) => apiUrl(path)}
+  appendIdentifier={appendIdentifier}
+/>
+
+  ) : null}
+</div>
+
 
         {/* Footer */}
         <div className="p-4 border-t bg-white">
@@ -1237,14 +1683,48 @@ function OrderStatusModal({ open, status, orderId, table, onOrderAnother, onClos
 }
 
 
+
+
+
+
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
-  // persist language
-  const [lang, setLang] = useState(() => localStorage.getItem("qr_lang") || "en");
-  useEffect(() => { localStorage.setItem("qr_lang", lang); }, [lang]);
-  const t = useMemo(() => makeT(lang), [lang]);
+  const { restaurantIdOrSlug } = useParams();
 
-  const [orderType, setOrderType] = useState(null);
+  const appendIdentifier = useCallback(
+    (url) => {
+      if (!restaurantIdOrSlug) return url;
+      const [base, hash] = String(url).split("#");
+      const separator = base.includes("?") ? "&" : "?";
+      const appended = `${base}${separator}identifier=${encodeURIComponent(restaurantIdOrSlug)}`;
+      return hash ? `${appended}#${hash}` : appended;
+    },
+    [restaurantIdOrSlug]
+  );
+
+  // 🔒 One liner to always pass identifier via secureFetch
+  const sFetch = useCallback((path, options) => {
+    return secureFetch(appendIdentifier(path), options);
+  }, [appendIdentifier]);
+
+  const shareUrl = useMemo(() => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    if (restaurantIdOrSlug) {
+      return origin
+        ? `${origin}/qr-menu/${restaurantIdOrSlug}`
+        : `/qr-menu/${restaurantIdOrSlug}`;
+    }
+    return origin ? `${origin}/qr-menu` : "/qr-menu";
+  }, [restaurantIdOrSlug]);
+
+  // persist language
+  const [lang, setLang] = useState(() => storage.getItem("qr_lang") || "en");
+  useEffect(() => { storage.setItem("qr_lang", lang); }, [lang]);
+  const t = useMemo(() => makeT(lang), [lang]);
+  const [showIosHelp, setShowIosHelp] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+const [platform, setPlatform] = useState(getPlatform());
+
   const [table, setTable] = useState(null);
   const [customerInfo, setCustomerInfo] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -1252,7 +1732,12 @@ export default function QrMenu() {
   const [extrasGroups, setExtrasGroups] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
   const [cart, setCart] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("qr_cart") || "[]"); } catch { return []; }
+    try {
+      const parsed = JSON.parse(storage.getItem("qr_cart") || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   });
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1260,213 +1745,610 @@ export default function QrMenu() {
   const [showStatus, setShowStatus] = useState(false);
   const [orderStatus, setOrderStatus] = useState("pending");
   const [orderId, setOrderId] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState("cash");
+  
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState(
+  () => storage.getItem("qr_payment_method") || "online"
+);
+  const [orderType, setOrderType] = useState(
+  () => storage.getItem("qr_orderType") || null
+);
 
-function handleOrderAnother() {
-  // If the backend already closed the order, start fresh
-  if (["closed", "completed", "paid", "delivered", "canceled"].includes((orderStatus || "").toLowerCase())) {
-    resetToTypePicker();
-    return;
-  }
+  const safeProducts = useMemo(() => toArray(products), [products]);
+  const safeCategories = useMemo(() => toArray(categories), [categories]);
+  const safeExtrasGroups = useMemo(() => toArray(extrasGroups), [extrasGroups]);
+  const safeCart = useMemo(() => toArray(cart), [cart]);
+  const safeOccupiedTables = useMemo(() => toArray(occupiedTables), [occupiedTables]);
+  const productsInActiveCategory = useMemo(
+    () =>
+      safeProducts.filter(
+        (p) =>
+          (p?.category || "").trim().toLowerCase() ===
+          (activeCategory || "").trim().toLowerCase()
+      ),
+    [safeProducts, activeCategory]
+  );
 
-  // Otherwise (still open table), keep same orderId for sub-orders
-  setShowStatus(false);
-  setOrderStatus("pending");
-  setCart([]);
-  localStorage.removeItem("qr_cart");
-
-  if (orderType === "table") {
-    localStorage.setItem("qr_show_status", "0");
-  } else {
+// at the top of QrMenu component
+const [showQrPrompt, setShowQrPrompt] = useState(() => {
+  return !storage.getItem("qr_saved");
+});
+// === PWA INSTALL HANDLER ===
+const [deferredPrompt, setDeferredPrompt] = useState(null);
+const [canInstall, setCanInstall] = useState(false);
+  const resetToTypePicker = () => {
+    setShowStatus(false);
+    setOrderStatus("pending");
     setOrderId(null);
-    setOrderType(null);
+    setCart([]);
     setCustomerInfo(null);
-    localStorage.setItem("qr_show_status", "0");
-    localStorage.removeItem("qr_active_order");
+    setTable(null);
+    setOrderType(null);
+  };
+
+useEffect(() => {
+  const handler = (e) => {
+    e.preventDefault();
+    setDeferredPrompt(e);
+    setCanInstall(true);
+  };
+  window.addEventListener("beforeinstallprompt", handler);
+  return () => window.removeEventListener("beforeinstallprompt", handler);
+}, [appendIdentifier]);
+
+function handleInstallClick() {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then((choice) => {
+    if (choice.outcome === "accepted") {
+      console.log("✅ User installed app");
+    }
+    setDeferredPrompt(null);
+    setCanInstall(false);
+  });
+}
+
+function handleDownloadQr() {
+  
+// fallback: open QR Menu page so user can add it manually
+window.location.href = shareUrl;
+
+
+  // Remember that user saved it
+  storage.setItem("qr_saved", "1");
+  setShowQrPrompt(false);
+}
+
+// When switching order type, choose a sensible default
+useEffect(() => {
+  if (orderType === "table" && !["online","card","sodexo","multinet","cash"].includes(paymentMethod)) {
+    setPaymentMethod("card");
+  }
+  if (orderType === "online" && !["online","card","cash"].includes(paymentMethod)) {
+    setPaymentMethod("online");
+  }
+}, [orderType]);
+
+useEffect(() => {
+  storage.setItem("qr_payment_method", paymentMethod);
+}, [paymentMethod]);
+
+
+// === Always-mounted Order Status (portal) ===
+const statusPortal = showStatus
+  ? createPortal(
+      <OrderStatusModal
+        open={true}
+        status={orderStatus}
+        orderId={orderId}
+        orderType={orderType} 
+        table={orderType === "table" ? table : null}
+        onOrderAnother={handleOrderAnother}
+        onClose={handleReset}
+        onFinished={resetToTypePicker}
+        t={t}
+        appendIdentifier={appendIdentifier}
+      />,
+      document.body
+    )
+  : null;
+  // show Delivery Info form first, every time Delivery is chosen
+// show Delivery Info form only when starting a brand-new online order
+const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+useEffect(() => {
+  const hasActive = !!(orderId || storage.getItem("qr_active_order_id"));
+  if (orderType === "online" && !hasActive) {
+    setShowDeliveryForm(true);
+  }
+}, [orderType, orderId]);
+
+
+
+
+
+
+// -- clear saved table ONLY when no items in cart and no active order
+function resetTableIfEmptyCart() {
+  const count = safeCart.length;
+  const hasActive = !!(orderId || storage.getItem("qr_active_order_id"));
+  if (count === 0 && !hasActive) {
+    try {
+      storage.removeItem("qr_table");
+      storage.removeItem("qr_selected_table");
+      storage.removeItem("qr_orderType");
+    } catch {}
+    // let any listeners react instantly (if you add one later)
+    window.dispatchEvent(new Event("qr:table-reset"));
   }
 }
 
-function resetToTypePicker() {
-  // clear all session keys
-  localStorage.removeItem("qr_active_order");
-  localStorage.removeItem("qr_cart");
-  localStorage.removeItem("qr_table");
-  localStorage.removeItem("qr_orderType");
-  localStorage.setItem("qr_show_status", "0");
+// when user taps the header “×”
+function handleCloseOrderPage() {
+  // If there’s an active order, keep showing status (don’t go back to type)
+  const activeId = orderId || Number(storage.getItem("qr_active_order_id")) || null;
+  if (activeId) {
+    setShowStatus(true);
+    setOrderStatus("success");
+    return;
+  }
 
-  // reset UI state
-  setShowStatus(false);
-  setOrderStatus("pending");
-  setOrderId(null);
-  setCart([]);
-  setCustomerInfo(null);
+  // No active order → normal behavior
+  resetTableIfEmptyCart();
   setTable(null);
   setOrderType(null);
 }
 
 
-  // Restore last context on refresh (order status, order type, table)
+
+// Bootstrap on refresh: restore by saved order id, else by saved table
 useEffect(() => {
-  try {
-    const show = localStorage.getItem("qr_show_status") === "1";
-    const last = JSON.parse(localStorage.getItem("qr_last_order") || "null");
+  (async () => {
+    try {
+      const activeId = storage.getItem("qr_active_order_id");
 
-    if (show && last) {
-      if (last.orderType === "table" && last.table) {
-        setOrderType("table");
-        setTable(Number(last.table));
-      } else if (last.orderType === "online") {
-        setOrderType("online");
+      // helper: true if ALL items are delivered
+      async function allItemsDelivered(id) {
+        try {
+          const token = getStoredToken();
+          if (!token) return false;
+          const ir = await fetch(appendIdentifier(apiUrl(`/orders/${id}/items`)), {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          if (!ir.ok) return false;
+          const raw = await ir.json();
+          const arr = Array.isArray(raw) ? raw : [];
+          return arr.length > 0 && arr.every(it => (it.kitchen_status || "").toLowerCase() === "delivered");
+        } catch {
+          return false;
+        }
       }
-      setOrderId(last.id || null);
-      setOrderStatus(last.status || "pending");
-      setShowStatus(true);
-      return; // don't override with defaults below
-    }
 
-    // No status to show—restore last chosen order type/table for continuity
-    const savedType = localStorage.getItem("qr_orderType");
-    if (savedType) {
-      setOrderType(savedType);
-      if (savedType === "table") {
-        const savedTable = Number(localStorage.getItem("qr_table"));
-        if (savedTable) setTable(savedTable);
+      // 1) If we have a saved active order id, prefer that
+      if (activeId) {
+        const token = getStoredToken();
+        const res = token
+          ? await fetch(appendIdentifier(apiUrl(`/orders/${activeId}`)), {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          : null;
+        if (res?.ok) {
+          const order = await res.json();
+          const status = (order?.status || "").toLowerCase();
+
+          // finished states or everything delivered → reset to type picker
+          if (["closed", "completed", "paid", "canceled"].includes(status) || await allItemsDelivered(activeId)) {
+            resetToTypePicker();
+            return;
+          }
+
+          // still active → restore and show status
+          const type = order.order_type === "table" ? "table" : "online";
+          setOrderType(type);
+          setTable(type === "table" ? Number(order.table_number) || null : null);
+          setOrderId(order.id);
+
+          setOrderStatus("success");
+          setShowStatus(true);
+          return;
+        }
+
+        // bad fetch or missing → clean up any stale flags
+        resetToTypePicker();
+        return;
       }
-    }
-  } catch {}
-}, []);
 
+      // 2) Fallback: see if a saved table has an open (non-closed) order
+      const savedTable = Number(
+        storage.getItem("qr_table") ||
+        storage.getItem("qr_selected_table") ||
+        "0"
+      ) || null;
 
-const QrMenu = () => {
-  const navigate = useNavigate();
-  const orderId = localStorage.getItem("qr_active_order_id");
+      if (savedTable) {
+        const token = getStoredToken();
+        if (token) {
+          const q = await fetch(appendIdentifier(apiUrl(`/orders?table_number=${savedTable}`)), {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (q.ok) {
+            const raw = await q.json();
+            const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+            const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
 
-  const goToTypePicker = () => {
-    navigate("/qr/order-type", { replace: true }); // adjust to your route
-  };
+            if (openOrder) {
+              // all delivered? → reset
+              if (await allItemsDelivered(openOrder.id)) {
+                resetToTypePicker();
+                return;
+              }
 
-  useOrderAutoClose(orderId, goToTypePicker);
-// --- restore order status after refresh ---
-useEffect(() => {
-  try {
-    const shouldShow = localStorage.getItem("qr_show_status") === "1";
-    const active = JSON.parse(localStorage.getItem("qr_active_order") || "null");
-    if (shouldShow && active?.orderId) {
-      setOrderId(active.orderId);
-      setOrderType(active.orderType || null);
-      if (active.orderType === "table" && active.table) {
-        setTable(Number(active.table));
+              // restore
+              setOrderType("table");
+              setTable(savedTable);
+              setOrderId(openOrder.id);
+              setOrderStatus("success");
+              setShowStatus(true);
+
+              storage.setItem("qr_active_order_id", String(openOrder.id));
+              storage.setItem("qr_orderType", "table");
+              storage.setItem("qr_show_status", "1");
+              return;
+            }
+          }
+        }
       }
-      setShowStatus(true);
-    } else {
-      // restore last chosen type/table for continuity (optional)
-      const savedType = localStorage.getItem("qr_orderType");
-      const savedTable = localStorage.getItem("qr_table");
-      if (savedType) setOrderType(savedType);
-      if (savedType === "table" && savedTable) setTable(Number(savedTable));
+
+      // 3) Nothing to restore
+      setOrderType(null);
+      setTable(null);
+      setShowStatus(false);
+    } catch {
+      setOrderType(null);
+      setTable(null);
+      setShowStatus(false);
     }
-  } catch {}
-}, []);
+  })();
+}, [appendIdentifier]);
 
 
+  // QrMenu.jsx
   useEffect(() => {
-    secureFetch('category-images`)
-      .then((res) => res.json())
-      .then((data) => {
+    fetch(appendIdentifier(apiUrl("/category-images")))
+      .then(res => res.json())
+      .then(data => {
         const dict = {};
-        data.forEach(({ category, image }) => {
-          dict[category.trim().toLowerCase()] = `/uploads/${image}`;
+        (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
+          const key = (category || "").trim().toLowerCase();
+          if (!key || !image) return;
+          dict[key] = image; // <-- keep full Cloudinary URL (or relative) as-is
         });
         setCategoryImages(dict);
       })
       .catch(() => setCategoryImages({}));
-  }, []);
+  }, [appendIdentifier]);
+
 
   useEffect(() => {
-    localStorage.setItem("qr_cart", JSON.stringify(cart));
-  }, [cart]);
+    const storedCart = safeCart;
+    storage.setItem("qr_cart", JSON.stringify(storedCart));
+  }, [safeCart]);
 
   useEffect(() => {
-    secureFetch('products`)
-      .then((res) => res.json())
-      .then((data) => {
-        setProducts(data);
-        const cats = [...new Set(data.map((p) => p.category))].filter(Boolean);
+    let cancelled = false;
+
+    const parseArray = (raw) =>
+      Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+
+    const tryJSON = (value) => {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const loadProducts = async () => {
+      try {
+        const res = await fetch(appendIdentifier(apiUrl("/products")));
+        if (!res.ok) {
+          throw new Error(`Failed to fetch products (${res.status})`);
+        }
+        const payload = await res.json();
+        const list = parseArray(payload);
+        if (cancelled) return;
+        const listArray = toArray(list);
+        setProducts(listArray);
+        const cats = [...new Set(listArray.map((p) => p.category))].filter(Boolean);
         setCategories(cats);
         setActiveCategory(cats[0] || "");
-      });
+      } catch (err) {
+        console.warn("⚠️ Failed to fetch products:", err);
+        if (cancelled) return;
+        setProducts([]);
+        setCategories([]);
+        setActiveCategory("");
+      }
+    };
 
-    secureFetch('extras-groups`)
-      .then((res) => res.json())
-      .then((data) =>
+    const loadExtras = async () => {
+      try {
+        const res = await fetch(appendIdentifier(apiUrl("/extras-groups")));
+        if (!res.ok) {
+          throw new Error(`Failed to fetch extras groups (${res.status})`);
+        }
+        const payload = await res.json();
+        const list = parseArray(payload);
+        if (cancelled) return;
+        const listArray = toArray(list);
         setExtrasGroups(
-          (data || []).map((g) => ({
+          listArray.map((g) => ({
             groupName: g.groupName || g.group_name,
             items: typeof g.items === "string" ? tryJSON(g.items) : g.items || [],
           }))
-        )
-      );
+        );
+      } catch (err) {
+        console.warn("⚠️ Failed to fetch extras groups:", err);
+        if (cancelled) return;
+        setExtrasGroups([]);
+      }
+    };
 
-    secureFetch('orders`)
-      .then((res) => res.json())
-      .then((orders) => {
-        const occupied = orders
-          .filter((order) => order.table_number && order.status !== "closed")
-          .map((order) => Number(order.table_number));
-        setOccupiedTables(occupied);
-      });
+    loadProducts();
+    loadExtras();
 
-    function tryJSON(v) { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
-  }, []);
+    const token = getStoredToken();
+    if (token) {
+      fetch(appendIdentifier(apiUrl("/orders")), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`Failed to fetch orders (${res.status})`);
+          return res.json();
+        })
+        .then((orders) => {
+          if (cancelled) return;
+          const list = parseArray(orders);
+          const occupied = toArray(list)
+            .filter((order) => order?.table_number && order?.status !== "closed")
+            .map((order) => Number(order.table_number));
+         setOccupiedTables(occupied);
+        })
+        .catch((err) => {
+          console.warn("⚠️ Failed to fetch orders:", err);
+          if (!cancelled) setOccupiedTables([]);
+        });
+    } else {
+      setOccupiedTables([]);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appendIdentifier]);
+
+
+
+
+
+// --- Order type select (show modal here too if needed) ---
 if (!orderType)
   return (
-    <OrderTypeSelect
-      onSelect={(type) => {
-        setOrderType(type);
-        localStorage.setItem("qr_orderType", type);
-        if (type !== "table") {
-          localStorage.removeItem("qr_table");
-        }
-      }}
-      lang={lang}
-      setLang={setLang}
-      t={t}
-    />
-  );
-
-
-  if (orderType === "table" && !table)
-    return (
-<TableSelectModal
-  onSelectTable={(n) => {
-    setTable(n);
-    localStorage.setItem("qr_table", String(n));
-    localStorage.setItem("qr_orderType", "table");
+    <>
+   <OrderTypeSelect
+  onSelect={(type) => {
+    setOrderType(type);
+    if (type === "online") {
+      setShowDeliveryForm(true);
+    }
   }}
-  occupiedTables={occupiedTables}
-  onClose={() => setOrderType(null)}
+  lang={lang}
+  setLang={setLang}
   t={t}
+  onInstallClick={handleInstallClick}
+  canInstall={canInstall}
+  showHelp={showHelp}
+  setShowHelp={setShowHelp}
+  platform={platform}
 />
 
 
-    );
 
-  if (orderType === "online" && !customerInfo)
-    return (
-      <OnlineOrderForm
-        onSubmit={(info) => {
-          setCustomerInfo(info);
-          setPaymentMethod(info.payment_method);     // keep global in sync
+      {statusPortal}
+    </>
+  );
+
+// --- Table select (let THIS device re-open its own occupied table) ---
+if (orderType === "table" && !table) {
+  const myTable = Number(
+    storage.getItem("qr_table") ||
+    storage.getItem("qr_selected_table") ||
+    "0"
+  ) || null;
+
+  const filteredOccupied = myTable
+    ? safeOccupiedTables.filter((n) => n !== myTable)
+    : safeOccupiedTables;
+
+  return (
+    <>
+      <TableSelectModal
+        onSelectTable={async (n) => {
+          // Try to jump straight to an existing open order on this table
+          const token = getStoredToken();
+          if (token) {
+            try {
+              const res = await fetch(appendIdentifier(apiUrl(`/orders?table_number=${n}`)), {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+              if (res.ok) {
+                const raw = await res.json();
+                const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+                // backend often excludes closed already; be defensive
+                const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || list[0] || null;
+
+                if (openOrder) {
+                  setOrderType("table");
+                  setTable(n);
+                  setOrderId(openOrder.id);
+                  setActiveOrder(openOrder);
+                  setShowStatus(true);
+                  setOrderStatus("success");
+
+                  storage.setItem("qr_active_order", JSON.stringify({ orderId: openOrder.id, orderType: "table", table: n }));
+                  storage.setItem("qr_active_order_id", String(openOrder.id));
+                  storage.setItem("qr_orderType", "table");
+                  storage.setItem("qr_table", String(n));
+                  storage.setItem("qr_show_status", "1");
+                  return; // <- IMPORTANT: stop here so status opens
+                }
+              }
+            } catch (err) {
+              console.warn("⚠️ Failed to fetch orders for table:", err);
+              // fall through
+            }
+          }
+
+          // No open order -> proceed like a fresh selection
+          setTable(n);
+          storage.setItem("qr_table", String(n));
+          storage.setItem("qr_orderType", "table");
         }}
-        submitting={submitting}
+        occupiedTables={filteredOccupied}
         onClose={() => setOrderType(null)}
         t={t}
       />
-    );
+      {statusPortal}
+    </>
+  );
+}
+
+
+// ---- Rehydrate cart from current order (generate NEW unique_id for each line) ----
+// ---- Rehydrate cart from current order, but mark them as locked (read-only) ----
+async function rehydrateCartFromOrder(orderId) {
+  try {
+    const token = getStoredToken();
+    if (!token) {
+      console.info("ℹ️ Skipping cart rehydrate (no auth token)");
+      return;
+    }
+    const res = await fetch(appendIdentifier(apiUrl(`/orders/${orderId}/items`)), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) throw new Error("Failed to load order items");
+    const raw = await res.json();
+
+    const now36 = Date.now().toString(36);
+    const lockedItems = (Array.isArray(raw) ? raw : [])
+      // keep non-delivered so customer can see what is in progress/ready
+      .filter(i => (i.kitchen_status || "new") !== "delivered")
+      .map((it) => ({
+        id: it.product_id ?? it.external_product_id,
+        name: it.order_item_name || it.product_name || it.name || "Item",
+        price: Number(it.price || 0),
+        quantity: Number(it.quantity || 1),
+        extras: typeof it.extras === "string" ? JSON.parse(it.extras) : (it.extras || []),
+        note: it.note || "",
+        image: null,
+        unique_id: `${(it.product_id ?? it.external_product_id ?? "x")}-${now36}-${Math.random().toString(36).slice(2,8)}`,
+        locked: true, // ← ← ← IMPORTANT
+      }));
+
+    // Show only locked items for context; new items will be added later
+    setCart(lockedItems);
+  } catch (e) {
+    console.error("rehydrateCartFromOrder failed:", e);
+  }
+}
+
+// ---- Order Another: show previous lines (locked), start fresh for new ones ----
+async function handleOrderAnother() {
+  try {
+    setShowStatus(false);
+    setOrderStatus("pending");
+
+    // keep drawer closed; user opens if needed
+    storage.setItem("qr_cart_auto_open", "0");
+    window.dispatchEvent(new Event("qr:cart-close"));
+
+    // resolve existing order
+    let id = orderId || Number(storage.getItem("qr_active_order_id")) || null;
+    let type = orderType || storage.getItem("qr_orderType") || (table ? "table" : null);
+
+    // If table known but no id, fetch open order for that table
+    if (!id && (type === "table" || table)) {
+      const tNo = table || Number(storage.getItem("qr_table")) || null;
+      if (tNo) {
+        const token = getStoredToken();
+        if (token) {
+          try {
+            const q = await fetch(appendIdentifier(apiUrl(`/orders?table_number=${tNo}`)), {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (q.ok) {
+              const list = await q.json();
+              const arr = Array.isArray(list) ? list : (Array.isArray(list?.data) ? list.data : []);
+              const open = arr.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
+              if (open) {
+                id = open.id;
+                type = "table";
+                setOrderId(id);
+                setOrderType("table");
+              }
+            }
+          } catch (err) {
+            console.warn("⚠️ Failed to fetch open table order:", err);
+          }
+        }
+      }
+    }
+
+    // ONLINE branch: rehydrate previous (locked) items too
+    if (type === "online" && id) {
+      await rehydrateCartFromOrder(id); // sets locked: true items
+      setOrderType("online");
+      storage.setItem("qr_active_order_id", String(id));
+      storage.setItem("qr_orderType", "online");
+      storage.setItem("qr_show_status", "0");
+      setShowDeliveryForm(false); // don’t ask details again
+      return;
+    }
+
+    // TABLE branch (unchanged)
+    if (type === "table" && id) {
+      await rehydrateCartFromOrder(id); // sets locked: true items
+      storage.setItem("qr_active_order_id", String(id));
+      storage.setItem("qr_orderType", "table");
+      if (table) storage.setItem("qr_table", String(table));
+      storage.setItem("qr_show_status", "0");
+      return;
+    }
+
+    // nothing to restore → clean cart
+    setCart([]);
+    storage.setItem("qr_cart", "[]");
+    storage.setItem("qr_show_status", "0");
+  } catch (e) {
+    console.error("handleOrderAnother failed:", e);
+  }
+}
+
+
+
+
+
 
     function calcOrderTotalWithExtras(cart) {
   return cart.reduce((sum, item) => {
@@ -1517,142 +2399,214 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
     customer_name: customer?.name || null,
     customer_phone: customer?.phone || null,
     customer_address: customer?.address || null,
-    payment_method: null,
+    payment_method: paymentMethod || null,
   };
 }
-
-
 async function handleSubmitOrder() {
   try {
+    setSubmitting(true);
     setLastError(null);
 
-    if (!Array.isArray(cart) || cart.length === 0) {
-      throw new Error("Cart is empty.");
+    setOrderStatus("pending");
+    setShowStatus(true);
+
+    // Require delivery details only when starting a brand-new ONLINE order
+    const hasActiveOnline =
+      orderType === "online" &&
+      (orderId || storage.getItem("qr_active_order_id"));
+    if (orderType === "online" && !hasActiveOnline && !customerInfo) {
+      setShowDeliveryForm(true);
+      return;
     }
+
+    // 🔒 Require payment method ONLY for delivery orders
+    if (orderType === "online" && !paymentMethod) {
+      alert(t("Please select a payment method before continuing."));
+      setSubmitting(false);
+      setOrderStatus("pending");
+      setShowStatus(false);
+      return;
+    }
+
+    const newItems = toArray(cart).filter((i) => !i.locked);
+    if (newItems.length === 0) {
+      setOrderStatus("success");
+      setShowStatus(true);
+      return;
+    }
+
     if (orderType === "table" && !table) {
       throw new Error("Please select a table.");
     }
 
-    const total = calcOrderTotalWithExtras(cart); // keep your existing total logic
+    // ---------- APPEND to existing order ----------
+    if (orderId) {
+      const itemsPayload = newItems.map((i) => ({
+        product_id: i.id,
+        quantity: i.quantity,
+        price: parseFloat(i.price) || 0,
+        ingredients: i.ingredients ?? [],
+        extras: i.extras ?? [],
+        unique_id: i.unique_id,
+        note: i.note || null,
+        confirmed: true,
+        payment_method: null,
+        receipt_id: null,
+      }));
 
-  
-    // ---- TABLE SUB-ORDER: append to existing order (UNPAID) ----
-if (orderType === "table" && orderId) {
-  const itemsPayload = cart.map((i) => ({
-    product_id: i.id,
-    quantity: i.quantity,
-    price: parseFloat(i.price) || 0,
-    ingredients: i.ingredients ?? [],
-    extras: i.extras ?? [],
-    unique_id: i.unique_id,
-    note: i.note || null,
-    confirmed: true,        // send to kitchen right away
-    payment_method: null,   // NOT paid yet
-    receipt_id: null,
-    // kitchen_status: 'new', // optional; backend already sets when confirmed && not paid
-  }));
+      await postJSON(appendIdentifier(apiUrl("/orders/order-items")), {
+        order_id: orderId,
+        receipt_id: null,
+        items: itemsPayload,
+      });
 
-  await postJSON(`${API_URL}/api/orders/order-items`, {
-    order_id: orderId,
-    receipt_id: null,
-    items: itemsPayload,
-  });
-
-  // success: keep same order, clear cart, show status
-  setCart([]);
-  setOrderStatus("success");
-  setShowStatus(true);
-
-  localStorage.setItem("qr_active_order", JSON.stringify({ orderId, orderType, table }));
-  localStorage.setItem("qr_show_status", "1");
-
-  // (optional) refresh full order so status shows all items
-  try {
-    const full = await (await secureFetch('orders/${orderId}`)).json();
-    setActiveOrder?.(full);
-  } catch {}
-
-  return;
-}
-
-
-    // ---- ONLINE: ensure customer only for online ----
-    let customerId = null;
-    if (orderType === "online" && customerInfo?.phone) {
+      // Save/patch the chosen payment method on the order (ignore if backend doesn't support)
       try {
-        const searchRes = await secureFetch('customers?search=${customerInfo.phone}`);
-        const candidates = await searchRes.json();
-        const norm = (s) => (s || "").replace(/\D/g, "");
-        const exact = (Array.isArray(candidates) ? candidates : []).find(
-          (c) => norm(c.phone) === norm(customerInfo.phone)
-        );
-        if (exact) {
-          customerId = exact.id;
-        } else {
-          const created = await postJSON(`${API_URL}/api/customers`, {
-            name: customerInfo.name,
-            phone: customerInfo.phone,
-            email: null,
-            birthday: null,
-          });
-          customerId = created?.id;
-        }
-        if (customerId && customerInfo.address) {
-          await postJSON(`${API_URL}/api/customers/${customerId}/addresses`, {
-            label: "Home",
-            address: customerInfo.address,
-            is_default: true,
-          });
-        }
-      } catch (e) {
-        console.error("ensure-customer failed:", e);
-        // don't block order creation for online if address save fails
+        await fetch(appendIdentifier(apiUrl(`/orders/${orderId}`)), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payment_method: paymentMethod }),
+        });
+      } catch {}
+
+      // If user chose Online, create/refresh a checkout session
+      if (paymentMethod === "online") {
+        await startOnlinePaymentSession(orderId);
+        try {
+         await fetch(appendIdentifier(apiUrl(`/orders/${orderId}/status`)), {
+           method: "PUT",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({
+             status: "paid",
+             payment_method: "Online",
+             total: newItems.reduce(
+               (sum, i) =>
+                 sum +
+                 (parseFloat(i.price) +
+                   (i.extras || []).reduce(
+                     (s, ex) =>
+                     s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+                     0
+                   )) *
+                   (i.quantity || 1),
+               0
+             ),
+           }),
+         });
+       } catch (err) {
+         console.error("❌ Failed to mark existing online order as paid:", err);
+       }
       }
+
+      // clear only NEW items
+      setCart((prev) => toArray(prev).filter((i) => i.locked));
+
+      storage.setItem(
+        "qr_active_order",
+        JSON.stringify({
+          orderId,
+          orderType,
+          table: orderType === "table" ? table : null,
+        })
+      );
+      storage.setItem("qr_active_order_id", String(orderId));
+      if (orderType === "table" && table)
+        storage.setItem("qr_table", String(table));
+      storage.setItem("qr_orderType", orderType);
+      storage.setItem("qr_payment_method", paymentMethod);
+      storage.setItem("qr_show_status", "1");
+
+      setOrderStatus("success");
+      setShowStatus(true);
+      return;
     }
 
-    // ---- CREATE NEW ORDER (table OR online) ----
-    const created = await postJSON(
-  `${API_URL}/api/orders`,
-  buildOrderPayload({
-    orderType,
-    table,
-    items: cart,
-    total,
-    customer: orderType === "online" ? customerInfo : null,
-  })
-);
+    // ---------- CREATE brand-new order ----------
+    const total = newItems.reduce((sum, item) => {
+      const extrasTotal = (item.extras || []).reduce(
+        (s, ex) =>
+          s +
+          (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
+            (ex.quantity || 1),
+        0
+      );
+      return (
+        sum +
+        (parseFloat(item.price) + extrasTotal) * (item.quantity || 1)
+      );
+    }, 0);
 
+    const created = await postJSON(
+      appendIdentifier(apiUrl("/orders")),
+      buildOrderPayload({
+        orderType,
+        table,
+        items: newItems,
+        total,
+        customer: orderType === "online" ? customerInfo : null,
+        // 👇 tell backend what the customer selected (store it on the order)
+        payment_method: paymentMethod,
+      })
+    );
 
     const newId = created?.id;
     if (!newId) throw new Error("Server did not return order id.");
 
+    // If Online, start a checkout session for this order
+    if (paymentMethod === "online") {
+      await startOnlinePaymentSession(newId);
+          // 🔑 Immediately mark order as Paid Online
+     try {
+       await fetch(appendIdentifier(apiUrl(`/orders/${newId}/status`)), {
+         method: "PUT",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+           status: "paid",
+           payment_method: "Online",
+           total,
+         }),
+       });
+       console.log("✅ Order marked Paid Online");
+     } catch (err) {
+       console.error("❌ Failed to mark online order as paid:", err);
+     }
+    }
+
     setOrderId(newId);
+    storage.setItem(
+      "qr_active_order",
+      JSON.stringify({
+        orderId: newId,
+        orderType,
+        table: orderType === "table" ? table : null,
+      })
+    );
+    storage.setItem("qr_active_order_id", String(newId));
+    if (orderType === "table" && table)
+      storage.setItem("qr_table", String(table));
+    storage.setItem("qr_orderType", orderType);
+    storage.setItem("qr_payment_method", paymentMethod);
+    storage.setItem("qr_show_status", "1");
+
+    setCart([]); // fresh order → empty cart
     setOrderStatus("success");
     setShowStatus(true);
-    setCart([]);
-
-    localStorage.setItem(
-      "qr_active_order",
-      JSON.stringify({ orderId: newId, orderType, table: orderType === "table" ? table : null })
-    );
-    localStorage.setItem("qr_show_status", "1");
   } catch (e) {
     console.error("Order submit failed:", e);
+    setLastError(e.message || "Order failed");
     setOrderStatus("fail");
     setShowStatus(true);
-    setLastError(e.message || "Order failed");
+  } finally {
+    setSubmitting(false);
   }
 }
-
-
-
 
 function handleReset() {
   setShowStatus(false);
   setOrderStatus("pending");
   setCart([]);
-  localStorage.removeItem("qr_cart");
-  localStorage.setItem("qr_show_status", "0");
+  storage.removeItem("qr_cart");
+  storage.setItem("qr_show_status", "0");
 
   if (orderType === "table") {
     // Stay on same table & keep orderId for sub-orders
@@ -1664,83 +2618,95 @@ function handleReset() {
   setOrderId(null);
   setOrderType(null);
   setCustomerInfo(null);
-  localStorage.removeItem("qr_active_order");
+  storage.removeItem("qr_active_order");
 }
 
 
   
 
-  return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
-      <QrHeader
-        orderType={orderType}
-        table={table}
-        onClose={() => { setOrderType(null); }}
-        t={t}
-      />
+return (
+  <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
+    <QrHeader
+      orderType={orderType}
+      table={table}
+      onClose={handleCloseOrderPage}
+      t={t}
+    />
 
-      <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
-        <ProductGrid
-          products={products.filter((p) => p.category === activeCategory)}
-          onProductClick={(product) => {
-            setSelectedProduct(product);
-            setShowAddModal(true);
-          }}
-          t={t}
-        />
-      </div>
-
-      <CategoryBar
-        categories={categories}
-        activeCategory={activeCategory}
-        setActiveCategory={setActiveCategory}
-        categoryImages={categoryImages}
-      />
-
-      <CartDrawer
-        cart={cart}
-        setCart={setCart}
-        orderType={orderType}
-        onSubmitOrder={handleSubmitOrder}
-        paymentMethod={paymentMethod}
-        setPaymentMethod={setPaymentMethod}
-        submitting={submitting}
-        t={t}
-      />
-
-      <AddToCartModal
-        open={showAddModal}
-        product={selectedProduct}
-        extrasGroups={extrasGroups}
-        onClose={() => setShowAddModal(false)}
-        onAddToCart={(item) => {
-          setCart((prev) => {
-            const idx = prev.findIndex((x) => x.unique_id === item.unique_id);
-            if (idx !== -1) {
-              const copy = [...prev];
-              copy[idx].quantity += item.quantity;
-              return copy;
-            }
-            return [...prev, item];
-          });
-          setShowAddModal(false);
+    <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
+      <ProductGrid
+        products={productsInActiveCategory}
+        onProductClick={(product) => {
+          setSelectedProduct(product);
+          setShowAddModal(true);
         }}
         t={t}
       />
+    </div>
 
-  <OrderStatusModal
-    open={showStatus}
-    status={orderStatus}
-    orderId={orderId}
-    table={orderType === "table" ? table : null}
-    onOrderAnother={handleOrderAnother}
-    onClose={handleReset}
-    onFinished={resetToTypePicker}
+    <CategoryBar
+      categories={safeCategories}
+      activeCategory={activeCategory}
+      setActiveCategory={setActiveCategory}
+      categoryImages={categoryImages}
+    />
+
+    <CartDrawer
+  cart={safeCart}
+  setCart={setCart}
+  onSubmitOrder={handleSubmitOrder}
+  orderType={orderType}                 // ✅ add this
+  paymentMethod={paymentMethod}
+  setPaymentMethod={setPaymentMethod}
+  submitting={submitting}
+  onOrderAnother={handleOrderAnother}
+  t={t}
+/>
+
+
+    <AddToCartModal
+      open={showAddModal}
+      product={selectedProduct}
+      extrasGroups={safeExtrasGroups}
+      onClose={() => setShowAddModal(false)}
+      onAddToCart={(item) => {
+  storage.setItem("qr_cart_auto_open", "1");
+  setCart((prev) => [...prev, item]);   // always append new line
+  setShowAddModal(false);
+}}
+
+
+      t={t}
+    />
+
+    {/* 🔑 Show Order Status after submit */}
+    {statusPortal}
+
+    {/* ✅ Delivery form stays inside the return */}
+   {((orderType === "online" && showDeliveryForm) || 
+  (orderType === "table" && paymentMethod === "online" && showDeliveryForm)) && (
+  <OnlineOrderForm
+    submitting={submitting}
     t={t}
+    onClose={() => {
+      setShowDeliveryForm(false);
+      if (orderType === "online") setOrderType(null); // keep table
+    }}
+    onSubmit={(form) => {
+      setCustomerInfo({
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        payment_method: form.payment_method,
+      });
+      setShowDeliveryForm(false);
+    }}
   />
+)}
 
-</div>
+
+
+  </div>
 );
+
 }
-
-

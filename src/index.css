@@ -8,6 +8,11 @@
   --font-size: 16px;
 }
 
+html {
+  overflow-y: scroll;
+}
+
+
 /* ✅ High Contrast Mode */
 .contrast-more * {
   outline: 2px dashed var(--accent-color);

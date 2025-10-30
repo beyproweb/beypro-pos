@@ -251,30 +251,55 @@ function calcOrderBaseTotal(order) {
 useEffect(() => {
   if (showPaymentModal && editingPaymentOrder) {
     const fetchSplit = async () => {
-      if (editingPaymentOrder.receipt_id) {
-        const res = await fetch(`${API_URL}/receipt-methods/${editingPaymentOrder.receipt_id}`);
-        const split = await res.json();
-        if (Array.isArray(split) && split.length) {
-          setSplitPayments(
-            split.map(row => ({ method: row.payment_method, amount: row.amount }))
+      try {
+        if (editingPaymentOrder.receipt_id) {
+          const split = await secureFetch(
+            `/receipt-methods/${editingPaymentOrder.receipt_id}`
           );
-          return;
+
+          if (Array.isArray(split) && split.length) {
+            setSplitPayments(
+              split.map((row) => ({
+                method: row.payment_method,
+                amount: row.amount,
+              }))
+            );
+            return;
+          }
         }
+
+        // 🧮 Always use calcOrderTotalWithExtras!
+        const totalWithExtras = calcOrderTotalWithExtras(editingPaymentOrder);
+        const discounted =
+          totalWithExtras - calcOrderDiscount(editingPaymentOrder);
+
+        setSplitPayments([
+          {
+            method: editingPaymentOrder.payment_method || "Cash",
+            amount: discounted,
+          },
+        ]);
+      } catch (err) {
+        console.warn("⚠️ Failed to fetch split payments:", err);
+
+        // fallback if request fails
+        const totalWithExtras = calcOrderTotalWithExtras(editingPaymentOrder);
+        const discounted =
+          totalWithExtras - calcOrderDiscount(editingPaymentOrder);
+        setSplitPayments([
+          {
+            method: editingPaymentOrder.payment_method || "Cash",
+            amount: discounted,
+          },
+        ]);
       }
-      // Always use calcOrderTotalWithExtras!
-const totalWithExtras = calcOrderTotalWithExtras(editingPaymentOrder);
-const discounted = totalWithExtras - calcOrderDiscount(editingPaymentOrder);
-setSplitPayments([
-  { method: editingPaymentOrder.payment_method || "Cash", amount: discounted },
-]);
-
-
     };
 
     fetchSplit();
   }
   // eslint-disable-next-line
 }, [showPaymentModal, editingPaymentOrder]);
+
 
 
 
@@ -1189,7 +1214,29 @@ const totalDiscount = calcOrderDiscount(order);
     <span className="mr-1">✅</span> Confirmed
   </span>
 )}
+ <div className="flex items-center gap-2">
+    {/* 🖨️ Print button (always if order exists & has items) */}
+    {order && order.items?.length > 0 && (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          console.log(`🖨️ Print clicked for order #${order.id}`);
+          // handlePrintReceipt(order); // ← wire later
+        }}
+        className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-bold rounded-full shadow hover:brightness-105 border border-slate-300"
+        title={t("Print Receipt")}
+      >
+        🖨️
+      </button>
+    )}
 
+    {/* ✅ Paid badge */}
+    {(order.status === "paid" || order.payment_status === "paid" || order.is_paid) && (
+      <span className="px-3 py-1 bg-green-100 text-green-800 font-bold rounded-full shadow-sm">
+        ✅ {t("Paid")}
+      </span>
+    )}
+  </div>
 {/* Auto-confirmed badge, always solid */}
 {autoConfirmOrders && order.status === "confirmed" && (
   <span
@@ -1713,15 +1760,15 @@ onClick={async () => {
     }),
   });
 
-  await fetch(`${API_URL}/${editingPaymentOrder.id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      payment_method: splitPayments[0].method,
-      total: grandTotal,
-      receipt_id: receiptId
-    })
-  });
+await secureFetch(`/${editingPaymentOrder.id}`, {
+  method: "PUT",
+  body: JSON.stringify({
+    payment_method: splitPayments[0].method,
+    total: grandTotal,
+    receipt_id: receiptId,
+  }),
+});
+
   setShowPaymentModal(false);
   await fetchOrders();
 }}

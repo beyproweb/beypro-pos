@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Card } from "../components/ui/card";
 import { CalendarIcon } from "lucide-react";
-const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../utils/secureFetch";
 
 export default function CashRegisterHistory() {
   const { t } = useTranslation();
@@ -10,12 +10,16 @@ export default function CashRegisterHistory() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  const fetchHistory = () => {
+  const fetchHistory = async () => {
     if (!from || !to) return;
-    secureFetch("reports/cash-register-history?from=${from}&to=${to}")
-      .then(res => res.json())
-      .then(setHistory)
-      .catch(err => console.error("❌ Failed to fetch register history:", err));
+    try {
+      const data = await secureFetch(
+        `/reports/cash-register-history?from=${from}&to=${to}`
+      );
+      setHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("❌ Failed to fetch register history:", err);
+    }
   };
 
   useEffect(() => {

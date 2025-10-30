@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { MapPin, User, Plus, Pencil, Trash2, Gift } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
+import { toast } from "react-hot-toast";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -153,7 +154,11 @@ const handleEditCustomer = async (id) => {
   try {
     const updated = await secureFetch(`/customers/${id}`, {
       method: "PATCH",
-      body: JSON.stringify(editForm),
+    body: JSON.stringify({
+  ...editForm,
+  birthday: editForm.birthday || null,
+})
+
     });
 
     if (updated && updated.id) {

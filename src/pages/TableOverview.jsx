@@ -32,14 +32,16 @@ const getTableColor = (order) => {
   if (!order) return "bg-gray-300 text-black";
 
   // 🟢 Paid orders (even if backend resets status to "confirmed")
-  if (order.is_paid || order.status === "paid") {
-    const allDelivered = order.suborders?.every(
-      (sub) => sub.kitchen_status === "delivered"
-    );
-    return allDelivered
-      ? "bg-green-500 text-white" // fully delivered & paid
-      : "bg-yellow-400 text-black"; // partially delivered but paid
-  }
+// 🟢 Paid orders (support backend payment_status field)
+if (order.is_paid || order.status === "paid" || order.payment_status === "paid") {
+  const allDelivered = Array.isArray(order.items)
+    ? order.items.every((i) => i.kitchen_status === "delivered")
+    : false;
+  return allDelivered
+    ? "bg-green-500 text-white" // fully delivered & paid
+    : "bg-yellow-400 text-black"; // partially delivered but paid
+}
+
 
   // 🔴 Confirmed but unpaid
   if (order.status === "confirmed") return "bg-red-500 text-white";
@@ -118,14 +120,37 @@ const [todayExpenses, setTodayExpenses] = useState([]);
 
 const handleCloseTable = async (orderId) => {
   try {
+    // 🔎 Fetch the order items first
+    const items = await secureFetch(`/orders/${orderId}/items`);
+    if (!Array.isArray(items)) {
+      toast.error("Failed to verify kitchen items");
+      return;
+    }
+
+    // ✅ Check if all items are delivered or excluded
+    const allDelivered = items.every(
+      (i) =>
+        i.kitchen_status === "delivered" ||
+        !i.kitchen_status || // no kitchen step (e.g., drinks)
+        i.excluded === true || // backend flag if present
+        i.category === "Drinks" // optional soft check
+    );
+
+    if (!allDelivered) {
+      toast.warning("⚠️ Cannot close table: not all items delivered!");
+      return;
+    }
+
+    // ✅ Proceed with close only if all delivered
     await secureFetch(`/orders/${orderId}/close`, { method: "POST" });
-    toast.success("Table closed successfully!");
-    await fetchOrders(); // refresh tables after closing
+    toast.success("✅ Table closed successfully!");
+    await fetchOrders();
   } catch (err) {
     console.error("❌ Failed to close table:", err);
     toast.error("Failed to close table");
   }
 };
+
 
 useEffect(() => {
   if (!showRegisterModal) return;
@@ -180,6 +205,15 @@ const TAB_LIST = [
   { id: "phone", label: "Phone", icon: "📞" },
   { id: "register", label: "Register", icon: "💵" }
 ];
+const SIDEBAR_DRAG_TYPE = "application/x-dashboard-shortcut";
+const TAB_TO_SIDEBAR = {
+  tables: { labelKey: "Tables", defaultLabel: "Tables", path: "/tables" },
+  kitchen: { labelKey: "Kitchen", defaultLabel: "Kitchen", path: "/kitchen" },
+  history: { labelKey: "History", defaultLabel: "History", path: "/tableoverview?tab=history" },
+  packet: { labelKey: "Packet", defaultLabel: "Packet", path: "/tableoverview?tab=packet" },
+  phone: { labelKey: "Phone", defaultLabel: "Phone", path: "/tableoverview?tab=phone" },
+  register: { labelKey: "Register", defaultLabel: "Register", path: "/tableoverview?tab=register" },
+};
 const visibleTabs = TAB_LIST.filter(tab => {
   const map = {
     phone: "phone-orders",
@@ -192,6 +226,29 @@ const visibleTabs = TAB_LIST.filter(tab => {
   const key = map[tab.id] || tab.id;
   return useHasPermission(key);
 });
+
+  const handleTabDragStart = (tab) => (event) => {
+    const payload = TAB_TO_SIDEBAR[tab.id];
+    if (!payload) return;
+    event.dataTransfer.effectAllowed = "move";
+    try {
+      event.dataTransfer.setData(
+        SIDEBAR_DRAG_TYPE,
+        JSON.stringify({
+          labelKey: payload.labelKey,
+          defaultLabel: payload.defaultLabel,
+          path: payload.path,
+        })
+      );
+    } catch {
+      /* ignore serialization errors */
+    }
+  };
+
+  useEffect(() => {
+    setShowPhoneOrderModal(activeTab === "phone");
+    setShowRegisterModal(activeTab === "register");
+  }, [activeTab]);
 
 useEffect(() => {
   const titlesByTab = {
@@ -455,6 +512,8 @@ useEffect(() => {
 }, []);
 
 const fetchOrders = async () => {
+  console.log("🔍 Current user before fetch:", currentUser);
+  console.log("🔍 Token in localStorage:", localStorage.getItem("token"));
   try {
     // Always use secureFetch → tenant_id + auth included
     const data = await secureFetch("/orders");
@@ -654,6 +713,7 @@ const handleTableClick = async (table) => {
       hideProgressBar: false,
     });
     // Optionally, open the register modal here:
+    setActiveTab("register");
     setShowRegisterModal(true);
     return;
   }
@@ -700,11 +760,14 @@ if (!table.order) {
  const markMultipleAsDelivered = async (itemIds) => {
   try {
     new Audio("/sound-ready.mp3").play(); // 🔊 Play instantly
-    await fetch(`${API_URL}/order-items/kitchen-status`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: itemIds, status: "delivered" }),
-    });
+await secureFetch("/orders/order-items/kitchen-status", {
+  method: "PUT",
+  body: JSON.stringify({
+    ids: itemIds,
+    status: "delivered",
+  }),
+});
+
     fetchKitchenOrders();
   } catch (err) {
     console.error("❌ Failed to mark as delivered:", err);
@@ -765,10 +828,10 @@ useEffect(() => {
           <button
             key={tab.id}
             onClick={() => {
-              if (tab.id === "phone") setShowPhoneOrderModal(true);
-              else if (tab.id === "register") setShowRegisterModal(true);
-              else setActiveTab(tab.id);
+              setActiveTab(tab.id);
             }}
+            draggable={Boolean(TAB_TO_SIDEBAR[tab.id])}
+            onDragStart={handleTabDragStart(tab)}
             className={`
               flex items-center gap-2 px-6 py-3 rounded-full font-bold text-lg shadow-xl
               transition-all duration-200 backdrop-blur
@@ -875,29 +938,52 @@ useEffect(() => {
   </div>
 
 
-  {/* Bottom Row: Total and "Over 1 min" alert */}
+{/* Bottom Row: Total, alerts, and action buttons */}
 <div className="flex items-end justify-between mt-2">
   {isDelayed(table.order) && (
     <span className="text-yellow-500 font-bold animate-pulse drop-shadow">⚠️</span>
   )}
 
   <div className="flex items-center gap-3 ml-auto">
+    {/* 💰 Total */}
     <span className="text-lg font-bold text-indigo-700 dark:text-indigo-200 tracking-wide">
       ₺{getDisplayTotal(table.order).toFixed(2)}
     </span>
 
-    {/* ✅ Show Close button only when order is paid */}
-    {table.order?.status === "paid" && (
+    {/* 🖨️ Print button — show if order exists and has at least 1 item */}
+    {table.order && table.order.items?.length > 0 && (
       <button
         onClick={(e) => {
           e.stopPropagation();
-          handleCloseTable(table.order.id);
+          console.log(`🖨️ Print clicked for Table ${table.table_number}`);
+          // handlePrintReceipt(table.order); // ← wire later
         }}
-        className="px-3 py-1.5 bg-gradient-to-r from-green-400 via-blue-400 to-indigo-400 text-white font-bold rounded-full shadow hover:scale-105 transition"
-        title="Close Table"
+        className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-bold rounded-full shadow hover:brightness-105 border border-slate-300"
+        title={t("Print Receipt")}
       >
-        🔒 {t("Close")}
+        🖨️
       </button>
+    )}
+
+    {/* ✅ Paid badge & Close button */}
+    {(table.order?.status === "paid" ||
+      table.order?.payment_status === "paid" ||
+      table.order?.is_paid) && (
+      <>
+        <span className="px-3 py-1 bg-green-100 text-green-800 font-bold rounded-full shadow-sm">
+          ✅ {t("Paid")}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleCloseTable(table.order.id);
+          }}
+          className="px-3 py-1.5 bg-gradient-to-r from-green-400 via-blue-400 to-indigo-400 text-white font-bold rounded-full shadow hover:scale-105 transition"
+          title="Close Table"
+        >
+          🔒 {t("Close")}
+        </button>
+      </>
     )}
   </div>
 </div>
@@ -915,7 +1001,10 @@ useEffect(() => {
     {showPhoneOrderModal && (
       <PhoneOrderModal
         open={showPhoneOrderModal}
-        onClose={() => setShowPhoneOrderModal(false)}
+        onClose={() => {
+          setShowPhoneOrderModal(false);
+          setActiveTab("tables");
+        }}
 onCreateOrder={() => {
   setShowPhoneOrderModal(false);
   setActiveTab("tables");
@@ -1060,7 +1149,10 @@ onCreateOrder={() => {
     >
       {/* Close Button */}
       <button
-        onClick={() => setShowRegisterModal(false)}
+        onClick={() => {
+          setShowRegisterModal(false);
+          setActiveTab("tables");
+        }}
         className="absolute top-5 right-5 text-2xl text-gray-400 hover:text-indigo-700 transition-all hover:-translate-y-1"
         title={t("Close")}
         aria-label="Close"

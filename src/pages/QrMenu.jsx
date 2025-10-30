@@ -1,10 +1,19 @@
 // src/pages/QrMenu.jsx
-import React, { useState, useEffect, useRef, memo, useMemo } from "react";
+// src/pages/QrMenu.jsx
+import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import secureFetch from "../utils/secureFetch";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
+const RAW_API = import.meta.env.VITE_API_URL || "";
+const API_ROOT = RAW_API.replace(/\/+$/, "");
+const API_BASE = API_ROOT.endsWith("/api")
+  ? API_ROOT.slice(0, -4)
+  : API_ROOT || "";
+const API_URL = API_BASE ? `${API_BASE}/api` : "/api";
+const apiUrl = (path) =>
+  `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
 const QR_PREFIX = "qr_";
 
 function computeTenantSuffix() {
@@ -27,6 +36,14 @@ function computeTenantSuffix() {
     if (queryTenant && queryTenant !== "undefined" && queryTenant !== "null") {
       // Don't persist query-derived tenant; just scope storage while URL has it
       return `${queryTenant}_`;
+    }
+
+    const pathSegments = (window.location.pathname || "")
+      .split("/")
+      .filter(Boolean);
+    const qrIndex = pathSegments.indexOf("qr-menu");
+    if (qrIndex !== -1 && pathSegments[qrIndex + 1]) {
+      return `${pathSegments[qrIndex + 1]}_`;
     }
   } catch {
     // ignore – fall back to legacy global storage keys
@@ -134,14 +151,34 @@ const toArray = (value) => {
 // --- TABLE PERSISTENCE HELPERS ---
 const TABLE_KEY = "qr_selected_table";
 
+function normalizeToken(raw) {
+  return String(raw || "")
+    .replace(/^["']|["']$/g, "")
+    .replace(/^Bearer\s+/i, "")
+    .trim();
+}
+
 function getStoredToken() {
   try {
     const direct = storage.getItem("token");
-    if (direct && direct !== "null" && direct !== "undefined") return direct;
-    const stored = storage.getItem("beyproUser");
-    if (!stored) return null;
-    const parsed = JSON.parse(stored);
-    return parsed?.token || parsed?.accessToken || null;
+    let candidate = null;
+
+    if (direct && direct !== "null" && direct !== "undefined") {
+      candidate = direct;
+    } else {
+      const stored = storage.getItem("beyproUser");
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      candidate =
+        parsed?.token ||
+        parsed?.accessToken ||
+        parsed?.user?.token ||
+        parsed?.user?.accessToken ||
+        null;
+    }
+
+    const clean = normalizeToken(candidate);
+    return clean || null;
   } catch {
     return null;
   }
@@ -435,10 +472,10 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
         navigator.share({
           title: "Beypro QR Menu",
           text: "Check out our menu!",
-          url: "https://pos.beypro.com/qr-menu",
+          url: shareUrl,
         }).catch((err) => console.error("Share failed:", err));
       } else {
-        navigator.clipboard.writeText("https://pos.beypro.com/qr-menu").then(() => {
+        navigator.clipboard.writeText(shareUrl).then(() => {
           alert("Link copied! You can paste it into WhatsApp or any app.");
         });
       }
@@ -584,7 +621,8 @@ function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTab
 }
 
 /* ====================== ONLINE ORDER FORM (with card fields) ====================== */
-function OnlineOrderForm({ onSubmit, submitting, onClose, t }) {
+function OnlineOrderForm({ submitting, t, onClose, onSubmit, appendIdentifier }) {
+
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -622,7 +660,7 @@ useEffect(() => {
       }));
     }
   } catch {}
-}, []);
+}, [appendIdentifier]);
 
 
 
@@ -648,8 +686,7 @@ useEffect(() => {
   }, [form.phone]);
   // ⬆️ end: saved card handling
 
-  async function saveDelivery() {
-  // basic form completeness for save
+async function saveDelivery() {
   const name = (form.name || "").trim();
   const phone = (form.phone || "").trim();
   const address = (form.address || "").trim();
@@ -658,51 +695,50 @@ useEffect(() => {
 
   setSaving(true);
   try {
-    // 1) Save locally so it's there on next open
+    // 1️⃣ Save locally first
     storage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
 
-    // 2) Try to sync with backend (best-effort)
+    // 2️⃣ Sync with backend (tenant-safe)
     try {
-      // find existing customer
-      let res = await fetch(`${API_URL}/api/customers/by-phone/${phone}`);
-      let customer = await res.json();
+      // try to find customer by phone (✅ now tenant-aware)
+      let customer = await secureFetch(appendIdentifier(`/customers?phone=${phone}`), {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
 
-      // create if not exists
-      if (!customer) {
-        const cr = await fetch(`${API_URL}/api/customers`, {
+      // if not found → create (✅ tenant-aware)
+      if (!customer || !customer.id) {
+        customer = await secureFetch(appendIdentifier("/customers"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, phone }),
         });
-        customer = await cr.json();
       }
 
-      // ensure default address
-      if (customer && (customer.id || customer.customer_id || customer.ID)) {
-        const cid = customer.id ?? customer.customer_id ?? customer.ID;
+      // ensure address exists (✅ tenant-aware)
+      if (customer && (customer.id || customer.customer_id)) {
+        const cid = customer.id ?? customer.customer_id;
+        const addrs = Array.isArray(customer.addresses) ? customer.addresses : [];
 
-        const existing = Array.isArray(customer.addresses)
-          ? customer.addresses.find((a) => (a.address || "").trim() === address)
-          : null;
-
+        const existing = addrs.find((a) => (a.address || "").trim() === address);
         if (existing) {
           if (!existing.is_default) {
-            await fetch(`${API_URL}/api/customer-addresses/${existing.id}`, {
+            await secureFetch(appendIdentifier(`/customer-addresses/${existing.id}`), {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ is_default: true }),
             });
           }
         } else {
-          await fetch(`${API_URL}/api/customers/${cid}/addresses`, {
+          await secureFetch(appendIdentifier(`/customers/${cid}/addresses`), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ label: "Default", address, is_default: true }),
           });
         }
       }
-    } catch {
-      // Backend sync is best-effort; local save is enough for UX
+    } catch (err) {
+      console.warn("⚠️ Backend sync failed:", err);
     }
 
     setSavedOnce(true);
@@ -710,6 +746,7 @@ useEffect(() => {
     setSaving(false);
   }
 }
+
 
 
   // Auto-prefill name + default address when phone is valid
@@ -720,8 +757,12 @@ useEffect(() => {
   (async () => {
     try {
       // exact match + addresses in one call
-      const res = await fetch(`${API_URL}/api/customers/by-phone/${form.phone}`);
-      const match = await res.json();
+      const res = await secureFetch(`/customers?phone=${form.phone}`, {
+  method: "GET",
+  headers: { "Content-Type": "application/json" },
+});
+const match = await res.json();
+
       if (!match) return;
 
       if (match.name && !form.name) {
@@ -1129,40 +1170,46 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
       (ex) => ex.group === groupName && ex.name === itemName
     )?.quantity || 0;
 
-  const incExtra = (group, item) => {
-    setSelectedExtras((prev) => {
-      const idx = prev.findIndex(
-        (ex) => ex.group === group.groupName && ex.name === item.name
+const incExtra = (group, item) => {
+  setSelectedExtras((prev) => {
+    const existing = prev.find(
+      (ex) => ex.group === group.groupName && ex.name === item.name
+    );
+    if (existing) {
+      // ✅ only increment once
+      return prev.map((ex) =>
+        ex.group === group.groupName && ex.name === item.name
+          ? { ...ex, quantity: (ex.quantity || 0) + 1 }
+          : ex
       );
-      if (idx === -1) {
-        return [
-          ...prev,
-          {
-            group: group.groupName,
-            name: item.name,
-            price: priceOf(item),
-            quantity: 1,
-          },
-        ];
-      }
-      const copy = [...prev];
-      copy[idx].quantity = (copy[idx].quantity || 0) + 1;
-      return copy;
-    });
-  };
+    } else {
+      // ✅ add new extra cleanly
+      return [
+        ...prev,
+        {
+          group: group.groupName,
+          name: item.name,
+          price: priceOf(item),
+          quantity: 1,
+        },
+      ];
+    }
+  });
+};
 
-  const decExtra = (group, item) => {
-    setSelectedExtras((prev) => {
-      const idx = prev.findIndex(
-        (ex) => ex.group === group.groupName && ex.name === item.name
-      );
-      if (idx === -1) return prev;
-      const copy = [...prev];
-      copy[idx].quantity = Math.max(0, (copy[idx].quantity || 0) - 1);
-      if (copy[idx].quantity === 0) copy.splice(idx, 1);
-      return copy;
-    });
-  };
+
+const decExtra = (group, item) => {
+  setSelectedExtras((prev) =>
+    prev
+      .map((ex) =>
+        ex.group === group.groupName && ex.name === item.name
+          ? { ...ex, quantity: Math.max(0, (ex.quantity || 0) - 1) }
+          : ex
+      )
+      .filter((ex) => ex.quantity > 0) // 🧹 auto-remove zeroes
+  );
+};
+
 
   const handleBackdrop = (e) => {
     if (e.target.dataset.backdrop === "true") onClose?.();
@@ -1336,21 +1383,17 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
                 .toString(36)
                 .slice(2, 8)}`;
               const extrasList = toArray(selectedExtras);
-              onAddToCart({
-                id: product.id,
-                name: product.name,
-                image: product.image,
-                price:
-                  basePrice +
-                  extrasList.reduce(
-                    (s, ex) => s + (ex.price || 0) * (ex.quantity || 1),
-                    0
-                  ),
-                quantity,
-                extras: extrasList.filter((e) => e.quantity > 0),
-                note,
-                unique_id,
-              });
+            onAddToCart({
+  id: product.id,
+  name: product.name,
+  image: product.image,
+  price: basePrice, // ✅ only base price here
+  quantity,
+  extras: extrasList.filter((e) => e.quantity > 0),
+  note,
+  unique_id,
+});
+
             }}
           >
             {t("Add to Cart")}
@@ -1382,13 +1425,15 @@ function CartDrawer({
   const newItems  = cartArray.filter((i) => !i.locked);
 
   const lineTotal = (item) => {
+    const base = parseFloat(item.price) || 0;
     const extrasTotal = (item.extras || []).reduce(
-      (s, ex) => s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+      (sum, ex) => sum + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
       0
     );
-    return (parseFloat(item.price) || 0 + extrasTotal) * (item.quantity || 1);
+    return (base + extrasTotal) * (item.quantity || 1);
   };
-  const total = newItems.reduce((sum, i) => sum + lineTotal(i), 0);
+
+  const total = newItems.reduce((sum, item) => sum + lineTotal(item), 0);
 
   // 👂 close by global event
   useEffect(() => {
@@ -1583,7 +1628,7 @@ function CartDrawer({
 
 async function startOnlinePaymentSession(id) {
   try {
-    const res = await fetch(`${API_URL}/api/payments/start`, {
+    const res = await secureFetch('/payments/start' , {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ order_id: id, method: "online" }),
@@ -1608,7 +1653,7 @@ async function startOnlinePaymentSession(id) {
 
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t }) {
+function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier }) {
   if (!open) return null;
 
   const title =
@@ -1636,13 +1681,15 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
         {/* Scrollable content */}
        <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
   {orderId ? (
-    <OrderStatusScreen
+<OrderStatusScreen
   orderId={orderId}
   table={orderType === "table" ? table : null}   // now safe
    onOrderAnother={onOrderAnother}   
   onFinished={onFinished}
 
   t={t}
+  buildUrl={(path) => apiUrl(path)}
+  appendIdentifier={appendIdentifier}
 />
 
   ) : null}
@@ -1670,6 +1717,34 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
+  const { restaurantIdOrSlug } = useParams();
+
+  const appendIdentifier = useCallback(
+    (url) => {
+      if (!restaurantIdOrSlug) return url;
+      const [base, hash] = String(url).split("#");
+      const separator = base.includes("?") ? "&" : "?";
+      const appended = `${base}${separator}identifier=${encodeURIComponent(restaurantIdOrSlug)}`;
+      return hash ? `${appended}#${hash}` : appended;
+    },
+    [restaurantIdOrSlug]
+  );
+
+  // 🔒 One liner to always pass identifier via secureFetch
+  const sFetch = useCallback((path, options) => {
+    return secureFetch(appendIdentifier(path), options);
+  }, [appendIdentifier]);
+
+  const shareUrl = useMemo(() => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    if (restaurantIdOrSlug) {
+      return origin
+        ? `${origin}/qr-menu/${restaurantIdOrSlug}`
+        : `/qr-menu/${restaurantIdOrSlug}`;
+    }
+    return origin ? `${origin}/qr-menu` : "/qr-menu";
+  }, [restaurantIdOrSlug]);
+
   // persist language
   const [lang, setLang] = useState(() => storage.getItem("qr_lang") || "en");
   useEffect(() => { storage.setItem("qr_lang", lang); }, [lang]);
@@ -1724,7 +1799,9 @@ const [platform, setPlatform] = useState(getPlatform());
       ),
     [safeProducts, activeCategory]
   );
-
+const restaurantSlug =
+  localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
+const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
 // at the top of QrMenu component
 const [showQrPrompt, setShowQrPrompt] = useState(() => {
   return !storage.getItem("qr_saved");
@@ -1750,7 +1827,7 @@ useEffect(() => {
   };
   window.addEventListener("beforeinstallprompt", handler);
   return () => window.removeEventListener("beforeinstallprompt", handler);
-}, []);
+}, [appendIdentifier]);
 
 function handleInstallClick() {
   if (!deferredPrompt) return;
@@ -1767,7 +1844,7 @@ function handleInstallClick() {
 function handleDownloadQr() {
   
 // fallback: open QR Menu page so user can add it manually
-window.location.href = "https://pos.beypro.com/qr-menu";
+window.location.href = shareUrl;
 
 
   // Remember that user saved it
@@ -1803,6 +1880,7 @@ const statusPortal = showStatus
         onClose={handleReset}
         onFinished={resetToTypePicker}
         t={t}
+        appendIdentifier={appendIdentifier}
       />,
       document.body
     )
@@ -1838,23 +1916,51 @@ function resetTableIfEmptyCart() {
 }
 
 // when user taps the header “×”
-function handleCloseOrderPage() {
-  // If there’s an active order, keep showing status (don’t go back to type)
+// ✅ Updated handleCloseOrderPage
+async function handleCloseOrderPage() {
   const activeId = orderId || Number(storage.getItem("qr_active_order_id")) || null;
+  const cartIsEmpty = !Array.isArray(cart) || cart.length === 0;
+
+  // 🧩 1. If an active order exists, verify its status before showing “Order Sent”
   if (activeId) {
-    setShowStatus(true);
-    setOrderStatus("success");
+    try {
+      const token = getStoredToken();
+      if (token) {
+        const res = await secureFetch(appendIdentifier(`/orders/${activeId}`), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = typeof res.json === "function" ? await res.json() : res;
+        const status = (data?.status || "").toLowerCase();
+
+        // ✅ Only show “Order Sent” if not closed/completed/canceled
+        if (!["closed", "completed", "canceled"].includes(status)) {
+          setShowStatus(true);
+          setOrderStatus("success");
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ handleCloseOrderPage check failed:", err);
+    }
+  }
+
+  // 🧩 2. If no active order or it's closed → reset everything
+  if (cartIsEmpty) {
+    setShowStatus(false);
+    setOrderStatus("pending");
+    resetTableIfEmptyCart();
+    setTable(null);
+    setOrderType(null);
     return;
   }
 
-  // No active order → normal behavior
+  // 🧩 3. Still items in cart → stay in current screen
   resetTableIfEmptyCart();
-  setTable(null);
-  setOrderType(null);
 }
 
 
 
+// Bootstrap on refresh: restore by saved order id, else by saved table
 // Bootstrap on refresh: restore by saved order id, else by saved table
 useEffect(() => {
   (async () => {
@@ -1862,127 +1968,174 @@ useEffect(() => {
       const activeId = storage.getItem("qr_active_order_id");
 
       // helper: true if ALL items are delivered
-      async function allItemsDelivered(id) {
-        try {
-          const token = getStoredToken();
-          if (!token) return false;
-          const ir = await fetch(`${API_URL}/api/orders/${id}/items`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          if (!ir.ok) return false;
-          const raw = await ir.json();
-          const arr = Array.isArray(raw) ? raw : [];
-          return arr.length > 0 && arr.every(it => (it.kitchen_status || "").toLowerCase() === "delivered");
-        } catch {
-          return false;
-        }
-      }
+     // helper: true if ALL items are delivered
+async function allItemsDelivered(id) {
+  try {
+    const token = getStoredToken();
+    if (!token) return false;
+    const ir = await secureFetch(`/orders/${id}/items`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!ir.ok) return false;
 
-      // 1) If we have a saved active order id, prefer that
-      if (activeId) {
-        const token = getStoredToken();
-        const res = token
-          ? await fetch(`${API_URL}/api/orders/${activeId}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            })
-          : null;
-        if (res?.ok) {
-          const order = await res.json();
-          const status = (order?.status || "").toLowerCase();
+    const raw = await ir.json();
+    const arr = Array.isArray(raw) ? raw : [];
 
-          // finished states or everything delivered → reset to type picker
-          if (["closed", "completed", "paid", "canceled"].includes(status) || await allItemsDelivered(activeId)) {
-            resetToTypePicker();
-            return;
-          }
+    // ✅ Empty or missing items → treat as not delivered
+    if (!arr || arr.length === 0) return false;
 
-          // still active → restore and show status
-          const type = order.order_type === "table" ? "table" : "online";
-          setOrderType(type);
-          setTable(type === "table" ? Number(order.table_number) || null : null);
-          setOrderId(order.id);
+    // ✅ Only mark delivered when all have final kitchen statuses
+    return arr.every((it) => {
+      const ks = (it.kitchen_status || "").toLowerCase();
+      return ["delivered", "served", "ready"].includes(ks);
+    });
+  } catch {
+    return false;
+  }
+}
 
-          setOrderStatus("success");
-          setShowStatus(true);
+
+      // 1️⃣ If we have a saved active order id, prefer that
+      // 1️⃣ If we have a saved active order id, prefer that
+let order = null;
+const token = getStoredToken();
+if (token && activeId) {
+  try {
+    const res = await secureFetch(appendIdentifier(`/orders/${activeId}`), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res && res.ok !== false) {
+      const data = typeof res.json === "function" ? await res.json() : res;
+      order = data;
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to restore active order:", err);
+  }
+}
+
+if (order) {
+  const status = (order?.status || "").toLowerCase();
+  const paid =
+    status === "paid" ||
+    order.payment_status === "paid" ||
+    order.payment_state === "paid";
+
+  // ✅ Only reset when POS explicitly closes it
+  if (["closed", "completed", "canceled"].includes(status)) {
+    resetToTypePicker();
+    return;
+  }
+
+  // 🚫 Do NOT reset just because it’s paid or delivered
+  // Keep showing until table is actually closed
+  setOrderStatus("success");
+  setShowStatus(true);
+
+  const type = order.order_type === "table" ? "table" : "online";
+  setOrderType(type);
+  setTable(type === "table" ? Number(order.table_number) || null : null);
+  setOrderId(order.id);
+
+  return;
+}
+
+
+      // 2️⃣ Fallback: see if a saved table has an open (non-closed) order
+      const savedTable =
+        Number(
+          storage.getItem("qr_table") ||
+            storage.getItem("qr_selected_table") ||
+            "0"
+        ) || null;
+if (savedTable) {
+  const token = getStoredToken();
+  if (token) {
+    try {
+      const q = await secureFetch(`/orders?table_number=${savedTable}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const raw = await q.json();
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.data)
+        ? raw.data
+        : [];
+
+      const openOrder = list.find(
+        (o) => !["closed", "completed", "canceled"].includes((o?.status || "").toLowerCase())
+      );
+
+      if (openOrder) {
+        const status = (openOrder?.status || "").toLowerCase();
+        const paid =
+          status === "paid" ||
+          openOrder.payment_status === "paid" ||
+          openOrder.payment_state === "paid";
+
+        // 🚫 DO NOT close for paid orders
+        if (["closed", "completed", "canceled"].includes(status)) {
+          resetToTypePicker();
           return;
         }
 
-        // bad fetch or missing → clean up any stale flags
-        resetToTypePicker();
+        // 🚫 DO NOT reset for delivered-only orders
+        // Only auto-reset for online (delivery) orders that are fully done
+        const allDelivered = await allItemsDelivered(openOrder.id);
+        if (openOrder.order_type === "online" && allDelivered && !paid) {
+          resetToTypePicker();
+          return;
+        }
+
+        // ✅ Keep showing OrderStatusScreen until table is closed
+        setOrderType("table");
+        setTable(savedTable);
+        setOrderId(openOrder.id);
+        setOrderStatus("success");
+        setShowStatus(true);
+
+        storage.setItem("qr_active_order_id", String(openOrder.id));
+        storage.setItem("qr_orderType", "table");
+        storage.setItem("qr_show_status", "1");
         return;
       }
+    } catch (err) {
+      console.warn("⚠️ Failed to restore table order:", err);
+    }
+  }
+}
 
-      // 2) Fallback: see if a saved table has an open (non-closed) order
-      const savedTable = Number(
-        storage.getItem("qr_table") ||
-        storage.getItem("qr_selected_table") ||
-        "0"
-      ) || null;
 
-      if (savedTable) {
-        const token = getStoredToken();
-        if (token) {
-          const q = await fetch(`${API_URL}/api/orders?table_number=${savedTable}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (q.ok) {
-            const raw = await q.json();
-            const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
-            const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
-
-            if (openOrder) {
-              // all delivered? → reset
-              if (await allItemsDelivered(openOrder.id)) {
-                resetToTypePicker();
-                return;
-              }
-
-              // restore
-              setOrderType("table");
-              setTable(savedTable);
-              setOrderId(openOrder.id);
-              setOrderStatus("success");
-              setShowStatus(true);
-
-              storage.setItem("qr_active_order_id", String(openOrder.id));
-              storage.setItem("qr_orderType", "table");
-              storage.setItem("qr_show_status", "1");
-              return;
-            }
-          }
-        }
-      }
-
-      // 3) Nothing to restore
+      // 3️⃣ Nothing to restore
       setOrderType(null);
       setTable(null);
       setShowStatus(false);
-    } catch {
+    } catch (err) {
+      console.error("❌ QRMenu restore failed:", err);
       setOrderType(null);
       setTable(null);
       setShowStatus(false);
     }
   })();
-}, []);
+}, [appendIdentifier]);
+
 
 
   // QrMenu.jsx
-  useEffect(() => {
-    fetch(`${API_URL}/api/category-images`)
-      .then(res => res.json())
-      .then(data => {
-        const dict = {};
-        (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
-          const key = (category || "").trim().toLowerCase();
-          if (!key || !image) return;
-          dict[key] = image; // <-- keep full Cloudinary URL (or relative) as-is
-        });
-        setCategoryImages(dict);
-      })
-      .catch(() => setCategoryImages({}));
-  }, []);
+useEffect(() => {
+  sFetch("/category-images")
+    .then((data) => {
+      const dict = {};
+      (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
+        const key = (category || "").trim().toLowerCase();
+        if (!key || !image) return;
+        dict[key] = image;
+      });
+      setCategoryImages(dict);
+    })
+    .catch(() => setCategoryImages({}));
+}, [sFetch]);
+
 
 
   useEffect(() => {
@@ -2005,37 +2158,35 @@ useEffect(() => {
       }
     };
 
-    const loadProducts = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/products`);
-        if (!res.ok) {
-          throw new Error(`Failed to fetch products (${res.status})`);
-        }
-        const payload = await res.json();
-        const list = parseArray(payload);
-        if (cancelled) return;
-        const listArray = toArray(list);
-        setProducts(listArray);
-        const cats = [...new Set(listArray.map((p) => p.category))].filter(Boolean);
-        setCategories(cats);
-        setActiveCategory(cats[0] || "");
-      } catch (err) {
-        console.warn("⚠️ Failed to fetch products:", err);
-        if (cancelled) return;
-        setProducts([]);
-        setCategories([]);
-        setActiveCategory("");
-      }
-    };
+const loadProducts = async () => {
+  try {
+    // sFetch / secureFetch already parses JSON or throws
+    const payload = await sFetch("/products", { method: "GET" });
+
+    const list = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.data)
+      ? payload.data
+      : [];
+
+    setProducts(list);
+    const cats = [...new Set(list.map((p) => p.category))].filter(Boolean);
+    setCategories(cats);
+    setActiveCategory(cats[0] || "");
+  } catch (err) {
+    console.warn("⚠️ Failed to fetch products:", err);
+    setProducts([]);
+    setCategories([]);
+    setActiveCategory("");
+  }
+};
+
 
     const loadExtras = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/extras-groups`);
-        if (!res.ok) {
-          throw new Error(`Failed to fetch extras groups (${res.status})`);
-        }
-        const payload = await res.json();
-        const list = parseArray(payload);
+const payload = await secureFetch(appendIdentifier("/extras-groups"));
+const list = parseArray(payload);
+
         if (cancelled) return;
         const listArray = toArray(list);
         setExtrasGroups(
@@ -2055,36 +2206,41 @@ useEffect(() => {
     loadExtras();
 
     const token = getStoredToken();
-    if (token) {
-      fetch(`${API_URL}/api/orders`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(`Failed to fetch orders (${res.status})`);
-          return res.json();
-        })
-        .then((orders) => {
-          if (cancelled) return;
-          const list = parseArray(orders);
-          const occupied = toArray(list)
-            .filter((order) => order?.table_number && order?.status !== "closed")
-            .map((order) => Number(order.table_number));
-         setOccupiedTables(occupied);
-        })
-        .catch((err) => {
-          console.warn("⚠️ Failed to fetch orders:", err);
-          if (!cancelled) setOccupiedTables([]);
-        });
-    } else {
-      setOccupiedTables([]);
-    }
+if (token) {
+  sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } })
+    .then((orders) => {
+      if (cancelled) return;
+  const list = parseArray(orders);
+
+// ✅ Mark occupied only if NOT closed
+const occupied = toArray(list)
+  .filter(order => {
+    if (!order?.table_number) return false;
+
+    // ✅ Still occupied if order is not closed, even if paid
+    if (order.status !== "closed") return true;
+
+    // ✅ Free only if explicitly closed
+    return false;
+  })
+  .map(order => Number(order.table_number));
+
+setOccupiedTables(occupied);
+
+    })
+    .catch((err) => {
+      console.warn("⚠️ Failed to fetch orders:", err);
+      if (!cancelled) setOccupiedTables([]);
+    });
+} else {
+  setOccupiedTables([]);
+}
+
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [appendIdentifier]);
 
 
 
@@ -2137,7 +2293,7 @@ if (orderType === "table" && !table) {
           const token = getStoredToken();
           if (token) {
             try {
-              const res = await fetch(`${API_URL}/api/orders?table_number=${n}`, {
+              const res = await secureFetch(`/orders?table_number=${n}` , {
                 headers: {
                   Authorization: `Bearer ${token}`,
                 },
@@ -2194,11 +2350,12 @@ async function rehydrateCartFromOrder(orderId) {
       console.info("ℹ️ Skipping cart rehydrate (no auth token)");
       return;
     }
-    const res = await fetch(`${API_URL}/api/orders/${orderId}/items`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+const res = await secureFetch(appendIdentifier(`/orders/${orderId}/items`), {
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
+});
+
     if (!res.ok) throw new Error("Failed to load order items");
     const raw = await res.json();
 
@@ -2246,7 +2403,7 @@ async function handleOrderAnother() {
         const token = getStoredToken();
         if (token) {
           try {
-            const q = await fetch(`${API_URL}/api/orders?table_number=${tNo}`, {
+            const q = await secureFetch(`/orders?table_number=${tNo}` , {
               headers: { Authorization: `Bearer ${token}` },
             });
             if (q.ok) {
@@ -2314,17 +2471,16 @@ async function handleOrderAnother() {
 
 // ---- helpers ----
 async function postJSON(url, body) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let msg = "";
-    try { msg = (await res.json())?.message || (await res.text()); } catch {}
-    throw new Error(msg || `Request failed: ${res.status}`);
+  try {
+    const json = await secureFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return json; // secureFetch already returns parsed JSON or throws
+  } catch (err) {
+    throw new Error(err.message || "Request failed");
   }
-  try { return await res.json(); } catch { return null; }
 }
 
 function buildOrderPayload({ orderType, table, items, total, customer }) {
@@ -2406,26 +2562,28 @@ async function handleSubmitOrder() {
         receipt_id: null,
       }));
 
-      await postJSON(`${API_URL}/api/orders/order-items`, {
-        order_id: orderId,
-        receipt_id: null,
-        items: itemsPayload,
-      });
+await postJSON(appendIdentifier("/orders/order-items"), {
+  order_id: orderId,
+  receipt_id: null,
+  items: itemsPayload,
+});
+
 
       // Save/patch the chosen payment method on the order (ignore if backend doesn't support)
       try {
-        await fetch(`${API_URL}/api/orders/${orderId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payment_method: paymentMethod }),
-        });
+     await secureFetch(`/orders/${orderId}/status`, {
+  method: "PUT",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ payment_method: paymentMethod }),
+});
+
       } catch {}
 
       // If user chose Online, create/refresh a checkout session
       if (paymentMethod === "online") {
         await startOnlinePaymentSession(orderId);
         try {
-         await fetch(`${API_URL}/api/orders/${orderId}/status`, {
+         await secureFetch(`/orders/${orderId}/status` , {
            method: "PUT",
            headers: { "Content-Type": "application/json" },
            body: JSON.stringify({
@@ -2488,18 +2646,18 @@ async function handleSubmitOrder() {
       );
     }, 0);
 
-    const created = await postJSON(
-      `${API_URL}/api/orders`,
-      buildOrderPayload({
-        orderType,
-        table,
-        items: newItems,
-        total,
-        customer: orderType === "online" ? customerInfo : null,
-        // 👇 tell backend what the customer selected (store it on the order)
-        payment_method: paymentMethod,
-      })
-    );
+const created = await postJSON(
+  appendIdentifier("/orders"),
+  buildOrderPayload({
+    orderType,
+    table,
+    items: newItems,
+    total,
+    customer: orderType === "online" ? customerInfo : null,
+    payment_method: paymentMethod,
+  })
+);
+
 
     const newId = created?.id;
     if (!newId) throw new Error("Server did not return order id.");
@@ -2509,7 +2667,7 @@ async function handleSubmitOrder() {
       await startOnlinePaymentSession(newId);
           // 🔑 Immediately mark order as Paid Online
      try {
-       await fetch(`${API_URL}/api/orders/${newId}/status`, {
+       await secureFetch(`/orders/${newId}/status` , {
          method: "PUT",
          headers: { "Content-Type": "application/json" },
          body: JSON.stringify({
@@ -2635,15 +2793,12 @@ return (
     {statusPortal}
 
     {/* ✅ Delivery form stays inside the return */}
-   {((orderType === "online" && showDeliveryForm) || 
-  (orderType === "table" && paymentMethod === "online" && showDeliveryForm)) && (
+{orderType === "online" && showDeliveryForm && (
   <OnlineOrderForm
     submitting={submitting}
     t={t}
-    onClose={() => {
-      setShowDeliveryForm(false);
-      if (orderType === "online") setOrderType(null); // keep table
-    }}
+    appendIdentifier={appendIdentifier}
+    onClose={() => setShowDeliveryForm(false)}
     onSubmit={(form) => {
       setCustomerInfo({
         name: form.name,
@@ -2655,6 +2810,8 @@ return (
     }}
   />
 )}
+
+
 
 
 

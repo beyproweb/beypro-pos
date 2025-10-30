@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { INGREDIENT_PRICES_API } from "../utils/api";
-
+import { useAuth } from "../context/AuthContext";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import secureFetch from "../utils/secureFetch";
@@ -31,9 +31,9 @@ const convertPrice = (basePrice, supplierUnit, targetUnit) => {
 };
 
 
-export default function ProductForm({ onSuccess, initialData = null }) {
+export default function ProductForm({ onSuccess, initialData = null, categories = [] }) {
   const { t } = useTranslation();
-
+  const { currentUser } = useAuth();
   const [product, setProduct] = useState({
     name: "",
     price: "",
@@ -63,6 +63,18 @@ export default function ProductForm({ onSuccess, initialData = null }) {
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [availableIngredients, setAvailableIngredients] = useState([]);
+
+  const categoryOptions = useMemo(() => {
+    const unique = new Set(
+      (Array.isArray(categories) ? categories : []).filter((item) => !!item)
+    );
+    if (product.category) {
+      unique.add(product.category);
+    }
+    return Array.from(unique).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [categories, product.category]);
 useEffect(() => {
   secureFetch("/suppliers/ingredients")
     .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
@@ -70,20 +82,33 @@ useEffect(() => {
 }, []);
 
   // ---------- helpers ----------
-  const handleUpload = async () => {
-    if (!imageFile) return "";
+const handleUpload = async () => {
+  if (!imageFile) return "";
+  try {
     const formData = new FormData();
     formData.append("file", imageFile);
-    const res = await fetch(`${API_URL}/upload`, { method: "POST", body: formData });
-    const data = await res.json();
-    if (!res.ok || !data.url) {
+
+    // Use secureFetch (it auto-handles headers + token)
+    const data = await secureFetch("/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!data || !data.url) {
       toast.error("Image upload failed!");
       return "";
     }
+
     setImageUrl(data.url);
     setImagePreview(data.url);
     return data.url;
-  };
+  } catch (err) {
+    console.error("❌ Upload error:", err);
+    toast.error("Image upload failed!");
+    return "";
+  }
+};
+
 
   const getImageSource = () => imageUrl || imagePreview || null;
 
@@ -164,24 +189,35 @@ secureFetch("/products/extras-group")
   }, []);
 
   // auto-fetch category preview when category changes
-  useEffect(() => {
-    if (!product.category) return;
-    const cat = product.category.trim().toLowerCase();
-    fetch(`${API_URL}/category-images?category=${encodeURIComponent(cat)}`)
+useEffect(() => {
+  if (!product.category) return;
 
-      .then(res => res.json())
-      .then(data => {
-        if (data.length > 0 && data[0].image) {
-          const img = data[0].image;
-          if (img && img.startsWith("http")) setCategoryImagePreview(img);
-          else if (img) setCategoryImagePreview(`${API_URL}/uploads/${img}`);
-          else setCategoryImagePreview(null);
-        } else {
-          setCategoryImagePreview(null);
-        }
-      })
-      .catch(() => setCategoryImagePreview(null));
-  }, [product.category]);
+  const loadCategoryImage = async () => {
+    try {
+      const cat = product.category.trim().toLowerCase();
+      const identifier = currentUser?.restaurant_id || currentUser?.restaurant?.slug || "";
+      const data = await secureFetch(`/category-images?category=${encodeURIComponent(cat)}&identifier=${identifier}`);
+
+      if (Array.isArray(data) && data.length > 0 && data[0].image) {
+        const img = data[0].image;
+        setCategoryImagePreview(
+          img.startsWith("http")
+            ? img
+            : `${import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000"}/uploads/${img}`
+        );
+      } else {
+        setCategoryImagePreview(null);
+      }
+    } catch (err) {
+      console.warn("⚠️ Failed to fetch category image:", err);
+      setCategoryImagePreview(null);
+    }
+  };
+
+  loadCategoryImage();
+}, [product.category, currentUser]);
+
+
 
 
 // cost calc
@@ -477,13 +513,24 @@ return (
             <div>
               <label className="block">
                 <span className="font-medium">{t("Category")}</span>
-                <input
-                  type="text"
+                <select
                   name="category"
                   value={product.category ?? ""}
                   onChange={handleChange}
-                  className="w-full p-3 mt-1 rounded-xl border"
-                />
+                  className="w-full p-3 mt-1 rounded-xl border bg-white dark:bg-gray-900"
+                >
+                  <option value="">{t("Select Category")}</option>
+                  {categoryOptions.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+                {categoryOptions.length === 0 && (
+                  <p className="mt-2 text-sm text-gray-500">
+                    {t("Add a category to get started.")}
+                  </p>
+                )}
               </label>
 
               <label className="block mt-3">
@@ -501,26 +548,28 @@ return (
                     fd.append("image", file);
                     fd.append("category", product.category.trim().toLowerCase());
                     try {
-                      const res = await fetch(`${API_URL}/category-images`, {
-                        method: "POST",
-                        body: fd,
-                      });
-                      if (!res.ok) {
-                        toast.error("Upload failed");
-                        return;
-                      }
+               const res = await secureFetch("/category-images", {
+  method: "POST",
+  body: fd, // ✅ FormData: secureFetch handles this automatically
+});
+
+if (!res || res.error) {
+  toast.error("Upload failed");
+  return;
+}
+
                       toast.success("Category image uploaded!");
                       const cat = product.category.trim().toLowerCase();
-                      const resp = await fetch(
-                        `${API_URL}/api/category-images?category=${encodeURIComponent(cat)}`
-                      );
-                      const data = await resp.json();
-                      if (data.length > 0 && data[0].image) {
-                        const img = data[0].image;
-                        setCategoryImagePreview(
-                          img.startsWith("http") ? img : `${API_URL}/uploads/${img}`
-                        );
-                      }
+const data = await secureFetch(`/category-images?category=${encodeURIComponent(cat)}`);
+if (Array.isArray(data) && data.length > 0 && data[0].image) {
+  const img = data[0].image;
+  setCategoryImagePreview(
+    img.startsWith("http")
+      ? img
+      : `${import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000"}/uploads/${img}`
+  );
+}
+
                     } catch (err) {
                       toast.error("Category upload failed!");
                     }

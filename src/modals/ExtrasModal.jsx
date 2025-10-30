@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function ExtrasModal({
@@ -19,11 +19,26 @@ export default function ExtrasModal({
   t,
 }) {
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
+  useEffect(() => {
+    if (showExtrasModal) {
+      setActiveGroupIdx(0);
+    }
+  }, [showExtrasModal, selectedProduct?.id]);
 
   if (!showExtrasModal || !selectedProduct) return null;
 
   // --- Normalize groups (accept both group_name and groupName) ---
-  const groups = Array.isArray(extrasGroups) ? extrasGroups.map(g => ({
+  const normalizeGroupKey = (value) => {
+    if (value === null || value === undefined) return "";
+    return String(value).trim().toLowerCase().replace(/\s+/g, " ");
+  };
+
+  const sourceGroups =
+    Array.isArray(selectedProduct?.modalExtrasGroups) && selectedProduct.modalExtrasGroups.length > 0
+      ? selectedProduct.modalExtrasGroups
+      : extrasGroups;
+
+  const groups = Array.isArray(sourceGroups) ? sourceGroups.map(g => ({
     id: g.id,
     groupName: g.group_name ?? g.groupName ?? "",
     items: Array.isArray(g.items) ? g.items.map(it => ({
@@ -42,11 +57,29 @@ export default function ExtrasModal({
   const keys = Array.isArray(selectedProduct?.selectedExtrasGroup)
     ? selectedProduct.selectedExtrasGroup
     : [];
-  const selectedGroupIds = new Set(
-    (selectedProduct?.selectedExtrasGroup || []).map(id => Number(id)).filter(Number.isFinite)
-  );
+const selectedGroupIds = new Set(
+  [
+    ...(selectedProduct?.selectedExtrasGroup || []),
+    ...(selectedProduct?.extrasGroupRefs?.ids || [])
+  ]
+  .map(id => Number(id))
+  .filter(Number.isFinite)
+);
 
-  let allowedGroups = groups.filter(g => selectedGroupIds.has(Number(g.id)));
+const selectedGroupNames = new Set(
+  (selectedProduct?.selectedExtrasGroupNames ||
+    selectedProduct?.extrasGroupRefs?.names ||
+    [])
+    .map(normalizeGroupKey)
+    .filter(Boolean)
+);
+
+
+  let allowedGroups = groups.filter(g => {
+    const groupId = Number(g.id);
+    const groupNameKey = normalizeGroupKey(g.groupName);
+    return selectedGroupIds.has(groupId) || (groupNameKey && selectedGroupNames.has(groupNameKey));
+  });
 
   // If no selected groups, fallback to manual extras
   if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {
@@ -73,6 +106,13 @@ export default function ExtrasModal({
     ? 0
     : Math.min(activeGroupIdx, allowedGroups.length - 1);
   const activeGroup = allowedGroups[safeIdx];
+
+  console.log("🧩 ExtrasModal selection", {
+    selectedProduct,
+    selectedGroupIds: Array.from(selectedGroupIds),
+    selectedGroupNames: Array.from(selectedGroupNames),
+    allowedGroups,
+  });
 
   const groupTabs = allowedGroups.map(g => g.groupName || String(g.id));
 
@@ -246,6 +286,7 @@ export default function ExtrasModal({
             <button
               onClick={() => {
                 const productQty = selectedProduct.quantity || 1;
+                const trimmedNote = (note || "").trim();
 
                 // ✅ Ensure extras always carry correct unit + amount
                 const validExtras = selectedExtras
@@ -264,7 +305,9 @@ export default function ExtrasModal({
 
                 const itemPrice = Number(selectedProduct.price); // base price only
                 const extrasKey = JSON.stringify(validExtras);
-                const uniqueId = `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
+                const baseUniqueId = `${selectedProduct.id}-NO_EXTRAS`;
+                const isPlain = validExtras.length === 0 && trimmedNote.length === 0;
+                const uniqueId = isPlain ? baseUniqueId : `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
 
                 if (editingCartItemIndex !== null) {
                   setCartItems((prev) => {
@@ -275,25 +318,68 @@ export default function ExtrasModal({
                       price: itemPrice,
                       extras: validExtras,    // ✅ carries unit + amount
                       unique_id: uniqueId,
-                      note: note || null,
+                      note: trimmedNote || null,
                     };
                     return updated;
                   });
                   setEditingCartItemIndex(null);
                 } else {
-                  setCartItems((prev) => [
-                    ...prev,
-                    {
-                      id: selectedProduct.id,
-                      name: selectedProduct.name,
-                      price: itemPrice,
-                      quantity: productQty,
-                      ingredients: selectedProduct.ingredients || [],
-                      extras: validExtras,   // ✅ carries unit + amount
-                      unique_id: uniqueId,
-                      note: note || null,
-                    },
-                  ]);
+                  if (isPlain) {
+                    setCartItems((prev) => {
+                      const existingIndex = prev.findIndex(
+                        (item) =>
+                          item.unique_id === baseUniqueId &&
+                          !item.confirmed &&
+                          !item.paid
+                      );
+
+                      if (existingIndex !== -1) {
+                        return prev.map((item, idx) =>
+                          idx === existingIndex
+                            ? { ...item, quantity: item.quantity + productQty }
+                            : item
+                        );
+                      }
+
+                      const hasLocked = prev.some(
+                        (item) =>
+                          item.unique_id === baseUniqueId &&
+                          (item.confirmed || item.paid)
+                      );
+
+                      const finalUniqueId = hasLocked
+                        ? `${baseUniqueId}-${uuidv4()}`
+                        : baseUniqueId;
+
+                      return [
+                        ...prev,
+                        {
+                          id: selectedProduct.id,
+                          name: selectedProduct.name,
+                          price: itemPrice,
+                          quantity: productQty,
+                          ingredients: selectedProduct.ingredients || [],
+                          extras: [],
+                          unique_id: finalUniqueId,
+                          note: null,
+                        },
+                      ];
+                    });
+                  } else {
+                    setCartItems((prev) => [
+                      ...prev,
+                      {
+                        id: selectedProduct.id,
+                        name: selectedProduct.name,
+                        price: itemPrice,
+                        quantity: productQty,
+                        ingredients: selectedProduct.ingredients || [],
+                        extras: validExtras,   // ✅ carries unit + amount
+                        unique_id: uniqueId,
+                        note: trimmedNote || null,
+                      },
+                    ]);
+                  }
                 }
 
                 setShowExtrasModal(false);

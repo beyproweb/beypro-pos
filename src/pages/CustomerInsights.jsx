@@ -12,6 +12,40 @@ export default function CustomerInsights() {
   const [birthdayCustomers, setBirthdayCustomers] = useState([]);
   const { t } = useTranslation();
   const canAccess = useHasPermission("customer");
+  const [editModal, setEditModal] = useState({ open: false, data: null });
+
+async function handleSaveCustomer(updated) {
+  try {
+    const res = await secureFetch(`/customers/${updated.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: updated.name,
+        phone: updated.phone,
+        address: updated.address || "",
+        birthday: updated.birthday ? updated.birthday : null,
+        email: updated.email || null,
+      }),
+    });
+    setCustomers(cs => cs.map(c => c.id === updated.id ? { ...res } : c));
+    setEditModal({ open: false, data: null });
+    alert("✅ Customer updated successfully!");
+  } catch (err) {
+    alert("❌ Failed to update: " + err.message);
+  }
+}
+
+
+async function handleDeleteCustomer(id) {
+  if (!window.confirm("Are you sure you want to delete this customer?")) return;
+  try {
+    await secureFetch(`/customers/${id}`, { method: "DELETE" });
+    setCustomers(cs => cs.filter(c => c.id !== id));
+    setEditModal({ open: false, data: null });
+    alert("🗑️ Customer deleted successfully!");
+  } catch (err) {
+    alert("❌ Failed to delete customer: " + err.message);
+  }
+}
 
   if (!canAccess) {
     return (
@@ -182,30 +216,107 @@ export default function CustomerInsights() {
 
             </tr>
           </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={7} className="py-12 text-center text-blue-500 font-semibold">Loading…</td></tr>
-            ) : customers.length === 0 ? (
-              <tr><td colSpan={7} className="py-12 text-center text-gray-500">No customers found</td></tr>
-            ) : (
-              customers.map(c => (
-                <tr
-                  key={c.id}
-                  className="border-b border-blue-50 dark:border-zinc-800 hover:bg-blue-50/60 dark:hover:bg-zinc-800/30 transition group"
-                >
-                  <td className="py-3 px-4 font-semibold text-blue-700 dark:text-blue-200">{c.name}</td>
-                  <td className="py-3 px-4">{c.phone}</td>
-                  <td className="py-3 px-4">{c.address}</td>
-                  <td className="py-3 px-4">{c.visit_count || 1}</td>
-                  <td className="py-3 px-4">₺{c.lifetime_value?.toLocaleString?.() ?? "0"}</td>
-                  <td className="py-3 px-4">{c.last_visit ? new Date(c.last_visit).toLocaleDateString() : "-"}</td>
-                  <td className="py-3 px-4">{c.birthday ? new Date(c.birthday).toLocaleDateString("en-GB") : "-"}</td>
-                  <td className="py-3 px-4">{c.email || <span className="text-gray-400">—</span>}</td>
+<tbody>
+  {loading ? (
+    <tr><td colSpan={9} className="py-12 text-center text-blue-500 font-semibold">Loading…</td></tr>
+  ) : customers.length === 0 ? (
+    <tr><td colSpan={9} className="py-12 text-center text-gray-500">No customers found</td></tr>
+  ) : (
+    customers.map(c => (
+      <tr
+        key={c.id}
+        className="border-b border-blue-50 dark:border-zinc-800 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:from-zinc-800 dark:hover:to-zinc-900 transition-all group"
+      >
+        <td className="py-3 px-4 font-semibold text-blue-700 dark:text-blue-200">{c.name}</td>
+        <td className="py-3 px-4">{c.phone}</td>
+        <td className="py-3 px-4">{c.address}</td>
+        <td className="py-3 px-4 text-center">{c.visit_count || 1}</td>
+        <td className="py-3 px-4">₺{c.lifetime_value?.toLocaleString?.() ?? "0"}</td>
+        <td className="py-3 px-4">{c.last_visit ? new Date(c.last_visit).toLocaleDateString() : "-"}</td>
+        <td className="py-3 px-4">{c.birthday ? new Date(c.birthday).toLocaleDateString("en-GB") : "-"}</td>
+        <td className="py-3 px-4">{c.email || <span className="text-gray-400">—</span>}</td>
+        <td className="py-3 px-4 text-right">
+          <button
+            className="text-blue-600 hover:underline text-sm"
+            onClick={() => setEditModal({ open: true, data: c })}
+          >
+            ✏️ Edit
+          </button>
+        </td>
+      </tr>
+    ))
+  )}
+</tbody>
 
-                </tr>
-              ))
-            )}
-          </tbody>
+
+
+{editModal.open && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-lg p-6 relative">
+      <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent">
+        Edit Customer
+      </h2>
+
+      <div className="space-y-3">
+        <input
+          className="border-2 border-blue-100 rounded-xl px-3 py-2 w-full"
+          value={editModal.data.name || ""}
+          onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, name: e.target.value } }))}
+          placeholder="Name"
+        />
+        <input
+          className="border-2 border-blue-100 rounded-xl px-3 py-2 w-full"
+          value={editModal.data.phone || ""}
+          onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, phone: e.target.value } }))}
+          placeholder="Phone"
+        />
+        <input
+          className="border-2 border-blue-100 rounded-xl px-3 py-2 w-full"
+          value={editModal.data.address || ""}
+          onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, address: e.target.value } }))}
+          placeholder="Address"
+        />
+        <input
+          type="email"
+          className="border-2 border-blue-100 rounded-xl px-3 py-2 w-full"
+          value={editModal.data.email || ""}
+          onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, email: e.target.value } }))}
+          placeholder="Email"
+        />
+        <input
+          type="date"
+          className="border-2 border-pink-100 rounded-xl px-3 py-2 w-full"
+          value={editModal.data.birthday ? new Date(editModal.data.birthday).toISOString().slice(0, 10) : ""}
+          onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, birthday: e.target.value } }))}
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-2 justify-between mt-6">
+        <button
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
+          onClick={() => handleSaveCustomer(editModal.data)}
+        >
+          💾 Save Changes
+        </button>
+        <button
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-semibold"
+          onClick={() => handleDeleteCustomer(editModal.data.id)}
+        >
+          🗑 Delete
+        </button>
+        <button
+          className="text-gray-700 dark:text-gray-200 hover:underline px-4 py-2"
+          onClick={() => setEditModal({ open: false, data: null })}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+
+
         </table>
       </div>
       {/* Footer */}

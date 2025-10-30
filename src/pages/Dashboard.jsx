@@ -1,6 +1,6 @@
 // src/pages/Dashboard.jsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-
+import secureFetch from "../utils/secureFetch";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
@@ -19,7 +19,7 @@ const QUICK_ACCESS_CONFIG = [
   {
     id: "orders",
     labelKey: "Orders",
-    defaultLabel: "Orders",
+    defaultLabel: "Tables",
     path: "/tables",
     color: "bg-gradient-to-r from-rose-400 to-pink-500",
     icon: "ClipboardList",
@@ -162,6 +162,7 @@ const QUICK_ACCESS_CONFIG = [
   },
 ];
 
+const DASHBOARD_TO_SIDEBAR_TYPE = "application/x-dashboard-shortcut";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -195,14 +196,80 @@ export default function Dashboard() {
     salesTrend: [1100, 1400, 1900, 3250, 4520],
   });
 
-  // Fetch all summary stats (replace mock logic here)
-  const fetchSummaryStats = useCallback(async () => {
-    // TODO: Connect to your real API endpoints
-    // Example:
-    // const salesRes = await axios.get(`${API_URL}/api/reports/summary`);
-    // ...setSummary({ ... })
-    // Keep the mock for now
-  }, []);
+
+
+
+// ---------------- FETCH SUMMARY (live + tenant-safe) ----------------
+const fetchSummaryStats = useCallback(async () => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 🧾 1️⃣ Main summary
+    const summaryRes = await secureFetch(`/reports/summary?from=${today}&to=${today}`);
+
+    // 💳 2️⃣ Payment breakdown
+    const paymentRes = await secureFetch(`/reports/sales-by-payment-method?from=${today}&to=${today}`);
+
+    // 🥇 3️⃣ Best seller
+    const categoryRes = await secureFetch(`/reports/sales-by-category-detailed?from=${today}&to=${today}`);
+    let bestSelling = "–";
+    let bestTotal = 0;
+    for (const category in categoryRes) {
+      for (const product of categoryRes[category]) {
+        if (product.total > bestTotal) {
+          bestTotal = product.total;
+          bestSelling = product.name;
+        }
+      }
+    }
+
+    // ⚠️ 4️⃣ Low stock count
+    const stockRes = await secureFetch(`/stock`);
+    const lowStockCount = Array.isArray(stockRes)
+      ? stockRes.filter((s) => s.critical_quantity && s.quantity <= s.critical_quantity).length
+      : 0;
+
+    // 🧾 5️⃣ Orders in progress (tenant-safe)
+    const ordersRes = await secureFetch(`/orders?status=confirmed`);
+    const ordersInProgress = Array.isArray(ordersRes)
+      ? ordersRes.filter((o) => o.status !== "closed").length
+      : 0;
+
+    // 💰 Group payment breakdown
+    const cash = paymentRes.find((p) => p.method?.toLowerCase() === "cash")?.value || 0;
+    const card = paymentRes.find((p) => p.method?.toLowerCase().includes("card"))?.value || 0;
+    const online = paymentRes
+      .filter(
+        (p) =>
+          !["cash", "card", "credit card", "debit card"].includes(p.method?.toLowerCase())
+      )
+      .reduce((a, b) => a + (b.value || 0), 0);
+
+    // 📊 6️⃣ Apply to dashboard
+    setSummary({
+      dailySales: summaryRes.daily_sales || 0,
+      salesDelta: 0, // % change placeholder, can add /sales-trends later
+      dailyOrders: Math.round((summaryRes.daily_sales / (summaryRes.average_order_value || 1)) || 0),
+      ordersInProgress,
+      cash,
+      card,
+      online,
+      bestSelling,
+      lowStockCount,
+      newCustomers: 0, // optional later via /customers
+      repeatRate: 0,
+      avgDelivery: 0,
+      avgPrep: 0,
+      salesTrend: [summaryRes.gross_sales || 0],
+    });
+  } catch (err) {
+    console.error("❌ Failed to fetch dashboard summary:", err);
+  }
+}, []);
+
+
+
+
 
   useEffect(() => { fetchSummaryStats(); }, [fetchSummaryStats]);
 
@@ -313,10 +380,22 @@ export default function Dashboard() {
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
-  const handleDragStart = (id) => (event) => {
-    event.dataTransfer.setData("text/plain", id);
+  const handleDragStart = (item, label) => (event) => {
+    event.dataTransfer.setData("text/plain", item.id);
+    try {
+      event.dataTransfer.setData(
+        DASHBOARD_TO_SIDEBAR_TYPE,
+        JSON.stringify({
+          labelKey: item.labelKey,
+          defaultLabel: label,
+          path: item.path,
+        })
+      );
+    } catch {
+      /* ignore serialization issues */
+    }
     event.dataTransfer.effectAllowed = "move";
-    setDraggedId(id);
+    setDraggedId(item.id);
   };
 
   const handleDragOverItem = (id) => (event) => {
@@ -396,7 +475,7 @@ export default function Dashboard() {
                   isDragOver ? "ring-2 ring-white/70" : ""
                 } ${isDragging ? "opacity-70" : ""}`}
                 draggable
-                onDragStart={handleDragStart(item.id)}
+                onDragStart={handleDragStart(item, label)}
                 onDragOver={handleDragOverItem(item.id)}
                 onDragLeave={handleDragLeave(item.id)}
                 onDrop={handleDrop(item.id)}
@@ -434,28 +513,30 @@ export default function Dashboard() {
 function BusinessSnapshot({ summary = {}, onRefresh }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+
   const snap = {
-    dailySales: summary.dailySales ?? 4350,
-    salesDelta: summary.salesDelta ?? +12,
-    dailyOrders: summary.dailyOrders ?? 43,
-    ordersInProgress: summary.ordersInProgress ?? 6,
-    cash: summary.cash ?? 2100,
-    card: summary.card ?? 1500,
-    online: summary.online ?? 750,
-    bestSelling: summary.bestSelling ?? "Double Burger",
-    bestSellingId: summary.bestSellingId ?? 11,
-    lowStockCount: summary.lowStockCount ?? 3,
-    newCustomers: summary.newCustomers ?? 7,
-    repeatRate: summary.repeatRate ?? 56,
-    avgDelivery: summary.avgDelivery ?? 19,
-    avgPrep: summary.avgPrep ?? 14,
-    salesTrend: summary.salesTrend ?? [1400, 1800, 2100, 3000, 4350],
+    dailySales: summary.dailySales ?? 0,
+    salesDelta: summary.salesDelta ?? 0,
+    dailyOrders: summary.dailyOrders ?? 0,
+    ordersInProgress: summary.ordersInProgress ?? 0,
+    cash: summary.cash ?? 0,
+    card: summary.card ?? 0,
+    online: summary.online ?? 0,
+    bestSelling: summary.bestSelling ?? "-",
+    lowStockCount: summary.lowStockCount ?? 0,
+    newCustomers: summary.newCustomers ?? 0,
+    repeatRate: summary.repeatRate ?? 0,
+    avgDelivery: summary.avgDelivery ?? 0,
+    avgPrep: summary.avgPrep ?? 0,
+    salesTrend: summary.salesTrend ?? [],
   };
 
   return (
     <section className="mb-10">
       <div className="flex items-center gap-4 mb-4">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">{t("Business Snapshot")}</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+          {t("Business Snapshot")}
+        </h2>
         {onRefresh && (
           <button
             onClick={onRefresh}
@@ -465,44 +546,36 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
           </button>
         )}
       </div>
-      {/* Main cards row */}
+
+      {/* Main metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-4">
-        {/* Sales Today */}
         <SnapshotCard>
           <div className="flex items-center gap-3">
             <BarChart className="text-green-500 w-7 h-7" />
             <div>
-              <div className="text-2xl font-extrabold">₺{snap.dailySales.toLocaleString()}</div>
+              <div className="text-2xl font-extrabold">
+                ₺{snap.dailySales.toLocaleString()}
+              </div>
               <div className="text-xs text-gray-500">{t("Sales today")}</div>
             </div>
           </div>
           <div className="flex items-center gap-2 mt-2 text-sm font-bold">
-            {snap.salesDelta >= 0
-              ? <span className="flex items-center text-green-600 animate-slideup">
-                  <ArrowUpRight className="w-4 h-4" />
-                  +{snap.salesDelta}%
-                </span>
-              : <span className="flex items-center text-red-600 animate-slidedown">
-                  <ArrowDownRight className="w-4 h-4" />
-                  {snap.salesDelta}%
-                </span>}
+            {snap.salesDelta >= 0 ? (
+              <span className="flex items-center text-green-600 animate-slideup">
+                <ArrowUpRight className="w-4 h-4" /> +{snap.salesDelta}%
+              </span>
+            ) : (
+              <span className="flex items-center text-red-600 animate-slidedown">
+                <ArrowDownRight className="w-4 h-4" /> {snap.salesDelta}%
+              </span>
+            )}
             <span className="text-gray-400 text-xs">{t("vs yesterday")}</span>
           </div>
           <div className="mt-2 text-xs text-gray-400">
             {t("Orders count label", { count: snap.dailyOrders })}
           </div>
-          {/* Optional: Sparkline */}
-          <div className="mt-2 flex items-end gap-1 h-8">
-            {snap.salesTrend.map((val, i, arr) => (
-              <span
-                key={i}
-                className={`block w-2 rounded-full ${i === arr.length - 1 ? "bg-green-500" : "bg-green-300"} transition-all`}
-                style={{ height: `${10 + (val / Math.max(...arr)) * 18}px` }}
-              ></span>
-            ))}
-          </div>
         </SnapshotCard>
-        {/* Orders in Progress */}
+
         <SnapshotCard
           onClick={() => navigate("/kitchen")}
           className="cursor-pointer hover:ring-2 hover:ring-blue-400"
@@ -514,11 +587,8 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
               <div className="text-xs text-gray-500">{t("In Progress")}</div>
             </div>
           </div>
-          <button className="mt-3 flex items-center gap-1 text-xs text-blue-600 hover:underline">
-            {t("View Orders")} <ChevronRight className="w-4 h-4" />
-          </button>
         </SnapshotCard>
-        {/* Stock Alerts */}
+
         <SnapshotCard
           onClick={() => navigate("/stock")}
           className="cursor-pointer hover:ring-2 hover:ring-red-400"
@@ -530,11 +600,8 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
               <div className="text-xs text-gray-500">{t("Stock Alerts")}</div>
             </div>
           </div>
-          <button className="mt-3 flex items-center gap-1 text-xs text-red-600 hover:underline">
-            {t("View Stock")} <ChevronRight className="w-4 h-4" />
-          </button>
         </SnapshotCard>
-        {/* Best Seller */}
+
         <SnapshotCard
           onClick={() => navigate("/products")}
           className="cursor-pointer hover:ring-2 hover:ring-yellow-300"
@@ -546,49 +613,32 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
               <div className="text-xs text-gray-500">{t("Best Seller")}</div>
             </div>
           </div>
-          <span className="mt-3 block text-xs text-yellow-600">{t("See all products")}</span>
         </SnapshotCard>
       </div>
-      {/* Sub cards row */}
+
+      {/* Revenue breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        {/* Revenue Breakdown */}
         <MiniCard>
           <div className="flex items-center gap-2 mb-1">
             <CreditCard className="text-indigo-500 w-5 h-5" />
-            <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200">{t("Revenue Breakdown")}</div>
+            <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+              {t("Revenue Breakdown")}
+            </div>
           </div>
           <div className="flex gap-4 text-sm font-semibold">
-            <span className="text-green-600">₺{snap.cash}</span> <span className="text-gray-400">{t("Cash")}</span>
-            <span className="text-blue-600">₺{snap.card}</span> <span className="text-gray-400">{t("Card")}</span>
-            <span className="text-pink-600">₺{snap.online}</span> <span className="text-gray-400">{t("Online")}</span>
-          </div>
-        </MiniCard>
-        {/* Customers Today */}
-        <MiniCard>
-          <div className="flex items-center gap-2 mb-1">
-            <Users className="text-purple-500 w-5 h-5" />
-            <div className="text-xs font-bold text-purple-900 dark:text-purple-200">{t("Customers")}</div>
-          </div>
-          <div className="flex flex-col text-sm font-semibold">
-            <span>{t("New customers today", { count: snap.newCustomers })}</span>
-            <span className="text-gray-400">{t("Repeat rate label", { rate: snap.repeatRate })}</span>
-          </div>
-        </MiniCard>
-        {/* Delivery/Prep Times */}
-        <MiniCard>
-          <div className="flex items-center gap-2 mb-1">
-            <Clock className="text-emerald-500 w-5 h-5" />
-            <div className="text-xs font-bold text-emerald-900 dark:text-emerald-200">{t("Times (min)")}</div>
-          </div>
-          <div className="flex flex-col text-sm">
-            <span>{t("Prep average label", { value: snap.avgPrep })}</span>
-            <span>{t("Delivery average label", { value: snap.avgDelivery })}</span>
+            <span className="text-green-600">₺{snap.cash}</span>
+            <span className="text-gray-400">{t("Cash")}</span>
+            <span className="text-blue-600">₺{snap.card}</span>
+            <span className="text-gray-400">{t("Card")}</span>
+            <span className="text-pink-600">₺{snap.online}</span>
+            <span className="text-gray-400">{t("Online")}</span>
           </div>
         </MiniCard>
       </div>
     </section>
   );
 }
+
 
 function SnapshotCard({ children, onClick, className }) {
   return (

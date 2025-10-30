@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Megaphone, Send, Users, Percent, BarChart, Mail } from "lucide-react";
-import axios from "axios";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 
@@ -95,47 +94,83 @@ export default function EmailCampaignLanding() {
   const [customers, setCustomers] = useState([]);
   const [selectedPhones, setSelectedPhones] = useState([]);
   const { t } = useTranslation();
+  const [whatsAppQR, setWhatsAppQR] = useState(null);
+const [qrStatus, setQrStatus] = useState("idle");
 
+async function fetchWhatsAppQR() {
+  setQrStatus("loading");
+  try {
+    const res = await secureFetch("/campaigns/whatsapp/qr");
+    if (res.qr) {
+      setWhatsAppQR(res.qr);
+      setQrStatus("ready");
+    } else if (res.status === "ready") {
+      setWhatsAppQR(null);
+      setQrStatus("connected");
+    } else {
+      setWhatsAppQR(null);
+      setQrStatus("waiting");
+    }
+  } catch (err) {
+    console.error("❌ Failed to load QR:", err);
+    setQrStatus("error");
+  }
+}
     // Fetch + apply stats (prefers /by/:cid, falls back to /last)
-  async function fetchAndApplyStats(cid) {
-    try {
-      let payload = null;
-      if (cid) {
-        try {
-          const res = await axios.get(`${API_URL}/api/campaigns/stats/by/${cid}`);
-          payload = res.data;
-        } catch {
-          const res = await axios.get(`${API_URL}/api/campaigns/stats/last`);
-          payload = res.data;
-        }
-      } else {
-        const res = await axios.get(`${API_URL}/api/campaigns/stats/last`);
-        payload = res.data;
-      }
-      if (payload?.ok) {
-        setStats(s => ({
-  ...s,
-  lastOpen: Number.isFinite(payload.openRate) ? payload.openRate : s.lastOpen,
-  lastClick: Number.isFinite(payload.clickRate) ? payload.clickRate : s.lastClick,
-}));
+async function fetchAndApplyStats(cid) {
+  try {
+    // 🔹 always use secureFetch so JWT token is included
+    let payload = null;
 
-        // also reflect in the top row of the table
-        setHistory(prev => {
-          if (!prev.length) return prev;
-          const [first, ...rest] = prev;
-          return [{
+    if (cid) {
+      try {
+        payload = await secureFetch(`/campaigns/stats/by/${cid}`);
+      } catch {
+        payload = await secureFetch("/campaigns/stats/last");
+      }
+    } else {
+      payload = await secureFetch("/campaigns/stats/last");
+    }
+
+    if (payload?.ok) {
+      // 🔸 update global stats
+      setStats((s) => ({
+        ...s,
+        lastOpen: Number.isFinite(payload.openRate)
+          ? payload.openRate
+          : s.lastOpen,
+        lastClick: Number.isFinite(payload.clickRate)
+          ? payload.clickRate
+          : s.lastClick,
+      }));
+
+      // 🔸 reflect in table top row
+      setHistory((prev) => {
+        if (!prev.length) return prev;
+        const [first, ...rest] = prev;
+        return [
+          {
             ...first,
             openRate: payload.openRate ?? first.openRate,
             clickRate: payload.clickRate ?? first.clickRate,
-          }, ...rest];
-        });
-        // stop early if we have any non-zero rate
-        if ((payload.openRate ?? 0) > 0 || (payload.clickRate ?? 0) > 0) {
-          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          },
+          ...rest,
+        ];
+      });
+
+      // 🔸 stop polling early if non-zero stats found
+      if ((payload.openRate ?? 0) > 0 || (payload.clickRate ?? 0) > 0) {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
         }
       }
-    } catch {}
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to fetch campaign stats:", err);
   }
+}
+
 
   function startStatsPolling(cid) {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -205,13 +240,15 @@ function stickyMergeHistory(prev, incoming) {
 }
 
 useEffect(() => {
-  // ✅ Top counters
+  // ✅ Top counters (customers)
   fetchCustomerCount()
-    .then((count) => setStats((s) => ({ ...s, totalCustomers: count })))
+    .then((count) =>
+      setStats((s) => ({ ...s, totalCustomers: count }))
+    )
     .catch(() => {});
 
   // ✅ Keep top cards in sync with "last" campaign stats
-  secureFetch("/campaigns/stats/last")
+ secureFetch("/campaigns/stats/last")
     .then((data) => {
       setStats((s) => ({
         ...s,
@@ -219,26 +256,27 @@ useEffect(() => {
         lastClick: data.clickRate ?? s.lastClick,
       }));
     })
-    .catch((err) => console.warn("⚠️ Failed to fetch last campaign stats:", err));
+    .catch((err) =>
+      console.warn("⚠️ Failed to fetch last campaign stats:", err)
+    );
 
   // ✅ Load customers for WhatsApp selector
   fetchCustomers().catch(() => {});
 
   // ✅ Load recent campaigns (with rates)
-  axios
-    .get(`${API_URL}/api/campaigns/list`)
+ secureFetch("/campaigns/list")
     .then((res) => {
-      if (res.data?.ok && Array.isArray(res.data.campaigns)) {
-        const rows = res.data.campaigns
-          .filter((c) => c && c.id)
-          .map((c) => ({
-            date: c.sent_at ? String(c.sent_at).slice(0, 10) : "",
-            type: "Email",
-            subject: c.subject || "",
-            message: c.message || "",
-            openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
-            clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-            _id: String(c.id),
+      if (res.ok && Array.isArray(res.campaigns)) {
+            const rows = res.campaigns
+              .filter((c) => c && c.id)
+              .map((c) => ({
+                date: c.sent_at ? String(c.sent_at).slice(0, 10) : "",
+                type: c.channel || (c.text && !c.html ? "WhatsApp" : "Email"),
+                subject: c.subject || "",
+                message: c.message || "",
+                openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+                clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+                _id: String(c.id),
           }));
 
         // ✅ Merge into table
@@ -249,40 +287,82 @@ useEffect(() => {
         if (latest) {
           setStats((s) => ({
             ...s,
-            lastOpen: Number.isFinite(latest.openRate) ? latest.openRate : 0,
-            lastClick: Number.isFinite(latest.clickRate) ? latest.clickRate : 0,
+            lastOpen: Number.isFinite(latest.openRate)
+              ? latest.openRate
+              : 0,
+            lastClick: Number.isFinite(latest.clickRate)
+              ? latest.clickRate
+              : 0,
           }));
         }
       }
     })
-    .catch(() => {});
+    .catch((err) =>
+      console.warn("⚠️ Failed to fetch campaign list:", err)
+    );
 }, []);
 
 
 
 
-  async function fetchCustomerCount() {
-    const res = await axios.get(`${API_URL}/api/customers`);
-    return res.data.length || 0;
-  }
 
-  async function fetchCustomers() {
-    const res = await axios.get(`${API_URL}/api/customers`);
+async function fetchCustomerCount() {
+  const res = await secureFetch("/customers");
+  // Handle both {data: [...]} or plain [...]
+  const data = Array.isArray(res) ? res : res.data || [];
+  return data.length || 0;
+}
+
+async function fetchCustomers() {
+  const res = await secureFetch("/customers");
+  // Handle both shapes safely
+  const list = Array.isArray(res) ? res : res.data || [];
+
+  // Only customers with phone, deduplicated by phone number
+  const phoneMap = new Map();
+  list.forEach((c) => {
+    if (c.phone && !phoneMap.has(c.phone)) {
+      phoneMap.set(c.phone, { name: c.name, phone: c.phone });
+    }
+  });
+
+  const uniquePhoneCustomers = Array.from(phoneMap.values());
+  setCustomers(uniquePhoneCustomers);
+  setSelectedPhones(uniquePhoneCustomers.map((c) => c.phone)); // Select all by default
+}
+
+
+// 🔹 Fetch Customers (fixed for both array and {data:[]} formats)
+async function fetchCustomers() {
+  try {
+    const res = await secureFetch("/customers");
+    const list = Array.isArray(res) ? res : res.data || [];
+
     // Only customers with phone, deduplicated by phone number
     const phoneMap = new Map();
-    res.data.forEach(c => {
+    list.forEach((c) => {
       if (c.phone && !phoneMap.has(c.phone)) {
         phoneMap.set(c.phone, { name: c.name, phone: c.phone });
       }
     });
+
     const uniquePhoneCustomers = Array.from(phoneMap.values());
     setCustomers(uniquePhoneCustomers);
-    setSelectedPhones(uniquePhoneCustomers.map(c => c.phone)); // Select all by default
-  }
+    setSelectedPhones(uniquePhoneCustomers.map((c) => c.phone)); // Select all by default
 
+    if (uniquePhoneCustomers.length === 0) {
+      console.warn("⚠️ No customers found in database for this restaurant.");
+    }
+  } catch (err) {
+    console.error("❌ Failed to fetch customers:", err);
+  }
+}
+
+// 🔹 Send Email Campaign (robust error handling + fallback-safe)
 async function sendCampaign() {
   if (!message || !subject) return;
   setSending(true);
+
   try {
     if (primaryUrl && !/^https?:\/\//i.test(primaryUrl)) {
       alert("Tracked link must start with http:// or https://");
@@ -290,14 +370,17 @@ async function sendCampaign() {
       return;
     }
 
-    const { data } = await axios.post(`${API_URL}/api/campaigns/email`, {
-      subject,
-      body: message,
-      primary_url: primaryUrl || undefined,
+    const data = await secureFetch("/campaigns/email", {
+      method: "POST",
+      body: JSON.stringify({
+        subject,
+        body: message,
+        primary_url: primaryUrl || undefined,
+      }),
     });
 
-    // Optimistic row so user sees it instantly
-    setHistory(prev => [
+    // Optimistic history update
+    setHistory((prev) => [
       {
         date: new Date().toISOString().slice(0, 10),
         type: "Email",
@@ -310,79 +393,105 @@ async function sendCampaign() {
       ...prev,
     ]);
 
-    // Start polling stats for THIS campaign (updates top cards & first row)
-    if (data?.campaignId) {
-      startStatsPolling(data.campaignId);
-    }
+    // Start polling campaign stats
+    if (data?.campaignId) startStatsPolling(data.campaignId);
 
-    // Refetch /list shortly to beat DB race (insert/update latency)
-setTimeout(() => {
-  axios.get(`${API_URL}/api/campaigns/list`)
-.then(res => {
-  if (res.data?.ok && Array.isArray(res.data.campaigns)) {
-    const rows = res.data.campaigns
-      .filter(c => c && c.id)
-      .map(c => ({
-        date: c.sent_at ? String(c.sent_at).slice(0,10) : "",
-        type: "Email",
-        subject: c.subject || "",
-        message: c.message || "",
-        openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
-        clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
-        _id: String(c.id),
-      }));
+    // Fetch latest campaign list shortly after
+    setTimeout(() => {
+     secureFetch("/campaigns/list")
+        .then((res) => {
+          const list = res?.campaigns || res?.data?.campaigns || [];
+          if (Array.isArray(list)) {
+            const rows = list
+              .filter((c) => c && c.id)
+              .map((c) => ({
+                date: c.sent_at ? String(c.sent_at).slice(0, 10) : "",
+                type: c.channel || (c.text && !c.html ? "WhatsApp" : "Email"),
+                subject: c.subject || "",
+                message: c.message || "",
+                openRate: Number.isFinite(c.openRate) ? c.openRate : 0,
+                clickRate: Number.isFinite(c.clickRate) ? c.clickRate : 0,
+                _id: String(c.id),
+              }));
 
-    setHistory(prev => {
-      const merged = stickyMergeHistory(prev, rows);
-      // 🔝 sync top cards from newest row
-      const latest = merged[0];
-      if (latest) {
-        setStats(s => ({
-          ...s,
-          lastOpen: Number.isFinite(latest.openRate) ? latest.openRate : 0,
-          lastClick: Number.isFinite(latest.clickRate) ? latest.clickRate : 0,
-        }));
-      }
-      return merged;
-    });
-  }
-})
+            setHistory((prev) => {
+              const merged = stickyMergeHistory(prev, rows);
+              const latest = merged[0];
+              if (latest) {
+                setStats((s) => ({
+                  ...s,
+                  lastOpen: Number.isFinite(latest.openRate)
+                    ? latest.openRate
+                    : 0,
+                  lastClick: Number.isFinite(latest.clickRate)
+                    ? latest.clickRate
+                    : 0,
+                }));
+              }
+              return merged;
+            });
+          }
+        })
+        .catch((err) =>
+          console.warn("⚠️ Failed to refresh campaign list:", err)
+        );
+    }, 3000);
 
-    .catch(() => {});
-}, 3000);
-
-
-
-    // Clear inputs
+    // Reset inputs
     setMessage("");
     setSubject("");
     setPrimaryUrl("");
   } catch (e) {
+    console.error("❌ Campaign send failed:", e);
     alert("Failed to send campaign!");
   }
+
   setSending(false);
 }
 
+// 🔹 Send WhatsApp Campaign (safe + consistent)
+async function sendWhatsAppCampaign() {
+  if (!message) return;
+  setSending(true);
 
-
-  async function sendWhatsAppCampaign() {
-    if (!message) return;
-    setSending(true);
-    try {
-      await axios.post(`${API_URL}/api/campaigns/whatsapp`, {
+  try {
+    const result = await secureFetch("/campaigns/whatsapp", {
+      method: "POST",
+      body: JSON.stringify({
         body: message,
         phones: selectedPhones,
-      });
-      setHistory([
-        { date: new Date().toISOString().slice(0, 10), type: "WhatsApp", message, openRate: 0, clickRate: 0 },
-        ...history,
-      ]);
-      setMessage("");
-    } catch (e) {
-      alert("Failed to send WhatsApp campaign!");
+        subject: subject || undefined,
+        primary_url: primaryUrl || undefined,
+      }),
+    });
+
+    if (result.failed > 0) {
+      alert(`WhatsApp campaign sent with ${result.failed} failures. Check console for details.`);
+    } else {
+      alert("✅ WhatsApp campaign sent!");
     }
-    setSending(false);
+
+    setHistory((prev) => [
+      {
+        date: new Date().toISOString().slice(0, 10),
+        type: "WhatsApp",
+        subject: subject || "WhatsApp Campaign",
+        message,
+        openRate: 0,
+        clickRate: 0,
+      },
+      ...prev,
+    ]);
+
+    setMessage("");
+  } catch (e) {
+    console.error("❌ WhatsApp campaign send failed:", e);
+    alert("Failed to send WhatsApp campaign!");
   }
+
+  setSending(false);
+}
+
 
   function handleSelectAll() {
     if (selectedPhones.length === customers.length) {
@@ -514,38 +623,126 @@ setTimeout(() => {
             </span>
           </div>
         </div>
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-lg p-6 mb-8 text-center">
+      <h2 className="text-xl font-bold mb-3 flex items-center justify-center gap-2">
+        <span>📱 WhatsApp Connection</span>
+        <button
+          onClick={fetchWhatsAppQR}
+          className="text-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
+        >
+          Refresh
+        </button>
+      </h2>
+
+      {qrStatus === "connected" && (
+        <p className="text-green-600 font-semibold">✅ WhatsApp Connected!</p>
+      )}
+      {qrStatus === "waiting" && (
+        <p className="text-yellow-500 font-semibold">⏳ Waiting for QR code...</p>
+      )}
+      {qrStatus === "error" && (
+        <p className="text-red-500 font-semibold">❌ Failed to fetch QR.</p>
+      )}
+      {whatsAppQR && (
+        <img
+          src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
+            whatsAppQR
+          )}&size=200x200`}
+          alt="WhatsApp QR"
+          className="mx-auto my-3 border rounded-xl shadow-md"
+        />
+      )}
+    </div>
+  
+
         {/* Recent Campaigns */}
-        <div>
-          <h2 className="font-bold mb-2 text-lg">Recent Campaigns</h2>
-          <div className="overflow-x-auto rounded-2xl shadow bg-white dark:bg-zinc-900/70 border border-orange-100 dark:border-zinc-800">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-bold text-lg">Recent Campaigns</h2>
+          <button
+            onClick={async () => {
+              if (window.confirm("Are you sure you want to delete all campaigns from database? This cannot be undone.")) {
+                try {
+                  const res = await secureFetch("/campaigns/clear-all", {
+                    method: "DELETE",
+                  });
+                  if (res.ok) {
+                    alert(`✅ ${res.deleted} campaigns cleared successfully.`);
+                    setHistory([]);
+                  } else {
+                    alert("❌ Failed to clear campaigns: " + (res.error || ""));
+                  }
+                } catch (err) {
+                  console.error("❌ Clear campaigns failed:", err);
+                  alert("Error clearing campaigns.");
+                }
+              }
+            }}
+            className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg shadow transition"
+          >
+            Clear Campaigns
+          </button>
+        </div>
+
+        <div className="bg-white/85 dark:bg-zinc-900/80 border border-orange-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden mb-8">
+          {history.length === 0 ? (
+            <p className="text-sm text-center text-gray-500 dark:text-gray-400 py-6">
+              Send your first email or WhatsApp blast to see it appear here.
+            </p>
+          ) : (
             <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b border-orange-100 dark:border-zinc-700">
-                  <th className="py-2 px-3 font-bold">Date</th>
-                  <th className="py-2 px-3 font-bold">Type</th>
-                  <th className="py-2 px-3 font-bold">Subject</th>
-                  <th className="py-2 px-3 font-bold">Message</th>
-                  <th className="py-2 px-3 font-bold">Open Rate</th>
-                  <th className="py-2 px-3 font-bold">Click Rate</th>
+              <thead className="bg-orange-50/80 dark:bg-zinc-800/70 text-left text-gray-600 dark:text-gray-300 uppercase text-xs tracking-wide">
+                <tr>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Subject / Message</th>
+                  <th className="px-4 py-3 text-center">Open %</th>
+                  <th className="px-4 py-3 text-center">Click %</th>
                 </tr>
               </thead>
               <tbody>
-                {history.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-6 text-gray-400">No campaigns yet</td></tr>
-                ) : history.map((c, i) => (
-                  <tr key={i} className="border-b border-orange-50 dark:border-zinc-800 hover:bg-orange-50/60 dark:hover:bg-zinc-800/30 transition">
-                    <td className="py-2 px-3">{c.date}</td>
-                    <td className="py-2 px-3">{c.type}</td>
-                    <td className="py-2 px-3">{c.subject}</td>
-                    <td className="py-2 px-3">{c.message}</td>
-                    <td className="py-2 px-3">{c.openRate ? `${c.openRate}%` : "—"}</td>
-                    <td className="py-2 px-3">{c.clickRate ? `${c.clickRate}%` : "—"}</td>
-                  </tr>
-                ))}
+                {history.slice(0, 12).map((row, idx) => {
+                  const key = row._id || `${row.date}-${idx}`;
+                  const summary =
+                    row.subject?.trim() ||
+                    row.message?.trim() ||
+                    (row.type === "Email" ? "Email campaign" : "WhatsApp blast");
+                  return (
+                    <tr
+                      key={key}
+                      className="border-t border-orange-100/70 dark:border-zinc-800/80 hover:bg-orange-50/60 dark:hover:bg-zinc-800/60 transition"
+                    >
+                      <td className="px-4 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                        {row.date || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            row.type === "Email"
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
+                              : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200"
+                          }`}
+                        >
+                          {row.type || "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-800 dark:text-gray-200 max-w-[220px] truncate">
+                        {summary}
+                      </td>
+                      <td className="px-4 py-3 text-center text-gray-700 dark:text-gray-300">
+                        {Number.isFinite(row.openRate) ? `${row.openRate}%` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-center text-gray-700 dark:text-gray-300">
+                        {Number.isFinite(row.clickRate) ? `${row.clickRate}%` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
-          </div>
+          )}
         </div>
+
+
         {/* Footer */}
         <div className="mt-7 text-sm text-gray-400 text-center">
           <span className="font-semibold">Beypro Marketing</span> — Reach every customer, fill every table.

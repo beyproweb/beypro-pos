@@ -1,7 +1,6 @@
 // modals/StockConfirmModal.js
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from "react-i18next";
-const API_URL = import.meta.env.VITE_API_URL || "";
 import secureFetch from "../utils/secureFetch";
 
 export default function StockConfirmModal({
@@ -10,7 +9,9 @@ export default function StockConfirmModal({
   productName,
   expectedQuantity,
   unit,
-  onConfirm
+  onConfirm,
+  productObj,
+  batchCount,
 }) {
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState('');
@@ -18,10 +19,21 @@ export default function StockConfirmModal({
      const { t, i18n } = useTranslation();
   useEffect(() => {
     if (!isOpen) return;
-    secureFetch("suppliers")
-      .then((res) => res.json())
-      .then((data) => setSuppliers(data))
-      .catch((err) => console.error('❌ Failed to load suppliers:', err));
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await secureFetch("/suppliers");
+        if (mounted) {
+          setSuppliers(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.error("❌ Failed to load suppliers:", err);
+        if (mounted) setSuppliers([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -38,8 +50,9 @@ export default function StockConfirmModal({
     supplier_id: selectedSupplier,
     quantity: parseFloat(actualQuantity),
     name: productName,
-
-    unit
+    unit,
+    productObj,
+    batchCount,
   };
 
   console.log("📤 Confirming stock with payload:", payload); // ✅ Add this line

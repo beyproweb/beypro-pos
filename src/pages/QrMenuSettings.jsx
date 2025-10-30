@@ -34,7 +34,38 @@ export default function QrMenuSettings() {
       })
       .catch((err) => console.error("❌ Failed to load disabled IDs:", err));
 
-    setQrUrl(`${window.location.origin}/qr-menu`);
+    const origin = window.location.origin;
+    let identifier = "";
+
+    try {
+      const storedUser = JSON.parse(localStorage.getItem("beyproUser") || "null");
+      if (storedUser && typeof storedUser === "object") {
+        identifier =
+          storedUser.restaurant_id ||
+          storedUser.user?.restaurant_id ||
+          storedUser.restaurant?.slug ||
+          "";
+      }
+    } catch {
+      identifier = "";
+    }
+
+    if (!identifier) {
+      try {
+        const storedRestaurant = JSON.parse(localStorage.getItem("restaurant") || "null");
+        if (storedRestaurant && typeof storedRestaurant === "object") {
+          identifier = storedRestaurant.slug || "";
+        }
+      } catch {
+        identifier = "";
+      }
+    }
+
+    setQrUrl(
+      identifier
+        ? `${origin}/qr-menu/${identifier}`
+        : `${origin}/qr-menu`
+    );
   }, []);
 
   // ✅ Toggle product visibility

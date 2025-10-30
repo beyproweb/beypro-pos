@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useSetting } from "../components/hooks/useSetting";
 import { normalizeUser } from "../utils/normalizeUser";
+import { getAuthToken } from "../utils/secureFetch";
 
 // Always point to the API base (ending in /api)
 const RAW_API =
@@ -24,27 +25,25 @@ export const AuthProvider = ({ children }) => {
   useSetting("users", setUserSettings, { roles: {} });
 
   // ✅ Load cached user instantly on mount and normalize it
-// ✅ Load cached user instantly on mount and normalize it
-useEffect(() => {
-  try {
-    const cachedUser = JSON.parse(localStorage.getItem("beyproUser"));
-    if (cachedUser) {
-      const normalized = normalizeUser(cachedUser, userSettings);
-      setCurrentUser(normalized);
-      localStorage.setItem("beyproUser", JSON.stringify(normalized));
+  useEffect(() => {
+    try {
+      const cachedUser = JSON.parse(localStorage.getItem("beyproUser"));
+      if (cachedUser) {
+        const normalized = normalizeUser(cachedUser, userSettings);
+        setCurrentUser(normalized);
+        localStorage.setItem("beyproUser", JSON.stringify(normalized));
 
-      // ✅ Ensure restaurant_id is always in localStorage
-      if (normalized.restaurant_id) {
-        localStorage.setItem("restaurant_id", normalized.restaurant_id);
+        // ✅ Ensure restaurant_id is always in localStorage
+        if (normalized.restaurant_id) {
+          localStorage.setItem("restaurant_id", normalized.restaurant_id);
+        }
       }
+    } catch (err) {
+      console.warn("⚠️ Failed to parse cached user:", err);
     }
-  } catch (err) {
-    console.warn("⚠️ Failed to parse cached user:", err);
-  }
-  setLoading(false);
-  setInitializing(false);
-}, []);
-
+    setLoading(false);
+    setInitializing(false);
+  }, []);
 
   // ✅ Persist role settings for permission hooks
   useEffect(() => {
@@ -55,17 +54,16 @@ useEffect(() => {
 
   // ✅ Background refresh (runs once, token-based)
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
+    const rawToken = getAuthToken();
+    if (!rawToken) return;
 
-    const resolvePermissions = (user) => {
-      const normalized = normalizeUser(user, userSettings);
-      return normalized;
-    };
+    const authHeader = rawToken.startsWith("Bearer ")
+      ? rawToken
+      : `Bearer ${rawToken}`;
 
     fetch(`${API_BASE}/me`, {
-  headers: { Authorization: `Bearer ${token}` },
-})
+      headers: { Authorization: authHeader },
+    })
 
       .then((res) => {
         if (res.status === 401) {
@@ -84,9 +82,49 @@ useEffect(() => {
         if (!res) return;
         const user = res.user || res.staff;
         if (user) {
-          const fullUser = resolvePermissions(user);
-          setCurrentUser(fullUser);
-          localStorage.setItem("beyproUser", JSON.stringify(fullUser));
+          setCurrentUser((prev) => {
+            const normalized = normalizeUser(user, userSettings);
+            if (!normalized) return prev || null;
+
+            const nextUser = { ...normalized };
+
+            if (!Array.isArray(nextUser.permissions) || nextUser.permissions.length === 0) {
+              if (prev?.permissions?.length) {
+                nextUser.permissions = prev.permissions;
+              } else {
+                try {
+                  const cached = JSON.parse(localStorage.getItem("beyproUser") || "{}");
+                  if (Array.isArray(cached?.permissions) && cached.permissions.length) {
+                    nextUser.permissions = cached.permissions;
+                  }
+                } catch {
+                  /* ignore */
+                }
+              }
+            }
+
+            if (!nextUser.token) {
+              if (prev?.token) {
+                nextUser.token = prev.token;
+              } else {
+                const raw = getAuthToken();
+                if (raw) {
+                  nextUser.token = raw.startsWith("Bearer ") ? raw.slice(7) : raw;
+                }
+              }
+            }
+
+            try {
+              localStorage.setItem("beyproUser", JSON.stringify(nextUser));
+              if (nextUser.restaurant_id) {
+                localStorage.setItem("restaurant_id", nextUser.restaurant_id);
+              }
+            } catch {
+              /* ignore */
+            }
+
+            return nextUser;
+          });
         } else {
           console.warn("⚠️ No valid user returned from /me");
           setCurrentUser(null);

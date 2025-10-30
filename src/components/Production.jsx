@@ -1,13 +1,12 @@
 // 📁 Production.jsx (frontend)
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Minus, Plus, Pencil } from 'lucide-react';
 import RecipeModal from '../modals/RecipeModal';
 import StockConfirmModal from '../modals/StockConfirmModal';
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import secureFetch from "../utils/secureFetch";
-
-const API_URL = import.meta.env.VITE_API_URL || "";
+import { useAuth } from "../context/AuthContext";
 
 export default function Production() {
   const [recipes, setRecipes] = useState([]);
@@ -15,45 +14,130 @@ export default function Production() {
   const [showModal, setShowModal] = useState(false);
   const [editRecipe, setEditRecipe] = useState(null);
   const [loadingMap, setLoadingMap] = useState({});
-  const [stockModal, setStockModal] = useState({ open: false, product: null, quantity: 0, unit: '' });
+  const [stockModal, setStockModal] = useState({
+    open: false,
+    product: null,
+    quantity: 0,
+    unit: '',
+    productObj: null,
+    batchCount: 1,
+  });
   const [historyMap, setHistoryMap] = useState({});
   const [lockedProduce, setLockedProduce] = useState({});
 
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
+
+  const tenantId = useMemo(() => {
+    if (currentUser?.restaurant_id) return String(currentUser.restaurant_id);
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem("restaurant_id");
+      if (stored) return String(stored);
+    }
+    return null;
+  }, [currentUser]);
+
+  const filterByTenant = useCallback(
+    (items) => {
+      if (!tenantId) return items;
+      return items.filter((recipe) => {
+        const owners = [
+          recipe.restaurant_id,
+          recipe.restaurantId,
+          recipe.tenant_id,
+          recipe.tenantId,
+        ]
+          .filter(Boolean)
+          .map(String);
+        return owners.length > 0 && owners.includes(tenantId);
+      });
+    },
+    [tenantId]
+  );
+
+  const loadRecipes = useCallback(async () => {
+    try {
+      const endpoint = tenantId
+        ? `/production/recipes?restaurant_id=${tenantId}`
+        : "/production/recipes";
+      const data = await secureFetch(endpoint);
+      const recipeList = Array.isArray(data) ? data : [];
+      const normalized = recipeList.map((recipe) => {
+        const owners = [
+          recipe.restaurant_id,
+          recipe.restaurantId,
+          recipe.tenant_id,
+          recipe.tenantId,
+        ].filter(Boolean);
+        if (!owners.length && tenantId) {
+          return {
+            ...recipe,
+            restaurant_id: tenantId,
+          };
+        }
+        return recipe;
+      });
+
+      const filtered = filterByTenant(normalized);
+
+      setRecipes(filtered);
+
+      const initialQuantities = {};
+      filtered.forEach((recipe) => {
+        initialQuantities[recipe.name] = 1;
+      });
+      setQuantities(initialQuantities);
+
+      const historyAccumulator = {};
+      const readyMap = {};
+
+      await Promise.all(
+        filtered.map(async (recipe) => {
+          const encodedName = encodeURIComponent(recipe.name);
+          try {
+            const history = await secureFetch(
+              `/production/production-log/history?product=${encodedName}&limit=5`
+            );
+            historyAccumulator[recipe.name] = Array.isArray(history) ? history : [];
+          } catch (err) {
+            console.error("❌ Failed to load history:", err);
+            historyAccumulator[recipe.name] = [];
+          }
+
+          try {
+            const unstocked = await secureFetch(
+              `/production/production-log/unstocked?product=${encodedName}&limit=1`
+            );
+            if (Array.isArray(unstocked) && unstocked.length > 0) {
+              readyMap[recipe.name] = "ready";
+            }
+          } catch {
+            /* ignore */
+          }
+        })
+      );
+
+      setHistoryMap(historyAccumulator);
+      if (Object.keys(readyMap).length) {
+        setLoadingMap((prev) => ({ ...prev, ...readyMap }));
+      }
+    } catch (err) {
+      console.error("❌ Failed to load recipes:", err);
+      setRecipes([]);
+      setQuantities({});
+    }
+  }, [filterByTenant, tenantId]);
 
   useEffect(() => {
-    secureFetch("production/recipes")
-      .then((res) => res.json())
-      .then((data) => {
-        setRecipes(data);
-        const q = {};
-        data.forEach((r) => (q[r.name] = 1));
-        setQuantities(q);
-
-        // history for each product
-        data.forEach((recipe) => {
-          secureFetch("production/production-log/history?product=${encodeURIComponent(recipe.name)}&limit=5")
-            .then((res) => res.json())
-            .then((history) => {
-              setHistoryMap((prev) => ({ ...prev, [recipe.name]: history }));
-            })
-            .catch((err) => console.error('❌ Failed to load history:', err));
-        });
-
-        // mark cards as ready if there’s unstocked production
-        data.forEach((recipe) => {
-          secureFetch("production/production-log/unstocked?product=${encodeURIComponent(recipe.name)}&limit=1")
-            .then((res) => res.json())
-            .then((unstockedLogs) => {
-              if (Array.isArray(unstockedLogs) && unstockedLogs.length > 0) {
-                setLoadingMap((prev) => ({ ...prev, [recipe.name]: 'ready' }));
-              }
-            })
-            .catch(() => {});
-        });
-      })
-      .catch((err) => console.error('❌ Failed to load recipes:', err));
-  }, []);
+    let cancelled = false;
+    (async () => {
+      await loadRecipes();
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadRecipes]);
 
   const handleAdjust = (productName, delta) => {
     setQuantities((prev) => ({
@@ -62,14 +146,41 @@ export default function Production() {
     }));
   };
 
-  const fetchProductHistory = (productName) => {
-    secureFetch("production/production-log/history?product=${encodeURIComponent(productName)}&limit=5")
-      .then((res) => res.json())
-      .then((history) => {
-        setHistoryMap((prev) => ({ ...prev, [productName]: history }));
-      })
-      .catch((err) => console.error('❌ Failed to load history:', err));
+  const fetchProductHistory = async (productName) => {
+    try {
+      const history = await secureFetch(
+        `/production/production-log/history?product=${encodeURIComponent(productName)}&limit=5`
+      );
+      setHistoryMap((prev) => ({
+        ...prev,
+        [productName]: Array.isArray(history) ? history : [],
+      }));
+    } catch (err) {
+      console.error("❌ Failed to load history:", err);
+    }
   };
+
+  const logProduction = useCallback(
+    async (payload, { swallowNotFound = false } = {}) => {
+      try {
+        await secureFetch("/production/production-log", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return true;
+      } catch (err) {
+        const message = String(err?.message || "");
+        if (swallowNotFound && message.includes("404")) {
+          console.info(
+            "ℹ️ production/production-log endpoint not available (404). Skipping server log."
+          );
+          return false;
+        }
+        throw err;
+      }
+    },
+    []
+  );
 
   /**
    * Produce a product (deduct ingredients + log)
@@ -91,23 +202,10 @@ export default function Production() {
         batch_count: batchCount,
         produced_by: 'admin',
         ingredients: product.ingredients,
-        product_unit: product.output_unit
+        product_unit: product.output_unit,
       };
 
-      const res = await secureFetch("production/production-log", {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const msg = await res.text().catch(() => '');
-        console.error('❌ Production failed:', msg);
-        toast.error(t('Failed to log production (ingredient deduction).'));
-        setLoadingMap((prev) => ({ ...prev, [product.name]: null }));
-        setLockedProduce((prev) => ({ ...prev, [product.name]: false }));
-        return false;
-      }
+      await logProduction(payload, { swallowNotFound: true });
 
       // success → show “ready” briefly, refresh history
       fetchProductHistory(product.name);
@@ -120,7 +218,11 @@ export default function Production() {
       return true;
     } catch (e) {
       console.error(e);
-      toast.error(t('Network error while logging production.'));
+      toast.error(
+        e?.message
+          ? `${t('Failed to log production')}: ${e.message}`
+          : t('Failed to log production (ingredient deduction).')
+      );
       setLoadingMap((prev) => ({ ...prev, [product.name]: null }));
       setLockedProduce((prev) => ({ ...prev, [product.name]: false }));
       return false;
@@ -132,48 +234,56 @@ export default function Production() {
    */
 const handleAddToStock = async ({ supplier_id, quantity, name, unit, productObj, batchCount }) => {
   try {
-    // ✅ 1) Always log production first (deduct ingredients)
-    const payloadLog = {
-      product_name: productObj.name,
-      base_quantity: productObj.base_quantity,
-      batch_count: batchCount ?? Math.max(1, Math.round(quantity / (productObj.base_quantity || 1))),
-      produced_by: 'admin',
-      ingredients: productObj.ingredients,
-      product_unit: productObj.output_unit
-    };
-
-    console.log("🧾 Calling /production-log with:", payloadLog);
-    const prodRes = await secureFetch("production/production-log", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payloadLog)
-    });
-
-    if (!prodRes.ok) {
-      const msg = await prodRes.text().catch(() => '');
-      toast.error(`❌ Could not deduct ingredients: ${msg || 'production-log failed'}`);
+    const targetRecipe =
+      productObj || recipes.find((r) => r.name === name) || null;
+    if (!targetRecipe) {
+      toast.error(t("Unable to find recipe details for this product."));
       return;
     }
 
+    // ✅ 1) Always log production first (deduct ingredients)
+    const payloadLog = {
+      product_name: targetRecipe.name,
+      base_quantity: targetRecipe.base_quantity,
+      batch_count:
+        batchCount ??
+        Math.max(
+          1,
+          Math.round(quantity / (targetRecipe.base_quantity || 1))
+        ),
+      produced_by: 'admin',
+      ingredients: targetRecipe.ingredients,
+      product_unit: targetRecipe.output_unit
+    };
+
+    console.log("🧾 Calling /production-log with:", payloadLog);
+    await logProduction(payloadLog, { swallowNotFound: true });
+
     // ✅ 2) Then add finished product to stock
-    const payloadStock = { supplier_id, name, quantity, unit, from_production: true };
+      const payloadStock = {
+        supplier_id,
+        name,
+        quantity,
+        unit,
+        from_production: true,
+        restaurant_id: tenantId || null,
+        batch_count: batchCount ?? Math.max(1, Math.round(quantity / (targetRecipe.base_quantity || 1))),
+      };
     console.log("📤 Sending final stock payload:", payloadStock);
 
-    const res = await secureFetch("stock", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payloadStock)
+    await secureFetch("/stock", {
+      method: "POST",
+      body: JSON.stringify(payloadStock),
     });
 
-    if (res.ok) {
-      toast.success(`✔️ "${name}" added to stock!`);
-    } else {
-      const error = await res.json().catch(() => ({}));
-      toast.error(`❌ Failed to add stock: ${error.error || 'Unknown error'}`);
-    }
+    toast.success(`✔️ "${name}" added to stock!`);
   } catch (err) {
     console.error(err);
-    toast.error(`❌ Network error during production/stock add!`);
+    toast.error(
+      err?.message
+        ? `❌ ${err.message}`
+        : '❌ Network error during production/stock add!'
+    );
   } finally {
     setLoadingMap((prev) => ({ ...prev, [name]: null }));
     setLockedProduce((prev) => ({ ...prev, [name]: false }));
@@ -181,38 +291,98 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit, productObj,
 };
 
   const handleAddOrUpdateRecipe = async (recipe) => {
-    const method = editRecipe ? 'PUT' : 'POST';
-    const endpoint = editRecipe
-      ? `${API_URL}/api/production/recipes/${editRecipe.id}`
-      : `${API_URL}/api/production/recipes`;
+    try {
+      const payload = { ...recipe };
+      if (tenantId) {
+        payload.restaurant_id = tenantId;
+        payload.restaurantId = tenantId;
+        payload.tenant_id = tenantId;
+        payload.tenantId = tenantId;
+      }
 
-    const res = await fetch(endpoint, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(recipe)
-    });
+      if (editRecipe) {
+        const recipeIdentifier = editRecipe.id || editRecipe._id;
+        const encodedId = recipeIdentifier
+          ? encodeURIComponent(recipeIdentifier)
+          : null;
+        let updated = false;
 
-    if (res.ok) {
-      const updated = await secureFetch("production/recipes").then(res => res.json());
-      setRecipes(updated);
-      const q = {};
-      updated.forEach((r) => (q[r.name] = 1));
-      setQuantities(q);
+        if (encodedId) {
+          try {
+            const updateEndpoint = tenantId
+              ? `/production/recipes/${encodedId}?restaurant_id=${tenantId}`
+              : `/production/recipes/${encodedId}`;
+            await secureFetch(updateEndpoint, {
+              method: "PUT",
+              body: JSON.stringify(payload),
+            });
+            updated = true;
+          } catch (err) {
+            console.warn(
+              "⚠️ PUT /production/recipes failed, attempting delete + recreate",
+              err
+            );
+            try {
+              const deleteEndpoint = tenantId
+                ? `/production/recipes/${encodedId}?restaurant_id=${tenantId}`
+                : `/production/recipes/${encodedId}`;
+              await secureFetch(deleteEndpoint, {
+                method: "DELETE",
+              });
+            } catch (delErr) {
+              console.error(
+                "❌ Failed to delete recipe before recreate",
+                delErr
+              );
+            }
+          }
+        }
+
+        if (!updated) {
+          const fallbackCreateEndpoint = tenantId
+            ? `/production/recipes?restaurant_id=${tenantId}`
+            : "/production/recipes";
+          await secureFetch(fallbackCreateEndpoint, {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+        }
+      } else {
+        const createEndpoint = tenantId
+          ? `/production/recipes?restaurant_id=${tenantId}`
+          : "/production/recipes";
+        await secureFetch(createEndpoint, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
+      await loadRecipes();
+      toast.success(editRecipe ? t("Recipe updated!") : t("Recipe added!"));
+    } catch (err) {
+      console.error("❌ Failed to save recipe:", err);
+      toast.error(err?.message || t("Failed to save recipe."));
+    } finally {
+      setEditRecipe(null);
     }
-    setEditRecipe(null);
   };
 
   const handleDeleteRecipe = async (recipeName) => {
     const recipe = recipes.find(r => r.name === recipeName);
     if (!recipe) return;
-    const res = await secureFetch("production/recipes/${recipe.id}", { method: 'DELETE' });
-    if (res.ok) {
-      setRecipes((prev) => prev.filter((r) => r.name !== recipeName));
-      setQuantities((prev) => {
-        const updated = { ...prev };
-        delete updated[recipeName];
-        return updated;
+    const recipeId = recipe.id || recipe._id || recipeName;
+    try {
+      const deleteEndpoint = tenantId
+        ? `/production/recipes/${encodeURIComponent(recipeId)}?restaurant_id=${tenantId}`
+        : `/production/recipes/${encodeURIComponent(recipeId)}`;
+      await secureFetch(deleteEndpoint, {
+        method: "DELETE",
       });
+      await loadRecipes();
+      toast.success(t("Recipe deleted"));
+    } catch (err) {
+      console.error("❌ Failed to delete recipe:", err);
+      toast.error(err?.message || t("Failed to delete recipe."));
     }
   };
 
@@ -337,10 +507,12 @@ const handleAddToStock = async ({ supplier_id, quantity, name, unit, productObj,
       {/* Add to Stock Modal */}
       <StockConfirmModal
         isOpen={stockModal.open}
-        onClose={() => setStockModal({ open: false, product: null, quantity: 0, unit: '' })}
+        onClose={() => setStockModal({ open: false, product: null, quantity: 0, unit: '', productObj: null, batchCount: 1 })}
         productName={stockModal.product}
         expectedQuantity={stockModal.quantity}
         unit={stockModal.unit}
+        productObj={stockModal.productObj}
+        batchCount={stockModal.batchCount}
         onConfirm={handleAddToStock}
       />
     </div>
