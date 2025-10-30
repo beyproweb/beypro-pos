@@ -27,13 +27,12 @@ export default function LoginScreen() {
     console.groupCollapsed("🔑 Login Debug");
     console.log("➡️ Using API_BASE:", API_BASE);
 
-// ✅ Remove the extra /api — secure and correct
-const res = await fetch(`${API_BASE}/auth/login`, {
+    // ✅ Correct full login route
+const res = await fetch(`${API_BASE}/api/auth/login`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ email, password }),
 });
-
 
 
     console.log("⬅️ Raw Response:", res.status, res.statusText);
