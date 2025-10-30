@@ -1,14 +1,24 @@
 // src/utils/socket.js
 import { io } from "socket.io-client";
 
+// 🧩 Choose backend automatically
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
   (import.meta.env.MODE === "development"
     ? "http://localhost:5000"
     : "https://beypro-backend.onrender.com");
 
-let socket = null;
+// Initialize socket
+const socket = io(SOCKET_URL, {
+  transports: ["websocket", "polling"],
+  reconnection: true,
+  reconnectionAttempts: 20,
+  reconnectionDelay: 2000,
+  withCredentials: true,
+  autoConnect: true,
+});
 
+// 🧠 Helper to safely get restaurant ID
 function getRestaurantId() {
   try {
     const user = JSON.parse(localStorage.getItem("beyproUser") || "{}");
@@ -18,52 +28,64 @@ function getRestaurantId() {
   }
 }
 
-// ✅ Initialize socket only after restaurant_id exists
-export function initSocket() {
+// 🟢 On first connect
+socket.on("connect", () => {
+  console.log(`[SOCKET] ✅ Connected: ${socket.id}`);
   const restaurantId = getRestaurantId();
-
-  if (!restaurantId) {
-    console.warn("[SOCKET] ⏳ Waiting for restaurant_id before connecting...");
-    setTimeout(initSocket, 500);
-    return;
+  if (restaurantId) {
+    socket.emit("join_restaurant", restaurantId);
+    console.log(`[SOCKET] 👥 Joined restaurant_${restaurantId}`);
+  } else {
+    console.warn("[SOCKET] ⚠️ No restaurant_id found in localStorage on connect");
   }
 
-  socket = io(SOCKET_URL, {
-    transports: ["websocket", "polling"],
-    reconnection: true,
-    reconnectionAttempts: 20,
-    reconnectionDelay: 2000,
-    withCredentials: true,
-    auth: { restaurantId }, // 🧠 pass restaurant automatically
-  });
+  // 🧩 Safety rejoin few seconds after connect (handles slow logins)
+  setTimeout(() => {
+    const rid = getRestaurantId();
+    if (rid) {
+      socket.emit("join_restaurant", rid);
+      console.log(`[SOCKET] 🧠 Safety rejoin restaurant_${rid}`);
+    }
+  }, 3000);
+});
 
-  socket.on("connect", () => {
-    console.log(`[SOCKET] ✅ Connected: ${socket.id} | restaurant_${restaurantId}`);
-  });
+// ♻️ Auto-rejoin on reconnect attempts
+socket.io.on("reconnect_attempt", (attempt) => {
+  console.log(`[SOCKET] 🔄 Reconnect attempt #${attempt}`);
+  const restaurantId = getRestaurantId();
+  if (restaurantId) {
+    socket.emit("join_restaurant", restaurantId);
+    console.log(`[SOCKET] 🔁 Rejoined restaurant_${restaurantId}`);
+  }
+});
 
-  socket.on("reconnect_attempt", (attempt) => {
-    console.log(`[SOCKET] 🔄 Reconnect attempt #${attempt}`);
-  });
+// 🔁 Rejoin whenever app reloads or localStorage changes
+window.addEventListener("storage", () => {
+  const user = JSON.parse(localStorage.getItem("beyproUser") || "{}");
+  if (user?.restaurant_id) {
+    socket.emit("join_restaurant", user.restaurant_id);
+    console.log(`[SOCKET] 🧩 Auto rejoined restaurant_${user.restaurant_id} from storage change`);
+  }
+});
 
-  socket.on("disconnect", (reason) => {
-    console.warn(`[SOCKET] ❌ Disconnected: ${reason}`);
-  });
+// 🔌 On disconnect
+socket.on("disconnect", (reason) => {
+  console.warn(`[SOCKET] ❌ Disconnected: ${reason}`);
+});
 
-  socket.on("connect_error", (err) => {
-    console.error("[SOCKET] 🚫 Connection error:", err?.message || err);
-  });
+// ⚠️ Connection errors
+socket.on("connect_error", (err) => {
+  console.error("[SOCKET] 🚫 Connection error:", err?.message || err);
+});
 
-  return socket;
-}
-
-// ✅ Helper for manual rejoin (after login)
+// 🔄 Public helper to manually rejoin (used in GlobalOrderAlert)
 export function joinRestaurantRoom() {
   const restaurantId = getRestaurantId();
-  if (socket && socket.connected && restaurantId) {
+  if (restaurantId && socket.connected) {
     socket.emit("join_restaurant", restaurantId);
-    console.log(`[SOCKET] ✅ Joined restaurant_${restaurantId}`);
-  } else {
-    console.warn("[SOCKET] ⚠️ Cannot join — socket not ready or no restaurant_id");
+    console.log(`[SOCKET] ✅ Manually joined restaurant_${restaurantId}`);
+  } else if (!socket.connected) {
+    console.warn("[SOCKET] ⚠️ Socket not connected yet, will join on connect");
   }
 }
 
