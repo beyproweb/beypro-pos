@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import { useTranslation } from "react-i18next";
@@ -162,6 +162,49 @@ const productsInActiveCategory = safeProducts.filter(
     (p.category || "").trim().toLowerCase() ===
     (activeCategory || "").trim().toLowerCase()
 );
+
+const renderCategoryButton = (cat, idx, variant = "desktop") => {
+  const slug = (cat || "").trim().toLowerCase();
+  const catSrc = categoryImages[slug] || "";
+  const isActive = currentCategoryIndex === idx;
+  const hasImg = !!catSrc;
+
+  const baseClasses =
+    "flex w-full flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition lg:items-center lg:text-center";
+
+  const activeClasses =
+    "border-indigo-500 bg-white shadow-md";
+
+  const inactiveClasses =
+    "border-blue-100 hover:border-indigo-200 hover:bg-blue-50";
+
+  const imageClasses =
+    "mb-1 h-10 w-10 rounded-lg border object-cover shadow-sm lg:self-center";
+
+  const iconClasses = "mb-1 text-xl lg:self-center";
+
+  const labelClasses =
+    "text-sm font-semibold text-slate-800 lg:text-center";
+
+  return (
+    <button
+      key={`${variant}-${cat}-${idx}`}
+      type="button"
+      onClick={() => setCurrentCategoryIndex(idx)}
+      className={`${baseClasses} ${isActive ? activeClasses : inactiveClasses}`}
+    >
+      {hasImg ? (
+        <img src={catSrc} alt={cat} className={imageClasses} />
+      ) : (
+        <span className={iconClasses}>
+          {categoryIcons[cat] || categoryIcons.default}
+        </span>
+      )}
+      <span className={labelClasses}>{t(cat)}</span>
+    </button>
+  );
+};
+
 const hasExtras = (item) => Array.isArray(item.extras) && item.extras.length > 0;
 const [categoryImages, setCategoryImages] = useState({});
 // Calculate extras total and final price in the Add to Cart modal
@@ -174,13 +217,14 @@ const basePrice = selectedProduct ? parseFloat(selectedProduct.price) || 0 : 0;
 const quantity = selectedProduct ? selectedProduct.quantity || 1 : 1;
 const perItemTotal = basePrice + extrasPricePerProduct;
 const fullTotal = perItemTotal * quantity;
-  const { setHeader } = useHeader();
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const { setHeader } = useHeader();
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-  const [showMoveTableModal, setShowMoveTableModal] = useState(false);
-  const { currentUser } = useAuth();
+const [showMoveTableModal, setShowMoveTableModal] = useState(false);
+const { currentUser } = useAuth();
 // 1. Add drinksList state at the top
 const [drinksList, setDrinksList] = useState([]);
+const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
   const fetchExtrasGroupsOnce = useCallback(async () => {
     const data = await secureFetch(`/extras-groups${identifier}`);
@@ -415,8 +459,6 @@ useEffect(() => {
     });
 }, []);
 
-
-
 // At the top inside TransactionScreen()
 const handleQuickDiscount = () => {
   // TODO: open your discount modal, or show a toast for now
@@ -648,8 +690,6 @@ function TableNavigationRow({ tableId, navigate, t, cartMode }) {
 
 </button>
 
-
-
       {/* Next Table Arrow */}
       <button
         onClick={() => {
@@ -687,8 +727,6 @@ function TableNavigationRow({ tableId, navigate, t, cartMode }) {
   );
 }
 
-
-
 // Increase quantity of a cart item by unique_id
 const incrementCartItem = (uniqueId) => {
   setCartItems(prev =>
@@ -716,8 +754,6 @@ const decrementCartItem = (uniqueId) => {
 
 
 
-
-
 function allItemsDelivered(items) {
   return Array.isArray(items) && items.length > 0 &&
     items.every(item => {
@@ -730,8 +766,6 @@ function allItemsDelivered(items) {
         item.kitchen_status === "delivered";
     });
 }
-
-
 
 
 
@@ -804,13 +838,12 @@ useEffect(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [order?.id]);
 
-
-
 useEffect(() => {
   // Whenever a new table/order is opened, reset discount
   setDiscountValue(0);
   setDiscountType("percent");
 }, [tableId, orderId]);
+
 
 useEffect(() => {
   // 🧹 1️⃣ Clear previous table state instantly when switching tables
@@ -851,14 +884,21 @@ await fetchOrderItems(newOrder.id);
   // ✅ Create or fetch table order
 const createOrFetchTableOrder = async (tableNumber) => {
   try {
-    const orders = await secureFetch(
+    const ordersResponse = await secureFetch(
       identifier
         ? `/orders?table_number=${tableNumber}&identifier=${restaurantSlug}`
         : `/orders?table_number=${tableNumber}`
     );
 
-    // 🧩 Prefer any non-closed order; if none, fall back to the latest paid one
-    let newOrder = orders.find((o) => o.status !== "closed") || orders[0];
+    const orders = Array.isArray(ordersResponse) ? ordersResponse : [];
+
+    // 🧩 Prefer only truly active orders (exclude closed/paid history entries)
+    const activeOrder = orders.find((o) => {
+      const status = (o.status || "").toLowerCase();
+      return status !== "closed" && status !== "paid";
+    });
+
+    let newOrder = activeOrder || null;
 
     if (!newOrder) {
       // No prior order for this table — create a fresh one
@@ -873,7 +913,7 @@ const createOrFetchTableOrder = async (tableNumber) => {
       });
     }
 
-    // 🧠 If it’s paid, we still show it — don’t reset immediately
+    // 🧠 Normalize backend status (treat online payments as paid for UI)
     let correctedStatus = newOrder.status;
     if (newOrder.payment_method === "Online") correctedStatus = "paid";
 
@@ -894,8 +934,6 @@ const createOrFetchTableOrder = async (tableNumber) => {
   if (orderId) fetchPhoneOrder(orderId);
   else if (tableId) createOrFetchTableOrder(tableId);
 }, [tableId, orderId]);
-
-
 
 const fetchOrderItems = async (orderId) => {
   try {
@@ -989,8 +1027,6 @@ const updateOrderStatus = async (newStatus = null, total = null, method = null) 
     return null;
   }
 };
-
-
 
 
 
@@ -1191,13 +1227,7 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaid)) {
 }
 
 
-
-
 };
-
-
-
-
 
 
 
@@ -1264,8 +1294,6 @@ if (order?.order_type === "table" && order?.source === "qr") {
 };
 
 
-
-
 const confirmPayment = async (method, payIds = null) => {
   const receiptId = uuidv4();
 const ids = (payIds && payIds.length > 0)
@@ -1325,10 +1353,6 @@ await secureFetch(`/orders/receipt-methods${identifier}`, {
 
 
 
-
-
-
-
     // Instantly update cart state to reflect paid items for better UX and sound logic
     setCartItems((prev) =>
       prev.map((item) =>
@@ -1368,8 +1392,6 @@ const isFullyPaid2 = allItems2.every((item) => item.paid_at);
 };
 
 
-
-
 const getButtonLabel = () => {
   if (!order) return "Preparing..";
 
@@ -1385,8 +1407,6 @@ const getButtonLabel = () => {
   if (hasUnpaid) return "Pay";
   return "Close";
 };
-
-
 
 function showToast(message) {
   setToast({ show: true, message });
@@ -1495,12 +1515,18 @@ const addToCart = async (product) => {
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
 };
 
-
-
 const displayTotal = cartItems
   .filter(i => !i.paid)
   .reduce((sum, i) => sum + (i.price * i.quantity), 0);
 
+const invoiceNumber = useMemo(() => {
+  if (!order) return null;
+  if (order.invoice_number) return order.invoice_number;
+  if (order.receipt_number) return order.receipt_number;
+  if (order.order_number) return order.order_number;
+  if (order.id) return `INV-${String(order.id).padStart(5, "0")}`;
+  return null;
+}, [order?.invoice_number, order?.receipt_number, order?.order_number, order?.id]);
 
   const removeItem = (uniqueId) => {
     setCartItems((prev) =>
@@ -1513,8 +1539,6 @@ const displayTotal = cartItems
 const clearUnconfirmedCartItems = () => {
   setCartItems((prev) => prev.filter((item) => item.confirmed));
 };
-
-
 
   useEffect(() => {
     if (order?.id) fetchSubOrders();
@@ -1592,8 +1616,6 @@ useEffect(() => {
 
   fetchMethods();
 }, [receiptId]);
-
-
 
 return (
 <div className="relative flex min-h-full flex-col gap-4 transition-all duration-300 ease-in-out">
@@ -1681,71 +1703,335 @@ return (
 );
 }
 
+const renderCartContent = (variant = "desktop") => {
+  const isDesktop = variant === "desktop";
+  const containerClasses = isDesktop
+    ? "flex min-h-0 flex-col rounded-3xl bg-white shadow-xl ring-1 ring-slate-200 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-120px)] overflow-hidden"
+    : "flex w-full max-h-[calc(100vh-96px)] flex-col rounded-t-3xl bg-white shadow-2xl overflow-hidden";
+  const headerPadding = isDesktop ? "px-5 pt-5 pb-3" : "px-5 pt-4 pb-3";
+  const footerPadding = isDesktop
+    ? "px-5 py-5"
+    : "px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]";
+
+  const actionControls = isDesktop ? (
+    <div className="flex gap-3 items-center">
+      <button
+        onClick={clearUnconfirmedCartItems}
+        className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
+      >
+        {t("Clear")}
+      </button>
+      <button
+        onClick={handleMultifunction}
+        className="flex-1 rounded-lg bg-gradient-to-r from-emerald-400 via-blue-400 to-indigo-400 py-3 text-lg font-extrabold text-white shadow-lg hover:brightness-105"
+      >
+        💸 {t(getButtonLabel())}
+      </button>
+      <button
+        onClick={() => console.log("🖨️ Print clicked - wire later")}
+        className="rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 p-3 shadow hover:brightness-105 border border-slate-300"
+        title={t("Print Receipt")}
+      >
+        🖨️
+      </button>
+    </div>
+  ) : (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        <button
+          onClick={clearUnconfirmedCartItems}
+          className="flex-1 rounded-lg bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
+        >
+          {t("Clear")}
+        </button>
+        <button
+          onClick={() => console.log("🖨️ Print clicked - wire later")}
+          className="flex-1 rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 py-2 text-sm font-semibold text-slate-700 shadow hover:brightness-105 border border-slate-300"
+          title={t("Print Receipt")}
+        >
+          🖨️ {t("Print")}
+        </button>
+      </div>
+      <button
+        onClick={handleMultifunction}
+        className="w-full rounded-xl bg-gradient-to-r from-emerald-400 via-blue-400 to-indigo-500 py-3 text-lg font-extrabold text-white shadow-lg hover:brightness-105"
+      >
+        💸 {t(getButtonLabel())}
+      </button>
+    </div>
+  );
+
+  return (
+    <aside className={containerClasses}>
+<header className="flex items-center justify-between border-b border-slate-200 px-5 pt-3 pb-3">
+        <div className="space-y-1">
+          <h2 className="hidden text-xl font-semibold text-slate-800 lg:block">{t("Cart")}</h2>
+          <p className="text-sm text-slate-500">
+            {orderId ? t("Phone Order") : `${t("Table")} ${tableId}`}
+          </p>
+          {invoiceNumber && (
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+              {t("Invoice")} #{invoiceNumber}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
+            {cartItems.filter((i) => !i.paid).length} {t("Items")}
+          </span>
+          {!isDesktop && (
+            <button
+              type="button"
+              onClick={() => setIsMobileCartOpen(false)}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm"
+              aria-label={t("Close")}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </header>
+   <div className="min-h-0 flex-1 overflow-y-auto">
+  <div
+    className="min-h-0 flex-1 px-5 pb-4 space-y-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
+    style={{
+      WebkitOverflowScrolling: "touch",
+    }}
+  >
+
+          {cartItems.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm font-medium text-slate-400">
+              {t("Cart is empty.")}
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {cartItems.map((item, idx) => {
+                const extrasList = safeParseExtras(item.extras);
+                const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
+                const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
+                  const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                  const qty = Number(ex.quantity) || 1;
+                  return sum + price * qty;
+                }, 0);
+                const basePrice = parseFloat(item.price) || 0;
+                const quantity = Number(item.quantity) || 1;
+                const lineTotal = (basePrice + perItemExtrasTotal) * quantity;
+                const showNote =
+                  typeof item.note === "string"
+                    ? item.note.trim() !== ""
+                    : !!item.note;
+                const isEditable = !item.confirmed && !item.paid;
+
+                const cardGradient = item.paid
+                  ? "bg-gradient-to-br from-emerald-200 via-emerald-100 to-emerald-300"
+                  : item.confirmed
+                  ? "bg-gradient-to-br from-indigo-200 via-indigo-100 to-indigo-300"
+                  : "bg-gradient-to-br from-amber-200 via-amber-100 to-amber-300";
+
+                return (
+                  <li
+                    key={item.unique_id || `${item.id}-${idx}`}
+                    className={`relative flex flex-col gap-2 overflow-hidden rounded-2xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition ${cardGradient}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <span className="block font-semibold text-slate-800 break-words">
+                          {item.name}
+                        </span>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                          <span>
+                            ₺{basePrice.toFixed(2)} × {quantity}
+                          </span>
+                          {perItemExtrasTotal > 0 && (
+                            <span>
+                              + ₺{(perItemExtrasTotal * quantity).toFixed(2)} {t("Extras")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        {item.paid && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
+                            {t("paid")}
+                          </span>
+                        )}
+                        <span className="font-bold text-indigo-600 whitespace-nowrap">
+                          ₺{lineTotal.toFixed(2)}
+                        </span>
+                        {isEditable && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={async () => {
+                                const parsedExtras = safeParseExtras(item.extras);
+                                const selection = normalizeExtrasGroupSelection([
+                                  item.extrasGroupRefs,
+                                  item.selectedExtrasGroup,
+                                  item.selected_extras_group,
+                                  item.selectedExtrasGroupNames,
+                                ]);
+
+                                const groupsData = await ensureExtrasGroups();
+                                setSelectedProduct({
+                                  ...item,
+                                  modalExtrasGroups: groupsData,
+                                  extrasGroupRefs: selection,
+                                  selectedExtrasGroup: selection.ids,
+                                  selected_extras_group: selection.ids,
+                                  selectedExtrasGroupNames: selection.names,
+                                });
+                                setSelectedExtras(parsedExtras || []);
+                                setEditingCartItemIndex(idx);
+                                setShowExtrasModal(true);
+                              }}
+                              className="text-xs font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1"
+                              title={t("Edit item")}
+                            >
+                              🖊️
+                              <span>{t("Edit")}</span>
+                            </button>
+                            <button
+                              onClick={() => removeItem(item.unique_id)}
+                              className="text-xs font-semibold text-red-500 hover:text-red-600 flex items-center gap-1"
+                              title={t("Remove item")}
+                            >
+                              🗑
+                              <span>{t("Remove")}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {normalizedExtras.length > 0 && (
+                      <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                        {normalizedExtras.map((ex, extraIdx) => {
+                          const extraQty = Number(ex.quantity) || 1;
+                          const extraTotal =
+                            (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
+                            extraQty;
+                          return (
+                            <li key={`${item.unique_id}-extra-${extraIdx}`}>
+                              {ex.name} ×{extraQty} – ₺{extraTotal.toFixed(2)}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+
+                    {showNote && (
+                      <div className="mt-2 bg-yellow-50 border-l-4 border-yellow-400 px-3 py-2 text-xs text-yellow-900 rounded">
+                        <div className="flex items-center gap-2 font-medium">
+                          <span className="text-base leading-none">📝</span>
+                          <span>{t("Notes")}:</span>
+                        </div>
+                        <div className="mt-1 whitespace-pre-wrap leading-snug">
+                          {item.note}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center text-sm text-slate-500 pt-1">
+                      <span>
+                        {t("Qty")}: {quantity}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => decrementCartItem(item.unique_id)}
+                          className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                          disabled={!isEditable}
+                        >
+                          –
+                        </button>
+                        <button
+                          onClick={() => incrementCartItem(item.unique_id)}
+                          className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                          disabled={!isEditable}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+      <footer className={`space-y-3 border-t border-slate-200 bg-slate-50 ${footerPadding} shadow-inner`}>
+        <div className="flex justify-between text-sm font-medium text-slate-600">
+          <span>{t("Subtotal")}:</span>
+          <span className="text-slate-900">
+            ₺{calculateDiscountedTotal().toFixed(2)}
+          </span>
+        </div>
+
+        {discountValue > 0 && (
+          <div className="flex justify-between text-sm font-semibold text-fuchsia-600">
+            <span>
+              🎁 {t("Discount")}{" "}
+              {discountType === "percent"
+                ? `(${discountValue}%)`
+                : `(-₺${discountValue})`}
+            </span>
+            <span>-₺{discountValue}</span>
+          </div>
+        )}
+
+        <div className="flex justify-between items-center rounded-2xl bg-white px-3 py-3 text-lg font-bold text-indigo-700 shadow-sm">
+          <span>{t("Total")}:</span>
+          <span>₺{calculateDiscountedTotal().toFixed(2)}</span>
+        </div>
+
+        {actionControls}
+
+        <div className={`flex ${isDesktop ? "gap-2" : "flex-col gap-2"}`}>
+          <button
+            onClick={() => setShowDiscountModal(true)}
+            className={`${isDesktop ? "flex-1" : "w-full"} rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:scale-105 transition`}
+          >
+            🎁 {t("Discount")}
+          </button>
+          <button
+            onClick={handleOpenCashRegister}
+            className={`${isDesktop ? "flex-1" : "w-full"} rounded-lg bg-gradient-to-r from-blue-400 to-emerald-400 px-3 py-2 text-xs font-semibold text-white hover:scale-105 transition`}
+          >
+            🗄️ {t("Register")}
+          </button>
+        </div>
+      </footer>
+    </aside>
+  );
+};
   if (loading) return <p className="p-4 text-center">{t("Loading...")}</p>;
 
 return (
-  <div className="h-screen w-full bg-slate-50 overflow-hidden">
-    <div className="mx-auto flex h-full w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-hidden">
-      <section
-        className="grid flex-1 min-h-0 gap-6 items-stretch overflow-hidden pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]"
-        style={{ paddingBottom: "2cm" }}
-      >
+  <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
+    <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-x-hidden">
+<section className="flex flex-1 min-h-0 flex-col gap-6 pb-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:overflow-hidden">
         {/* === Left: Categories + Products === */}
-        <div className="flex min-h-0 gap-4 overflow-hidden">
-{/* Categories */}
-<aside className="flex w-full max-w-[230px] flex-col rounded-3xl p-5 shadow-md border border-blue-200 bg-transparent backdrop-blur-sm">
-  <div className="flex items-center justify-between gap-3">
-    <h2 className="text-xl font-semibold text-indigo-700">
-      {t("Categories")}
-    </h2>
-    <span className="rounded-full bg-white px-1 py-1 text-sm font-semibold text-indigo-700 shadow">
-      {categories.length} {t("Total")}
-    </span>
-  </div>
-
-  {/* Category buttons */}
-<div className="mt-3 flex-1 overflow-y-auto pr-1 scrollbar-hide hover:scrollbar-thin hover:scrollbar-thumb-blue-400">
-    <div className="grid grid-cols-2 gap-2">
-      {categories.map((cat, idx) => {
-        const slug = (cat || "").trim().toLowerCase();
-        const catSrc = categoryImages[slug] || "";
-        const hasImg = !!catSrc;
-        return (
-          <button
-            key={cat}
-            onClick={() => setCurrentCategoryIndex(idx)}
-            className={`flex flex-col items-center justify-center rounded-xl border text-center py-3 transition ${
-              currentCategoryIndex === idx
-                ? "border-indigo-500 bg-white shadow-md"
-                : "border-blue-100 hover:border-indigo-200 hover:bg-blue-50"
-            }`}
-          >
-            {hasImg ? (
-              <img
-                src={catSrc}
-                alt={cat}
-                className="mb-1 h-10 w-10 rounded-lg border object-cover shadow-sm"
-              />
-            ) : (
-              <span className="mb-1 text-xl">
-                {categoryIcons[cat] || categoryIcons.default}
+        <div className="flex min-h-0 flex-row gap-3 overflow-hidden">
+          {/* Categories */}
+          <aside className="flex w-[28%] min-w-[110px] max-w-[160px] flex-col rounded-3xl bg-gradient-to-br from-white via-slate-50 to-slate-100 p-4 shadow-lg ring-1 ring-slate-200 sm:w-[26%] sm:max-w-[185px] md:w-[25%] lg:w-[230px] lg:max-w-[230px]">
+            <div className="flex items-center justify-between gap-3 lg:flex">
+              <h2 className="hidden text-xl font-semibold text-indigo-700 lg:block">
+                {t("Categories")}
+              </h2>
+              <span className="hidden rounded-full bg-white px-2 py-1 text-sm font-semibold text-indigo-700 shadow lg:inline-flex">
+                {categories.length} {t("Total")}
               </span>
-            )}
-            <span className="text-[12px] font-semibold text-slate-800">
-              {t(cat)}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  </div>
-</aside>
+            </div>
 
-
+            <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-indigo-200">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {categories.map((cat, idx) => renderCategoryButton(cat, idx))}
+              </div>
+            </div>
+          </aside>
 
           {/* Products */}
-          <article className="flex min-h-0 flex-1 flex-col rounded-3xl bg-white p-5 shadow-lg ring-1 ring-slate-200">
-            <div className="flex items-center justify-between">
+          <article className="flex min-h-0 flex-1 flex-col rounded-3xl bg-gradient-to-br from-white via-slate-50 to-slate-100 p-5 shadow-lg ring-1 ring-slate-200">
+            <div className="hidden items-center justify-between lg:flex">
               <h2 className="text-xl font-semibold text-slate-800">
                 {activeCategory ? t(activeCategory) : t("Products")}
               </h2>
@@ -1754,7 +2040,7 @@ return (
               </span>
             </div>
 
-            <div className="mt-4 flex-1 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-200 via-slate-100 to-white p-3">
+            <div className="flex-1 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-200 via-slate-100 to-white p-3">
               <div className="h-full overflow-y-auto pr-1">
                 <div className="grid grid-cols-2 gap-3 pb-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
                   {productsInActiveCategory.length > 0 ? (
@@ -1762,7 +2048,7 @@ return (
                       <button
                         key={product.id}
                         onClick={() => addToCart(product)}
-                        className="flex flex-col items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 p-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md"
+                        className="flex w-full flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 p-3 text-center shadow-sm transition-all hover:border-indigo-300 hover:shadow-md"
                       >
                         <img
                           src={
@@ -1770,12 +2056,12 @@ return (
                             "https://via.placeholder.com/100?text=🍔"
                           }
                           alt={product.name}
-                          className="mb-2 h-20 w-20 rounded-xl border object-cover shadow"
+                          className="h-20 w-20 rounded-xl border object-cover shadow"
                         />
-                        <p className="text-sm font-semibold text-slate-700 line-clamp-2 text-center">
+                        <p className="text-sm font-semibold text-slate-700 line-clamp-2">
                           {product.name}
                         </p>
-                        <span className="mt-1 text-base font-bold text-indigo-600">
+                        <span className="text-base font-bold text-indigo-600">
                           ₺{parseFloat(product.price).toFixed(2)}
                         </span>
                       </button>
@@ -1791,292 +2077,52 @@ return (
           </article>
         </div>
 
-        {/* === Right Section: Cart === */}
-        <aside className="flex min-h-0 flex-col rounded-3xl bg-white shadow-xl ring-1 ring-slate-200">
-          <header className="flex items-center justify-between border-b border-slate-200 px-5 pt-5 pb-3 flex-shrink-0">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-800">{t("Cart")}</h2>
-              <p className="text-sm text-slate-500">
-                {orderId ? t("Phone Order") : `${t("Table")} ${tableId}`}
-              </p>
-            </div>
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
-              {cartItems.filter((i) => !i.paid).length} {t("Items")}
-            </span>
-          </header>
-          {/* Cart items */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 space-y-3">
-            {cartItems.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm font-medium text-slate-400">
-                {t("Cart is empty.")}
-              </div>
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {cartItems.map((item, idx) => {
-                  const extrasList = safeParseExtras(item.extras);
-                  const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
-                  const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
-                    const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                    const qty = Number(ex.quantity) || 1;
-                    return sum + price * qty;
-                  }, 0);
-                  const basePrice = parseFloat(item.price) || 0;
-                  const quantity = Number(item.quantity) || 1;
-                  const lineTotal = (basePrice + perItemExtrasTotal) * quantity;
-                  const showNote =
-                    typeof item.note === "string"
-                      ? item.note.trim() !== ""
-                      : !!item.note;
-                  const isEditable = !item.confirmed && !item.paid;
-
-                  const cardGradient = item.paid
-                    ? "bg-gradient-to-br from-emerald-200 via-emerald-100 to-emerald-300"
-                    : item.confirmed
-                    ? "bg-gradient-to-br from-indigo-200 via-indigo-100 to-indigo-300"
-                    : "bg-gradient-to-br from-amber-200 via-amber-100 to-amber-300";
-
-                  return (
-                    <li
-                      key={item.unique_id || `${item.id}-${idx}`}
-                      className={`relative flex flex-col gap-2 overflow-hidden rounded-2xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition ${cardGradient}`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <span className="block font-semibold text-slate-800 break-words">
-                            {item.name}
-                          </span>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                            <span>
-                              ₺{basePrice.toFixed(2)} × {quantity}
-                            </span>
-                            {perItemExtrasTotal > 0 && (
-                              <span>
-                                + ₺{(perItemExtrasTotal * quantity).toFixed(2)} {t("Extras")}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          {item.paid && (
-                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-                              {t("paid")}
-                            </span>
-                          )}
-                          <span className="font-bold text-indigo-600 whitespace-nowrap">
-                            ₺{lineTotal.toFixed(2)}
-                          </span>
-                        {isEditable && (
-  <div className="flex items-center gap-2">
-    {/* ✏️ Edit button */}
-<button
-onClick={async () => {
-  const parsedExtras = safeParseExtras(item.extras);
-
-  // Try to determine which extras groups belong to this product
-  let selection = normalizeExtrasGroupSelection([
-    item.extrasGroupRefs,
-    item.selectedExtrasGroup,
-    item.selected_extras_group,
-    item.selectedExtrasGroupNames,
-  ]);
-
-  // 🧩 If still empty, use the product’s definition from `products` state
-  if ((!selection.ids.length && !selection.names.length) && item.id) {
-    const matchedProduct = products.find(p => p.id === item.id);
-    if (matchedProduct) {
-      selection = normalizeExtrasGroupSelection([
-        matchedProduct.extrasGroupRefs,
-        matchedProduct.selectedExtrasGroup,
-        matchedProduct.selected_extras_group,
-        matchedProduct.selectedExtrasGroupNames,
-      ]);
-    }
-  }
-
-  // 🔁 Always fetch from backend if possible (ensures we have actual group items)
-  let groupsData = [];
-  if (selection.ids.length > 0 || selection.names.length > 0) {
-    const match = await getMatchedExtrasGroups(selection);
-    groupsData = match?.matchedGroups || [];
-  }
-
-  // 🧠 If nothing came back, double-check via product ID → /extras-groups endpoint
-  if ((!groupsData || groupsData.length === 0) && item.id) {
-    try {
-      const allGroups = await ensureExtrasGroups();
-      const related = allGroups.filter(g =>
-        (g.products || []).some(pid => String(pid) === String(item.id))
-      );
-      if (related.length > 0) groupsData = related;
-    } catch (err) {
-      console.error("❌ Fallback fetch extras-groups failed:", err);
-    }
-  }
-
-  setSelectedProduct({
-    ...item,
-    modalExtrasGroups: groupsData,
-  });
-  setSelectedExtras(parsedExtras || []);
-  setEditingCartItemIndex(idx);
-  setShowExtrasModal(true);
-}}
-
-  className="text-xs font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1"
-  title={t("Edit item")}
->
-  🖊️
-  <span>{t("Edit")}</span>
-</button>
-
-
-
-    {/* 🗑 Remove button */}
-    <button
-      onClick={() => removeItem(item.unique_id)}
-      className="text-xs font-semibold text-red-500 hover:text-red-600 flex items-center gap-1"
-      title={t("Remove item")}
-    >
-      🗑
-      <span>{t("Remove")}</span>
-    </button>
-  </div>
-)}
-
-                        </div>
-                      </div>
-
-                      {normalizedExtras.length > 0 && (
-                        <ul className="mt-1 space-y-1 text-xs text-slate-600">
-                          {normalizedExtras.map((ex, extraIdx) => {
-                            const extraQty = Number(ex.quantity) || 1;
-                            const extraTotal =
-                              (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
-                              extraQty;
-                            return (
-                              <li key={`${item.unique_id}-extra-${extraIdx}`}>
-                                {ex.name} ×{extraQty} – ₺{extraTotal.toFixed(2)}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-
-                      {showNote && (
-                        <div className="mt-2 bg-yellow-50 border-l-4 border-yellow-400 px-3 py-2 text-xs text-yellow-900 rounded">
-                          <div className="flex items-center gap-2 font-medium">
-                            <span className="text-base leading-none">📝</span>
-                            <span>{t("Notes")}:</span>
-                          </div>
-                          <div className="mt-1 whitespace-pre-wrap leading-snug">
-                            {item.note}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between items-center text-sm text-slate-500 pt-1">
-                        <span>
-                          {t("Qty")}: {quantity}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => decrementCartItem(item.unique_id)}
-                            className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-                            disabled={!isEditable}
-                          >
-                            –
-                          </button>
-                          <button
-                            onClick={() => incrementCartItem(item.unique_id)}
-                            className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-                            disabled={!isEditable}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          {/* Footer */}
-          <footer className="space-y-3 border-t border-slate-200 bg-slate-50 px-5 py-5 shadow-inner">
-            <div className="flex justify-between text-sm font-medium text-slate-600">
-              <span>{t("Subtotal")}:</span>
-              <span className="text-slate-900">
-                ₺{calculateDiscountedTotal().toFixed(2)}
-              </span>
-            </div>
-
-            {discountValue > 0 && (
-              <div className="flex justify-between text-sm font-semibold text-fuchsia-600">
-                <span>
-                  🎁 {t("Discount")}{" "}
-                  {discountType === "percent"
-                    ? `(${discountValue}%)`
-                    : `(-₺${discountValue})`}
-                </span>
-                <span>-₺{discountValue}</span>
-              </div>
-            )}
-
-            <div className="flex justify-between items-center rounded-2xl bg-white px-3 py-3 text-lg font-bold text-indigo-700 shadow-sm">
-              <span>{t("Total")}:</span>
-              <span>₺{calculateDiscountedTotal().toFixed(2)}</span>
-            </div>
-
-           <div className="flex gap-3 items-center">
-  {/* 🧹 Clear button */}
-  <button
-    onClick={clearUnconfirmedCartItems}
-    className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
-  >
-    {t("Clear")}
-  </button>
-
-  {/* 💸 Main multifunction button */}
-  <button
-    onClick={handleMultifunction}
-    className="flex-1 rounded-lg bg-gradient-to-r from-emerald-400 via-blue-400 to-indigo-400 py-3 text-lg font-extrabold text-white shadow-lg hover:brightness-105"
-  >
-    💸 {t(getButtonLabel())}
-  </button>
-
-  {/* 🖨️ Print button (to be wired later) */}
-  <button
-    onClick={() => console.log('🖨️ Print clicked - wire later')}
-    className="rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 p-3 shadow hover:brightness-105 border border-slate-300"
-    title={t("Print Receipt")}
-  >
-    🖨️
-  </button>
+        {/* === Right: Cart (sticky and aligned) === */}
+<div className="hidden lg:block h-full">
+  <div className="sticky top-0">{renderCartContent("desktop")}</div>
 </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowDiscountModal(true)}
-                className="flex-1 rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:scale-105 transition"
-              >
-                🎁 {t("Discount")}
-              </button>
-              <button
-                onClick={handleOpenCashRegister}
-                className="flex-1 rounded-lg bg-gradient-to-r from-blue-400 to-emerald-400 px-3 py-2 text-xs font-semibold text-white hover:scale-105 transition"
-              >
-                🗄️ {t("Register")}
-              </button>
-            </div>
-          </footer>
-        </aside>
       </section>
     </div>
-  
 
+      <div
+        className={`lg:hidden fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] transition-transform duration-300 ${isMobileCartOpen ? "translate-y-[120%]" : "translate-y-0"}`}
+      >
+        <button
+          type="button"
+          onClick={() => setIsMobileCartOpen(true)}
+          className="flex w-full items-center justify-between rounded-3xl bg-indigo-600 px-5 py-4 text-white shadow-2xl"
+        >
+          <div className="flex flex-col">
+            <span className="text-xs font-semibold uppercase tracking-widest text-indigo-100">
+              {t("Total")}
+            </span>
+            <span className="text-2xl font-bold">
+              ₺{calculateDiscountedTotal().toFixed(2)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-indigo-500 px-3 py-1 text-xs font-semibold">
+              {cartItems.filter((i) => !i.paid).length} {t("Items")}
+            </span>
+            <span className="text-sm font-semibold">{t("View Cart")}</span>
+          </div>
+        </button>
+      </div>
 
- 
+      <div
+        className={`lg:hidden fixed inset-0 z-50 transition-all duration-300 ${isMobileCartOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+      >
+        <div
+          className={`absolute inset-0 bg-slate-900/60 transition-opacity duration-300 ${isMobileCartOpen ? "opacity-100" : "opacity-0"}`}
+          onClick={() => setIsMobileCartOpen(false)}
+        />
+        <div
+          className={`absolute inset-x-0 bottom-0 transition-transform duration-300 ${isMobileCartOpen ? "translate-y-0" : "translate-y-full"}`}
+        >
+          {renderCartContent("mobile")}
+        </div>
+      </div>
 
     {/* --- TOAST NOTIFICATION --- */}
     {toast.show && (
@@ -2105,6 +2151,7 @@ onClick={async () => {
   activeSplitMethod={activeSplitMethod}
   setActiveSplitMethod={setActiveSplitMethod}
   confirmPaymentWithSplits={confirmPaymentWithSplits}
+  staffId={currentUser?.staff_id ?? currentUser?.id ?? null}
   navigate={navigate}
 />
 
@@ -2127,8 +2174,6 @@ onClick={async () => {
   fullTotal={fullTotal}
   t={t}
 />
-
-
 
 <DiscountModal
   show={showDiscountModal}
@@ -2205,8 +2250,6 @@ onConfirm={async (destTable) => {
 }}
 
 />
-
-
 
   </div>
 );

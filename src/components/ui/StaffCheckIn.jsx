@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import { QRCodeCanvas } from "qrcode.react";
 import { Toaster, toast } from "react-hot-toast";
@@ -181,7 +181,7 @@ const StaffCheckIn = () => {
     }
   };
 
-  const calculateDuration = (checkInTime, checkOutTime) => {
+  const getDurationMilliseconds = (checkInTime, checkOutTime) => {
     const start = new Date(
       new Date(checkInTime).toLocaleString("en-US", { timeZone: "Europe/Istanbul" })
     );
@@ -189,8 +189,21 @@ const StaffCheckIn = () => {
       ? new Date(
           new Date(checkOutTime).toLocaleString("en-US", { timeZone: "Europe/Istanbul" })
         )
-      : new Date();
-    const diffMs = end - start;
+      : new Date(
+          new Date().toLocaleString("en-US", { timeZone: "Europe/Istanbul" })
+        );
+    const diffMs = Math.max(end - start, 0);
+    return diffMs;
+  };
+
+  const formatDurationParts = (totalMs) => {
+    const hours = Math.floor(totalMs / (1000 * 60 * 60));
+    const minutes = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
+    return { hours, minutes };
+  };
+
+  const calculateDuration = (checkInTime, checkOutTime) => {
+    const diffMs = getDurationMilliseconds(checkInTime, checkOutTime);
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
     const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
     return `${hours}h ${minutes}m`;
@@ -202,19 +215,63 @@ const StaffCheckIn = () => {
   };
 
   const calculateTotalDuration = (records) => {
-    let totalMs = 0;
-    records.forEach((r) => {
-      const start = new Date(r.check_in_time);
-      const end = r.check_out_time ? new Date(r.check_out_time) : new Date();
-      totalMs += end - start;
-    });
-    const hours = Math.floor(totalMs / 3600000);
-    const minutes = Math.floor((totalMs % 3600000) / 60000);
-    return { hours, minutes };
+    const totalMs = records.reduce(
+      (sum, record) =>
+        sum + getDurationMilliseconds(record.check_in_time, record.check_out_time),
+      0
+    );
+    const { hours, minutes } = formatDurationParts(totalMs);
+    return { hours, minutes, totalMs };
   };
 
   const weeklyTotal = calculateTotalDuration(filterAttendanceByDays(7));
   const monthlyTotal = calculateTotalDuration(filterAttendanceByDays(30));
+
+  const weeklyStaffSummary = useMemo(() => {
+    const weeklyRecords = filterAttendanceByDays(7).filter(
+      (record) => record.check_out_time
+    );
+    if (!weeklyRecords.length) return [];
+
+    const summaryMap = new Map();
+
+    weeklyRecords.forEach((record) => {
+      const staffId =
+        record.staff_id ??
+        record.staffId ??
+        record.staff ??
+        record.staffID ??
+        null;
+      const key = staffId ?? record.name ?? record.id;
+      const existing = summaryMap.get(key);
+      const durationMs = getDurationMilliseconds(
+        record.check_in_time,
+        record.check_out_time
+      );
+      if (durationMs <= 0) return;
+
+      if (existing) {
+        existing.totalMs += durationMs;
+        existing.sessions += 1;
+      } else {
+        const staffMeta = staffId
+          ? staffList.find((staff) => Number(staff.id) === Number(staffId))
+          : null;
+        summaryMap.set(key, {
+          key,
+          staffId,
+          name: staffMeta?.name || record.name || "",
+          role: staffMeta?.role || record.role || "",
+          totalMs: durationMs,
+          sessions: 1,
+        });
+      }
+    });
+
+    return Array.from(summaryMap.values()).sort(
+      (a, b) => b.totalMs - a.totalMs
+    );
+  }, [attendanceList, staffList]);
 
   const handleArchive = async (recordId, name) => {
     try {
@@ -365,6 +422,48 @@ const StaffCheckIn = () => {
           </p>
           <p className="text-sm text-gray-500">{t("Last 30 Days")}</p>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <h3 className="text-2xl font-semibold mb-4">{t("Weekly Hours by Staff")}</h3>
+        {weeklyStaffSummary.length > 0 ? (
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {weeklyStaffSummary.map((member) => {
+              const { hours, minutes } = formatDurationParts(member.totalMs);
+              const decimalHours = (member.totalMs / (1000 * 60 * 60)).toFixed(2);
+              return (
+                <div
+                  key={member.key}
+                  className="p-4 bg-white dark:bg-gray-800 shadow rounded-lg border border-slate-100 dark:border-slate-700"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        {member.name || `${t("Staff")} ${member.staffId ? `#${member.staffId}` : ""}`}
+                      </p>
+                      {member.role && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{member.role}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-green-600">
+                        {hours}h {minutes}m
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {t("Total Logged Hours")}: {decimalHours}h
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+                    {t("Sessions")}: {member.sessions}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-500 dark:text-gray-400">{t("No completed sessions this week.")}</p>
+        )}
       </div>
     </div>
   );

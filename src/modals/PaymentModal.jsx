@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import secureFetch from "../utils/secureFetch";
+import { useAuth } from "../context/AuthContext";
 
 export default function PaymentModal({
   show,
@@ -21,7 +23,52 @@ export default function PaymentModal({
   setActiveSplitMethod,
   confirmPaymentWithSplits,
   navigate,
+  staffId, // ✅ Make sure Payroll or parent passes this
 }) {
+  const { currentUser } = useAuth();
+  const effectiveStaffId = useMemo(() => {
+    return (
+      staffId ??
+      currentUser?.staff_id ??
+      currentUser?.id ??
+      currentUser?.staffId ??
+      currentUser?.staff?.id ??
+      null
+    );
+  }, [staffId, currentUser]);
+  const [autoPayment, setAutoPayment] = useState(null);
+
+  // ✅ Fetch saved Auto Payment when modal opens
+  useEffect(() => {
+    if (!show || !effectiveStaffId) {
+      setAutoPayment(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const res = await secureFetch(
+          `/staff/${effectiveStaffId}/payments/auto`
+        );
+        if (isMounted) {
+          setAutoPayment(res);
+          console.log("💾 Loaded auto payment:", res);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setAutoPayment(null);
+        }
+        console.error("❌ Failed to load auto payment:", err);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [show, effectiveStaffId]);
+
   if (!show) return null;
 
   // Helper for calculating sum of split amounts
@@ -31,17 +78,24 @@ export default function PaymentModal({
 
   // Discounted subtotal for selected or all unpaid
   const getDiscountedTotal = () => {
-    const items = selectedForPayment.length > 0
-      ? cartItems.filter(i => selectedForPayment.includes(i.unique_id) && !i.paid)
-      : cartItems.filter(i => !i.paid);
+    const items =
+      selectedForPayment.length > 0
+        ? cartItems.filter(
+            (i) => selectedForPayment.includes(i.unique_id) && !i.paid
+          )
+        : cartItems.filter((i) => !i.paid);
     let subtotal = items.reduce((sum, i) => {
-  const base = i.price * i.quantity;
-  const extras = (i.extras || []).reduce(
-    (s, ex) => s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
-    0
-  ) * i.quantity;
-  return sum + base + extras;
-}, 0);
+      const base = i.price * i.quantity;
+      const extras =
+        (i.extras || []).reduce(
+          (s, ex) =>
+            s +
+            (parseFloat(ex.price || ex.extraPrice || 0) *
+              (ex.quantity || 1)),
+          0
+        ) * i.quantity;
+      return sum + base + extras;
+    }, 0);
 
     if (discountType === "percent") {
       subtotal -= subtotal * (discountValue / 100);
@@ -56,8 +110,34 @@ export default function PaymentModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white p-6 rounded-2xl w-96 shadow-2xl relative">
         <h2 className="text-2xl font-bold mb-4 text-center">
-          {isSplitMode ? `💳 ${t("Split Payment")}` : `💳 ${t("Select Payment Method")}`}
+          {isSplitMode
+            ? `💳 ${t("Split Payment")}`
+            : `💳 ${t("Select Payment Method")}`}
         </h2>
+
+        {/* ✅ Auto Payment Info Display */}
+        {autoPayment && (autoPayment.active || autoPayment.amount) && (
+          <div className="mb-3 text-center text-blue-700 font-semibold space-y-1">
+            <div>🔁 {t("Auto Payment Enabled")}</div>
+            <div className="text-sm text-blue-600">
+              {(() => {
+                const amt = Number(autoPayment.amount);
+                const formattedAmount = !isNaN(amt)
+                  ? `₺${amt.toFixed(2)}`
+                  : "₺0.00";
+                return `${formattedAmount} • ${t(
+                  autoPayment.repeat_type || "none"
+                )} @ ${autoPayment.repeat_time || "--:--"}`;
+              })()}
+            </div>
+            {autoPayment.scheduled_date && (
+              <div className="text-xs text-blue-500">
+                {t("Next Run")}: {autoPayment.scheduled_date}
+              </div>
+            )}
+          </div>
+        )}
+
         {discountValue > 0 && (
           <div className="flex justify-between items-center mb-1">
             <span className="text-base font-bold text-pink-700">
@@ -67,12 +147,21 @@ export default function PaymentModal({
                 : ` (-₺${discountValue})`}
             </span>
             <span className="text-base font-extrabold text-pink-700">
-              -{discountType === "percent"
+              -
+              {discountType === "percent"
                 ? `₺${(
                     (selectedForPayment.length > 0
-                      ? cartItems.filter(i => selectedForPayment.includes(i.unique_id) && !i.paid)
-                      : cartItems.filter(i => !i.paid)
-                    ).reduce((sum, i) => sum + i.price * i.quantity, 0) * (discountValue / 100)
+                      ? cartItems.filter(
+                          (i) =>
+                            selectedForPayment.includes(i.unique_id) &&
+                            !i.paid
+                        )
+                      : cartItems.filter((i) => !i.paid)
+                    ).reduce(
+                      (sum, i) => sum + i.price * i.quantity,
+                      0
+                    ) *
+                    (discountValue / 100)
                   ).toFixed(2)}`
                 : `₺${discountValue}`}
             </span>
@@ -97,12 +186,21 @@ export default function PaymentModal({
         {isSplitMode ? (
           <div className="space-y-4">
             {paymentMethods.map((method) => (
-              <div key={method} className="flex items-center justify-between">
+              <div
+                key={method}
+                className="flex items-center justify-between"
+              >
                 <div className="flex items-center space-x-2">
                   {method === "Cash" && <span className="text-2xl">💵</span>}
-                  {method === "Credit Card" && <span className="text-2xl">💳</span>}
-                  {method === "Sodexo" && <span className="text-2xl">🍽️</span>}
-                  {method === "Multinet" && <span className="text-2xl">🪙</span>}
+                  {method === "Credit Card" && (
+                    <span className="text-2xl">💳</span>
+                  )}
+                  {method === "Sodexo" && (
+                    <span className="text-2xl">🍽️</span>
+                  )}
+                  {method === "Multinet" && (
+                    <span className="text-2xl">🪙</span>
+                  )}
                   <span className="font-medium">{t(method)}</span>
                 </div>
                 <button
@@ -114,16 +212,17 @@ export default function PaymentModal({
               </div>
             ))}
             <div className="flex justify-between items-center my-3 px-3 py-2 bg-yellow-100 border-2 border-yellow-400 rounded-xl shadow text-lg font-bold">
-  <span className="text-yellow-700">{t("Remaining")}</span>
-  <span className={
-    (totalDue - sumOfSplits) === 0
-      ? "text-green-700"
-      : "text-red-700 animate-pulse"
-  }>
-    ₺{(totalDue - sumOfSplits).toFixed(2)}
-  </span>
-</div>
-
+              <span className="text-yellow-700">{t("Remaining")}</span>
+              <span
+                className={
+                  totalDue - sumOfSplits === 0
+                    ? "text-green-700"
+                    : "text-red-700 animate-pulse"
+                }
+              >
+                ₺{(totalDue - sumOfSplits).toFixed(2)}
+              </span>
+            </div>
           </div>
         ) : (
           <div className="space-y-2">
@@ -131,9 +230,12 @@ export default function PaymentModal({
               <button
                 key={method}
                 onClick={async () => {
-                  let idsToPay = selectedForPayment.length > 0
-                    ? selectedForPayment
-                    : cartItems.filter(i => !i.paid && i.confirmed).map(i => i.unique_id);
+                  let idsToPay =
+                    selectedForPayment.length > 0
+                      ? selectedForPayment
+                      : cartItems
+                          .filter((i) => !i.paid && i.confirmed)
+                          .map((i) => i.unique_id);
                   await confirmPayment(method, idsToPay);
                   onClose();
                 }}
@@ -143,8 +245,10 @@ export default function PaymentModal({
                     : "bg-white text-gray-800 hover:bg-gray-100"
                 }`}
               >
-                {method === "Cash" && "💵"} {method === "Credit Card" && "💳"}
-                {method === "Sodexo" && "🍽️"} {method === "Multinet" && "🪙"} {t(method)}
+                {method === "Cash" && "💵"}{" "}
+                {method === "Credit Card" && "💳"}
+                {method === "Sodexo" && "🍽️"}{" "}
+                {method === "Multinet" && "🪙"} {t(method)}
               </button>
             ))}
           </div>
@@ -167,6 +271,7 @@ export default function PaymentModal({
               {t("Pay")} ₺{totalDue.toFixed(2)}
             </button>
           )}
+          
           <button
             onClick={onClose}
             className="block w-full py-2 rounded-lg text-center bg-gray-200 text-gray-800 hover:bg-gray-300 transition"
@@ -184,16 +289,21 @@ export default function PaymentModal({
                     key={key}
                     onClick={() => {
                       if (key === "←") {
-                        const current = splits[activeSplitMethod]?.toString() || "";
+                        const current =
+                          splits[activeSplitMethod]?.toString() || "";
                         setSplits((prev) => ({
                           ...prev,
-                          [activeSplitMethod]: current.slice(0, -1) || ""
+                          [activeSplitMethod]:
+                            current.slice(0, -1) || "",
                         }));
                       } else {
-                        const current = splits[activeSplitMethod]?.toString() || "";
+                        const current =
+                          splits[activeSplitMethod]?.toString() || "";
                         setSplits((prev) => ({
                           ...prev,
-                          [activeSplitMethod]: (current + key).replace(/^0+(?!\.)/, "")
+                          [activeSplitMethod]: (
+                            current + key
+                          ).replace(/^0+(?!\.)/, ""),
                         }));
                       }
                     }}
@@ -205,7 +315,12 @@ export default function PaymentModal({
               </div>
               <div className="flex space-x-2 mt-4">
                 <button
-                  onClick={() => setSplits((prev) => ({ ...prev, [activeSplitMethod]: "" }))}
+                  onClick={() =>
+                    setSplits((prev) => ({
+                      ...prev,
+                      [activeSplitMethod]: "",
+                    }))
+                  }
                   className="w-1/2 bg-red-100 text-red-800 py-2 rounded-xl hover:bg-red-200"
                 >
                   {t("Clear")}

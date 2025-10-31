@@ -34,6 +34,7 @@ import { useTranslation } from "react-i18next";
 
 export const SIDEBAR_WIDTH_OPEN = 224;
 export const SIDEBAR_WIDTH_COLLAPSED = 72;
+export const DASHBOARD_ITEM_DRAG_TYPE = "application/x-dashboard-shortcut";
 
 const MENU = [
   { labelKey: "Dashboard", defaultLabel: "Dashboard", path: "/", icon: Home, permission: "dashboard" },
@@ -64,7 +65,6 @@ const MENU = [
 const HIDDEN_STORAGE_KEY = "beyproHiddenSidebarItems";
 const ORDER_STORAGE_KEY = "beyproSidebarOrder";
 const SIDEBAR_ITEM_DRAG_TYPE = "application/x-sidebar-item";
-const DASHBOARD_ITEM_DRAG_TYPE = "application/x-dashboard-shortcut";
 const ORDERABLE_KEYS = MENU.map((item) => item.labelKey);
 const ORDERABLE_SET = new Set(ORDERABLE_KEYS);
 const DEFAULT_HIDDEN_KEYS = [
@@ -195,6 +195,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
   }, [currentUser, hiddenKeys, isLoggedIn, orderedMenu]);
 
   function handleLogout() {
+    setIsOpen?.(false);
     localStorage.removeItem("beyproUser");
     window.location = "/login";
   }
@@ -341,7 +342,9 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     if (dragKey) {
       event.preventDefault();
       event.stopPropagation();
+      return;
     }
+    setIsOpen?.(false);
   };
 
   const sidebarWidth = isOpen ? SIDEBAR_WIDTH_OPEN : SIDEBAR_WIDTH_COLLAPSED;
@@ -477,8 +480,16 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
       </nav>
 
-      {/* Spacer for mobile */}
-      <div className="mt-auto mb-1" />
+      <div className="mt-auto mb-6 flex flex-col items-center gap-2 px-4 text-center">
+        <span
+          className="text-2xl font-extrabold tracking-wide select-none bg-gradient-to-r from-blue-200 via-fuchsia-200 to-indigo-200 bg-clip-text text-transparent drop-shadow-lg"
+        >
+          Beypro
+        </span>
+        <span className="text-xs uppercase tracking-[0.3em] text-white/60">
+          Dashboard
+        </span>
+      </div>
     </aside>
   );
 }

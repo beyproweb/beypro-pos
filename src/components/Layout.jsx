@@ -1,8 +1,7 @@
 // src/components/Layout.jsx
-
 import React, { useState, useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import Sidebar, { SIDEBAR_WIDTH_OPEN, SIDEBAR_WIDTH_COLLAPSED } from "./Sidebar";
+import Sidebar, { DASHBOARD_ITEM_DRAG_TYPE } from "./Sidebar";
 import GlobalOrderAlert from "./GlobalOrderAlert";
 import ModernHeader from "./ModernHeader";
 import NotificationBell from "./NotificationBell";
@@ -19,10 +18,7 @@ export default function Layout({
   hideBell = false,
   onClearNotifications,
 }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return window.innerWidth >= 1024;
-  });
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [now, setNow] = useState(new Date());
   const location = useLocation();
   const { title, subtitle, tableNav } = useHeader();
@@ -157,32 +153,83 @@ export default function Layout({
   );
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const handleResize = () => {
-      if (window.innerWidth < 1024) {
+    if (!isSidebarOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
         setIsSidebarOpen(false);
       }
     };
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isSidebarOpen]);
 
-  const sidebarOffset = isSidebarOpen ? SIDEBAR_WIDTH_OPEN : SIDEBAR_WIDTH_COLLAPSED;
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let openTimeout = null;
+
+    const shouldTriggerFromEvent = (event) => {
+      if (!event?.dataTransfer?.types) return false;
+      return Array.from(event.dataTransfer.types).includes(DASHBOARD_ITEM_DRAG_TYPE);
+    };
+
+    const scheduleOpen = () => {
+      if (isSidebarOpen) return;
+      if (openTimeout !== null) return;
+      openTimeout = window.setTimeout(() => {
+        setIsSidebarOpen(true);
+        openTimeout = null;
+      }, 120);
+    };
+
+    const clearPendingOpen = () => {
+      if (openTimeout !== null) {
+        clearTimeout(openTimeout);
+        openTimeout = null;
+      }
+    };
+
+    const handleDragIntent = (event) => {
+      if (!shouldTriggerFromEvent(event)) return;
+      scheduleOpen();
+    };
+
+    const handleDragEnd = (event) => {
+      if (!shouldTriggerFromEvent(event)) return;
+      clearPendingOpen();
+    };
+
+    window.addEventListener("dragenter", handleDragIntent, true);
+    window.addEventListener("dragover", handleDragIntent, true);
+    window.addEventListener("drop", handleDragEnd, true);
+    window.addEventListener("dragleave", handleDragEnd, true);
+    window.addEventListener("dragend", handleDragEnd, true);
+
+    return () => {
+      clearPendingOpen();
+      window.removeEventListener("dragenter", handleDragIntent, true);
+      window.removeEventListener("dragover", handleDragIntent, true);
+      window.removeEventListener("drop", handleDragEnd, true);
+      window.removeEventListener("dragleave", handleDragEnd, true);
+      window.removeEventListener("dragend", handleDragEnd, true);
+    };
+  }, [isSidebarOpen]);
 
   return (
     <div className="w-screen h-screen overflow-hidden flex bg-slate-50 dark:bg-zinc-950 transition-colors">
-      {/* Sidebar */}
-      <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
+      {isSidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
+        </>
+      )}
 
       {/* Main content area */}
       <div
-        className="flex-1 flex flex-col h-screen transition-all duration-300 ease-in-out"
-        style={{
-          marginLeft: sidebarOffset,
-          width: `calc(100% - ${sidebarOffset}px)`,
-          minWidth: 0,
-        }}
+        className="flex-1 flex flex-col h-screen transition-all duration-300 ease-in-out w-full min-w-0"
       >
         {/* ModernHeader with notification bell in rightContent */}
         <ModernHeader

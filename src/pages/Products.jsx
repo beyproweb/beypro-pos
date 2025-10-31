@@ -33,6 +33,8 @@ export default function Products() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [categoryEdits, setCategoryEdits] = useState([]);
+  const [categoryAction, setCategoryAction] = useState({ name: null, type: null });
 
   const [showGroupModal, setShowGroupModal] = useState(false);
 
@@ -185,7 +187,21 @@ useEffect(() => {
     fetchExtrasGroups();
   }, []);
 
-
+  useEffect(() => {
+    if (showCategoryModal) {
+      const normalized = [...(categories || [])]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+        .map((name) => ({
+          original: name,
+          value: name,
+        }));
+      setCategoryEdits(normalized);
+    } else {
+      setCategoryEdits([]);
+      setCategoryAction({ name: null, type: null });
+    }
+  }, [showCategoryModal, categories]);
 
   // ---------- Handlers ----------
   const handleCategoryToggle = (category) => {
@@ -199,6 +215,8 @@ useEffect(() => {
   const closeCategoryModal = () => {
     setShowCategoryModal(false);
     setNewCategoryName("");
+    setCategoryEdits([]);
+    setCategoryAction({ name: null, type: null });
   };
 
   const handleCategoryDelete = async () => {
@@ -250,6 +268,81 @@ useEffect(() => {
     } catch (err) {
       console.error("❌ Failed to add category:", err);
       alert(t("Failed to add category"));
+    }
+  };
+
+  const isCategoryBusy = (name, type) =>
+    categoryAction.name === name && (type ? categoryAction.type === type : true);
+
+  const updateCategoryDraft = (original, value) => {
+    setCategoryEdits((prev) =>
+      prev.map((cat) =>
+        cat.original === original ? { ...cat, value } : cat
+      )
+    );
+  };
+
+const handleRenameCategory = async (original, value) => {
+  const trimmedOldName = (original || "").trim();
+  const trimmedNewName = (value || "").trim();
+
+  if (!trimmedOldName || !trimmedNewName || trimmedOldName === trimmedNewName) {
+    return;
+  }
+
+  setCategoryAction({ name: original, type: "rename" });
+
+  try {
+    await secureFetch("/products/categories", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oldName: trimmedOldName, newName: trimmedNewName }),
+    });
+
+    setCategoryEdits((prev) =>
+      prev.map((cat) =>
+        cat.original === original
+          ? { original: trimmedNewName, value: trimmedNewName }
+          : cat
+      )
+    );
+
+    await fetchCategories();
+    await fetchProducts();
+  } catch (err) {
+    console.error("❌ Failed to rename category:", err);
+    alert("Failed to rename category — check console.");
+  } finally {
+    setCategoryAction({ name: null, type: null });
+  }
+};
+
+
+  const handleDeleteCategoryEntry = async (name) => {
+    if (!name) return;
+    const confirmDelete = window.confirm(
+      t(
+        "Deleting this category will remove it from all products (they will appear without a category). Continue?"
+      )
+    );
+    if (!confirmDelete) return;
+
+    setCategoryAction({ name, type: "delete" });
+    try {
+      await secureFetch("/products/categories", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: name }),
+      });
+
+      setCategoryEdits((prev) => prev.filter((cat) => cat.original !== name));
+      await fetchCategories();
+      await fetchProducts();
+    } catch (err) {
+      console.error("❌ Failed to delete category:", err);
+      alert(t("Failed to delete category"));
+    } finally {
+      setCategoryAction({ name: null, type: null });
     }
   };
 
@@ -583,6 +676,65 @@ useEffect(() => {
                 </button>
               </div>
             </form>
+            <div className="px-6 pb-6 border-t border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                {t("Existing Categories")}
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                {t("Edit names or delete categories directly from this list.")}
+              </p>
+              <div className="mt-3 max-h-64 overflow-y-auto pr-1 space-y-2">
+                {categoryEdits.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-gray-200 py-6 text-center text-sm text-gray-500">
+                    {t("No categories have been added yet.")}
+                  </div>
+                ) : (
+                  categoryEdits.map((cat) => {
+                    const trimmed = (cat.value || "").trim();
+                    const hasChanges = trimmed && trimmed !== cat.original;
+                    const renameBusy = isCategoryBusy(cat.original, "rename");
+                    const deleteBusy = isCategoryBusy(cat.original, "delete");
+                    return (
+                      <div
+                        key={cat.original}
+                        className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2 shadow-sm"
+                      >
+                        <input
+                          type="text"
+                          value={cat.value}
+                          onChange={(e) => updateCategoryDraft(cat.original, e.target.value)}
+                          className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRenameCategory(cat.original, trimmed)}
+                          disabled={!hasChanges || renameBusy}
+                          className={`flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                            hasChanges && !renameBusy
+                              ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:scale-[1.02]"
+                              : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                          }`}
+                          title={t("Save changes")}
+                        >
+                          <Edit3 size={14} />
+                          {renameBusy ? t("Saving...") : t("Save")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategoryEntry(cat.original)}
+                          disabled={deleteBusy}
+                          className="flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold text-white bg-gradient-to-r from-red-500 to-rose-500 hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed transition"
+                          title={t("Delete category")}
+                        >
+                          <Trash2 size={14} />
+                          {deleteBusy ? t("Deleting...") : t("Delete")}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

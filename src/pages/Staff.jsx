@@ -16,6 +16,7 @@ const currency = (amt) => `₺${parseFloat(amt || 0).toLocaleString('tr-TR', { m
 
 const Staff = () => {
   const { t } = useTranslation();
+  const [savedAutoPayment, setSavedAutoPayment] = useState(null);
 
   const [activeTab, setActiveTab] = useState(0);
   const [showAddStaff, setShowAddStaff] = useState(false);
@@ -71,18 +72,22 @@ const Staff = () => {
   }, []);
 
   // ✅ Fetch payroll + payment history
-  const fetchStaffHistory = async (staffId) => {
-    setSelectedStaffForPayment(staffId);
-    if (!staffId) { setStaffHistory({}); return; }
-    try {
-      const [payroll, payments] = await Promise.all([
-        secureFetch(`/staff/${staffId}/payroll`),
-        secureFetch(`/staff/${staffId}/payments`)
-      ]);
-      setStaffHistory({
-        ...payroll.payroll,
-        paymentHistory: payments
-      });
+const fetchStaffHistory = async (staffId) => {
+  setSelectedStaffForPayment(staffId);
+  if (!staffId) { setStaffHistory({}); return; }
+  try {
+  const [payroll, payments, autoSchedule] = await Promise.all([
+  secureFetch(`/staff/${staffId}/payroll`),
+  secureFetch(`/staff/${staffId}/payments`),
+  secureFetch(`/staff/${staffId}/payments/auto`)
+]);
+console.log("📥 Staff.jsx payments:", payments);
+setStaffHistory({
+  ...payroll.payroll,
+  paymentHistory: payments
+});
+setSavedAutoPayment(autoSchedule); // ✅ new line
+
     } catch (err) {
       toast.error(t("Failed to fetch payroll data"));
     }
@@ -168,6 +173,8 @@ const Staff = () => {
       setRepeatTime("09:00");
       setSelectedStaffForPayment("");
       setStaffHistory({});
+      setSavedAutoPayment(null);
+
     } catch {
       toast.error("Failed to save payment");
     }
@@ -349,7 +356,7 @@ const Staff = () => {
         </div>
       )}
 
-      {/* ---------------------- ADD PAYMENT MODAL ---------------------- */}
+         {/* ---------------------- ADD PAYMENT MODAL ---------------------- */}
       <Modal
         isOpen={isModalOpen}
         onRequestClose={()=>setIsModalOpen(false)}
@@ -360,6 +367,13 @@ const Staff = () => {
           <h2 className="text-2xl font-bold text-blue-900 dark:text-slate-100">{t('Add Payment')}</h2>
           <button onClick={()=>setIsModalOpen(false)} className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 transition"><span className="text-xl font-bold text-gray-700 dark:text-slate-200">×</span></button>
         </div>
+
+        {/* compute auto state */}
+        {/*
+          savedAutoPayment is already set in fetchStaffHistory()
+          We treat auto as ACTIVE only if savedAutoPayment?.active === true
+        */}
+        {(() => null)()}
         <select
           className="w-full p-3 border rounded-md mb-4 text-base dark:bg-slate-800 dark:text-slate-100"
           value={selectedStaffForPayment}
@@ -370,97 +384,194 @@ const Staff = () => {
             <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
           ))}
         </select>
+
         {selectedStaffForPayment && (
         <>
-          <div className="mb-4">
-            <p className="text-lg font-semibold text-blue-900 dark:text-slate-100">
-              {staffList.find(s => s.id === selectedStaffForPayment)?.name} – {staffList.find(s => s.id === selectedStaffForPayment)?.role}
-            </p>
-            <p className="text-base text-blue-600 dark:text-slate-300">{t('Salary Due')}: <span className="font-semibold text-red-600">{currency(staffHistory.salaryDue)}</span></p>
-          </div>
-          <input
-            type="number"
-            value={paymentAmount}
-            onChange={e=>setPaymentAmount(e.target.value)}
-            placeholder={t('Payment amount (TL)')}
-            className="p-4 border rounded-lg w-full bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 mb-4 text-base"
-          />
-          <input type="date" className="p-4 border rounded-lg w-full bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 mb-4 text-base"
-            value={new Date().toISOString().slice(0,10)} readOnly />
-          <label className="text-base font-medium text-blue-900 dark:text-slate-200 mt-3">{t('Payment Method')}</label>
-          <select className="w-full p-3 border rounded-md mb-4 text-base dark:bg-slate-800 dark:text-slate-100"
-            value={paymentMethod}
-            onChange={e=>setPaymentMethod(e.target.value)}
-          >
-            <option value="cash">{t('Cash')}</option>
-            <option value="bank">{t('Bank Transfer')}</option>
-            <option value="papara">{t('Papara')}</option>
-            <option value="card">{t('Card')}</option>
-          </select>
-          <div className="flex items-center mt-2 mb-2">
-            <input type="checkbox" id="autoPay" checked={autoPaymentEnabled}
-              onChange={e=>setAutoPaymentEnabled(e.target.checked)} className="mr-2"/>
-            <label htmlFor="autoPay" className="text-base text-blue-900 dark:text-slate-200">{t('Schedule Auto Payment')}</label>
-          </div>
-          {autoPaymentEnabled && (
-            <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-900 rounded-lg text-base text-yellow-800 dark:text-yellow-200 shadow">
-              🔁 {t('Auto Payment Amount')}: <span className="font-semibold">{currency(staffHistory.salaryDue)}</span>
-              <p className="text-xs mt-1 text-yellow-600 dark:text-yellow-200">{t('Will be paid on each schedule.')}</p>
-            </div>
-          )}
-          {autoPaymentEnabled && (
-            <div className="mb-4">
-              <label className="text-base font-medium text-blue-900 dark:text-slate-200">{t('Scheduled Date')}</label>
-              <input
-                type="date"
-                className="w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base"
-                value={autoPaymentDate}
-                onChange={e=>setAutoPaymentDate(e.target.value)}
-              />
-            </div>
-          )}
-          <div className="mt-3">
-            <label className="text-base font-medium text-blue-900 dark:text-slate-200">{t('Repeat')}</label>
-            <select className="w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base"
-              value={repeatType}
-              onChange={e=>setRepeatType(e.target.value)}
-            >
-              <option value="none">{t('Do not repeat')}</option>
-              <option value="daily">{t('Daily')}</option>
-              <option value="weekly">{t('Weekly')}</option>
-              <option value="monthly">{t('Monthly')}</option>
-            </select>
-          </div>
-          <div className="mt-3">
-            <label className="text-base font-medium text-blue-900 dark:text-slate-200">{t('Time')}</label>
-            <input
-              type="time"
-              className="w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base"
-              value={repeatTime}
-              onChange={e=>setRepeatTime(e.target.value)}
-            />
-          </div>
-          <textarea
-            rows="3"
-            placeholder={t('Optional note...')}
-            className="p-4 border rounded-lg w-full bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 mb-4 text-base"
-            value={note}
-            onChange={e=>setNote(e.target.value)}
-          ></textarea>
-          <button
-            onClick={handlePayment}
-            disabled={!paymentAmount && !autoPaymentEnabled}
-            className={`flex items-center justify-center gap-2 transition-colors p-4 rounded-xl w-full text-white font-bold text-base shadow
-              ${paymentAmount || autoPaymentEnabled
-                ? 'bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600'
-                : 'bg-gray-300 cursor-not-allowed'
-              }`}
-          >
-            <Save size={22}/> {t('Save Payment')}
-          </button>
+          {/*
+            Determine if auto payroll is active for selected staff
+          */}
+          {(() => {
+            const autoActive = !!(savedAutoPayment && savedAutoPayment.active);
+            const repeatLabel = (savedAutoPayment?.repeat_type || "none")
+              .replace("daily", t("Daily"))
+              .replace("weekly", t("Weekly"))
+              .replace("monthly", t("Monthly"))
+              .replace("none", t("None"));
+            return (
+              <>
+                <div className="mb-4">
+                  <p className="text-lg font-semibold text-blue-900 dark:text-slate-100">
+                    {staffList.find(s => s.id === selectedStaffForPayment)?.name} – {staffList.find(s => s.id === selectedStaffForPayment)?.role}
+                  </p>
+                  <p className="text-base text-blue-600 dark:text-slate-300">{t('Salary Due')}: <span className="font-semibold text-red-600">{currency(staffHistory.salaryDue)}</span></p>
+                </div>
+
+                {/* Auto Payroll Banner */}
+                {autoActive && (
+                  <div className="mb-4 p-4 border-2 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 rounded-xl text-yellow-800 dark:text-yellow-200 shadow">
+                    <div className="font-bold mb-1">🔁 {t('Auto Payroll Active')}</div>
+                    <div className="text-sm">
+                      {t('Manual payments are disabled while auto payroll is active.')}
+                      {" "}
+                      <span className="whitespace-nowrap">
+                        {t('Schedule')}: <strong>{repeatLabel}</strong>
+                        {savedAutoPayment?.repeat_time ? ` @ ${savedAutoPayment.repeat_time}` : ""}
+                      </span>
+                      {savedAutoPayment?.scheduled_date && (
+                        <span className="whitespace-nowrap"> • {t('Next Run')}: <strong>{savedAutoPayment.scheduled_date}</strong></span>
+                      )}
+                    </div>
+                    {autoActive && (
+  <button
+    onClick={async () => {
+      try {
+        await secureFetch(`/staff/${selectedStaffForPayment}/payments/auto/toggle`, {
+          method: "PUT",
+          body: JSON.stringify({ active: false }),
+        });
+        toast.success(t("Auto payroll disabled successfully"));
+        fetchStaffHistory(selectedStaffForPayment);
+      } catch (err) {
+        console.error("❌ Disable auto payroll error:", err);
+        toast.error(t("Failed to disable auto payroll"));
+      }
+    }}
+    className="mt-2 px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold shadow"
+  >
+    {t("Disable Auto Payroll")}
+  </button>
+)}
+
+                  </div>
+                )}
+                
+
+                {/* Amount */}
+                <input
+                  type="number"
+                  value={paymentAmount}
+                  onChange={e=>setPaymentAmount(e.target.value)}
+                  placeholder={t('Payment amount (TL)')}
+                  disabled={autoActive}
+                  className={`p-4 border rounded-lg w-full bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 mb-4 text-base ${autoActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                />
+
+                {/* Date */}
+                <input
+                  type="date"
+                  className="p-4 border rounded-lg w-full bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 mb-4 text-base"
+                  value={new Date().toISOString().slice(0,10)}
+                  readOnly
+                />
+
+                {/* Method */}
+                <label className="text-base font-medium text-blue-900 dark:text-slate-200 mt-3">{t('Payment Method')}</label>
+                <select
+                  className={`w-full p-3 border rounded-md mb-4 text-base dark:bg-slate-800 dark:text-slate-100 ${autoActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  value={paymentMethod}
+                  onChange={e=>setPaymentMethod(e.target.value)}
+                  disabled={autoActive}
+                >
+                  <option value="cash">{t('Cash')}</option>
+                  <option value="bank">{t('Bank Transfer')}</option>
+                  <option value="papara">{t('Papara')}</option>
+                  <option value="card">{t('Card')}</option>
+                </select>
+
+                {/* Auto schedule creator — disabled when auto already active */}
+                <div className="flex items-center mt-2 mb-2">
+                  <input
+                    type="checkbox"
+                    id="autoPay"
+                    checked={autoPaymentEnabled}
+                    onChange={e=>setAutoPaymentEnabled(e.target.checked)}
+                    className="mr-2"
+                    disabled={autoActive}
+                  />
+                  <label htmlFor="autoPay" className={`text-base ${autoActive ? 'opacity-60' : ''}`}>
+                    {t('Schedule Auto Payment')}
+                  </label>
+                </div>
+
+                {autoPaymentEnabled && !autoActive && (
+                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-900 rounded-lg text-base text-yellow-800 dark:text-yellow-200 shadow">
+                    🔁 {t('Auto Payment Amount')}: <span className="font-semibold">{currency(staffHistory.salaryDue)}</span>
+                    <p className="text-xs mt-1 text-yellow-600 dark:text-yellow-200">{t('Will be paid on each schedule.')}</p>
+                  </div>
+                )}
+
+                {autoPaymentEnabled && !autoActive && (
+                  <div className="mb-4">
+                    <label className="text-base font-medium text-blue-900 dark:text-slate-200">{t('Scheduled Date')}</label>
+                    <input
+                      type="date"
+                      className="w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base"
+                      value={autoPaymentDate}
+                      onChange={e=>setAutoPaymentDate(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div className="mt-3">
+                  <label className={`text-base font-medium text-blue-900 dark:text-slate-200 ${autoActive ? 'opacity-60' : ''}`}>{t('Repeat')}</label>
+                  <select
+                    className={`w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base ${autoActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    value={repeatType}
+                    onChange={e=>setRepeatType(e.target.value)}
+                    disabled={autoActive}
+                  >
+                    <option value="none">{t('Do not repeat')}</option>
+                    <option value="daily">{t('Daily')}</option>
+                    <option value="weekly">{t('Weekly')}</option>
+                    <option value="monthly">{t('Monthly')}</option>
+                  </select>
+                </div>
+
+                <div className="mt-3">
+                  <label className={`text-base font-medium text-blue-900 dark:text-slate-200 ${autoActive ? 'opacity-60' : ''}`}>{t('Time')}</label>
+                  <input
+                    type="time"
+                    className={`w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base ${autoActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    value={repeatTime}
+                    onChange={e=>setRepeatTime(e.target.value)}
+                    disabled={autoActive}
+                  />
+                </div>
+
+                <textarea
+                  rows="3"
+                  placeholder={t('Optional note...')}
+                  className={`p-4 border rounded-lg w-full bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 mb-4 text-base ${autoActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  value={note}
+                  onChange={e=>setNote(e.target.value)}
+                  disabled={autoActive}
+                ></textarea>
+
+                {/* Save button — fully disabled when auto is active */}
+                <button
+                  onClick={handlePayment}
+                  disabled={autoActive || (!paymentAmount && !autoPaymentEnabled)}
+                  className={`flex items-center justify-center gap-2 transition-colors p-4 rounded-xl w-full text-white font-bold text-base shadow
+                    ${
+                      autoActive
+                        ? 'bg-gray-300 cursor-not-allowed'
+                        : (paymentAmount || autoPaymentEnabled
+                            ? 'bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600'
+                            : 'bg-gray-300 cursor-not-allowed')
+                    }`}
+                  title={autoActive ? t('Manual payments are disabled while auto payroll is active.') : ''}
+                >
+                  <Save size={22}/>
+                  {autoActive ? t('Auto payroll active — manual disabled') : t('Save Payment')}
+                </button>
+              </>
+            );
+          })()}
         </>
         )}
       </Modal>
+      {/* ---------------------- END PAYMENT MODAL ---------------------- */}
+
       {/* ---------------------- END PAYMENT MODAL ---------------------- */}
     </div>
   );

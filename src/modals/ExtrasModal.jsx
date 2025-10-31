@@ -33,81 +33,83 @@ export default function ExtrasModal({
     return String(value).trim().toLowerCase().replace(/\s+/g, " ");
   };
 
+  // Determine which extras groups are explicitly assigned to this product
+  const selectedGroupIds = new Set(
+    [
+      ...(selectedProduct?.selectedExtrasGroup || []),
+      ...(selectedProduct?.extrasGroupRefs?.ids || []),
+    ]
+      .map((id) => Number(id))
+      .filter(Number.isFinite)
+  );
+
+  const selectedGroupNames = new Set(
+    (
+      selectedProduct?.selectedExtrasGroupNames ||
+      selectedProduct?.extrasGroupRefs?.names ||
+      []
+    )
+      .map(normalizeGroupKey)
+      .filter(Boolean)
+  );
+
+  const hasGroupRefs = selectedGroupIds.size > 0 || selectedGroupNames.size > 0;
+
+  const hasModalGroups =
+    Array.isArray(selectedProduct?.modalExtrasGroups) &&
+    selectedProduct.modalExtrasGroups.length > 0;
+
   const sourceGroups =
-    Array.isArray(selectedProduct?.modalExtrasGroups) && selectedProduct.modalExtrasGroups.length > 0
+    Array.isArray(selectedProduct?.modalExtrasGroups) &&
+    selectedProduct.modalExtrasGroups.length > 0
       ? selectedProduct.modalExtrasGroups
-      : extrasGroups;
+      : hasGroupRefs
+      ? extrasGroups
+      : [];
 
-  const groups = Array.isArray(sourceGroups) ? sourceGroups.map(g => ({
-    id: g.id,
-    groupName: g.group_name ?? g.groupName ?? "",
-    items: Array.isArray(g.items) ? g.items.map(it => ({
-      id: it.id,
-      name: it.name ?? it.ingredient_name ?? "",
-      price: Number(it.extraPrice ?? it.price ?? 0),
-      amount:
-  it.amount !== undefined && it.amount !== null && it.amount !== ""
-    ? Number(it.amount)
-    : 1,
-      unit: it.unit || ""                 // ✅ include unit
-    })) : [],
-  })) : [];
-
-  // --- Build allowed set from product’s selectedExtrasGroup (IDs or names) ---
-  const keys = Array.isArray(selectedProduct?.selectedExtrasGroup)
-    ? selectedProduct.selectedExtrasGroup
+  const groups = Array.isArray(sourceGroups)
+    ? sourceGroups.map((g) => ({
+        id: g.id,
+        groupName: g.group_name ?? g.groupName ?? "",
+        items: Array.isArray(g.items)
+          ? g.items.map((it) => ({
+              id: it.id,
+              name: it.name ?? it.ingredient_name ?? "",
+              price: Number(it.extraPrice ?? it.price ?? 0),
+              amount:
+                it.amount !== undefined && it.amount !== null && it.amount !== ""
+                  ? Number(it.amount)
+                  : 1,
+              unit: it.unit || "", // ✅ include unit
+            }))
+          : [],
+      }))
     : [];
-const selectedGroupIds = new Set(
-  [
-    ...(selectedProduct?.selectedExtrasGroup || []),
-    ...(selectedProduct?.extrasGroupRefs?.ids || [])
-  ]
-  .map(id => Number(id))
-  .filter(Number.isFinite)
-);
 
-const selectedGroupNames = new Set(
-  (selectedProduct?.selectedExtrasGroupNames ||
-    selectedProduct?.extrasGroupRefs?.names ||
-    [])
-    .map(normalizeGroupKey)
-    .filter(Boolean)
-);
-
-
- let allowedGroups = groups.filter(g => {
-  const groupId = Number(g.id);
-  const groupNameKey = normalizeGroupKey(g.groupName);
-  return selectedGroupIds.has(groupId) || (groupNameKey && selectedGroupNames.has(groupNameKey));
-});
-
-// 🧩 FIX: if no selection, show all available extras groups for this product
-if (allowedGroups.length === 0) {
-  if (Array.isArray(groups) && groups.length > 0) {
-    allowedGroups = groups; // ✅ show all groups as fallback
-  } else if (Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {
-    // ✅ fallback manual extras display
-    allowedGroups = [
-      {
-        id: "manual",
-        groupName: "Extras",
-        items: selectedProduct.extras.map((ex, idx) => ({
-          id: idx,
-          name: ex.name,
-          price: Number(ex.extraPrice || ex.price || 0),
-          unit: ex.unit || "",
-          amount:
-            ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
-              ? Number(ex.amount)
-              : 1,
-        })),
-      },
-    ];
+  let allowedGroups;
+  if (hasGroupRefs) {
+    allowedGroups = groups.filter((g) => {
+      const groupId = Number(g.id);
+      const groupNameKey = normalizeGroupKey(g.groupName);
+      return (
+        selectedGroupIds.has(groupId) ||
+        (groupNameKey && selectedGroupNames.has(groupNameKey))
+      );
+    });
+  } else if (hasModalGroups) {
+    // When we explicitly fetched groups for this product (e.g., editing a cart item),
+    // trust that modal payload and surface them even without stored refs.
+    allowedGroups = groups;
+  } else {
+    allowedGroups = [];
   }
-}
 
+  // 🧩 If we have explicit refs but filtering failed (e.g., data mismatch) keep modal-specific groups
+  if (hasGroupRefs && allowedGroups.length === 0 && Array.isArray(groups) && groups.length > 0) {
+    allowedGroups = groups;
+  }
 
-  // If no selected groups, fallback to manual extras
+  // If no matched groups but the product already carries manual extras, show those instead
   if (allowedGroups.length === 0 && Array.isArray(selectedProduct?.extras) && selectedProduct.extras.length > 0) {
     allowedGroups = [
       {
@@ -117,11 +119,11 @@ if (allowedGroups.length === 0) {
           id: idx,
           name: ex.name,
           price: Number(ex.extraPrice || ex.price || 0),
-          unit: ex.unit || "",             // ✅ always keep unit
+          unit: ex.unit || "", // ✅ always keep unit
           amount:
-  ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
-    ? Number(ex.amount)
-    : 1,   // ✅ always keep amount
+            ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
+              ? Number(ex.amount)
+              : 1, // ✅ always keep amount
         })),
       },
     ];
@@ -330,6 +332,14 @@ if (allowedGroups.length === 0) {
                   }));
 
                 const itemPrice = Number(selectedProduct.price); // base price only
+                const extrasRefs =
+                  selectedProduct.extrasGroupRefs ||
+                  (hasGroupRefs
+                    ? {
+                        ids: Array.from(selectedGroupIds),
+                        names: Array.from(selectedGroupNames),
+                      }
+                    : null);
                 const extrasKey = JSON.stringify(validExtras);
                 const baseUniqueId = `${selectedProduct.id}-NO_EXTRAS`;
                 const isPlain = validExtras.length === 0 && trimmedNote.length === 0;
@@ -338,6 +348,27 @@ if (allowedGroups.length === 0) {
                 if (editingCartItemIndex !== null) {
                   setCartItems((prev) => {
                     const updated = [...prev];
+                    const existing = updated[editingCartItemIndex] || {};
+                    const persistedRefs =
+                      extrasRefs ||
+                      existing.extrasGroupRefs ||
+                      (Array.isArray(selectedProduct?.selectedExtrasGroup) || Array.isArray(selectedProduct?.selectedExtrasGroupNames)
+                        ? {
+                            ids: Array.isArray(selectedProduct.selectedExtrasGroup)
+                              ? selectedProduct.selectedExtrasGroup.map((id) => Number(id)).filter(Number.isFinite)
+                              : [],
+                            names: Array.isArray(selectedProduct.selectedExtrasGroupNames)
+                              ? selectedProduct.selectedExtrasGroupNames
+                                  .map((name) =>
+                                    normalizeGroupKey(
+                                      typeof name === "string" ? name : String(name || "")
+                                    )
+                                  )
+                                  .filter(Boolean)
+                              : [],
+                          }
+                        : null);
+
                     updated[editingCartItemIndex] = {
                       ...updated[editingCartItemIndex],
                       quantity: productQty,
@@ -345,6 +376,14 @@ if (allowedGroups.length === 0) {
                       extras: validExtras,    // ✅ carries unit + amount
                       unique_id: uniqueId,
                       note: trimmedNote || null,
+                      ...(persistedRefs
+                        ? {
+                            extrasGroupRefs: persistedRefs,
+                            selectedExtrasGroup: persistedRefs.ids,
+                            selected_extras_group: persistedRefs.ids,
+                            selectedExtrasGroupNames: persistedRefs.names,
+                          }
+                        : {}),
                     };
                     return updated;
                   });
@@ -359,13 +398,24 @@ if (allowedGroups.length === 0) {
                           !item.paid
                       );
 
-                      if (existingIndex !== -1) {
-                        return prev.map((item, idx) =>
-                          idx === existingIndex
-                            ? { ...item, quantity: item.quantity + productQty }
-                            : item
-                        );
-                      }
+	                      if (existingIndex !== -1) {
+	                        return prev.map((item, idx) =>
+	                          idx === existingIndex
+	                            ? {
+	                                ...item,
+	                                quantity: item.quantity + productQty,
+	                                ...(extrasRefs && !item.extrasGroupRefs
+	                                  ? {
+	                                      extrasGroupRefs: extrasRefs,
+	                                      selectedExtrasGroup: extrasRefs.ids,
+	                                      selected_extras_group: extrasRefs.ids,
+	                                      selectedExtrasGroupNames: extrasRefs.names,
+	                                    }
+	                                  : {}),
+	                              }
+	                            : item
+	                        );
+	                      }
 
                       const hasLocked = prev.some(
                         (item) =>
@@ -377,36 +427,52 @@ if (allowedGroups.length === 0) {
                         ? `${baseUniqueId}-${uuidv4()}`
                         : baseUniqueId;
 
-                      return [
-                        ...prev,
-                        {
-                          id: selectedProduct.id,
-                          name: selectedProduct.name,
-                          price: itemPrice,
-                          quantity: productQty,
-                          ingredients: selectedProduct.ingredients || [],
-                          extras: [],
-                          unique_id: finalUniqueId,
-                          note: null,
-                        },
-                      ];
-                    });
-                  } else {
-                    setCartItems((prev) => [
-                      ...prev,
-                      {
-                        id: selectedProduct.id,
-                        name: selectedProduct.name,
-                        price: itemPrice,
-                        quantity: productQty,
-                        ingredients: selectedProduct.ingredients || [],
-                        extras: validExtras,   // ✅ carries unit + amount
-                        unique_id: uniqueId,
-                        note: trimmedNote || null,
-                      },
-                    ]);
-                  }
-                }
+	                      return [
+	                        ...prev,
+	                        {
+	                          id: selectedProduct.id,
+	                          name: selectedProduct.name,
+	                          price: itemPrice,
+	                          quantity: productQty,
+	                          ingredients: selectedProduct.ingredients || [],
+	                          extras: [],
+	                          unique_id: finalUniqueId,
+	                          note: null,
+	                          ...(extrasRefs
+	                            ? {
+	                                extrasGroupRefs: extrasRefs,
+	                                selectedExtrasGroup: extrasRefs.ids,
+	                                selected_extras_group: extrasRefs.ids,
+	                                selectedExtrasGroupNames: extrasRefs.names,
+	                              }
+	                            : {}),
+	                        },
+	                      ];
+	                    });
+	                  } else {
+	                    setCartItems((prev) => [
+	                      ...prev,
+	                      {
+	                        id: selectedProduct.id,
+	                        name: selectedProduct.name,
+	                        price: itemPrice,
+	                        quantity: productQty,
+	                        ingredients: selectedProduct.ingredients || [],
+	                        extras: validExtras,   // ✅ carries unit + amount
+	                        unique_id: uniqueId,
+	                        note: trimmedNote || null,
+	                        ...(extrasRefs
+	                          ? {
+	                              extrasGroupRefs: extrasRefs,
+	                              selectedExtrasGroup: extrasRefs.ids,
+	                              selected_extras_group: extrasRefs.ids,
+	                              selectedExtrasGroupNames: extrasRefs.names,
+	                            }
+	                          : {}),
+	                      },
+	                    ]);
+	                  }
+	                }
 
                 setShowExtrasModal(false);
                 setSelectedExtras([]);

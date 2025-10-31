@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import Modal from "react-modal";
 import { Toaster, toast } from "react-hot-toast";
-import { Plus, Save, Download } from "lucide-react";
+import { Plus, Save, Download, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
 
@@ -11,20 +11,274 @@ const currency = (amt) =>
     minimumFractionDigits: 2,
   })}`;
 const dateStr = (d) => new Date(d).toLocaleDateString("tr-TR");
-const timeStr = (h, m) => `${h}h ${m}min`;
 
 function calcDueHistory(totalSalaryDue, payments = []) {
-  let due = totalSalaryDue || 0;
+  const seed =
+    Number.isFinite(Number(totalSalaryDue))
+      ? Number(totalSalaryDue)
+      : payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  let due = seed;
   const out = [];
   payments
     .slice()
     .reverse()
     .forEach((p) => {
-      out.push({ ...p, dueAfter: due });
-      due = due + (p.amount || 0) * -1;
+      const amount = Number(p.amount || 0);
+      out.push({ ...p, amount, dueAfter: due });
+      due -= amount;
     });
   return out.reverse();
 }
+
+const formatMinutes = (mins) => {
+  const numeric = Number(mins);
+  if (!Number.isFinite(numeric) || numeric === 0) return "0min";
+  const sign = numeric < 0 ? "-" : "";
+  const abs = Math.abs(Math.round(numeric));
+  const hours = Math.floor(abs / 60);
+  const minutes = abs % 60;
+  if (hours > 0) {
+    return `${sign}${hours}h ${minutes}min`;
+  }
+  return `${sign}${minutes}min`;
+};
+
+const toFiniteNumber = (value) => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const replaced = normalized.replace(",", ".");
+    const parsed = Number(replaced);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const parseDurationTextToMinutes = (input) => {
+  if (typeof input !== "string") return 0;
+  const text = input.trim();
+  if (!text) return 0;
+
+  const colonMatch = text.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
+  if (colonMatch) {
+    const hours = Number.parseInt(colonMatch[1], 10);
+    const minutes = Number.parseInt(colonMatch[2], 10);
+    const seconds = colonMatch[3] ? Number.parseInt(colonMatch[3], 10) : 0;
+    if ([hours, minutes, seconds].every((n) => Number.isFinite(n))) {
+      return hours * 60 + minutes + Math.round(seconds / 60);
+    }
+  }
+
+  const hourMatch = text.match(/(\d+(?:[.,]\d+)?)\s*h/i);
+  const minuteMatch = text.match(/(\d+(?:[.,]\d+)?)\s*m/i);
+  let minutes = 0;
+
+  if (hourMatch) {
+    const value = parseFloat(hourMatch[1].replace(",", "."));
+    if (Number.isFinite(value)) minutes += value * 60;
+  }
+  if (minuteMatch) {
+    const value = parseFloat(minuteMatch[1].replace(",", "."));
+    if (Number.isFinite(value)) minutes += value;
+  }
+
+  if (!hourMatch && !minuteMatch) {
+    const numeric = toFiniteNumber(text);
+    if (numeric !== null) {
+      minutes += numeric > 24 ? numeric : numeric * 60;
+    }
+  }
+
+  return Math.round(minutes);
+};
+
+const computeSessionMinutes = (session) => {
+  if (!session || typeof session !== "object") return 0;
+
+  const minuteFields = [
+    "durationMinutes",
+    "duration_minutes",
+    "minutes",
+    "totalMinutes",
+    "total_minutes",
+    "workedMinutes",
+    "worked_minutes",
+  ];
+
+  for (const field of minuteFields) {
+    if (field in session) {
+      const value = toFiniteNumber(session[field]);
+      if (value !== null && value > 0) return value;
+    }
+  }
+
+  const hourFields = ["durationHours", "hours", "workedHours"];
+  for (const field of hourFields) {
+    if (field in session) {
+      const value = toFiniteNumber(session[field]);
+      if (value !== null && value > 0) return value * 60;
+    }
+  }
+
+  const textFields = ["duration", "totalTime", "workedTime"];
+  for (const field of textFields) {
+    if (field in session && typeof session[field] === "string") {
+      const minutes = parseDurationTextToMinutes(session[field]);
+      if (minutes > 0) return minutes;
+    }
+  }
+
+  const start =
+    session.check_in ||
+    session.checkIn ||
+    session.start_time ||
+    session.start ||
+    session.clock_in;
+  const end =
+    session.check_out ||
+    session.checkOut ||
+    session.end_time ||
+    session.end ||
+    session.clock_out;
+
+  if (start && end) {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffMs = endDate - startDate;
+    if (Number.isFinite(diffMs) && diffMs > 0) {
+      return Math.round(diffMs / 60000);
+    }
+  }
+
+  return 0;
+};
+
+const computeEntryMinutes = (entry) => {
+  if (!entry || typeof entry !== "object") return 0;
+
+  const minuteFields = [
+    "totalMinutes",
+    "total_minutes",
+    "totalTimeMinutes",
+    "total_time_minutes",
+    "workedMinutes",
+    "worked_minutes",
+    "minutes",
+  ];
+
+  for (const field of minuteFields) {
+    if (field in entry) {
+      const value = toFiniteNumber(entry[field]);
+      if (value !== null && value > 0) return value;
+    }
+  }
+
+  const hourFields = ["totalHours", "workedHours"];
+  for (const field of hourFields) {
+    if (field in entry) {
+      const value = toFiniteNumber(entry[field]);
+      if (value !== null && value > 0) return value * 60;
+    }
+  }
+
+  if (typeof entry.totalTime === "string") {
+    const minutes = parseDurationTextToMinutes(entry.totalTime);
+    if (minutes > 0) return minutes;
+  }
+
+  if (Array.isArray(entry.sessions)) {
+    const minutes = entry.sessions.reduce(
+      (sum, session) => sum + computeSessionMinutes(session),
+      0
+    );
+    if (minutes > 0) return minutes;
+  }
+
+  return 0;
+};
+
+const ClearHistoryToast = ({
+  toastInstance,
+  defaultStart,
+  defaultEnd,
+  onConfirm,
+  onCancel,
+}) => {
+  const { t: translate } = useTranslation();
+  const [start, setStart] = useState(defaultStart || "");
+  const [end, setEnd] = useState(defaultEnd || "");
+  const [includeDownload, setIncludeDownload] = useState(true);
+  const visible = toastInstance?.visible;
+
+  return (
+    <div
+      className={`max-w-md w-full bg-white border border-blue-100 rounded-2xl shadow-lg p-5 text-base text-blue-900 transition-all duration-200 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 ${
+        visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"
+      }`}
+    >
+      <div className="font-semibold text-lg text-blue-800 dark:text-slate-50">
+        {translate("Clear payment history?")}
+      </div>
+      <p className="text-sm text-blue-700 dark:text-slate-200 mt-1">
+        {translate(
+          "Choose a date range and optionally download the history before clearing."
+        )}
+      </p>
+      <div className="grid grid-cols-2 gap-3 mt-4">
+        <label className="flex flex-col text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-slate-300 gap-1">
+          {translate("From")}
+          <input
+            type="date"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            className="rounded-lg border border-blue-200 px-3 py-2 text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+          />
+        </label>
+        <label className="flex flex-col text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-slate-300 gap-1">
+          {translate("To")}
+          <input
+            type="date"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+            className="rounded-lg border border-blue-200 px-3 py-2 text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100"
+          />
+        </label>
+      </div>
+      <label className="flex items-center gap-2 mt-4 text-sm text-blue-800 dark:text-slate-200">
+        <input
+          type="checkbox"
+          checked={includeDownload}
+          onChange={(e) => setIncludeDownload(e.target.checked)}
+          className="h-4 w-4 accent-blue-600"
+        />
+        {translate("Download CSV before clearing")}
+      </label>
+      <div className="mt-5 flex justify-end gap-2">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 rounded-lg border border-blue-200 text-blue-700 font-semibold hover:bg-blue-100 transition dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          {translate("Cancel")}
+        </button>
+        <button
+          onClick={() =>
+            onConfirm({
+              startDate: start,
+              endDate: end,
+              download: includeDownload,
+            })
+          }
+          className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
+        >
+          {translate("Confirm")}
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const DEFAULT_AVATAR =
   "https://www.pngkey.com/png/full/115-1150152_default-profile-picture-avatar-png-green.png";
@@ -37,7 +291,13 @@ const getAvatar = (url) => {
   return DEFAULT_AVATAR;
 };
 
-const StaffCard = ({ staff, staffHistory, onExport }) => {
+const StaffCard = ({
+  staff,
+  staffHistory,
+  paymentHistory,
+  onExport,
+  onClear,
+}) => {
   const { t } = useTranslation();
   const history = staffHistory || {};
   const breakdown = Array.isArray(history.weeklyCheck)
@@ -45,8 +305,98 @@ const StaffCard = ({ staff, staffHistory, onExport }) => {
     : [];
   const paymentRows = calcDueHistory(
     history.totalSalaryDue,
-    history.paymentHistory
+    paymentHistory
   );
+  console.log("📊 StaffCard payment rows:", paymentRows, paymentHistory);
+  const hasPayments = Array.isArray(paymentRows) && paymentRows.length > 0;
+  const autoPaymentInfo = history.autoPayment || null;
+  const hasAutoPayment =
+    !!autoPaymentInfo &&
+    (autoPaymentInfo.active ||
+      autoPaymentInfo.repeat_type ||
+      Number(autoPaymentInfo.amount) > 0);
+  const repeatLabels = {
+    daily: t("Daily"),
+    weekly: t("Weekly"),
+    monthly: t("Monthly"),
+    none: t("None"),
+  };
+  const repeatLabel = autoPaymentInfo?.repeat_type
+    ? repeatLabels[autoPaymentInfo.repeat_type] ||
+      autoPaymentInfo.repeat_type
+    : repeatLabels.none;
+  const todayIso = new Date().toISOString().split("T")[0];
+  const todayEntry = breakdown.find((entry) => entry?.date === todayIso);
+  const latencyStats = history.latency || {};
+  const absenceMinutes = latencyStats.absentMinutes ?? 0;
+  const absentDays = breakdown.filter((entry) =>
+    Array.isArray(entry?.latency) && entry.latency.includes("Absent")
+  ).length;
+  const weeklyScheduledHours = Number.isFinite(Number(history.weeklyHours))
+    ? `${Number(history.weeklyHours).toFixed(1)}h`
+    : t("No data");
+  const totalCheckins = breakdown.reduce(
+    (sum, entry) => sum + (Array.isArray(entry?.sessions) ? entry.sessions.length : 0),
+    0
+  );
+  const weeklyActualMinutes = breakdown.reduce(
+    (sum, entry) => sum + computeEntryMinutes(entry),
+    0
+  );
+  const weeklyCheckinsLabel =
+    weeklyActualMinutes > 0
+      ? `${formatMinutes(weeklyActualMinutes)}${
+          totalCheckins > 0 ? ` (${totalCheckins}×)` : ""
+        }`
+      : totalCheckins > 0
+      ? `${formatMinutes(weeklyActualMinutes)} (${totalCheckins}×)`
+      : t("No data");
+  const lateCheckinMinutes = latencyStats.checkinLateMinutes ?? 0;
+  const earlyCheckoutMinutes =
+    history.earlyCheckoutMinutes ?? latencyStats.earlyCheckout ?? 0;
+  const rawDifference = history.timeDifferenceMinutes ?? 0;
+  const overtimeMinutes = rawDifference > 0 ? rawDifference : 0;
+  const overtimeLabel =
+    overtimeMinutes > 0 ? formatMinutes(overtimeMinutes) : t("None");
+  const overtimeHelper =
+    rawDifference < 0
+      ? t("Undertime: {{value}}", { value: formatMinutes(rawDifference) })
+      : undefined;
+  const summaryMetrics = [
+    {
+      key: "weeklyHours",
+      label: t("Weekly Scheduled Hours"),
+      value: weeklyScheduledHours,
+    },
+    {
+      key: "weeklyCheckins",
+      label: t("Total Weekly Check-In/Out"),
+      value: weeklyCheckinsLabel,
+    },
+    {
+      key: "absence",
+      label: t("Absence"),
+      value: absentDays > 0 ? `${absentDays}×` : t("None"),
+      helper:
+        absenceMinutes > 0 ? formatMinutes(absenceMinutes) : undefined,
+    },
+    {
+      key: "latency",
+      label: t("Latency"),
+      value: formatMinutes(lateCheckinMinutes),
+    },
+    {
+      key: "earlyCheckout",
+      label: t("Checkout Early"),
+      value: formatMinutes(-earlyCheckoutMinutes),
+    },
+    {
+      key: "overtime",
+      label: t("Overtime"),
+      value: overtimeLabel,
+      helper: overtimeHelper,
+    },
+  ];
 
   return (
     <div className="w-full rounded-3xl shadow-2xl p-0 mb-18 overflow-hidden bg-gradient-to-tr from-blue-100 via-blue-50 to-white dark:from-blue-950 dark:via-slate-900 dark:to-purple-950">
@@ -74,11 +424,22 @@ const StaffCard = ({ staff, staffHistory, onExport }) => {
           >
             <Download size={18} /> {t("Export")}
           </button>
+          <button
+            onClick={onClear}
+            disabled={!hasPayments}
+            className={`flex items-center gap-2 px-5 py-2 rounded-lg font-bold shadow text-base transition ${
+              hasPayments
+                ? "bg-rose-200 hover:bg-rose-300 text-rose-900"
+                : "bg-rose-100 text-rose-400 cursor-not-allowed"
+            }`}
+          >
+            <Trash2 size={18} /> {t("Clear History")}
+          </button>
         </div>
       </div>
 
       {/* Salary & Attendance Section */}
-      <div className="p-8 flex flex-col lg:flex-row gap-8 justify-between bg-white/60 dark:bg-slate-900">
+      <div className="p-8 flex flex-col gap-6 bg-white/60 dark:bg-slate-900">
         <div className="flex-1">
           <h3 className="text-xl font-bold text-blue-700 mb-1">
             {t("Salary Progress")}
@@ -117,7 +478,80 @@ const StaffCard = ({ staff, staffHistory, onExport }) => {
               : t("No payment data")}
           </div>
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {summaryMetrics.map((metric) => (
+            <div
+              key={metric.key}
+              className="rounded-2xl border border-blue-100 bg-white/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/60"
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide text-blue-500 dark:text-slate-300">
+                {metric.label}
+              </div>
+              <div className="text-2xl font-bold text-blue-900 dark:text-white mt-1">
+                {metric.value}
+              </div>
+              {metric.helper && (
+                <div className="text-xs text-blue-500 dark:text-slate-400 mt-1">
+                  {metric.helper}
+                </div>
+              )}
+              {metric.key === "overtime" && history.overtimePendingApproval && (
+                <div className="mt-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                  {t("Pending approval")}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
+
+      {hasAutoPayment && (
+        <div className="px-8 pb-6 -mt-4">
+          <div className="rounded-2xl border border-blue-200 bg-blue-50/70 dark:border-blue-800 dark:bg-slate-900/70 p-6 shadow-inner space-y-2 text-base">
+            <div className="flex items-center justify-between text-blue-800 dark:text-blue-200">
+              <h4 className="text-lg font-bold">
+                {t("Auto Payroll Plan")}
+              </h4>
+              <span className="text-sm font-medium bg-blue-200 text-blue-900 px-3 py-1 rounded-full">
+                {autoPaymentInfo.active ? t("Active") : t("Paused")}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="px-3 py-1 rounded-full bg-white text-blue-900 font-semibold shadow-sm">
+                {currency(autoPaymentInfo.amount || 0)}
+              </span>
+              <span className="px-3 py-1 rounded-full bg-white text-blue-900 font-medium shadow-sm">
+                {repeatLabel} @ {autoPaymentInfo.repeat_time || "--:--"}
+              </span>
+              {autoPaymentInfo.payment_method && (
+                <span className="px-3 py-1 rounded-full bg-white text-blue-900 font-medium shadow-sm capitalize">
+                  {autoPaymentInfo.payment_method}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-blue-800 dark:text-blue-100">
+              <div>
+                <span className="font-semibold">{t("Next Run")}:</span>{" "}
+                {autoPaymentInfo.scheduled_date
+                  ? dateStr(autoPaymentInfo.scheduled_date)
+                  : t("Not scheduled")}
+              </div>
+              <div>
+                <span className="font-semibold">{t("Last Payment")}:</span>{" "}
+                {autoPaymentInfo.last_payment_date
+                  ? dateStr(autoPaymentInfo.last_payment_date)
+                  : t("No history")}
+              </div>
+              {autoPaymentInfo.note && (
+                <div className="md:col-span-2">
+                  <span className="font-semibold">{t("Note")}:</span>{" "}
+                  {autoPaymentInfo.note}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Payment History */}
       <div className="bg-blue-50 dark:bg-slate-950 p-8 mt-4 rounded-b-2xl">
@@ -131,6 +565,7 @@ const StaffCard = ({ staff, staffHistory, onExport }) => {
                 <th className="p-3">{t("Date")}</th>
                 <th className="p-3">{t("Amount")}</th>
                 <th className="p-3">{t("Method")}</th>
+                <th className="p-3">{t("Type")}</th>
                 <th className="p-3">{t("Note")}</th>
                 <th className="p-3">{t("Due After Payment")}</th>
               </tr>
@@ -142,16 +577,33 @@ const StaffCard = ({ staff, staffHistory, onExport }) => {
                     key={i}
                     className="text-blue-900 odd:bg-white even:bg-blue-50"
                   >
-                    <td className="p-3">{dateStr(pay.payment_date)}</td>
+                    <td className="p-3">
+  {pay.payment_date
+    ? dateStr(pay.payment_date)
+    : pay.scheduled_date
+    ? dateStr(pay.scheduled_date)
+    : "-"}
+</td>
                     <td className="p-3">{currency(pay.amount)}</td>
                     <td className="p-3">{pay.payment_method || "-"}</td>
+                    <td className="p-3">
+                      {pay.auto ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                          {t("Auto")}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                          {t("Manual")}
+                        </span>
+                      )}
+                    </td>
                     <td className="p-3">{pay.note || "-"}</td>
                     <td className="p-3">{currency(pay.dueAfter)}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="p-3 text-blue-400">
+                  <td colSpan={6} className="p-3 text-blue-400">
                     {t("No payment records")}
                   </td>
                 </tr>
@@ -169,6 +621,8 @@ const Payroll = () => {
   const [staffList, setStaffList] = useState([]);
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [staffHistory, setStaffHistory] = useState({});
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  console.log("📘 Payroll component state:", staffHistory);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [note, setNote] = useState("");
@@ -219,24 +673,45 @@ const Payroll = () => {
     setSelectedStaff(staffId);
     if (!staffId) {
       setStaffHistory({});
+      setPaymentHistory([]);
       return;
     }
+
     try {
-      const [payroll, payments] = await Promise.all([
-        secureFetch(
-          `/staff/${staffId}/payroll?startDate=${startDate}&endDate=${endDate}`
-        ),
+      const [payments, autoSchedule] = await Promise.all([
         secureFetch(`/staff/${staffId}/payments`),
+        secureFetch(`/staff/${staffId}/payments/auto`),
       ]);
-      setStaffHistory({
-        ...payroll.payroll,
-        paymentHistory: payments,
-      });
+
+      console.log("📥 Payments API raw:", payments);
+
+      const normalizedPayments = Array.isArray(payments)
+        ? payments.map((p) => ({
+            ...p,
+            amount: Number(p.amount || 0),
+          }))
+        : [];
+
+      setPaymentHistory(normalizedPayments);
+      setStaffHistory({ autoPayment: autoSchedule });
     } catch (err) {
-      console.error("❌ Payroll fetch error:", err);
-      toast.error(t("Failed to fetch payroll data"));
+      console.error("❌ Payment history fetch error:", err);
+      toast.error(t("Failed to fetch payment history"));
+    }
+
+    try {
+      const payroll = await secureFetch(
+        `/staff/${staffId}/payroll?startDate=${startDate}&endDate=${endDate}`
+      );
+      setStaffHistory((prev) => ({
+        ...payroll.payroll,
+        autoPayment: prev.autoPayment,
+      }));
+    } catch (err) {
+      console.error("❌ Detailed payroll fetch error:", err);
     }
   };
+
 
   useEffect(() => {
     if (selectedStaff) fetchStaffHistory(selectedStaff);
@@ -302,6 +777,145 @@ const Payroll = () => {
     }
   };
 
+  const downloadPaymentHistory = (rangeStart, rangeEnd) => {
+    const staff = staffList.find((s) => s.id === selectedStaff);
+    if (!staff) return false;
+
+    const rows = calcDueHistory(
+      staffHistory.totalSalaryDue,
+      paymentHistory
+    );
+
+    const filtered = rows.filter((entry) => {
+      const rawDate =
+        entry.payment_date || entry.scheduled_date || entry.created_at || "";
+      if (!rawDate) return true;
+      const dateOnly = rawDate.slice(0, 10);
+      if (rangeStart && dateOnly && dateOnly < rangeStart) return false;
+      if (rangeEnd && dateOnly && dateOnly > rangeEnd) return false;
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      toast(t("No payment records in selected range"));
+      return false;
+    }
+
+    const csvRows = [
+      [
+        t("Date"),
+        t("Amount"),
+        t("Method"),
+        t("Type"),
+        t("Note"),
+        t("Due After Payment"),
+      ],
+      ...filtered.map((pay) => [
+        pay.payment_date
+          ? dateStr(pay.payment_date)
+          : pay.scheduled_date
+          ? dateStr(pay.scheduled_date)
+          : "-",
+        currency(pay.amount),
+        pay.payment_method || "-",
+        pay.auto ? t("Auto") : t("Manual"),
+        pay.note || "-",
+        currency(pay.dueAfter),
+      ]),
+    ];
+
+    const csvContent = csvRows
+      .map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const safeName = staff.name ? staff.name.replace(/\s+/g, "_") : "staff";
+    let rangeSuffix = "all";
+    if (rangeStart && rangeEnd) {
+      rangeSuffix = `${rangeStart}_to_${rangeEnd}`;
+    } else if (rangeStart) {
+      rangeSuffix = `from_${rangeStart}`;
+    } else if (rangeEnd) {
+      rangeSuffix = `until_${rangeEnd}`;
+    }
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${safeName}-payments-${rangeSuffix}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast.success(t("Download started"));
+    return true;
+  };
+
+  const clearPaymentHistory = async ({
+    startDate: rangeStart,
+    endDate: rangeEnd,
+    download,
+  }) => {
+    if (!selectedStaff) return;
+
+    if (
+      rangeStart &&
+      rangeEnd &&
+      new Date(rangeStart).getTime() > new Date(rangeEnd).getTime()
+    ) {
+      toast.error(t("Start date must be before end date"));
+      return;
+    }
+
+    if (download) {
+      downloadPaymentHistory(rangeStart, rangeEnd);
+    }
+
+    try {
+      await secureFetch(`/staff/${selectedStaff}/payments`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          startDate: rangeStart || null,
+          endDate: rangeEnd || null,
+        }),
+      });
+      toast.success(t("Payment history cleared"));
+      fetchStaffHistory(selectedStaff);
+    } catch (err) {
+      console.error("❌ Clear payment history error:", err);
+      toast.error(t("Failed to clear payment history"));
+    }
+  };
+
+  const handleClearHistoryPrompt = () => {
+    if (!selectedStaff) {
+      toast.error(t("Select staff first"));
+      return;
+    }
+    if (!paymentHistory || paymentHistory.length === 0) {
+      toast.error(t("No payment records to clear"));
+      return;
+    }
+    toast.custom(
+      (toastInstance) => (
+        <ClearHistoryToast
+          toastInstance={toastInstance}
+          defaultStart={startDate}
+          defaultEnd={endDate}
+          onCancel={() => toast.dismiss(toastInstance.id)}
+          onConfirm={(payload) => {
+            toast.dismiss(toastInstance.id);
+            clearPaymentHistory(payload);
+          }}
+        />
+      ),
+      { duration: Infinity }
+    );
+  };
+
   // Search filter
   useEffect(() => {
     if (searchQuery.trim() && staffList.length > 0) {
@@ -362,7 +976,9 @@ const Payroll = () => {
           <StaffCard
             staff={staffList.find((s) => s.id === selectedStaff)}
             staffHistory={staffHistory}
+            paymentHistory={paymentHistory}
             onExport={exportPayroll}
+            onClear={handleClearHistoryPrompt}
           />
         )}
       </div>

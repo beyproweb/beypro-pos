@@ -1,5 +1,7 @@
 // src/components/ModernHeader.jsx
 import React from "react";
+import { ArrowLeft, Menu } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 /**
  * Prevents flicker of customer name / address (subtitle)
@@ -50,16 +52,47 @@ export default function ModernHeader({
   onBellClick,
   rightContent,
 }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const normalizedPath = React.useMemo(() => {
+    const trimmed = location.pathname.replace(/\/+$/, "") || "/";
+    return trimmed.toLowerCase();
+  }, [location.pathname]);
+
+  const handleGoBack = React.useCallback(() => {
+    if (normalizedPath.startsWith("/transaction")) {
+      navigate("/tableoverview?tab=tables", { replace: true });
+      return;
+    }
+    if (normalizedPath === "/tableoverview" || normalizedPath === "/tables") {
+      navigate("/dashboard", { replace: true });
+      return;
+    }
+    navigate("/");
+  }, [navigate, normalizedPath]);
+
   return (
     <header className="sticky top-0 z-40 w-full px-6 h-16 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
-      {/* Left: Logo */}
-      <div className="flex items-center min-w-0 flex-shrink-0">
-        <span
-          className="text-2xl font-extrabold tracking-tight flex items-center gap-1 select-none bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent drop-shadow-lg"
-          style={{ letterSpacing: "0.03em" }}
+      {/* Left: Drawer toggle + Back arrow */}
+      <div className="flex items-center min-w-0 flex-shrink-0 gap-3">
+        {onSidebarToggle && (
+          <button
+            type="button"
+            onClick={onSidebarToggle}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:text-indigo-200 dark:hover:bg-indigo-500/20 transition"
+            aria-label="Toggle navigation"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleGoBack}
+          className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-indigo-400/50 bg-white/70 text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-white dark:bg-zinc-800/70 dark:text-indigo-200 dark:hover:bg-indigo-700/20 dark:focus:ring-offset-zinc-900 transition"
+          aria-label="Go to previous page"
         >
-          Beypro
-        </span>
+          <ArrowLeft className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Center: Welcome + sticky subtitle (no flicker) */}
