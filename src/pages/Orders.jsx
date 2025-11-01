@@ -107,7 +107,7 @@ const removeDrink = async (id) => {
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/30 backdrop-blur-sm">
       <div className="bg-white rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 p-7 max-w-md w-full text-slate-900">
-        <h2 className="font-semibold text-2xl mb-3 tracking-tight text-slate-900">🍹 Define Drinks</h2>
+        <h2 className="font-semibold text-xl sm:text-2xl mb-3 tracking-tight text-slate-900">🍹 Define Drinks</h2>
         <div className="flex gap-2 mb-4">
           <input
             className="flex-1 border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-300"
@@ -691,9 +691,201 @@ const safeOrders = Array.isArray(orders)
   ? orders.map(o => ({ ...o, items: o.items ?? [] }))
   : [];
 
-return (
+const renderPaymentModal = () => {
+  if (!showPaymentModal || !editingPaymentOrder) return null;
 
-  <div className="min-h-screen pt-0 px-4 pb-4 w-full relative bg-[#f7f9fc] text-slate-900 transition-colors duration-300 space-y-8">
+  const grandTotal =
+    calcOrderTotalWithExtras(editingPaymentOrder) -
+    calcOrderDiscount(editingPaymentOrder);
+
+  return (
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 transition-all duration-300">
+      <div className="relative bg-white rounded-3xl w-[94vw] max-w-md mx-auto p-7 shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 animate-fade-in">
+        {/* Close */}
+        <button
+          onClick={() => setShowPaymentModal(false)}
+          className="absolute top-3 right-4 text-2xl text-slate-400 hover:text-emerald-500 transition"
+          title="Close"
+        >
+          ✕
+        </button>
+        {/* Title */}
+        <div className="flex flex-col items-center mb-5">
+          <div className="text-3xl font-semibold text-slate-900 mb-1">💸 Payment</div>
+          <div className="text-sm font-medium text-slate-500 mb-2">
+            Order #{editingPaymentOrder.id}
+          </div>
+          <div className="text-xs bg-slate-100 text-slate-500 rounded-xl px-4 py-1 font-medium tracking-[0.35em] uppercase border border-slate-200">
+            Split between multiple payment methods if needed.
+          </div>
+        </div>
+        {/* Split Payment Rows */}
+        <div className="flex flex-col gap-3 mb-5">
+          {splitPayments.map((pay, idx) => (
+            <div
+              key={idx}
+              className="flex gap-3 items-center group animate-fade-in border-b border-slate-200 pb-2"
+            >
+              <select
+                value={pay.method}
+                onChange={(e) => {
+                  const copy = [...splitPayments];
+                  copy[idx].method = e.target.value;
+                  setSplitPayments(copy);
+                }}
+                className="rounded-xl border border-slate-200 px-3 py-2 font-medium text-base bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400"
+              >
+                <option>Cash</option>
+                <option>Credit Card</option>
+                <option>Multinet</option>
+                <option>Sodexo</option>
+              </select>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                className="w-28 rounded-xl border border-slate-200 px-4 py-2 text-base text-right font-mono bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400"
+                placeholder="₺0.00"
+                value={pay.amount}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const copy = [...splitPayments];
+                  copy[idx].amount = value;
+
+                  if (splitPayments.length === 2) {
+                    const otherIdx = idx === 0 ? 1 : 0;
+                    const thisVal = Number(value || 0);
+                    const otherVal = Math.max(grandTotal - thisVal, 0);
+                    copy[otherIdx].amount = otherVal === 0 ? "" : otherVal.toFixed(2);
+                  }
+                  setSplitPayments(copy);
+                }}
+              />
+              {splitPayments.length > 1 && (
+                <button
+                  className="ml-2 p-2 bg-slate-100 text-rose-500 rounded-full hover:bg-rose-100 border border-slate-200 transition"
+                  onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))}
+                  title="Remove"
+                >
+                  –
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium shadow transition-all"
+            onClick={() => setSplitPayments([...splitPayments, { method: "Cash", amount: "" }])}
+          >
+            <span className="text-lg sm:text-xl">+</span> Add Payment Method
+          </button>
+        </div>
+        {/* Total Summary */}
+        <div className="bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl shadow-inner text-center">
+  <span className="text-2xl sm:text-4xl text-emerald-700 font-extrabold font-mono tracking-tight">
+    ₺{grandTotal.toFixed(2)}
+
+
+          </span>
+          <span className="text-sm sm:text-base text-slate-600 flex gap-2 items-center">
+            Split Amount Paid:&nbsp;
+            <span className="text-lg sm:text-xl font-semibold text-slate-900 font-mono">
+              ₺{splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0).toFixed(2)}
+            </span>
+          </span>
+          {/* Remaining Balance */}
+          {(() => {
+            const paid = splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const remaining = grandTotal - paid;
+            return (
+              <div
+                className={`mt-2 text-base sm:text-lg font-semibold ${
+                  remaining > 0
+                    ? "text-amber-500"
+                    : remaining < 0
+                    ? "text-rose-500"
+                    : "text-emerald-600"
+                }`}
+              >
+                {remaining > 0
+                  ? `Remaining: ₺${remaining.toFixed(2)}`
+                  : remaining < 0
+                  ? `Overpaid: ₺${Math.abs(remaining).toFixed(2)}`
+                  : ``}
+              </div>
+            );
+          })()}
+          {splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) !== grandTotal && (
+            <span className="text-rose-500 text-sm mt-1 animate-pulse">
+              Amounts must sum to order total.
+            </span>
+          )}
+        </div>
+        {/* Save/Cancel */}
+        <div className="flex gap-3 justify-end mt-5">
+          <button
+            className="px-5 py-2 rounded-xl bg-white text-slate-600 font-medium border border-slate-200 hover:bg-slate-100"
+            onClick={() => setShowPaymentModal(false)}
+          >
+            Cancel
+          </button>
+          <button
+            className={`px-6 py-2 rounded-xl font-semibold shadow text-white transition-all duration-150 ${
+              splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) === grandTotal
+                ? "bg-emerald-500 hover:bg-emerald-400 scale-[1.02]"
+                : "bg-slate-300 cursor-not-allowed text-slate-500"
+            }`}
+            disabled={splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) !== grandTotal}
+            onClick={async () => {
+              const receiptId = editingPaymentOrder.receipt_id || uuidv4();
+              const cleanedSplits = {};
+              splitPayments.forEach((p) => {
+                if (p.method && p.amount > 0) cleanedSplits[p.method] = Number(p.amount);
+              });
+
+              await secureFetch(`/orders/receipt-methods`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  order_id: editingPaymentOrder.id,
+                  receipt_id: receiptId,
+                  methods: cleanedSplits,
+                }),
+              });
+
+            await secureFetch(`/orders/${editingPaymentOrder.id}`, {
+  method: "PUT",
+  body: JSON.stringify({
+    payment_method: splitPayments[0].method,
+    total: grandTotal,
+    receipt_id: receiptId,
+  }),
+});
+
+
+              setShowPaymentModal(false);
+              await fetchOrders();
+            }}
+          >
+            Save Payment
+          </button>
+        </div>
+        <style>{`
+          .animate-fade-in {
+            animation: fadeIn .3s cubic-bezier(.4,0,.2,1);
+          }
+          @keyframes fadeIn {
+            from { opacity:0; transform:scale(0.95);}
+            to { opacity:1; transform:scale(1);}
+          }
+        `}</style>
+      </div>
+    </div>
+  );
+};
+
+return (
+  <div className="min-h-screen w-full bg-[#f7f9fc] text-slate-900">
 
 {/* --- HEADER & ACTIONS, Always Centered --- */}
 <div className="w-full flex flex-col items-center justify-center pt-1 pb-0 min-h-[50px]">
@@ -701,7 +893,7 @@ return (
   <div className="flex flex-col items-center justify-center w-full max-w-3xl">
     <div className="flex flex-col md:flex-row items-center justify-center gap-5 w-full">
       <select
-        className="px-4 py-2 rounded-2xl text-base font-medium bg-white text-slate-900 border border-slate-200 shadow-sm focus:border-slate-400 focus:ring-slate-300 min-w-[180px]"
+        className="w-full md:w-auto px-4 py-2 rounded-2xl text-base font-medium bg-white text-slate-900 border border-slate-200 shadow-sm focus:border-slate-400 focus:ring-slate-300 min-w-[180px]"
         value={selectedDriverId || ""}
         onChange={e => setSelectedDriverId(e.target.value)}
       >
@@ -711,7 +903,7 @@ return (
         ))}
       </select>
       <button
-        className="px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 flex items-center gap-2 disabled:opacity-40 transition"
+        className="w-full md:w-auto px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-40 transition"
         disabled={!selectedDriverId}
         onClick={async () => {
           const driverOrders = orders.filter(
@@ -724,11 +916,11 @@ return (
       >
         🛵<span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-lg border border-emerald-300 font-semibold">LIVE</span> {t("Route")}
       </button>
-      <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-1 border border-slate-200 shadow-sm">
+      <div className="w-full md:w-auto flex flex-wrap items-center justify-between gap-2 bg-white rounded-xl px-3 py-2 border border-slate-200 shadow-sm">
         <label className="font-semibold text-slate-600">{t("Date")}:</label>
         <input
           type="date"
-          className="border border-slate-200 px-2 py-1 rounded text-lg bg-white text-slate-900 focus:border-slate-400 focus:ring-slate-300"
+          className="border border-slate-200 px-2 py-1 rounded text-base sm:text-lg bg-white text-slate-900 focus:border-slate-400 focus:ring-slate-300"
           value={reportDate}
           max={new Date().toISOString().slice(0,10)}
           onChange={e => setReportDate(e.target.value)}
@@ -737,7 +929,7 @@ return (
       </div>
     </div>
     <button
-      className="mt-4 md:mt-0 md:absolute md:right-14 px-4 py-2 rounded-2xl bg-white text-slate-700 font-semibold border border-slate-200 shadow-sm hover:bg-slate-100 transition"
+      className="mt-4 md:mt-0 md:absolute md:right-14 w-full md:w-auto px-4 py-2 rounded-2xl bg-white text-slate-700 font-semibold border border-slate-200 shadow-sm hover:bg-slate-100 transition text-center"
       onClick={() => setShowDrinkModal(true)}
     >
       {t("Settings")}
@@ -750,7 +942,7 @@ return (
     {selectedDriverId && (
       <div className="mt-4">
         {reportLoading ? (
-          <div className="animate-pulse text-xl">Loading driver report...</div>
+          <div className="animate-pulse text-lg sm:text-xl">Loading driver report...</div>
         ) : driverReport?.error ? (
           <div className="text-red-600 font-bold">{driverReport.error}</div>
         ) : driverReport ? (
@@ -758,11 +950,11 @@ return (
             <div className="flex flex-wrap gap-10 items-center mb-3">
               <div>
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">Packets Delivered</div>
-                <div className="text-4xl font-extrabold text-slate-900">{driverReport.packets_delivered}</div>
+                <div className="text-xl sm:text-4xl font-extrabold text-slate-900">{driverReport.packets_delivered}</div>
               </div>
               <div>
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">Total Sales</div>
-                <div className="text-4xl font-extrabold text-slate-900">₺{driverReport.total_sales?.toFixed(2)}</div>
+                <div className="text-xl sm:text-4xl font-extrabold text-slate-900">₺{driverReport.total_sales?.toFixed(2)}</div>
               </div>
               <div>
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">By Payment Method</div>
@@ -981,7 +1173,7 @@ return (
   return (
     <div key={driver.id} className="mb-6 px-2">
       <div className="flex items-center gap-4 mb-2">
-        <span className="text-lg font-semibold text-slate-800 tracking-tight">
+        <span className="text-base sm:text-lg font-semibold text-slate-800 tracking-tight">
           🧃 {driver.name}
         </span>
         <span className="ml-auto text-base font-medium text-emerald-700 flex flex-wrap gap-1">
@@ -1001,7 +1193,7 @@ return (
 
 
    {/* --- ORDERS LIST --- */}
-<div className="min-h-screen p-6 w-full mx-auto relative bg-[#f7f9fc] text-slate-900 transition-colors duration-300">
+<div className="min-h-screen px-0 sm:px-6 py-6 w-full mx-auto relative bg-[#f7f9fc] text-slate-900 transition-colors duration-300">
 <div
   className={`
     grid
@@ -1105,20 +1297,19 @@ const totalDiscount = calcOrderDiscount(order);
 
             {/* CARD HEADER */}
 <div
-  className="flex flex-col gap-1 w-full pb-2 mb-3"
+ className="flex flex-col gap-[2px] w-full pb-0 mb-[2px]"
   style={{ minWidth: 0 }}
 >
   {/* Top Row: Address + Timer */}
-  <div className={`relative rounded-t-3xl px-6 py-4 flex items-start justify-between gap-4 transition-colors duration-500 ${statusVisual.header}`}>
+  <div className={`relative rounded-t-3xl px-5 sm:px-6 py-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between transition-colors duration-500 ${statusVisual.header}`}>
   {/* Address + icon */}
   <div className="flex flex-col flex-1 min-w-0">
     <div className="flex items-center gap-2">
-      <span className="text-2xl text-emerald-500">📍</span>
+      <span className="text-xl sm:text-2xl text-emerald-500">📍</span>
       <span
   className="
-    text-2xl font-extrabold text-slate-900
+    text-lg sm:text-2xl font-extrabold text-slate-900
     leading-snug break-words w-full
-    sm:text-xl sm:leading-snug
     "
   style={{
     wordBreak: "break-word",
@@ -1134,20 +1325,36 @@ const totalDiscount = calcOrderDiscount(order);
     </div>
   </div>
   {/* Right badges */}
-  <div className="flex flex-col items-end gap-2 min-w-[135px]">
+  <div className="flex flex-wrap sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto min-w-0 sm:min-w-[160px]">
     {isYemeksepeti && (
-  <span className="inline-flex items-center px-5 py-2 rounded-2xl bg-gradient-to-r from-pink-500 to-orange-400 text-white text-lg font-extrabold shadow gap-2 tracking-wider border border-pink-200" style={{ fontSize: '1.35rem', letterSpacing: 1 }}>
+  <span className="inline-flex items-center justify-center w-full sm:w-auto px-4 py-2 rounded-2xl bg-gradient-to-r from-pink-500 to-orange-400 text-white text-base sm:text-lg lg:text-xl font-extrabold shadow gap-2 tracking-wider border border-pink-200" style={{ letterSpacing: 1 }}>
     Yemeksepeti
     <svg width="28" height="28" viewBox="0 0 24 24" className="inline -mt-0.5 ml-1"><circle cx="12" cy="12" r="12" fill="#FF3B30"/><text x="12" y="16" textAnchor="middle" fontSize="13" fill="#fff" fontWeight="bold">YS</text></svg>
   </span>
 )}
-
-    <span className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl font-mono font-semibold text-sm transition ${statusVisual.timer}`}>
-  <span className="text-base opacity-80">⏰</span> {getWaitingTimer(order)}
-</span>
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide transition ${statusVisual.statusChip}`}>
-      {driverStatusLabel}
-    </span>
+    <div className="flex items-center justify-center sm:justify-end gap-2 w-full">
+     
+      <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide transition ${statusVisual.statusChip}`}>
+        {driverStatusLabel}
+      </span>
+      {order && order.items?.length > 0 && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            console.log(`🖨️ Print clicked for order #${order.id}`);
+            // handlePrintReceipt(order); // ← wire later
+          }}
+          className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-semibold sm:font-bold rounded-full shadow hover:brightness-105 border border-slate-300 transition"
+          title={t("Print Receipt")}
+        >
+          🖨️
+        </button>
+        
+      )}
+       <span className={`flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl font-mono font-semibold text-sm transition ${statusVisual.timer}`}>
+        <span className="text-base opacity-80">⏰</span> {getWaitingTimer(order)}
+      </span>
+    </div>
 
   </div>
 
@@ -1155,138 +1362,94 @@ const totalDiscount = calcOrderDiscount(order);
 
   </div>
   {/* Second Row: Customer + Statuses */}
-  <div className="flex flex-wrap items-center gap-3 mt-1 w-full">
-<div className="flex items-center gap-4 my-2">
-<span className={`inline-flex items-center px-4 py-2 rounded-xl text-xl font-semibold transition ${statusVisual.nameChip}`}>
-  <span className="mr-2">👤</span> {order.customer_name}
-</span>
-
-  {order.customer_phone && (
-    <a
-      href={`tel:${order.customer_phone}`}
-      className={`inline-flex items-center px-3 py-2 rounded-xl font-semibold text-lg transition-transform duration-200 hover:-translate-y-0.5 ${statusVisual.phoneBtn}`}
-      title="Click to call"
-      style={{ textDecoration: 'none' }}
-    >
-      <svg className="mr-2" width="22" height="22" fill="none" viewBox="0 0 24 24"><path fill="currentColor" d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1.003 1.003 0 011.11-.21c1.21.49 2.53.76 3.88.76.55 0 1 .45 1 1v3.5c0 .55-.45 1-1 1C7.72 22 2 16.28 2 9.5c0-.55.45-1 1-1H6.5c.55 0 1 .45 1 1 0 1.35.27 2.67.76 3.88.17.39.09.85-.21 1.11l-2.2 2.2z"/></svg>
-      {order.customer_phone}
-    </a>
-  )}
-</div>
-
-
-{/* --- Confirmation / Auto-Confirm UI --- */}
-{/* Confirm Online Order button, only shows/blinks if NOT confirmed */}
-{["packet", "phone"].includes(order.order_type)
-  && order.status !== "confirmed"
-  && order.status !== "closed" && (
-  <button
-    onClick={async () => {
-      const res = await secureFetch(`/orders/${order.id}/confirm-online`, { method: "POST" });
-      if (!res.ok) {
-        const err = await res.json();
-        return alert(`Confirm failed: ${err.error}`);
-      } 
-      const { order: updated } = await res.json();
-
-      // Fetch items for this order
-      const items = await secureFetch(`/orders/${order.id}/items`);
-
-
-      setOrders(prev =>
-        prev.map(o =>
-          o.id === updated.id ? { ...updated, items } : o
-        )
-      );
-    }}
-    className="animate-pulse inline-flex items-center px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-lg shadow transition-all"
-  >
-    <span className="mr-2">⚡</span> Confirm Online Order
-  </button>
-)}
-
-{/* SOLID "Confirmed" badge, never blinks */}
-{!autoConfirmOrders && order.status === "confirmed" && (
-  <span
-    className="inline-flex items-center px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-lg border border-emerald-300 shadow-sm"
-    title="Order Confirmed"
-  >
-    <span className="mr-1">✅</span> Confirmed
-  </span>
-)}
- <div className="flex items-center gap-2">
-    {/* 🖨️ Print button (always if order exists & has items) */}
-    {order && order.items?.length > 0 && (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          console.log(`🖨️ Print clicked for order #${order.id}`);
-          // handlePrintReceipt(order); // ← wire later
-        }}
-        className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-bold rounded-full shadow hover:brightness-105 border border-slate-300"
-        title={t("Print Receipt")}
-      >
-        🖨️
-      </button>
-    )}
-
-    {/* ✅ Paid badge */}
-    {(order.status === "paid" || order.payment_status === "paid" || order.is_paid) && (
-      <span className="px-3 py-1 bg-green-100 text-green-800 font-bold rounded-full shadow-sm">
-        ✅ {t("Paid")}
+  <div className="flex flex-wrap items-center justify-between gap-3 mt-1 w-full">
+    <div className="flex flex-wrap items-center gap-3 my-2">
+      <span className={`inline-flex items-center justify-center sm:justify-start px-4 py-2 rounded-xl text-base sm:text-xl font-semibold transition ${statusVisual.nameChip}`}>
+        <span className="mr-2">👤</span> {order.customer_name}
       </span>
-    )}
+
+      {order.customer_phone && (
+        <a
+          href={`tel:${order.customer_phone}`}
+          className={`inline-flex items-center justify-center sm:justify-start px-3 py-2 rounded-xl font-semibold text-base sm:text-lg transition-transform duration-200 hover:-translate-y-0.5 ${statusVisual.phoneBtn}`}
+          title="Click to call"
+          style={{ textDecoration: "none" }}
+        >
+          <svg className="mr-2" width="22" height="22" fill="none" viewBox="0 0 24 24">
+            <path
+              fill="currentColor"
+              d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1.003 1.003 0 011.11-.21c1.21.49 2.53.76 3.88.76.55 0 1 .45 1 1v3.5c0 .55-.45 1-1 1C7.72 22 2 16.28 2 9.5c0-.55.45-1 1-1H6.5c.55 0 1 .45 1 1 0 1.35.27 2.67.76 3.88.17.39.09.85-.21 1.11l-2.2 2.2z"
+            />
+          </svg>
+          {order.customer_phone}
+        </a>
+      )}
+    </div>
+
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {/* --- Confirmation / Auto-Confirm UI --- */}
+      {["packet", "phone"].includes(order.order_type) &&
+        order.status !== "confirmed" &&
+        order.status !== "closed" && (
+          <button
+            onClick={async () => {
+              const res = await secureFetch(`/orders/${order.id}/confirm-online`, { method: "POST" });
+              if (!res.ok) {
+                const err = await res.json();
+                return alert(`Confirm failed: ${err.error}`);
+              }
+              const { order: updated } = await res.json();
+
+              const items = await secureFetch(`/orders/${order.id}/items`);
+
+              setOrders((prev) =>
+                prev.map((o) => (o.id === updated.id ? { ...updated, items } : o))
+              );
+            }}
+            className="animate-pulse inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-base sm:text-lg shadow transition-all"
+          >
+            <span className="mr-2">⚡</span> Confirm Online Order
+          </button>
+        )}
+
+      {!autoConfirmOrders && order.status === "confirmed" && (
+        <span
+          className="inline-flex items-center justify-center px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm sm:text-lg border border-emerald-300 shadow-sm"
+          title="Order Confirmed"
+        >
+          <span className="mr-1">✅</span> Confirmed
+        </span>
+      )}
+
+      {autoConfirmOrders && order.status === "confirmed" && (
+        <span
+          className="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-sm sm:text-lg border border-emerald-300 shadow-sm"
+          style={{
+            fontSize: "1.1rem",
+            letterSpacing: 1,
+          }}
+        >
+          Auto Confirmed!
+        </span>
+      )}
+
+      {order.status === "draft" && (
+        <span className="px-3 py-1 rounded-xl font-semibold text-xs sm:text-sm bg-slate-100 text-slate-500 border border-slate-200 shadow-sm">
+          Draft
+        </span>
+      )}
+      {order.status === "cancelled" && (
+        <span className="px-3 py-1 rounded-xl font-semibold text-xs sm:text-sm bg-rose-100 text-rose-700 border border-rose-200 shadow-sm">
+          Cancelled
+        </span>
+      )}
+      {order.status === "closed" && (
+        <span className="px-3 py-1 rounded-xl font-semibold text-xs sm:text-sm bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
+          Closed
+        </span>
+      )}
+    </div>
   </div>
-{/* Auto-confirmed badge, always solid */}
-{autoConfirmOrders && order.status === "confirmed" && (
-  <span
-    className="inline-flex items-center px-4 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-semibold text-lg border border-emerald-300 shadow-sm"
-    style={{
-      fontSize: "1.1rem",
-      letterSpacing: 1,
-    }}
-  >
-    <span className="mr-1"></span> Auto Confirmed!
-  </span>
-)}
-
-{order.status !== 'closed' && (
-  <button
-    className="px-4 py-2 rounded-xl bg-white text-slate-700 font-medium border border-slate-200 shadow-sm hover:bg-slate-100 transition"
-    onClick={async () => {
-  // Fetch latest items (including extras) for this order!
-  const items = await secureFetch(`/orders/${order.id}/items`);
-
-  setEditingPaymentOrder({ ...order, items }); // set with freshest items+extras!
-  setShowPaymentModal(true);
-}}
-
-  >
-    Change/Add Payment
-  </button>
-)}
-
-
-{order.status === "paid" && (
-  <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">
-    Paid
-  </span>
-)}
-{order.status === "draft" && (
-  <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-slate-100 text-slate-500 border border-slate-200 shadow-sm">
-    Draft
-  </span>
-)}
-{order.status === "cancelled" && (
-  <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-rose-100 text-rose-700 border border-rose-200 shadow-sm">
-    Cancelled
-  </span>
-)}
-{order.status === "closed" && (
-  <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
-    Closed
-  </span>
-)}
 
 
 {/* Kitchen Status */}
@@ -1311,8 +1474,8 @@ const totalDiscount = calcOrderDiscount(order);
 
               {/* Items */}
               <details open className="w-full">
-                <summary className="cursor-pointer flex items-center gap-2 text-base font-semibold select-none hover:underline">
-                  <span className="text-xl">🛒</span>
+                <summary className="cursor-pointer flex items-center gap- text-base font-semibold select-none hover:underline">
+                  <span className="text-lg sm:text-xl">🛒</span>
                   Order Items <span className="text-sm opacity-60">({order.items?.length ?? 0})</span>
                 </summary>
 <ul className="pl-0 mt-2 flex flex-col gap-2">
@@ -1322,18 +1485,18 @@ const totalDiscount = calcOrderDiscount(order);
       className="flex flex-col gap-1 px-2 py-2 rounded-xl bg-slate-50 border border-slate-200 shadow-sm"
     >
       {/* Main Product Row */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="inline-block min-w-[28px] h-7 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 font-mono font-semibold text-base border border-emerald-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <span className="inline-block min-w-[28px] h-7 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 font-mono font-semibold text-base border border-emerald-200 flex-shrink-0">
             {item.quantity}×
           </span>
-          <span className="text-lg sm:text-xl font-semibold text-slate-900 break-words tracking-wide">
+          <span className="text-base sm:text-xl font-semibold text-slate-900 break-words tracking-wide flex-1 min-w-[180px]">
             {item.product_name || item.external_product_name || item.order_item_name || "Unnamed"}
           </span>
 
 
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           <span
             className={`
               flex items-center px-3 py-1 rounded-xl font-semibold text-sm tracking-wide border
@@ -1341,19 +1504,19 @@ const totalDiscount = calcOrderDiscount(order);
               ${item.kitchen_status === "ready" ? "bg-orange-100 text-orange-700 border-orange-200 animate-pulse" : ""}
               ${item.kitchen_status === "delivered" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-white text-slate-600 border-slate-200"}
             `}
-            style={{ minWidth: 100, textAlign: "center", letterSpacing: 0.5 }}
+            style={{ minWidth: 96, textAlign: "center", letterSpacing: 0.5 }}
           >
             {item.kitchen_status === "preparing" && <>🍳 PREP</>}
             {item.kitchen_status === "ready" && <>🟠 READY</>}
             {item.kitchen_status === "delivered" && <>✅ READY</>}
           </span>
-          <span className={`text-xl font-semibold font-mono ml-2 px-3 py-1 rounded-xl border transition ${statusVisual.priceTag}`}>
+          <span className={`text-base sm:text-xl font-semibold font-mono sm:ml-2 px-3 py-1 rounded-xl border transition ${statusVisual.priceTag}`}>
             ₺{Number(item.price).toFixed(2)}
           </span>
         </div>
         {order.estimated_ready_at && (
-  <span className="inline-flex items-center gap-2 px-4 py-1 rounded-2xl bg-slate-100 text-slate-600 font-medium border border-slate-200 text-base">
-    <span className="text-xl text-slate-500">⏰</span>
+  <span className="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-1 rounded-2xl bg-slate-100 text-slate-600 font-medium border border-slate-200 text-sm sm:text-base w-full sm:w-auto">
+    <span className="text-lg sm:text-xl text-slate-500">⏰</span>
     Ready by:&nbsp;
     {new Date(order.estimated_ready_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
   </span>
@@ -1362,20 +1525,20 @@ const totalDiscount = calcOrderDiscount(order);
       </div>
 
 {item.extras && item.extras.length > 0 && (
-  <div className="ml-6 mt-2 flex flex-col gap-1">
+  <div className="ml-3 sm:ml-6 mt-2 flex flex-col gap-1">
     {item.extras.map((ex, i) => (
       <div
         key={i}
-        className={`flex justify-between items-center px-3 py-1 rounded-xl text-base font-medium transition ${statusVisual.extrasRow}`}
+        className={`flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 px-3 py-1 rounded-xl text-base font-medium transition ${statusVisual.extrasRow}`}
         style={{ fontSize: "1.08em" }}
       >
         <span className="flex items-center gap-2 font-semibold">
           ➕ {ex.name}
-          <span className="ml-2 font-semibold text-inherit text-lg tracking-wide" style={{letterSpacing: "0.5px"}}>
+          <span className="ml-2 font-semibold text-inherit text-base sm:text-lg tracking-wide" style={{letterSpacing: "0.5px"}}>
   ×{ex.quantity || 1}
 </span>
         </span>
-        <span className="font-mono">
+        <span className="font-mono text-center sm:text-right w-full sm:w-auto">
           ₺{((ex.price || 0) * (ex.quantity || 1)).toFixed(2)}
         </span>
       </div>
@@ -1385,7 +1548,7 @@ const totalDiscount = calcOrderDiscount(order);
 
 {/* --- NOTE: Always shows below the EXTRAS, with unique color --- */}
 {item.note && (
-  <div className={`ml-6 mt-2 px-3 py-1 rounded-xl font-medium italic flex items-center gap-2 text-base transition ${statusVisual.noteBox}`}>
+  <div className={`ml-3 sm:ml-6 mt-2 px-3 py-1 rounded-xl font-medium italic flex items-start sm:items-center gap-2 text-base transition ${statusVisual.noteBox}`}>
     📝 <span style={{ wordBreak: "break-word" }}>{item.note}</span>
   </div>
 )}
@@ -1401,397 +1564,140 @@ const totalDiscount = calcOrderDiscount(order);
 
               </details>
               {/* Payment/driver/total/actions */}
-<div className="flex justify-between items-start w-full mt-auto pt-2 gap-2">
-  {/* LEFT: Payment + Driver */}
-  <div className="flex items-center gap-4 flex-wrap">
-    {/* --- PAYMENT --- */}
-    <div className="flex items-center gap-2 text-base">
-      <span
-        className="font-semibold font-mono text-slate-500 text-lg tracking-wide uppercase"
-        style={{
-          letterSpacing: 2,
-          fontFamily: "Inter, 'Segoe UI', Arial, sans-serif",
-        }}
-      >
-        Payment:
-      </span>
-      <div className="flex flex-wrap gap-2 items-center">
-        {(order.receiptMethods?.length > 0
-          ? order.receiptMethods
-          : [{ payment_method: order.payment_method, amount: order.total }]
-        ).map((pm, idx) => {
-          const icons = {
-            "Cash": "💵",
-            "Credit Card": "💳",
-            "Sodexo": "🍽️",
-            "Multinet": "🪙"
-          };
-          return (
-            <span
-              key={idx}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-100 border border-slate-200 rounded-2xl font-mono text-slate-800 text-lg shadow-sm tracking-tight"
-              style={{
-                fontSize: "1.05rem",
-                letterSpacing: 0.8,
-                minWidth: 110,
-                height: 44,
-                alignItems: "center",
-                justifyContent: "center"
-              }}
-            >
-              <span style={{ fontSize: "1.15em", lineHeight: 1, marginRight: 2 }}>{icons[pm.payment_method] || "💳"}</span>
-              {pm.payment_method}
-            </span>
+{/* --- DRIVER + PAYMENT + TOTAL + BUTTONS --- */}
+<div className="flex flex-col w-full mt-auto pt-0 gap-2">
+
+  {/* === DRIVER SELECT === */}
+  <div className="flex items-center justify-between gap-2 w-full">
+    <span className="font-semibold font-mono text-slate-500 text-sm sm:text-base tracking-wide uppercase">
+      Driver:
+    </span>
+    <div className="relative w-[120px]">
+      <select
+        value={order.driver_id || ""}
+        onChange={async (e) => {
+          const driverId = e.target.value;
+          await secureFetch(`/orders/${order.id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              driver_id: driverId,
+              total: order.total,
+              payment_method: order.payment_method,
+            }),
+          });
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id ? { ...o, driver_id: driverId } : o
+            )
           );
-        })}
-      </div>
-    </div>
-    {/* --- DRIVER --- */}
-    <div className="flex items-center gap-2 text-base">
-      <span className="font-semibold font-mono text-slate-500 text-lg tracking-wide mr-1 uppercase"
-        style={{
-          letterSpacing: 2,
-          fontFamily: "Inter, 'Segoe UI', Arial, sans-serif",
         }}
+        className="appearance-none px-3 pr-8 py-1.5 w-full bg-white border border-slate-200 rounded-xl 
+                   text-slate-800 text-sm sm:text-base font-mono shadow-sm 
+                   focus:ring-2 focus:ring-emerald-300/70 focus:border-emerald-300 transition-all"
       >
-        Driver:
+        <option value="">Unassigned</option>
+        {drivers.map((d) => (
+          <option key={d.id} value={d.id}>
+            {d.name}
+          </option>
+        ))}
+      </select>
+      <span className="pointer-events-none absolute right-3 top-1/2 transform -translate-y-1/2 text-emerald-400 text-base">
+        ▼
       </span>
-      <div className="relative">
-        <select
-  value={order.driver_id || ""}
-  onChange={async e => {
-    const driverId = e.target.value;
-    setEditingDriver(prev => ({ ...prev, [order.id]: driverId }));
-
-   await secureFetch(`/orders/${order.id}`, {
-  method: "PUT",
-  body: JSON.stringify({
-    driver_id: driverId,
-    total: order.total,
-    payment_method: order.payment_method,
-  }),
-});
-
-
-    // Optimistically update local UI immediately
-    setOrders(prev =>
-      prev.map(o =>
-        o.id === order.id
-          ? { ...o, driver_id: driverId }
-          : o
-      )
-    );
-
-    setHighlightedOrderId(order.id);
-    setTimeout(() => setHighlightedOrderId(null), 1200);
-    if (!propOrders) await fetchOrders();
-  }}
-  className={`
-    peer appearance-none px-4 pr-10 py-2 w-[140px]
-    bg-white border border-slate-200 rounded-2xl font-mono text-slate-800 text-lg shadow-sm
-    focus:ring-2 focus:ring-emerald-300/70 focus:border-emerald-300
-    disabled:bg-slate-100 disabled:opacity-60
-    transition-all
-  `}
-  disabled={isDelivered}
-  style={{
-    minWidth: 110,
-    height: 44,
-    fontSize: "1.05rem",
-    letterSpacing: 1,
-    outline: "none",
-    fontFamily: "Inter, 'Segoe UI', Arial, sans-serif",
-  }}
->
-  <option value="">Unassigned</option>
-  {drivers.map(d => (
-    <option key={d.id} value={d.id}>
-      {d.name}
-    </option>
-  ))}
-</select>
-
-        <span className="pointer-events-none absolute right-4 top-1/2 transform -translate-y-1/2 text-emerald-400 text-xl">
-          ▼
-        </span>
-      </div>
     </div>
   </div>
-  {/* RIGHT: Discount (if any) above Total */}
-  <div className="flex flex-col items-end min-w-[180px]">
+
+  {/* === TOTAL SECTION === */}
+  <div className="flex flex-col items-end w-full mt-1">
     {totalDiscount > 0 && (
-      <span className="font-semibold font-mono text-rose-600 text-lg px-4 py-1 bg-rose-100 rounded-xl border border-rose-200 shadow-sm mb-1 text-right flex justify-end items-center w-full">
-        🎁 Discount: &nbsp; –₺{totalDiscount.toFixed(2)}
+      <span className="font-semibold font-mono text-rose-600 text-sm px-3 py-1 bg-rose-100 rounded-xl border border-rose-200 mb-[2px] text-right">
+        🎁 Discount: –₺{totalDiscount.toFixed(2)}
       </span>
     )}
-    <span className="font-semibold font-mono text-emerald-700 text-lg px-4 py-1 bg-emerald-100 rounded-xl border border-emerald-200 shadow-sm text-right flex justify-end items-center w-full">
-      Total: &nbsp; ₺{discountedTotal.toFixed(2)}
+    <span className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-700 bg-emerald-50 
+                     border border-emerald-200 px-5 py-2 rounded-2xl text-right w-full sm:w-auto">
+      Total:&nbsp;₺{discountedTotal.toFixed(2)}
     </span>
+  </div>
+
+  {/* === ACTION BUTTON === */}
+  <div className="flex flex-col sm:flex-row gap-2 mt-1 w-full">
+    {!order.driver_status && (
+      <button
+        className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-slate-900 hover:bg-slate-800 
+                   text-white shadow transition"
+        disabled={driverButtonDisabled(order)}
+        onClick={async () => {
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id ? { ...o, driver_status: 'on_road' } : o
+            )
+          );
+          await secureFetch(`/orders/${order.id}/driver-status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ driver_status: 'on_road' }),
+          });
+        }}
+      >
+        On Road
+      </button>
+    )}
+
+    {order.driver_status === "on_road" && (
+      <button
+        className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-sky-500 hover:bg-sky-600 
+                   text-white shadow transition"
+        onClick={async () => {
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id ? { ...o, driver_status: 'delivered' } : o
+            )
+          );
+          await secureFetch(`/orders/${order.id}/driver-status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ driver_status: 'delivered' }),
+          });
+        }}
+      >
+        Delivered
+      </button>
+    )}
+
+    {order.driver_status === "delivered" && (
+      <button
+        className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
+                   text-white shadow transition"
+        onClick={async () => {
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id ? { ...o, status: 'closed' } : o
+            )
+          );
+          await secureFetch(`/orders/${order.id}/close`, { method: 'POST' });
+          setOrders((prev) =>
+            prev.filter((o) => Number(o.id) !== Number(order.id))
+          );
+        }}
+      >
+        Close Order
+      </button>
+    )}
   </div>
 </div>
 
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 mt-3">
-                {!order.driver_status && (
-                  <button
-  className="flex-1 px-5 py-3 rounded-2xl font-semibold text-base bg-slate-900 hover:bg-slate-800 text-white shadow transition"
-  disabled={driverButtonDisabled(order)}
-  onClick={async () => {
-    setOrders(prev =>
-      prev.map(o =>
-        o.id === order.id
-          ? { ...o, driver_status: "on_road" }
-          : o
-      )
-    );
-  await secureFetch(`/orders/${order.id}/driver-status`, {
-  method: "PATCH",
-  body: JSON.stringify({ driver_status: "on_road" }),
-});
-
-    // Optionally: await fetchOrders();
-  }}
->
-  On Road
-</button>
-
-
-
-                )}
-                {order.driver_status === "on_road" && (
-                  <button
-  className="flex-1 px-5 py-3 rounded-2xl font-semibold text-base bg-sky-500 hover:bg-sky-600 text-white shadow transition"
-  onClick={async () => {
-    setOrders(prev =>
-      prev.map(o =>
-        o.id === order.id
-          ? { ...o, driver_status: "delivered" }
-          : o
-      )
-    );
-    await secureFetch(`/orders/${order.id}/driver-status`,  {      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ driver_status: "delivered" }),
-    });
-    // Optionally: await fetchOrders();
-  }}
->
-  Delivered
-</button>
-
-                )}
-          {order.driver_status === "delivered" && (
-  <button
-  className="flex-1 px-5 py-3 rounded-2xl font-semibold text-base bg-emerald-500 hover:bg-emerald-600 text-white shadow transition"
-    onClick={async () => {
-      setOrders(prev =>
-        prev.map(o =>
-          o.id === order.id
-            ? { ...o, status: "closed" }
-            : o
-        )
-      );
-      await secureFetch(`/orders/${order.id}/close`,{ method: "POST" });
-      setOrders(prev => prev.filter(o => Number(o.id) !== Number(order.id)));
-      // Optionally: await fetchOrders();
-    }}
-  >
-    Close Order
-  </button>
-)}
-
-              </div>
             </div>
           </div>
 
-        </div>
+     
 
       );
-
     })}
 
   </div>
-{showPaymentModal && editingPaymentOrder && (
-  (() => {
-const grandTotal =
-  calcOrderTotalWithExtras(editingPaymentOrder) -
-  calcOrderDiscount(editingPaymentOrder);
-
-    return (
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 transition-all duration-300">
-        <div className="relative bg-white rounded-3xl w-[94vw] max-w-md mx-auto p-7 shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 animate-fade-in">
-          {/* Close */}
-          <button
-            onClick={() => setShowPaymentModal(false)}
-            className="absolute top-3 right-4 text-2xl text-slate-400 hover:text-emerald-500 transition"
-            title="Close"
-          >✕</button>
-          {/* Title */}
-          <div className="flex flex-col items-center mb-5">
-            <div className="text-3xl font-semibold text-slate-900 mb-1">💸 Payment</div>
-            <div className="text-sm font-medium text-slate-500 mb-2">Order #{editingPaymentOrder.id}</div>
-            <div className="text-xs bg-slate-100 text-slate-500 rounded-xl px-4 py-1 font-medium tracking-[0.35em] uppercase border border-slate-200">
-              Split between multiple payment methods if needed.
-            </div>
-          </div>
-          {/* Split Payment Rows */}
-          <div className="flex flex-col gap-3 mb-5">
-            {splitPayments.map((pay, idx) => (
-              <div key={idx} className="flex gap-3 items-center group animate-fade-in border-b border-slate-200 pb-2">
-                <select
-                  value={pay.method}
-                  onChange={e => {
-                    const copy = [...splitPayments];
-                    copy[idx].method = e.target.value;
-                    setSplitPayments(copy);
-                  }}
-                  className="rounded-xl border border-slate-200 px-3 py-2 font-medium text-base bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400"
-                >
-                  <option>Cash</option>
-                  <option>Credit Card</option>
-                  <option>Multinet</option>
-                  <option>Sodexo</option>
-                </select>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  className="w-28 rounded-xl border border-slate-200 px-4 py-2 text-base text-right font-mono bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400"
-                  placeholder="₺0.00"
-                  value={pay.amount}
-                  onChange={e => {
-                    const value = e.target.value;
-                    const copy = [...splitPayments];
-                    copy[idx].amount = value;
-
-                    if (splitPayments.length === 2) {
-                      const otherIdx = idx === 0 ? 1 : 0;
-                      const thisVal = Number(value || 0);
-                      const otherVal = Math.max(grandTotal - thisVal, 0);
-                      copy[otherIdx].amount = otherVal === 0 ? "" : otherVal.toFixed(2);
-                    }
-                    setSplitPayments(copy);
-                  }}
-                />
-                {splitPayments.length > 1 && (
-                  <button
-                    className="ml-2 p-2 bg-slate-100 text-rose-500 rounded-full hover:bg-rose-100 border border-slate-200 transition"
-                    onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))}
-                    title="Remove"
-                  >–</button>
-                )}
-              </div>
-            ))}
-            <button
-              className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium shadow transition-all"
-              onClick={() => setSplitPayments([...splitPayments, { method: "Cash", amount: "" }])}
-            >
-              <span className="text-xl">+</span> Add Payment Method
-            </button>
-          </div>
-          {/* Total Summary */}
-          <div className="bg-slate-50 p-4 rounded-xl flex flex-col items-center gap-2 shadow-inner mb-2 border border-slate-200">
-            <span className="text-lg font-semibold text-slate-700 flex gap-2 items-center">
-              Grand Total:&nbsp;
-              <span className="text-2xl text-slate-900 font-semibold font-mono tracking-wide">
-                ₺{grandTotal.toFixed(2)}
-              </span>
-            </span>
-            <span className="text-md text-slate-600 flex gap-2 items-center">
-              Split Amount Paid:&nbsp;
-              <span className="text-xl font-semibold text-slate-900 font-mono">
-                ₺{splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0).toFixed(2)}
-              </span>
-            </span>
-            {/* Remaining Balance */}
-            {(() => {
-              const paid = splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-              const remaining = grandTotal - paid;
-              return (
-                <div className={`mt-2 text-lg font-semibold ${
-                  remaining > 0
-                    ? "text-amber-500"
-                    : remaining < 0
-                    ? "text-rose-500"
-                    : "text-emerald-600"
-                }`}>
-                  {remaining > 0
-                    ? `Remaining: ₺${remaining.toFixed(2)}`
-                    : remaining < 0
-                    ? `Overpaid: ₺${Math.abs(remaining).toFixed(2)}`
-                    : ``}
-                </div>
-              );
-            })()}
-            {splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) !== grandTotal && (
-              <span className="text-rose-500 text-sm mt-1 animate-pulse">Amounts must sum to order total.</span>
-            )}
-          </div>
-          {/* Save/Cancel */}
-          <div className="flex gap-3 justify-end mt-5">
-            <button
-              className="px-5 py-2 rounded-xl bg-white text-slate-600 font-medium border border-slate-200 hover:bg-slate-100"
-              onClick={() => setShowPaymentModal(false)}
-            >Cancel</button>
-            <button
-              className={`px-6 py-2 rounded-xl font-semibold shadow text-white transition-all duration-150 ${
-                splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) === grandTotal
-                  ? "bg-emerald-500 hover:bg-emerald-400 scale-[1.02]"
-                  : "bg-slate-300 cursor-not-allowed text-slate-500"
-              }`}
-              disabled={splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) !== grandTotal}
-onClick={async () => {
-  const receiptId = editingPaymentOrder.receipt_id || uuidv4();
-  const cleanedSplits = {};
-  splitPayments.forEach(p => {
-    if (p.method && p.amount > 0) cleanedSplits[p.method] = Number(p.amount);
-  });
-
-  await secureFetch(`/orders/receipt-methods`, {
-
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      order_id: editingPaymentOrder.id,   // FIXED
-      receipt_id: receiptId,
-      methods: cleanedSplits
-    }),
-  });
-
-await secureFetch(`/${editingPaymentOrder.id}`, {
-  method: "PUT",
-  body: JSON.stringify({
-    payment_method: splitPayments[0].method,
-    total: grandTotal,
-    receipt_id: receiptId,
-  }),
-});
-
-  setShowPaymentModal(false);
-  await fetchOrders();
-}}
-
-            >Save Payment</button>
-          </div>
-        </div>
-        {/* Small fade-in animation */}
-        <style>{`
-          .animate-fade-in {
-            animation: fadeIn .3s cubic-bezier(.4,0,.2,1);
-          }
-          @keyframes fadeIn {
-            from { opacity:0; transform:scale(0.95);}
-            to { opacity:1; transform:scale(1);}
-          }
-        `}</style>
-      </div>
-    );
-  })()
-)}
-
-
+  {renderPaymentModal()}
   <style>{`
     @keyframes pulseGlow {
       0% { filter: brightness(1.12) blur(0.8px);}
@@ -1799,13 +1705,6 @@ await secureFetch(`/${editingPaymentOrder.id}`, {
     }
   `}</style>
 </div>
-<style>{`
-  @keyframes pulseGlow {
-    0% { filter: brightness(1.12) blur(0.8px);}
-    100% { filter: brightness(1.24) blur(2.5px);}
-  }
-`}</style>
-
   </div>
 );
 
