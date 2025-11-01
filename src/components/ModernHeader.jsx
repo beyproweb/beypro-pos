@@ -51,25 +51,22 @@ export default function ModernHeader({
   hasNotification = false,
   onBellClick,
   rightContent,
+  previousRoute,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const normalizedPath = React.useMemo(() => {
-    const trimmed = location.pathname.replace(/\/+$/, "") || "/";
-    return trimmed.toLowerCase();
-  }, [location.pathname]);
-
+  const currentPath = `${location.pathname}${location.search}`;
   const handleGoBack = React.useCallback(() => {
-    if (normalizedPath.startsWith("/transaction")) {
-      navigate("/tableoverview?tab=tables", { replace: true });
+    if (previousRoute && previousRoute !== currentPath) {
+      navigate(previousRoute);
       return;
     }
-    if (normalizedPath === "/tableoverview" || normalizedPath === "/tables") {
-      navigate("/dashboard", { replace: true });
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      navigate(-1);
       return;
     }
     navigate("/");
-  }, [navigate, normalizedPath]);
+  }, [navigate, previousRoute, currentPath]);
 
   return (
     <header className="sticky top-0 z-40 w-full px-6 h-16 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
@@ -102,21 +99,24 @@ export default function ModernHeader({
             👋 Welcome, {userName}
           </span>
         )}
+        
         {/* 👇 StickySubtitle ensures customer name/address never disappear */}
         <StickySubtitle text={subtitle} />
       </div>
 
       {/* Right: Title + bell + other right content */}
       <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
+                {tableNav && <div className="ml-2">{tableNav}</div>}
+
         {title && (
           <span className="text-xl md:text-2xl font-bold tracking-tight text-indigo-700 dark:text-violet-300 drop-shadow mr-1">
             {title}
           </span>
         )}
 
-        {tableNav && <div className="ml-2">{tableNav}</div>}
         {rightContent && rightContent}
         {notificationBell}
+        
       </div>
     </header>
   );

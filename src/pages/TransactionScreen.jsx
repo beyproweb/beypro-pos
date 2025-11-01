@@ -170,7 +170,7 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const hasImg = !!catSrc;
 
   const baseClasses =
-    "flex w-full flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition lg:items-center lg:text-center";
+    "flex w-full flex-col items-center justify-center gap-1 rounded-xl border px-3 py-3 text-center transition";
 
   const activeClasses =
     "border-indigo-500 bg-white shadow-md";
@@ -183,8 +183,7 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
 
   const iconClasses = "mb-1 text-xl lg:self-center";
 
-  const labelClasses =
-    "text-sm font-semibold text-slate-800 lg:text-center";
+  const labelClasses = "text-sm font-semibold text-slate-800 text-center";
 
   return (
     <button
@@ -430,6 +429,7 @@ useEffect(() => {
         navigate={navigate}
         t={t}
         cartMode={false}
+        showLabels={false}
       />
     ) : null,
   });
@@ -657,72 +657,25 @@ if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
   }
 };
 
-function TableNavigationRow({ tableId, navigate, t, cartMode }) {
+function TableNavigationRow({ tableId, navigate, t, cartMode, showLabels = true }) {
   return (
     <div className={`flex items-center justify-center w-full ${cartMode ? "gap-4 py-2" : "gap-2 md:gap-6 py-2"}`}>
-      {/* Prev Table Arrow */}
-      <button
-        onClick={() => {
-          const prev = Math.max(1, Number(tableId) - 1);
-          if (Number(tableId) !== prev) navigate(`/transaction/${prev}`);
-        }}
-        className={`rounded-full shadow border flex items-center justify-center transition
-          ${cartMode
-            ? "w-8 h-8 text-base bg-white/70 dark:bg-zinc-900/70 border-blue-100 dark:border-zinc-700"
-            : "w-9 h-9 text-lg bg-white/60 dark:bg-zinc-900/60 border-blue-100 dark:border-zinc-700"
-          }`}
-        title={t('Previous Table')}
-        disabled={Number(tableId) <= 1}
-      >
-        <svg viewBox="0 0 20 20" fill="none" className={cartMode ? "w-4 h-4" : "w-5 h-5"} stroke="currentColor" strokeWidth="2">
-          <path d="M13 16l-5-5 5-5" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </button>
-      {/* Table Button */}
-<button
-  onClick={() => navigate("/tables")}
-  className={`font-bold rounded-xl shadow border transition flex items-center gap-2
-    px-1 md:px-3 py-2 text-base bg-gradient-to-br from-white/80 via-blue-50/80 to-blue-200/60 text-blue-800 border-blue-200 dark:border-zinc-700`}
-  style={{ minWidth: 8, margin: "2 14px" }}
-  title={t("Go to Table Overview")}
->
-  <span className="text-inherit">{t("Back")}</span>
-
-</button>
-
-      {/* Next Table Arrow */}
-      <button
-        onClick={() => {
-          const next = Math.min(20, Number(tableId) + 1);
-          if (Number(tableId) !== next) navigate(`/transaction/${next}`);
-        }}
-        className={`rounded-full shadow border flex items-center justify-center transition
-          ${cartMode
-            ? "w-8 h-8 text-base bg-white/70 dark:bg-zinc-900/70 border-blue-100 dark:border-zinc-700"
-            : "w-9 h-9 text-lg bg-white/60 dark:bg-zinc-900/60 border-blue-100 dark:border-zinc-700"
-          }`}
-        title={t('Next Table')}
-        disabled={Number(tableId) >= 20}
-      >
-        <svg viewBox="0 0 20 20" fill="none" className={cartMode ? "w-4 h-4" : "w-5 h-5"} stroke="currentColor" strokeWidth="2">
-          <path d="M7 4l5 5-5 5" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </button>
       <button
         onClick={() => setShowMoveTableModal(true)}
-        className="ml-2 flex items-center gap-2 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-400 to-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-emerald-500 hover:to-teal-500"
+        className="flex items-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-blue shadow-sm transition hover:bg-emerald-50 active:scale-95"
+        aria-label={t("Move")}
       >
         <span className="text-base">🔀</span>
-        <span className="tracking-wide">{t("Move Table")}</span>
+        {showLabels && <span className="tracking-wide">{t("Move")}</span>}
       </button>
       <button
         onClick={() => setShowMergeTableModal(true)}
-        className="ml-2 flex items-center gap-2 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-400 to-orange-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-amber-500 hover:to-orange-500"
+        className="flex items-center gap-2 rounded-xl border border-amber-200 px-4 py-2 text-sm font-semibold text-blue shadow-sm transition hover:bg-amber-50 active:scale-95"
+        aria-label={t("Merge")}
       >
         <span className="text-base">🧩</span>
-        <span className="tracking-wide">{t("Merge Table")}</span>
+        {showLabels && <span className="tracking-wide">{t("Merge")}</span>}
       </button>
-
     </div>
   );
 }
@@ -1985,6 +1938,25 @@ const renderCartContent = (variant = "desktop") => {
 
         {actionControls}
 
+        {!isDesktop && !orderId && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowMoveTableModal(true)}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-blue shadow-sm transition hover:bg-emerald-50 active:scale-95"
+            >
+              <span className="text-base">🔀</span>
+              <span className="tracking-wide">{t("Move")}</span>
+            </button>
+            <button
+              onClick={() => setShowMergeTableModal(true)}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm font-semibold text-blue shadow-sm transition hover:bg-amber-50 active:scale-95"
+            >
+              <span className="text-base">🧩</span>
+              <span className="tracking-wide">{t("Merge")}</span>
+            </button>
+          </div>
+        )}
+
         <div className={`flex ${isDesktop ? "gap-2" : "flex-col gap-2"}`}>
           <button
             onClick={() => setShowDiscountModal(true)}
@@ -2042,7 +2014,7 @@ return (
 
             <div className="flex-1 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-200 via-slate-100 to-white p-3">
               <div className="h-full overflow-y-auto pr-1">
-                <div className="grid grid-cols-2 gap-3 pb-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 pb-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
                   {productsInActiveCategory.length > 0 ? (
                     productsInActiveCategory.map((product) => (
                       <button
@@ -2211,18 +2183,22 @@ return (
   onClose={() => setShowMergeTableModal(false)}
   currentTable={tableId}
   t={t}
-onConfirm={async (destTable) => {
-  if (!order?.id) return;
-  try {
-    console.log("🧩 Merging table...");
-    await secureFetch(`/orders/${order.id}/merge-table${identifier}`, {
-      method: "PATCH",
-      body: JSON.stringify({ target_table_number: destTable.tableNum }),
-    });
+	onConfirm={async (destTable) => {
+	  if (!order?.id) return;
+	  try {
+	    console.log("🧩 Merging table...");
+	    await secureFetch(`/orders/${order.id}/merge-table${identifier}`, {
+	      method: "PATCH",
+	      body: JSON.stringify({
+	        target_table_number: Number(destTable.tableNum),
+	        target_order_id: destTable.orderId ?? null,
+	        source_table_number: Number(tableId) || null,
+	      }),
+	    });
 
-    // ✅ Wait for socket confirmation or fallback reload
-    const handleMerged = (payload) => {
-      if (payload?.order?.table_number === Number(destTable.tableNum)) {
+	    // ✅ Wait for socket confirmation or fallback reload
+	    const handleMerged = (payload) => {
+	      if (payload?.order?.table_number === Number(destTable.tableNum)) {
         console.log("✅ Merge confirmed by socket:", payload);
         socket.off("order_merged", handleMerged);
         setShowMergeTableModal(false);
@@ -2242,12 +2218,12 @@ onConfirm={async (destTable) => {
       setShowMergeTableModal(false);
       navigate(`/transaction/${destTable.tableNum}`, { replace: true });
     }, 1500);
-  } catch (err) {
-    console.error("❌ Merge table failed:", err);
-    alert(err.message || "Failed to merge table");
-    setShowMergeTableModal(false);
-  }
-}}
+	  } catch (err) {
+	    console.error("❌ Merge table failed:", err);
+	    showToast(err.message || t("Failed to merge table"));
+	    setShowMergeTableModal(false);
+	  }
+	}}
 
 />
 

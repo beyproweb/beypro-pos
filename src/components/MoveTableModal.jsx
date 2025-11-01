@@ -16,9 +16,12 @@ useEffect(() => {
       // Mark all tables 1–20, with info on whether occupied
       const all = Array.from({ length: 20 }, (_, i) => {
         const tableNum = i + 1;
-        const order = data.find(
-          (o) => o.table_number === tableNum && o.status !== "closed"
-        );
+        const order = (Array.isArray(data) ? data : []).find((o) => {
+          if (!o) return false;
+          const normalized = Number(o.table_number);
+          const status = (o.status || "").toLowerCase();
+          return Number.isFinite(normalized) && normalized === tableNum && status !== "closed";
+        });
         return {
           tableNum,
           occupied: !!order,
@@ -43,7 +46,7 @@ useEffect(() => {
           className="absolute top-3 right-3 text-xl text-gray-500"
           onClick={onClose}
         >✖</button>
-        <h2 className="text-xl font-bold mb-4">{t ? t("Move Table") : "Move Table"}</h2>
+        <h2 className="text-xl font-bold mb-4">{t ? t("Move") : "Move"}</h2>
         {loading ? (
           <p>{t ? t("Loading...") : "Loading..."}</p>
         ) : (

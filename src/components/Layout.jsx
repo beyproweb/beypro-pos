@@ -19,15 +19,9 @@ export default function Layout({
   onClearNotifications,
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [now, setNow] = useState(new Date());
   const location = useLocation();
   const { title, subtitle, tableNav } = useHeader();
   const [filter, setFilter] = useState("all");
-  // Live clock for header
-  useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Username from localStorage for welcome
   let username = "Manager";
@@ -46,8 +40,6 @@ export default function Layout({
   }
 
   // Show welcome message only on /tables
-  const showWelcome = location.pathname === "/tables";
-
   // Default titles for common routes
   const pageTitles = {
     "/": "Dashboard",
@@ -142,9 +134,6 @@ export default function Layout({
   const rightContent = (
     <div className="flex items-center gap-4">
 
-      <span className="font-mono text-sm text-blue-900 dark:text-blue-200 bg-white/60 dark:bg-zinc-900/50 rounded-xl px-3 py-1 shadow-inner">
-        {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-      </span>
 {!hideBell && (
         <NotificationBell unread={unread} onClick={onBellClick} />
       )}
