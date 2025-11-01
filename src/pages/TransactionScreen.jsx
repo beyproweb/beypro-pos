@@ -1984,7 +1984,7 @@ return (
         {/* === Left: Categories + Products === */}
         <div className="flex min-h-0 flex-row gap-3 overflow-hidden">
           {/* Categories */}
-          <aside className="flex w-[28%] min-w-[110px] max-w-[160px] flex-col rounded-3xl bg-gradient-to-br from-white via-slate-50 to-slate-100 p-4 shadow-lg ring-1 ring-slate-200 sm:w-[26%] sm:max-w-[185px] md:w-[25%] lg:w-[230px] lg:max-w-[230px]">
+          <aside className="flex w-[28%] min-w-[110px] max-w-[160px] flex-col rounded-3xl bg-gradient-to-br from-indigo-50 via-sky-50 to-blue-100 p-4 shadow-lg ring-1 ring-indigo-100 sm:w-[26%] sm:max-w-[185px] md:w-[25%] lg:w-[230px] lg:max-w-[230px]">
             <div className="flex items-center justify-between gap-3 lg:flex">
               <h2 className="hidden text-xl font-semibold text-indigo-700 lg:block">
                 {t("Categories")}
@@ -1995,14 +1995,14 @@ return (
             </div>
 
             <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-indigo-200">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:mt-4">
                 {categories.map((cat, idx) => renderCategoryButton(cat, idx))}
               </div>
             </div>
           </aside>
 
           {/* Products */}
-          <article className="flex min-h-0 flex-1 flex-col rounded-3xl bg-gradient-to-br from-white via-slate-50 to-slate-100 p-5 shadow-lg ring-1 ring-slate-200">
+          <article className="flex min-h-0 flex-1 flex-col rounded-3xl bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-100 p-5 shadow-lg ring-1 ring-teal-100">
             <div className="hidden items-center justify-between lg:flex">
               <h2 className="text-xl font-semibold text-slate-800">
                 {activeCategory ? t(activeCategory) : t("Products")}
@@ -2012,7 +2012,7 @@ return (
               </span>
             </div>
 
-            <div className="flex-1 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-200 via-slate-100 to-white p-3">
+            <div className="flex-1 overflow-hidden rounded-3xl bg-transparent p-3">
               <div className="h-full overflow-y-auto pr-1">
                 <div className="grid grid-cols-1 gap-3 pb-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
                   {productsInActiveCategory.length > 0 ? (
@@ -2020,7 +2020,7 @@ return (
                       <button
                         key={product.id}
                         onClick={() => addToCart(product)}
-                        className="flex w-full flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 p-3 text-center shadow-sm transition-all hover:border-indigo-300 hover:shadow-md"
+                        className="flex w-full flex-col items-center gap-2 rounded-2xl border border-emerald-100 bg-white/80 p-3 text-center shadow-sm transition-all hover:border-indigo-300 hover:bg-white hover:shadow-md"
                       >
                         <img
                           src={
