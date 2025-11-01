@@ -1568,44 +1568,43 @@ const totalDiscount = calcOrderDiscount(order);
 <div className="flex flex-col w-full mt-auto pt-0 gap-2">
 
   {/* === DRIVER SELECT === */}
-  <div className="flex items-center justify-between gap-2 w-full">
-    <span className="font-semibold font-mono text-slate-500 text-sm sm:text-base tracking-wide uppercase">
-      Driver:
+ <div className="flex flex-row items-center justify-start gap-3 w-full">
+  <span className="font-semibold font-mono text-slate-500 text-sm sm:text-base tracking-wide uppercase">
+    Driver:
+  </span>
+  <div className="relative w-[130px]">
+    <select
+      value={order.driver_id || ""}
+      onChange={async (e) => {
+        const driverId = e.target.value;
+        await secureFetch(`/orders/${order.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            driver_id: driverId,
+            total: order.total,
+            payment_method: order.payment_method,
+          }),
+        });
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === order.id ? { ...o, driver_id: driverId } : o
+          )
+        );
+      }}
+      className="appearance-none px-3 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl 
+                 text-slate-800 text-sm sm:text-base font-mono shadow-sm 
+                 focus:ring-2 focus:ring-emerald-300/70 focus:border-emerald-300 transition-all"
+    >
+      <option value="">Unassigned</option>
+      {drivers.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.name}
+        </option>
+      ))}
+    </select>
+    <span className="pointer-events-none absolute right-3 top-1/2 transform -translate-y-1/2 text-emerald-400 text-base">
+      ▼
     </span>
-    <div className="relative w-[120px]">
-      <select
-        value={order.driver_id || ""}
-        onChange={async (e) => {
-          const driverId = e.target.value;
-          await secureFetch(`/orders/${order.id}`, {
-            method: "PUT",
-            body: JSON.stringify({
-              driver_id: driverId,
-              total: order.total,
-              payment_method: order.payment_method,
-            }),
-          });
-          setOrders((prev) =>
-            prev.map((o) =>
-              o.id === order.id ? { ...o, driver_id: driverId } : o
-            )
-          );
-        }}
-        className="appearance-none px-3 pr-8 py-1.5 w-full bg-white border border-slate-200 rounded-xl 
-                   text-slate-800 text-sm sm:text-base font-mono shadow-sm 
-                   focus:ring-2 focus:ring-emerald-300/70 focus:border-emerald-300 transition-all"
-      >
-        <option value="">Unassigned</option>
-        {drivers.map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.name}
-          </option>
-        ))}
-      </select>
-      <span className="pointer-events-none absolute right-3 top-1/2 transform -translate-y-1/2 text-emerald-400 text-base">
-        ▼
-      </span>
-    </div>
   </div>
 
   {/* === TOTAL SECTION === */}
@@ -1620,7 +1619,38 @@ const totalDiscount = calcOrderDiscount(order);
       Total:&nbsp;₺{discountedTotal.toFixed(2)}
     </span>
   </div>
+</div>
+{/* === PAYMENT METHOD + EDIT === */}
+<div className="flex items-center justify-end gap-3 w-full mt-2">
+  {/* Current Payment Method */}
+  <div className="flex items-center gap-2">
+    <span className="font-semibold text-slate-700 text-sm sm:text-base">
+      Payment:
+    </span>
+    <span
+      className="px-3 py-1.5 rounded-xl bg-emerald-100 border border-emerald-300 
+                 text-emerald-800 font-bold text-sm sm:text-base shadow-sm"
+    >
+      {order.payment_method ? order.payment_method : "—"}
+    </span>
+  </div>
 
+  {/* Edit Button */}
+  <button
+    className="px-3 py-1.5 rounded-xl bg-white border border-slate-300 
+               text-slate-700 hover:text-emerald-700 hover:border-emerald-400 
+               font-semibold text-sm sm:text-base shadow-sm transition"
+    onClick={() => {
+      setEditingPaymentOrder(order);
+      setShowPaymentModal(true);
+    }}
+  >
+    ✏️ Edit
+  </button>
+</div>
+
+
+</div>
   {/* === ACTION BUTTON === */}
   <div className="flex flex-col sm:flex-row gap-2 mt-1 w-full">
     {!order.driver_status && (
@@ -1688,7 +1718,7 @@ const totalDiscount = calcOrderDiscount(order);
 </div>
 
 
-            </div>
+            
           </div>
 
      
