@@ -1171,7 +1171,7 @@ return (
 
 
   return (
-    <div key={driver.id} className="mb-6 px-2">
+    <div key={driver.id} className="mb-8 px-4">
       <div className="flex items-center gap-4 mb-2">
         <span className="text-base sm:text-lg font-semibold text-slate-800 tracking-tight">
           🧃 {driver.name}
