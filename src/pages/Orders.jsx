@@ -1607,18 +1607,22 @@ const totalDiscount = calcOrderDiscount(order);
     </span>
   </div>
 
-  {/* === TOTAL SECTION === */}
-  <div className="flex flex-col items-end w-full mt-1">
-    {totalDiscount > 0 && (
-      <span className="font-semibold font-mono text-rose-600 text-sm px-3 py-1 bg-rose-100 rounded-xl border border-rose-200 mb-[2px] text-right">
-        🎁 Discount: –₺{totalDiscount.toFixed(2)}
-      </span>
-    )}
-    <span className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-700 bg-emerald-50 
-                     border border-emerald-200 px-5 py-2 rounded-2xl text-right w-full sm:w-auto">
-      Total:&nbsp;₺{discountedTotal.toFixed(2)}
+{/* === TOTAL SECTION (responsive fix) === */}
+<div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-2 mt-2">
+  {totalDiscount > 0 && (
+    <span className="font-semibold font-mono text-rose-600 text-sm px-3 py-1 bg-rose-100 rounded-xl border border-rose-200 text-right sm:text-left">
+      🎁 Discount: –₺{totalDiscount.toFixed(2)}
     </span>
-  </div>
+  )}
+  <span
+    className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-700 bg-emerald-50 
+               border border-emerald-200 px-5 py-2 rounded-2xl text-right sm:text-left w-full sm:w-auto
+               break-words overflow-hidden whitespace-normal"
+  >
+    Total:&nbsp;₺{discountedTotal.toFixed(2)}
+  </span>
+</div>
+
 </div>
 {/* === PAYMENT METHOD + EDIT === */}
 <div className="flex items-center justify-end gap-3 w-full mt-2">
