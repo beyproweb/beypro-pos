@@ -1,6 +1,6 @@
 // src/components/ModernHeader.jsx
 import React from "react";
-import { ArrowLeft, Menu } from "lucide-react";
+import { ArrowLeft, Home, Menu } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 /**
@@ -68,6 +68,10 @@ export default function ModernHeader({
     navigate("/");
   }, [navigate, previousRoute, currentPath]);
 
+  const handleGoHome = React.useCallback(() => {
+    navigate("/dashboard");
+  }, [navigate]);
+
   return (
     <header className="sticky top-0 z-40 w-full px-6 h-16 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
       {/* Left: Drawer toggle + Back arrow */}
@@ -89,6 +93,14 @@ export default function ModernHeader({
           aria-label="Go to previous page"
         >
           <ArrowLeft className="w-5 h-5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleGoHome}
+          className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:text-indigo-200 dark:hover:bg-indigo-500/20 transition"
+          aria-label="Go to dashboard"
+        >
+          <Home className="w-5 h-5" />
         </button>
       </div>
 

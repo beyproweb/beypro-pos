@@ -8,6 +8,7 @@ import { Toaster, toast } from 'react-hot-toast';
 import { Plus, Save } from 'lucide-react';
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
+import { useLocation } from "react-router-dom";
 const API_URL = import.meta.env.VITE_API_URL || "";
 Modal.setAppElement('#root');
 
@@ -16,6 +17,7 @@ const currency = (amt) => `₺${parseFloat(amt || 0).toLocaleString('tr-TR', { m
 
 const Staff = () => {
   const { t } = useTranslation();
+  const location = useLocation();
   const [savedAutoPayment, setSavedAutoPayment] = useState(null);
 
   const [activeTab, setActiveTab] = useState(0);
@@ -54,6 +56,18 @@ const Staff = () => {
   const [autoPaymentDate, setAutoPaymentDate] = useState('');
   const [repeatType, setRepeatType] = useState('none');
   const [repeatTime, setRepeatTime] = useState('09:00');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedTab = params.get("tab");
+    if (requestedTab === "payroll") {
+      setActiveTab(2);
+    } else if (requestedTab === "schedule") {
+      setActiveTab(1);
+    } else if (requestedTab === "checkin") {
+      setActiveTab(0);
+    }
+  }, [location.search]);
 
   // ✅ Load staff
   useEffect(() => {

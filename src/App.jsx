@@ -1,6 +1,6 @@
 // src/App.jsx
 
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import React, { useEffect, useState } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import Layout from "./components/Layout";
@@ -21,7 +21,6 @@ import Production from "./components/Production";
 import LoginScreenWrapper from "./components/LoginScreen";
 import SubscriptionTab from "./components/settings-tabs/SubscriptionTab";
 import AppearanceProvider from "./components/AppearanceProvider";
-import NotificationsTab from "./components/settings-tabs/NotificationsTab";
 import GlobalOrderAlert from "./components/GlobalOrderAlert";
 import Task from "./pages/Task";
 import { ToastContainer } from "react-toastify";
@@ -42,6 +41,34 @@ import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 import secureFetch from "./utils/secureFetch";
 import QrMenuSettings from "./pages/QrMenuSettings";
+import UserManagementPage from "./pages/UserManagementPage";
+import PrintersPage from "./pages/PrintersPage";
+
+const SETTINGS_TAB_PERMISSIONS = {
+  notifications: "settings-notifications",
+  users: "settings-users",
+  printers: "settings-printers",
+  shop_hours: "settings-shop-hours",
+  localization: "settings-localization",
+  subscription: "settings-subscription",
+  payments: "settings-payments",
+  register: "settings-register",
+  integrations: "settings-integrations",
+  inventory: "settings-inventory",
+  appearance: "settings-appearance",
+};
+
+function SettingsRouteWrapper() {
+  const { tabKey } = useParams();
+  const normalized = tabKey ? tabKey.toLowerCase() : undefined;
+  const permission = normalized ? SETTINGS_TAB_PERMISSIONS[normalized] || "settings" : "settings";
+
+  return (
+    <ProtectedRoute permission={permission}>
+      <SettingsPage />
+    </ProtectedRoute>
+  );
+}
 
 // ✅ choose automatically based on environment
 const API_URL =
@@ -199,9 +226,25 @@ const loadSettings = async () => {
               <Route path="staff" element={<ProtectedRoute permission="staff"><Staff /></ProtectedRoute>} />
               <Route path="task" element={<ProtectedRoute permission="task"><Task /></ProtectedRoute>} />
               <Route path="live-route" element={<ProtectedRoute permission="delivery"><LiveRouteMap /></ProtectedRoute>} />
-              <Route path="settings" element={<ProtectedRoute permission="settings"><SettingsPage /></ProtectedRoute>} />
+              <Route
+                path="user-management"
+                element={
+                  <ProtectedRoute permission="settings-users">
+                    <UserManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="printers"
+                element={
+                  <ProtectedRoute permission="settings-printers">
+                    <PrintersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="settings" element={<SettingsRouteWrapper />} />
+              <Route path="settings/:tabKey" element={<SettingsRouteWrapper />} />
               <Route path="subscription" element={<SubscriptionTab />} />
-              <Route path="settings/notifications" element={<ProtectedRoute permission="settings-notifications"><NotificationsTab /></ProtectedRoute>} />
               <Route path="/expenses" element={<ProtectedRoute permission="expenses"><ExpensesPage /></ProtectedRoute>} />
               <Route path="ingredient-prices" element={<ProtectedRoute permission="ingredient-prices"><IngredientPrices /></ProtectedRoute>} />
               <Route path="cash-register-history" element={<ProtectedRoute permission="cash-register-history"><CashRegisterHistory /></ProtectedRoute>} />

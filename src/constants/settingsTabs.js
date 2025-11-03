@@ -9,11 +9,6 @@ export const settingsTabs = [
   { key: "integrations", label: "🔌 Integrations", permission: "settings-integrations" },
   { key: "inventory", label: "📁 Log Files & Activity", permission: "settings-inventory" },
   { key: "appearance", label: "🎨 Appearance & UI", permission: "settings-appearance" },
-  {
-  key: "printer",
-  label: "Printer",
-  emoji: "🖨️",
-  permission: "settings" // or your printer permission key
-},
+  { key: "printers", label: "🖨️ Printers", permission: "settings-printers" },
 
 ];

@@ -4,12 +4,14 @@ import secureFetch from "../utils/secureFetch";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
+
 import { useNavigate } from 'react-router-dom';
 import {
   Home, Utensils, Package, BarChart, Users, Settings, QrCode,
   PieChart, ClipboardList, TrendingUp, FileText, Factory, Bot,
   UserCheck, Megaphone, Wrench, Star, AlertTriangle, CreditCard,
-  Clock, ChevronRight, ArrowUpRight, ArrowDownRight, ChefHat
+  Clock, ChevronRight, ArrowUpRight, ArrowDownRight, ChefHat,
+  UserCog, Bell, Printer, Plug
 } from 'lucide-react';
 import axios from "axios";
 import socket from "../utils/socket"; // adjust path as needed!
@@ -23,6 +25,24 @@ const QUICK_ACCESS_CONFIG = [
     path: "/tables",
     color: "bg-gradient-to-r from-rose-400 to-pink-500",
     icon: "ClipboardList",
+  },
+  {
+    id: "packet",
+    labelKey: "Packet",
+    defaultLabel: "Packet",
+    path: "/tableoverview?tab=packet",
+    color: "bg-gradient-to-r from-sky-500 to-cyan-500",
+    icon: "Package",
+    permission: "packet-orders",
+  },
+  {
+    id: "history",
+    labelKey: "History",
+    defaultLabel: "History",
+    path: "/tableoverview?tab=history",
+    color: "bg-gradient-to-r from-indigo-500 to-purple-600",
+    icon: "Clock",
+    permission: "history",
   },
   {
     id: "kitchen",
@@ -73,6 +93,15 @@ const QUICK_ACCESS_CONFIG = [
     icon: "Users",
   },
   {
+    id: "payroll",
+    labelKey: "Payroll",
+    defaultLabel: "Payroll",
+    path: "/staff?tab=payroll",
+    color: "bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500",
+    icon: "CreditCard",
+    permission: "staff",
+  },
+  {
     id: "task",
     labelKey: "Task",
     defaultLabel: "Task",
@@ -118,7 +147,7 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Integrations",
     path: "/integrations",
     color: "bg-accent",
-    icon: "Settings",
+    icon: "Plug",
   },
   {
     id: "settings",
@@ -159,6 +188,33 @@ const QUICK_ACCESS_CONFIG = [
     path: "/maintenance",
     color: "bg-gradient-to-r from-gray-400 to-gray-700",
     icon: "Wrench",
+  },
+  {
+    id: "user-management",
+    labelKey: "User Management",
+    defaultLabel: "User Management",
+    path: "/user-management",
+    color: "bg-gradient-to-r from-blue-500 to-indigo-500",
+    icon: "UserCog",
+    permission: "settings-users",
+  },
+  {
+    id: "notifications",
+    labelKey: "Notifications",
+    defaultLabel: "Notifications",
+    path: "/settings/notifications",
+    color: "bg-gradient-to-r from-amber-500 to-orange-500",
+    icon: "Bell",
+    permission: "settings-notifications",
+  },
+  {
+    id: "printers",
+    labelKey: "Printers",
+    defaultLabel: "Printers",
+    path: "/printers",
+    color: "bg-gradient-to-r from-slate-600 to-slate-800",
+    icon: "Printer",
+    permission: "settings-printers",
   },
 ];
 
@@ -289,9 +345,15 @@ const fetchSummaryStats = useCallback(async () => {
       case 'Factory': return <Factory size={28} />;
       case 'Bot': return <Bot size={28} />;
       case 'QrCode': return <QrCode size={28} />;
+      case 'CreditCard': return <CreditCard size={28} />;
       case 'UserCheck': return <UserCheck size={28} />;
       case 'Megaphone': return <Megaphone size={28} />;
+      case 'Clock': return <Clock size={28} />;
       case 'Wrench': return <Wrench size={28} />;
+      case 'UserCog': return <UserCog size={28} />;
+      case 'Bell': return <Bell size={28} />;
+      case 'Printer': return <Printer size={28} />;
+      case 'Plug': return <Plug size={28} />;
       default: return <Home size={28} />;
     }
   };

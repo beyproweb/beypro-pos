@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { settingsTabs } from "../constants/settingsTabs";
 import { useTranslation } from "react-i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
+import { useNavigate, useParams } from "react-router-dom";
 
 // Tab components
 import ShopHoursTab from "../components/settings-tabs/ShopHoursTab";
@@ -27,11 +28,13 @@ const tabComponents = {
   integrations: IntegrationsTab,
   inventory: LogFilesTab,
   appearance: AppearanceTab,
-  printer: PrinterTab,
+  printers: PrinterTab,
 };
 
 export default function SettingsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { tabKey } = useParams();
 
   // ✅ List of all valid settings permissions
   const settingsPermissions = [
@@ -46,6 +49,7 @@ export default function SettingsPage() {
     "settings-register",
     "settings-integrations",
     "settings-inventory",
+    "settings-printers",
   ];
 
   // ✅ Properly check each permission
@@ -62,23 +66,48 @@ export default function SettingsPage() {
   }
 
   // ✅ Only show tabs the user actually has permission for
+  const normalizedTabKey = tabKey ? tabKey.toLowerCase() : null;
+
   const permittedTabs = settingsTabs.filter((tab) =>
     useHasPermission(tab.permission)
   );
   const defaultTab = permittedTabs.length > 0 ? permittedTabs[0].key : null;
+  const hasTabAccess = normalizedTabKey
+    ? permittedTabs.some((tab) => tab.key === normalizedTabKey)
+    : false;
 
-  // Set the first available tab as default
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [activeTab, setActiveTab] = useState(
+    hasTabAccess ? normalizedTabKey : defaultTab
+  );
 
-  // Keep activeTab valid when permittedTabs change
   useEffect(() => {
-    if (!permittedTabs.some((tab) => tab.key === activeTab)) {
+    if (normalizedTabKey && hasTabAccess) {
+      setActiveTab(normalizedTabKey);
+      return;
+    }
+    if (!normalizedTabKey && defaultTab) {
       setActiveTab(defaultTab);
     }
-    // eslint-disable-next-line
-  }, [defaultTab, activeTab, permittedTabs.length]);
+  }, [normalizedTabKey, hasTabAccess, defaultTab]);
 
-  const ActiveComponent = tabComponents[activeTab];
+  useEffect(() => {
+    if (!defaultTab) return;
+    if (!normalizedTabKey) {
+      navigate(`/settings/${defaultTab}`, { replace: true });
+      return;
+    }
+    if (!hasTabAccess) {
+      navigate(`/settings/${defaultTab}`, { replace: true });
+    }
+  }, [normalizedTabKey, hasTabAccess, defaultTab, navigate]);
+
+  const ActiveComponent = activeTab ? tabComponents[activeTab] : null;
+
+  const handleTabSelect = (key) => {
+    if (key === normalizedTabKey) return;
+    setActiveTab(key);
+    navigate(`/settings/${key}`);
+  };
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto text-base bg-transparent dark:bg-gray-900 text-gray-900 dark:text-white transition-colors">
@@ -89,7 +118,7 @@ export default function SettingsPage() {
             {permittedTabs.map(({ key, label, emoji }) => (
               <button
                 key={key}
-                onClick={() => setActiveTab(key)}
+                onClick={() => handleTabSelect(key)}
                 className={`flex-shrink-0 md:flex-none text-left px-4 md:px-6 py-3 md:py-4 font-semibold text-sm md:text-lg rounded-xl md:rounded-none transition-all duration-200 ${
                   activeTab === key
                     ? "bg-accent text-white shadow-lg md:shadow-inner"

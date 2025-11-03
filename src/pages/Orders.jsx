@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef  } from "react";
+import React, { useEffect, useState, useRef, useMemo  } from "react";
 import { geocodeAddress } from '../utils/geocode';
 import LiveRouteMap from "../components/LiveRouteMap";
 import socket from "../utils/socket";
@@ -12,12 +12,17 @@ const API_URL = import.meta.env.VITE_API_URL || "";
 
 const paymentMethods = ["Cash", "Credit Card", "Multinet", "Sodexo"];
 
-function DrinkSettingsModal({ open, onClose, fetchDrinks }) {
+function DrinkSettingsModal({ open, onClose, fetchDrinks, summaryByDriver = [] }) {
   const [input, setInput] = useState("");
   const [drinks, setDrinks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("manage");
+
+  useEffect(() => {
+    if (open) setActiveTab("summary");
+  }, [open]);
 
 
 
@@ -99,60 +104,150 @@ const removeDrink = async (id) => {
   }
 };
 
-
-
-
-
   if (!open) return null;
+  const tabs = [
+    { key: "summary", label: "Drinks" },
+    { key: "manage", label: "Manage Drinks" },
+  ];
+
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 p-7 max-w-md w-full text-slate-900">
-        <h2 className="font-semibold text-xl sm:text-2xl mb-3 tracking-tight text-slate-900">🍹 Define Drinks</h2>
-        <div className="flex gap-2 mb-4">
-          <input
-            className="flex-1 border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-300"
-            value={input}
-            placeholder="Drink name (e.g. Cola)"
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && addDrink()}
-            disabled={saving}
-          />
-          <button
-            className="bg-slate-900 text-white px-4 py-2 rounded-xl hover:bg-slate-800 transition"
-            onClick={addDrink}
-            disabled={saving || !input.trim()}
-          >
-            Add
-          </button>
+      <div className="bg-white rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 p-7 max-w-4xl w-full text-slate-900">
+        <h2 className="font-semibold text-xl sm:text-2xl mb-4 tracking-tight text-slate-900">
+          ⚙️ Settings
+        </h2>
 
-        </div>
-        {loading ? (
-          <div className="text-slate-500 mb-2">Loading drinks...</div>
-        ) : (
-          <div className="mb-4 flex flex-wrap gap-2">
-            {drinks.map(d => (
-              <span
-                key={d.id}
-                className="inline-flex items-center gap-2 bg-slate-100 text-slate-800 px-3 py-1 rounded-xl border border-slate-200"
+        <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-2xl p-1 mb-4">
+          {tabs.map(({ key, label }) => {
+            const isActive = activeTab === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                disabled={isActive}
+                className={`px-4 py-2 rounded-2xl text-sm sm:text-base font-semibold transition ${
+                  isActive
+                    ? "bg-white text-slate-900 shadow border border-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
               >
-                {d.name}
-                <button
-                  className="text-rose-500 ml-1 hover:text-rose-600 transition"
-                  onClick={() => removeDrink(d.id)}
-                  disabled={saving}
-                  title="Delete"
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {activeTab === "manage" ? (
+          <>
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
+              <input
+                className="flex-1 border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-300"
+                value={input}
+                placeholder="Drink name (e.g. Cola)"
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addDrink()}
+                disabled={saving}
+              />
+              <button
+                className="bg-slate-900 text-white px-4 py-2 rounded-xl hover:bg-slate-800 transition"
+                onClick={addDrink}
+                disabled={saving || !input.trim()}
+              >
+                Add
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="text-slate-500 mb-2">Loading drinks...</div>
+            ) : (
+              <div className="mb-4 flex flex-wrap gap-2 max-h-[38vh] overflow-y-auto pr-1">
+                {drinks.map((d) => (
+                  <span
+                    key={d.id}
+                    className="inline-flex items-center gap-2 bg-slate-100 text-slate-800 px-3 py-1 rounded-xl border border-slate-200"
+                  >
+                    {d.name}
+                    <button
+                      className="text-rose-500 ml-1 hover:text-rose-600 transition"
+                      onClick={() => removeDrink(d.id)}
+                      disabled={saving}
+                      title="Delete"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                {drinks.length === 0 && !loading && (
+                  <span className="text-slate-400 italic">
+                    No drinks defined yet.
+                  </span>
+                )}
+              </div>
+            )}
+            {error && <div className="text-rose-500 mb-2">{error}</div>}
+          </>
+        ) : (
+          <div className="flex flex-col gap-4 max-h-[48vh] overflow-y-auto pr-1">
+            {summaryByDriver.length === 0 ? (
+              <div className="text-slate-500 text-sm">
+                No drink activity yet. Drinks linked to orders will appear here
+                grouped by driver.
+              </div>
+            ) : (
+              summaryByDriver.map((driver) => (
+                <div
+                  key={driver.driverId}
+                  className="border border-slate-200 rounded-3xl p-4 bg-white shadow-sm"
                 >
-                  ✕
-                </button>
-              </span>
-            ))}
-            {drinks.length === 0 && !loading && (
-              <span className="text-slate-400 italic">No drinks defined yet.</span>
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span className="text-lg font-semibold text-slate-900">
+                      🛵 {driver.driverName}
+                    </span>
+                    <div className="flex flex-wrap gap-2 ml-auto">
+                      {driver.totals.map((total) => (
+                        <span
+                          key={total.key}
+                          className="inline-flex items-center px-3 py-1 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-semibold"
+                        >
+                          {total.qty}× {total.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {driver.customers.map((customer) => (
+                      <div
+                        key={customer.key}
+                        className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3 shadow-sm"
+                      >
+                        <div className="font-semibold text-slate-800">
+                          {customer.name}
+                        </div>
+                        {customer.address && (
+                          <div className="text-xs text-slate-500 mt-1 leading-snug">
+                            {customer.address}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {customer.drinks.map((drink) => (
+                            <span
+                              key={`${customer.key}-${drink.key}`}
+                              className="inline-flex items-center px-3 py-1 rounded-xl bg-white text-emerald-700 border border-emerald-200 text-sm font-semibold shadow-sm"
+                            >
+                              {drink.qty}× {drink.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         )}
-        {error && <div className="text-rose-500 mb-2">{error}</div>}
-        <div className="flex justify-end gap-2">
+
+        <div className="flex justify-end gap-2 mt-6">
           <button
             className="px-4 py-2 rounded-xl bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
             onClick={onClose}
@@ -686,10 +781,151 @@ const totalByMethod = paymentMethods.reduce((obj, method) => {
 }, {});
 
 
+const [openDetails, setOpenDetails] = useState(() => {
+  try {
+    return JSON.parse(localStorage.getItem("orderDetailsState")) || {};
+  } catch {
+    return {};
+  }
+});
 
 const safeOrders = Array.isArray(orders)
   ? orders.map(o => ({ ...o, items: o.items ?? [] }))
   : [];
+
+const drinkSummaryByDriver = useMemo(() => {
+  if (!Array.isArray(drivers) || !drivers.length) return [];
+  if (!Array.isArray(orders) || !orders.length) return [];
+
+  const normalizeToken = (value = "") =>
+    value.replace(/[\s\-]/g, "").toLowerCase();
+
+  const drinkTokens = drinksList.map(normalizeToken).filter(Boolean);
+  if (!drinkTokens.length) return [];
+
+  const isDrinkToken = (token) =>
+    token &&
+    (drinkTokens.includes(token) ||
+      drinkTokens.some((entry) => token.includes(entry)));
+
+  return drivers
+    .map((driver) => {
+      const assignedOrders = orders.filter(
+        (o) => Number(o.driver_id) === Number(driver.id)
+      );
+      if (!assignedOrders.length) return null;
+
+      const totalDrinks = new Map();
+      const customerGroups = new Map();
+      const groupOrder = [];
+
+      const ensureGroup = (order) => {
+        const customerRaw = (order.customer_name || "").trim();
+        const key = customerRaw
+          ? customerRaw.toLowerCase()
+          : `order-${order.id}`;
+        if (!customerGroups.has(key)) {
+          customerGroups.set(key, {
+            key,
+            name: customerRaw || order.customer_name || "Customer",
+            address: order.customer_address || "",
+            drinks: new Map(),
+          });
+          groupOrder.push(key);
+        }
+        return customerGroups.get(key);
+      };
+
+      const recordDrink = (group, label, qty = 1) => {
+        if (!label) return;
+        const normalized = normalizeToken(label);
+        if (!isDrinkToken(normalized)) return;
+
+        const amount = Number(qty) || 1;
+
+        const existingGroupDrink = group.drinks.get(normalized);
+        if (existingGroupDrink) {
+          existingGroupDrink.qty += amount;
+          if (label.length > existingGroupDrink.name.length) {
+            existingGroupDrink.name = label;
+          }
+        } else {
+          group.drinks.set(normalized, {
+            key: normalized,
+            name: label,
+            qty: amount,
+          });
+        }
+
+        const existingTotal = totalDrinks.get(normalized);
+        if (existingTotal) {
+          existingTotal.qty += amount;
+          if (label.length > existingTotal.name.length) {
+            existingTotal.name = label;
+          }
+        } else {
+          totalDrinks.set(normalized, {
+            key: normalized,
+            name: label,
+            qty: amount,
+          });
+        }
+      };
+
+      assignedOrders.forEach((order) => {
+        const group = ensureGroup(order);
+
+        if (!group.address && order.customer_address) {
+          group.address = order.customer_address;
+        }
+        if ((!group.name || group.name === "Customer") && order.customer_name) {
+          group.name = order.customer_name;
+        }
+
+        (order.items || []).forEach((item) => {
+          const rawName =
+            item.order_item_name ||
+            item.external_product_name ||
+            item.product_name ||
+            "";
+          recordDrink(group, rawName.trim(), item.quantity);
+
+          if (Array.isArray(item.extras)) {
+            item.extras.forEach((ex) => {
+              recordDrink(group, (ex.name || "").trim(), 1);
+            });
+          }
+        });
+      });
+
+      const customers = groupOrder
+        .map((key) => {
+          const group = customerGroups.get(key);
+          const drinks = Array.from(group.drinks.values()).sort(
+            (a, b) => b.qty - a.qty
+          );
+          return {
+            key: group.key,
+            name: group.name || "Customer",
+            address: group.address,
+            drinks,
+          };
+        })
+        .filter((entry) => entry.drinks.length > 0);
+
+      if (!customers.length) return null;
+
+      return {
+        driverId: driver.id,
+        driverName: driver.name,
+        totals: Array.from(totalDrinks.values()).sort(
+          (a, b) => b.qty - a.qty
+        ),
+        customers,
+      };
+    })
+    .filter(Boolean);
+}, [drivers, orders, drinksList]);
 
 const renderPaymentModal = () => {
   if (!showPaymentModal || !editingPaymentOrder) return null;
@@ -932,7 +1168,7 @@ return (
       className="mt-4 md:mt-0 md:absolute md:right-14 w-full md:w-auto px-4 py-2 rounded-2xl bg-white text-slate-700 font-semibold border border-slate-200 shadow-sm hover:bg-slate-100 transition text-center"
       onClick={() => setShowDrinkModal(true)}
     >
-      {t("Settings")}
+      {t("Checklist")}
     </button>
   </div>
 </div>
@@ -940,7 +1176,7 @@ return (
 
     {/* --- DRIVER REPORT --- */}
     {selectedDriverId && (
-      <div className="mt-4">
+      <div className="mt-2">
         {reportLoading ? (
           <div className="animate-pulse text-lg sm:text-xl">Loading driver report...</div>
         ) : driverReport?.error ? (
@@ -1036,164 +1272,12 @@ return (
     <DrinkSettingsModal
       open={showDrinkModal}
       onClose={() => setShowDrinkModal(false)}
-      drinks={drinksList}
-      setDrinks={setDrinksList}
       fetchDrinks={fetchDrinks}
+      summaryByDriver={drinkSummaryByDriver}
     />
 
-{/* --- Drinks summary per assigned driver --- */}
-{drivers.map(driver => {
-  const assignedOrders = orders.filter(o => o.driver_id === driver.id);
-  if (!assignedOrders.length) return null;
-
-  const normalizeToken = (value = "") =>
-    value.replace(/[\s\-]/g, "").toLowerCase();
-  const normDrinks = drinksList.map(d => normalizeToken(d)).filter(Boolean);
-  const isDrinkToken = (token) =>
-    token &&
-    (normDrinks.includes(token) || normDrinks.some(d => token.includes(d)));
-
-  const totalDrinks = new Map();
-  const customerGroups = new Map();
-  const groupOrder = [];
-
-  assignedOrders.forEach(order => {
-    const customerRaw = (order.customer_name || "").trim();
-    const groupKey = customerRaw ? customerRaw.toLowerCase() : `order-${order.id}`;
-
-    if (!customerGroups.has(groupKey)) {
-      customerGroups.set(groupKey, {
-        key: groupKey,
-        name: customerRaw || order.customer_name || "Customer",
-        address: order.customer_address || "",
-        drinks: new Map(),
-      });
-      groupOrder.push(groupKey);
-    }
-
-    const group = customerGroups.get(groupKey);
-    if (!group.address && order.customer_address) {
-      group.address = order.customer_address;
-    }
-    if ((!group.name || group.name === "Customer") && order.customer_name) {
-      group.name = order.customer_name;
-    }
-
-    const recordDrink = (label, qty = 1) => {
-      if (!label) return;
-      const normalized = normalizeToken(label);
-      if (!normalized) return;
-      const amount = Number(qty) || 1;
-
-      const groupEntry = group.drinks.get(normalized);
-      if (groupEntry) {
-        groupEntry.qty += amount;
-        if (label.length > groupEntry.name.length) groupEntry.name = label;
-      } else {
-        group.drinks.set(normalized, { key: normalized, name: label, qty: amount });
-      }
-
-      const totalEntry = totalDrinks.get(normalized);
-      if (totalEntry) {
-        totalEntry.qty += amount;
-        if (label.length > totalEntry.name.length) totalEntry.name = label;
-      } else {
-        totalDrinks.set(normalized, { key: normalized, name: label, qty: amount });
-      }
-    };
-
-    (order.items || []).forEach(item => {
-      const rawName =
-        item.order_item_name ||
-        item.external_product_name ||
-        item.product_name ||
-        "";
-      const name = rawName.trim();
-      const normName = normalizeToken(name);
-
-      if (isDrinkToken(normName)) {
-        recordDrink(name, Number(item.quantity || 1));
-      }
-
-      if (Array.isArray(item.extras)) {
-        item.extras.forEach(ex => {
-          const exName = (ex.name || "").trim();
-          const normEx = normalizeToken(exName);
-
-          if (isDrinkToken(normEx)) {
-            recordDrink(exName, 1);
-          }
-        });
-      }
-    });
-  });
-
-  const clientBags = groupOrder.map(groupKey => {
-    const group = customerGroups.get(groupKey);
-    const drinkEntries = Array.from(group.drinks.values());
-    const drinkBadges = drinkEntries.map(({ key, name, qty }) => (
-      <span
-        key={key}
-        className="inline-flex items-center px-3 py-1 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-sm font-semibold tracking-tight"
-      >
-        {qty}× {name}
-      </span>
-    ));
-
-    return (
-      <div
-        key={group.key}
-        className="min-w-[180px] max-w-[220px] bg-white rounded-3xl shadow-[0_18px_30px_-22px_rgba(15,23,42,0.18)] border border-slate-200 flex flex-col justify-between px-4 py-3 mx-2 transition-transform duration-300 hover:-translate-y-1"
-      >
-        <div className="text-xs font-semibold text-slate-600 text-center truncate mb-1">
-          {group.name || "Customer"}
-        </div>
-        <div className="flex flex-wrap justify-center gap-1 mb-2 min-h-[40px]">
-          {drinkBadges.length > 0 ? drinkBadges : (
-            <span className="italic text-slate-400">No drinks</span>
-          )}
-        </div>
-        <div className="text-xs text-slate-500 text-center truncate">
-          {group.address}
-        </div>
-      </div>
-    );
-  });
-
-  const totalStr = Array.from(totalDrinks.values()).map(({ key, name, qty }) => (
-    <span
-      key={key}
-      className="inline-flex items-center px-2 py-1 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-semibold"
-    >
-      {qty}× {name}
-    </span>
-  ));
-
-
-  return (
-    <div key={driver.id} className="mb-8 px-4">
-      <div className="flex items-center gap-4 mb-2">
-        <span className="text-base sm:text-lg font-semibold text-slate-800 tracking-tight">
-          🧃 {driver.name}
-        </span>
-        <span className="ml-auto text-base font-medium text-emerald-700 flex flex-wrap gap-1">
-          {totalStr}
-        </span>
-      </div>
-      <div className="flex overflow-x-auto py-2 px-1 space-x-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-        {clientBags}
-      </div>
-    </div>
-  );
-})}
-
-
-
-
-
-
    {/* --- ORDERS LIST --- */}
-<div className="min-h-screen px-0 sm:px-6 py-6 w-full mx-auto relative bg-[#f7f9fc] text-slate-900 transition-colors duration-300">
+<div className="min-h-screen px-0 sm:px-0 py-0 w-full mx-auto relative bg-[#f7f9fc] text-slate-900 transition-colors duration-300">
 <div
   className={`
     grid
@@ -1306,39 +1390,60 @@ const totalDiscount = calcOrderDiscount(order);
   <div className="flex flex-col flex-1 min-w-0">
     <div className="flex items-center gap-2">
       <span className="text-xl sm:text-2xl text-emerald-500">📍</span>
-      <span
-  className="
-    text-lg sm:text-2xl font-extrabold text-slate-900
-    leading-snug break-words w-full
-    "
-  style={{
-    wordBreak: "break-word",
-    whiteSpace: "pre-line",
-    overflowWrap: "break-word",
-    maxWidth: "100%",
-    display: "block"
-  }}
->
-  {order.customer_address}
-</span>
+      {order.customer_address ? (
+        <a
+          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.customer_address)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="
+            text-lg sm:text-2xl font-extrabold text-slate-900
+            leading-snug break-words w-full underline decoration-emerald-300 decoration-2 underline-offset-4 hover:decoration-emerald-500 transition-colors
+          "
+          style={{
+            wordBreak: "break-word",
+            whiteSpace: "pre-line",
+            overflowWrap: "break-word",
+            maxWidth: "100%",
+            display: "block"
+          }}
+        >
+          {order.customer_address}
+        </a>
+      ) : (
+        <span
+          className="
+            text-lg sm:text-2xl font-extrabold text-slate-900
+            leading-snug break-words w-full
+          "
+          style={{
+            wordBreak: "break-word",
+            whiteSpace: "pre-line",
+            overflowWrap: "break-word",
+            maxWidth: "100%",
+            display: "block"
+          }}
+        >
+          {t("No address available")}
+        </span>
+      )}
 
     </div>
   </div>
   {/* Right badges */}
-  <div className="flex flex-wrap sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto min-w-0 sm:min-w-[160px]">
+  <div className="flex flex-row sm:flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto min-w-0 sm:min-w-[160px] overflow-x-auto sm:overflow-visible whitespace-nowrap pr-1">
     {isYemeksepeti && (
-  <span className="inline-flex items-center justify-center w-full sm:w-auto px-4 py-2 rounded-2xl bg-gradient-to-r from-pink-500 to-orange-400 text-white text-base sm:text-lg lg:text-xl font-extrabold shadow gap-2 tracking-wider border border-pink-200" style={{ letterSpacing: 1 }}>
+  <span className="inline-flex items-center justify-center w-full sm:w-auto px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-gradient-to-r from-pink-500 to-orange-400 text-white text-sm sm:text-lg lg:text-xl font-extrabold shadow gap-2 tracking-wider border border-pink-200 flex-shrink-0" style={{ letterSpacing: 1 }}>
     Yemeksepeti
     <svg width="28" height="28" viewBox="0 0 24 24" className="inline -mt-0.5 ml-1"><circle cx="12" cy="12" r="12" fill="#FF3B30"/><text x="12" y="16" textAnchor="middle" fontSize="13" fill="#fff" fontWeight="bold">YS</text></svg>
   </span>
 )}
-    <div className="flex items-center justify-center sm:justify-end gap-2 w-full">
+    <div className="flex items-center justify-end gap-2 w-full sm:w-auto flex-nowrap overflow-x-auto sm:overflow-visible whitespace-nowrap">
      
-      <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide transition ${statusVisual.statusChip}`}>
+      <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide transition flex-shrink-0 ${statusVisual.statusChip}`}>
         {driverStatusLabel}
       </span>
   
-       <span className={`flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl font-mono font-semibold text-sm transition ${statusVisual.timer}`}>
+       <span className={`flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl font-mono font-semibold text-sm transition flex-shrink-0 ${statusVisual.timer}`}>
         <span className="text-base opacity-80">⏰</span> {getWaitingTimer(order)}
       </span>
           {order && order.items?.length > 0 && (
@@ -1348,7 +1453,7 @@ const totalDiscount = calcOrderDiscount(order);
             console.log(`🖨️ Print clicked for order #${order.id}`);
             // handlePrintReceipt(order); // ← wire later
           }}
-          className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-semibold sm:font-bold rounded-full shadow hover:brightness-105 border border-slate-300 transition"
+          className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-semibold sm:font-bold rounded-full shadow hover:brightness-105 border border-slate-300 transition flex-shrink-0"
           title={t("Print Receipt")}
         >
           🖨️
@@ -1411,114 +1516,116 @@ const totalDiscount = calcOrderDiscount(order);
   </div>
 
 
-              {/* Items */}
-              <details open className="w-full">
-                <summary className="cursor-pointer flex items-center gap- text-base font-semibold select-none hover:underline">
-                  <span className="text-lg sm:text-xl">🛒</span>
-                  Order Items <span className="text-sm opacity-60">({order.items?.length ?? 0})</span>
-                </summary>
-<ul className="pl-0 mt-2 flex flex-col gap-2">
-  {(order.items ?? []).map((item, idx) => (
-    <li
-      key={item.unique_id || idx}
-      className="flex flex-col gap-1 px-2 py-2 rounded-xl bg-slate-50 border border-slate-200 shadow-sm"
-    >
-{/* Main Product Row */}
-<div className="flex items-center justify-between flex-nowrap gap-2 w-full">
-  <div className="flex items-center gap-2 flex-wrap min-w-0">
-    <span className="inline-block min-w-[28px] h-7 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 font-mono font-semibold text-base border border-emerald-200 flex-shrink-0">
-      {item.quantity}×
-    </span>
+            {/* Items */}
+<details
+  open={openDetails[order.id] || false}
+  onToggle={(e) => {
+    setOpenDetails((prev) => ({
+      ...prev,
+      [order.id]: e.target.open,
+    }));
+    localStorage.setItem(
+      "orderDetailsState",
+      JSON.stringify({
+        ...openDetails,
+        [order.id]: e.target.open,
+      })
+    );
+  }}
+  className="w-full"
+>
+  <summary className="cursor-pointer flex items-center gap-2 text-base font-semibold select-none hover:underline">
+    <span className="text-lg sm:text-xl">🛒</span>
+    Order Items <span className="text-sm opacity-60">({order.items?.length ?? 0})</span>
+  </summary>
 
-    <div className="flex items-center flex-wrap gap-2 min-w-0">
-      <span className="text-base sm:text-xl font-semibold text-slate-900 break-words tracking-wide truncate max-w-[180px] sm:max-w-[240px]">
-        {item.product_name || item.external_product_name || item.order_item_name || "Unnamed"}
-      </span>
-
-      {/* --- Kitchen Status inline with name --- */}
-      <span
-        className={`
-          flex items-center px-2 py-0.5 rounded-lg font-semibold text-xs tracking-wide border flex-shrink-0
-          ${item.kitchen_status === "preparing" ? "bg-amber-100 text-amber-700 border-amber-200 animate-pulse" : ""}
-          ${item.kitchen_status === "ready" ? "bg-orange-100 text-orange-700 border-orange-200 animate-pulse" : ""}
-          ${item.kitchen_status === "delivered" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}
-        `}
+  <ul className="pl-0 mt-2 flex flex-col gap-2">
+    {(order.items ?? []).map((item, idx) => (
+      <li
+        key={item.unique_id || idx}
+        className="flex flex-col gap-1 px-2 py-2 rounded-xl bg-slate-50 border border-slate-200 shadow-sm"
       >
-        {item.kitchen_status === "preparing" && "PREP"}
-        {item.kitchen_status === "ready" && "READY"}
-        {item.kitchen_status === "delivered" && "DONE"}
-      </span>
-    </div>
-  </div>
+        {/* Main Product Row */}
+        <div className="flex items-center justify-between flex-nowrap gap-2 w-full">
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+            <span className="inline-block min-w-[28px] h-7 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 font-mono font-semibold text-base border border-emerald-200 flex-shrink-0">
+              {item.quantity}×
+            </span>
 
-  <span
-    className={`text-base sm:text-xl font-semibold font-mono px-3 py-1 rounded-xl border transition whitespace-nowrap ${statusVisual.priceTag}`}
-  >
-    ₺{Number(item.price).toFixed(2)}
-  </span>
+            <div className="flex items-center gap-2 min-w-0 flex-nowrap">
+              <span className="text-base sm:text-xl font-semibold text-slate-900 break-words tracking-wide truncate max-w-[140px] sm:max-w-[240px]">
+                {item.product_name ||
+                  item.external_product_name ||
+                  item.order_item_name ||
+                  "Unnamed"}
+              </span>
 
-  {order.estimated_ready_at && (
-    <span className="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-1 rounded-2xl bg-slate-100 text-slate-600 font-medium border border-slate-200 text-sm sm:text-base w-full sm:w-auto mt-2">
-      <span className="text-lg sm:text-xl text-slate-500">⏰</span>
-      Ready by:&nbsp;
-      {new Date(order.estimated_ready_at).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })}
-    </span>
-  )}
-</div>
+              <span
+                className={`
+                  flex items-center px-2 py-0.5 rounded-lg font-semibold text-xs tracking-wide border flex-shrink-0
+                  ${item.kitchen_status === "preparing" ? "bg-amber-100 text-amber-700 border-amber-200 animate-pulse" : ""}
+                  ${item.kitchen_status === "ready" ? "bg-orange-100 text-orange-700 border-orange-200 animate-pulse" : ""}
+                  ${item.kitchen_status === "delivered" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}
+                `}
+              >
+                {item.kitchen_status === "preparing" && "PREP"}
+                {item.kitchen_status === "ready" && "READY"}
+                {item.kitchen_status === "delivered" && "DONE"}
+              </span>
+            </div>
+          </div>
 
+          <span
+            className={`text-base sm:text-xl font-semibold font-mono px-3 py-1 rounded-xl border transition whitespace-nowrap ${statusVisual.priceTag}`}
+          >
+            ₺{Number(item.price).toFixed(2)}
+          </span>
+        </div>
 
-{item.extras && item.extras.length > 0 && (
-  <div className="ml-3 sm:ml-6 mt-2 flex flex-col gap-1">
-    {item.extras.map((ex, i) => (
-      <div
-        key={i}
-        className={`flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 px-3 py-1 rounded-xl text-base font-medium transition ${statusVisual.extrasRow}`}
-        style={{ fontSize: "1.08em" }}
-      >
-        <span className="flex items-center gap-2 font-semibold">
-          ➕ {ex.name}
-          <span className="ml-2 font-semibold text-inherit text-base sm:text-lg tracking-wide" style={{letterSpacing: "0.5px"}}>
-  ×{ex.quantity || 1}
-</span>
-        </span>
-        <span className="font-mono text-center sm:text-right w-full sm:w-auto">
-          ₺{((ex.price || 0) * (ex.quantity || 1)).toFixed(2)}
-        </span>
-      </div>
+        {item.extras?.length > 0 && (
+          <div className="ml-3 sm:ml-6 mt-2 flex flex-col gap-1">
+            {item.extras.map((ex, i) => (
+              <div
+                key={i}
+                className={`flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 px-3 py-1 rounded-xl text-base font-medium transition ${statusVisual.extrasRow}`}
+                style={{ fontSize: "1.08em" }}
+              >
+                <span className="flex items-center gap-2 font-semibold">
+                  ➕ {ex.name}
+                  <span className="ml-2 font-semibold text-inherit text-base sm:text-lg tracking-wide">
+                    ×{ex.quantity || 1}
+                  </span>
+                </span>
+                <span className="font-mono text-center sm:text-right w-full sm:w-auto">
+                  ₺{((ex.price || 0) * (ex.quantity || 1)).toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {item.note && (
+          <div
+            className={`ml-3 sm:ml-6 mt-2 px-3 py-1 rounded-xl font-medium italic flex items-start sm:items-center gap-2 text-base transition ${statusVisual.noteBox}`}
+          >
+            📝 <span style={{ wordBreak: "break-word" }}>{item.note}</span>
+          </div>
+        )}
+      </li>
     ))}
-  </div>
-)}
+  </ul>
+</details>
 
-{/* --- NOTE: Always shows below the EXTRAS, with unique color --- */}
-{item.note && (
-  <div className={`ml-3 sm:ml-6 mt-2 px-3 py-1 rounded-xl font-medium italic flex items-start sm:items-center gap-2 text-base transition ${statusVisual.noteBox}`}>
-    📝 <span style={{ wordBreak: "break-word" }}>{item.note}</span>
-  </div>
-)}
-
-
-
-
-    </li>
-  ))}
-</ul>
-
-
-
-              </details>
 
 {/* --- DRIVER + PAYMENT + TOTAL + BUTTONS --- */}
 <div className="flex flex-col w-full mt-auto pt-0 gap-2">
 
-<div className="flex flex-row items-center justify-between w-full gap-2 mt-2">
-  <div className="flex items-center gap-2 w-full">
-    <span className="font-semibold font-mono text-slate-500 text-sm tracking-wide uppercase">
+<div className="flex items-center justify-between w-full gap-2 mt-2 flex-nowrap overflow-x-auto">
+  <div className="flex items-center gap-2 flex-1 min-w-0">
+    <span className="font-semibold font-mono text-slate-500 text-sm tracking-wide uppercase flex-shrink-0">
       Driver:
     </span>
-  <div className="relative w-full sm:w-[160px]">
+  <div className="relative flex-1 min-w-[140px] max-w-full sm:w-[160px]">
       <select
         value={order.driver_id || ""}
         onChange={async (e) => {
@@ -1557,16 +1664,16 @@ const totalDiscount = calcOrderDiscount(order);
   <span
     className="flex items-center justify-center h-[42px] text-m sm:text-lg font-extrabold font-mono text-emerald-700 
                bg-emerald-50 border border-emerald-200 px-3 sm:px-5 rounded-2xl text-right sm:ml-auto
-               w-auto whitespace-nowrap"
+               w-auto whitespace-nowrap flex-shrink-0"
   >
     &nbsp;₺{discountedTotal.toFixed(2)}
   </span>
 </div>
 
 
-<div className="flex flex-wrap items-center justify-between gap-3 w-full mt-2">
+<div className="flex items-center w-full mt-2 gap-2 sm:gap-3 flex-nowrap overflow-x-auto sm:flex-wrap sm:overflow-visible sm:justify-between">
   {/* --- Status (Left Side) --- */}
-  <div className="flex items-center flex-wrap gap-2">
+  <div className="flex items-center gap-2 flex-nowrap overflow-x-auto sm:flex-wrap sm:overflow-visible sm:flex-1">
     {["packet", "phone"].includes(order.order_type) &&
       order.status !== "confirmed" &&
       order.status !== "closed" && (
@@ -1629,7 +1736,7 @@ const totalDiscount = calcOrderDiscount(order);
   </div>
 
   {/* --- Payment + Edit (Right Side, unchanged) --- */}
-  <div className="flex items-center gap-3">
+  <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 pl-1">
     <div className="flex items-center gap-2">
       <span className="font-semibold text-slate-700 text-s sm:text-base">
         Paid:

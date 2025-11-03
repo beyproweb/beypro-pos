@@ -385,17 +385,7 @@ async function handleTestPrint() {
             <h2 className="text-lg font-semibold">Receipt Preview</h2>
             <span className="text-sm text-gray-500">Demo layout</span>
           </div>
-
-          <div className="flex items-start gap-6">
-            <div
-              ref={previewRef}
-              className="rounded-xl border bg-gray-50 p-4"
-              style={{ width: 300 }}
-            >
-              <ReceiptPreviewHTML order={demoOrder} />
-            </div>
-
-            <div className="flex-1">
+  <div className="flex-1">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl border p-3">
                   <div className="text-gray-500">Paper</div>
@@ -420,6 +410,16 @@ async function handleTestPrint() {
                 preview prints exactly as shown when using HTML printing.
               </p>
             </div>
+          <div className="flex items-start gap-6">
+            <div
+              ref={previewRef}
+              className="rounded-xl border bg-gray-50 p-4"
+              style={{ width: 300 }}
+            >
+              <ReceiptPreviewHTML order={demoOrder} />
+            </div>
+
+          
           </div>
         </div>
       </div>

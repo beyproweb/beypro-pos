@@ -1,5 +1,5 @@
 // src/components/Layout.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar, { DASHBOARD_ITEM_DRAG_TYPE } from "./Sidebar";
 import GlobalOrderAlert from "./GlobalOrderAlert";
@@ -9,6 +9,9 @@ import { ToastContainer } from "react-toastify";
 import { useHeader } from "../context/HeaderContext";
 import "react-toastify/dist/ReactToastify.css";
 import { X } from "lucide-react";
+
+const EDGE_TRIGGER_THRESHOLD = 48;
+
 export default function Layout({
   unread = 0,
   bellOpen = false,
@@ -22,6 +25,7 @@ export default function Layout({
   const location = useLocation();
   const { title, subtitle, tableNav } = useHeader();
   const [filter, setFilter] = useState("all");
+  const contentRef = useRef(null);
 
   // Username from localStorage for welcome
   let username = "Manager";
@@ -57,6 +61,8 @@ export default function Layout({
     "/task": "Tasks",
     "/reports": "Reports",
     "/settings": "Settings",
+    "/user-management": "User Management",
+    "/printers": "Printers",
     "/Production":"Production",
     "/staff":"Staff Management",
     "/expenses":"Expenses",
@@ -153,12 +159,30 @@ export default function Layout({
   }, [isSidebarOpen]);
 
   useEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTo({ top: 0, behavior: "auto" });
+    }
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
     let openTimeout = null;
 
     const shouldTriggerFromEvent = (event) => {
       if (!event?.dataTransfer?.types) return false;
       return Array.from(event.dataTransfer.types).includes(DASHBOARD_ITEM_DRAG_TYPE);
+    };
+
+    const pointerIsAtLeftEdge = (event) => {
+      const pointerX =
+        typeof event?.clientX === "number"
+          ? event.clientX
+          : event?.changedTouches?.[0]?.clientX;
+      if (typeof pointerX !== "number") return false;
+      return pointerX <= EDGE_TRIGGER_THRESHOLD;
     };
 
     const scheduleOpen = () => {
@@ -178,7 +202,14 @@ export default function Layout({
     };
 
     const handleDragIntent = (event) => {
-      if (!shouldTriggerFromEvent(event)) return;
+      if (!shouldTriggerFromEvent(event)) {
+        clearPendingOpen();
+        return;
+      }
+      if (!pointerIsAtLeftEdge(event)) {
+        clearPendingOpen();
+        return;
+      }
       scheduleOpen();
     };
 
@@ -233,7 +264,10 @@ export default function Layout({
         {/* Global order alert and notifications */}
 
         {/* Page content */}
-        <main className="flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors overflow-y-auto">
+        <main
+          ref={contentRef}
+          className="flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors overflow-y-auto"
+        >
           <div className="max-w-full min-h-[calc(100vh-70px)]">
            <Outlet context={{ isSidebarOpen }} />
 
