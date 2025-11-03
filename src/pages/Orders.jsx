@@ -1444,9 +1444,9 @@ const totalDiscount = calcOrderDiscount(order);
           ${item.kitchen_status === "delivered" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}
         `}
       >
-        {item.kitchen_status === "preparing" && "🍳 PREP"}
-        {item.kitchen_status === "ready" && "🟠 READY"}
-        {item.kitchen_status === "delivered" && "✅ DONE"}
+        {item.kitchen_status === "preparing" && "PREP"}
+        {item.kitchen_status === "ready" && "READY"}
+        {item.kitchen_status === "delivered" && "DONE"}
       </span>
     </div>
   </div>
@@ -1559,7 +1559,7 @@ const totalDiscount = calcOrderDiscount(order);
                bg-emerald-50 border border-emerald-200 px-3 sm:px-5 rounded-2xl text-right sm:ml-auto
                w-auto whitespace-nowrap"
   >
-    Total:&nbsp;₺{discountedTotal.toFixed(2)}
+    &nbsp;₺{discountedTotal.toFixed(2)}
   </span>
 </div>
 
@@ -1631,19 +1631,19 @@ const totalDiscount = calcOrderDiscount(order);
   {/* --- Payment + Edit (Right Side, unchanged) --- */}
   <div className="flex items-center gap-3">
     <div className="flex items-center gap-2">
-      <span className="font-semibold text-slate-700 text-sm sm:text-base">
-        Payment:
+      <span className="font-semibold text-slate-700 text-s sm:text-base">
+        Paid:
       </span>
       <span
-        className="px-3 py-1.5 rounded-xl bg-emerald-100 border border-emerald-300 
-                   text-emerald-800 font-bold text-sm sm:text-base shadow-sm"
+        className="px-1.5 py-1 rounded-xl bg-emerald-100 border border-emerald-300 
+                   text-emerald-800 font-bold text-s sm:text-base shadow-sm"
       >
         {order.payment_method ? order.payment_method : "—"}
       </span>
     </div>
 
     <button
-      className="px-3 py-1.5 rounded-xl bg-white border border-slate-300 
+      className="px-1.5 py-1.5 rounded-xl bg-white border border-slate-300 
                  text-slate-700 hover:text-emerald-700 hover:border-emerald-400 
                  font-semibold text-sm sm:text-base shadow-sm transition"
       onClick={() => {
