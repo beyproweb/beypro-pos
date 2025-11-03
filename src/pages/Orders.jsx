@@ -1444,7 +1444,7 @@ const totalDiscount = calcOrderDiscount(order);
       </span>
   
        <span className={`flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl font-mono font-semibold text-sm transition flex-shrink-0 ${statusVisual.timer}`}>
-        <span className="text-base opacity-80">⏰</span> {getWaitingTimer(order)}
+        <span className="text-base opacity-80"></span> {getWaitingTimer(order)}
       </span>
           {order && order.items?.length > 0 && (
         <button
