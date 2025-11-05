@@ -31,19 +31,27 @@ const isDelayed = (order) => {
 const getTableColor = (order) => {
   if (!order) return "bg-gray-300 text-black";
 
-  // 🟢 Paid orders (even if backend resets status to "confirmed")
-// 🟢 Paid orders (support backend payment_status field)
-if (order.is_paid || order.status === "paid" || order.payment_status === "paid") {
-  const allDelivered = Array.isArray(order.items)
-    ? order.items.every((i) => i.kitchen_status === "delivered")
+  const items = Array.isArray(order.items) ? order.items : [];
+
+  const allDeliveredOrExcluded = items.length > 0
+    ? items.every(
+        (i) =>
+          i.kitchen_status === "delivered" ||
+          !i.kitchen_status ||
+          i.excluded === true ||
+          i.kitchen_excluded === true
+      )
     : false;
-  return allDelivered
-    ? "bg-green-500 text-white" // fully delivered & paid
-    : "bg-yellow-400 text-black"; // partially delivered but paid
-}
 
+  // 🟢 Paid orders
+  if (order.is_paid || order.status === "paid" || order.payment_status === "paid") {
+    if (allDeliveredOrExcluded) {
+      return "bg-green-500 text-white"; // ✅ fully paid and all items delivered or excluded
+    }
+    return "bg-lime-400 text-white"; // 💚 paid but some kitchen items pending
+  }
 
-  // 🔴 Confirmed but unpaid
+  // 🔵 Confirmed but unpaid
   if (order.status === "confirmed") return "bg-red-500 text-white";
 
   // ⚪ Default fallback
@@ -120,36 +128,47 @@ const [todayExpenses, setTodayExpenses] = useState([]);
 
 const handleCloseTable = async (orderId) => {
   try {
-    // 🔎 Fetch the order items first
     const items = await secureFetch(`/orders/${orderId}/items`);
     if (!Array.isArray(items)) {
       toast.error("Failed to verify kitchen items");
       return;
     }
 
-    // ✅ Check if all items are delivered or excluded
-    const allDelivered = items.every(
+    // ✅ Fetch current kitchen exclusion settings (same as TransactionScreen)
+    const { excludedItems = [], excludedCategories = [] } =
+      (await secureFetch("kitchen/compile-settings")) || {};
+
+    // ✅ Allow closing if all items are delivered OR excluded
+    const allDeliveredOrExcluded = items.every(
       (i) =>
         i.kitchen_status === "delivered" ||
-        !i.kitchen_status || // no kitchen step (e.g., drinks)
-        i.excluded === true || // backend flag if present
-        i.category === "Drinks" // optional soft check
+        !i.kitchen_status ||
+        excludedItems.includes(i.product_id) ||
+        excludedCategories.includes(i.category)
     );
 
-    if (!allDelivered) {
-      toast.warning("⚠️ Cannot close table: not all items delivered!");
+    if (!allDeliveredOrExcluded) {
+      toast.warning("⚠️ Cannot close: some kitchen items not yet delivered!");
       return;
     }
 
-    // ✅ Proceed with close only if all delivered
+    // ✅ Proceed to close
     await secureFetch(`/orders/${orderId}/close`, { method: "POST" });
     toast.success("✅ Table closed successfully!");
-    await fetchOrders();
+
+    // optional: return to overview
+    setTimeout(() => {
+      fetchOrders();
+    }, 800);
   } catch (err) {
     console.error("❌ Failed to close table:", err);
     toast.error("Failed to close table");
   }
 };
+
+
+
+
 
 
 useEffect(() => {

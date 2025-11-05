@@ -22,17 +22,50 @@ const DEFAULT_SOUNDS = {
   payment_made: "cash.mp3",
   stock_low: "warning.mp3",
   stock_restocked: "pop.mp3",
+  driver_assigned: "horn.mp3",
 };
 
 const DEFAULT_NOTIFICATIONS = {
+  enabled: true,
   defaultSound: "ding.mp3",
   eventSounds: { ...DEFAULT_SOUNDS },
   enableToasts: true,
   enableSounds: true,
+  volume: 0.8,
 };
 
-const soundPath = (name) =>
-  name ? (name.startsWith("/") ? name : `/sounds/${name}`) : "/sounds/ding.mp3";
+const SUPPORTED_EXTENSIONS = [".mp3", ".wav", ".ogg"];
+
+const clampVolume = (value, fallback = 1) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
+  return Math.min(Math.max(value, 0), 1);
+};
+
+const normalizeSoundConfig = (value) => {
+  if (value === undefined || value === null) return { src: null, explicit: false };
+  const trimmed = String(value).trim();
+  if (!trimmed) return { src: null, explicit: false };
+
+  const lowered = trimmed.toLowerCase();
+  if (lowered === "none" || lowered === "off" || lowered === "silent") {
+    return { src: null, explicit: true };
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return { src: trimmed, explicit: true };
+  }
+
+  let candidate = trimmed.replace(/^(\.\/|\.{2}\/)+/, "");
+  const hasKnownExtension = SUPPORTED_EXTENSIONS.some((ext) =>
+    candidate.toLowerCase().endsWith(ext)
+  );
+
+  if (!hasKnownExtension) candidate += ".mp3";
+
+  if (candidate.startsWith("/")) return { src: candidate, explicit: true };
+  if (candidate.startsWith("sounds/")) return { src: `/${candidate}`, explicit: true };
+  return { src: `/sounds/${candidate}`, explicit: true };
+};
 
 const cooldownMillis = {
   new_order: 4000,
@@ -42,6 +75,7 @@ const cooldownMillis = {
   payment_made: 2500,
   stock_low: 8000,
   stock_restocked: 6000,
+  driver_assigned: 2500,
 };
 
 /* ------------------------------------------
@@ -180,8 +214,28 @@ export default function GlobalOrderAlert() {
       "payment_made",
       "stock_low",
       "stock_restocked",
+      "driver_assigned",
     ],
     []
+  );
+
+  const resolveSoundSrc = useCallback(
+    (key) => {
+      const attempts = [
+        notif?.eventSounds?.[key],
+        DEFAULT_SOUNDS[key],
+        notif?.defaultSound,
+        DEFAULT_NOTIFICATIONS.defaultSound,
+      ];
+
+      for (const candidate of attempts) {
+        const { src, explicit } = normalizeSoundConfig(candidate);
+        if (explicit && !src) return null;
+        if (src) return src;
+      }
+      return null;
+    },
+    [notif]
   );
 
   /* Auto rejoin socket room */
@@ -193,13 +247,6 @@ export default function GlobalOrderAlert() {
     socket.on("connect", handleConnect);
     return () => socket.off("connect", handleConnect);
   }, []);
-
-  /* Register audio refs */
-  useEffect(() => {
-    eventKeys.forEach((k) => {
-      audioRefs.current[k] = React.createRef();
-    });
-  }, [eventKeys, notif]);
 
   /* Unlock browser audio */
   useEffect(() => {
@@ -226,37 +273,101 @@ export default function GlobalOrderAlert() {
 
   /* Sequential sound queue playback */
   useEffect(() => {
-  if (!notif.enabled || !notif.enableSounds || !audioUnlocked) return;
-  if (soundPlayingRef.current) return;
-  if (!soundQueue.length) return;
+    if (!notif.enabled) {
+      if (soundQueue.length) {
+        console.log(
+          "[Notifications] Sound queue present but notifications disabled; dropping",
+          soundQueue
+        );
+        setSoundQueue([]);
+      }
+      return;
+    }
+    if (!notif.enableSounds) {
+      if (soundQueue.length) {
+        console.log("[Notifications] Sounds disabled; clearing queue", soundQueue);
+        setSoundQueue([]);
+      }
+      return;
+    }
+    if (!audioUnlocked) {
+      if (soundQueue.length) {
+        console.log(
+          "[Notifications] Audio context locked; waiting for user gesture",
+          soundQueue
+        );
+      }
+      return;
+    }
+    if (soundPlayingRef.current) {
+      return;
+    }
+    if (!soundQueue.length) return;
 
     const key = soundQueue[0];
     const now = Date.now();
     const cool = cooldownMillis[key] || 2000;
-    if (now - (lastSoundAtRef.current[key] || 0) < cool) {
+    const lastPlayAt = lastSoundAtRef.current[key] || 0;
+    if (now - lastPlayAt < cool) {
+      console.log(`[Notifications] Cooldown active for ${key}; skipping sound.`);
       setSoundQueue((q) => q.slice(1));
       return;
     }
 
+    const resolvedSound = resolveSoundSrc(key);
+    if (!resolvedSound) {
+      console.log(
+        `[Notifications] Resolved sound is empty for ${key}; removing from queue.`
+      );
+      setSoundQueue((q) => q.slice(1));
+      return;
+    }
+
+    if (!audioRefs.current[key]) {
+      audioRefs.current[key] = React.createRef();
+    }
     const ref = audioRefs.current[key]?.current;
     if (!ref) {
-      console.warn("No audio ref for", key);
+      console.warn("[Notifications] Audio element missing for", key, "- skipping.");
       setSoundQueue((q) => q.slice(1));
       return;
     }
 
+    const currentSrcAttr = ref.getAttribute("src");
+    if (currentSrcAttr !== resolvedSound) {
+      ref.setAttribute("src", resolvedSound);
+    }
+    ref.currentTime = 0;
+    ref.volume = clampVolume(
+      notif?.volume ?? DEFAULT_NOTIFICATIONS.volume ?? 1,
+      DEFAULT_NOTIFICATIONS.volume ?? 1
+    );
+
+    console.log("[Notifications] Playing sound for", key, resolvedSound);
     soundPlayingRef.current = true;
     ref
       .play()
       .then(() => (lastSoundAtRef.current[key] = Date.now()))
-      .catch(() => {})
+      .catch((err) => {
+        console.warn(
+          `[Notifications] Playback failed for ${key}:`,
+          err?.message || err
+        );
+      })
       .finally(() => {
         setTimeout(() => {
           soundPlayingRef.current = false;
           setSoundQueue((q) => q.slice(1));
         }, 250);
       });
-  }, [soundQueue, notif.enabled, notif.enableSounds, audioUnlocked]);
+  }, [
+    soundQueue,
+    notif.enabled,
+    notif.enableSounds,
+    audioUnlocked,
+    resolveSoundSrc,
+    notif.volume,
+  ]);
 
   /* Load notification config */
   useEffect(() => {
@@ -276,22 +387,22 @@ export default function GlobalOrderAlert() {
   }, []);
 
   /* ✅ Listen for settings changes (from NotificationsTab) */
-useEffect(() => {
-  const handler = () => {
-    const updated = window.notificationSettings;
-    if (updated) {
-      setNotif({
-  ...DEFAULT_NOTIFICATIONS,
-  ...updated,
-  eventSounds: { ...DEFAULT_SOUNDS, ...(updated.eventSounds || {}) },
-});
+  useEffect(() => {
+    const handler = () => {
+      const updated = window.notificationSettings;
+      if (updated) {
+        setNotif({
+          ...DEFAULT_NOTIFICATIONS,
+          ...updated,
+          eventSounds: { ...DEFAULT_SOUNDS, ...(updated.eventSounds || {}) },
+        });
 
-      console.log("🔄 Notification settings refreshed in GlobalOrderAlert");
-    }
-  };
-  window.addEventListener("notification_settings_updated", handler);
-  return () => window.removeEventListener("notification_settings_updated", handler);
-}, []);
+        console.log("🔄 Notification settings refreshed in GlobalOrderAlert");
+      }
+    };
+    window.addEventListener("notification_settings_updated", handler);
+    return () => window.removeEventListener("notification_settings_updated", handler);
+  }, []);
 
   /* Load printer layout */
   useEffect(() => {
@@ -306,14 +417,49 @@ useEffect(() => {
   }, []);
 
   /* Toast + sound helper */
-const notify = useCallback(
-  (key, msg) => {
-    if (!notif.enabled) return; // master off
-    if (notif.enableToasts && msg) toast.info(msg);
-    if (notif.enableSounds) setSoundQueue((q) => q.concat(key));
-  },
-  [notif.enabled, notif.enableToasts, notif.enableSounds]
-);
+  const notify = useCallback(
+    (key, msg) => {
+      if (!notif.enabled) {
+        console.log(`[Notifications] Ignoring ${key}; notifications disabled.`);
+        return;
+      }
+
+      const configuredSound = notif.eventSounds?.[key] ?? null;
+      const resolvedSound = resolveSoundSrc(key);
+
+      console.log("[Notifications] Event", {
+        key,
+        msg,
+        toast: notif.enableToasts,
+        soundsEnabled: notif.enableSounds,
+        configuredSound,
+        resolvedSound,
+        audioUnlocked,
+      });
+
+      if (notif.enableToasts && msg) toast.info(msg);
+      if (!notif.enableSounds) return;
+
+      if (!resolvedSound) {
+        console.log(`[Notifications] No resolved sound for ${key}; skipping audio playback.`);
+        return;
+      }
+
+      setSoundQueue((q) => {
+        const nextQueue = q.concat(key);
+        console.log("[Notifications] Queue updated:", nextQueue);
+        return nextQueue;
+      });
+    },
+    [
+      notif.enabled,
+      notif.enableToasts,
+      notif.enableSounds,
+      notif.eventSounds,
+      resolveSoundSrc,
+      audioUnlocked,
+    ]
+  );
 
 
 
@@ -353,6 +499,14 @@ const onPaid = (p) => {
 };
     const onStockLow = () => notify("stock_low", "⚠️ Stock critical");
     const onRestocked = () => notify("stock_restocked", "📦 Stock replenished");
+    const onDriverAssigned = (payload = {}) => {
+      const driverName = payload.driverName || "Driver";
+      const orderSuffix = payload.orderId ? ` #${payload.orderId}` : "";
+      notify(
+        "driver_assigned",
+        `🚗 ${driverName} assigned to order${orderSuffix}`
+      );
+    };
 
     socket.on("order_confirmed", onNewOrder);
     socket.on("order_preparing", onPreparing);
@@ -361,6 +515,7 @@ const onPaid = (p) => {
     socket.on("payment_made", onPaid);
     socket.on("stock_critical", onStockLow);
     socket.on("stock_restocked", onRestocked);
+    socket.on("driver_assigned", onDriverAssigned);
 
     return () => {
       socket.off("order_confirmed", onNewOrder);
@@ -370,6 +525,7 @@ const onPaid = (p) => {
       socket.off("payment_made", onPaid);
       socket.off("stock_critical", onStockLow);
       socket.off("stock_restocked", onRestocked);
+      socket.off("driver_assigned", onDriverAssigned);
     };
   }, [notify, printOrder]);
 
@@ -449,13 +605,19 @@ const onPaid = (p) => {
   return (
     <Fragment>
       {eventKeys.map((key) => {
-        const fileName =
-          notif.eventSounds?.[key] ||
-          DEFAULT_SOUNDS[key] ||
-          notif.defaultSound ||
-          DEFAULT_NOTIFICATIONS.defaultSound;
-        const src = soundPath(fileName);
-        return <audio key={key} ref={audioRefs.current[key]} src={src} preload="auto" />;
+        const src = resolveSoundSrc(key);
+        if (!src) return null;
+        if (!audioRefs.current[key]) {
+          audioRefs.current[key] = React.createRef();
+        }
+        return (
+          <audio
+            key={key}
+            ref={audioRefs.current[key]}
+            src={src}
+            preload="auto"
+          />
+        );
       })}
     </Fragment>
   );

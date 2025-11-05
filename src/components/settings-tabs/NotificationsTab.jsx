@@ -20,6 +20,7 @@ export default function NotificationsTab() {
     stock_restocked: "New Stock",
     order_delayed: "Delayed Order Alert",
     driver_arrived: "Driver Delivered",
+    driver_assigned: "Driver Assigned",
     yemeksepeti_order: "Yemeksepeti Order",
   };
 
@@ -40,6 +41,7 @@ export default function NotificationsTab() {
     stock_restocked: "ding.mp3",
     order_delayed: "alarm.mp3",
     driver_arrived: "horn.mp3",
+    driver_assigned: "horn.mp3",
   };
 
   const defaultConfig = {

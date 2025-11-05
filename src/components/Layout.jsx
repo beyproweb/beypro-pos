@@ -23,7 +23,7 @@ export default function Layout({
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
-  const { title, subtitle, tableNav } = useHeader();
+  const { title, subtitle, tableNav, actions } = useHeader();
   const [filter, setFilter] = useState("all");
   const contentRef = useRef(null);
 
@@ -136,14 +136,13 @@ export default function Layout({
   const currentTitle = computedTitle || "Beypro";
 
 
-  // Right content for ModernHeader (welcome, clock, bell)
+  // Right content for ModernHeader (kitchen actions, notifications, etc.)
   const rightContent = (
     <div className="flex items-center gap-4">
-
-{!hideBell && (
+      {actions}
+      {!hideBell && (
         <NotificationBell unread={unread} onClick={onBellClick} />
       )}
-
     </div>
   );
 

@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useLayoutEffect,
+} from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import { useTranslation } from "react-i18next";
@@ -163,6 +170,7 @@ const productsInActiveCategory = safeProducts.filter(
     (activeCategory || "").trim().toLowerCase()
 );
 
+
 const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const slug = (cat || "").trim().toLowerCase();
   const catSrc = categoryImages[slug] || "";
@@ -224,6 +232,11 @@ const { currentUser } = useAuth();
 // 1. Add drinksList state at the top
 const [drinksList, setDrinksList] = useState([]);
 const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+const cartScrollRef = useRef(null);
+const lastVisibleCartItemRef = useRef(null);
+const [expandedCartItems, setExpandedCartItems] = useState(() => new Set());
+const [selectedCartItemIds, setSelectedCartItemIds] = useState(() => new Set());
+
 
   const fetchExtrasGroupsOnce = useCallback(async () => {
     const data = await secureFetch(`/extras-groups${identifier}`);
@@ -341,11 +354,166 @@ useEffect(() => {
 
 }, []);
 
-  useEffect(() => {
-    ensureExtrasGroups().catch((err) => {
-      console.error("❌ Failed to load extras groups:", err);
+useLayoutEffect(() => {
+  // When cart changes, scroll to bottom
+  const node = cartScrollRef.current;
+  if (!node) return;
+
+  requestAnimationFrame(() => {
+    node.scrollTo({
+      top: node.scrollHeight,
+      behavior: "smooth",
     });
-  }, [ensureExtrasGroups]);
+  });
+}, [cartItems.length]);
+
+
+const scrollCartToBottom = useCallback(() => {
+  const node = cartScrollRef.current;
+  if (!node) return;
+
+  const bottom = Math.max(node.scrollHeight - node.clientHeight, 0);
+
+  if (typeof node.scrollTo === "function") {
+    try {
+      node.scrollTo({ top: bottom, behavior: "smooth" });
+      return;
+    } catch {
+      // fall through to direct assignment
+    }
+  }
+
+  node.scrollTop = bottom;
+}, []);
+
+useLayoutEffect(() => {
+  const unpaidItems = cartItems.filter((item) => !item.paid);
+
+  if (unpaidItems.length === 0) {
+    lastVisibleCartItemRef.current = null;
+    if (selectedCartItemIds.size > 0) setSelectedCartItemIds(new Set());
+    return;
+  }
+
+  const lastItem = unpaidItems[unpaidItems.length - 1];
+  const identifier =
+    lastItem?.unique_id ??
+    `${lastItem?.id ?? "unknown"}-${unpaidItems.length - 1}`;
+
+  if (lastVisibleCartItemRef.current === identifier) return;
+  lastVisibleCartItemRef.current = identifier;
+
+  requestAnimationFrame(() => {
+    const node = cartScrollRef.current;
+    const lastElement = node?.querySelector('li[data-cart-item="true"]:last-child');
+
+    if (lastElement && typeof lastElement.scrollIntoView === "function") {
+      lastElement.scrollIntoView({ block: "end", behavior: "smooth" });
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      scrollCartToBottom();
+    });
+  });
+}, [cartItems, scrollCartToBottom, selectedCartItemIds]);
+
+const toggleCartItemExpansion = useCallback((itemId) => {
+  if (!itemId) return;
+  setExpandedCartItems((prev) => {
+    const next = new Set(prev);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
+    return next;
+  });
+}, []);
+
+useEffect(() => {
+  setExpandedCartItems((prev) => {
+    const validKeys = new Set(
+      cartItems.map((item, idx) => item.unique_id || `${item.id}-index-${idx}`)
+    );
+
+    let changed = false;
+    const next = new Set();
+    prev.forEach((key) => {
+      if (validKeys.has(key)) {
+        next.add(key);
+      } else {
+        changed = true;
+      }
+    });
+
+    if (!changed && next.size === prev.size) return prev;
+    return next;
+  });
+}, [cartItems]);
+
+const toggleCartItemSelection = useCallback((itemId) => {
+  if (!itemId) return;
+  const key = String(itemId);
+  setSelectedCartItemIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
+}, []);
+
+const clearSelectedCartItems = useCallback(() => {
+  if (selectedCartItemIds.size === 0) return;
+
+  let removedAny = false;
+  const selectedKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
+
+  setCartItems((prev) =>
+    prev.filter((item) => {
+      const key = String(item.unique_id || item.id);
+      const shouldRemove = selectedKeys.has(key) && !item.confirmed;
+
+      if (shouldRemove) removedAny = true;
+      return !shouldRemove;
+    })
+  );
+
+  if (!removedAny) {
+    showToast(t("Selected items cannot be cleared"));
+    return;
+  }
+
+  setSelectedCartItemIds(new Set());
+  setSelectedForPayment((prev) => prev.filter((id) => !selectedKeys.has(id)));
+}, [selectedCartItemIds, t]);
+
+useEffect(() => {
+  ensureExtrasGroups().catch((err) => {
+    console.error("❌ Failed to load extras groups:", err);
+  });
+}, [ensureExtrasGroups]);
+
+useEffect(() => {
+  setSelectedCartItemIds((prev) => {
+    const validKeys = new Set(
+      cartItems
+        .filter((item) => !item.paid)
+        .map((item) => String(item.unique_id || item.id))
+    );
+
+    let changed = false;
+    const next = new Set();
+
+    prev.forEach((key) => {
+      if (validKeys.has(key)) {
+        next.add(key);
+      } else {
+        changed = true;
+      }
+    });
+
+    if (!changed && next.size === prev.size) return prev;
+    return next;
+  });
+}, [cartItems]);
 
 // 2. Utility to split drink extras
 function splitDrinkExtras(extras, drinksList) {
@@ -543,6 +711,21 @@ useEffect(() => {
       return [];
     }
   };
+
+  // 💡 Compute total of selected cart items
+const selectedItemsTotal = cartItems
+  .filter((item) => selectedCartItemIds.has(String(item.unique_id || item.id)))
+  .reduce((sum, item) => {
+    const extrasList = safeParseExtras(item.extras);
+    const perItemExtrasTotal = (Array.isArray(extrasList) ? extrasList : []).reduce((acc, ex) => {
+      const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+      const qty = Number(ex.quantity) || 1;
+      return acc + price * qty;
+    }, 0);
+    const basePrice = parseFloat(item.price) || 0;
+    const quantity = Number(item.quantity) || 1;
+    return sum + (basePrice + perItemExtrasTotal) * quantity;
+  }, 0);
     // --- New split payment state ---
   const [splits, setSplits] = useState({
     Cash: 0,
@@ -635,6 +818,7 @@ if (!rMethods) throw new Error("Failed to save receipt methods");
     await fetchSubOrders();
     setSelectedForPayment([]);
     setShowPaymentModal(false);
+    setSelectedCartItemIds(new Set());
 
     // 8) If all items are paid, mark order as paid
 const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
@@ -662,18 +846,16 @@ function TableNavigationRow({ tableId, navigate, t, cartMode, showLabels = true 
     <div className={`flex items-center justify-center w-full ${cartMode ? "gap-4 py-2" : "gap-2 md:gap-6 py-2"}`}>
       <button
         onClick={() => setShowMoveTableModal(true)}
-        className="flex items-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-blue shadow-sm transition hover:bg-emerald-50 active:scale-95"
+        className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-blue shadow-sm transition hover:bg-emerald-50 active:scale-95"
         aria-label={t("Move")}
       >
-        <span className="text-base">🔀</span>
         {showLabels && <span className="tracking-wide">{t("Move")}</span>}
       </button>
       <button
         onClick={() => setShowMergeTableModal(true)}
-        className="flex items-center gap-2 rounded-xl border border-amber-200 px-4 py-2 text-sm font-semibold text-blue shadow-sm transition hover:bg-amber-50 active:scale-95"
+        className="flex items-center justify-center gap-2 rounded-xl border border-amber-200 px-4 py-2 text-sm font-semibold text-blue shadow-sm transition hover:bg-amber-50 active:scale-95"
         aria-label={t("Merge")}
       >
-        <span className="text-base">🧩</span>
         {showLabels && <span className="tracking-wide">{t("Merge")}</span>}
       </button>
     </div>
@@ -845,10 +1027,16 @@ const createOrFetchTableOrder = async (tableNumber) => {
 
     const orders = Array.isArray(ordersResponse) ? ordersResponse : [];
 
-    // 🧩 Prefer only truly active orders (exclude closed/paid history entries)
-    const activeOrder = orders.find((o) => {
+    // 🧩 Prefer the most recent order that is still open (paid tables should reopen with their last order)
+    const sortedOrders = [...orders].sort((a, b) => {
+      const aTime = new Date(a?.updated_at || a?.created_at || 0).getTime();
+      const bTime = new Date(b?.updated_at || b?.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+
+    const activeOrder = sortedOrders.find((o) => {
       const status = (o.status || "").toLowerCase();
-      return status !== "closed" && status !== "paid";
+      return status !== "closed";
     });
 
     let newOrder = activeOrder || null;
@@ -972,7 +1160,7 @@ const updateOrderStatus = async (newStatus = null, total = null, method = null) 
     if (!updated || updated.error) throw new Error(updated?.error || "Failed to update order status");
 
     setOrder(updated);
-    console.log("✅ Order status updated:", updated.status, updated.payment_status);
+    console.log("Order status updated:", updated.status, updated.payment_status);
     return updated;
   } catch (error) {
     console.error("❌ Error updating order status:", error);
@@ -997,7 +1185,7 @@ function getPaymentMethodSummaryWithIcon(items) {
     .map(i => i.payment_method)
     .filter(m => m && m !== "Unknown");
 
-  console.log("✅ Valid methods in group:", validMethods);
+  console.log("Valid methods in group:", validMethods);
 
   if (validMethods.length === 0) {
     console.warn("❓ All methods invalid or missing");
@@ -1029,16 +1217,54 @@ function hasPreparingItems(orderItems) {
 
 
 const handleMultifunction = async () => {
-   console.log("🧩 ENTERED handleMultifunction()");
-  console.log("🧩 order before any checks →", order);
+   console.log("ENTERED handleMultifunction()");
+  console.log("order before any checks →", order);
 
   if (!order || !order.status) return;
   
 
+  const selectionKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
+  const hasUnconfirmedSelected = cartItems.some(
+    (item) => selectionKeys.has(String(item.unique_id || item.id)) && !item.confirmed
+  );
+
+  if (hasUnconfirmedSelected) {
+    showToast(t("Selected items must be confirmed before payment"));
+    return;
+  }
+
+  let paymentIds =
+    selectionKeys.size > 0
+      ? cartItems
+          .filter(
+            (item) =>
+              !item.paid && selectionKeys.has(String(item.unique_id || item.id))
+          )
+          .map((item) => item.unique_id)
+      : selectedForPayment.length > 0
+      ? [...selectedForPayment]
+      : cartItems
+          .filter((item) => !item.paid && item.confirmed)
+          .map((item) => item.unique_id);
+
+  if (selectionKeys.size > 0 && paymentIds.length === 0) {
+    showToast(t("Selected items are already paid"));
+    return;
+  }
+
+  if (paymentIds.length === 0 && cartItems.some((item) => !item.paid && item.confirmed)) {
+    paymentIds = cartItems
+      .filter((item) => !item.paid && item.confirmed)
+      .map((item) => item.unique_id);
+  }
+
+  if (paymentIds.length > 0) {
+    setSelectedForPayment(paymentIds);
+  }
+
   const total = cartItems
-    .filter(i => selectedForPayment.includes(i.unique_id))
+    .filter((i) => paymentIds.includes(i.unique_id))
     .reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const receiptId = uuidv4();
   const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
 
   // ✅ Allow phone orders to close even if empty
@@ -1064,7 +1290,7 @@ const handleMultifunction = async () => {
     getButtonLabel() === "Close" &&
     hasPreparingItems(receiptItems.concat(cartItems))
   ) {
-    showToast("⚠️ Table cannot be closed: preparing");
+    showToast(t("Table cannot be closed: preparing"));
     return;
   }
 
@@ -1116,7 +1342,7 @@ const handleMultifunction = async () => {
     setHeader(prev => ({ ...prev, subtitle: "" }));
 
     // ✅ show toast + navigate back to orders after short delay
-    showToast("✅ Phone order confirmed and sent to kitchen");
+    showToast(t("Phone order confirmed and sent to kitchen"));
     setTimeout(() => navigate("/orders"), 400);
     return;
   }
@@ -1130,6 +1356,10 @@ const handleMultifunction = async () => {
     !orderId &&
     cartItems.some(i => !i.paid && i.confirmed)
   ) {
+    if (paymentIds.length === 0) {
+      showToast(t("No items available to pay"));
+      return;
+    }
     setShowPaymentModal(true);
     return;
   }
@@ -1142,10 +1372,10 @@ if (orderType === "phone" && order.status !== "closed") {
   try {
     await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
     navigate("/orders");
-    showToast("✅ Phone order closed successfully");
+    showToast(t("Phone order closed successfully"));
   } catch (err) {
     console.error("❌ Failed to close phone order:", err);
-    showToast("❌ Failed to close phone order");
+    showToast(t("Failed to close phone order"));
   }
   return;
 }
@@ -1153,31 +1383,34 @@ if (orderType === "phone" && order.status !== "closed") {
 // 🧠 For table orders → close ONLY when user manually presses “Close”
 // 🧠 For table orders → close ONLY when all items are delivered
 if (getButtonLabel() === "Close" && (order.status === "paid" || allPaid)) {
-  // 🚫 Prevent closing if any item not delivered
   const allDelivered = cartItems.every(
     (i) =>
       i.kitchen_status === "delivered" ||
-      !i.kitchen_status || // no kitchen process (e.g., drinks)
+      !i.kitchen_status ||
       excludedItems.includes(i.id) ||
       excludedCategories.includes(i.category)
   );
 
+  // ❌ Not all delivered → don’t close; show message and bounce to TableOverview after 3s
   if (!allDelivered) {
-    showToast("⚠️ Cannot close table: not all items delivered!");
+    showToast(t("Not delivered yet"));
+    setTimeout(() => navigate("/tableoverview"), 2000);
     return;
   }
 
+  // ✅ All delivered → close and go immediately
   try {
     await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
-    navigate("/tables");
     setDiscountValue(0);
     setDiscountType("percent");
-    showToast("✅ Table closed successfully");
+    showToast(t("Table closed successfully"));
+    navigate("/tableoverview"); // <— correct route
   } catch (err) {
     console.error("❌ Close failed:", err);
-    showToast("❌ Failed to close table");
+    showToast(t("Failed to close table"));
   }
 }
+
 
 
 };
@@ -1236,7 +1469,7 @@ if (order?.order_type === "table" && order?.source === "qr") {
       acc[key].push(i);
       return acc;
     }, {});
-    console.log("📚 Grouped Receipt IDs:", Object.keys(grouped));
+    console.log("Grouped receipt IDs:", Object.keys(grouped));
 
     // ✅ Update states
     setReceiptItems(paidItems); // only those with receipt_id
@@ -1342,6 +1575,7 @@ const isFullyPaid2 = allItems2.every((item) => item.paid_at);
   await fetchSubOrders();
   setSelectedForPayment([]);
   setShowPaymentModal(false);
+  setSelectedCartItemIds(new Set());
 };
 
 
@@ -1383,11 +1617,9 @@ const addToCart = async (product) => {
 
   if (selection.ids.length > 0 || selection.names.length > 0) {
     const match = await getMatchedExtrasGroups(selection);
-
     if (match) {
       const idsForModal = match.matchedIds.length > 0 ? match.matchedIds : selection.ids;
       const namesForModal = Array.from(new Set([...selection.names, ...match.matchedNames]));
-
       const productForModal = {
         ...product,
         quantity: 1,
@@ -1397,7 +1629,6 @@ const addToCart = async (product) => {
         selectedExtrasGroupNames: namesForModal,
         modalExtrasGroups: match.matchedGroups,
       };
-
       setNote("");
       setSelectedProduct(productForModal);
       setSelectedExtras([]);
@@ -1406,7 +1637,6 @@ const addToCart = async (product) => {
     }
   }
 
-  // 🧩 FIX: even when no extras are selected, keep reference for future edit
   const productGroups = normalizeExtrasGroupSelection([
     product.extrasGroupRefs,
     product.selectedExtrasGroup,
@@ -1417,6 +1647,7 @@ const addToCart = async (product) => {
   const baseUniqueId = `${product.id}-NO_EXTRAS`;
 
   setCartItems((prev) => {
+    // 🧠 Only merge with unpaid & unconfirmed of the same base id
     const existingIndex = prev.findIndex(
       (item) =>
         item.unique_id === baseUniqueId &&
@@ -1424,24 +1655,26 @@ const addToCart = async (product) => {
         !item.paid
     );
 
+    // 🧩 If found, increment quantity
     if (existingIndex !== -1) {
       return prev.map((item, idx) =>
-        idx === existingIndex
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
+        idx === existingIndex ? { ...item, quantity: item.quantity + 1 } : item
       );
     }
 
+    // 🛑 Check if there's a paid or confirmed instance
     const hasLockedInstance = prev.some(
       (item) =>
-        item.unique_id === baseUniqueId &&
-        (item.confirmed === true || item.paid)
+        item.id === product.id &&
+        (item.confirmed === true || item.paid === true)
     );
 
+    // 🔒 If paid exists, create a new distinct id so it won't merge
     const finalUniqueId = hasLockedInstance
-      ? `${baseUniqueId}-${uuidv4()}`
+      ? `${baseUniqueId}-new-${uuidv4()}`
       : baseUniqueId;
 
+    // ✅ Add the new product
     return [
       ...prev,
       {
@@ -1455,8 +1688,6 @@ const addToCart = async (product) => {
         unique_id: finalUniqueId,
         confirmed: false,
         paid: false,
-
-        // ✅ store product’s extras reference for later editing
         extrasGroupRefs: productGroups,
         selectedExtrasGroup: productGroups.ids,
         selected_extras_group: productGroups.ids,
@@ -1465,8 +1696,22 @@ const addToCart = async (product) => {
     ];
   });
 
+  // Keep order status consistent
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
+
+  // Scroll new item into view
+  setTimeout(() => {
+    const node = cartScrollRef.current;
+    const lastElement = node?.querySelector('li[data-cart-item="true"]:last-child');
+    if (lastElement && typeof lastElement.scrollIntoView === "function") {
+      lastElement.scrollIntoView({ block: "end", behavior: "smooth" });
+      return;
+    }
+    scrollCartToBottom();
+  }, 80);
 };
+
+
 
 const displayTotal = cartItems
   .filter(i => !i.paid)
@@ -1481,16 +1726,38 @@ const invoiceNumber = useMemo(() => {
   return null;
 }, [order?.invoice_number, order?.receipt_number, order?.order_number, order?.id]);
 
-  const removeItem = (uniqueId) => {
-    setCartItems((prev) =>
-      prev.filter((item) => item.unique_id !== uniqueId || item.confirmed)
-    );
-    setSelectedForPayment((prev) => prev.filter((id) => id !== uniqueId));
-  };
+const removeItem = (uniqueId) => {
+  setCartItems((prev) =>
+    prev.filter((item) => item.unique_id !== uniqueId || item.confirmed)
+  );
+  setSelectedForPayment((prev) => prev.filter((id) => id !== uniqueId));
+  setSelectedCartItemIds((prev) => {
+    if (!prev.has(String(uniqueId))) return prev;
+    const next = new Set(prev);
+    next.delete(String(uniqueId));
+    return next;
+  });
+};
 
 // Clears only UNCONFIRMED items from the cart
 const clearUnconfirmedCartItems = () => {
-  setCartItems((prev) => prev.filter((item) => item.confirmed));
+  let removedAny = false;
+  setCartItems((prev) =>
+    prev.filter((item) => {
+      if (!item.confirmed) {
+        removedAny = true;
+        return false;
+      }
+      return true;
+    })
+  );
+
+  if (!removedAny) {
+    showToast(t("No unconfirmed items to clear"));
+  }
+
+  setSelectedCartItemIds(new Set());
+  setSelectedForPayment([]);
 };
 
   useEffect(() => {
@@ -1666,313 +1933,354 @@ const renderCartContent = (variant = "desktop") => {
     ? "px-5 py-5"
     : "px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]";
 
+  const hasSelection = selectedCartItemIds.size > 0;
+  const baseButtonClass =
+    "flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-100";
+  const primaryButtonClass =
+    "flex-1 min-w-0 rounded-lg bg-indigo-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-600";
+
   const actionControls = isDesktop ? (
-    <div className="flex gap-3 items-center">
+    <div className="flex gap-3">
       <button
-        onClick={clearUnconfirmedCartItems}
-        className="rounded-lg bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
+        onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
+        className={baseButtonClass}
+      >
+        {t("Clear")}
+      </button>
+      <button onClick={handleMultifunction} className={primaryButtonClass}>
+        {t(getButtonLabel())}
+      </button>
+      <button
+        onClick={() => console.log("Print clicked - wire later")}
+        className={baseButtonClass}
+        title={t("Print Receipt")}
+      >
+        {t("Print")}
+      </button>
+    </div>
+  ) : (
+    <div className="flex flex-wrap gap-2">
+      <button
+        onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
+        className={`${baseButtonClass} flex-1 min-w-[120px]`}
       >
         {t("Clear")}
       </button>
       <button
-        onClick={handleMultifunction}
-        className="flex-1 rounded-lg bg-gradient-to-r from-emerald-400 via-blue-400 to-indigo-400 py-3 text-lg font-extrabold text-white shadow-lg hover:brightness-105"
-      >
-        💸 {t(getButtonLabel())}
-      </button>
-      <button
-        onClick={() => console.log("🖨️ Print clicked - wire later")}
-        className="rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 p-3 shadow hover:brightness-105 border border-slate-300"
+        onClick={() => console.log("Print clicked - wire later")}
+        className={`${baseButtonClass} flex-1 min-w-[120px]`}
         title={t("Print Receipt")}
       >
-        🖨️
+        {t("Print")}
       </button>
-    </div>
-  ) : (
-    <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
-        <button
-          onClick={clearUnconfirmedCartItems}
-          className="flex-1 rounded-lg bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
-        >
-          {t("Clear")}
-        </button>
-        <button
-          onClick={() => console.log("🖨️ Print clicked - wire later")}
-          className="flex-1 rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 py-2 text-sm font-semibold text-slate-700 shadow hover:brightness-105 border border-slate-300"
-          title={t("Print Receipt")}
-        >
-          🖨️ {t("Print")}
-        </button>
-      </div>
       <button
         onClick={handleMultifunction}
-        className="w-full rounded-xl bg-gradient-to-r from-emerald-400 via-blue-400 to-indigo-500 py-3 text-lg font-extrabold text-white shadow-lg hover:brightness-105"
+        className={`${primaryButtonClass} flex-1 min-w-[120px]`}
       >
-        💸 {t(getButtonLabel())}
+        {t(getButtonLabel())}
       </button>
     </div>
   );
 
   return (
-    <aside className={containerClasses}>
-<header className="flex items-center justify-between border-b border-slate-200 px-5 pt-3 pb-3">
-        <div className="space-y-1">
-          <h2 className="hidden text-xl font-semibold text-slate-800 lg:block">{t("Cart")}</h2>
-          <p className="text-sm text-slate-500">
-            {orderId ? t("Phone Order") : `${t("Table")} ${tableId}`}
-          </p>
-          {invoiceNumber && (
-            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
-              {t("Invoice")} #{invoiceNumber}
-            </p>
-          )}
+   <aside className={containerClasses}>
+  {/* === Header === */}
+  <header className="flex items-center justify-between border-b border-slate-200 px-3 pt-2 pb-2">
+    <div className="space-y-0.5">
+      <h2 className="hidden text-lg font-semibold text-slate-800 lg:block">{t("Cart")}</h2>
+      <p className="text-xs text-slate-500">
+        {orderId ? t("Phone Order") : `${t("Table")} ${tableId}`}
+      </p>
+      {invoiceNumber && (
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
+          {t("Invoice")} #{invoiceNumber}
+        </p>
+      )}
+    </div>
+
+    <div className="flex items-center gap-1.5">
+      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+        {cartItems.filter((i) => !i.paid).length} {t("Items")}
+      </span>
+      {hasSelection && (
+        <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-600">
+          {selectedCartItemIds.size} {t("Selected")}
+        </span>
+      )}
+      {!isDesktop && (
+        <button
+          type="button"
+          onClick={() => setIsMobileCartOpen(false)}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm"
+          aria-label={t("Close")}
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  </header>
+
+  {/* === Body === */}
+  <div ref={cartScrollRef} className="min-h-0 flex-1 overflow-y-auto">
+    <div
+      className="min-h-0 flex-1 px-3 pb-2 space-y-1.5 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
+      style={{ WebkitOverflowScrolling: "touch" }}
+    >
+      {cartItems.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-xs font-medium text-slate-400">
+          {t("Cart is empty.")}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
-            {cartItems.filter((i) => !i.paid).length} {t("Items")}
-          </span>
-          {!isDesktop && (
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {/* === Group items by product name + extras + note === */}
+    {Object.values(
+  cartItems.reduce((acc, item) => {
+    const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
+    const noteKey =
+      typeof item.note === "string" ? item.note.trim() : JSON.stringify(item.note || "");
+
+    // ➕ Add a status slice to the key so paid/confirmed/unconfirmed never merge together
+    const statusSlice = item.paid
+      ? `paid:${item.receipt_id || "yes"}`
+      : (item.confirmed ? "confirmed" : "unconfirmed");
+
+    // 🔑 New grouping key (prevents merging with paid items)
+    const key = `${item.name}__${extrasKey}__${noteKey}__${statusSlice}`;
+
+    if (!acc[key]) acc[key] = { ...item, quantity: 0, items: [] };
+
+    acc[key].quantity += Number(item.quantity) || 1;
+    acc[key].items.push(item);
+    return acc;
+  }, {})
+).map((item, idx) => {
+            const extrasList = safeParseExtras(item.extras);
+            const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
+            const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
+              const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+              const qty = Number(ex.quantity) || 1;
+              return sum + price * qty;
+            }, 0);
+            const basePrice = parseFloat(item.price) || 0;
+            const quantity = Number(item.quantity) || 1;
+            const lineTotal = (basePrice + perItemExtrasTotal) * quantity;
+            const showNote =
+              typeof item.note === "string" ? item.note.trim() !== "" : !!item.note;
+            const isEditable = !item.confirmed && !item.paid;
+            // 💡 More vibrant, clearly distinct colors
+const cardGradient = item.paid
+  ? "bg-gradient-to-br from-green-200 via-green-100 to-green-50 border-green-300" // Paid = green
+  : item.confirmed
+  ? "bg-gradient-to-br from-blue-200 via-blue-100 to-blue-50 border-blue-300"     // Confirmed = blue
+  : "bg-gradient-to-br from-amber-200 via-amber-100 to-yellow-50 border-amber-300"; // Unpaid (not confirmed) = yellow
+
+
+            const itemKey = item.unique_id || `${item.id}-${idx}`;
+            const isExpanded = expandedCartItems.has(itemKey);
+            const selectionKey = String(item.unique_id || item.id);
+            const isSelected = selectedCartItemIds.has(selectionKey);
+
+            return (
+            <li
+  data-cart-item="true"
+  key={itemKey}
+  className={`relative flex flex-col gap-1 overflow-hidden rounded-lg border border-slate-200 p-2 text-[13px] shadow-sm transition ${cardGradient}`}
+>
+  <div className="flex items-center justify-between gap-1">
+    <div className="flex items-center gap-1 flex-1">
+      <input
+        type="checkbox"
+        className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+        checked={isSelected}
+        disabled={item.paid}
+        onChange={() => toggleCartItemSelection(selectionKey)}
+        onClick={(e) => e.stopPropagation()}
+      />
+      <span
+        className="truncate font-semibold text-slate-800 flex-1"
+        onClick={() => toggleCartItemExpansion(itemKey)}
+      >
+        {item.name} ×{quantity}
+      </span>
+    </div>
+    <span className="font-semibold text-indigo-600 whitespace-nowrap">
+      ₺{lineTotal.toFixed(2)}
+    </span>
+  </div>
+
+  {/* Expanded Details */}
+  {isExpanded && (
+    <div className="mt-1 rounded-lg bg-white/60 p-2 text-[12px] text-slate-600 space-y-2">
+      {/* === Extras List === */}
+      {normalizedExtras.length > 0 && (
+        <ul className="space-y-0.5 text-xs text-slate-600">
+          {normalizedExtras.map((ex, i2) => {
+            const extraQty = Number(ex.quantity) || 1;
+            const extraTotal =
+              (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * extraQty;
+            return (
+              <li key={`${item.unique_id}-extra-${i2}`}>
+                {ex.name} ×{extraQty} – ₺{extraTotal.toFixed(2)}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* === Notes === */}
+      {showNote && (
+        <div className="rounded border border-yellow-200 bg-yellow-50 px-2 py-1 text-[11px] text-yellow-800">
+          {item.note}
+        </div>
+      )}
+
+      {/* === Qty / Edit / Remove === */}
+      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200">
+        {/* Qty Control */}
+        <div className="flex items-center gap-1">
+          <span>{t("Qty")}:</span>
+          <button
+            onClick={() => decrementCartItem(item.unique_id)}
+            className="h-5 w-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!isEditable}
+          >
+            –
+          </button>
+          <span className="min-w-[18px] text-center">{quantity}</span>
+          <button
+            onClick={() => incrementCartItem(item.unique_id)}
+            className="h-5 w-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!isEditable}
+          >
+            +
+          </button>
+        </div>
+
+        {/* Edit / Remove */}
+        {isEditable && (
+          <div className="flex items-center gap-1">
             <button
-              type="button"
-              onClick={() => setIsMobileCartOpen(false)}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm"
-              aria-label={t("Close")}
+              onClick={async () => {
+                const parsedExtras = safeParseExtras(item.extras);
+                const selection = normalizeExtrasGroupSelection([
+                  item.extrasGroupRefs,
+                  item.selectedExtrasGroup,
+                  item.selected_extras_group,
+                  item.selectedExtrasGroupNames,
+                ]);
+                const groupsData = await ensureExtrasGroups();
+                setSelectedProduct({
+                  ...item,
+                  modalExtrasGroups: groupsData,
+                  extrasGroupRefs: selection,
+                  selectedExtrasGroup: selection.ids,
+                  selected_extras_group: selection.ids,
+                  selectedExtrasGroupNames: selection.names,
+                });
+                setSelectedExtras(parsedExtras || []);
+                setEditingCartItemIndex(idx);
+                setShowExtrasModal(true);
+              }}
+              className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-100"
+              title={t("Edit item")}
             >
-              ✕
+              {t("Edit")}
             </button>
-          )}
-        </div>
-      </header>
-   <div className="min-h-0 flex-1 overflow-y-auto">
-  <div
-    className="min-h-0 flex-1 px-5 pb-4 space-y-3 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
-    style={{
-      WebkitOverflowScrolling: "touch",
-    }}
-  >
-
-          {cartItems.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm font-medium text-slate-400">
-              {t("Cart is empty.")}
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {cartItems.map((item, idx) => {
-                const extrasList = safeParseExtras(item.extras);
-                const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
-                const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
-                  const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                  const qty = Number(ex.quantity) || 1;
-                  return sum + price * qty;
-                }, 0);
-                const basePrice = parseFloat(item.price) || 0;
-                const quantity = Number(item.quantity) || 1;
-                const lineTotal = (basePrice + perItemExtrasTotal) * quantity;
-                const showNote =
-                  typeof item.note === "string"
-                    ? item.note.trim() !== ""
-                    : !!item.note;
-                const isEditable = !item.confirmed && !item.paid;
-
-                const cardGradient = item.paid
-                  ? "bg-gradient-to-br from-emerald-200 via-emerald-100 to-emerald-300"
-                  : item.confirmed
-                  ? "bg-gradient-to-br from-indigo-200 via-indigo-100 to-indigo-300"
-                  : "bg-gradient-to-br from-amber-200 via-amber-100 to-amber-300";
-
-                return (
-                  <li
-                    key={item.unique_id || `${item.id}-${idx}`}
-                    className={`relative flex flex-col gap-2 overflow-hidden rounded-2xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition ${cardGradient}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <span className="block font-semibold text-slate-800 break-words">
-                          {item.name}
-                        </span>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                          <span>
-                            ₺{basePrice.toFixed(2)} × {quantity}
-                          </span>
-                          {perItemExtrasTotal > 0 && (
-                            <span>
-                              + ₺{(perItemExtrasTotal * quantity).toFixed(2)} {t("Extras")}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        {item.paid && (
-                          <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-                            {t("paid")}
-                          </span>
-                        )}
-                        <span className="font-bold text-indigo-600 whitespace-nowrap">
-                          ₺{lineTotal.toFixed(2)}
-                        </span>
-                        {isEditable && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={async () => {
-                                const parsedExtras = safeParseExtras(item.extras);
-                                const selection = normalizeExtrasGroupSelection([
-                                  item.extrasGroupRefs,
-                                  item.selectedExtrasGroup,
-                                  item.selected_extras_group,
-                                  item.selectedExtrasGroupNames,
-                                ]);
-
-                                const groupsData = await ensureExtrasGroups();
-                                setSelectedProduct({
-                                  ...item,
-                                  modalExtrasGroups: groupsData,
-                                  extrasGroupRefs: selection,
-                                  selectedExtrasGroup: selection.ids,
-                                  selected_extras_group: selection.ids,
-                                  selectedExtrasGroupNames: selection.names,
-                                });
-                                setSelectedExtras(parsedExtras || []);
-                                setEditingCartItemIndex(idx);
-                                setShowExtrasModal(true);
-                              }}
-                              className="text-xs font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1"
-                              title={t("Edit item")}
-                            >
-                              🖊️
-                              <span>{t("Edit")}</span>
-                            </button>
-                            <button
-                              onClick={() => removeItem(item.unique_id)}
-                              className="text-xs font-semibold text-red-500 hover:text-red-600 flex items-center gap-1"
-                              title={t("Remove item")}
-                            >
-                              🗑
-                              <span>{t("Remove")}</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {normalizedExtras.length > 0 && (
-                      <ul className="mt-1 space-y-1 text-xs text-slate-600">
-                        {normalizedExtras.map((ex, extraIdx) => {
-                          const extraQty = Number(ex.quantity) || 1;
-                          const extraTotal =
-                            (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
-                            extraQty;
-                          return (
-                            <li key={`${item.unique_id}-extra-${extraIdx}`}>
-                              {ex.name} ×{extraQty} – ₺{extraTotal.toFixed(2)}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-
-                    {showNote && (
-                      <div className="mt-2 bg-yellow-50 border-l-4 border-yellow-400 px-3 py-2 text-xs text-yellow-900 rounded">
-                        <div className="flex items-center gap-2 font-medium">
-                          <span className="text-base leading-none">📝</span>
-                          <span>{t("Notes")}:</span>
-                        </div>
-                        <div className="mt-1 whitespace-pre-wrap leading-snug">
-                          {item.note}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex justify-between items-center text-sm text-slate-500 pt-1">
-                      <span>
-                        {t("Qty")}: {quantity}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => decrementCartItem(item.unique_id)}
-                          className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-                          disabled={!isEditable}
-                        >
-                          –
-                        </button>
-                        <button
-                          onClick={() => incrementCartItem(item.unique_id)}
-                          className="h-7 w-7 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-                          disabled={!isEditable}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+            <button
+              onClick={() => removeItem(item.unique_id)}
+              className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100"
+              title={t("Remove item")}
+            >
+              {t("Remove")}
+            </button>
+          </div>
+        )}
       </div>
-      <footer className={`space-y-3 border-t border-slate-200 bg-slate-50 ${footerPadding} shadow-inner`}>
-        <div className="flex justify-between text-sm font-medium text-slate-600">
-          <span>{t("Subtotal")}:</span>
-          <span className="text-slate-900">
-            ₺{calculateDiscountedTotal().toFixed(2)}
-          </span>
-        </div>
+    </div>
+  )}
+</li>
 
-        {discountValue > 0 && (
-          <div className="flex justify-between text-sm font-semibold text-fuchsia-600">
-            <span>
-              🎁 {t("Discount")}{" "}
-              {discountType === "percent"
-                ? `(${discountValue}%)`
-                : `(-₺${discountValue})`}
-            </span>
-            <span>-₺{discountValue}</span>
-          </div>
-        )}
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  </div>
 
-        <div className="flex justify-between items-center rounded-2xl bg-white px-3 py-3 text-lg font-bold text-indigo-700 shadow-sm">
-          <span>{t("Total")}:</span>
-          <span>₺{calculateDiscountedTotal().toFixed(2)}</span>
-        </div>
+  {/* === Footer === */}
+  <footer className="space-y-2 border-t border-slate-200 bg-slate-50 px-3 py-2 shadow-inner">
+    <div className="flex justify-between text-xs font-medium text-slate-600">
+      <span>{t("Subtotal")}:</span>
+      <span className="text-slate-900">₺{calculateDiscountedTotal().toFixed(2)}</span>
+    </div>
 
-        {actionControls}
+    {discountValue > 0 && (
+      <div className="flex justify-between text-xs font-semibold text-fuchsia-600">
+        <span>
+          {t("Discount")}{" "}
+          {discountType === "percent"
+            ? `(${discountValue}%)`
+            : `(-₺${discountValue})`}
+        </span>
+        <span>-₺{discountValue}</span>
+      </div>
+    )}
 
-        {!isDesktop && !orderId && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowMoveTableModal(true)}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-blue shadow-sm transition hover:bg-emerald-50 active:scale-95"
-            >
-              <span className="text-base">🔀</span>
-              <span className="tracking-wide">{t("Move")}</span>
-            </button>
-            <button
-              onClick={() => setShowMergeTableModal(true)}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm font-semibold text-blue shadow-sm transition hover:bg-amber-50 active:scale-95"
-            >
-              <span className="text-base">🧩</span>
-              <span className="tracking-wide">{t("Merge")}</span>
-            </button>
-          </div>
-        )}
+   <div
+  className={`flex justify-between items-center rounded-2xl bg-white px-3 py-3 text-lg font-bold shadow-sm
+  ${selectedCartItemIds.size > 0 ? "text-emerald-700 border border-emerald-300 bg-emerald-50" : "text-indigo-700"}`}
+>
+  <span>
+    {selectedCartItemIds.size > 0
+      ? t("Selected Total")
+      : t("Total")}
+    :
+  </span>
+  <span>
+    ₺
+    {selectedCartItemIds.size > 0
+      ? selectedItemsTotal.toFixed(2)
+      : calculateDiscountedTotal().toFixed(2)}
+  </span>
+</div>
 
-        <div className={`flex ${isDesktop ? "gap-2" : "flex-col gap-2"}`}>
-          <button
-            onClick={() => setShowDiscountModal(true)}
-            className={`${isDesktop ? "flex-1" : "w-full"} rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:scale-105 transition`}
-          >
-            🎁 {t("Discount")}
-          </button>
-          <button
-            onClick={handleOpenCashRegister}
-            className={`${isDesktop ? "flex-1" : "w-full"} rounded-lg bg-gradient-to-r from-blue-400 to-emerald-400 px-3 py-2 text-xs font-semibold text-white hover:scale-105 transition`}
-          >
-            🗄️ {t("Register")}
-          </button>
-        </div>
-      </footer>
-    </aside>
+
+    {actionControls}
+
+    {!isDesktop && !orderId && (
+      <div className="flex gap-1.5">
+        <button
+          onClick={() => setShowMoveTableModal(true)}
+          className="flex-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+        >
+          {t("Move")}
+        </button>
+        <button
+          onClick={() => setShowMergeTableModal(true)}
+          className="flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+        >
+          {t("Merge")}
+        </button>
+      </div>
+    )}
+
+    <div className={`flex ${isDesktop ? "gap-1.5" : "flex-col gap-1.5"}`}>
+      <button
+        onClick={() => setShowDiscountModal(true)}
+        className={`${isDesktop ? "flex-1" : "w-full"} rounded-md bg-fuchsia-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-fuchsia-600`}
+      >
+        {t("Discount")}
+      </button>
+      <button
+        onClick={handleOpenCashRegister}
+        className={`${isDesktop ? "flex-1" : "w-full"} rounded-md bg-emerald-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600`}
+      >
+        {t("Register")}
+      </button>
+    </div>
+  </footer>
+</aside>
+
   );
 };
   if (loading) return <p className="p-4 text-center">{t("Loading...")}</p>;
@@ -2182,11 +2490,11 @@ return (
   open={showMergeTableModal}
   onClose={() => setShowMergeTableModal(false)}
   currentTable={tableId}
-  t={t}
+ t={t}
 	onConfirm={async (destTable) => {
 	  if (!order?.id) return;
 	  try {
-	    console.log("🧩 Merging table...");
+	    console.log("Merging table...");
 	    await secureFetch(`/orders/${order.id}/merge-table${identifier}`, {
 	      method: "PATCH",
 	      body: JSON.stringify({
@@ -2199,7 +2507,7 @@ return (
 	    // ✅ Wait for socket confirmation or fallback reload
 	    const handleMerged = (payload) => {
 	      if (payload?.order?.table_number === Number(destTable.tableNum)) {
-        console.log("✅ Merge confirmed by socket:", payload);
+        console.log("Merge confirmed by socket:", payload);
         socket.off("order_merged", handleMerged);
         setShowMergeTableModal(false);
         navigate(`/transaction/${destTable.tableNum}`, {

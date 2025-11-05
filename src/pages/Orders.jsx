@@ -487,11 +487,36 @@ try {
       items = await secureFetch(`/orders/${order.id}/items`);
     }
 
-    let overallKitchenStatus = "preparing";
-    if (items.every(i => i.kitchen_status === "delivered")) overallKitchenStatus = "delivered";
-    else if (items.some(i => i.kitchen_status === "ready")) overallKitchenStatus = "ready";
+// ✅ Normalize items: auto-mark drinks / excluded as delivered
+const drinksLower = drinksList.map(d =>
+  d.replace(/[\s\-]/g, "").toLowerCase()
+);
 
-    withKitchenStatus.push({ ...order, items, overallKitchenStatus });
+const normalizedItems = (items || []).map(i => {
+  const normalizedName = (i.name || i.product_name || "")
+    .replace(/[\s\-]/g, "")
+    .toLowerCase();
+  const isExcluded =
+    drinksLower.includes(normalizedName) ||
+    excludedKitchenIds.includes(i.product_id) ||
+    i.excluded === true ||
+    i.kitchen_excluded === true;
+
+  // 🟢 Mark excluded items as delivered
+  if (isExcluded && i.kitchen_status !== "delivered") {
+    return { ...i, kitchen_status: "delivered" };
+  }
+  return i;
+});
+
+let overallKitchenStatus = "preparing";
+if (normalizedItems.every(i => i.kitchen_status === "delivered"))
+  overallKitchenStatus = "delivered";
+else if (normalizedItems.some(i => i.kitchen_status === "ready"))
+  overallKitchenStatus = "ready";
+
+   withKitchenStatus.push({ ...order, items: normalizedItems, overallKitchenStatus });
+
   }
 
   // ✅ Merge instead of overwrite
@@ -1309,47 +1334,69 @@ const totalDiscount = calcOrderDiscount(order);
         onlinePayments.some(type => order.payment_method.toLowerCase().includes(type));
       const isYemeksepeti = order.order_type === "packet" && order.external_id;
 
-      const statusVisual = (() => {
-        const isPacketOrder = order.order_type === "packet";
+ const statusVisual = (() => {
+  const isPacketOrder = order.order_type === "packet";
 
-        if (isDelivered) {
-          return {
-            card: "border-2 border-emerald-300 ring-4 ring-emerald-200/70 bg-gradient-to-br from-emerald-100 via-white to-white text-emerald-900 shadow-[0_35px_65px_-32px_rgba(16,185,129,0.45)]",
-            header: "bg-white/80 border border-emerald-200 shadow-sm",
-            timer: "bg-emerald-500 text-white border border-emerald-400 shadow-sm",
-            nameChip: "bg-white text-emerald-700 border border-emerald-200 shadow-sm",
-            phoneBtn: "bg-white text-emerald-600 hover:bg-emerald-50 border border-emerald-200 shadow-sm",
-            statusChip: "bg-emerald-500 text-white border border-emerald-600 shadow-sm",
-            priceTag: "text-emerald-700 bg-white/70 border border-emerald-200 shadow-sm",
-            extrasRow: "bg-white/70 border border-emerald-200 text-emerald-700 shadow-sm",
-            noteBox: "bg-white/75 border border-emerald-200 text-emerald-800 shadow-sm",
-          };
-        }
-        if (isPicked) {
-          return {
-            card: "border-2 border-sky-400 ring-4 ring-sky-200/70 bg-gradient-to-br from-sky-100 via-white to-white text-slate-900 shadow-[0_35px_65px_-32px_rgba(56,189,248,0.45)]",
-            header: "bg-white/80 border border-sky-200 shadow-sm",
-            timer: "bg-sky-500 text-white border border-sky-400 shadow-sm",
-            nameChip: "bg-white text-sky-700 border border-sky-200 shadow-sm",
-            phoneBtn: "bg-slate-900 text-white hover:bg-slate-800 shadow-sm",
-            statusChip: "bg-sky-500 text-white border border-sky-600 shadow-sm",
-            priceTag: "text-sky-700 bg-white/70 border border-sky-200 shadow-sm",
-            extrasRow: "bg-white/70 border border-sky-200 text-sky-700 shadow-sm",
-            noteBox: "bg-white/75 border border-sky-200 text-sky-800 shadow-sm",
-          };
-        }
-        return {
-          card: `border-2 ${isPacketOrder ? "border-fuchsia-400" : "border-slate-300"} ring-1 ring-slate-100 bg-white text-slate-900 shadow-[0_24px_50px_-32px_rgba(15,23,42,0.12)]`,
-          header: "bg-slate-50 border border-slate-200 shadow-sm",
-          timer: "bg-slate-100 text-slate-700 border border-slate-200 shadow-sm",
-          nameChip: "bg-slate-100 text-slate-900 border border-slate-200 shadow-sm",
-          phoneBtn: "bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm",
-          statusChip: "bg-amber-100 text-amber-700 border border-amber-200 shadow-sm",
-          priceTag: "text-emerald-700 bg-emerald-100 border border-emerald-200 shadow-sm",
-          extrasRow: "bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-sm",
-          noteBox: "bg-rose-50 border border-rose-200 text-rose-700 shadow-sm",
-        };
-      })();
+  // ✅ Delivered Orders (Completed)
+  if (isDelivered) {
+    return {
+      card: "bg-emerald-50 border-4 border-emerald-400 text-emerald-900 shadow-md",
+      header: "bg-emerald-100 border border-emerald-300 shadow-sm",
+      timer: "bg-emerald-200 text-emerald-900 border border-emerald-300 shadow-sm",
+      nameChip: "bg-emerald-50 text-emerald-800 border border-emerald-300",
+      phoneBtn: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm",
+      statusChip: "bg-emerald-500 text-white border border-emerald-600 shadow-sm",
+      priceTag: "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm",
+      extrasRow: "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-sm",
+      noteBox: "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-sm",
+    };
+  }
+
+  // 🚗 On Road (Driver picked up)
+  if (isPicked) {
+    return {
+      card: "bg-blue-50 border-4 border-blue-400 text-blue-900 shadow-md",
+      header: "bg-blue-100 border border-blue-300 shadow-sm",
+      timer: "bg-blue-200 text-blue-900 border border-blue-300 shadow-sm",
+      nameChip: "bg-blue-50 text-blue-800 border border-blue-300",
+      phoneBtn: "bg-blue-600 text-white hover:bg-blue-700 shadow-sm",
+      statusChip: "bg-blue-500 text-white border border-blue-600 shadow-sm",
+      priceTag: "bg-blue-100 text-blue-800 border border-blue-300 shadow-sm",
+      extrasRow: "bg-blue-50 text-blue-800 border border-blue-300 shadow-sm",
+      noteBox: "bg-blue-50 text-blue-800 border border-blue-300 shadow-sm",
+    };
+  }
+
+  // 🍳 Preparing / Ready
+  if (isReady || isPrep) {
+    return {
+      card: "bg-amber-50 border-4 border-amber-400 text-amber-900 shadow-md",
+      header: "bg-amber-100 border border-amber-300 shadow-sm",
+      timer: "bg-amber-200 text-amber-900 border border-amber-300 shadow-sm",
+      nameChip: "bg-amber-50 text-amber-800 border border-amber-300",
+      phoneBtn: "bg-amber-600 text-white hover:bg-amber-700 shadow-sm",
+      statusChip: "bg-amber-500 text-white border border-amber-600 shadow-sm",
+      priceTag: "bg-amber-100 text-amber-800 border border-amber-300 shadow-sm",
+      extrasRow: "bg-amber-50 text-amber-800 border border-amber-300 shadow-sm",
+      noteBox: "bg-amber-50 text-amber-900 border border-amber-300 shadow-sm",
+    };
+  }
+
+  // 🕓 Pending / Unconfirmed (default)
+  return {
+    card: `bg-slate-50 border-4 ${isPacketOrder ? "border-fuchsia-400" : "border-slate-400"} text-slate-900 shadow-md`,
+    header: "bg-slate-100 border border-slate-300 shadow-sm",
+    timer: "bg-slate-200 text-slate-700 border border-slate-300 shadow-sm",
+    nameChip: "bg-slate-50 text-slate-900 border border-slate-300",
+    phoneBtn: "bg-slate-900 text-white hover:bg-slate-800 shadow-sm",
+    statusChip: "bg-slate-200 text-slate-700 border border-slate-300 shadow-sm",
+    priceTag: "bg-slate-100 text-slate-900 border border-slate-300 shadow-sm",
+    extrasRow: "bg-slate-50 text-slate-900 border border-slate-300 shadow-sm",
+    noteBox: "bg-slate-50 text-slate-900 border border-slate-300 shadow-sm",
+  };
+})();
+
+
 
       const driverStatusLabel =
         order.driver_status === "on_road"

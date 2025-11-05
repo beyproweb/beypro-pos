@@ -4,6 +4,7 @@ const HeaderContext = createContext({
   title: "",
   subtitle: "",
   tableNav: null,
+  actions: null,
   setHeader: () => {},
 });
 

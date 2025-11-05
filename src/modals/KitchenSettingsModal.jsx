@@ -108,18 +108,34 @@ export default function KitchenSettingsModal({
                     className="w-5 h-5 accent-accent transition-all"
                     checked={products.filter(p => p.category === category).every(p => excludedItems?.includes(p.id))}
                     onChange={() => {
-                      const catProducts = products
-                        .filter((p) => p.category === category)
-                        .map((p) => p.id);
-                      setExcludedItems((prev) => {
-                        const allChecked = catProducts.every((id) => prev.includes(id));
-                        const updated = allChecked
-                          ? prev.filter((id) => !catProducts.includes(id))
-                          : Array.from(new Set([...prev, ...catProducts]));
-                        persistSettings({ excludedItems: updated });
-                        return updated;
-                      });
-                    }}
+  const catProducts = products
+    .filter((p) => p.category === category)
+    .map((p) => p.id);
+
+  setExcludedItems((prev) => {
+    const allChecked = catProducts.every((id) => prev.includes(id));
+    let updated;
+
+    if (allChecked) {
+      // ✅ Uncheck: remove all items of this category
+      updated = prev.filter((id) => !catProducts.includes(id));
+      // Also ensure the category itself is unexcluded
+      persistSettings({
+        excludedItems: updated,
+        excludedCategories: excludedCategories.filter((c) => c !== category),
+      });
+    } else {
+      // ✅ Check: add all items and mark category excluded
+      updated = Array.from(new Set([...prev, ...catProducts]));
+      persistSettings({
+        excludedItems: updated,
+        excludedCategories: Array.from(new Set([...excludedCategories, category])),
+      });
+    }
+    return updated;
+  });
+}}
+
                   />
                   <span className="font-bold text-lg bg-gradient-to-r from-indigo-600 via-blue-500 to-purple-500 bg-clip-text text-transparent drop-shadow">
                     {category}
