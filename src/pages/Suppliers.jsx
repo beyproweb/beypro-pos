@@ -1218,15 +1218,59 @@ name}: {formattedSelectedSupplierDue} ₺
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="space-y-6">
                 <div className="space-y-4">
-                  <div className="space-y-1">
+               
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+                    <p className="text-slate-500 dark:text-slate-400">
+                      {t("Suppliers connected")}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                      {suppliers.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+                    <p className="text-slate-500 dark:text-slate-400">
+                      {t("Tracked transactions")}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                      {transactions.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+                    <p className="text-slate-500 dark:text-slate-400">
+                      {t("Active price alerts")}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                      {priceAlerts.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+                    <p className="text-slate-500 dark:text-slate-400">
+                      {t("Feedback entries logged")}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                      {feedbackEntries.length}
+                    </p>
+                  </div>
+                </div>
+             
+              </div>
+            </section>
+<section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                  <div className="space-y-6">
+                     <div className="space-y-1">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
                       {t("Primary supplier")}
                     </p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">
                       {t("Choose which supplier you want to review or update.")}
                     </p>
+              
                   </div>
+                  
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+                    
                     {selectedSupplier ? (
 <div className="w-full sm:w-72 rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-200">
   <div className="flex items-center justify-between">
@@ -1285,110 +1329,75 @@ name}: {formattedSelectedSupplierDue} ₺
                       </div>
                     </div>
                   </div>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                    <p className="text-slate-500 dark:text-slate-400">
-                      {t("Suppliers connected")}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                      {suppliers.length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                    <p className="text-slate-500 dark:text-slate-400">
-                      {t("Tracked transactions")}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                      {transactions.length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                    <p className="text-slate-500 dark:text-slate-400">
-                      {t("Active price alerts")}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                      {priceAlerts.length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                    <p className="text-slate-500 dark:text-slate-400">
-                      {t("Feedback entries logged")}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                      {feedbackEntries.length}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-                    onClick={() => setSupplierModalOpen(true)}
-                  >
-                    ➕ {t("Add Supplier")}
-                  </button>
-                  {selectedSupplier?.phone && (
-                    <a href={`tel:${selectedSupplier.phone}`}>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-                      >
-                        📞 {t("Call supplier")}
-                      </button>
-                    </a>
-                  )}
-                  {selectedSupplier && (
-                    <button
-                      type="button"
-                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow transition ${
-                        selectedSupplierDue > 0
-                          ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg"
-                          : "cursor-not-allowed bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600"
-                      }`}
-                      onClick={() => {
-                        if (selectedSupplierDue <= 0) {
-                          toast.info(t("No payment due for this supplier."));
-                          return;
-                        }
-                        setPaymentModalOpen(true);
-                      }}
-                    >
-                      💳 {t("Record payment")}
-                    </button>
-                  )}
-                  {selectedSupplier && (
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-                      onClick={() => handleEditSupplier(selectedSupplier)}
-                    >
-                      ✏️ {t("Edit Supplier")}
-                    </button>
-                  )}
-                  {selectedSupplier && (
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            t("Are you sure you want to delete this supplier?")
-                          )
-                        ) {
-                          handleDeleteSupplier();
-                        }
-                      }}
-                    >
-                      🗑️ {t("Delete Supplier")}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </section>
-<section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="space-y-6">
-                  
+       <div className="flex flex-wrap justify-start sm:justify-start items-center gap-2 w-full">
+  {/* Add Supplier */}
+  <button
+    type="button"
+    className="flex-1 sm:flex-none min-w-[130px] inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
+    onClick={() => setSupplierModalOpen(true)}
+  >
+    ➕ {t("Add Supplier")}
+  </button>
+
+  {/* Call Supplier */}
+  {selectedSupplier?.phone && (
+    <a href={`tel:${selectedSupplier.phone}`} className="flex-1 sm:flex-none min-w-[130px]">
+      <button
+        type="button"
+        className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
+      >
+        📞 {t("Call Supplier")}
+      </button>
+    </a>
+  )}
+
+  {/* Record Payment */}
+  {selectedSupplier && (
+    <button
+      type="button"
+      className={`flex-1 sm:flex-none min-w-[130px] inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow transition ${
+        selectedSupplierDue > 0
+          ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg"
+          : "cursor-not-allowed bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600"
+      }`}
+      onClick={() => {
+        if (selectedSupplierDue <= 0) {
+          toast.info(t("No payment due for this supplier."));
+          return;
+        }
+        setPaymentModalOpen(true);
+      }}
+    >
+      💳 {t("Record payment")}
+    </button>
+  )}
+
+  {/* Edit Supplier */}
+  {selectedSupplier && (
+    <button
+      type="button"
+      className="flex-1 sm:flex-none min-w-[130px] inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
+      onClick={() => handleEditSupplier(selectedSupplier)}
+    >
+      ✏️ {t("Edit Supplier")}
+    </button>
+  )}
+
+  {/* Delete Supplier */}
+  {selectedSupplier && (
+    <button
+      type="button"
+      className="flex-1 sm:flex-none min-w-[130px] inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
+      onClick={() => {
+        if (window.confirm(t("Are you sure you want to delete this supplier?"))) {
+          handleDeleteSupplier();
+        }
+      }}
+    >
+      🗑️ {t("Delete Supplier")}
+    </button>
+  )}
+</div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
                       <div className="flex flex-wrap items-center justify-between gap-3">
