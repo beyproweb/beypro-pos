@@ -22,14 +22,14 @@ export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [newTransaction, setNewTransaction] = useState({
-  ingredient: "",
-  quantity: "",
-  unit: "kg",
-  total_cost: "",
+const [newTransaction, setNewTransaction] = useState({
+  rows: [
+    { ingredient: "", quantity: "", unit: "kg", total_cost: "" }, // ✅ default one row
+  ],
   paymentStatus: "Due",
-  paymentMethod: "Due", // 👈 Set "Due" as default
+  paymentMethod: "Due",
 });
+
   const BACKEND_URL = "http://localhost:5000";
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -73,10 +73,11 @@ export default function Suppliers() {
     complaint: false,
     notes: "",
   });
-
+  const [openDays, setOpenDays] = useState({});
   const socketRef = useRef();
   const { fetchStock } = useStock();
   const [receiptFile, setReceiptFile] = useState(null);
+  const [latestTransaction, setLatestTransaction] = useState(null);
 
   useEffect(() => {
     setHeader(prev => ({
@@ -545,23 +546,22 @@ feedback_history.map((entry) => ({
     };
   }, [sortedTransactions, selectedSupplier?.total_due]);
 
-  const projectedBalance = useMemo(() => {
-    const currentOutstanding = supplierFinancials.outstanding ?? 0;
-    const orderTotal = Number(newTransaction.total_cost) || 0;
-    if (!orderTotal) return currentOutstanding;
+const projectedBalance = useMemo(() => {
+  const currentOutstanding = Number(supplierFinancials.outstanding ?? 0);
 
-    const immediatePaymentMethods = ["Cash", "Credit Card", "IBAN"];
-    const shouldSettleImmediately = immediatePaymentMethods.includes(
-      newTransaction.paymentMethod
-    );
-    const immediatePayment = shouldSettleImmediately ? orderTotal : 0;
+  // Sum all ingredient rows’ total_cost
+  const orderTotal = (newTransaction.rows || []).reduce(
+    (sum, r) => sum + (parseFloat(r.total_cost) || 0),
+    0
+  );
 
-    return currentOutstanding + orderTotal - immediatePayment;
-  }, [
-    supplierFinancials.outstanding,
-    newTransaction.total_cost,
-    newTransaction.paymentMethod,
-  ]);
+  const immediateMethods = ["Cash", "Credit Card", "IBAN"];
+  const isImmediate = immediateMethods.includes(newTransaction.paymentMethod);
+  const immediatePayment = isImmediate ? orderTotal : 0;
+
+  return currentOutstanding + orderTotal - immediatePayment;
+}, [supplierFinancials.outstanding, newTransaction.rows, newTransaction.paymentMethod]);
+
 
   const recentReceipts = useMemo(() => {
     return sortedTransactions.filter((txn) => txn?.receipt_url).slice(0, 3);
@@ -577,6 +577,14 @@ feedback_history.map((entry) => ({
       maximumFractionDigits: 2,
     });
   };
+
+  // Combined due = existing supplier due + current new order total
+const combinedDue = useMemo(() => {
+  const existingDue = Number(selectedSupplier?.total_due || 0);
+  const newOrderTotal = Number(newTransaction.total_cost || 0);
+  return existingDue + newOrderTotal;
+}, [selectedSupplier?.total_due, newTransaction.total_cost]);
+
 
   const coveragePercent =
     supplierFinancials.coverage !== null
@@ -753,72 +761,57 @@ feedback_history.map((entry) => ({
   };
 
 const handleAddTransaction = async (e) => {
-  e.preventDefault();
+  e?.preventDefault?.();
 
   if (!selectedSupplier) {
-    alert("Please select a supplier before adding a transaction.");
+    toast.error(t("Please select a supplier first."));
     return;
   }
 
-  const { ingredient, quantity, unit, total_cost, paymentMethod } = newTransaction;
-  if (!ingredient || !quantity || !total_cost) {
-    alert("Please enter all required fields.");
-    return;
-  }
+  const validRows = (newTransaction.rows || []).filter(
+    (r) => r.ingredient && r.quantity && r.total_cost
+  );
 
-  let pricePerUnit = 0;
-  if (unit === "kg" || unit === "lt" || unit === "piece") {
-    pricePerUnit = total_cost / quantity;
-  } else if (unit === "g" || unit === "ml") {
-    pricePerUnit = (total_cost / quantity) * 1000;
+  if (validRows.length === 0) {
+    toast.error(t("Please enter at least one valid ingredient row."));
+    return;
   }
 
   const formData = new FormData();
-  formData.append("supplier_id", selectedSupplier?.
-id);
-  formData.append("ingredient", ingredient);
-  formData.append("quantity", parseFloat(quantity));
-  formData.append("unit", unit);
-  formData.append("total_cost", parseFloat(total_cost));
-  formData.append("amount_paid", 0);
-  formData.append("payment_method", paymentMethod || "Cash");
-  formData.append("price_per_unit", parseFloat(pricePerUnit.toFixed(2)));
+  formData.append("supplier_id", selectedSupplier.id);
+  formData.append("payment_method", newTransaction.paymentMethod || "Due");
+  formData.append("rows", JSON.stringify(validRows)); // ✅ send all rows at once
 
-  if (receiptFile) {
-    formData.append("receipt", receiptFile);
-  }
+  if (receiptFile) formData.append("receipt", receiptFile);
 
   try {
     const result = await secureFetch("/suppliers/transactions", {
       method: "POST",
-      body: formData, // ✅ FormData, not JSON
+      body: formData,
     });
 
     if (result?.success) {
-      toast.success("✅ Order added successfully!");
-      await fetchTransactions(selectedSupplier?.
-id);
-      await fetchSupplierDetails(selectedSupplier?.
-id);
+      toast.success("✅ Compiled receipt saved successfully!");
+      await fetchTransactions(selectedSupplier.id);
+      await fetchSupplierDetails(selectedSupplier.id);
       await fetchSuppliers();
-
-      setNewTransaction({
-        ingredient: "",
-        quantity: "",
-        unit: "kg",
-        total_cost: "",
-        paymentStatus: "Due",
-        paymentMethod: "Cash",
-      });
-      setReceiptFile(null);
     } else {
-      toast.error(result?.error || "❌ Error adding transaction.");
+      toast.error(result?.error || "❌ Failed to save receipt");
     }
-  } catch (error) {
-    console.error("❌ Error adding transaction:", error);
-    toast.error("❌ Network error. Please try again.");
+  } catch (err) {
+    console.error("❌ Error saving compiled receipt:", err);
+    toast.error("❌ Error saving compiled receipt");
   }
+
+  setNewTransaction({
+    rows: [{ ingredient: "", quantity: "", unit: "kg", total_cost: "" }],
+    paymentMethod: "Due",
+  });
+  setReceiptFile(null);
 };
+
+
+
 
 const handleManageReceipt = (txn) => {
   if (txn?.receipt_url) {
@@ -828,34 +821,40 @@ const handleManageReceipt = (txn) => {
   }
 };
 
-
-
 const handlePayment = async () => {
-    if (!selectedSupplier?.id || !paymentAmount) return;
-    try {
-      const res = await secureFetch(`/suppliers/${selectedSupplier?.
-id}/pay`, {
-        method: "PUT",
-        body: JSON.stringify({
-          payment: parseFloat(paymentAmount),
-          payment_method: paymentMethod,
-        }),
-      });
-      if (res?.message) {
-        toast.success("💳 Payment updated!");
-        await fetchTransactions(selectedSupplier?.
-id);
-        await fetchSupplierDetails(selectedSupplier?.
-id);
-        await fetchSuppliers();
-      } else {
-        toast.error(res?.error || "❌ Payment failed");
+  if (!selectedSupplier?.id || !paymentAmount) return;
+  try {
+    const totalDueToUpdate = combinedDue; // 🧮 includes new order
+
+    const res = await secureFetch(`/suppliers/${selectedSupplier.id}/pay`, {
+      method: "PUT",
+      body: JSON.stringify({
+        payment: parseFloat(paymentAmount),
+        payment_method: paymentMethod,
+        total_due: totalDueToUpdate, // ✅ include updated total
+      }),
+    });
+
+    if (res?.message) {
+      toast.success("💳 Payment successful!");
+
+      // add the ingredient automatically after payment
+      if (newTransaction.ingredient && newTransaction.total_cost && newTransaction.quantity) {
+        await handleAddTransaction({ preventDefault: () => {}, auto: true });
       }
-    } catch (err) {
-      console.error("❌ Error processing payment:", err);
-      toast.error("❌ Payment failed");
+
+      await fetchTransactions(selectedSupplier.id);
+      await fetchSupplierDetails(selectedSupplier.id);
+      await fetchSuppliers();
+      setPaymentModalOpen(false);
+    } else {
+      toast.error(res?.error || "❌ Payment failed");
     }
-  };  
+  } catch (err) {
+    console.error("❌ Error processing payment:", err);
+    toast.error("❌ Payment failed");
+  }
+};
 
 
 
@@ -1202,14 +1201,8 @@ name}: {formattedSelectedSupplierDue} ₺
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 dark:border-slate-700 dark:bg-slate-900">
-              <span className="h-2 w-2 rounded-full bg-indigo-500" />
-              {t("Suppliers tracked")}: {suppliers.length}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 dark:border-slate-700 dark:bg-slate-900">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              {t("Outstanding")}: {formattedTotalDues} ₺
-            </span>
+       
+           
           </div>
         </div>
         {/* --- SUPPLIERS TAB --- */}
@@ -1384,115 +1377,460 @@ name}: {formattedSelectedSupplierDue} ₺
                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
                           {t("New delivery entry")}
                         </p>
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                          <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                            {t("Ingredient")}
-                            <input
-                              type="text"
-                              name="ingredient"
-                              value={newTransaction.ingredient}
-                              onChange={handleInputChange}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                              required
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                            {t("Quantity")}
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              name="quantity"
-                              value={newTransaction.quantity}
-                              onChange={handleInputChange}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                              required
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                            {t("Unit")}
-                            <select
-                              name="unit"
-                              value={newTransaction.unit}
-                              onChange={handleInputChange}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                            >
-                              <option value="kg">{t("Kilogram (kg)")}</option>
-                              <option value="g">{t("Gram (g)")}</option>
-                              <option value="lt">{t("Liter (lt)")}</option>
-                              <option value="ml">{t("Milliliter (ml)")}</option>
-                              <option value="piece">{t("Piece")}</option>
-                            </select>
-                          </label>
-                          <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                            {t("Total cost (₺)")}
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              name="total_cost"
-                              value={newTransaction.total_cost}
-                              onChange={handleInputChange}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                              required
-                            />
-                          </label>
-                        </div>
+                        {/* --- Multi-ingredient input rows --- */}
+{/* --- Multi-ingredient input rows --- */}
+
+{newTransaction.rows?.map((row, idx) => {
+  const qty = parseFloat(row.quantity);
+  const total = parseFloat(row.total_cost);
+  const unitPrice =
+    !isNaN(qty) && qty > 0 && !isNaN(total) ? (total / qty).toFixed(2) : "0.00";
+
+  return (
+    <div key={idx} className="relative mb-6">
+      {/* --- Separator line between rows --- */}
+      {idx > 0 && (
+        <div className="my-4 border-t border-dashed border-slate-300 dark:border-slate-700"></div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6 items-end">
+        {/* Ingredient */}
+        <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+          {t("Ingredient")}
+          <input
+            type="text"
+            value={row.ingredient}
+            onChange={(e) => {
+              const updated = [...newTransaction.rows];
+              updated[idx].ingredient = e.target.value;
+              setNewTransaction({ ...newTransaction, rows: updated });
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            required
+          />
+        </label>
+
+        {/* Quantity */}
+        <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+          {t("Quantity")}
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={row.quantity}
+            onChange={(e) => {
+              const updated = [...newTransaction.rows];
+              updated[idx].quantity = e.target.value;
+              setNewTransaction({ ...newTransaction, rows: updated });
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            required
+          />
+        </label>
+
+        {/* Unit */}
+        <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+          {t("Unit")}
+          <select
+            value={row.unit}
+            onChange={(e) => {
+              const updated = [...newTransaction.rows];
+              updated[idx].unit = e.target.value;
+              setNewTransaction({ ...newTransaction, rows: updated });
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          >
+            <option value="kg">{t("kg")}</option>
+            <option value="g">{t("g")}</option>
+            <option value="lt">{t("lt")}</option>
+            <option value="ml">{t("ml")}</option>
+            <option value="piece">{t("piece")}</option>
+          </select>
+        </label>
+
+        {/* Total cost */}
+        <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+          {t("Total cost (₺)")}
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={row.total_cost}
+            onChange={(e) => {
+              const updated = [...newTransaction.rows];
+              updated[idx].total_cost = e.target.value;
+              setNewTransaction({ ...newTransaction, rows: updated });
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            required
+          />
+        </label>
+
+        {/* Computed Unit Price */}
+        <div className="flex flex-col justify-end h-full text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+          <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            {t("Unit price")}
+          </p>
+          <p className="text-lg mt-1">{unitPrice} ₺</p>
+        </div>
+
+        {/* 🗑️ Remove Row Button */}
+        <div className="flex justify-center items-end">
+          <button
+            type="button"
+            onClick={() => {
+              const updated = [...newTransaction.rows];
+              updated.splice(idx, 1);
+              if (updated.length === 0)
+                updated.push({ ingredient: "", quantity: "", unit: "kg", total_cost: "" });
+              setNewTransaction({ ...newTransaction, rows: updated });
+            }}
+            className="inline-flex items-center gap-2 rounded-full border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-600/40 dark:text-rose-300 dark:hover:bg-rose-900/30 transition"
+          >
+            🗑️ {t("Remove")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+})}
+
+
+
+{/* ➕ Add Row button */}
+<button
+  type="button"
+  onClick={() =>
+    setNewTransaction({
+      ...newTransaction,
+      rows: [
+        ...(newTransaction.rows || []),
+        { ingredient: "", quantity: "", unit: "kg", total_cost: "" },
+      ],
+    })
+  }
+  className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+>
+  ➕ {t("Add Row")}
+</button>
+
+
+
                         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                              {t("Computed unit price")}
+                              {t(" Total price")}
                             </span>
-                            <p className="mt-2 text-lg font-semibold text-indigo-600 dark:text-indigo-300">
-                              {computedUnitPrice()} ₺
-                            </p>
-                            <p className="text-xs text-slate-400 dark:text-slate-500">
-                              {t("Helps staff validate supplier pricing in seconds.")}
-                            </p>
-                          </div>
-                          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                              {t("This order effect")}
-                            </span>
-                            <p
-                              className={`mt-2 text-lg font-semibold ${
-                                outstandingDelta >= 0
-                                  ? "text-rose-600 dark:text-rose-400"
-                                  : "text-emerald-600 dark:text-emerald-400"
-                              }`}
-                            >
-                              {`${outstandingDelta >= 0 ? "+" : "−"}${formatCurrency(
-                                Math.abs(outstandingDelta)
-                              )} ₺`}
-                            </p>
-                            <p className="text-xs text-slate-400 dark:text-slate-500">
-                              {isImmediateSettle
-                                ? t("Marked as paid immediately with this method.")
-                                : t("Adds to outstanding balance until payment is recorded.")}
-                            </p>
+                         {(() => {
+  const totalOrder = newTransaction.rows?.reduce(
+    (sum, r) => sum + (parseFloat(r.total_cost) || 0),
+    0
+  );
+  const totalEffect =
+    (selectedSupplier?.total_due || 0) + totalOrder - (selectedSupplier?.total_due || 0);
+
+  return (
+    <>
+      <p
+        className={`mt-2 text-lg font-semibold ${
+          totalOrder >= 0
+            ? "text-rose-600 dark:text-rose-400"
+            : "text-emerald-600 dark:text-emerald-400"
+        }`}
+      >
+        +{formatCurrency(totalOrder)} ₺
+      </p>
+      <p className="text-xs text-slate-400 dark:text-slate-500">
+        {t("Total added to outstanding balance (all items)")}
+      </p>
+    </>
+  );
+})()}
+
+                   
                           </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <button
-                            type="submit"
-                            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                          >
-                            🛒 {t("Order Now")}
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                            onClick={() => setShowUploadOptions(true)}
-                          >
-                            📸 {t("Upload Receipt")}
-                          </button>
-                        </div>
+                       <div className="flex flex-wrap items-center gap-3">
+  {/* ✅ Confirm Order (adds ingredients before payment) */}
+  <button
+    type="button"
+    onClick={handleAddTransaction}
+    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+  >
+    ✅ {t("Confirm Order")}
+  </button>
+
+  {/* 💳 Pay Now */}
+  <button
+    type="button"
+    onClick={() => setPaymentModalOpen(true)}
+    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+  >
+    💳 {t("Pay Now")}
+  </button>
+
+  {/* 📸 Upload Receipt */}
+  <button
+    type="button"
+    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+    onClick={() => setShowUploadOptions(true)}
+  >
+    📸 {t("Upload Receipt")}
+  </button>
+</div>
+
                       </form>
                     </div>
    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="space-y-6">
                 <div className="space-y-4">
-               
+                                  {/* === Latest Added Entry Preview === */}
+{latestTransaction && (
+  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+      🆕 {t("Latest Added Order")}
+    </h3>
+    <div className="flex flex-wrap justify-between text-sm text-slate-600 dark:text-slate-300">
+      <p>
+        <span className="font-semibold">{t("Ingredient")}:</span>{" "}
+        {latestTransaction.ingredient}
+      </p>
+      <p>
+        <span className="font-semibold">{t("Quantity")}:</span>{" "}
+        {latestTransaction.quantity} {latestTransaction.unit}
+      </p>
+      <p>
+        <span className="font-semibold">{t("Total Cost")}:</span>{" "}
+        ₺{Number(latestTransaction.total_cost).toFixed(2)}
+      </p>
+      <p>
+        <span className="font-semibold">{t("Payment Method")}:</span>{" "}
+        {latestTransaction.payment_method}
+      </p>
+      <p className="text-xs text-slate-400 dark:text-slate-500">
+        {t("Added at")}: {new Date(latestTransaction.created_at).toLocaleString()}
+      </p>
+    </div>
+  </div>
+)}
+<section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <div className="space-y-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+          {t("Transaction History")}
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {t("Review every purchase and payment with clear statuses.")}
+        </p>
+      </div>
+      <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        {[
+          { value: "all", label: t("All") },
+          { value: "purchases", label: t("Purchases") },
+          { value: "payments", label: t("Payments") },
+        ].map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setTransactionView(option.value)}
+            className={`rounded-full px-4 py-1.5 font-semibold transition ${
+              transactionView === option.value
+                ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+          {t("Outstanding")}
+        </p>
+        <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+          {formatCurrency(supplierFinancials.outstanding)} ₺
+        </p>
+      </div>
+      <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+          {t("Total purchases")}
+        </p>
+        <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+          {formatCurrency(supplierFinancials.totalPurchases)} ₺
+        </p>
+      </div>
+      <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+          {t("Payments made")}
+        </p>
+        <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+          {formatCurrency(supplierFinancials.totalPaid)} ₺
+        </p>
+      </div>
+    </div>
+{filteredTransactions.length > 0 ? (
+  <div className="space-y-4">
+    {(() => {
+      // ✅ Group transactions by date
+      const grouped = filteredTransactions.reduce((acc, txn) => {
+        const dateKey = txn.delivery_date
+          ? new Date(txn.delivery_date).toISOString().split("T")[0]
+          : "Unknown";
+        if (!acc[dateKey]) acc[dateKey] = [];
+        acc[dateKey].push(txn);
+        return acc;
+      }, {});
+
+      // ✅ Sort dates (newest → oldest)
+      const sortedDates = Object.keys(grouped).sort(
+        (a, b) => new Date(b) - new Date(a)
+      );
+
+      let runningBalance = 0;
+
+      return sortedDates.map((day) => {
+        const txns = grouped[day].sort(
+          (a, b) => new Date(b.delivery_date) - new Date(a.delivery_date)
+        );
+
+        return (
+          <div
+            key={day}
+            className="border border-slate-200 rounded-2xl shadow-sm dark:border-slate-800"
+          >
+            {/* === Day header === */}
+            <button
+              onClick={() =>
+                setOpenDays((prev) => ({ ...prev, [day]: !prev[day] }))
+              }
+              className="w-full flex justify-between items-center px-5 py-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-t-2xl transition"
+            >
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                📅 {getLocalizedDate(day)}
+              </span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {openDays[day] ? "▲ " + t("Hide") : "▼ " + t("Show")}
+              </span>
+            </button>
+
+            {/* === Transactions under that day === */}
+            {openDays[day] && (
+              <div className="p-5 space-y-4 bg-white dark:bg-slate-900 rounded-b-2xl">
+                {txns.map((txn, idx) => {
+                  const isPayment = txn.ingredient === "Payment";
+                  const totalCost = Number(txn.total_cost) || 0;
+                  const amountPaid = Number(txn.amount_paid) || 0;
+                  const change = isPayment ? -amountPaid : totalCost;
+                  runningBalance += change;
+
+                  const paymentLabel =
+                    txn.payment_method && paymentChipLabel(txn.payment_method);
+
+                  return (
+                    <div
+                      key={txn.id || `txn-${day}-${idx}`}
+                      className="rounded-xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      {/* === Header === */}
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <p
+                            className={`font-semibold ${
+                              isPayment
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-slate-900 dark:text-white"
+                            }`}
+                          >
+                            {isPayment
+                              ? `${t("Payment recorded")} – ${formatCurrency(
+                                  amountPaid
+                                )} ₺`
+                              : `${
+                                  txn.ingredient || t("Compiled Receipt")
+                                } – ${formatCurrency(totalCost)} ₺`}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {txn.payment_method ? txn.payment_method : ""}
+                          </p>
+                        </div>
+                        {paymentLabel && (
+                          <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {paymentLabel}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* === Ingredient list (for compiled receipts) === */}
+                      {!isPayment &&
+                        Array.isArray(txn.items) &&
+                        txn.items.length > 0 && (
+                          <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                              {t("Included ingredients")}
+                            </p>
+                            <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+                              {txn.items.map((item, i) => (
+                                <li
+                                  key={i}
+                                  className="py-1.5 flex justify-between text-xs sm:text-sm"
+                                >
+                                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                                    {item.ingredient}
+                                  </span>
+                                  <span className="text-slate-500 dark:text-slate-400">
+                                    {item.quantity} {item.unit} ×{" "}
+                                    {Number(item.price_per_unit).toFixed(2)}₺ ={" "}
+                                    <strong className="text-slate-900 dark:text-white">
+                                      {Number(item.total_cost).toFixed(2)}₺
+                                    </strong>
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                      {/* === Running balance === */}
+                      <div className="mt-4 flex justify-between text-sm font-semibold">
+                        <span
+                          className={
+                            change < 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-rose-600 dark:text-rose-400"
+                          }
+                        >
+                          {change < 0 ? "−" : "+"}
+                          {formatCurrency(Math.abs(change))} ₺
+                        </span>
+                        <span className="text-slate-700 dark:text-slate-200">
+                          {t("Balance after this")}:{" "}
+                          {formatCurrency(runningBalance)} ₺
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      });
+    })()}
+  </div>
+) : (
+  <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+    {t("No transactions recorded yet for this supplier.")}
+  </div>
+)}
+
+
+
+  </div>
+</section>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
@@ -1543,7 +1881,7 @@ name}: {formattedSelectedSupplierDue} ₺
                           </strong>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span>{t("Payments received")}</span>
+                          <span>{t("Payments made")}</span>
                           <strong className="text-slate-900 dark:text-white">
                             {formatCurrency(supplierFinancials.monthPayments)} ₺
                           </strong>
@@ -1594,53 +1932,7 @@ name}: {formattedSelectedSupplierDue} ₺
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
-                      <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                        {t("Supplier management")}
-                      </p>
-                      <ul className="mt-4 space-y-4 text-sm text-slate-600 dark:text-slate-300">
-                        <li className="flex items-start gap-3">
-                          <span className="mt-1 text-lg">🧾</span>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="font-semibold text-slate-900 dark:text-white">
-                                {t("Download transaction log")}
-                              </p>
-                              <p className="text-xs text-slate-400 dark:text-slate-500">
-                                {t("Share Excel reports with accounting whenever requested.")}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                              onClick={handleDownloadHistory}
-                            >
-                              📥 {t("Export Excel")}
-                            </button>
-                          </div>
-                        </li>
-                        <li className="flex items-start gap-3">
-                          <span className="mt-1 text-lg">🧹</span>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="font-semibold text-slate-900 dark:text-white">
-                                {t("Reset transaction history")}
-                              </p>
-                              <p className="text-xs text-slate-400 dark:text-slate-500">
-                                {t("Start fresh after completing annual reconciliation.")}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-slate-700 dark:text-rose-300 dark:hover:bg-slate-800"
-                              onClick={handleClearTransactions}
-                            >
-                              🧹 {t("Clear history")}
-                            </button>
-                          </div>
-                        </li>
-                      </ul>
-                    </div>
+                 
                   </div>
                 </section>
 <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
@@ -1819,6 +2111,8 @@ name}: {formattedSelectedSupplierDue} ₺
                         {t("Log feedback")}
                       </button>
                     </form>
+ 
+
                     <div className="mt-6 space-y-4">
                       {feedbackTimeline.length > 0 ? (
                         feedbackTimeline.map((entry, idx) => {
@@ -1924,7 +2218,7 @@ name}: {formattedSelectedSupplierDue} ₺
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
                           <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                            {t("Payments received")}
+                            {t("Payments made")}
                           </p>
                           <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
                             {formatCurrency(supplierFinancials.totalPaid)} ₺
@@ -2208,225 +2502,60 @@ notes || "—"}
                   </div>
                 </section>
 
-                
-
-                <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="space-y-6">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                          {t("Transaction History")}
-                        </h2>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                          {t("Review every purchase and payment with clear statuses.")}
-                        </p>
-                      </div>
-                      <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                        {[
-                          { value: "all", label: t("All") },
-                          { value: "purchases", label: t("Purchases") },
-                          { value: "payments", label: t("Payments") },
-                        ].map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => setTransactionView(option.value)}
-                            className={`rounded-full px-4 py-1.5 font-semibold transition ${
-                              transactionView === option.value
-                                ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow"
-                                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-                        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                          {t("Outstanding")}
-                        </p>
-                        <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                          {formatCurrency(supplierFinancials.outstanding)} ₺
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-                        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                          {t("Total purchases")}
-                        </p>
-                        <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                          {formatCurrency(supplierFinancials.totalPurchases)} ₺
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-                        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                          {t("Payments received")}
-                        </p>
-                        <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                          {formatCurrency(supplierFinancials.totalPaid)} ₺
-                        </p>
-                      </div>
-                    </div>
-
-                    {filteredTransactions.length > 0 ? (
-                      <div className="space-y-4">
-                        {filteredTransactions.map((txn, idx) => {
-                          const isPayment = txn.ingredient === "Payment";
-                          const totalCost = Number(txn.total_cost) || 0;
-                          const amountPaid = Number(txn.amount_paid) || 0;
-                          const perUnit = Number(txn.price_per_unit) || 0;
-                          const remaining = isPayment ? 0 : Math.max(0, totalCost - amountPaid);
-                          const txnDateRaw = resolveTxnDate(txn);
-                          const statusLabel = isPayment
-                            ? t("Payment")
-                            : remaining > 0.01
-                            ? t("Due")
-                            : t("Settled");
-                          const statusClasses = isPayment
-                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
-                            : remaining > 0.01
-                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-300"
-                            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
-                          const paymentLabel =
-                            txn.payment_method && paymentChipLabel(txn.payment_method);
-                          const displayTotal = isPayment ? amountPaid || totalCost : totalCost;
-                          const displayPaid = isPayment ? amountPaid || totalCost : amountPaid;
-
-                          return (
-                            <div
-                              key={txn.id || `txn-card-${idx}`}
-                              className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
-                            >
-                              <div className="flex flex-wrap items-start justify-between gap-4">
-                                <div>
-                                  <p className="text-base font-semibold text-slate-900 dark:text-white">
-                                    {isPayment ? t("Payment recorded") : txn.ingredient || t("Unnamed item")}
-                                  </p>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    {getLocalizedDate(txnDateRaw)}
-                                  </p>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span
-                                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${statusClasses}`}
-                                  >
-                                    {statusLabel}
-                                  </span>
-                                  {paymentLabel && (
-                                    <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                      {paymentLabel}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm text-slate-600 dark:text-slate-300">
-                                {!isPayment && (
-                                  <div>
-                                    <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                                      {t("Quantity")}
-                                    </p>
-                                    <p className="mt-1 font-semibold text-slate-900 dark:text-white">
-                                      {(txn.quantity ?? "—")} {txn.unit || ""}
-                                    </p>
-                                  </div>
-                                )}
-                                {!isPayment && (
-                                  <div>
-                                    <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                                      {t("Unit price")}
-                                    </p>
-                                    <p className="mt-1 font-semibold text-slate-900 dark:text-white">
-                                      {perUnit > 0 ? `${perUnit.toFixed(2)} ₺` : "—"}
-                                    </p>
-                                  </div>
-                                )}
-                                <div>
-                                  <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                                    {isPayment ? t("Payment amount") : t("Total")}
-                                  </p>
-                                  <p className="mt-1 font-semibold text-slate-900 dark:text-white">
-                                    {formatCurrency(displayTotal)} ₺
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                                    {t("Paid")}
-                                  </p>
-                                  <p className="mt-1 font-semibold text-slate-900 dark:text-white">
-                                    {formatCurrency(displayPaid)} ₺
-                                  </p>
-                                </div>
-                                {!isPayment && (
-                                  <div>
-                                    <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                                      {t("Still due")}
-                                    </p>
-                                    <p
-                                      className={`mt-1 font-semibold ${
-                                        remaining > 0.01
-                                          ? "text-rose-600 dark:text-rose-400"
-                                          : "text-emerald-600 dark:text-emerald-400"
-                                      }`}
-                                    >
-                                      {formatCurrency(remaining)} ₺
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                              {txn.notes && (
-                                <p className="mt-3 text-sm italic text-slate-500 dark:text-slate-400">
-                                  “{txn.notes}”
-                                </p>
-                              )}
-                              <div className="mt-4 flex flex-wrap items-center gap-3">
-                                {txn.receipt_url ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 dark:border-slate-700 dark:text-indigo-300 dark:hover:bg-indigo-900"
-                                      onClick={() => setPreviewImage(txn.receipt_url)}
-                                    >
-                                      📄 {t("View receipt")}
-                                    </button>
-                                    <a
-                                      href={txn.receipt_url}
-                                      download
-                                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                                    >
-                                      ⬇️ {t("Download")}
-                                    </a>
-                                  </>
-                                ) : (
-                                  <span className="text-xs text-slate-400 dark:text-slate-500">
-                                    {t("No receipt attached")}
-                                  </span>
-                                )}
-                                {!isPayment && (
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:shadow-md"
-                                    onClick={() => handleManageReceipt(txn)}
-                                  >
-                                    📎 {t(txn.receipt_url ? "Edit receipt" : "Upload Receipt")}
-                                  </button>
-                                )}
-                              </div>
+                   <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
+                      <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                        {t("Supplier management")}
+                      </p>
+                      <ul className="mt-4 space-y-4 text-sm text-slate-600 dark:text-slate-300">
+                        <li className="flex items-start gap-3">
+                          <span className="mt-1 text-lg">🧾</span>
+                          <div className="space-y-2">
+                            <div>
+                              <p className="font-semibold text-slate-900 dark:text-white">
+                                {t("Download transaction log")}
+                              </p>
+                              <p className="text-xs text-slate-400 dark:text-slate-500">
+                                {t("Share Excel reports with accounting whenever requested.")}
+                              </p>
                             </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
-                        {t("No transactions recorded yet for this supplier.")}
-                      </div>
-                    )}
-                  </div>
-                </section>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                              onClick={handleDownloadHistory}
+                            >
+                              📥 {t("Export Excel")}
+                            </button>
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <span className="mt-1 text-lg">🧹</span>
+                          <div className="space-y-2">
+                            <div>
+                              <p className="font-semibold text-slate-900 dark:text-white">
+                                {t("Reset transaction history")}
+                              </p>
+                              <p className="text-xs text-slate-400 dark:text-slate-500">
+                                {t("Start fresh after completing annual reconciliation.")}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-slate-700 dark:text-rose-300 dark:hover:bg-slate-800"
+                              onClick={handleClearTransactions}
+                            >
+                              🧹 {t("Clear history")}
+                            </button>
+                          </div>
+                        </li>
+                      </ul>
+                    </div>
+
+
+
+
               </>
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white/80 p-12 text-center text-slate-500 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+             <div className="rounded-2xl border border-dashed border-slate-300 bg-white/80 p-12 text-center text-slate-500 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
                 <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">
                   {t("Select a supplier to view performance insights")}
                 </h3>
@@ -2435,7 +2564,7 @@ notes || "—"}
                     "Pick a supplier from the dropdown above to unlock performance analytics, price tracking, and payment tools."
                   )}
                 </p>
-              </div>
+              </div> 
             )}
           </div>
         )}
@@ -2663,11 +2792,14 @@ notes || ""}
       {/* Total Due Card */}
       <div className="bg-gradient-to-r from-blue-100 via-white to-indigo-100 dark:from-gray-800 dark:to-gray-900 p-5 rounded-xl shadow-inner mb-6 text-center border border-indigo-100 dark:border-indigo-900 z-10 relative">
         <div className="text-gray-600 dark:text-gray-300 text-sm font-semibold">{t("Total Due")}</div>
-        <div className={`text-3xl font-extrabold mt-1
-          ${selectedSupplier?.total_due > 0 ? "text-red-600" : "text-green-500"}`}>
-          {selectedSupplier?.total_due ? Number(selectedSupplier?.
-total_due).toFixed(2) + "₺" : "0.00₺"}
-        </div>
+        <div
+  className={`text-3xl font-extrabold mt-1 ${
+    combinedDue > 0 ? "text-red-600" : "text-green-500"
+  }`}
+>
+  {combinedDue.toFixed(2)}₺
+</div>
+
       </div>
 
       {/* Payment Amount Label + Input */}
@@ -2697,20 +2829,21 @@ total_due).toFixed(2) + "₺" : "0.00₺"}
       )}
 
       {/* Remaining Calculation */}
-      {paymentAmount && (
-        <div className="text-center mb-4 z-10 relative">
-          {selectedSupplier?.total_due - parseFloat(paymentAmount) > 0 ? (
-            <>
-              <span className="text-gray-600 dark:text-gray-300 text-sm font-semibold">{t("Remaining After Payment")}:</span>
-              <div className="text-lg font-bold text-red-500">
-                {Math.max(0, (selectedSupplier?.total_due - parseFloat(paymentAmount))).toFixed(2)}₺
-              </div>
-            </>
-          ) : (
-            <div className="text-green-600 font-extrabold text-lg">✅ {t("Fully Paid!")}</div>
-          )}
-        </div>
-      )}
+{combinedDue - parseFloat(paymentAmount || 0) > 0 ? (
+  <>
+    <span className="text-gray-600 dark:text-gray-300 text-sm font-semibold">
+      {t("Remaining After Payment")}:
+    </span>
+    <div className="text-lg font-bold text-red-500">
+      {Math.max(0, combinedDue - parseFloat(paymentAmount || 0)).toFixed(2)}₺
+    </div>
+  </>
+) : (
+  <div className="text-green-600 font-extrabold text-lg">
+    ✅ {t("Fully Paid!")}
+  </div>
+)}
+
 
       {/* Payment Method Selector */}
       <label
