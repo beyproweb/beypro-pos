@@ -1215,48 +1215,7 @@ name}: {formattedSelectedSupplierDue} ₺
         {/* --- SUPPLIERS TAB --- */}
         {activeTab === "suppliers" && (
           <div className="space-y-10">
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="space-y-6">
-                <div className="space-y-4">
-               
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                    <p className="text-slate-500 dark:text-slate-400">
-                      {t("Suppliers connected")}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                      {suppliers.length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                    <p className="text-slate-500 dark:text-slate-400">
-                      {t("Tracked transactions")}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                      {transactions.length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                    <p className="text-slate-500 dark:text-slate-400">
-                      {t("Active price alerts")}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                      {priceAlerts.length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                    <p className="text-slate-500 dark:text-slate-400">
-                      {t("Feedback entries logged")}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                      {feedbackEntries.length}
-                    </p>
-                  </div>
-                </div>
-             
-              </div>
-            </section>
+         
 <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                   <div className="space-y-6">
                      <div className="space-y-1">
@@ -1269,65 +1228,65 @@ name}: {formattedSelectedSupplierDue} ₺
               
                   </div>
                   
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-                    
-                    {selectedSupplier ? (
-<div className="w-full sm:w-72 rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-200">
-  <div className="flex items-center justify-between">
-    <p>{t("Due")}</p>
-    <p className="text-lg font-bold text-rose-500 dark:text-rose-300">
-      {formattedSelectedSupplierDue} ₺
-    </p>
+               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 w-full">
+  {/* === Supplier Select (Left on desktop) === */}
+  <div className="relative w-full sm:w-72 order-1 sm:order-none">
+    <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
+      <svg
+        className="h-4 w-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M3 4h18M3 10h18M3 16h18"
+        />
+      </svg>
+    </div>
+    <select
+      className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+      value={selectedSupplier?.id || ""}
+      onChange={(e) => handleSelectSupplier(e.target.value)}
+    >
+      <option value="">{t("Select Supplier")}</option>
+      {suppliers.map((supplier) => (
+        <option key={supplier.id} value={supplier.id}>
+          {supplier.name}
+        </option>
+      ))}
+    </select>
+    <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
+      <svg
+        className="h-4 w-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
+    </div>
   </div>
-</div>
 
-                    ) : (
-                      <div className="hidden w-full sm:block sm:w-72" />
-                    )}
-                    <div className="relative w-full sm:w-72">
-                      <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M3 4h18M3 10h18M3 16h18"
-                          />
-                        </svg>
-                      </div>
-                      <select
-                        className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                        value={selectedSupplier?.id || ""}
-                        onChange={(e) => handleSelectSupplier(e.target.value)}
-                      >
-                        <option value="">{t("Select Supplier")}</option>
-                        {suppliers.map((supplier) => (
-                          <option key={supplier.id} value={supplier.id}>
-                            {supplier.name}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M19 9l-7 7-7-7"
-                          />
-                        </svg>
-                      </div>
-                    </div>
+  {/* === Due Card (Right on desktop) === */}
+  {selectedSupplier ? (
+    <div className="w-full sm:w-72 rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-200 order-2 sm:order-none">
+      <div className="flex items-center justify-between">
+        <p>{t("Due")}</p>
+        <p className="text-lg font-bold text-rose-500 dark:text-rose-300">
+          {formattedSelectedSupplierDue} ₺
+        </p>
+      </div>
+    </div>
+  ) : (
+    <div className="hidden w-full sm:block sm:w-72" />
+  )}
+
+
+                   
                   </div>
        <div className="flex flex-wrap justify-start sm:justify-start items-center gap-2 w-full">
   {/* Add Supplier */}
@@ -1530,7 +1489,48 @@ name}: {formattedSelectedSupplierDue} ₺
                         </div>
                       </form>
                     </div>
-
+   <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="space-y-6">
+                <div className="space-y-4">
+               
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+                    <p className="text-slate-500 dark:text-slate-400">
+                      {t("Suppliers connected")}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                      {suppliers.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+                    <p className="text-slate-500 dark:text-slate-400">
+                      {t("Tracked transactions")}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                      {transactions.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+                    <p className="text-slate-500 dark:text-slate-400">
+                      {t("Active price alerts")}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                      {priceAlerts.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+                    <p className="text-slate-500 dark:text-slate-400">
+                      {t("Feedback entries logged")}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                      {feedbackEntries.length}
+                    </p>
+                  </div>
+                </div>
+             
+              </div>
+            </section>
                     <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
                       <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
                         {t("Month to date overview")}
