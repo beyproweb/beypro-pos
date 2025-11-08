@@ -2446,7 +2446,8 @@ const loadProducts = async () => {
   try {
     const identifier = restaurantIdOrSlug; // already resolved from useParams at top
     // ⬇️ call sFetch WITHOUT adding ?identifier= again
-    const payload = await sFetch(`/products`, { method: "GET" });
+    const res = await fetch(`${API_URL}/products?identifier=${restaurantIdOrSlug}`);
+const payload = await res.json();
 
     const list = Array.isArray(payload)
       ? payload
