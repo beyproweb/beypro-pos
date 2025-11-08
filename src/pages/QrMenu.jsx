@@ -930,17 +930,22 @@ const showNewCard = !savedCard || !useSaved;
           />
 
           {/* Phone */}
-          <input
-            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
-              touched.phone && !/^5\\d{9}$/.test(form.phone) ? "border-red-500" : "border-neutral-300"
-            }`}
-            placeholder={t("Phone (5XXXXXXXXX)")}
-            value={form.phone}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, phone: e.target.value.replace(/[^\\d]/g, "").slice(0, 10) }))
-            }
-            maxLength={10}
-          />
+        <input
+  className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
+    touched.phone && !/^(5\d{9}|[578]\d{7})$/.test(form.phone)
+      ? "border-red-500"
+      : "border-neutral-300"
+  }`}
+  placeholder={t("Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)")}
+  value={form.phone}
+  onChange={(e) => {
+    // Allow typing any digits, limit to 10 max, keep numeric only
+    const cleaned = e.target.value.replace(/[^\d]/g, "");
+    setForm((f) => ({ ...f, phone: cleaned.slice(0, 10) }));
+  }}
+  inputMode="numeric"
+/>
+
 
           {/* Address */}
           <textarea
@@ -3044,8 +3049,8 @@ return (
       />
     </div>
 
-{/* ✅ Hide category bar when OrderStatusScreen is active */}
-{!showStatus && (
+{/* ✅ Hide category bar when any modal (status, delivery, or takeaway) is open */}
+{!showStatus && !showDeliveryForm && !showTakeawayForm && (
   <CategoryBar
     categories={categories}
     activeCategory={activeCategory}
@@ -3053,6 +3058,7 @@ return (
     categoryImages={categoryImages}
   />
 )}
+
 
 
 
