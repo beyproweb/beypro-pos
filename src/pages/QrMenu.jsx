@@ -2444,21 +2444,17 @@ useEffect(() => {
   // ✅ UPDATED BLOCK
 const loadProducts = async () => {
   try {
-    const identifier = restaurantIdOrSlug;
-    const res = await fetch(`${API_URL}/products?identifier=${identifier}`); // ✅ plain fetch
-    const payload = await res.json();
+    const payload = await sFetch("/products");
+    if (cancelled) return;
 
-    const list = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payload?.data)
-      ? payload.data
-      : [];
-
+    const list = parseArray(payload);
     setProducts(list);
+
     const cats = [...new Set(list.map((p) => p.category))].filter(Boolean);
     setCategories(cats);
     setActiveCategory(cats[0] || "");
   } catch (err) {
+    if (cancelled) return;
     console.warn("⚠️ Failed to fetch products:", err);
     setProducts([]);
     setCategories([]);
