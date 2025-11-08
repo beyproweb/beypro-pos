@@ -5,15 +5,14 @@ export default defineConfig(({ mode }) => {
   const isDev = mode === "development";
   const backendURL = isDev
     ? "http://localhost:5000"
-    : "https://hurrypos-backend.onrender.com/api"
+    : "https://hurrypos-backend.onrender.com";
 
   return {
     plugins: [react()],
-    base: mode === "production" ? "./" : "/",
+    base: "/",
 
     build: {
       outDir: "dist",
-      assetsDir: "",
       chunkSizeWarningLimit: 3000,
     },
 
