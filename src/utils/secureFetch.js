@@ -1,5 +1,5 @@
 // secureFetch.js
-// ✅ Unified token-aware fetch helper for Beypro frontend
+// ✅ Unified token-aware fetch helper for Beypro frontend (with public route safety)
 
 const RAW =
   import.meta.env.VITE_API_URL ||
@@ -52,19 +52,33 @@ export function getAuthToken() {
   }
 }
 
-// ✅ Secure fetch with Authorization header always set
+/**
+ * ✅ Unified secureFetch
+ * Automatically omits Authorization for public endpoints like:
+ *   - /api/products?identifier=...
+ *   - /api/public/*
+ *   - /qr-menu/*
+ *   - /restaurant-info
+ */
 export default async function secureFetch(endpoint, options = {}) {
   const rawToken = getAuthToken();
-  const tokenHeader = rawToken.startsWith("Bearer ")
-    ? rawToken
-    : rawToken
-    ? `Bearer ${rawToken}`
-    : "";
+  const tokenHeader =
+    rawToken && !rawToken.startsWith("Bearer ") ? `Bearer ${rawToken}` : rawToken;
+
+  // Detect public (non-auth) routes
+  const lower = endpoint.toLowerCase();
+  const isPublic =
+    lower.includes("/products?identifier=") ||
+    lower.includes("/public/") ||
+    lower.includes("/qr-menu") ||
+    lower.includes("/restaurant-info") ||
+    lower.includes("/me") || // allow /me to be protected but not break public
+    lower.includes("/uploads/");
 
   const isFormData = options.body instanceof FormData;
 
   const headers = {
-    ...(tokenHeader ? { Authorization: tokenHeader } : {}),
+    ...(!isPublic && tokenHeader ? { Authorization: tokenHeader } : {}), // 🚫 skip token on public
     ...options.headers,
   };
 
@@ -73,13 +87,15 @@ export default async function secureFetch(endpoint, options = {}) {
   }
 
   const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  const fullUrl = `${BASE_URL}${path}`;
 
+  const res = await fetch(fullUrl, { ...options, headers });
   const ctype = res.headers.get("content-type") || "";
+
   if (!ctype.includes("application/json")) {
     const text = await res.text();
     throw new Error(
-      `❌ Response from ${BASE_URL}${path} was not JSON (${res.status}). First bytes: ${text.slice(0, 80)}`
+      `❌ Response from ${fullUrl} was not JSON (${res.status}). First bytes: ${text.slice(0, 80)}`
     );
   }
 
