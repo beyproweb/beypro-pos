@@ -2444,10 +2444,9 @@ useEffect(() => {
   // ✅ UPDATED BLOCK
 const loadProducts = async () => {
   try {
-    const identifier = restaurantIdOrSlug; // already resolved from useParams at top
-    // ⬇️ call sFetch WITHOUT adding ?identifier= again
-    const res = await fetch(`${API_URL}/products?identifier=${restaurantIdOrSlug}`);
-const payload = await res.json();
+    const identifier = restaurantIdOrSlug;
+    const res = await fetch(`${API_URL}/products?identifier=${identifier}`); // ✅ plain fetch
+    const payload = await res.json();
 
     const list = Array.isArray(payload)
       ? payload
@@ -2466,6 +2465,7 @@ const payload = await res.json();
     setActiveCategory("");
   }
 };
+
 
   // ✅ END UPDATED BLOCK
 
