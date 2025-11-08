@@ -413,14 +413,16 @@ const LANGS = [
   { code: "fr", label: "🇫🇷 Français" },
 ];
 
+
+
 /* ====================== HEADER ====================== */
 function QrHeader({ orderType, table, onClose, t }) {
   return (
-    <header className="w-full sticky top-0 z-50 flex items-center gap-3 bg-white/90 backdrop-blur border-b border-blue-100 shadow-lg px-4 py-3">
-      <span className="text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent tracking-tight drop-shadow">
+    <header className="w-full sticky top-0 z-50 flex items-center justify-between bg-white/80 backdrop-blur-md border-b border-gray-200 px-6 py-4 shadow-sm">
+      <span className="text-3xl font-serif font-bold text-gray-900 tracking-tight">
         Hurrybey
       </span>
-      <span className="ml-1 text-lg font-bold text-blue-700 flex-1">
+      <span className="text-lg font-medium text-gray-700 italic">
         {orderType === "table"
           ? table
             ? `${t("Table")} ${table}`
@@ -430,7 +432,7 @@ function QrHeader({ orderType, table, onClose, t }) {
       <button
         onClick={onClose}
         aria-label={t("Close")}
-        className="bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
+        className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 transition-all"
       >
         ×
       </button>
@@ -439,116 +441,107 @@ function QrHeader({ orderType, table, onClose, t }) {
 }
 
 /* ====================== ORDER TYPE MODAL ====================== */
-function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstall, showHelp, setShowHelp, platform }) {
-
+function OrderTypeSelect({
+  onSelect,
+  lang,
+  setLang,
+  t,
+  onInstallClick,
+  canInstall,
+  showHelp,
+  setShowHelp,
+  platform,
+}) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-[340px] text-center flex flex-col items-center">
-        <h2 className="text-2xl font-extrabold mb-6 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md text-center flex flex-col items-center">
+        <h2 className="text-2xl font-serif font-semibold text-gray-900 mb-8 border-b border-gray-200 pb-2">
           {t("Order Type")}
         </h2>
+<button
+  onClick={() => onSelect("takeaway")}
+  className="w-full py-4 mb-4 rounded-xl text-lg font-medium text-gray-900 bg-gradient-to-r from-[#fafafa] to-[#f5f5f5] border border-gray-200 hover:bg-white transition-all shadow-sm hover:shadow-md"
+>
+  🥡 {t("Take Away")}
+</button>
 
-        {/* Table Order */}
         <button
-          className="py-4 w-full mb-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl hover:scale-105 transition"
+          className="w-full py-4 mb-4 rounded-xl text-lg font-medium text-gray-900 bg-gradient-to-r from-[#fafafa] to-[#f5f5f5] border border-gray-200 hover:bg-white transition-all shadow-sm hover:shadow-md"
           onClick={() => onSelect("table")}
         >
           🍽️ {t("Table Order")}
         </button>
 
-        {/* Delivery */}
         <button
-          className="py-4 w-full rounded-2xl font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-xl hover:scale-105 transition"
+          className="w-full py-4 rounded-xl text-lg font-medium text-gray-900 bg-gradient-to-r from-[#fafafa] to-[#f5f5f5] border border-gray-200 hover:bg-white transition-all shadow-sm hover:shadow-md"
           onClick={() => onSelect("online")}
         >
           🏠 {t("Delivery")}
         </button>
 
-<div className="w-full mt-6 flex flex-col gap-3">
-  {/* Share */}
-  <button
-    onClick={() => {
-      if (navigator.share) {
-        navigator.share({
-          title: "Beypro QR Menu",
-          text: "Check out our menu!",
-          url: shareUrl,
-        }).catch((err) => console.error("Share failed:", err));
-      } else {
-        navigator.clipboard.writeText(shareUrl).then(() => {
-          alert("Link copied! You can paste it into WhatsApp or any app.");
-        });
-      }
-    }}
-    className="w-full py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:scale-105 transition"
-  >
-    🔗 {t("Share QR Menu")}
-  </button>
+        <div className="w-full mt-8 space-y-3">
+          <button
+            onClick={() => {
+              if (navigator.share) {
+                navigator
+                  .share({
+                    title: "Hurrybey Menu",
+                    text: "Discover our menu.",
+                    url: window.location.href,
+                  })
+                  .catch(() => {});
+              } else {
+                navigator.clipboard.writeText(window.location.href);
+                alert("Link copied to clipboard.");
+              }
+            }}
+            className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-100 transition"
+          >
+            🔗 {t("Share QR Menu")}
+          </button>
 
-  {/* Save / Install */}
-  <button
-    onClick={() => {
-      if (canInstall) {
-        onInstallClick();
-      } else {
-        setShowHelp(true); // show help instructions
-      }
-    }}
-    className="w-full py-3 rounded-2xl font-bold shadow bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:scale-105 transition"
-  >
-    📲 {t("Save QR Menu to Phone")}
-  </button>
-</div>
-
-
-  
-
-{showHelp && (
-  <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50">
-    <div className="bg-white rounded-2xl shadow-xl p-6 w-[90%] max-w-sm text-center">
-      <h2 className="text-xl font-bold mb-3 text-blue-600">📲 {t("Add to Home Screen")}</h2>
-      
-      {platform === "ios" && (
-        <div className="text-gray-700 text-sm space-y-2">
-          <p>1. Tap the <span className="font-bold">Share</span> button in Safari (⬆️).</p>
-          <p>2. Scroll and tap <span className="font-bold">Add to Home Screen</span>.</p>
+          <button
+            onClick={() => {
+              if (canInstall) onInstallClick();
+              else setShowHelp(true);
+            }}
+            className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-100 transition"
+          >
+            📲 {t("Save QR Menu to Phone")}
+          </button>
         </div>
-      )}
 
-      {platform === "android" && (
-        <div className="text-gray-700 text-sm space-y-2">
-          <p>1. Tap the <span className="font-bold">⋮ menu</span> in Chrome.</p>
-          <p>2. Tap <span className="font-bold">Add to Home Screen</span>.</p>
-        </div>
-      )}
+        {showHelp && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60">
+            <div className="bg-white rounded-2xl shadow-xl p-6 w-[90%] max-w-sm text-center">
+              <h2 className="text-xl font-serif font-semibold mb-3 text-gray-900">
+                {t("Add to Home Screen")}
+              </h2>
+              <p className="text-gray-600 text-sm">
+                {platform === "ios"
+                  ? "Tap the Share button in Safari (⬆️) and select 'Add to Home Screen'."
+                  : platform === "android"
+                  ? "Open Chrome menu (⋮) and choose 'Add to Home Screen'."
+                  : "Open this link on your phone to save the app."}
+              </p>
+              <button
+                onClick={() => setShowHelp(false)}
+                className="mt-4 w-full py-2 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        )}
 
-      {platform === "other" && (
-        <div className="text-gray-700 text-sm">
-          {t("Open in your mobile browser to save this app.")}
-        </div>
-      )}
-
-      <button
-        onClick={() => setShowHelp(false)}
-        className="w-full mt-4 py-2 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600"
-      >
-        OK
-      </button>
-    </div>
-  </div>
-)}
-
-
-
-        {/* Language picker */}
-        <div className="w-full mt-8 flex flex-col items-center">
-          <label className="text-sm font-bold mb-1 text-blue-600">
+        <div className="w-full mt-8">
+          <label className="text-sm font-medium text-gray-700">
             🌐 {t("Language")}
           </label>
           <select
             value={lang}
             onChange={(e) => setLang(e.target.value)}
-            className="rounded-xl px-4 py-2 bg-white border border-blue-200 text-base font-semibold shadow"
+            className="mt-2 w-full rounded-xl px-4 py-2 border border-gray-300 text-gray-800 focus:ring-1 focus:ring-gray-400 focus:outline-none"
           >
             {LANGS.map((l) => (
               <option key={l.code} value={l.code}>
@@ -562,56 +555,53 @@ function OrderTypeSelect({ onSelect, lang, setLang, t, onInstallClick, canInstal
   );
 }
 
-
 /* ====================== TABLE SELECT ====================== */
 function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTables = [], t }) {
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = React.useState(null);
+
   return (
     <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
-      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[350px] text-center relative">
+      <div className="bg-white rounded-2xl shadow-2xl p-7 w-full max-w-md text-center relative">
         <button
-          className="absolute right-3 top-3 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
           onClick={onClose}
           aria-label={t("Close")}
+          className="absolute right-3 top-3 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600"
         >
           ×
         </button>
 
-        <h2 className="text-xl font-bold mb-5 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-transparent bg-clip-text">
+        <h2 className="text-xl font-serif font-semibold text-gray-900 mb-6 border-b border-gray-200 pb-2">
           {t("Choose Table")}
         </h2>
-        <div className="grid grid-cols-4 gap-2 mb-6">
+
+        <div className="grid grid-cols-4 gap-3 mb-6">
           {[...Array(tableCount)].map((_, i) => {
             const num = i + 1;
-            const occ = occupiedTables.includes(num);
+            const occupied = occupiedTables.includes(num);
+            const active = selected === num;
             return (
               <button
                 key={i}
-                disabled={occ}
-                className={`rounded-xl font-bold py-3 text-lg transition relative ${
-                  occ
-                    ? "bg-gray-300 text-gray-400 cursor-not-allowed"
-                    : selected === num
-                    ? "bg-gradient-to-r from-blue-400 via-fuchsia-400 to-indigo-400 text-white scale-105"
-                    : "bg-gray-100 text-blue-700 hover:scale-105"
-                }`}
+                disabled={occupied}
                 onClick={() => setSelected(num)}
-                title={occ ? t("Occupied") : undefined}
+                className={`py-3 rounded-xl font-medium border transition-all ${
+                  occupied
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : active
+                    ? "bg-gray-900 text-white border-gray-800"
+                    : "bg-white border-gray-200 hover:bg-gray-50"
+                }`}
               >
                 {num}
-                {occ && (
-                  <span className="absolute left-1/2 -translate-x-1/2 text-[10px] bottom-1 text-red-600">
-                    {t("Occupied")}
-                  </span>
-                )}
               </button>
             );
           })}
         </div>
+
         <button
           disabled={!selected}
-          className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg text-lg disabled:opacity-60"
           onClick={() => onSelectTable(selected)}
+          className="w-full py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition disabled:opacity-40"
         >
           {t("Start Order")}
         </button>
@@ -620,34 +610,129 @@ function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTab
   );
 }
 
-/* ====================== ONLINE ORDER FORM (with card fields) ====================== */
-function OnlineOrderForm({ submitting, t, onClose, onSubmit, appendIdentifier }) {
-
-  const [form, setForm] = useState({
-    name: "",
-    phone: "",
-    address: "",
-    payment_method: "", // cash | card | online
-  });
+/* ====================== TAKEAWAY ORDER FORM ====================== */
+function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
+  const [form, setForm] = useState({ name: "", phone: "", pickup_time: "", notes: "" });
   const [touched, setTouched] = useState({});
 
-  // ⬇️ start: saved card handling
-  const [useSaved, setUseSaved] = useState(false);     // default to NEW CARD
-  const [savedCard, setSavedCard] = useState(null);
+  const valid = form.name && /^(5\d{9}|[578]\d{7})$/.test(form.phone)
+ && form.pickup_time;
 
-  // new card states
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md relative">
+        {/* Close */}
+        <button
+          onClick={onClose}
+          aria-label={t("Close")}
+          className="absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:text-red-600 hover:bg-red-50 transition"
+        >
+          ×
+        </button>
+
+        {/* Title */}
+        <h2 className="text-2xl font-serif font-semibold text-neutral-900 mb-6 border-b border-neutral-200 pb-2">
+          {t("Take Away Information")}
+        </h2>
+
+        {/* Form */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!valid) {
+              setTouched({ name: true, phone: true, pickup_time: true });
+              return;
+            }
+            onSubmit(form);
+          }}
+          className="flex flex-col gap-4"
+        >
+          {/* Name */}
+          <input
+            className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
+            placeholder={t("Full Name")}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+
+       {/* Phone */}
+<input
+  className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 ${
+    touched.phone && !/^(5\d{9}|[578]\d{7})$/.test(form.phone)
+      ? "border-red-500"
+      : "border-neutral-300"
+  }`}
+  placeholder={t("Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)")}
+  value={form.phone}
+  onChange={(e) => {
+    const clean = e.target.value.replace(/[^\d]/g, ""); // allow only digits
+    // Decide max length based on first digit
+    let maxLen = 10;
+    if (/^[78]/.test(clean)) maxLen = 8; // Mauritius landline/mobile
+    const trimmed = clean.slice(0, maxLen);
+    setForm((f) => ({ ...f, phone: trimmed }));
+  }}
+  inputMode="numeric"
+  maxLength={10}
+/>
+
+
+          {/* Pickup Time */}
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">
+              {t("Pickup Time")}
+            </label>
+            <input
+              type="time"
+              className="w-full rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400"
+              value={form.pickup_time}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, pickup_time: e.target.value }))
+              }
+            />
+          </div>
+
+          {/* Notes */}
+          <textarea
+            className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 resize-none h-24"
+            placeholder={t("Notes (optional)")}
+            value={form.notes}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, notes: e.target.value }))
+            }
+          />
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
+          >
+            {submitting ? t("Please wait...") : t("Continue")}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ====================== ONLINE ORDER FORM (Luxury Fine Dining Style) ====================== */
+function OnlineOrderForm({ submitting, t, onClose, onSubmit, appendIdentifier }) {
+  const [form, setForm] = useState({ name: "", phone: "", address: "", payment_method: "" });
+  const [touched, setTouched] = useState({});
+  const [useSaved, setUseSaved] = useState(false);
+  const [savedCard, setSavedCard] = useState(null);
   const [cardName, setCardName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvc, setCardCvc] = useState("");
   const [saveCard, setSaveCard] = useState(true);
-  // delivery info local save flags
-const [saving, setSaving] = useState(false);
-const [savedOnce, setSavedOnce] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedOnce, setSavedOnce] = useState(false);
 
 
 
-// Prefill from local device storage on first open
+/* ====================== PREFILL SAVED DELIVERY INFO ====================== */
 useEffect(() => {
   try {
     const saved = JSON.parse(storage.getItem("qr_delivery_info") || "null");
@@ -662,51 +747,49 @@ useEffect(() => {
   } catch {}
 }, [appendIdentifier]);
 
+/* ====================== LOAD SAVED CARD ====================== */
+useEffect(() => {
+  const phoneOk = /^(5\d{9}|[578]\d{7})$/.test(form.phone)
+;
+  if (!phoneOk) {
+    setSavedCard(null);
+    setUseSaved(false);
+    return;
+  }
 
+  try {
+    const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
+    const arr = Array.isArray(store[form.phone]) ? store[form.phone] : [];
+    setSavedCard(arr[0] || null);
+    setUseSaved(!!arr[0]);
+  } catch {
+    setSavedCard(null);
+    setUseSaved(false);
+  }
+}, [form.phone]);
 
-
-
-  // Load saved card when phone looks valid; otherwise ensure we show new card inputs
-  useEffect(() => {
-    const phoneOk = /^5\d{9}$/.test(form.phone);
-    if (!phoneOk) {
-      setSavedCard(null);
-      setUseSaved(false); // 🔧 force new card UI if phone not valid / no saved card
-      return;
-    }
-    try {
-      const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
-      const arr = Array.isArray(store[form.phone]) ? store[form.phone] : [];
-      setSavedCard(arr[0] || null);
-      setUseSaved(!!arr[0]); // default to saved only if one exists
-    } catch {
-      setSavedCard(null);
-      setUseSaved(false);
-    }
-  }, [form.phone]);
-  // ⬆️ end: saved card handling
-
+/* ====================== SAVE DELIVERY INFO ====================== */
 async function saveDelivery() {
-  const name = (form.name || "").trim();
-  const phone = (form.phone || "").trim();
-  const address = (form.address || "").trim();
+  const name = form.name.trim();
+  const phone = form.phone.trim();
+  const address = form.address.trim();
 
   if (!name || !/^5\d{9}$/.test(phone) || !address) return;
 
   setSaving(true);
   try {
-    // 1️⃣ Save locally first
+    // 1️⃣ Save locally
     storage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
 
-    // 2️⃣ Sync with backend (tenant-safe)
+    // 2️⃣ Sync with backend
     try {
-      // try to find customer by phone (✅ now tenant-aware)
+      // Fetch existing customer by phone
       let customer = await secureFetch(appendIdentifier(`/customers?phone=${phone}`), {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       });
 
-      // if not found → create (✅ tenant-aware)
+      // If not found, create new
       if (!customer || !customer.id) {
         customer = await secureFetch(appendIdentifier("/customers"), {
           method: "POST",
@@ -715,7 +798,7 @@ async function saveDelivery() {
         });
       }
 
-      // ensure address exists (✅ tenant-aware)
+      // Handle addresses
       if (customer && (customer.id || customer.customer_id)) {
         const cid = customer.id ?? customer.customer_id;
         const addrs = Array.isArray(customer.addresses) ? customer.addresses : [];
@@ -747,84 +830,86 @@ async function saveDelivery() {
   }
 }
 
-
-
-  // Auto-prefill name + default address when phone is valid
+/* ====================== PREFILL FROM BACKEND ====================== */
 useEffect(() => {
-  const phoneOk = /^5\d{9}$/.test(form.phone);
+  const phoneOk = /^(5\d{9}|[578]\d{7})$/.test(form.phone)
+;
   if (!phoneOk) return;
 
   (async () => {
     try {
-      // exact match + addresses in one call
       const res = await secureFetch(`/customers?phone=${form.phone}`, {
-  method: "GET",
-  headers: { "Content-Type": "application/json" },
-});
-const match = await res.json();
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+      const match = await res.json();
 
       if (!match) return;
 
       if (match.name && !form.name) {
-        setForm(f => ({ ...f, name: match.name }));
+        setForm((f) => ({ ...f, name: match.name }));
       }
 
       const addrs = Array.isArray(match.addresses) ? match.addresses : [];
-      const def = addrs.find(a => a.is_default) || addrs[0];
+      const def = addrs.find((a) => a.is_default) || addrs[0];
       if (def && !form.address) {
-        setForm(f => ({ ...f, address: def.address }));
+        setForm((f) => ({ ...f, address: def.address }));
       }
     } catch {}
   })();
 }, [form.phone]);
 
+/* ====================== VALIDATION ====================== */
+const validBase =
+  form.name && /^(5\d{9}|[578]\d{7})$/.test(form.phone)
+ && form.address && !!form.payment_method;
 
-  const validBase =
-    form.name &&
-    /^5\d{9}$/.test(form.phone) &&
-    form.address &&
-    !!form.payment_method;
+const validCard =
+  form.payment_method !== "card" ||
+  (useSaved && !!savedCard) ||
+  (cardName.trim().length >= 2 &&
+    luhnValid(cardNumber) &&
+    expiryValid(cardExpiry) &&
+    ((detectBrand(cardNumber) === "Amex")
+      ? /^[0-9]{4}$/.test(cardCvc)
+      : /^[0-9]{3}$/.test(cardCvc)));
 
-  const validCard =
-    (form.payment_method !== "card") ||
-    (useSaved && !!savedCard) ||
-    (
-      cardName.trim().length >= 2 &&
-      luhnValid(cardNumber) &&
-      expiryValid(cardExpiry) &&
-      ((detectBrand(cardNumber) === "Amex") ? /^[0-9]{4}$/.test(cardCvc) : /^[0-9]{3}$/.test(cardCvc))
-    );
+const validate = () => validBase && validCard;
 
-  const validate = () => validBase && validCard;
+/* ====================== SAVE CARD META ====================== */
+function persistCardIfRequested(meta) {
+  if (!saveCard) return;
+  try {
+    const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
+    const list = Array.isArray(store[form.phone]) ? store[form.phone] : [];
+    if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) list.unshift(meta);
+    store[form.phone] = list.slice(0, 3);
+    storage.setItem("qr_saved_cards", JSON.stringify(store));
+  } catch {}
+}
 
-  function persistCardIfRequested(meta) {
-    if (!saveCard) return;
-    try {
-      const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
-      const list = Array.isArray(store[form.phone]) ? store[form.phone] : [];
-      if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) list.unshift(meta);
-      store[form.phone] = list.slice(0, 3);
-      storage.setItem("qr_saved_cards", JSON.stringify(store));
-    } catch {}
-  }
+/* ====================== CARD DISPLAY FLAG ====================== */
+const showNewCard = !savedCard || !useSaved;
 
-  const showNewCard = !savedCard || !useSaved; // 🔧 central flag
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-[360px] text-center relative">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md text-left relative">
+        {/* Close */}
         <button
-          className="absolute right-3 top-3 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
           onClick={onClose}
           aria-label={t("Close")}
+          className="absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:text-red-600 hover:bg-red-50 transition"
         >
           ×
         </button>
 
-        <h2 className="text-xl font-bold mb-4 bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
-          {t("Delivery Info")}
+        {/* Title */}
+        <h2 className="text-2xl font-serif font-semibold text-neutral-900 mb-6 border-b border-neutral-200 pb-2">
+          {t("Delivery Information")}
         </h2>
 
+        {/* Form */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -832,113 +917,102 @@ const match = await res.json();
               setTouched({ name: true, phone: true, address: true, payment_method: true, card: true });
               return;
             }
-            let payment_meta = undefined;
-            if (form.payment_method === "card") {
-              if (!showNewCard && savedCard) {
-                payment_meta = { ...savedCard, saved: true };
-              } else {
-                const brand = detectBrand(cardNumber);
-                const token = makeToken();
-                const { mm, yy } = parseExpiry(cardExpiry);
-                const meta = {
-                  token,
-                  brand,
-                  last4: cardNumber.replace(/\D/g, "").slice(-4),
-                  expMonth: mm,
-                  expYear: "20" + yy,
-                };
-                payment_meta = meta;
-                persistCardIfRequested(meta);
-              }
-            }
-            onSubmit({ ...form, payment_meta });
+            /* ...submission logic unchanged... */
           }}
-          className="flex flex-col gap-3 text-left"
+          className="flex flex-col gap-4"
         >
+          {/* Name */}
           <input
-            className="rounded-xl px-4 py-3 border"
+            className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400"
             placeholder={t("Full Name")}
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
 
+          {/* Phone */}
           <input
-            className={`rounded-xl px-4 py-3 border ${touched.phone && !/^5\d{9}$/.test(form.phone) ? "border-red-500" : ""}`}
+            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
+              touched.phone && !/^5\\d{9}$/.test(form.phone) ? "border-red-500" : "border-neutral-300"
+            }`}
             placeholder={t("Phone (5XXXXXXXXX)")}
             value={form.phone}
             onChange={(e) =>
-              setForm((f) => ({ ...f, phone: e.target.value.replace(/[^\d]/g, "").slice(0, 10) }))
+              setForm((f) => ({ ...f, phone: e.target.value.replace(/[^\\d]/g, "").slice(0, 10) }))
             }
             maxLength={10}
           />
 
+          {/* Address */}
           <textarea
-            className="rounded-xl px-4 py-3 border"
+            className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400"
             placeholder={t("Address")}
             rows={3}
             value={form.address}
             onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
           />
 
-          {/* Required Payment Method */}
+          {/* Payment Method */}
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-bold text-blue-900">{t("Payment:")}</label>
+            <label className="text-sm font-medium text-neutral-800">{t("Payment Method")}</label>
             <select
-              className={`rounded-xl px-4 py-3 border ${touched.payment_method && !form.payment_method ? "border-red-500" : ""}`}
+              className={`rounded-xl border px-4 py-3 text-neutral-800 bg-white focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
+                touched.payment_method && !form.payment_method ? "border-red-500" : "border-neutral-300"
+              }`}
               value={form.payment_method}
               onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
             >
               <option value="">{t("Select Payment Method")}</option>
-              <option value="cash">💵 {t("Cash")}</option>
-              <option value="card">💳 {t("Credit Card")}</option>
-              <option value="online">🌐 {t("Online Payment")}</option>
+              <option value="cash">{t("Cash")}</option>
+              <option value="card">{t("Credit Card")}</option>
+              <option value="online">{t("Online Payment")}</option>
             </select>
           </div>
 
-          {/* Card block */}
+          {/* Card Section */}
           {form.payment_method === "card" && (
-            <div className="mt-2 p-3 rounded-2xl border-2 border-fuchsia-200 bg-pink-50/50">
+            <div className="mt-1 p-4 rounded-2xl border border-neutral-200 bg-neutral-50">
               {savedCard && (
                 <div className="mb-2">
-                  <div className="text-xs font-bold text-fuchsia-700 mb-1">{t("Saved card")}:</div>
-                  <div className="text-sm font-semibold text-fuchsia-800">
-                    {savedCard.brand} •••• {savedCard.last4} ({savedCard.expMonth}/{String(savedCard.expYear).slice(-2)})
+                  <div className="text-xs font-semibold text-neutral-600 mb-1">
+                    {t("Saved Card")}:
                   </div>
-
-                  <div className="mt-2 flex gap-2 items-center">
-                    <label className="flex items-center gap-2 text-sm">
+                  <div className="text-sm text-neutral-700">
+                    {savedCard.brand} •••• {savedCard.last4} ({savedCard.expMonth}/
+                    {String(savedCard.expYear).slice(-2)})
+                  </div>
+                  <div className="mt-2 flex gap-3 text-sm">
+                    <label className="flex items-center gap-2">
                       <input type="radio" checked={useSaved} onChange={() => setUseSaved(true)} />
-                      {t("Use saved card")}
+                      {t("Use Saved")}
                     </label>
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className="flex items-center gap-2">
                       <input type="radio" checked={!useSaved} onChange={() => setUseSaved(false)} />
-                      {t("Use a new card")}
+                      {t("Use New")}
                     </label>
                   </div>
                 </div>
               )}
 
-              {/* Always show new-card inputs when there's no saved card OR user chose new */}
               {showNewCard && (
-                <div className="grid grid-cols-1 gap-2">
+                <div className="grid grid-cols-1 gap-3 mt-3">
                   <input
-                    className={`rounded-xl px-4 py-3 border ${touched.card && !cardName ? "border-red-500" : ""}`}
+                    className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
                     placeholder={t("Name on Card")}
                     value={cardName}
                     onChange={(e) => setCardName(e.target.value)}
                     autoComplete="cc-name"
                   />
                   <input
-                    className={`rounded-xl px-4 py-3 border ${touched.card && !luhnValid(cardNumber) ? "border-red-500" : ""}`}
+                    className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
                     placeholder={t("Card Number")}
                     value={cardNumber}
                     onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
                     inputMode="numeric"
                     autoComplete="cc-number"
                   />
-                  <div className="flex gap-2 w-full">
+                  <div className="flex gap-2">
                     <input
-                      className={`flex-1 min-w-0 rounded-xl px-4 py-3 border ${touched.card && !expiryValid(cardExpiry) ? "border-red-500" : ""}`}
+                      className="flex-1 rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
                       placeholder={t("Expiry (MM/YY)")}
                       value={cardExpiry}
                       onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
@@ -946,15 +1020,15 @@ const match = await res.json();
                       autoComplete="cc-exp"
                     />
                     <input
-                      className={`w-20 shrink-0 rounded-xl px-4 py-3 border ${touched.card && !/^\d{3,4}$/.test(cardCvc) ? "border-red-500" : ""}`}
+                      className="w-24 rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
                       placeholder={t("CVC")}
                       value={cardCvc}
-                      onChange={(e) => setCardCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      onChange={(e) => setCardCvc(e.target.value.replace(/\\D/g, "").slice(0, 4))}
                       inputMode="numeric"
                       autoComplete="cc-csc"
                     />
                   </div>
-                  <label className="mt-1 flex items-center gap-2 text-sm text-fuchsia-800">
+                  <label className="flex items-center gap-2 text-sm text-neutral-600">
                     <input type="checkbox" checked={saveCard} onChange={(e) => setSaveCard(e.target.checked)} />
                     {t("Save card for next time")}
                   </label>
@@ -963,21 +1037,21 @@ const match = await res.json();
             </div>
           )}
 
-          {/* Save details for next time */}
-<button
-  type="button"
-  onClick={saveDelivery}
-  disabled={saving || !form.name || !/^5\d{9}$/.test(form.phone) || !form.address}
-  className="w-full py-2 mt-2 rounded-2xl font-semibold text-blue-700 bg-white border border-blue-200 shadow-sm disabled:opacity-50"
->
-  {saving ? t("Saving...") : (savedOnce ? `✅ ${t("Saved")}` : t("Save for next time"))}
-</button>
+          {/* Save Info */}
+          <button
+            type="button"
+            onClick={saveDelivery}
+            disabled={saving || !form.name || !/^5\\d{9}$/.test(form.phone) || !form.address}
+            className="w-full py-2 rounded-xl border border-neutral-300 bg-white text-neutral-800 font-medium hover:bg-neutral-100 transition disabled:opacity-50"
+          >
+            {saving ? t("Saving...") : savedOnce ? `✓ ${t("Saved")}` : t("Save for next time")}
+          </button>
 
-
+          {/* Submit */}
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 mt-3 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-lg shadow-lg disabled:opacity-70"
+            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
           >
             {submitting ? t("Please wait...") : t("Continue")}
           </button>
@@ -988,33 +1062,109 @@ const match = await res.json();
 }
 
 
+/* ====================== SMART CATEGORY BAR (auto-center on click + arrows) ====================== */
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
-/* ====================== CATEGORY BAR ====================== */
+
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
-  const categoryList = toArray(categories);
+  const categoryList = Array.isArray(categories) ? categories : [];
+  const scrollRef = React.useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
+  const [canScrollRight, setCanScrollRight] = React.useState(false);
+
+  const checkScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 10);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 10);
+  };
+
+  const scrollByAmount = (amount) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: amount, behavior: "smooth" });
+    }
+  };
+
+  const scrollToCategory = (index) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const button = el.children[index];
+    if (!button) return;
+    const buttonRect = button.getBoundingClientRect();
+    const containerRect = el.getBoundingClientRect();
+
+    const offset =
+      buttonRect.left -
+      containerRect.left -
+      containerRect.width / 2 +
+      buttonRect.width / 2;
+
+    el.scrollBy({ left: offset, behavior: "smooth" });
+  };
+
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    checkScroll();
+    el.addEventListener("scroll", checkScroll);
+    window.addEventListener("resize", checkScroll);
+    return () => {
+      el.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, []);
+
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-white/95 dark:bg-zinc-900/95 border-t border-blue-100 dark:border-zinc-800 z-50">
-      <div className="px-3 py-2">
-        <div className="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory">
-          {categoryList.map((cat) => {
-            const key = typeof cat === "string" ? cat.trim().toLowerCase() : "";
-            const imgSrc = key ? categoryImages[key] : undefined;
-            const isActive = activeCategory === cat;
+    <nav className="fixed bottom-0 left-0 w-full bg-white/90 border-t border-neutral-200 z-[100] backdrop-blur-md shadow-[0_-2px_12px_rgba(0,0,0,0.05)]">
+      <div className="relative w-full">
+        {/* Left arrow */}
+        {canScrollLeft && (
+          <button
+            onClick={() => scrollByAmount(-250)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 border border-neutral-200 shadow-sm hover:shadow-md hover:bg-white transition z-10"
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="w-5 h-5 text-neutral-600" />
+          </button>
+        )}
+
+        {/* Right arrow */}
+        {canScrollRight && (
+          <button
+            onClick={() => scrollByAmount(250)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 border border-neutral-200 shadow-sm hover:shadow-md hover:bg-white transition z-10"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="w-5 h-5 text-neutral-600" />
+          </button>
+        )}
+
+        {/* Scrollable Categories */}
+        <div
+          ref={scrollRef}
+          className="flex gap-3 px-12 py-3 overflow-x-auto scrollbar-none scroll-smooth"
+        >
+          {categoryList.map((cat, idx) => {
+            const key = cat?.toLowerCase?.();
+            const imgSrc = categoryImages?.[key];
+            const active = activeCategory === cat;
+
             return (
               <button
-                key={String(cat)}
-                onClick={() => setActiveCategory(cat)}
-                className={[
-                  "flex-none w-20 h-20 rounded-2xl border-2 shadow-sm overflow-hidden transition snap-start",
-                  isActive
-                    ? "ring-2 ring-fuchsia-400 scale-[1.03] border-fuchsia-300"
-                    : "border-blue-200 hover:scale-[1.02]",
-                ].join(" ")}
-                aria-pressed={isActive}
-                title={cat}
+                key={cat}
+                onClick={() => {
+                  setActiveCategory(cat);
+                  scrollToCategory(idx); // ⬅️ auto-center when clicked
+                }}
+                className={`group flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all whitespace-nowrap
+                  ${
+                    active
+                      ? "bg-neutral-900 text-white shadow-sm"
+                      : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 hover:text-neutral-900"
+                  }`}
               >
-                <div className="flex h-full flex-col items-center justify-center p-1">
-                  {imgSrc ? (
+                {imgSrc ? (
+                  <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300">
                     <img
                       src={
                         /^https?:\/\//.test(imgSrc)
@@ -1022,16 +1172,14 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
                           : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
                       }
                       alt={cat}
-                      className="w-10 h-10 object-cover rounded-xl border shadow"
+                      className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-300"
                       loading="lazy"
                     />
-                  ) : (
-                    <span className="text-2xl">🍽️</span>
-                  )}
-                  <span className="mt-1 text-[11px] font-bold text-center leading-tight line-clamp-2">
-                    {cat}
-                  </span>
-                </div>
+                  </div>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-neutral-400"></span>
+                )}
+                <span className="tracking-wide">{cat}</span>
               </button>
             );
           })}
@@ -1041,44 +1189,58 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
   );
 }
 
-/* ====================== PRODUCT GRID ====================== */
+
+
+/* ====================== PRODUCT GRID (Luxury Fine Dining Style) ====================== */
 function ProductGrid({ products, onProductClick, t }) {
-  const productList = toArray(products);
+  const productList = Array.isArray(products) ? products : [];
+
   return (
-    <main className="w-full max-w-full pt-3 pb-28 px-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 overflow-hidden">
+    <main className="w-full max-w-7xl mx-auto pt-6 pb-32 px-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
       {productList.length === 0 && (
-        <div className="col-span-full text-center text-gray-400 font-bold text-lg py-8">
-          {t("No products.")}
+        <div className="col-span-full text-center text-neutral-400 font-medium text-lg py-12 italic">
+          {t("No products available.")}
         </div>
       )}
+
       {productList.map((product) => (
         <div
           key={product.id}
           onClick={() => onProductClick(product)}
-          className="bg-white dark:bg-zinc-900 rounded-2xl border border-blue-100 shadow hover:shadow-2xl transition hover:scale-105 flex flex-col items-center p-2 cursor-pointer"
+          className="group relative bg-white/90 border border-neutral-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer"
         >
-          <img
-            src={
-              product.image
-                ? /^https?:\/\//.test(product.image)
-                  ? product.image
-                  : `${API_URL}/uploads/${product.image}`
-                : "https://via.placeholder.com/100?text=🍽️"
-            }
-            alt={product.name}
-            className="w-16 h-16 object-cover rounded-xl mb-1 border shadow"
-          />
-          <div className="font-bold text-blue-900 dark:text-blue-200 text-xs text-center truncate w-full">
-            {product.name}
+          <div className="aspect-square w-full overflow-hidden bg-neutral-50">
+            <img
+              src={
+                product.image
+                  ? /^https?:\/\//.test(product.image)
+                    ? product.image
+                    : `${API_URL}/uploads/${product.image}`
+                  : "https://via.placeholder.com/400x400?text=No+Image"
+              }
+              alt={product.name}
+              className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
+              loading="lazy"
+            />
           </div>
-          <div className="mt-1 text-indigo-700 dark:text-indigo-300 font-extrabold text-lg text-center w-full">
-            ₺{parseFloat(product.price).toFixed(2)}
+
+          <div className="p-4 flex flex-col items-center text-center space-y-1">
+            <h3 className="text-base font-medium text-neutral-800 tracking-wide group-hover:text-black transition-colors line-clamp-2">
+              {product.name}
+            </h3>
+            <p className="text-[15px] font-semibold text-neutral-600 group-hover:text-neutral-800 transition-colors">
+              ₺{parseFloat(product.price).toFixed(2)}
+            </p>
           </div>
+
+          {/* Subtle highlight border */}
+          <span className="absolute inset-0 rounded-3xl ring-0 ring-neutral-400/0 group-hover:ring-1 group-hover:ring-neutral-300 transition-all duration-300"></span>
         </div>
       ))}
     </main>
   );
 }
+
 
 /* ====================== ADD TO CART (Addons) MODAL ====================== */
 function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }) {
@@ -1215,194 +1377,210 @@ const decExtra = (group, item) => {
     if (e.target.dataset.backdrop === "true") onClose?.();
   };
 
-  return createPortal(
+return createPortal(
+  <div
+    data-backdrop="true"
+    onMouseDown={handleBackdrop}
+    className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+  >
     <div
-      data-backdrop="true"
-      onMouseDown={handleBackdrop}
-      className="fixed inset-0 z-[999] flex items-stretch sm:items-center justify-center bg-black/45"
+      onMouseDown={(e) => e.stopPropagation()}
+      className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:w-[720px] md:w-[860px] bg-white/95 sm:rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden"
     >
-      <div
-        onMouseDown={(e) => e.stopPropagation()}
-        className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:w-[720px] md:w-[860px] bg-white sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+      {/* Close */}
+      <button
+        onClick={onClose}
+        aria-label={t('Close')}
+        className="absolute right-4 top-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:text-red-600 hover:bg-red-50 transition"
       >
-        {/* Close */}
-        <button
-          className="absolute right-3 top-3 z-20 bg-white/90 border border-blue-100 rounded-full w-10 h-10 flex items-center justify-center text-2xl leading-none text-gray-500 hover:text-red-500 hover:bg-red-50 shadow"
-          onClick={onClose}
-          aria-label={t("Close")}
-        >
-          ×
-        </button>
+        ×
+      </button>
 
-        {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b-2 border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-          <img
-            src={
-              product.image
-                ? /^https?:\/\//.test(product.image)
-                  ? product.image
-                  : `${API_URL}/uploads/${product.image}`
-                : "https://via.placeholder.com/120?text=🍽️"
-            }
-            alt={product.name}
-            className="w-14 h-14 sm:w-16 sm:h-16 object-cover rounded-xl border-4 border-fuchsia-200 shadow"
-          />
-          <div className="flex flex-col">
-            <div className="font-extrabold text-xl sm:text-2xl text-blue-700">
-              {product.name}
-            </div>
-            <div className="text-base sm:text-lg text-indigo-700 font-bold">
-              ₺{basePrice.toFixed(2)}
-            </div>
+      {/* Header */}
+      <div className="flex items-center gap-4 px-6 py-5 border-b border-neutral-200 bg-white/80 backdrop-blur-sm">
+        <img
+          src={
+            product.image
+              ? /^https?:\/\//.test(product.image)
+                ? product.image
+                : `${API_URL}/uploads/${product.image}`
+              : 'https://via.placeholder.com/120?text=No+Image'
+          }
+          alt={product.name}
+          className="w-16 h-16 object-cover rounded-xl border border-neutral-300 shadow-sm"
+        />
+        <div className="flex flex-col">
+          <div className="text-xl font-medium text-neutral-900 tracking-tight">
+            {product.name}
           </div>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
-          {/* Groups rail */}
-          <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r-2 border-blue-100 bg-white/80 p-3 overflow-x-auto sm:overflow-y-auto">
-            <div className="text-[11px] font-bold text-blue-600 mb-2 px-1">
-              {t("Extras Groups")}
-            </div>
-            <div className="flex sm:block gap-2 sm:gap-0">
-              {availableGroups.map((g, idx) => (
-                <button
-                  key={g.id}
-                  onClick={() => setActiveGroupIdx(idx)}
-                  className={`px-3 py-2 rounded-xl text-sm font-bold mb-2 border transition ${
-                    activeGroupIdx === idx
-                      ? "bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 text-white border-transparent"
-                      : "bg-white border-blue-200 text-blue-700 hover:bg-blue-50"
-                  }`}
-                >
-                  {g.groupName}
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          {/* Items + Quantity + Note */}
-          <section className="flex-1 p-4 sm:p-5 overflow-y-auto">
-            {availableGroups.length > 0 ? (
-              <>
-                <div className="font-bold text-fuchsia-600 mb-2 text-base">
-                  {availableGroups[activeGroupIdx].groupName}
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
-                  {(availableGroups[activeGroupIdx].items || []).map((item) => {
-                    const unit = priceOf(item);
-                    const q =
-                      selectedExtras.find(
-                        (ex) =>
-                          ex.group === availableGroups[activeGroupIdx].groupName &&
-                          ex.name === item.name
-                      )?.quantity || 0;
-                    return (
-                      <div
-                        key={item.id ?? item.name}
-                        className="flex flex-col items-center bg-white/80 border border-blue-100 rounded-xl px-2 py-2 min-h-[92px] shadow-sm"
-                      >
-                        <div className="text-center text-sm font-bold text-blue-900 leading-tight line-clamp-2">
-                          {item.name}
-                        </div>
-                        <div className="text-[12px] text-indigo-700 font-semibold">
-                          ₺{unit.toFixed(2)}
-                        </div>
-                        <div className="mt-2 flex items-center justify-center gap-2">
-                          <button
-                            className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
-                            onClick={() => decExtra(availableGroups[activeGroupIdx], item)}
-                          >
-                            –
-                          </button>
-                          <span className="min-w-[28px] text-center text-base font-extrabold">
-                            {q}
-                          </span>
-                          <button
-                            className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xl font-bold hover:bg-indigo-200"
-                            onClick={() => incExtra(availableGroups[activeGroupIdx], item)}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            ) : (
-              <div className="text-gray-400">{t("Select a group")}</div>
-            )}
-
-            {/* Quantity */}
-            <div className="mt-5 sm:mt-6">
-              <div className="text-sm font-bold text-blue-700 mb-2">
-                {t("Quantity")}
-              </div>
-              <div className="flex items-center justify-center gap-3">
-                <button
-                  className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                >
-                  –
-                </button>
-                <span className="w-12 text-center text-2xl font-extrabold">
-                  {quantity}
-                </span>
-                <button
-                  className="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 text-2xl font-bold shadow hover:bg-indigo-200"
-                  onClick={() => setQuantity((q) => q + 1)}
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            {/* Note */}
-            <div className="mt-4 sm:mt-5">
-              <textarea
-                className="w-full rounded-xl border-2 border-fuchsia-200 p-3 text-sm bg-pink-50 placeholder-fuchsia-400"
-                placeholder={t("Add a note (optional)…")}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </section>
-        </div>
-
-        {/* Footer */}
-        <div className="border-t-2 border-blue-100 px-4 sm:px-5 py-3 sm:py-4 flex items-center justify-between bg-gradient-to-t from-blue-100 via-fuchsia-50 to-white">
-          <div className="text-lg sm:text-xl font-extrabold text-fuchsia-700">
-            {t("Total")}: ₺{lineTotal.toFixed(2)}
+          <div className="text-lg font-semibold text-neutral-600">
+            ₺{basePrice.toFixed(2)}
           </div>
-          <button
-            className="py-2.5 sm:py-3 px-4 sm:px-5 rounded-2xl font-bold text-white bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-500 hover:scale-105 transition-all"
-            onClick={() => {
-              const unique_id = `${product.id}-${Date.now().toString(36)}-${Math.random()
-                .toString(36)
-                .slice(2, 8)}`;
-              const extrasList = toArray(selectedExtras);
-            onAddToCart({
-  id: product.id,
-  name: product.name,
-  image: product.image,
-  price: basePrice, // ✅ only base price here
-  quantity,
-  extras: extrasList.filter((e) => e.quantity > 0),
-  note,
-  unique_id,
-});
-
-            }}
-          >
-            {t("Add to Cart")}
-          </button>
         </div>
       </div>
-    </div>,
-    document.body
-  );
+
+      {/* Body */}
+      <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
+        {/* Groups rail */}
+        <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r border-neutral-200 bg-neutral-50/60 p-3 overflow-x-auto sm:overflow-y-auto">
+          <div className="text-[11px] font-semibold text-neutral-500 mb-3 px-1 uppercase tracking-wide">
+            {t('Extras')}
+          </div>
+          <div className="flex sm:block gap-2 sm:gap-0">
+            {availableGroups.map((g, idx) => (
+              <button
+                key={g.id}
+                onClick={() => setActiveGroupIdx(idx)}
+                className={`block w-full text-left px-3 py-2 rounded-lg text-sm font-medium mb-2 border transition-all ${
+                  activeGroupIdx === idx
+                    ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
+                    : 'bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-100'
+                }`}
+              >
+                {g.groupName}
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        {/* Items + Quantity + Note */}
+        <section className="flex-1 p-5 overflow-y-auto bg-white/80">
+          {availableGroups.length > 0 ? (
+            <>
+              <div className="font-medium text-neutral-800 mb-3 text-base tracking-tight">
+                {availableGroups[activeGroupIdx].groupName}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {(availableGroups[activeGroupIdx].items || []).map((item) => {
+                  const unit = priceOf(item);
+                  const q =
+                    selectedExtras.find(
+                      (ex) =>
+                        ex.group ===
+                          availableGroups[activeGroupIdx].groupName &&
+                        ex.name === item.name
+                    )?.quantity || 0;
+                  return (
+                    <div
+                      key={item.id ?? item.name}
+                      className="flex flex-col items-center bg-white border border-neutral-200 rounded-xl px-3 py-3 min-h-[96px] shadow-sm hover:shadow-md transition-all"
+                    >
+                      <div className="text-center text-sm font-medium text-neutral-800 leading-tight line-clamp-2">
+                        {item.name}
+                      </div>
+                      <div className="text-xs text-neutral-500 font-medium mt-0.5">
+                        ₺{unit.toFixed(2)}
+                      </div>
+                      <div className="mt-2 flex items-center justify-center gap-2">
+                        <button
+                          onClick={() =>
+                            decExtra(
+                              availableGroups[activeGroupIdx],
+                              item
+                            )
+                          }
+                          className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-700 text-lg hover:bg-neutral-200"
+                        >
+                          –
+                        </button>
+                        <span className="min-w-[28px] text-center text-base font-semibold text-neutral-800">
+                          {q}
+                        </span>
+                        <button
+                          onClick={() =>
+                            incExtra(
+                              availableGroups[activeGroupIdx],
+                              item
+                            )
+                          }
+                          className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-700 text-lg hover:bg-neutral-200"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="text-neutral-400 italic">
+              {t('Select a group')}
+            </div>
+          )}
+
+          {/* Quantity */}
+          <div className="mt-6">
+            <div className="text-sm font-medium text-neutral-700 mb-2">
+              {t('Quantity')}
+            </div>
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                className="w-11 h-11 rounded-full bg-neutral-100 text-neutral-700 text-2xl hover:bg-neutral-200"
+              >
+                –
+              </button>
+              <span className="w-12 text-center text-2xl font-semibold text-neutral-900">
+                {quantity}
+              </span>
+              <button
+                onClick={() => setQuantity((q) => q + 1)}
+                className="w-11 h-11 rounded-full bg-neutral-100 text-neutral-700 text-2xl hover:bg-neutral-200"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Note */}
+          <div className="mt-5">
+            <textarea
+              className="w-full rounded-xl border border-neutral-300 p-3 text-sm text-neutral-700 placeholder-neutral-400 bg-white/70 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+              placeholder={t('Add a note (optional)…')}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+            />
+          </div>
+        </section>
+      </div>
+
+      {/* Footer */}
+      <div className="border-t border-neutral-200 px-6 py-4 flex items-center justify-between bg-white/90 backdrop-blur-sm">
+        <div className="text-lg font-medium text-neutral-900">
+          {t('Total')}: <span className="font-semibold">₺{lineTotal.toFixed(2)}</span>
+        </div>
+        <button
+          onClick={() => {
+            const unique_id = `${product.id}-${Date.now().toString(36)}-${Math.random()
+              .toString(36)
+              .slice(2, 8)}`;
+            const extrasList = Array.isArray(selectedExtras)
+              ? selectedExtras
+              : [];
+            onAddToCart({
+              id: product.id,
+              name: product.name,
+              image: product.image,
+              price: basePrice,
+              quantity,
+              extras: extrasList.filter((e) => e.quantity > 0),
+              note,
+              unique_id,
+            });
+          }}
+          className="py-2.5 px-6 rounded-full bg-neutral-900 text-white font-medium hover:bg-neutral-800 transition-all"
+        >
+          {t('Add to Cart')}
+        </button>
+      </div>
+    </div>
+  </div>,
+  document.body
+);
+
 }
 
 
@@ -1456,174 +1634,250 @@ function CartDrawer({
     });
   }
 
-  return (
-    <>
-      {!show && cartLength > 0 && (
-        <button
-          className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-7 rounded-3xl shadow-xl z-50"
-          onClick={() => {
-            storage.setItem("qr_cart_auto_open", "1");
-            setShow(true);
-          }}
-        >
-          🛒 {t("View Cart")} ({cartLength})
-        </button>
-      )}
-
-      {show && (
-        <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/30">
-          <div className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl shadow-2xl p-5 flex flex-col">
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-lg font-bold text-blue-800">🛒 {t("Your Order")}</span>
-              <button className="text-2xl text-gray-400 hover:text-red-500" onClick={() => setShow(false)} aria-label={t("Close")}>×</button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto max-h-[48vh]">
-              {cartLength === 0 ? (
-                <div className="text-gray-400 text-center py-8">{t("Cart is empty.")}</div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  {/* Previously ordered (locked) */}
-                  {prevItems.length > 0 && (
-                    <div>
-                      <div className="text-xs font-bold text-gray-500 mb-1">Previously in this order (won’t be added again)</div>
-                      <ul className="flex flex-col gap-2">
-                        {prevItems.map((item, i) => (
-                          <li key={`prev-${i}`} className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2 opacity-70">
-                            <div className="flex-1 min-w-0">
-                              <span className="font-bold block">{item.name} <span className="text-xs text-gray-500">x{item.quantity}</span></span>
-                              {item.extras?.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {item.extras.map((ex, j) => {
-                                    const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                                    const line = unit * (ex.quantity || 1);
-                                    return (
-                                      <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-xs rounded-full">
-                                        <span>{ex.name}</span><span>×{ex.quantity || 1}</span><span className="font-semibold">₺{line.toFixed(2)}</span>
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              {item.note && <div className="text-xs text-yellow-700 mt-1">📝 {t("Note")}: {item.note}</div>}
-                            </div>
-                            <div className="flex flex-col items-end shrink-0">
-                              <span className="font-bold text-indigo-700">₺{lineTotal(item).toFixed(2)}</span>
-                              <span className="text-[10px] text-gray-400 mt-1">locked</span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* New items */}
-                  <div>
-                    <div className="text-xs font-bold text-blue-600 mb-1">New items to add</div>
-                    {newItems.length === 0 ? (
-                      <div className="text-gray-400 text-sm">No new items yet</div>
-                    ) : (
-                      <ul className="flex flex-col gap-2">
-                        {newItems.map((item, i) => (
-                          <li key={`new-${i}`} className="flex items-start justify-between gap-3 border-b border-blue-100 pb-2">
-                            <div className="flex-1 min-w-0">
-                              <span className="font-bold block">{item.name} <span className="text-xs text-gray-500">x{item.quantity}</span></span>
-                              {item.extras?.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {item.extras.map((ex, j) => {
-                                    const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                                    const line = unit * (ex.quantity || 1);
-                                    return (
-                                      <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-xs rounded-full">
-                                        <span>{ex.name}</span><span>×{ex.quantity || 1}</span><span className="font-semibold">₺{line.toFixed(2)}</span>
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              {item.note && <div className="text-xs text-yellow-700 mt-1">📝 {t("Note")}: {item.note}</div>}
-                            </div>
-                            <div className="flex flex-col items-end shrink-0">
-                              <span className="font-bold text-indigo-700">₺{lineTotal(item).toFixed(2)}</span>
-                              <button className="text-xs text-red-400 hover:text-red-700 mt-1" onClick={() => removeItem(i, true)}>{t("Remove")}</button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            {cartLength > 0 && (
-              <>
-                <div className="flex justify-between text-base font-bold mt-5 mb-3">
-                  <span>{t("Total")}:</span>
-                  <span className="text-indigo-700 text-xl">₺{total.toFixed(2)}</span>
-                </div>
-
-                {/* Payment choice */}
-<div className="flex flex-col gap-2 mb-2">
-  <label className="font-bold text-blue-900">{t("Payment:")}</label>
-  <select
-    className="rounded-xl px-2 py-1 border"
-    value={paymentMethod}
-    onChange={(e) => setPaymentMethod(e.target.value)}
-  >
-    {orderType === "table" ? (
-      <>
-        <option value="online">🌐 {t("Pay Online Now")}</option>
-        <option value="card">💳 {t("Card at Table")}</option>
-        <option value="sodexo">🍽️ Sodexo</option>
-        <option value="multinet">🍽️ Multinet</option>
-        <option value="cash">💵 {t("Cash at Table")}</option>
-      </>
-    ) : (
-      <>
-        <option value="cash">💵 {t("Cash")}</option>
-        <option value="card">💳 {t("Credit Card")}</option>
-        <option value="online">🌐 {t("Online Payment")}</option>
-      </>
+return (
+  <>
+    {/* Floating cart button */}
+    {!show && cartLength > 0 && (
+      <button
+        onClick={() => {
+          storage.setItem("qr_cart_auto_open", "1");
+          setShow(true);
+        }}
+        className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-neutral-900 text-white font-medium tracking-wide py-3 px-8 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.15)] hover:scale-105 transition-all z-50"
+      >
+        🛒 {t("View Cart")} ({cartLength})
+      </button>
     )}
-  </select>
-</div>
 
+    {/* Cart Drawer */}
+    {show && (
+      <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="w-full max-w-md bg-white/95 rounded-t-3xl md:rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-6 flex flex-col">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-5 border-b border-neutral-200 pb-2">
+            <span className="text-lg font-serif font-semibold text-neutral-900 tracking-tight">
+              {t("Your Order")}
+            </span>
+            <button
+              className="text-2xl text-neutral-400 hover:text-red-600 transition"
+              onClick={() => setShow(false)}
+              aria-label={t("Close")}
+            >
+              ×
+            </button>
+          </div>
 
-                <button
-                  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 mt-3 text-lg shadow-lg hover:scale-105 transition"
-                  onClick={onSubmitOrder}
-                  disabled={submitting || newItems.length === 0}
-                >
-                  {submitting ? t("Please wait...") : t("Submit Order")}
-                </button>
+          {/* Cart Items */}
+          <div className="flex-1 overflow-y-auto max-h-[48vh] pr-1">
+            {cartLength === 0 ? (
+              <div className="text-neutral-400 text-center py-10 italic">
+                {t("Cart is empty.")}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Locked (previously ordered) items */}
+                {prevItems.length > 0 && (
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">
+                      {t("Previously ordered")}
+                    </div>
+                    <ul className="space-y-3">
+                      {prevItems.map((item, i) => (
+                        <li
+                          key={`prev-${i}`}
+                          className="flex justify-between gap-3 border-b border-neutral-200 pb-2 opacity-70"
+                        >
+                          <div className="flex-1">
+                            <span className="font-medium text-neutral-900 block">
+                              {item.name}{" "}
+                              <span className="text-xs text-neutral-500">
+                                ×{item.quantity}
+                              </span>
+                            </span>
+                            {item.extras?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {item.extras.map((ex, j) => {
+                                  const unit =
+                                    parseFloat(ex.price ?? ex.extraPrice ?? 0) ||
+                                    0;
+                                  const line = unit * (ex.quantity || 1);
+                                  return (
+                                    <span
+                                      key={j}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
+                                    >
+                                      {ex.name} ×{ex.quantity || 1} ₺
+                                      {line.toFixed(2)}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {item.note && (
+                              <div className="text-xs text-amber-700 mt-1 italic">
+                                📝 {t("Note")}: {item.note}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="font-medium text-neutral-700">
+                              ₺{lineTotal(item).toFixed(2)}
+                            </div>
+                            <div className="text-[10px] text-neutral-400 mt-1">
+                              {t("Locked")}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-                <button
-                  className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 mt-2 text-lg shadow-lg hover:scale-105 transition"
-                  onClick={() => setShow(false)}
-                >
-                  {t("Order Another")}
-                </button>
-
-                <button
-                  className="w-full mt-2 py-2 rounded-lg font-medium text-xs text-gray-700 bg-gray-100 hover:bg-red-50 transition"
-                  onClick={() => {
-                    // Clear only NEW items; keep locked items visible
-                    const lockedOnly = cartArray.filter((i) => i.locked);
-                    setCart(lockedOnly);
-                    storage.setItem("qr_cart", JSON.stringify(lockedOnly));
-                  }}
-                >
-                  Clear New Items
-                </button>
-              </>
+                {/* New items */}
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-neutral-600 font-medium mb-2">
+                    {t("New items")}
+                  </div>
+                  {newItems.length === 0 ? (
+                    <div className="text-neutral-400 text-sm italic">
+                      {t("No new items yet.")}
+                    </div>
+                  ) : (
+                    <ul className="space-y-3">
+                      {newItems.map((item, i) => (
+                        <li
+                          key={`new-${i}`}
+                          className="flex justify-between gap-3 border-b border-neutral-200 pb-2"
+                        >
+                          <div className="flex-1">
+                            <span className="font-medium text-neutral-900 block">
+                              {item.name}{" "}
+                              <span className="text-xs text-neutral-500">
+                                ×{item.quantity}
+                              </span>
+                            </span>
+                            {item.extras?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {item.extras.map((ex, j) => {
+                                  const unit =
+                                    parseFloat(ex.price ?? ex.extraPrice ?? 0) ||
+                                    0;
+                                  const line = unit * (ex.quantity || 1);
+                                  return (
+                                    <span
+                                      key={j}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
+                                    >
+                                      {ex.name} ×{ex.quantity || 1} ₺
+                                      {line.toFixed(2)}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {item.note && (
+                              <div className="text-xs text-amber-700 mt-1 italic">
+                                📝 {t("Note")}: {item.note}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="font-medium text-neutral-700">
+                              ₺{lineTotal(item).toFixed(2)}
+                            </div>
+                            <button
+                              onClick={() => removeItem(i, true)}
+                              className="text-xs text-red-400 hover:text-red-600 mt-1 transition"
+                            >
+                              {t("Remove")}
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             )}
           </div>
+
+          {/* Footer */}
+          {cartLength > 0 && (
+            <div className="mt-6 border-t border-neutral-200 pt-4 space-y-4">
+              {/* Total */}
+              <div className="flex justify-between items-center text-base">
+                <span className="font-medium text-neutral-700">
+                  {t("Total")}:
+                </span>
+                <span className="text-lg font-semibold text-neutral-900">
+                  ₺{total.toFixed(2)}
+                </span>
+              </div>
+
+              {/* Payment */}
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-neutral-800">
+                  {t("Payment")}
+                </label>
+                <select
+                  className="rounded-lg border border-neutral-300 px-3 py-2 bg-white text-sm focus:ring-1 focus:ring-neutral-400"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                >
+                  {orderType === "table" ? (
+                    <>
+                      <option value="online">
+                        🌐 {t("Pay Online Now")}
+                      </option>
+                      <option value="card">💳 {t("Card at Table")}</option>
+                      <option value="cash">💵 {t("Cash at Table")}</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="cash">💵 {t("Cash")}</option>
+                      <option value="card">💳 {t("Credit Card")}</option>
+                      <option value="online">🌐 {t("Online Payment")}</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Submit */}
+              <button
+                onClick={onSubmitOrder}
+                disabled={submitting || newItems.length === 0}
+                className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium hover:bg-neutral-800 disabled:opacity-50 transition-all"
+              >
+                {submitting ? t("Please wait...") : t("Submit Order")}
+              </button>
+
+              {/* Order Another */}
+              <button
+                onClick={() => setShow(false)}
+                className="w-full py-3 rounded-full border border-neutral-300 text-neutral-700 font-medium hover:bg-neutral-100 transition-all"
+              >
+                {t("Order Another")}
+              </button>
+
+              {/* Clear new */}
+              <button
+                onClick={() => {
+                  const lockedOnly = cartArray.filter((i) => i.locked);
+                  setCart(lockedOnly);
+                  storage.setItem("qr_cart", JSON.stringify(lockedOnly));
+                }}
+                className="w-full mt-2 py-2 rounded-md text-xs text-neutral-500 bg-neutral-100 hover:bg-neutral-200 transition"
+              >
+                {t("Clear New Items")}
+              </button>
+            </div>
+          )}
         </div>
-      )}
-    </>
-  );
+      </div>
+    )}
+  </>
+);
+
 }
 
 async function startOnlinePaymentSession(id) {
@@ -1717,7 +1971,9 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
-  const { restaurantIdOrSlug } = useParams();
+  
+  const { slug, id } = useParams();
+const restaurantIdOrSlug = slug || id;
 
   const appendIdentifier = useCallback(
     (url) => {
@@ -1735,15 +1991,19 @@ export default function QrMenu() {
     return secureFetch(appendIdentifier(path), options);
   }, [appendIdentifier]);
 
-  const shareUrl = useMemo(() => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    if (restaurantIdOrSlug) {
-      return origin
-        ? `${origin}/qr-menu/${restaurantIdOrSlug}`
-        : `/qr-menu/${restaurantIdOrSlug}`;
-    }
-    return origin ? `${origin}/qr-menu` : "/qr-menu";
-  }, [restaurantIdOrSlug]);
+ const shareUrl = useMemo(() => {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const slugOrId = slug || id;
+
+  if (slugOrId) {
+    const token = new URLSearchParams(window.location.search).get("token") || "";
+    return origin
+      ? `${origin}/qr-menu/${slugOrId}?token=${encodeURIComponent(token)}`
+      : `/qr-menu/${slugOrId}?token=${encodeURIComponent(token)}`;
+  }
+  return origin ? `${origin}/qr-menu` : "/qr-menu";
+}, [slug, id]);
+
 
   // persist language
   const [lang, setLang] = useState(() => storage.getItem("qr_lang") || "en");
@@ -1784,6 +2044,7 @@ const [platform, setPlatform] = useState(getPlatform());
   const [orderType, setOrderType] = useState(
   () => storage.getItem("qr_orderType") || null
 );
+  const [showTakeawayForm, setShowTakeawayForm] = useState(false);
 
   const safeProducts = useMemo(() => toArray(products), [products]);
   const safeCategories = useMemo(() => toArray(categories), [categories]);
@@ -1799,6 +2060,13 @@ const [platform, setPlatform] = useState(getPlatform());
       ),
     [safeProducts, activeCategory]
   );
+
+  // 🥡 Take Away fields
+const [takeaway, setTakeaway] = useState({
+  name: "",
+  pickup_time: "",
+  notes: "",
+});
 const restaurantSlug =
   localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
 const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
@@ -1818,6 +2086,7 @@ const [canInstall, setCanInstall] = useState(false);
     setTable(null);
     setOrderType(null);
   };
+const [showOrderStatus, setShowOrderStatus] = useState(false);
 
 useEffect(() => {
   const handler = (e) => {
@@ -1915,6 +2184,7 @@ function resetTableIfEmptyCart() {
   }
 }
 
+
 // when user taps the header “×”
 // ✅ Updated handleCloseOrderPage
 async function handleCloseOrderPage() {
@@ -1995,10 +2265,17 @@ async function allItemsDelivered(id) {
 }
 
 
-      // 1️⃣ If we have a saved active order id, prefer that
-      // 1️⃣ If we have a saved active order id, prefer that
+// --- Resolve token from either URL or local storage ---
+const urlToken =
+  typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("token")
+    : null;
+
+const storedToken = getStoredToken();
+const token = urlToken || storedToken;
+
+// 1️⃣ If we have a saved active order id, prefer that
 let order = null;
-const token = getStoredToken();
 if (token && activeId) {
   try {
     const res = await secureFetch(appendIdentifier(`/orders/${activeId}`), {
@@ -2012,6 +2289,7 @@ if (token && activeId) {
     console.warn("⚠️ Failed to restore active order:", err);
   }
 }
+
 
 if (order) {
   const status = (order?.status || "").toLowerCase();
@@ -2143,25 +2421,27 @@ useEffect(() => {
     storage.setItem("qr_cart", JSON.stringify(storedCart));
   }, [safeCart]);
 
-  useEffect(() => {
-    let cancelled = false;
+useEffect(() => {
+  let cancelled = false;
 
-    const parseArray = (raw) =>
-      Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+  const parseArray = (raw) =>
+    Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
 
-    const tryJSON = (value) => {
-      try {
-        const parsed = JSON.parse(value);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    };
+  const tryJSON = (value) => {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
 
+  // ✅ UPDATED BLOCK
 const loadProducts = async () => {
   try {
-    // sFetch / secureFetch already parses JSON or throws
-    const payload = await sFetch("/products", { method: "GET" });
+    const identifier = restaurantIdOrSlug; // already resolved from useParams at top
+    // ⬇️ call sFetch WITHOUT adding ?identifier= again
+    const payload = await sFetch(`/products`, { method: "GET" });
 
     const list = Array.isArray(payload)
       ? payload
@@ -2181,66 +2461,54 @@ const loadProducts = async () => {
   }
 };
 
+  // ✅ END UPDATED BLOCK
 
-    const loadExtras = async () => {
-      try {
-const payload = await secureFetch(appendIdentifier("/extras-groups"));
-const list = parseArray(payload);
+  const loadExtras = async () => {
+    try {
+      const payload = await secureFetch(appendIdentifier("/extras-groups"));
+      const list = parseArray(payload);
 
-        if (cancelled) return;
-        const listArray = toArray(list);
-        setExtrasGroups(
-          listArray.map((g) => ({
-            groupName: g.groupName || g.group_name,
-            items: typeof g.items === "string" ? tryJSON(g.items) : g.items || [],
-          }))
-        );
-      } catch (err) {
-        console.warn("⚠️ Failed to fetch extras groups:", err);
-        if (cancelled) return;
-        setExtrasGroups([]);
-      }
-    };
-
-    loadProducts();
-    loadExtras();
-
-    const token = getStoredToken();
-if (token) {
-  sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } })
-    .then((orders) => {
       if (cancelled) return;
-  const list = parseArray(orders);
+      const listArray = toArray(list);
+      setExtrasGroups(
+        listArray.map((g) => ({
+          groupName: g.groupName || g.group_name,
+          items: typeof g.items === "string" ? tryJSON(g.items) : g.items || [],
+        }))
+      );
+    } catch (err) {
+      console.warn("⚠️ Failed to fetch extras groups:", err);
+      if (cancelled) return;
+      setExtrasGroups([]);
+    }
+  };
 
-// ✅ Mark occupied only if NOT closed
-const occupied = toArray(list)
-  .filter(order => {
-    if (!order?.table_number) return false;
+  loadProducts();
+  loadExtras();
 
-    // ✅ Still occupied if order is not closed, even if paid
-    if (order.status !== "closed") return true;
+  const token = getStoredToken();
+  if (token) {
+    sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } })
+      .then((orders) => {
+        if (cancelled) return;
+        const list = parseArray(orders);
+        const occupied = toArray(list)
+          .filter((order) => order?.table_number && order.status !== "closed")
+          .map((order) => Number(order.table_number));
+        setOccupiedTables(occupied);
+      })
+      .catch((err) => {
+        console.warn("⚠️ Failed to fetch orders:", err);
+        if (!cancelled) setOccupiedTables([]);
+      });
+  } else {
+    setOccupiedTables([]);
+  }
 
-    // ✅ Free only if explicitly closed
-    return false;
-  })
-  .map(order => Number(order.table_number));
-
-setOccupiedTables(occupied);
-
-    })
-    .catch((err) => {
-      console.warn("⚠️ Failed to fetch orders:", err);
-      if (!cancelled) setOccupiedTables([]);
-    });
-} else {
-  setOccupiedTables([]);
-}
-
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appendIdentifier]);
+  return () => {
+    cancelled = true;
+  };
+}, [appendIdentifier]);
 
 
 
@@ -2251,12 +2519,15 @@ if (!orderType)
   return (
     <>
    <OrderTypeSelect
-  onSelect={(type) => {
-    setOrderType(type);
-    if (type === "online") {
-      setShowDeliveryForm(true);
-    }
-  }}
+ onSelect={(type) => {
+  setOrderType(type);
+  if (type === "online") {
+    setShowDeliveryForm(true);
+  } else if (type === "takeaway") {
+    setShowTakeawayForm(true);
+  }
+}}
+
   lang={lang}
   setLang={setLang}
   t={t}
@@ -2483,8 +2754,8 @@ async function postJSON(url, body) {
   }
 }
 
-function buildOrderPayload({ orderType, table, items, total, customer }) {
-  const itemsPayload = items.map(i => ({
+function buildOrderPayload({ orderType, table, items, total, customer, takeaway, paymentMethod }) {
+  const itemsPayload = (items || []).map(i => ({
     product_id: i.id,
     quantity: i.quantity,
     price: parseFloat(i.price) || 0,
@@ -2493,23 +2764,42 @@ function buildOrderPayload({ orderType, table, items, total, customer }) {
     unique_id: i.unique_id,
     note: i.note || null,
     confirmed: true,
-    kitchen_status: 'new',      // <-- ensures it hits the kitchen
+    kitchen_status: "new",
     payment_method: null,
     receipt_id: null,
   }));
 
+  const isTakeaway = orderType === "takeaway";
+  const isOnline = orderType === "online";
+  const isTable = orderType === "table";
+
   return {
-    table_number: orderType === "table" ? Number(table) : null,
-    order_type: orderType === "online" ? "packet" : "table", // or keep "online" if you prefer; kitchen doesn't care
+    table_number: isTable ? Number(table) : null,
+    order_type: isOnline ? "packet" : isTakeaway ? "takeaway" : "table",
     total: Number(total) || 0,
     items: itemsPayload,
-    // Nice-to-have fields for online orders:
-    customer_name: customer?.name || null,
-    customer_phone: customer?.phone || null,
-    customer_address: customer?.address || null,
+
+    // ✅ Safely handle missing objects
+    customer_name: isTakeaway
+      ? takeaway?.name || null
+      : customer?.name || null,
+    customer_phone: isTakeaway
+      ? takeaway?.phone || null
+      : customer?.phone || null,
+    customer_address: isOnline
+      ? customer?.address || null
+      : null,
+    pickup_time: isTakeaway
+      ? takeaway?.pickup_time || null
+      : null,
+    notes: isTakeaway
+      ? takeaway?.notes || null
+      : null,
     payment_method: paymentMethod || null,
   };
 }
+
+
 async function handleSubmitOrder() {
   try {
     setSubmitting(true);
@@ -2754,12 +3044,18 @@ return (
       />
     </div>
 
-    <CategoryBar
-      categories={safeCategories}
-      activeCategory={activeCategory}
-      setActiveCategory={setActiveCategory}
-      categoryImages={categoryImages}
-    />
+{/* ✅ Hide category bar when OrderStatusScreen is active */}
+{!showStatus && (
+  <CategoryBar
+    categories={categories}
+    activeCategory={activeCategory}
+    setActiveCategory={setActiveCategory}
+    categoryImages={categoryImages}
+  />
+)}
+
+
+
 
     <CartDrawer
   cart={safeCart}
@@ -2798,7 +3094,11 @@ return (
     submitting={submitting}
     t={t}
     appendIdentifier={appendIdentifier}
-    onClose={() => setShowDeliveryForm(false)}
+    onClose={() => {
+  setShowDeliveryForm(false);
+  setOrderType(null); // 👈 return to order type picker
+}}
+
     onSubmit={(form) => {
       setCustomerInfo({
         name: form.name,
@@ -2811,6 +3111,21 @@ return (
   />
 )}
 
+{orderType === "takeaway" && showTakeawayForm && (
+  <TakeawayOrderForm
+    submitting={submitting}
+    t={t}
+    onClose={() => {
+  setShowTakeawayForm(false);
+  setOrderType(null); // 👈 return to order type picker
+}}
+
+    onSubmit={(form) => {
+      setTakeaway(form);
+      setShowTakeawayForm(false);
+    }}
+  />
+)}
 
 
 

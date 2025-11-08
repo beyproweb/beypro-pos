@@ -217,13 +217,15 @@ const groupByDate = (orders) => {
 };
 
 const TAB_LIST = [
+  { id: "takeaway", label: "Take Away", icon: "⚡" }, 
   { id: "tables", label: "Tables", icon: "🍽️" },
-  { id: "kitchen", label: "Kitchen", icon: "👨‍🍳" },
+  { id: "kitchen", label: "All Orders", icon: "👨‍🍳" },
   { id: "history", label: "History", icon: "📘" },
   { id: "packet", label: "Packet", icon: "🛵" },
   { id: "phone", label: "Phone", icon: "📞" },
-  { id: "register", label: "Register", icon: "💵" }
+  { id: "register", label: "Register", icon: "💵" },
 ];
+
 const SIDEBAR_DRAG_TYPE = "application/x-dashboard-shortcut";
 const TAB_TO_SIDEBAR = {
   tables: { labelKey: "Tables", defaultLabel: "Tables", path: "/tables" },
@@ -385,6 +387,22 @@ const ordersWithItems = await Promise.all(
   }
 };
 
+const [takeawayOrders, setTakeawayOrders] = useState([]);
+
+const fetchTakeawayOrders = async () => {
+  try {
+    const data = await secureFetch("/orders?type=takeaway");
+    const filtered = data.filter(o => o.status !== "closed");
+    setTakeawayOrders(filtered);
+  } catch (err) {
+    console.error("❌ Fetch takeaway orders failed:", err);
+    toast.error("Could not load takeaway orders");
+  }
+};
+
+useEffect(() => {
+  if (activeTab === "takeaway") fetchTakeawayOrders();
+}, [activeTab]);
 
 
 useEffect(() => {
@@ -1013,6 +1031,63 @@ useEffect(() => {
         </div>
       )}
 
+{activeTab === "takeaway" && (
+  <div className="px-6 py-4">
+    <h2 className="text-2xl font-bold text-orange-600 mb-5">🥡 {t("Takeaway Orders")}</h2>
+
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* ➕ New Takeaway Card */}
+      <button
+        onClick={async () => {
+          try {
+            const newOrder = await secureFetch("/orders", {
+              method: "POST",
+              body: JSON.stringify({
+                order_type: "takeaway",
+                total: 0,
+                items: [],
+              }),
+            });
+            navigate(`/transaction/phone/${newOrder.id}`, { state: { order: newOrder } });
+          } catch (err) {
+            console.error("❌ Failed to create takeaway order:", err);
+            toast.error("Could not create new takeaway order");
+          }
+        }}
+        className="border-2 border-dashed border-orange-400 rounded-3xl p-8 flex flex-col items-center justify-center text-orange-500 hover:bg-orange-50 transition"
+      >
+        <span className="text-5xl mb-2">➕</span>
+        <span className="font-semibold text-lg">{t("New Takeaway")}</span>
+      </button>
+
+      {/* Existing Takeaway Orders */}
+      {takeawayOrders.map(order => (
+        <div
+          key={order.id}
+          onClick={() => navigate(`/transaction/phone/${order.id}`, { state: { order } })}
+          className="cursor-pointer rounded-3xl bg-white/80 p-5 shadow-lg hover:shadow-xl transition hover:scale-[1.03]"
+        >
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-lg font-semibold text-orange-700">#{order.id}</span>
+            <span className="text-sm text-gray-500">
+              {new Date(order.created_at).toLocaleTimeString("tr-TR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+          <div className="font-bold text-gray-800">
+            ₺{Number(order.total || 0).toFixed(2)}
+          </div>
+          <div className="text-sm text-gray-500">
+            {order.customer_name || t("Guest")}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
 
 
 
@@ -1026,13 +1101,12 @@ useEffect(() => {
         }}
 onCreateOrder={() => {
   setShowPhoneOrderModal(false);
-  setActiveTab("tables");
+  setActiveTab("takeaway");
   setTimeout(() => {
-    setActiveTab("packet");
-    // Give the tab a moment to switch, then fetch
-    setTimeout(fetchPacketOrders, 100);
-  }, 250);
+    fetchTakeawayOrders();
+  }, 300);
 }}
+
 
 
 

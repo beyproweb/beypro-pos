@@ -386,6 +386,17 @@ const scrollCartToBottom = useCallback(() => {
   node.scrollTop = bottom;
 }, []);
 
+useEffect(() => {
+  if (!window.socket) return;
+  const refresh = () => {
+    if (order?.order_type === "takeaway") {
+      fetchTakeawayOrder(order.id);
+    }
+  };
+  window.socket.on("orders_updated", refresh);
+  return () => window.socket.off("orders_updated", refresh);
+}, [order?.id, order?.order_type]);
+
 useLayoutEffect(() => {
   const unpaidItems = cartItems.filter((item) => !item.paid);
 
@@ -963,6 +974,17 @@ useEffect(() => {
   restaurantSlug,
 ]);
 
+useEffect(() => {
+  if (!window.socket) return;
+  const refresh = () => {
+    if (order?.order_type === "takeaway") {
+      fetchTakeawayOrder(order.id);
+    }
+  };
+  window.socket.on("orders_updated", refresh);
+  return () => window.socket.off("orders_updated", refresh);
+}, [order?.id, order?.order_type]);
+
 
 useEffect(() => {
   return () => {
@@ -979,6 +1001,38 @@ useEffect(() => {
   setDiscountType("percent");
 }, [tableId, orderId]);
 
+// ✅ Global reusable function to fetch takeaway orders
+const fetchTakeawayOrder = async (id) => {
+  try {
+    const restaurantSlug =
+      localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
+    const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
+
+    const newOrder = await secureFetch(`/orders/${id}${identifier}`);
+    const items = await secureFetch(`/orders/${id}/items${identifier}`);
+
+    setOrder(newOrder);
+    setCartItems(
+      Array.isArray(items)
+        ? items.map((i) => ({
+            id: i.product_id,
+            name: i.name || i.product_name,
+            quantity: i.quantity,
+            price: parseFloat(i.price),
+            extras: i.extras ? JSON.parse(i.extras) : [],
+            confirmed: i.confirmed ?? true,
+            paid: !!i.paid_at,
+            unique_id: i.unique_id,
+            kitchen_status: i.kitchen_status,
+          }))
+        : []
+    );
+    setLoading(false);
+  } catch (err) {
+    console.error("❌ Error fetching takeaway order:", err);
+    setLoading(false);
+  }
+};
 
 useEffect(() => {
   // 🧹 1️⃣ Clear previous table state instantly when switching tables
@@ -986,6 +1040,9 @@ useEffect(() => {
   setCartItems([]);
   setReceiptItems([]);
   setLoading(true);
+
+
+
 
   // ✅ Fetch order for phone/packet (QRMenu online orders also land here)
 const fetchPhoneOrder = async (id) => {
@@ -1074,6 +1131,8 @@ const createOrFetchTableOrder = async (tableNumber) => {
   // 💡 3️⃣ Choose proper loader based on params
   if (orderId) fetchPhoneOrder(orderId);
   else if (tableId) createOrFetchTableOrder(tableId);
+  else if (location.pathname.includes("/transaction/") && initialOrder?.order_type === "takeaway") 
+  fetchTakeawayOrder(initialOrder.id);
 }, [tableId, orderId]);
 
 const fetchOrderItems = async (orderId) => {
@@ -1334,35 +1393,42 @@ const handleMultifunction = async () => {
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
   await fetchOrderItems(updated.id);
 
-  if (orderId && getButtonLabel() === "Confirm") {
-    await fetchOrderItems(order.id);
-    setOrder((prev) => ({ ...prev, status: "confirmed" }));
+if ((orderId && orderType === "phone") && getButtonLabel() === "Confirm") {
+  await fetchOrderItems(order.id);
+  setOrder((prev) => ({ ...prev, status: "confirmed" }));
+  setHeader(prev => ({ ...prev, subtitle: "" }));
+  showToast(t("Phone order confirmed and sent to kitchen"));
+  setTimeout(() => navigate("/orders"), 400);
+  return;
+}
 
-    // ✅ CLEAR HEADER SUBTITLE IMMEDIATELY AFTER CONFIRM
-    setHeader(prev => ({ ...prev, subtitle: "" }));
+// 🥡 TAKEAWAY — confirm but STAY here (no navigate, no payment modal)
+if (orderType === "takeaway" && getButtonLabel() === "Confirm") {
+  await fetchOrderItems(order.id);
+  setOrder((prev) => ({ ...prev, status: "confirmed" }));
+  setHeader(prev => ({ ...prev, subtitle: "" }));
+  showToast(t("Takeaway order confirmed and sent to kitchen"));
+  // 🚫 Do NOT open pay modal or navigate
+  return;
+}
 
-    // ✅ show toast + navigate back to orders after short delay
-    showToast(t("Phone order confirmed and sent to kitchen"));
-    setTimeout(() => navigate("/orders"), 400);
-    return;
-  }
   return;
 }
 
 
-  // 3️⃣ Open payment modal only for table orders
-  if (
-    order.status === "confirmed" &&
-    !orderId &&
-    cartItems.some(i => !i.paid && i.confirmed)
-  ) {
-    if (paymentIds.length === 0) {
-      showToast(t("No items available to pay"));
-      return;
-    }
-    setShowPaymentModal(true);
+ // 3️⃣ Open payment modal for table OR takeaway orders
+if (
+  order.status === "confirmed" &&
+  (orderType === "table" || orderType === "takeaway") &&
+  cartItems.some(i => !i.paid && i.confirmed)
+) {
+  if (paymentIds.length === 0) {
+    showToast(t("No items available to pay"));
     return;
   }
+  setShowPaymentModal(true);
+  return;
+}
 
 // 4️⃣ Try to close if all items are paid — OR any phone order ready to close
 const allPaid = safeCartItems.every((i) => i.paid);

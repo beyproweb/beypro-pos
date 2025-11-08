@@ -14,7 +14,7 @@ import {
   UserCog, Bell, Printer, Plug
 } from 'lucide-react';
 import axios from "axios";
-import socket from "../utils/socket"; // adjust path as needed!
+// adjust path as needed!
 // Set your API URL
 
 const QUICK_ACCESS_CONFIG = [

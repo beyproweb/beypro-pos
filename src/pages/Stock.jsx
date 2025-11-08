@@ -13,7 +13,7 @@ export default function Stock() {
   const { groupedData, fetchStock, loading, handleAddToCart, setGroupedData } =
     useStock();
   const [ingredientPrices, setIngredientPrices] = useState([]);
-
+  
   // Only allow users with "settings" permission
   const hasStockAccess = useHasPermission("stock");
   if (!hasStockAccess) {
@@ -23,6 +23,13 @@ export default function Stock() {
       </div>
     );
   }
+  const [allSuppliers, setAllSuppliers] = useState([]);
+
+useEffect(() => {
+  secureFetch("/suppliers").then(setAllSuppliers).catch(() => setAllSuppliers([]));
+}, []);
+
+
 
   // Fetch stock and prices on mount
   useEffect(() => {
@@ -162,10 +169,28 @@ export default function Stock() {
       }),
     });
   };
+useEffect(() => {
+  const refreshSuppliers = () => {
+    secureFetch("/suppliers")
+      .then(setAllSuppliers)
+      .catch(() => setAllSuppliers([]));
+  };
 
-  const suppliersList = Array.from(
-    new Set(groupedData.map((item) => item.supplier_name).filter(Boolean))
-  );
+  socket.on("supplier-updated", refreshSuppliers);
+  socket.on("stock-updated", refreshSuppliers);
+
+  return () => {
+    socket.off("supplier-updated", refreshSuppliers);
+    socket.off("stock-updated", refreshSuppliers);
+  };
+}, []);
+
+const suppliersList = Array.from(
+  new Set([
+    ...allSuppliers.map(s => s.name),
+    ...groupedData.map(i => i.supplier_name).filter(Boolean),
+  ])
+);
   const formattedStockValue = totalStockValue.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

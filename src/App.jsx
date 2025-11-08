@@ -43,6 +43,8 @@ import secureFetch from "./utils/secureFetch";
 import QrMenuSettings from "./pages/QrMenuSettings";
 import UserManagementPage from "./pages/UserManagementPage";
 import PrintersPage from "./pages/PrintersPage";
+import TakeawayOverview from "./pages/TakeawayOverview";
+
 
 const SETTINGS_TAB_PERMISSIONS = {
   notifications: "settings-notifications",
@@ -143,7 +145,7 @@ const loadSettings = async () => {
         <div className="flex h-screen">
           <Routes>
             {/* PUBLIC: QR Menu */}
-            <Route path="/qr-menu/:restaurantIdOrSlug" element={<QrMenu />} />
+<Route path="/qr-menu/:slug/:id" element={<QrMenu />} />
 
             {/* PUBLIC: Login */}
             <Route
@@ -226,6 +228,11 @@ const loadSettings = async () => {
               <Route path="staff" element={<ProtectedRoute permission="staff"><Staff /></ProtectedRoute>} />
               <Route path="task" element={<ProtectedRoute permission="task"><Task /></ProtectedRoute>} />
               <Route path="live-route" element={<ProtectedRoute permission="delivery"><LiveRouteMap /></ProtectedRoute>} />
+              <Route
+  path="takeaway"
+  element={<ProtectedRoute permission="orders"><TakeawayOverview /></ProtectedRoute>}
+/>
+
               <Route
                 path="user-management"
                 element={

@@ -381,189 +381,32 @@ const activeTimers = useMemo(
   // Always use full URL for backend fetches!
 const fetchKitchenOrders = async () => {
   try {
-    const data = await secureFetch("kitchen-orders");
-    const filtered = data.filter((item) => {
-      const isDelivered = item.kitchen_status === "delivered";
-      const isPaid = item.status === "paid" || item.transaction_closed; // adjust field as needed
-      return !(isDelivered && isPaid); // Only hide if delivered AND paid/closed
-    });
+    const data = await secureFetch("/kitchen-orders");
 
-    const driverLookup = drivers.reduce((acc, driver) => {
-      if (driver?.id != null) {
-        const keyNum = Number(driver.id);
-        const keyStr = String(driver.id);
-        const displayName =
-          driver.name ||
-          driver.full_name ||
-          driver.fullName ||
-          driver.username ||
-          driver.short_name ||
-          "";
-        if (displayName) {
-          acc[keyNum] = displayName;
-          acc[keyStr] = displayName;
-        }
-      }
-      return acc;
-    }, {});
-
-    let enriched = filtered.map((item) => {
-      const directName =
-        item.driver_name ||
-        item.driver?.name ||
-        item.driver?.full_name ||
-        item.driver?.fullName ||
-        item.order_driver_name ||
-        item.order?.driver_name ||
-        item.order?.driverName ||
-        item.order?.delivery_driver_name ||
-        item.order?.driver?.name ||
-        item.order?.driver?.full_name ||
-        item.order?.driver?.fullName ||
-        "";
-      const derivedId =
-        item.driver_id ??
-        item.order_driver_id ??
-        item.order?.driver_id ??
-        item.order?.driverId ??
-        item.order?.delivery_driver_id ??
-        item.order?.deliveryDriverId ??
-        item.order?.driver?.id ??
-        null;
-      const lookupName =
-        derivedId != null
-          ? driverLookup[derivedId] || driverLookup[String(derivedId)] || ""
-          : "";
-      const finalName = directName || lookupName;
-
-      return {
-        ...item,
-        driver_id: derivedId ?? item.driver_id ?? null,
-        driver_name: finalName,
-      };
-    });
-
-    const missingOrderIds = Array.from(
-      new Set(
-        enriched
-          .filter(
-            (item) =>
-              (!item.driver_name || item.driver_name.trim() === "") &&
-              item.order_id
-          )
-          .map((item) => item.order_id)
-      )
+    // ✅ Include TAKEAWAY orders in the kitchen view
+    const active = data.filter(
+      (item) =>
+        item.kitchen_status !== "delivered" &&
+        item.kitchen_status !== null &&
+        item.kitchen_status !== "" &&
+        ["table", "packet", "phone", "takeaway"].includes(
+          String(item.order_type || "").toLowerCase()
+        )
     );
 
-    if (missingOrderIds.length) {
-      const orderDriverMap = {};
-      await Promise.all(
-        missingOrderIds.map(async (orderId) => {
-          try {
-            const detail = await secureFetch(`/orders/${orderId}`);
-            if (!detail) return;
-            const derivedId =
-              detail.driver_id ??
-              detail.driverId ??
-              detail.delivery_driver_id ??
-              detail.deliveryDriverId ??
-              detail.driver?.id ??
-              detail.driver?.driver_id ??
-              detail.delivery_driver?.id ??
-              null;
-            const derivedName =
-              detail.driver_name ||
-              detail.driver?.name ||
-              detail.driver?.full_name ||
-              detail.driver?.fullName ||
-              detail.delivery_driver_name ||
-              detail.delivery_driver?.name ||
-              detail?.assigned_driver ||
-              detail?.driverName ||
-              "";
-            orderDriverMap[orderId] = {
-              id: derivedId,
-              name: derivedName,
-            };
-          } catch (err) {
-            console.warn(`⚠️ Failed to fetch order ${orderId} for driver info:`, err);
-          }
-        })
-      );
+    console.log("🍽️ Active Kitchen Orders:", active.map(i => ({
+      id: i.item_id,
+      status: i.kitchen_status,
+      type: i.order_type,
+      table: i.table_number,
+    })));
 
-      enriched = enriched.map((item) => {
-        const extra = orderDriverMap[item.order_id];
-        if (!extra) return item;
-        const resolvedName =
-          item.driver_name && item.driver_name.trim() !== ""
-            ? item.driver_name
-            : extra.name || "";
-        const resolvedId =
-          item.driver_id != null ? item.driver_id : extra.id ?? null;
-        return {
-          ...item,
-          driver_id: resolvedId,
-          driver_name: resolvedName,
-        };
-      });
-    }
-
-    const previousMap = new Map(
-      prevOrdersRef.current.map((item) => [
-        item.item_id,
-        item.driver_id != null && item.driver_id !== ""
-          ? String(item.driver_id)
-          : null,
-      ])
-    );
-
-    const newlyAssignedIds = [];
-    enriched.forEach((item) => {
-      const prevDriver = previousMap.get(item.item_id) || null;
-      const currentDriver =
-        item.driver_id != null && item.driver_id !== ""
-          ? String(item.driver_id)
-          : null;
-      if (currentDriver && currentDriver !== prevDriver) {
-        newlyAssignedIds.push(item.item_id);
-      }
-    });
-
-    if (newlyAssignedIds.length) {
-      setRecentlyAssigned((prev) => {
-        const updated = { ...prev };
-        newlyAssignedIds.forEach((id) => {
-          updated[id] = Date.now();
-        });
-        return updated;
-      });
-
-      newlyAssignedIds.forEach((id) => {
-        window.setTimeout(() => {
-          setRecentlyAssigned((current) => {
-            if (!current[id]) return current;
-            const copy = { ...current };
-            delete copy[id];
-            return copy;
-          });
-        }, 8000);
-      });
-
-      playAssignmentChime().catch(() => {});
-    }
-
-    setOrders(enriched);
-    prevOrdersRef.current = enriched.map((item) => ({
-      item_id: item.item_id,
-      driver_id:
-        item.driver_id != null && item.driver_id !== ""
-          ? String(item.driver_id)
-          : null,
-    }));
+    setOrders(active);
   } catch (err) {
-    console.error("❌ Kitchen route failed:", err);
+    console.error("❌ Fetch kitchen orders failed:", err);
   }
 };
+
 
 
 useEffect(() => {

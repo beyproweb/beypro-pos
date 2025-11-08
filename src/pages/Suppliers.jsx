@@ -17,6 +17,7 @@ import {
 import socket from "../utils/socket";
 import secureFetch from "../utils/secureFetch";
 import { useHeader } from "../context/HeaderContext";
+import SupplierOverview from "../components/SupplierOverview";
 const API_URL = import.meta.env.VITE_API_URL || "";
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
@@ -78,6 +79,7 @@ const [newTransaction, setNewTransaction] = useState({
   const { fetchStock } = useStock();
   const [receiptFile, setReceiptFile] = useState(null);
   const [latestTransaction, setLatestTransaction] = useState(null);
+  const containerRef = useRef(null);
 
   useEffect(() => {
     setHeader(prev => ({
@@ -95,6 +97,34 @@ useEffect(() => {
   console.log("✅ fetchStock from context is loaded in Supplier.js");
   fetchStock(); // ← actually call it here
 }, [fetchStock]); // ✅ include it in dependency array
+
+// --- Simple section nav + scroll-to-top ---
+const sectionTabs = [
+  { key: "supplier-overview", label: t("Overview") },
+  { key: "primary-supplier", label: t("Add Product") }, // ✅ NEW TAB
+  { key: "transaction-history", label: t("Transactions") },
+  { key: "price-tracking", label: t("Price") },
+  { key: "feedback-log", label: t("Feedback") },
+  { key: "profile-balance", label: t("Profile") },
+  { key: "supplier-carts", label: t("Carts") },
+];
+
+const scrollToId = (id) => {
+  const el = document.getElementById(id);
+  if (!el || !containerRef.current) return;
+  const y = el.offsetTop - 60; // adjust offset
+  containerRef.current.scrollTo({ top: y, behavior: "smooth" });
+};
+
+
+const [showUp, setShowUp] = useState(false);
+useEffect(() => {
+  const node = containerRef.current;
+  if (!node) return;
+  const onScroll = () => setShowUp(node.scrollTop > 400);
+  node.addEventListener("scroll", onScroll);
+  return () => node.removeEventListener("scroll", onScroll);
+}, []);
 
 
   useEffect(() => {
@@ -1113,7 +1143,13 @@ id}`, {
 
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-8 transition-colors duration-300 dark:bg-slate-950 sm:px-6 lg:px-10">
+<div
+  ref={containerRef}
+  className="h-screen overflow-y-scroll bg-slate-50 px-4 py-8 transition-colors duration-300 dark:bg-slate-950 sm:px-6 lg:px-10 scrollbar-hide"
+>
+
+
+      
       {previewImage && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur"
@@ -1201,7 +1237,20 @@ name}: {formattedSelectedSupplierDue} ₺
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
-       
+             {/* ✅ NEW: section tabs next to the title */}
+      <div className="inline-flex max-w-full overflow-x-auto rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        {sectionTabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => scrollToId(tab.key)}
+            className="whitespace-nowrap rounded-full px-3 py-1.5 font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+            title={tab.label}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
            
           </div>
         </div>
@@ -1209,12 +1258,16 @@ name}: {formattedSelectedSupplierDue} ₺
         {activeTab === "suppliers" && (
           <div className="space-y-10">
          
-<section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+<section
+  id="primary-supplier"  // ✅ ADD THIS
+  className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+>
                   <div className="space-y-6">
                      <div className="space-y-1">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
                       {t("Primary supplier")}
                     </p>
+ 
                     <p className="text-sm text-slate-500 dark:text-slate-400">
                       {t("Choose which supplier you want to review or update.")}
                     </p>
@@ -1579,8 +1632,29 @@ name}: {formattedSelectedSupplierDue} ₺
   </button>
 </div>
 
-                      </form>
-                    </div>
+                     </form>
+</div>
+
+{/* === SUPPLIER OVERVIEW SECTION === */}
+<section id="supplier-overview" className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+  <div className="space-y-6">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800 dark:text-white">
+          {t("Supplier Overview")}
+        </h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          {t("Monitor supplier dues, payments, and spending at a glance.")}
+        </p>
+      </div>
+    </div>
+
+    {/* === Overview Box === */}
+    <div className="mt-6">
+      <SupplierOverview suppliers={suppliers} t={t} />
+    </div>
+  </div>
+</section>
    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="space-y-6">
                 <div className="space-y-4">
@@ -1613,7 +1687,7 @@ name}: {formattedSelectedSupplierDue} ₺
     </div>
   </div>
 )}
-<section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+<section id="transaction-history" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
   <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
@@ -1935,7 +2009,7 @@ name}: {formattedSelectedSupplierDue} ₺
                  
                   </div>
                 </section>
-<section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
+<section id="price-tracking" className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
                   <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
                       <div>
@@ -2019,7 +2093,7 @@ name}: {formattedSelectedSupplierDue} ₺
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+<div id="feedback-log"  className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div className="border-b border-slate-200 pb-4 dark:border-slate-700">
                       <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                         {t("Supplier Rating & Feedback Log")}
@@ -2182,7 +2256,7 @@ name}: {formattedSelectedSupplierDue} ₺
                       )}
                     </div>
                   </div>
-                </section><section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                </section><section id="profile-balance" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                   <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
                     <div className="space-y-6">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2912,12 +2986,13 @@ notes || ""}
         ❌ {t("Cancel")}
       </button>
     </div>
+    
   </div>
 )}
 
         {/* --- CART TAB --- */}
         {activeTab === "cart" && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div id="supplier-carts"  className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
@@ -2927,6 +3002,7 @@ notes || ""}
                   {t("Review scheduled orders and trigger supplier confirmations.")}
                 </p>
               </div>
+     
             </div>
             {suppliers.length > 0 ? (
               <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
@@ -2945,6 +3021,20 @@ notes || ""}
             )}
           </div>
         )}
+
+        {/* ⬆️ Scroll-to-top arrow */}
+{showUp && (
+  <button
+    onClick={() =>
+      containerRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+    }
+    className="fixed bottom-6 right-6 z-50 rounded-full bg-indigo-600 px-4 py-3 text-white shadow-lg transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+  >
+    ↑
+  </button>
+)}
+
+
 
     {/* --- Supplier Cart Modal --- */}
     {showCartModal && (
