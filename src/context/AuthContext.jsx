@@ -9,7 +9,16 @@ const RAW_API =
   (import.meta.env.MODE === "development"
     ? "http://localhost:5000/api"
     : "https://hurrypos-backend.onrender.com/api");
-const API_BASE = String(RAW_API).replace(/\/+$/, "");
+
+const API_BASE = (() => {
+  const base = String(RAW_API || "").trim();
+  if (!base) return "/api";
+  return (
+    base
+      .replace(/\/api\/?$/, "")
+      .replace(/\/+$/, "") + "/api"
+  );
+})();
 export const AuthContext = createContext();
 
 export function useAuth() {

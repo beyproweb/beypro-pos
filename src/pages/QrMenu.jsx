@@ -2444,7 +2444,10 @@ useEffect(() => {
   // ✅ UPDATED BLOCK
 const loadProducts = async () => {
   try {
-    const payload = await sFetch("/products");
+    const payload = restaurantIdOrSlug
+      ? await secureFetch(`/public/products/${encodeURIComponent(restaurantIdOrSlug)}`)
+      : await sFetch("/products");
+
     if (cancelled) return;
 
     const list = parseArray(payload);
