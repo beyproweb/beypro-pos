@@ -90,7 +90,24 @@ useEffect(() => {
       })
       .then((res) => {
         if (!res) return;
-        const user = res.user || res.staff;
+        if (res.error) {
+          console.warn("⚠️ /me responded with error:", res.error);
+          return;
+        }
+
+        const payload =
+          res && typeof res === "object" && !Array.isArray(res) ? res : null;
+        const fallbackUser =
+          payload &&
+          (payload.id ||
+            payload.email ||
+            payload.restaurant_id ||
+            payload.role ||
+            payload.permissions)
+            ? payload
+            : null;
+        const user = payload?.user || payload?.staff || fallbackUser;
+
         if (user) {
           setCurrentUser((prev) => {
             const normalized = normalizeUser(user, userSettings);

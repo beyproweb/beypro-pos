@@ -2443,19 +2443,28 @@ useEffect(() => {
 
   // ✅ UPDATED BLOCK
 const loadProducts = async () => {
-  try {
-    const payload = restaurantIdOrSlug
-      ? await secureFetch(`/public/products/${encodeURIComponent(restaurantIdOrSlug)}`)
-      : await sFetch("/products");
-
-    if (cancelled) return;
-
+  const assignProducts = (payload) => {
     const list = parseArray(payload);
     setProducts(list);
-
     const cats = [...new Set(list.map((p) => p.category))].filter(Boolean);
     setCategories(cats);
     setActiveCategory(cats[0] || "");
+  };
+
+  try {
+    let payload = null;
+    try {
+      payload = await sFetch("/products");
+    } catch (primaryErr) {
+      console.warn("⚠️ secureFetch /products failed, trying public route:", primaryErr);
+      if (!restaurantIdOrSlug) throw primaryErr;
+      payload = await secureFetch(
+        `/public/products/${encodeURIComponent(restaurantIdOrSlug)}`
+      );
+    }
+
+    if (cancelled) return;
+    assignProducts(payload);
   } catch (err) {
     if (cancelled) return;
     console.warn("⚠️ Failed to fetch products:", err);
