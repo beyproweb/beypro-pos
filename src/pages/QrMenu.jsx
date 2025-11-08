@@ -2442,6 +2442,7 @@ useEffect(() => {
   };
 
   // ✅ UPDATED BLOCK
+// ✅ Corrected public product loader
 const loadProducts = async () => {
   const assignProducts = (payload) => {
     const list = parseArray(payload);
@@ -2453,26 +2454,28 @@ const loadProducts = async () => {
 
   try {
     let payload = null;
-    try {
-      payload = await sFetch("/products");
-    } catch (primaryErr) {
-      console.warn("⚠️ secureFetch /products failed, trying public route:", primaryErr);
-      if (!restaurantIdOrSlug) throw primaryErr;
-      payload = await secureFetch(
-        `/public/products/${encodeURIComponent(restaurantIdOrSlug)}`
+
+    if (restaurantIdOrSlug) {
+      // 👇 Always use the public endpoint; no auth required
+      const res = await fetch(
+        `${API_URL}/public/products/${encodeURIComponent(restaurantIdOrSlug)}`
       );
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
+      payload = await res.json();
+    } else {
+      // fallback if opened from POS
+      payload = await sFetch("/products");
     }
 
-    if (cancelled) return;
     assignProducts(payload);
   } catch (err) {
-    if (cancelled) return;
     console.warn("⚠️ Failed to fetch products:", err);
     setProducts([]);
     setCategories([]);
     setActiveCategory("");
   }
 };
+
 
 
   // ✅ END UPDATED BLOCK
