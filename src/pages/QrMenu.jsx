@@ -1978,7 +1978,7 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 export default function QrMenu() {
   
   const { slug, id } = useParams();
-const restaurantIdOrSlug = slug || id;
+const restaurantIdOrSlug = slug && slug !== "null" ? slug : id;
 
   const appendIdentifier = useCallback(
     (url) => {

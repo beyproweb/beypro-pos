@@ -7,22 +7,33 @@ export default function QrLinkGenerator() {
   const [loading, setLoading] = useState(false);
 
   const fetchQrLink = async () => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem("token");
-const restaurantSlug = localStorage.getItem("restaurant_slug") || "hurrybey";
-const res = await fetch(`/api/public/qr-link/${restaurantSlug}`);
+  try {
+    setLoading(true);
+    const token = localStorage.getItem("token");
+    const restaurantSlug =
+      localStorage.getItem("restaurant_slug") ||
+      localStorage.getItem("restaurant_id");
 
-      const data = await res.json();
-      if (data.success) setLink(data.link);
-      else alert(data.error || "Failed to generate QR link");
-    } catch (e) {
-      console.error(e);
-      alert("Network error while fetching QR link");
-    } finally {
-      setLoading(false);
+    const res = await fetch(`/api/settings/qr-link`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const data = await res.json();
+    if (data.success && data.link) {
+      // ✅ Sanitize to ensure slug isn't "null"
+      const fixedLink = data.link.replace("/null/", `/${restaurantSlug || "id"}/`);
+      setLink(fixedLink);
+    } else {
+      alert(data.error || "Failed to generate QR link");
     }
-  };
+  } catch (e) {
+    console.error(e);
+    alert("Network error while fetching QR link");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(link);
