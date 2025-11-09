@@ -18,7 +18,7 @@ import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import MoveTableModal from "../components/MoveTableModal";
 import MergeTableModal from "../components/MergeTableModal";
 import { toCategorySlug } from "../utils/slugCategory"; 
-import secureFetch from "../utils/secureFetch";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import socket from "../utils/socket";
 import { useAuth } from "../context/AuthContext";
 
@@ -922,28 +922,33 @@ function allItemsDelivered(items) {
 useEffect(() => {
   const fetchProducts = async () => {
     try {
-      const identifierCandidates = [
-        currentUser?.tenant_id,
-        currentUser?.restaurant_slug,
-        currentUser?.restaurant_id,
-        restaurantSlug,
-      ];
+      const token = getAuthToken();
+      let path = "/products";
 
-      const rawIdentifier =
-        identifierCandidates
-          .map((value) => {
-            if (value === null || value === undefined) return "";
-            const str = String(value).trim();
-            if (!str || str === "null" || str === "undefined") return "";
-            return str;
-          })
-          .find(Boolean) || "";
+      if (!token) {
+        const identifierCandidates = [
+          currentUser?.tenant_id,
+          currentUser?.restaurant_slug,
+          currentUser?.restaurant_id,
+          restaurantSlug,
+        ];
 
-      const query = rawIdentifier
-        ? `?identifier=${encodeURIComponent(rawIdentifier)}`
-        : "";
+        const rawIdentifier =
+          identifierCandidates
+            .map((value) => {
+              if (value === null || value === undefined) return "";
+              const str = String(value).trim();
+              if (!str || str === "null" || str === "undefined") return "";
+              return str;
+            })
+            .find(Boolean) || "";
 
-      const data = await secureFetch(`/products${query}`);
+        if (rawIdentifier) {
+          path = `/products?identifier=${encodeURIComponent(rawIdentifier)}`;
+        }
+      }
+
+      const data = await secureFetch(path);
 
       const normalized = Array.isArray(data)
         ? data.map((product) => {
