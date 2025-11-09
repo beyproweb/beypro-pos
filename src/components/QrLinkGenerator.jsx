@@ -10,9 +10,9 @@ export default function QrLinkGenerator() {
     try {
       setLoading(true);
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/settings/qr-link", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+const restaurantSlug = localStorage.getItem("restaurant_slug") || "hurrybey";
+const res = await fetch(`/api/public/qr-link/${restaurantSlug}`);
+
       const data = await res.json();
       if (data.success) setLink(data.link);
       else alert(data.error || "Failed to generate QR link");

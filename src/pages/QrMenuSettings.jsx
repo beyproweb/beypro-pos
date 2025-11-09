@@ -27,7 +27,11 @@ export default function QrMenuSettings() {
 
         // ✅ fetch short QR link (no JWT)
         setLoadingLink(true);
-        const linkRes = await secureFetch("/settings/qr-link");
+        const token = localStorage.getItem("token");
+const linkRes = await secureFetch("/settings/qr-link", {
+  headers: { Authorization: `Bearer ${token}` },
+});
+
         if (linkRes?.success && linkRes.link) setQrUrl(linkRes.link);
         else toast.error(t("Failed to generate QR link"));
       } catch (err) {
