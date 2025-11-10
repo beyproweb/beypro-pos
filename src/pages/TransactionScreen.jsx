@@ -180,7 +180,11 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const hasImg = !!catSrc;
 
   const baseClasses =
-    "flex w-full flex-col items-center justify-center gap-1 rounded-xl border px-3 py-3 text-center transition";
+    "flex flex-col items-center justify-center gap-1 rounded-xl border px-3 py-3 text-center transition";
+  const widthClass =
+    variant === "mobile"
+      ? "min-w-[120px] snap-start"
+      : "w-full";
 
   const activeClasses =
     "border-indigo-500 bg-white shadow-md";
@@ -200,7 +204,7 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
       key={`${variant}-${cat}-${idx}`}
       type="button"
       onClick={() => setCurrentCategoryIndex(idx)}
-      className={`${baseClasses} ${isActive ? activeClasses : inactiveClasses}`}
+      className={`${widthClass} ${baseClasses} ${isActive ? activeClasses : inactiveClasses}`}
     >
       {hasImg ? (
         <img src={catSrc} alt={cat} className={imageClasses} />
@@ -2452,27 +2456,49 @@ return (
     <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-x-hidden">
 <section className="flex flex-1 min-h-0 flex-col gap-6 pb-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:overflow-hidden">
         {/* === Left: Categories + Products === */}
-        <div className="flex min-h-0 flex-row gap-3 overflow-hidden">
+        <div className="flex min-h-0 flex-col gap-4 lg:flex-row lg:gap-3 lg:overflow-hidden">
           {/* Categories */}
-          <aside className="flex w-[28%] min-w-[110px] max-w-[160px] flex-col rounded-3xl bg-gradient-to-br from-indigo-50 via-sky-50 to-blue-100 p-4 shadow-lg ring-1 ring-indigo-100 sm:w-[26%] sm:max-w-[185px] md:w-[25%] lg:w-[230px] lg:max-w-[230px]">
-            <div className="flex items-center justify-between gap-3 lg:flex">
-              <h2 className="hidden text-xl font-semibold text-indigo-700 lg:block">
-                {t("Categories")}
-              </h2>
-              <span className="hidden rounded-full bg-white px-2 py-1 text-sm font-semibold text-indigo-700 shadow lg:inline-flex">
-                {categories.length} {t("Total")}
-              </span>
+          <aside className="w-full lg:w-[28%] lg:min-w-[210px] lg:max-w-[230px]">
+            {/* Mobile horizontal scroller */}
+            <div className="rounded-2xl bg-white/90 p-4 shadow-sm ring-1 ring-indigo-100 lg:hidden">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-slate-800">
+                  {activeCategory ? t(activeCategory) : t("Categories")}
+                </h2>
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                  {categories.length}
+                </span>
+              </div>
+              <div className="-mx-1 flex gap-3 overflow-x-auto pb-1 pr-1 snap-x snap-mandatory [scrollbar-width:none] [-ms-overflow-style:none]">
+                {categories.map((cat, idx) => (
+                  <div key={`mobile-cat-${cat}-${idx}`} className="px-1">
+                    {renderCategoryButton(cat, idx, "mobile")}
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-indigo-200">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:mt-4">
-                {categories.map((cat, idx) => renderCategoryButton(cat, idx))}
+            {/* Desktop grid */}
+            <div className="hidden h-full flex-col rounded-3xl bg-gradient-to-br from-indigo-50 via-sky-50 to-blue-100 p-4 shadow-lg ring-1 ring-indigo-100 lg:flex">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold text-indigo-700">
+                  {t("Categories")}
+                </h2>
+                <span className="rounded-full bg-white px-2 py-1 text-sm font-semibold text-indigo-700 shadow">
+                  {categories.length} {t("Total")}
+                </span>
+              </div>
+
+              <div className="mt-4 flex-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-indigo-200">
+                <div className="grid grid-cols-2 gap-2">
+                  {categories.map((cat, idx) => renderCategoryButton(cat, idx))}
+                </div>
               </div>
             </div>
           </aside>
 
           {/* Products */}
-          <article className="flex min-h-0 flex-1 flex-col rounded-3xl bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-100 p-5 shadow-lg ring-1 ring-teal-100">
+          <article className="flex min-h-0 flex-1 flex-col rounded-3xl bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-100 p-4 sm:p-5 shadow-lg ring-1 ring-teal-100">
             <div className="hidden items-center justify-between lg:flex">
               <h2 className="text-xl font-semibold text-slate-800">
                 {activeCategory ? t(activeCategory) : t("Products")}
@@ -2482,9 +2508,18 @@ return (
               </span>
             </div>
 
+            <div className="mb-3 flex items-center justify-between lg:hidden">
+              <h2 className="text-base font-semibold text-slate-800">
+                {activeCategory ? t(activeCategory) : t("Products")}
+              </h2>
+              <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold text-indigo-600">
+                {productsInActiveCategory.length}
+              </span>
+            </div>
+
             <div className="flex-1 overflow-hidden rounded-3xl bg-transparent p-3">
               <div className="h-full overflow-y-auto pr-1">
-                <div className="grid grid-cols-1 gap-3 pb-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 pb-16 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4">
                   {productsInActiveCategory.length > 0 ? (
                     productsInActiveCategory.map((product) => (
                       <button
