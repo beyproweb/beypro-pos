@@ -21,6 +21,8 @@ import { toCategorySlug } from "../utils/slugCategory";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import socket from "../utils/socket";
 import { useAuth } from "../context/AuthContext";
+import { usePaymentMethods } from "../hooks/usePaymentMethods";
+import { getPaymentMethodLabel } from "../utils/paymentMethods";
 
 const normalizeGroupKey = (value) => {
   if (value === null || value === undefined) return "";
@@ -109,7 +111,6 @@ const normalizeExtrasGroupSelection = (raw) => {
     names: Array.from(names),
   };
 };
-const paymentMethods = ["Cash", "Credit Card", "Sodexo", "Multinet"];
 const categoryIcons = {
   Meat: "🍔",
   Pizza: "🍕",
@@ -125,6 +126,7 @@ const categoryIcons = {
 
 export default function TransactionScreen() {
   useRegisterGuard();
+  const paymentMethods = usePaymentMethods();
   const { tableId, orderId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -144,7 +146,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [receiptItems, setReceiptItems] = useState([]);
   const [order, setOrder] = useState(initialOrder);
   const [loading, setLoading] = useState(true);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(paymentMethods[0]);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [editingCartItemIndex, setEditingCartItemIndex] = useState(null);
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [showExtrasModal, setShowExtrasModal] = useState(false);
@@ -738,12 +740,41 @@ const selectedItemsTotal = cartItems
     return sum + (basePrice + perItemExtrasTotal) * quantity;
   }, 0);
     // --- New split payment state ---
-  const [splits, setSplits] = useState({
-    Cash: 0,
-    "Credit Card": 0,
-    Sodexo: 0,
-    Multinet: 0,
-  });
+  const [splits, setSplits] = useState({});
+
+  const resolvePaymentLabel = useCallback(
+    (id) => getPaymentMethodLabel(paymentMethods, id),
+    [paymentMethods]
+  );
+
+  useEffect(() => {
+    if (!paymentMethods.length) return;
+    setSelectedPaymentMethod((prev) => {
+      if (prev && paymentMethods.some((method) => method.id === prev)) {
+        return prev;
+      }
+      return paymentMethods[0].id;
+    });
+    setSplits((prev) => {
+      const next = {};
+      let changed = false;
+      paymentMethods.forEach((method) => {
+        const key = method.id;
+        const prevValue = prev?.[key];
+        next[key] = typeof prevValue !== "undefined" ? prevValue : 0;
+        if (next[key] !== prevValue) changed = true;
+      });
+      if (prev) {
+        Object.keys(prev).forEach((key) => {
+          if (!paymentMethods.some((method) => method.id === key)) {
+            changed = true;
+          }
+        });
+      }
+      if (!changed) return prev;
+      return next;
+    });
+  }, [paymentMethods]);
 
 
 // New: payment confirm with splits (cleaned)
@@ -795,15 +826,17 @@ if (!rSub?.sub_order_id) {
 
 
     // 5) Clean the splits payload (REMOVE undefined/empty/zero)
-    const cleanedSplits = Object.fromEntries(
-      Object.entries(splits)
-        .map(([k, v]) => [k, String(v ?? "").trim()])
-        .filter(([_, v]) => v !== "" && !isNaN(parseFloat(v)) && parseFloat(v) > 0)
-    );
+    const cleanedSplits = {};
+    Object.entries(splits || {}).forEach(([methodId, value]) => {
+      const parsed = parseFloat(value);
+      if (!isNaN(parsed) && parsed > 0) {
+        const label = resolvePaymentLabel(methodId);
+        cleanedSplits[label] = parsed;
+      }
+    });
 
     // Optional guard: ensure sum equals total
-    const sumSplits = Object.values(cleanedSplits)
-      .reduce((s, v) => s + parseFloat(v), 0);
+    const sumSplits = Object.values(cleanedSplits).reduce((s, v) => s + v, 0);
     if (Math.abs(sumSplits - totalDue) > 0.005) {
       throw new Error("Split amounts must equal the total.");
     }
@@ -1212,7 +1245,11 @@ const updateOrderStatus = async (newStatus = null, total = null, method = null) 
       status: newStatus || undefined,
       payment_status: newStatus === "paid" ? "paid" : undefined,
       total: total ?? order?.total ?? undefined,
-      payment_method: method || selectedPaymentMethod || order?.payment_method || "Unknown",
+      payment_method:
+        method ||
+        resolvePaymentLabel(selectedPaymentMethod) ||
+        order?.payment_method ||
+        "Unknown",
     };
 
     const updated = await secureFetch(`/orders/${targetId}/status`, {
@@ -1552,6 +1589,7 @@ if (order?.order_type === "table" && order?.source === "qr") {
 
 
 const confirmPayment = async (method, payIds = null) => {
+  const methodLabel = resolvePaymentLabel(method);
   const receiptId = uuidv4();
 const ids = (payIds && payIds.length > 0)
   ? payIds
@@ -1574,7 +1612,7 @@ if (discountValue > 0) {
       ingredients: i.ingredients,
       extras: i.extras,
       unique_id: i.unique_id,
-      payment_method: method,
+      payment_method: methodLabel,
       receipt_id: receiptId,
       note: i.note || null,
         discountType: discountValue > 0 ? discountType : null,
@@ -1588,16 +1626,19 @@ if (discountValue > 0) {
       body: JSON.stringify({
         order_id: order.id,
         total,
-        payment_method: method,
+        payment_method: methodLabel,
         receipt_id: receiptId,
         items: enhancedItems
       })
     });
 // Before calling secureFetch('orders/receipt-methods`, ...)
 const cleanedSplits = {};
-Object.entries(splits).forEach(([method, amt]) => {
+Object.entries(splits || {}).forEach(([methodId, amt]) => {
   const val = parseFloat(amt);
-  if (val > 0) cleanedSplits[method] = val;
+  if (val > 0) {
+    const label = resolvePaymentLabel(methodId);
+    cleanedSplits[label] = val;
+  }
 });
 await secureFetch(`/orders/receipt-methods${identifier}`, {
   method: "POST",
@@ -1846,7 +1887,7 @@ const clearUnconfirmedCartItems = () => {
     }
   };
 
- const sumOfSplits = Object.values(splits)
+ const sumOfSplits = Object.values(splits || {})
   .map((v) => parseFloat(v || 0))
   .reduce((sum, val) => sum + (isNaN(val) ? 0 : val), 0);
  
@@ -1863,7 +1904,9 @@ const totalDue = cartItems.filter(i => !i.paid).reduce((sum, item) => {
 
 
 // after you compute sumOfSplits…
-const hasAnySplit = Object.values(splits).some(v => v > 0);
+const hasAnySplit = Object.values(splits || {}).some(
+  (v) => parseFloat(v || 0) > 0
+);
 const shouldDisablePay = hasAnySplit && sumOfSplits !== totalDue;
 
 function ReceiptGroup({ receiptId, items, groupIdx }) {
@@ -2174,9 +2217,19 @@ const cardGradient = item.paid
         {item.name} ×{quantity}
       </span>
     </div>
-    <span className="font-semibold text-indigo-600 whitespace-nowrap">
-      ₺{lineTotal.toFixed(2)}
-    </span>
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => toggleCartItemExpansion(itemKey)}
+        className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-xs text-slate-500 hover:border-slate-300"
+        title={isExpanded ? t("Hide details") : t("Show details")}
+      >
+        {isExpanded ? "▲" : "▼"}
+      </button>
+      <span className="font-semibold text-indigo-600 whitespace-nowrap">
+        ₺{lineTotal.toFixed(2)}
+      </span>
+    </div>
   </div>
 
   {/* Expanded Details */}
@@ -2239,14 +2292,52 @@ const cardGradient = item.paid
                   item.selected_extras_group,
                   item.selectedExtrasGroupNames,
                 ]);
-                const groupsData = await ensureExtrasGroups();
+                if (selection.ids.length === 0 && selection.names.length === 0) {
+                  setSelectedProduct({
+                    ...item,
+                    modalExtrasGroups: [],
+                    extrasGroupRefs: { ids: [], names: [] },
+                    selectedExtrasGroup: [],
+                    selected_extras_group: [],
+                    selectedExtrasGroupNames: [],
+                  });
+                  setSelectedExtras(parsedExtras || []);
+                  setEditingCartItemIndex(idx);
+                  setShowExtrasModal(true);
+                  return;
+                }
+                let modalGroups = [];
+                let selectionForModal = selection;
+                try {
+                  const match = await getMatchedExtrasGroups(selection);
+                  if (match) {
+                    modalGroups = match.matchedGroups || [];
+                    const ids = match.matchedIds?.length
+                      ? match.matchedIds
+                      : selection.ids;
+                    const names = match.matchedNames?.length
+                      ? match.matchedNames
+                      : selection.names;
+                    selectionForModal = {
+                      ids,
+                      names,
+                    };
+                  } else {
+                    const groupsData = await ensureExtrasGroups();
+                    modalGroups = Array.isArray(groupsData) ? groupsData : [];
+                  }
+                } catch (err) {
+                  console.error("❌ Failed to resolve extras groups for edit:", err);
+                  const fallbackGroups = await ensureExtrasGroups();
+                  modalGroups = Array.isArray(fallbackGroups) ? fallbackGroups : [];
+                }
                 setSelectedProduct({
                   ...item,
-                  modalExtrasGroups: groupsData,
-                  extrasGroupRefs: selection,
-                  selectedExtrasGroup: selection.ids,
-                  selected_extras_group: selection.ids,
-                  selectedExtrasGroupNames: selection.names,
+                  modalExtrasGroups: modalGroups,
+                  extrasGroupRefs: selectionForModal,
+                  selectedExtrasGroup: selectionForModal.ids,
+                  selected_extras_group: selectionForModal.ids,
+                  selectedExtrasGroupNames: selectionForModal.names,
                 });
                 setSelectedExtras(parsedExtras || []);
                 setEditingCartItemIndex(idx);

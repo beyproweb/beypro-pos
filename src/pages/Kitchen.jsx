@@ -609,12 +609,19 @@ function compileTotals(selectedOrders) {
 
   // --- GROUP BY TABLE OR PHONE ORDER ---
 const groupedKitchenOrders = orders.reduce((acc, item) => {
-  if (item.order_type === "phone" || item.order_type === "packet") {
-    const key = `${item.order_type}-${item.customer_name || item.customer_phone || item.order_id}`;
-    if (!acc[key]) acc[key] = { type: item.order_type, items: [], header: item };
+  const normalizedType = String(item.order_type || "").toLowerCase();
+
+  if (["phone", "packet", "takeaway"].includes(normalizedType)) {
+    const identifier =
+      item.order_id ||
+      item.customer_name ||
+      item.customer_phone ||
+      item.pickup_time ||
+      "";
+    const key = `${normalizedType}-${identifier}`;
+    if (!acc[key]) acc[key] = { type: normalizedType, items: [], header: item };
     acc[key].items.push(item);
   } else {
-    // Table order, group by table_number
     const key = `table-${item.table_number}`;
     if (!acc[key]) acc[key] = { type: "table", items: [], header: item };
     acc[key].items.push(item);
@@ -790,6 +797,7 @@ return (
         const first = group.header;
         const ordersArePacket = group.type === "packet";
         const ordersArePhone = group.type === "phone";
+        const ordersAreTakeaway = group.type === "takeaway";
 
         // ✨ 4-tone palette matching POS
         const groupTheme = ordersArePacket
@@ -803,6 +811,12 @@ return (
               container: "border-l-[#7C6EF6]",
               header: "bg-[#EFEDFF] text-slate-800",
               badge: "bg-[#DCD6FF] text-[#3B33A8]",
+            }
+          : ordersAreTakeaway
+          ? {
+              container: "border-l-[#FB923C]",
+              header: "bg-[#FFF0E5] text-slate-800",
+              badge: "bg-[#FFE0CC] text-[#9A3412]",
             }
           : {
               container: "border-l-[#14B8A6]",
@@ -833,6 +847,7 @@ return (
                 {group.type === "table" && "🍽"}
                 {group.type === "phone" && "📞"}
                 {group.type === "packet" && "🛵"}
+                {group.type === "takeaway" && "🥡"}
               </span>
 
               <span className="flex items-center justify-between flex-1 min-w-0">
@@ -859,6 +874,34 @@ return (
                       {first.driver_name && (
                         <span className="text-xs font-semibold text-[#1E3A8A] dark:text-indigo-200">
                           🚗 {first.driver_name}
+                        </span>
+                      )}
+                    </>
+                  )}
+
+                  {ordersAreTakeaway && (
+                    <>
+                      <span className="font-black text-lg truncate">
+                        {t("Take Away")}
+                      </span>
+                      {first.customer_name && (
+                        <span className="text-sm text-slate-700">
+                          👤 {first.customer_name}
+                        </span>
+                      )}
+                      {first.customer_phone && (
+                        <span className="text-xs text-slate-500">
+                          📞 {first.customer_phone}
+                        </span>
+                      )}
+                      {first.pickup_time && (
+                        <span className="text-xs text-orange-600">
+                          🕒 {t("Pickup")}: {first.pickup_time}
+                        </span>
+                      )}
+                      {(first.takeaway_notes || first.notes) && (
+                        <span className="text-xs text-rose-600 truncate max-w-[220px]">
+                          📝 {(first.takeaway_notes || first.notes || "").slice(0, 140)}
                         </span>
                       )}
                     </>
@@ -910,13 +953,15 @@ return (
               </span>
 
               {/* Badge */}
-              {(ordersArePacket || ordersArePhone) && (
+              {(ordersArePacket || ordersArePhone || ordersAreTakeaway) && (
                 <span
                   className={`ml-2 px-2 py-1 rounded-lg text-xs font-semibold ${groupTheme.badge}`}
                 >
                   {ordersArePacket
                     ? `Packet${first.external_id ? " · Online" : ""}`
-                    : "Phone"}
+                    : ordersArePhone
+                    ? "Phone"
+                    : t("Take Away")}
                 </span>
               )}
             </div>

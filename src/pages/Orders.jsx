@@ -6,11 +6,9 @@ import PhoneOrderModal from "../components/PhoneOrderModal";
 import { useTranslation } from "react-i18next";
 import { v4 as uuidv4 } from "uuid";
 import secureFetch from "../utils/secureFetch";
+import { usePaymentMethods } from "../hooks/usePaymentMethods";
+import { DEFAULT_PAYMENT_METHODS } from "../utils/paymentMethods";
 const API_URL = import.meta.env.VITE_API_URL || "";
-
-
-
-const paymentMethods = ["Cash", "Credit Card", "Multinet", "Sodexo"];
 
 function DrinkSettingsModal({ open, onClose, fetchDrinks, summaryByDriver = [] }) {
   const [input, setInput] = useState("");
@@ -280,6 +278,17 @@ const RESTAURANT = {
 };
 
 export default function Orders({ orders: propOrders, hideModal = false }) {
+  const paymentMethods = usePaymentMethods();
+  const methodOptionSource = useMemo(
+    () => (paymentMethods.length ? paymentMethods : DEFAULT_PAYMENT_METHODS),
+    [paymentMethods]
+  );
+  const paymentMethodLabels = useMemo(
+    () => methodOptionSource.map((method) => method.label),
+    [methodOptionSource]
+  );
+  const fallbackMethodLabel = paymentMethodLabels[0] || "Cash";
+
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState({});
@@ -305,7 +314,7 @@ const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
 
 const [showPaymentModal, setShowPaymentModal] = useState(false);
 const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
-const [splitPayments, setSplitPayments] = useState([{ method: "Cash", amount: "" }]);
+const [splitPayments, setSplitPayments] = useState([{ method: "", amount: "" }]);
 
 
 function calcOrderTotalWithExtras(order) {
@@ -363,27 +372,25 @@ useEffect(() => {
           }
         }
 
-        // 🧮 Always use calcOrderTotalWithExtras!
         const totalWithExtras = calcOrderTotalWithExtras(editingPaymentOrder);
         const discounted =
           totalWithExtras - calcOrderDiscount(editingPaymentOrder);
 
         setSplitPayments([
           {
-            method: editingPaymentOrder.payment_method || "Cash",
+            method: editingPaymentOrder.payment_method || fallbackMethodLabel,
             amount: discounted,
           },
         ]);
       } catch (err) {
         console.warn("⚠️ Failed to fetch split payments:", err);
 
-        // fallback if request fails
         const totalWithExtras = calcOrderTotalWithExtras(editingPaymentOrder);
         const discounted =
           totalWithExtras - calcOrderDiscount(editingPaymentOrder);
         setSplitPayments([
           {
-            method: editingPaymentOrder.payment_method || "Cash",
+            method: editingPaymentOrder.payment_method || fallbackMethodLabel,
             amount: discounted,
           },
         ]);
@@ -393,7 +400,7 @@ useEffect(() => {
     fetchSplit();
   }
   // eslint-disable-next-line
-}, [showPaymentModal, editingPaymentOrder]);
+}, [showPaymentModal, editingPaymentOrder, fallbackMethodLabel]);
 
 
 
@@ -801,9 +808,14 @@ function countDrinksForDriver(orders, drinksList, driverId) {
 
 
 const filteredOrders = orders.filter(o => o.driver_id === Number(selectedDriverId));
-const totalByMethod = paymentMethods.reduce((obj, method) => {
-  obj[method] = filteredOrders.filter(o => o.payment_method === method).reduce((sum, o) => sum + Number(o.total || 0), 0); return obj;
-}, {});
+const totalByMethod = useMemo(() => {
+  return paymentMethodLabels.reduce((obj, label) => {
+    obj[label] = filteredOrders
+      .filter((o) => (o.payment_method || "").toLowerCase() === label.toLowerCase())
+      .reduce((sum, o) => sum + Number(o.total || 0), 0);
+    return obj;
+  }, {});
+}, [filteredOrders, paymentMethodLabels]);
 
 
 const [openDetails, setOpenDetails] = useState(() => {
@@ -996,10 +1008,16 @@ const renderPaymentModal = () => {
                 }}
                 className="rounded-xl border border-slate-200 px-3 py-2 font-medium text-base bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400"
               >
-                <option>Cash</option>
-                <option>Credit Card</option>
-                <option>Multinet</option>
-                <option>Sodexo</option>
+                {!methodOptionSource.some((method) => method.label === pay.method) &&
+                  pay.method && (
+                    <option value={pay.method}>{pay.method}</option>
+                  )}
+                {methodOptionSource.map((method) => (
+                  <option key={method.id} value={method.label}>
+                    {method.icon ? `${method.icon} ` : ""}
+                    {method.label}
+                  </option>
+                ))}
               </select>
               <input
                 type="number"
@@ -1036,7 +1054,9 @@ const renderPaymentModal = () => {
           ))}
           <button
             className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium shadow transition-all"
-            onClick={() => setSplitPayments([...splitPayments, { method: "Cash", amount: "" }])}
+            onClick={() =>
+              setSplitPayments([...splitPayments, { method: fallbackMethodLabel, amount: "" }])
+            }
           >
             <span className="text-lg sm:text-xl">+</span> Add Payment Method
           </button>

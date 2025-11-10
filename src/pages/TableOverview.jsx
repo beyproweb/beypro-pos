@@ -1141,14 +1141,17 @@ onCreateOrder={() => {
       </div>
     ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-7">
-        {kitchenOrders.map(item => (
+        {kitchenOrders.map(item => {
+          const orderType = String(item.order_type || "").trim().toLowerCase();
+          const takeawayNotes = item.takeaway_notes || item.notes;
+          return (
           <div
             key={item.item_id}
             className="rounded-3xl bg-gradient-to-br from-white/80 via-blue-50 to-indigo-50 border border-white/40 shadow-xl p-5 flex flex-col gap-3 hover:scale-[1.03] hover:shadow-2xl transition"
           >
             <div className="flex justify-between items-center">
 <div className="font-bold text-lg text-blue-800 flex flex-col">
-  {String(item.order_type || "").trim().toLowerCase() === "phone" ? (
+  {orderType === "phone" ? (
     <>
       <span>📞 {item.customer_name || item.customer_phone}</span>
       {item.customer_address && (
@@ -1156,7 +1159,7 @@ onCreateOrder={() => {
       )}
       <span className="ml-1 px-2 py-0.5 rounded bg-blue-200 text-blue-800 text-xs font-bold">Phone</span>
     </>
-  ) : String(item.order_type || "").trim().toLowerCase() === "packet" ? (
+  ) : orderType === "packet" ? (
     <>
       <span>🛵 {item.customer_name || "Online Order"}</span>
       {item.customer_address && (
@@ -1165,6 +1168,27 @@ onCreateOrder={() => {
       {/* Platform badge */}
       <span className="ml-1 px-2 py-0.5 rounded bg-orange-200 text-orange-800 text-xs font-bold">
         {item.external_id ? "Yemeksepeti" : "Packet"}
+      </span>
+    </>
+  ) : orderType === "takeaway" ? (
+    <>
+      <span>🥡 {t("Take Away")}</span>
+      {item.customer_name && (
+        <span className="text-sm text-slate-700">👤 {item.customer_name}</span>
+      )}
+      {item.customer_phone && (
+        <span className="text-xs text-slate-500">📞 {item.customer_phone}</span>
+      )}
+      {item.pickup_time && (
+        <span className="text-xs text-orange-700">
+          🕒 {t("Pickup")}: {item.pickup_time}
+        </span>
+      )}
+      {takeawayNotes && (
+        <span className="text-xs text-rose-600">📝 {takeawayNotes}</span>
+      )}
+      <span className="ml-1 px-2 py-0.5 rounded bg-orange-100 text-orange-700 text-xs font-bold">
+        {t("Take Away")}
       </span>
     </>
   ) : (
@@ -1219,7 +1243,7 @@ onCreateOrder={() => {
 
             </div>
           </div>
-        ))}
+        )})}
       </div>
     )}
   </div>

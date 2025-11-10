@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import secureFetch from "../utils/secureFetch";
 import { useAuth } from "../context/AuthContext";
+import {
+  DEFAULT_PAYMENT_METHODS,
+  slugifyPaymentId,
+  formatPaymentLabel,
+} from "../utils/paymentMethods";
 
 export default function PaymentModal({
   show,
@@ -69,10 +74,40 @@ export default function PaymentModal({
     };
   }, [show, effectiveStaffId]);
 
+  const normalizedMethods = useMemo(() => {
+    const source =
+      Array.isArray(paymentMethods) && paymentMethods.length
+        ? paymentMethods
+        : DEFAULT_PAYMENT_METHODS;
+    return source.map((method, index) => {
+      if (typeof method === "string") {
+        const id = slugifyPaymentId(method);
+        return {
+          id,
+          label: method,
+          icon: "💳",
+        };
+      }
+      const label =
+        method.label ||
+        method.name ||
+        formatPaymentLabel(method.id || `method_${index}`);
+      const id =
+        method.id ||
+        method.value ||
+        slugifyPaymentId(`${label}_${index}`);
+      return {
+        id,
+        label,
+        icon: method.icon || "💳",
+      };
+    });
+  }, [paymentMethods]);
+
   if (!show) return null;
 
   // Helper for calculating sum of split amounts
-  const sumOfSplits = Object.values(splits)
+  const sumOfSplits = Object.values(splits || {})
     .map((v) => parseFloat(v || 0))
     .reduce((sum, val) => sum + (isNaN(val) ? 0 : val), 0);
 
@@ -185,29 +220,20 @@ export default function PaymentModal({
 
         {isSplitMode ? (
           <div className="space-y-4">
-            {paymentMethods.map((method) => (
+            {normalizedMethods.map((method) => (
               <div
-                key={method}
+                key={method.id}
                 className="flex items-center justify-between"
               >
                 <div className="flex items-center space-x-2">
-                  {method === "Cash" && <span className="text-2xl">💵</span>}
-                  {method === "Credit Card" && (
-                    <span className="text-2xl">💳</span>
-                  )}
-                  {method === "Sodexo" && (
-                    <span className="text-2xl">🍽️</span>
-                  )}
-                  {method === "Multinet" && (
-                    <span className="text-2xl">🪙</span>
-                  )}
-                  <span className="font-medium">{t(method)}</span>
+                  <span className="text-2xl">{method.icon}</span>
+                  <span className="font-medium">{t(method.label)}</span>
                 </div>
                 <button
-                  onClick={() => setActiveSplitMethod(method)}
+                  onClick={() => setActiveSplitMethod(method.id)}
                   className="w-28 text-right px-4 py-3 border rounded-xl bg-gray-50 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-sm"
                 >
-                  {splits[method] ?? "0.00"}
+                  {splits?.[method.id] ?? "0.00"}
                 </button>
               </div>
             ))}
@@ -226,29 +252,28 @@ export default function PaymentModal({
           </div>
         ) : (
           <div className="space-y-2">
-            {paymentMethods.map((method) => (
+            {normalizedMethods.map((method) => (
               <button
-                key={method}
+                key={method.id}
                 onClick={async () => {
-                  let idsToPay =
+                  setSelectedPaymentMethod(method.id);
+                  const idsToPay =
                     selectedForPayment.length > 0
                       ? selectedForPayment
                       : cartItems
                           .filter((i) => !i.paid && i.confirmed)
                           .map((i) => i.unique_id);
-                  await confirmPayment(method, idsToPay);
+                  await confirmPayment(method.id, idsToPay);
                   onClose();
                 }}
                 className={`w-full py-2 rounded-xl border text-lg font-medium transition ${
-                  selectedPaymentMethod === method
+                  selectedPaymentMethod === method.id
                     ? "bg-blue-600 text-white"
                     : "bg-white text-gray-800 hover:bg-gray-100"
                 }`}
               >
-                {method === "Cash" && "💵"}{" "}
-                {method === "Credit Card" && "💳"}
-                {method === "Sodexo" && "🍽️"}{" "}
-                {method === "Multinet" && "🪙"} {t(method)}
+                <span className="text-xl mr-2">{method.icon}</span>
+                {t(method.label)}
               </button>
             ))}
           </div>
@@ -290,7 +315,7 @@ export default function PaymentModal({
                     onClick={() => {
                       if (key === "←") {
                         const current =
-                          splits[activeSplitMethod]?.toString() || "";
+                          splits?.[activeSplitMethod]?.toString() || "";
                         setSplits((prev) => ({
                           ...prev,
                           [activeSplitMethod]:
@@ -298,7 +323,7 @@ export default function PaymentModal({
                         }));
                       } else {
                         const current =
-                          splits[activeSplitMethod]?.toString() || "";
+                          splits?.[activeSplitMethod]?.toString() || "";
                         setSplits((prev) => ({
                           ...prev,
                           [activeSplitMethod]: (

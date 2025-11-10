@@ -1,17 +1,29 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
 const API_URL = import.meta.env.VITE_API_URL || "";
 import secureFetch from "../utils/secureFetch";
+import { usePaymentMethods } from "../hooks/usePaymentMethods";
 
-const PAYMENT_OPTIONS = [
-  "Cash", "Credit Card", "Sodexo", "Multinet"
+const FALLBACK_PAYMENT_OPTIONS = [
+  "Cash",
+  "Credit Card",
+  "Sodexo",
+  "Multinet",
 ];
 
 export default function OrderHistory({
   fromDate, toDate, paymentFilter,
   setFromDate, setToDate, setPaymentFilter,
 }) {
+  const paymentMethods = usePaymentMethods();
+  const paymentFilterOptions = useMemo(
+    () =>
+      paymentMethods.length
+        ? paymentMethods.map((method) => method.label)
+        : FALLBACK_PAYMENT_OPTIONS,
+    [paymentMethods]
+  );
   const [closedOrders, setClosedOrders] = useState([]);
   const [groupedClosedOrders, setGroupedClosedOrders] = useState({});
   const [editingPaymentOrderId, setEditingPaymentOrderId] = useState(null);
@@ -122,8 +134,10 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             value={paymentFilter}
           >
             <option value="All">{t('All Payments')}</option>
-            {PAYMENT_OPTIONS.map(p => (
-              <option key={p} value={p}>{t(p)}</option>
+            {paymentFilterOptions.map((p) => (
+              <option key={p} value={p}>
+                {t(p)}
+              </option>
             ))}
           </select>
         </div>
@@ -155,12 +169,19 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             {/* Order Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
               {orders
-  .filter(order =>
-    paymentFilter === "All" ||
-    (Array.isArray(order.receiptMethods) && order.receiptMethods.length > 0
-      ? order.receiptMethods.some(rm => rm.payment_method === paymentFilter)
-      : order.payment_method === paymentFilter)
-  )
+  .filter((order) => {
+    if (paymentFilter === "All") return true;
+    const target = (paymentFilter || "").toLowerCase();
+    const normalize = (val) => (val || "").toLowerCase();
+
+    if (Array.isArray(order.receiptMethods) && order.receiptMethods.length > 0) {
+      return order.receiptMethods.some(
+        (rm) => normalize(rm.payment_method) === target
+      );
+    }
+
+    return normalize(order.payment_method) === target;
+  })
   .map(order => (
     <div
       key={order.id}
@@ -288,9 +309,14 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
               }}
               className="border rounded px-2 py-1 text-base mr-2"
             >
-              {PAYMENT_OPTIONS.map(option =>
-                <option key={option} value={option}>{option}</option>
-              )}
+                {(paymentMethods.length
+                  ? paymentMethods.map((method) => method.label)
+                  : FALLBACK_PAYMENT_OPTIONS
+                ).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
             </select>
             <input
   type="number"
@@ -333,20 +359,32 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
         <button
           className="px-2 py-1 bg-green-100 text-green-800 rounded text-base font-bold mr-2"
           onClick={() => {
-            const draftArr = paymentMethodDraft[order.id] || order.receiptMethods;
-            setPaymentMethodDraft(pm => ({
-              ...pm,
-              [order.id]: [
-                ...draftArr,
-                {
-                  payment_method:
-                    PAYMENT_OPTIONS.find(
-                      opt => !draftArr.map(x => x.payment_method).includes(opt)
-                    ) || PAYMENT_OPTIONS[0],
-                  amount: 0,
-                }
-              ]
-            }));
+                const draftArr = paymentMethodDraft[order.id] || order.receiptMethods;
+                setPaymentMethodDraft(pm => ({
+                  ...pm,
+                  [order.id]: [
+                    ...draftArr,
+                    {
+                      payment_method:
+                        (paymentMethods.length
+                          ? paymentMethods
+                              .map((method) => method.label)
+                              .find(
+                                (opt) =>
+                                  !draftArr
+                                    .map((x) => x.payment_method)
+                                    .includes(opt)
+                              )
+                          : FALLBACK_PAYMENT_OPTIONS.find(
+                              (opt) =>
+                                !draftArr
+                                  .map((x) => x.payment_method)
+                                  .includes(opt)
+                            )) || (paymentMethods[0]?.label || FALLBACK_PAYMENT_OPTIONS[0]),
+                      amount: 0,
+                    }
+                  ]
+                }));
           }}
         >➕ Add Split</button>
         <button
@@ -448,9 +486,14 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 }}
                 className="border rounded px-2 py-1 text-base mr-2"
               >
-                {PAYMENT_OPTIONS.map(option =>
-                  <option key={option} value={option}>{option}</option>
-                )}
+                {(paymentMethods.length
+                  ? paymentMethods.map((method) => method.label)
+                  : FALLBACK_PAYMENT_OPTIONS
+                ).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
               </select>
               <input
                 type="number"
@@ -487,18 +530,28 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
           <button
             className="px-2 py-1 bg-green-100 text-green-800 rounded text-base font-bold mr-2"
             onClick={() => {
-              setPaymentMethodDraft(pm => ({
+              const options =
+                paymentMethods.length > 0
+                  ? paymentMethods.map((method) => method.label)
+                  : FALLBACK_PAYMENT_OPTIONS;
+              setPaymentMethodDraft((pm) => ({
                 ...pm,
                 [order.id]: [
                   ...pm[order.id],
                   {
-                    payment_method: PAYMENT_OPTIONS.find(opt => !pm[order.id].map(x => x.payment_method).includes(opt)) || PAYMENT_OPTIONS[0],
+                    payment_method:
+                      options.find(
+                        (opt) =>
+                          !pm[order.id].map((x) => x.payment_method).includes(opt)
+                      ) || options[0],
                     amount: 0,
-                  }
-                ]
+                  },
+                ],
               }));
             }}
-          >➕ Add Split</button>
+          >
+            ➕ Add Split
+          </button>
           <button
             className="ml-2 px-3 py-2 bg-blue-500 text-white rounded text-base"
             onClick={async () => {
@@ -553,27 +606,48 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
         <>
           <select
             value={paymentMethodDraft[order.id] || order.payment_method}
-            onChange={e =>
-              setPaymentMethodDraft(pm => ({ ...pm, [order.id]: e.target.value }))
+            onChange={(e) =>
+              setPaymentMethodDraft((pm) => ({ ...pm, [order.id]: e.target.value }))
             }
             className="border rounded px-2 py-1 text-base mr-2"
           >
-            {PAYMENT_OPTIONS.map(option =>
-              <option key={option} value={option}>{option}</option>
-            )}
+            {(paymentMethods.length
+              ? paymentMethods.map((method) => method.label)
+              : FALLBACK_PAYMENT_OPTIONS
+            ).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
           </select>
           <button
             className="px-2 py-1 bg-fuchsia-200 text-fuchsia-800 rounded text-base font-bold mr-2"
             onClick={() => {
-              setPaymentMethodDraft(pm => ({
+              const allOptions = paymentMethods.length
+                ? paymentMethods.map((method) => method.label)
+                : FALLBACK_PAYMENT_OPTIONS;
+              const current = paymentMethodDraft[order.id] || order.payment_method;
+
+              const nextOption =
+                allOptions.find((option) => option !== current) || allOptions[0];
+
+              setPaymentMethodDraft((pm) => ({
                 ...pm,
                 [order.id]: [
-                  { payment_method: pm[order.id] || order.payment_method, amount: Number(calculateGrandTotal(order.items)).toFixed(2) },
-                  { payment_method: PAYMENT_OPTIONS.find(opt => opt !== (pm[order.id] || order.payment_method)) || PAYMENT_OPTIONS[0], amount: 0 }
-                ]
+                  {
+                    payment_method: current,
+                    amount: Number(calculateGrandTotal(order.items)).toFixed(2),
+                  },
+                  {
+                    payment_method: nextOption,
+                    amount: 0,
+                  },
+                ],
               }));
             }}
-          >➕ Add Split</button>
+          >
+            ➕ Add Split
+          </button>
           <button
             className="px-2 py-1 bg-blue-500 text-white rounded text-base"
            onClick={async () => {

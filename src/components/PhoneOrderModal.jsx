@@ -5,21 +5,21 @@ import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { MapPin, User, Plus, Pencil, Trash2, Gift } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
 import { toast } from "react-hot-toast";
+import { usePaymentMethods } from "../hooks/usePaymentMethods";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
-
-const paymentMethods = ["Cash", "Credit Card", "Multinet", "Sodexo"];
 
 function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const paymentMethods = usePaymentMethods();
   const [search, setSearch] = useState("");
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", address: "", birthday: "", email: "" });
-  const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0]);
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState({ name: "", phone: "", address: "", birthday: "", email: "" });
 
@@ -28,6 +28,12 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [addrForm, setAddrForm] = useState({ label: "", address: "" });
   const [editAddrId, setEditAddrId] = useState(null);
+
+  useEffect(() => {
+    if (!paymentMethod && paymentMethods.length) {
+      setPaymentMethod(paymentMethods[0].label);
+    }
+  }, [paymentMethods, paymentMethod]);
 
   // ---- Customer search ----
   const searchCustomers = async (val) => {
@@ -502,9 +508,14 @@ const handleStartOrder = async () => {
               className="border-2 border-blue-100 rounded-xl px-4 py-2 w-full bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition"
               value={paymentMethod}
               onChange={e => setPaymentMethod(e.target.value)}
+              disabled={paymentMethods.length === 0}
             >
+              {paymentMethods.length === 0 && <option value="">{t("No payment methods")}</option>}
               {paymentMethods.map(method => (
-                <option key={method} value={method}>{t(method)}</option>
+                <option key={method.id} value={method.label}>
+                  {method.icon ? `${method.icon} ` : ""}
+                  {method.label}
+                </option>
               ))}
             </select>
           </div>
