@@ -1,10 +1,11 @@
 // src/pages/CustomerInsights.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Search, User, Gift, Phone, Repeat, Star, Mail, MapPin, Calendar, TrendingUp, Clock } from "lucide-react";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
-import { useNavigate } from "react-router-dom";
+import { usePaymentMethods } from "../hooks/usePaymentMethods";
+import { getPaymentMethodLabel } from "../utils/paymentMethods";
 
 export default function CustomerInsights() {
   const [customers, setCustomers] = useState([]);
@@ -14,8 +15,38 @@ export default function CustomerInsights() {
   const { t } = useTranslation();
   const canAccess = useHasPermission("customer");
   const [editModal, setEditModal] = useState({ open: false, data: null });
-  const [reopenCustomerId, setReopenCustomerId] = useState(null);
-  const navigate = useNavigate();
+  const paymentMethods = usePaymentMethods();
+  const [debtModal, setDebtModal] = useState({
+    open: false,
+    loading: false,
+    customer: null,
+    orders: [],
+    order: null,
+    items: [],
+    paymentMethod: "",
+    amount: "",
+    error: "",
+  });
+  const [isDebtPaying, setIsDebtPaying] = useState(false);
+  const paymentOptions = paymentMethods.length
+    ? paymentMethods.map((pm) => ({
+        value: pm.id || pm.label,
+        label: pm.label || pm.id || "Method",
+      }))
+    : ["Cash", "Credit Card", "Sodexo", "Multinet"].map((label) => ({
+        value: label,
+        label,
+      }));
+  const defaultPaymentMethod = paymentOptions[0]?.value || "";
+
+  useEffect(() => {
+    if (debtModal.open && !debtModal.paymentMethod && defaultPaymentMethod) {
+      setDebtModal((prev) => ({
+        ...prev,
+        paymentMethod: defaultPaymentMethod,
+      }));
+    }
+  }, [debtModal.open, debtModal.paymentMethod, defaultPaymentMethod]);
 
 async function handleSaveCustomer(updated) {
   try {
@@ -50,6 +81,196 @@ async function handleDeleteCustomer(id) {
   }
 }
 
+  const closeDebtModal = useCallback(() => {
+    setDebtModal({
+      open: false,
+      loading: false,
+      customer: null,
+      orders: [],
+      order: null,
+      items: [],
+      paymentMethod: "",
+      amount: "",
+      error: "",
+    });
+    setIsDebtPaying(false);
+  }, []);
+
+  const normalizeDebtItems = useCallback(
+    (items = []) =>
+      items.map((item) => ({
+        ...item,
+        display_name:
+          item.name ||
+          item.order_item_name ||
+          item.product_name ||
+          item.external_product_name ||
+          t("Item"),
+      })),
+    [t]
+  );
+
+  const fetchDebtOrderItems = useCallback(
+    async (orderId) => {
+      const items = await secureFetch(`/orders/${orderId}/items`);
+      return normalizeDebtItems(Array.isArray(items) ? items : []);
+    },
+    [normalizeDebtItems]
+  );
+
+  const handleOpenDebtPayment = async (customer) => {
+    if (!customer?.phone) {
+      alert("❌ Customer phone is required to pay debt");
+      return;
+    }
+    setIsDebtPaying(false);
+    setDebtModal({
+      open: true,
+      loading: true,
+      customer,
+      orders: [],
+      order: null,
+      items: [],
+      paymentMethod: defaultPaymentMethod,
+      amount: "",
+      error: "",
+    });
+    try {
+      const data = await secureFetch(`/orders/debt/find?phone=${encodeURIComponent(customer.phone)}`);
+      const ordersList = Array.isArray(data?.orders)
+        ? data.orders
+        : data?.id
+        ? [data]
+        : [];
+      if (!ordersList.length) {
+        throw new Error(t("No unpaid debt order found for this customer."));
+      }
+      const normalizedOrders = ordersList.map((order) => ({
+        ...order,
+        debt_recorded_total: Number(order.debt_recorded_total || 0),
+      }));
+      const ordersWithItems = [];
+      for (const order of normalizedOrders) {
+        const items = await fetchDebtOrderItems(order.id);
+        ordersWithItems.push({
+          ...order,
+          items,
+          remaining: Math.max(0, order.debt_recorded_total || order.total || 0),
+        });
+      }
+      const targetOrder =
+        ordersWithItems.find((o) => Array.isArray(o.items) && o.items.length > 0) ||
+        ordersWithItems[0];
+      const due = targetOrder?.remaining ?? 0;
+      setDebtModal({
+        open: true,
+        loading: false,
+        customer,
+        orders: ordersWithItems,
+        order: targetOrder,
+        items: targetOrder?.items || [],
+        paymentMethod: defaultPaymentMethod,
+        amount: due.toFixed(2),
+        error: "",
+      });
+    } catch (err) {
+      setDebtModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || t("Failed to load debt order"),
+      }));
+    }
+  };
+
+  const handleSelectDebtOrder = async (orderId) => {
+    if (!orderId || debtModal.order?.id === orderId) return;
+    const targetOrder = debtModal.orders.find((o) => o.id === orderId);
+    if (!targetOrder) return;
+    if (targetOrder.items && targetOrder.items.length) {
+      setDebtModal((prev) => ({
+        ...prev,
+        order: targetOrder,
+        items: targetOrder.items,
+        amount: (targetOrder.remaining ?? Math.max(0, targetOrder.debt_recorded_total || targetOrder.total || 0)).toFixed(2),
+        error: "",
+      }));
+      return;
+    }
+    setDebtModal((prev) => ({
+      ...prev,
+      loading: true,
+      error: "",
+    }));
+    try {
+      const items = await fetchDebtOrderItems(orderId);
+      const due = Math.max(0, targetOrder.debt_recorded_total || targetOrder.total || 0);
+      const updatedOrders = debtModal.orders.map((order) =>
+        order.id === orderId ? { ...order, items, remaining: due } : order
+      );
+      setDebtModal((prev) => ({
+        ...prev,
+        loading: false,
+        orders: updatedOrders,
+        order: { ...targetOrder, items, remaining: due },
+        items,
+        amount: due.toFixed(2),
+      }));
+    } catch (err) {
+      setDebtModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || t("Failed to load order items"),
+      }));
+    }
+  };
+
+  const handleConfirmDebtPayment = async () => {
+    if (!debtModal.order || isDebtPaying) return;
+    const amountDue = Math.max(
+      0,
+      Number(debtModal.order.debt_recorded_total || debtModal.order.total || 0)
+    );
+    if (amountDue <= 0) {
+      setDebtModal((prev) => ({ ...prev, error: t("No unpaid debt remains for this order.") }));
+      return;
+    }
+    const desiredAmount = Math.max(0, Number(debtModal.amount || 0));
+    if (desiredAmount <= 0) {
+      setDebtModal((prev) => ({ ...prev, error: t("Enter an amount to pay") }));
+      return;
+    }
+    const amountToPay = Math.min(amountDue, desiredAmount);
+    if (!debtModal.paymentMethod) {
+      setDebtModal((prev) => ({ ...prev, error: t("Select a payment method") }));
+      return;
+    }
+    try {
+      setIsDebtPaying(true);
+      const resolvedPaymentMethod =
+        getPaymentMethodLabel(paymentMethods, debtModal.paymentMethod) || debtModal.paymentMethod;
+      const response = await secureFetch(`/orders/${debtModal.order.id}/pay`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payment_method: resolvedPaymentMethod,
+          amount: amountToPay,
+          total: debtModal.order.total,
+        }),
+      });
+      if (response?.error) throw new Error(response.error);
+      alert(t("Debt payment recorded successfully."));
+      closeDebtModal();
+      fetchCustomers();
+    } catch (err) {
+      setDebtModal((prev) => ({
+        ...prev,
+        error: err.message || t("Failed to record debt payment"),
+      }));
+    } finally {
+      setIsDebtPaying(false);
+    }
+  };
+
   if (!canAccess) {
     return (
       <div className="p-12 text-2xl text-red-600 text-center">
@@ -71,34 +292,31 @@ async function handleDeleteCustomer(id) {
     top: [],
   });
 
-  // Fetch customers (searching by name/phone)
-  useEffect(() => {
-    let ignore = false;
-    async function fetchCustomers() {
-      setLoading(true);
-      try {
-        const query = search ? `?search=${encodeURIComponent(search)}` : "";
-        const res = await secureFetch(`/customers${query}`);
-        if (ignore) return;
-        setCustomers(res);
-        // You can compute stats here or fetch from backend
-        setStats(s => ({
-          ...s,
-          total: res.length,
-          repeat: res.filter(c => c.visit_count && c.visit_count > 1).length,
-          birthdays: res.filter(c => isThisWeekBirthday(c.birthday)).length,
-          top: [...res]
-            .sort((a, b) => (b.visit_count || 0) - (a.visit_count || 0))
-            .slice(0, 3),
-        }));
-      } catch (e) {
-        setCustomers([]);
-      }
+  const fetchCustomers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const query = search ? `?search=${encodeURIComponent(search)}` : "";
+      const res = await secureFetch(`/customers${query}`);
+      setCustomers(res);
+      setStats((s) => ({
+        ...s,
+        total: res.length,
+        repeat: res.filter((c) => c.visit_count && c.visit_count > 1).length,
+        birthdays: res.filter((c) => isThisWeekBirthday(c.birthday)).length,
+        top: [...res]
+          .sort((a, b) => (b.visit_count || 0) - (a.visit_count || 0))
+          .slice(0, 3),
+      }));
+    } catch (e) {
+      setCustomers([]);
+    } finally {
       setLoading(false);
     }
-    fetchCustomers();
-    return () => { ignore = true; };
   }, [search]);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   // Helper: is birthday this week
   function isThisWeekBirthday(birthday) {
@@ -114,29 +332,6 @@ async function handleDeleteCustomer(id) {
     return bday >= weekStart && bday <= weekEnd;
   }
 
-  const handleReopenDebt = async (customer) => {
-    if (!customer?.phone) {
-      alert("❌ Customer phone is required to reopen debt");
-      return;
-    }
-    try {
-      setReopenCustomerId(customer.id);
-      const order = await secureFetch(`/orders/debt/find?phone=${encodeURIComponent(customer.phone)}`);
-      if (!order) {
-        alert(t("No unpaid debt order found for this customer."));
-        return;
-      }
-      const reopened = await secureFetch(`/orders/${order.id}/reopen`, { method: "PATCH" });
-      if (!reopened || reopened.error) {
-        throw new Error(reopened?.error || "Failed to reopen order");
-      }
-      navigate(`/transaction/phone/${order.id}`, { state: { order: reopened } });
-    } catch (err) {
-      alert("❌ " + (err.message || "Failed to reopen debt order"));
-    } finally {
-      setReopenCustomerId(null);
-    }
-  };
 
   return (
     <div className="w-full px-3 py-6 max-w-6xl mx-auto">
@@ -296,10 +491,12 @@ async function handleDeleteCustomer(id) {
                       {debtPositive && (
                         <button
                           className="flex-1 min-w-[120px] rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600 disabled:opacity-60"
-                          disabled={reopenCustomerId === c.id}
-                          onClick={() => handleReopenDebt(c)}
+                          disabled={
+                            (debtModal.open && debtModal.customer?.id === c.id && (debtModal.loading || isDebtPaying))
+                          }
+                          onClick={() => handleOpenDebtPayment(c)}
                         >
-                          {reopenCustomerId === c.id ? t("Reopening…") : t("Reopen Debt")}
+                          {t("Pay Debt")}
                         </button>
                       )}
                       <button
@@ -378,6 +575,184 @@ async function handleDeleteCustomer(id) {
           Cancel
         </button>
       </div>
+    </div>
+  </div>
+)}
+
+{debtModal.open && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl dark:bg-zinc-900">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+            {t("Pay Customer Debt")}
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {debtModal.customer?.name} · {debtModal.customer?.phone}
+          </p>
+        </div>
+        <button
+          className="text-slate-500 hover:text-slate-800 dark:text-slate-300"
+          onClick={closeDebtModal}
+          disabled={isDebtPaying}
+        >
+          ✕
+        </button>
+      </div>
+
+      {debtModal.loading && !debtModal.order ? (
+        <div className="py-10 text-center text-slate-500">{t("Loading order items...")}</div>
+      ) : !debtModal.order ? (
+        <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600 dark:bg-rose-500/10 dark:text-rose-200">
+          {debtModal.error || t("No unpaid debt order found.")}
+        </div>
+      ) : (
+        <>
+          {debtModal.orders.length > 1 && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {debtModal.orders.map((order) => {
+                const selected = debtModal.order?.id === order.id;
+                const due = Math.max(0, Number(order.debt_recorded_total || order.total || 0)).toFixed(2);
+                return (
+                  <button
+                    key={order.id}
+                    className={`rounded-2xl border px-3 py-2 text-sm font-semibold shadow-sm transition ${
+                      selected
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10"
+                        : "border-slate-200 bg-white text-slate-600 dark:bg-zinc-900 dark:border-zinc-700"
+                    }`}
+                    onClick={() => handleSelectDebtOrder(order.id)}
+                    disabled={isDebtPaying || debtModal.loading}
+                  >
+                    #{order.id} • ₺{due}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {debtModal.loading && (
+            <div className="mb-3 rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-500 dark:bg-zinc-800/60">
+              {t("Refreshing order items...")}
+            </div>
+          )}
+
+          <div className="max-h-60 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50/80 p-3 dark:bg-zinc-800/40 dark:border-zinc-700">
+            {(!debtModal.order?.items || debtModal.order.items.length === 0) ? (
+              <p className="text-sm text-slate-500">{t("No items found for this order.")}</p>
+            ) : (
+              debtModal.order.items.map((item, idx) => {
+                const extras = Array.isArray(item.extras)
+                  ? item.extras
+                  : typeof item.extras === "string"
+                  ? (() => {
+                      try {
+                        return JSON.parse(item.extras);
+                      } catch {
+                        return [];
+                      }
+                    })()
+                  : [];
+                return (
+                  <div
+                    key={item.id || item.unique_id || idx}
+                    className="mb-3 rounded-2xl bg-white px-3 py-2 text-sm shadow-sm last:mb-0 dark:bg-zinc-900/70"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-800 dark:text-slate-100">
+                        {item.display_name ||
+                          item.name ||
+                          item.order_item_name ||
+                          item.product_name ||
+                          item.external_product_name ||
+                          t("Item")}
+                      </span>
+                      <span className="text-slate-700 dark:text-slate-200">
+                        ₺{(Number(item.price) * Number(item.quantity || 1)).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-300">
+                      {t("Qty")}: {item.quantity || 1}
+                    </div>
+                    {extras.length > 0 && (
+                      <ul className="mt-1 space-y-1 text-xs text-slate-500 dark:text-slate-300">
+                        {extras.map((ex, idx) => (
+                          <li key={idx}>
+                            ➕ {ex.name} ×{ex.quantity || 1} — ₺{Number(ex.price || 0).toFixed(2)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 dark:bg-zinc-800/60">
+            <span className="text-sm font-semibold text-slate-500">{t("Total Due")}</span>
+            <span className="text-2xl font-bold text-slate-900 dark:text-white">
+              ₺{Math.max(0, Number(debtModal.order.remaining ?? debtModal.order.debt_recorded_total ?? debtModal.order.total ?? 0)).toFixed(2)}
+            </span>
+          </div>
+
+          <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {t("Amount To Pay")}
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:bg-zinc-800 dark:border-zinc-700"
+            value={debtModal.amount}
+            onChange={(e) =>
+              setDebtModal((prev) => ({ ...prev, amount: e.target.value }))
+            }
+            disabled={isDebtPaying || debtModal.loading}
+          />
+        </label>
+
+        <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {t("Payment Method")}
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:bg-zinc-800 dark:border-zinc-700"
+              value={debtModal.paymentMethod}
+              onChange={(e) =>
+                setDebtModal((prev) => ({ ...prev, paymentMethod: e.target.value }))
+              }
+              disabled={isDebtPaying || debtModal.loading}
+            >
+              {paymentOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {t(opt.label)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {debtModal.error && (
+            <div className="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600 dark:bg-rose-500/10 dark:text-rose-200">
+              {debtModal.error}
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+            className="flex-1 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-600 disabled:opacity-60"
+            onClick={handleConfirmDebtPayment}
+            disabled={isDebtPaying || debtModal.loading}
+          >
+            {isDebtPaying ? t("Processing...") : t("Confirm Payment")}
+          </button>
+            <button
+              className="flex-1 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-zinc-700 dark:text-slate-200"
+              onClick={closeDebtModal}
+              disabled={isDebtPaying}
+            >
+              {t("Cancel")}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   </div>
 )}

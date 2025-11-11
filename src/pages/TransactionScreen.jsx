@@ -176,6 +176,8 @@ const [debtSearch, setDebtSearch] = useState("");
 const [debtSearchResults, setDebtSearchResults] = useState([]);
 const [debtSearchLoading, setDebtSearchLoading] = useState(false);
 const orderType = order?.order_type || (orderId ? "phone" : "table");
+const normalizedStatus = (order?.status || "").toLowerCase();
+const isDebtEligible = ["confirmed", "paid"].includes(normalizedStatus);
   const safeProducts = Array.isArray(products) ? products : [];
   const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
 const [excludedItems, setExcludedItems] = useState([]);
@@ -207,7 +209,6 @@ const reopenOrderIfNeeded = useCallback(
       const reopened = await secureFetch(`/orders/${orderCandidate.id}/reopen${identifier}`, {
         method: "PATCH",
       });
-      showToast(t("Unpaid order reopened for payment"));
       return reopened;
     } catch (err) {
       console.error("❌ Failed to reopen unpaid order:", err);
@@ -242,6 +243,10 @@ const handleCartPrint = async () => {
 const handleOpenDebtModal = async () => {
   if (!order?.id) {
     showToast(t("Select an order first"));
+    return;
+  }
+  if (!isDebtEligible) {
+    showToast(t("Order must be confirmed before adding debt"));
     return;
   }
   setDebtError("");
@@ -2214,20 +2219,16 @@ const renderCartContent = (variant = "desktop") => {
       <button onClick={handleMultifunction} className={primaryButtonClass}>
         {t(getButtonLabel())}
       </button>
-      <button
-        onClick={handleOpenDebtModal}
-        className={debtButtonClass}
-        disabled={isDebtSaving}
-      >
-        {isDebtSaving ? t("Saving...") : t("Add to Debt")}
-      </button>
-      <button
-        onClick={handleCartPrint}
-        className={baseButtonClass}
-        title={t("Print Receipt")}
-      >
-        {t("Print")}
-      </button>
+      {isDebtEligible && (
+        <button
+          onClick={handleOpenDebtModal}
+          className={debtButtonClass}
+          disabled={isDebtSaving}
+        >
+          {isDebtSaving ? t("Saving...") : t("Add to Debt")}
+        </button>
+      )}
+  
     </div>
   ) : (
     <div className="flex flex-wrap gap-2">
@@ -2244,13 +2245,15 @@ const renderCartContent = (variant = "desktop") => {
       >
         {t("Print")}
       </button>
-      <button
-        onClick={handleOpenDebtModal}
-        className={`${debtButtonClass} flex-1 min-w-[120px]`}
-        disabled={isDebtSaving}
-      >
-        {isDebtSaving ? t("Saving...") : t("Add to Debt")}
-      </button>
+      {isDebtEligible && (
+        <button
+          onClick={handleOpenDebtModal}
+          className={`${debtButtonClass} flex-1 min-w-[120px]`}
+          disabled={isDebtSaving}
+        >
+          {isDebtSaving ? t("Saving...") : t("Add to Debt")}
+        </button>
+      )}
       <button
         onClick={handleMultifunction}
         className={`${primaryButtonClass} flex-1 min-w-[120px]`}

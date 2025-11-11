@@ -64,13 +64,21 @@ const fetchClosedOrders = async () => {
       name: item.product_name || item.order_item_name || item.external_product_name || "Unnamed"
     }));
 
+    const paymentsRaw = await secureFetch(`/orders/${order.id}/payments`);
+    const payments = Array.isArray(paymentsRaw)
+      ? paymentsRaw.map((p) => ({
+          ...p,
+          amount: Number(p.amount || 0),
+        }))
+      : [];
+
     let receiptMethods = [];
     if (order.receipt_id) {
       const methodsRes = await secureFetch(`/reports/receipt-methods/${order.receipt_id}`);
       receiptMethods = Array.isArray(methodsRes) ? methodsRes : [];
     }
 
-    return { ...order, items, receiptMethods };
+    return { ...order, items, payments, receiptMethods };
   })
 );
 
@@ -179,6 +187,11 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
         (rm) => normalize(rm.payment_method) === target
       );
     }
+    if (Array.isArray(order.payments) && order.payments.length > 0) {
+      return order.payments.some(
+        (pm) => normalize(pm.payment_method) === target
+      );
+    }
 
     return normalize(order.payment_method) === target;
   })
@@ -217,11 +230,18 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             </>
           )}
         </div>
-        <span className={`px-2 py-1 rounded-full text-xs font-bold
-          ${order.status === "closed" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-800"}
-        `}>
-          {t(order.status)}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className={`px-2 py-1 rounded-full text-xs font-bold
+            ${order.status === "closed" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-800"}
+          `}>
+            {t(order.status)}
+          </span>
+          {order.debt_paid_at && (
+            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">
+              {t("Debt Paid")}
+            </span>
+          )}
+        </div>
       </div>
 
       <hr className="my-2" />
@@ -279,6 +299,33 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
           <span className="text-gray-400 text-xs">{t("No items")}</span>
         )}
       </div>
+
+      {order.payments && order.payments.length > 0 && (
+        <div className="mt-3 rounded-2xl bg-white/80 px-3 py-2 text-sm text-slate-600 shadow-inner border border-slate-100 dark:bg-zinc-900/60 dark:border-zinc-800">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">
+            {t("Payments")}
+          </p>
+          <div className="space-y-1">
+            {order.payments.map((payment) => (
+              <div key={payment.id} className="flex items-center justify-between">
+                <span>
+                  {new Date(payment.created_at).toLocaleString([], {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}{" "}
+                  · {payment.payment_method || t("Payment")}
+                </span>
+                <span className="font-semibold text-slate-900 dark:text-white">
+                  ₺{Number(payment.amount || 0).toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* --- Payment/Total Block --- */}
       <div className="flex items-center justify-between mt-4 border-t border-indigo-100 pt-3">
