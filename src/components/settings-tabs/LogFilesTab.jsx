@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "../../utils/secureFetch";
 
 export default function LogFilesTab() {
   const { t } = useTranslation();
@@ -27,16 +27,12 @@ export default function LogFilesTab() {
   const params = new URLSearchParams();
   if (dateFilter.from) params.append("from", dateFilter.from);
   if (dateFilter.to) params.append("to", dateFilter.to);
-
-  const url = `${API_URL}/api/settings/logs/${selectedLog}?${params.toString()}`;
-
-  console.log("Fetching logs from:", url);
+  const query = params.toString();
+  const endpoint = `/settings/logs/${selectedLog}${query ? `?${query}` : ""}`;
 
   setLoading(true);
-  fetch(url)
-    .then((res) => res.json())
+  secureFetch(endpoint)
     .then((data) => {
-      console.log("🧾 Logs response:", data); // <-- add this
       if (Array.isArray(data)) {
         setLogEntries(data);
       } else {
@@ -52,7 +48,38 @@ export default function LogFilesTab() {
     });
 }, [selectedLog, dateFilter]);
 
+ const isRegisterLog = selectedLog === "register";
+  const columns = useMemo(() => {
+    if (isRegisterLog) {
+      return [
+        { key: "created_at", label: t("Timestamp") },
+        { key: "type", label: t("Type") },
+        { key: "amount", label: t("Amount") },
+        { key: "note", label: t("Note") },
+        { key: "staff", label: t("Staff") },
+      ];
+    }
+    return [
+      { key: "date", label: t("Date") },
+      { key: "action", label: t("Action") },
+      { key: "user", label: t("User") },
+    ];
+  }, [isRegisterLog, t]);
 
+  const renderCell = (entry, column) => {
+    if (column.key === "amount") {
+      const value = parseFloat(entry.amount);
+      return Number.isFinite(value) ? `₺${value.toFixed(2)}` : "₺0.00";
+    }
+    if (column.key === "created_at") {
+      if (!entry.created_at) return entry.date || "—";
+      const dt = new Date(entry.created_at);
+      return Number.isNaN(dt.getTime())
+        ? entry.created_at
+        : dt.toLocaleString();
+    }
+    return entry[column.key] || "—";
+  };
 
  return (
   <div className="bg-white dark:bg-gray-900 rounded-xl shadow p-6 max-w-5xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
@@ -108,9 +135,11 @@ export default function LogFilesTab() {
       <table className="min-w-full text-sm text-left">
         <thead className="bg-gray-100 dark:bg-gray-700 border-b text-gray-600 dark:text-gray-300 uppercase">
           <tr>
-            <th className="px-4 py-3">{t("Date")}</th>
-            <th className="px-4 py-3">{t("Action")}</th>
-            <th className="px-4 py-3">{t("User")}</th>
+            {columns.map((col) => (
+              <th key={col.key} className="px-4 py-3">
+                {col.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -129,9 +158,11 @@ export default function LogFilesTab() {
           ) : (
             logEntries.map((entry, idx) => (
               <tr key={idx} className="border-t border-gray-200 dark:border-gray-700">
-                <td className="px-4 py-2">{entry.date}</td>
-                <td className="px-4 py-2">{t(entry.action)}</td>
-                <td className="px-4 py-2">{entry.user}</td>
+                {columns.map((col) => (
+                  <td key={col.key} className="px-4 py-2">
+                    {renderCell(entry, col)}
+                  </td>
+                ))}
               </tr>
             ))
           )}

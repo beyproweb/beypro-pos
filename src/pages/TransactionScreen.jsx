@@ -23,6 +23,14 @@ import socket from "../utils/socket";
 import { useAuth } from "../context/AuthContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { getPaymentMethodLabel } from "../utils/paymentMethods";
+import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../utils/cashDrawer";
+import {
+  renderReceiptText,
+  printViaBridge,
+  getReceiptLayout,
+} from "../utils/receiptPrinter";
+import { fetchOrderWithItems } from "../utils/orderPrinting";
+import TableActionButtons from "../components/TableActionButtons";
 
 const normalizeGroupKey = (value) => {
   if (value === null || value === undefined) return "";
@@ -158,7 +166,15 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [subOrders, setSubOrders] = useState([]);
   const [activeSplitMethod, setActiveSplitMethod] = useState(null);
   const [note, setNote] = useState("");
-  const [toast, setToast] = useState({ show: false, message: "" });
+const [toast, setToast] = useState({ show: false, message: "" });
+const [isDebtSaving, setIsDebtSaving] = useState(false);
+const [showDebtModal, setShowDebtModal] = useState(false);
+const [debtForm, setDebtForm] = useState({ name: "", phone: "" });
+const [debtError, setDebtError] = useState("");
+const [debtLookupLoading, setDebtLookupLoading] = useState(false);
+const [debtSearch, setDebtSearch] = useState("");
+const [debtSearchResults, setDebtSearchResults] = useState([]);
+const [debtSearchLoading, setDebtSearchLoading] = useState(false);
 const orderType = order?.order_type || (orderId ? "phone" : "table");
   const safeProducts = Array.isArray(products) ? products : [];
   const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
@@ -171,6 +187,181 @@ const productsInActiveCategory = safeProducts.filter(
     (p.category || "").trim().toLowerCase() ===
     (activeCategory || "").trim().toLowerCase()
 );
+
+const isCashMethod = useCallback(
+  (methodId) => {
+    if (!methodId) return false;
+    const method = paymentMethods.find((m) => m.id === methodId);
+    const label = method?.label || methodId;
+    return isCashLabel(label);
+  },
+  [paymentMethods]
+);
+
+const reopenOrderIfNeeded = useCallback(
+  async (orderCandidate) => {
+    if (!orderCandidate) return null;
+    const status = (orderCandidate.status || "").toLowerCase();
+    if (status !== "closed" || orderCandidate.is_paid) return null;
+    try {
+      const reopened = await secureFetch(`/orders/${orderCandidate.id}/reopen${identifier}`, {
+        method: "PATCH",
+      });
+      showToast(t("Unpaid order reopened for payment"));
+      return reopened;
+    } catch (err) {
+      console.error("❌ Failed to reopen unpaid order:", err);
+      showToast(t("Failed to reopen unpaid order"));
+      return null;
+    }
+  },
+  [identifier, t]
+);
+
+const handleCartPrint = async () => {
+  if (!order?.id) {
+    showToast(t("No order selected to print"));
+    return;
+  }
+  try {
+    const printable = await fetchOrderWithItems(order.id, identifier);
+    if (!Array.isArray(printable.items) || printable.items.length === 0) {
+      printable.items = cartItems;
+    }
+    const text = renderReceiptText(printable, getReceiptLayout());
+    const ok = printViaBridge(text);
+    showToast(
+      ok ? t("Receipt sent to printer") : t("Printer bridge is not connected")
+    );
+  } catch (err) {
+    console.error("❌ Print failed:", err);
+    showToast(t("Failed to print receipt"));
+  }
+};
+
+const handleOpenDebtModal = async () => {
+  if (!order?.id) {
+    showToast(t("Select an order first"));
+    return;
+  }
+  setDebtError("");
+  setDebtSearch("");
+  setDebtSearchResults([]);
+  setDebtLookupLoading(true);
+
+  let phone = (order.customer_phone || "").trim();
+  let name = (order.customer_name || "").trim();
+
+  if (phone) {
+    try {
+      const existingCustomer = await secureFetch(`/customers/by-phone/${encodeURIComponent(phone)}`);
+      if (existingCustomer) {
+        if (!name && existingCustomer.name) name = existingCustomer.name;
+        if (!phone && existingCustomer.phone) phone = existingCustomer.phone;
+      }
+    } catch (err) {
+      console.warn("⚠️ Failed to fetch existing customer for debt:", err);
+    }
+  }
+
+  setDebtForm({ name, phone });
+  setDebtLookupLoading(false);
+  setShowDebtModal(true);
+};
+
+const handleDebtSearch = async (value) => {
+  const term = value.trim();
+  setDebtSearch(value);
+  if (!term) {
+    setDebtSearchResults([]);
+    return;
+  }
+  setDebtSearchLoading(true);
+  try {
+    const query = `/customers?search=${encodeURIComponent(term)}`;
+    const results = await secureFetch(query);
+    setDebtSearchResults(Array.isArray(results) ? results.slice(0, 5) : []);
+  } catch (err) {
+    console.error("❌ Failed to search customers for debt:", err);
+    setDebtSearchResults([]);
+  } finally {
+    setDebtSearchLoading(false);
+  }
+};
+
+const handleSelectDebtCustomer = (customer) => {
+  setDebtForm({
+    name: customer?.name || "",
+    phone: customer?.phone || "",
+  });
+  setDebtSearch(customer?.name || customer?.phone || "");
+  setDebtSearchResults([]);
+};
+
+const handleAddToDebt = async () => {
+  if (!order?.id) {
+    showToast(t("Select an order first"));
+    return;
+  }
+  if (isDebtSaving) return;
+
+  const outstanding = Number(calculateDiscountedTotal().toFixed(2));
+  const fallbackOutstanding = Number(order?.total) || 0;
+  const amountToStore = outstanding > 0 ? outstanding : fallbackOutstanding;
+  if (amountToStore <= 0) {
+    setDebtError(t("No unpaid items to add to debt"));
+    return;
+  }
+
+  const name = debtForm.name?.trim();
+  const phone = debtForm.phone?.trim();
+
+  if (!phone) {
+    setDebtError(t("Customer phone is required for debt"));
+    return;
+  }
+  if (!name) {
+    setDebtError(t("Customer name is required for debt"));
+    return;
+  }
+
+  try {
+    setIsDebtSaving(true);
+    const response = await secureFetch(`/orders/${order.id}/add-debt${identifier}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: name,
+        customer_phone: phone,
+        amount: amountToStore,
+      }),
+    });
+
+    if (response?.error) {
+      throw new Error(response.error);
+    }
+
+    const updatedOrder = response.order || response;
+    setOrder(updatedOrder);
+    setCartItems([]);
+    setReceiptItems([]);
+    setSelectedForPayment([]);
+    setSelectedCartItemIds(new Set());
+    showToast(t("Order added to customer debt"));
+    setShowDebtModal(false);
+
+    if (tableId) {
+      navigate("/tableoverview");
+    } else if (orderId) {
+      navigate("/orders");
+    }
+  } catch (err) {
+    console.error("❌ Failed to add debt:", err);
+    setDebtError(err.message || t("Failed to add order debt"));
+  } finally {
+    setIsDebtSaving(false);
+  }
+};
 
 
 const renderCategoryButton = (cat, idx, variant = "desktop") => {
@@ -494,7 +685,7 @@ const clearSelectedCartItems = useCallback(() => {
   );
 
   if (!removedAny) {
-    showToast(t("Selected items cannot be cleared"));
+    showToast(t("Selected items cleared"));
     return;
   }
 
@@ -609,12 +800,13 @@ useEffect(() => {
     title: headerTitle,
     subtitle: subtitleText || undefined,
     tableNav: !orderId ? (
-      <TableNavigationRow
-        tableId={tableId}
-        navigate={navigate}
-        t={t}
+      <TableActionButtons
+        onMove={() => setShowMoveTableModal(true)}
+        onMerge={() => setShowMergeTableModal(true)}
         cartMode={false}
         showLabels={false}
+        moveLabel={t("Move Table")}
+        mergeLabel={t("Merge Table")}
       />
     ) : null,
   });
@@ -844,6 +1036,13 @@ if (!rSub?.sub_order_id) {
     if (Math.abs(sumSplits - totalDue) > 0.005) {
       throw new Error("Split amounts must equal the total.");
     }
+    const cashPortion = Object.entries(cleanedSplits).reduce((sum, [label, value]) => {
+      if (isCashLabel(label)) {
+        const numeric = Number(value);
+        return sum + (Number.isFinite(numeric) ? numeric : 0);
+      }
+      return sum;
+    }, 0);
 
     // 6) Save receipt methods ONCE (remove the earlier { [method]: total } post)
 const rMethods = await secureFetch(`/orders/receipt-methods${identifier}`, {
@@ -871,7 +1070,7 @@ if (!rMethods) throw new Error("Failed to save receipt methods");
     // 8) If all items are paid, mark order as paid
 const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
 
-if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
+  if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
  await secureFetch(`/orders/${order.id}/status${identifier}`, {
     method: "PUT",
     body: JSON.stringify({
@@ -883,32 +1082,17 @@ if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
   setOrder((prev) => ({ ...prev, status: "paid" }));
 }
 
+    if (cashPortion > 0) {
+      const note = order?.id ? `Order #${order.id} (split)` : "Split payment";
+      await logCashRegisterEvent({ type: "sale", amount: cashPortion, note });
+      await openCashDrawer();
+    }
+
   } catch (err) {
     console.error("❌ confirmPaymentWithSplits failed:", err);
     // optionally toast
   }
 };
-
-function TableNavigationRow({ tableId, navigate, t, cartMode, showLabels = true }) {
-  return (
-    <div className={`flex items-center justify-center w-full ${cartMode ? "gap-4 py-2" : "gap-2 md:gap-6 py-2"}`}>
-      <button
-        onClick={() => setShowMoveTableModal(true)}
-        className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-blue shadow-sm transition hover:bg-emerald-50 active:scale-95"
-        aria-label={t("Move")}
-      >
-        {showLabels && <span className="tracking-wide">{t("Move")}</span>}
-      </button>
-      <button
-        onClick={() => setShowMergeTableModal(true)}
-        className="flex items-center justify-center gap-2 rounded-xl border border-amber-200 px-4 py-2 text-sm font-semibold text-blue shadow-sm transition hover:bg-amber-50 active:scale-95"
-        aria-label={t("Merge")}
-      >
-        {showLabels && <span className="tracking-wide">{t("Merge")}</span>}
-      </button>
-    </div>
-  );
-}
 
 // Increase quantity of a cart item by unique_id
 const incrementCartItem = (uniqueId) => {
@@ -1041,7 +1225,7 @@ useEffect(() => {
   // Whenever a new table/order is opened, reset discount
   setDiscountValue(0);
   setDiscountType("percent");
-}, [tableId, orderId]);
+}, [tableId, orderId, reopenOrderIfNeeded]);
 
 // ✅ Global reusable function to fetch takeaway orders
 const fetchTakeawayOrder = async (id) => {
@@ -1050,8 +1234,11 @@ const fetchTakeawayOrder = async (id) => {
       localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
     const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
 
-    const newOrder = await secureFetch(`/orders/${id}${identifier}`);
-    const items = await secureFetch(`/orders/${id}/items${identifier}`);
+    let newOrder = await secureFetch(`/orders/${id}${identifier}`);
+    const reopened = await reopenOrderIfNeeded(newOrder);
+    if (reopened) newOrder = reopened;
+
+    const items = await secureFetch(`/orders/${newOrder.id}/items${identifier}`);
 
     setOrder(newOrder);
     setCartItems(
@@ -1093,27 +1280,27 @@ const fetchPhoneOrder = async (id) => {
       localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
     const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
 
-    const newOrder = await secureFetch(`/orders/${id}${identifier}`);
+    let newOrder = await secureFetch(`/orders/${id}${identifier}`);
+    const reopened = await reopenOrderIfNeeded(newOrder);
+    if (reopened) newOrder = reopened;
+
     let correctedStatus = newOrder.status;
 
-// 🧩 FIX: if phone order has no items, treat as "occupied" (not "confirmed")
-const items = await secureFetch(`/orders/${id}/items${identifier}`);
-if ((!items || items.length === 0) && newOrder.order_type === "phone") {
-  correctedStatus = "occupied";
-}
-
-if (newOrder.payment_method === "Online") correctedStatus = "paid";
-
-setOrder({ ...newOrder, status: correctedStatus });
-await fetchOrderItems(newOrder.id);
-
-      await fetchOrderItems(newOrder.id);
-      setLoading(false);
-    } catch (err) {
-      console.error("❌ Error fetching phone/packet order:", err);
-      setLoading(false);
+    const items = await secureFetch(`/orders/${newOrder.id}/items${identifier}`);
+    if ((!items || items.length === 0) && newOrder.order_type === "phone") {
+      correctedStatus = "occupied";
     }
-  };
+
+    if (newOrder.payment_method === "Online") correctedStatus = "paid";
+
+    setOrder({ ...newOrder, status: correctedStatus });
+    await fetchOrderItems(newOrder.id);
+    setLoading(false);
+  } catch (err) {
+    console.error("❌ Error fetching phone/packet order:", err);
+    setLoading(false);
+  }
+};
 
   // ✅ Create or fetch table order
 const createOrFetchTableOrder = async (tableNumber) => {
@@ -1139,6 +1326,16 @@ const createOrFetchTableOrder = async (tableNumber) => {
     });
 
     let newOrder = activeOrder || null;
+
+    if (!newOrder) {
+      const unpaidClosed = sortedOrders.find(
+        (o) => (o.status || "").toLowerCase() === "closed" && !o.is_paid
+      );
+      if (unpaidClosed) {
+        const reopened = await reopenOrderIfNeeded(unpaidClosed);
+        if (reopened) newOrder = reopened;
+      }
+    }
 
     if (!newOrder) {
       // No prior order for this table — create a fresh one
@@ -1594,68 +1791,72 @@ if (order?.order_type === "table" && order?.source === "qr") {
 
 const confirmPayment = async (method, payIds = null) => {
   const methodLabel = resolvePaymentLabel(method);
+  const methodIsCash = isCashMethod(method);
   const receiptId = uuidv4();
-const ids = (payIds && payIds.length > 0)
-  ? payIds
-  : cartItems.filter(i => !i.paid && i.confirmed).map(i => i.unique_id);
-if (order.status !== 'paid') {
-let total = cartItems
-  .filter(i => ids.includes(i.unique_id))
-  .reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const ids =
+    payIds && payIds.length > 0
+      ? payIds
+      : cartItems.filter((i) => !i.paid && i.confirmed).map((i) => i.unique_id);
+  let paidTotal = 0;
 
-if (discountValue > 0) {
-  if (discountType === "percent") total -= (total * (discountValue / 100));
-  if (discountType === "fixed") total = Math.max(0, total - discountValue);
-}
+  if (order.status !== "paid") {
+    let total = cartItems
+      .filter((i) => ids.includes(i.unique_id))
+      .reduce((sum, i) => sum + i.price * i.quantity, 0);
 
+    if (discountValue > 0) {
+      if (discountType === "percent") total -= total * (discountValue / 100);
+      if (discountType === "fixed") total = Math.max(0, total - discountValue);
+    }
 
-  const enhancedItems = cartItems.filter(i => ids.includes(i.unique_id)).map(i => ({
-      product_id: i.product_id || i.id,
-      quantity: i.quantity,
-      price: i.price,
-      ingredients: i.ingredients,
-      extras: i.extras,
-      unique_id: i.unique_id,
-      payment_method: methodLabel,
-      receipt_id: receiptId,
-      note: i.note || null,
+    paidTotal = total;
+
+    const enhancedItems = cartItems
+      .filter((i) => ids.includes(i.unique_id))
+      .map((i) => ({
+        product_id: i.product_id || i.id,
+        quantity: i.quantity,
+        price: i.price,
+        ingredients: i.ingredients,
+        extras: i.extras,
+        unique_id: i.unique_id,
+        payment_method: methodLabel,
+        receipt_id: receiptId,
+        note: i.note || null,
         discountType: discountValue > 0 ? discountType : null,
-  discountValue: discountValue > 0 ? discountValue : 0,
-      confirmed: true
-    }));
+        discountValue: discountValue > 0 ? discountValue : 0,
+        confirmed: true,
+      }));
 
     await secureFetch(`/orders/sub-orders${identifier}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         order_id: order.id,
         total,
         payment_method: methodLabel,
         receipt_id: receiptId,
-        items: enhancedItems
-      })
+        items: enhancedItems,
+      }),
     });
-// Before calling secureFetch('orders/receipt-methods`, ...)
-const cleanedSplits = {};
-Object.entries(splits || {}).forEach(([methodId, amt]) => {
-  const val = parseFloat(amt);
-  if (val > 0) {
-    const label = resolvePaymentLabel(methodId);
-    cleanedSplits[label] = val;
-  }
-});
-await secureFetch(`/orders/receipt-methods${identifier}`, {
-  method: "POST",
-  body: JSON.stringify({
-    order_id: order.id,
-    receipt_id: receiptId,
-    methods: cleanedSplits,
-  }),
-});
 
+    const cleanedSplits = {};
+    Object.entries(splits || {}).forEach(([methodId, amt]) => {
+      const val = parseFloat(amt);
+      if (val > 0) {
+        const label = resolvePaymentLabel(methodId);
+        cleanedSplits[label] = val;
+      }
+    });
+    await secureFetch(`/orders/receipt-methods${identifier}`, {
+      method: "POST",
+      body: JSON.stringify({
+        order_id: order.id,
+        receipt_id: receiptId,
+        methods: cleanedSplits,
+      }),
+    });
 
-
-    // Instantly update cart state to reflect paid items for better UX and sound logic
     setCartItems((prev) =>
       prev.map((item) =>
         selectedForPayment.includes(item.unique_id)
@@ -1664,25 +1865,27 @@ await secureFetch(`/orders/receipt-methods${identifier}`, {
       )
     );
 
-    // 🔊 Play paid sound after local update (ALWAYS, for every payment)
-    if (selectedForPayment.length > 0 && window && typeof window.playPaidSound === "function") window.playPaidSound();
+    if (
+      selectedForPayment.length > 0 &&
+      window &&
+      typeof window.playPaidSound === "function"
+    )
+      window.playPaidSound();
 
     await refreshReceiptAfterPayment();
 
-    // Now check if fully paid etc
-    // ✅ Use secureFetch so the Bearer token is automatically included
-const allItems2 = await secureFetch(`/orders/${order.id}/items${identifier}`);
+    const allItems2 = await secureFetch(`/orders/${order.id}/items${identifier}`);
 
-if (!Array.isArray(allItems2)) {
-  console.error("❌ Unexpected items response:", allItems2);
-  return;
-}
+    if (!Array.isArray(allItems2)) {
+      console.error("❌ Unexpected items response:", allItems2);
+      return;
+    }
 
-const isFullyPaid2 = allItems2.every((item) => item.paid_at);
+    const isFullyPaid2 = allItems2.every((item) => item.paid_at);
 
     if (isFullyPaid2) {
-      await updateOrderStatus('paid', total, method);
-      setOrder(prev => ({ ...prev, status: 'paid' }));
+      await updateOrderStatus("paid", total, method);
+      setOrder((prev) => ({ ...prev, status: "paid" }));
     }
   }
 
@@ -1692,6 +1895,12 @@ const isFullyPaid2 = allItems2.every((item) => item.paid_at);
   setSelectedForPayment([]);
   setShowPaymentModal(false);
   setSelectedCartItemIds(new Set());
+
+  if (methodIsCash && paidTotal > 0) {
+    const note = order?.id ? `Order #${order.id} (${methodLabel})` : `Sale (${methodLabel})`;
+    await logCashRegisterEvent({ type: "sale", amount: paidTotal, note });
+    await openCashDrawer();
+  }
 };
 
 
@@ -1724,6 +1933,7 @@ const selectedForPaymentTotal = cartItems
 const addToCart = async (product) => {
   if (!order) return;
 
+  // 🧠 Always try to find extras, but open modal even if none are matched
   const selection = normalizeExtrasGroupSelection([
     product.extrasGroupRefs,
     product.selectedExtrasGroup,
@@ -1731,101 +1941,38 @@ const addToCart = async (product) => {
     product.selectedExtrasGroupNames,
   ]);
 
-  if (selection.ids.length > 0 || selection.names.length > 0) {
-    const match = await getMatchedExtrasGroups(selection);
-    if (match) {
-      const idsForModal = match.matchedIds.length > 0 ? match.matchedIds : selection.ids;
-      const namesForModal = Array.from(new Set([...selection.names, ...match.matchedNames]));
-      const productForModal = {
-        ...product,
-        quantity: 1,
-        extrasGroupRefs: { ids: idsForModal, names: namesForModal },
-        selectedExtrasGroup: idsForModal,
-        selected_extras_group: idsForModal,
-        selectedExtrasGroupNames: namesForModal,
-        modalExtrasGroups: match.matchedGroups,
-      };
-      setNote("");
-      setSelectedProduct(productForModal);
-      setSelectedExtras([]);
-      setShowExtrasModal(true);
-      return;
-    }
+  let match = null;
+  try {
+    match = await getMatchedExtrasGroups(selection);
+  } catch (err) {
+    console.error("❌ Extras group fetch failed:", err);
   }
 
-  const productGroups = normalizeExtrasGroupSelection([
-    product.extrasGroupRefs,
-    product.selectedExtrasGroup,
-    product.selected_extras_group,
-    product.selectedExtrasGroupNames,
-  ]);
+  // ✅ Always open modal (even if extras empty)
+  const idsForModal = match?.matchedIds?.length ? match.matchedIds : selection.ids;
+  const namesForModal = Array.from(new Set([
+    ...(selection.names || []),
+    ...(match?.matchedNames || []),
+  ]));
 
-  const baseUniqueId = `${product.id}-NO_EXTRAS`;
+  const modalExtrasGroups = match?.matchedGroups || [];
 
-  setCartItems((prev) => {
-    // 🧠 Only merge with unpaid & unconfirmed of the same base id
-    const existingIndex = prev.findIndex(
-      (item) =>
-        item.unique_id === baseUniqueId &&
-        !item.confirmed &&
-        !item.paid
-    );
+  const productForModal = {
+    ...product,
+    quantity: 1,
+    extrasGroupRefs: { ids: idsForModal, names: namesForModal },
+    selectedExtrasGroup: idsForModal,
+    selected_extras_group: idsForModal,
+    selectedExtrasGroupNames: namesForModal,
+    modalExtrasGroups,
+  };
 
-    // 🧩 If found, increment quantity
-    if (existingIndex !== -1) {
-      return prev.map((item, idx) =>
-        idx === existingIndex ? { ...item, quantity: item.quantity + 1 } : item
-      );
-    }
-
-    // 🛑 Check if there's a paid or confirmed instance
-    const hasLockedInstance = prev.some(
-      (item) =>
-        item.id === product.id &&
-        (item.confirmed === true || item.paid === true)
-    );
-
-    // 🔒 If paid exists, create a new distinct id so it won't merge
-    const finalUniqueId = hasLockedInstance
-      ? `${baseUniqueId}-new-${uuidv4()}`
-      : baseUniqueId;
-
-    // ✅ Add the new product
-    return [
-      ...prev,
-      {
-        id: product.id,
-        name: product.name,
-        note: "",
-        price: parseFloat(product.price),
-        quantity: 1,
-        ingredients: product.ingredients || [],
-        extras: [],
-        unique_id: finalUniqueId,
-        confirmed: false,
-        paid: false,
-        extrasGroupRefs: productGroups,
-        selectedExtrasGroup: productGroups.ids,
-        selected_extras_group: productGroups.ids,
-        selectedExtrasGroupNames: productGroups.names,
-      },
-    ];
-  });
-
-  // Keep order status consistent
-  setOrder((prev) => ({ ...prev, status: "confirmed" }));
-
-  // Scroll new item into view
-  setTimeout(() => {
-    const node = cartScrollRef.current;
-    const lastElement = node?.querySelector('li[data-cart-item="true"]:last-child');
-    if (lastElement && typeof lastElement.scrollIntoView === "function") {
-      lastElement.scrollIntoView({ block: "end", behavior: "smooth" });
-      return;
-    }
-    scrollCartToBottom();
-  }, 80);
+  setNote("");
+  setSelectedProduct(productForModal);
+  setSelectedExtras([]);
+  setShowExtrasModal(true);
 };
+
 
 
 
@@ -1868,9 +2015,6 @@ const clearUnconfirmedCartItems = () => {
     })
   );
 
-  if (!removedAny) {
-    showToast(t("No unconfirmed items to clear"));
-  }
 
   setSelectedCartItemIds(new Set());
   setSelectedForPayment([]);
@@ -2056,6 +2200,8 @@ const renderCartContent = (variant = "desktop") => {
     "flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-100";
   const primaryButtonClass =
     "flex-1 min-w-0 rounded-lg bg-indigo-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-600";
+  const debtButtonClass =
+    "flex-1 min-w-0 rounded-lg bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed";
 
   const actionControls = isDesktop ? (
     <div className="flex gap-3">
@@ -2069,7 +2215,14 @@ const renderCartContent = (variant = "desktop") => {
         {t(getButtonLabel())}
       </button>
       <button
-        onClick={() => console.log("Print clicked - wire later")}
+        onClick={handleOpenDebtModal}
+        className={debtButtonClass}
+        disabled={isDebtSaving}
+      >
+        {isDebtSaving ? t("Saving...") : t("Add to Debt")}
+      </button>
+      <button
+        onClick={handleCartPrint}
         className={baseButtonClass}
         title={t("Print Receipt")}
       >
@@ -2085,11 +2238,18 @@ const renderCartContent = (variant = "desktop") => {
         {t("Clear")}
       </button>
       <button
-        onClick={() => console.log("Print clicked - wire later")}
+        onClick={handleCartPrint}
         className={`${baseButtonClass} flex-1 min-w-[120px]`}
         title={t("Print Receipt")}
       >
         {t("Print")}
+      </button>
+      <button
+        onClick={handleOpenDebtModal}
+        className={`${debtButtonClass} flex-1 min-w-[120px]`}
+        disabled={isDebtSaving}
+      >
+        {isDebtSaving ? t("Saving...") : t("Add to Debt")}
       </button>
       <button
         onClick={handleMultifunction}
@@ -2105,7 +2265,16 @@ const renderCartContent = (variant = "desktop") => {
   {/* === Header === */}
   <header className="flex items-center justify-between border-b border-slate-200 px-3 pt-2 pb-2">
     <div className="space-y-0.5">
-      <h2 className="hidden text-lg font-semibold text-slate-800 lg:block">{t("Cart")}</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="hidden text-lg font-semibold text-slate-800 lg:block">{t("Cart")}</h2>
+        <button
+          onClick={handleCartPrint}
+          className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700 shadow hover:bg-slate-200 transition"
+          title={t("Print Receipt")}
+        >
+          🖨️ <span className="hidden sm:inline">{t("Print")}</span>
+        </button>
+      </div>
       <p className="text-xs text-slate-500">
         {orderId ? t("Phone Order") : `${t("Table")} ${tableId}`}
       </p>
@@ -2414,20 +2583,13 @@ const cardGradient = item.paid
     {actionControls}
 
     {!isDesktop && !orderId && (
-      <div className="flex gap-1.5">
-        <button
-          onClick={() => setShowMoveTableModal(true)}
-          className="flex-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
-        >
-          {t("Move")}
-        </button>
-        <button
-          onClick={() => setShowMergeTableModal(true)}
-          className="flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50"
-        >
-          {t("Merge")}
-        </button>
-      </div>
+      <TableActionButtons
+        onMove={() => setShowMoveTableModal(true)}
+        onMerge={() => setShowMergeTableModal(true)}
+        cartMode
+        moveLabel={t("Move Table")}
+        mergeLabel={t("Merge Table")}
+      />
     )}
 
     <div className={`flex ${isDesktop ? "gap-1.5" : "flex-col gap-1.5"}`}>
@@ -2632,6 +2794,108 @@ return (
   navigate={navigate}
 />
 
+{showDebtModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-zinc-900">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+          {t("Add Order To Debt")}
+        </h2>
+        <button
+          className="text-slate-500 hover:text-slate-800"
+          onClick={() => setShowDebtModal(false)}
+        >
+          ✕
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        {t("Confirm the customer details before adding this balance to their debt account.")}
+      </p>
+
+      <div className="mb-4">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {t("Search Existing Customer")}
+          <input
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:bg-zinc-800 dark:border-zinc-700"
+            value={debtSearch}
+            onChange={(e) => handleDebtSearch(e.target.value)}
+            placeholder={t("Search by name or phone")}
+            disabled={isDebtSaving}
+          />
+        </label>
+        {debtSearchLoading && (
+          <p className="mt-2 text-xs text-slate-400">{t("Searching customers...")}</p>
+        )}
+        {debtSearchResults.length > 0 && (
+          <div className="mt-2 space-y-2 rounded-2xl border border-slate-100 bg-slate-50/80 p-2 dark:bg-zinc-800/40 dark:border-zinc-700">
+            {debtSearchResults.map((cust) => (
+              <button
+                key={cust.id}
+                className="w-full rounded-xl bg-white px-3 py-2 text-left text-sm shadow-sm transition hover:bg-indigo-50 dark:bg-zinc-900 dark:text-slate-100"
+                onClick={() => handleSelectDebtCustomer(cust)}
+              >
+                <p className="font-semibold text-slate-800 dark:text-white">{cust.name || t("Guest")}</p>
+                <p className="text-xs text-slate-500">{cust.phone || t("No phone")}</p>
+                {cust.address && (
+                  <p className="text-xs text-slate-400 truncate">{cust.address}</p>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {t("Customer Name")}
+          <input
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:bg-zinc-800 dark:border-zinc-700"
+            value={debtForm.name}
+            onChange={(e) => setDebtForm((prev) => ({ ...prev, name: e.target.value }))}
+            disabled={isDebtSaving || debtLookupLoading}
+          />
+        </label>
+
+        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {t("Customer Phone")}
+          <input
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:bg-zinc-800 dark:border-zinc-700"
+            value={debtForm.phone}
+            onChange={(e) => setDebtForm((prev) => ({ ...prev, phone: e.target.value }))}
+            disabled={isDebtSaving || debtLookupLoading}
+          />
+        </label>
+
+        {debtError && (
+          <div className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 dark:bg-rose-500/10 dark:text-rose-200">
+            {debtError}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-3">
+        <button
+          className="flex-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600 disabled:opacity-60"
+          onClick={handleAddToDebt}
+          disabled={isDebtSaving || debtLookupLoading}
+        >
+          {isDebtSaving ? t("Saving...") : t("Confirm Debt")}
+        </button>
+        <button
+          className="flex-1 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-zinc-700 dark:text-slate-200"
+          onClick={() => {
+            setShowDebtModal(false);
+            setDebtError("");
+          }}
+          disabled={isDebtSaving}
+        >
+          {t("Cancel")}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
 
 <ExtrasModal
   showExtrasModal={showExtrasModal}
@@ -2723,7 +2987,7 @@ return (
       setShowMergeTableModal(false);
       navigate(`/transaction/${destTable.tableNum}`, { replace: true });
     }, 1500);
-	  } catch (err) {
+  } catch (err) {
 	    console.error("❌ Merge table failed:", err);
 	    showToast(err.message || t("Failed to merge table"));
 	    setShowMergeTableModal(false);

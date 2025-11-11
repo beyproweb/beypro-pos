@@ -10,6 +10,17 @@ export default function RegisterSettingsTab() {
     requirePin: true,
     autoClose: false,
     sendSummaryEmail: true,
+    cashDrawerPrinter: {
+      interface: "network",
+      host: "",
+      port: 9100,
+      vendorId: "",
+      productId: "",
+      path: "",
+      baudRate: 9600,
+      pin: 2,
+      address: "",
+    },
   });
 
   useSetting("register", setRegister, {
@@ -17,12 +28,35 @@ export default function RegisterSettingsTab() {
     requirePin: true,
     autoClose: false,
     sendSummaryEmail: true,
+    cashDrawerPrinter: {
+      interface: "network",
+      host: "",
+      port: 9100,
+      vendorId: "",
+      productId: "",
+      path: "",
+      baudRate: 9600,
+      pin: 2,
+      address: "",
+    },
   });
 
   const handleSave = async () => {
     await saveSetting("register", register);
     alert("✅ Register settings saved!");
   };
+
+  const handlePrinterChange = (field, value) => {
+    setRegister((prev) => ({
+      ...prev,
+      cashDrawerPrinter: {
+        ...prev.cashDrawerPrinter,
+        [field]: value,
+      },
+    }));
+  };
+
+  const printer = register.cashDrawerPrinter || {};
 
   return (
   <div className="bg-white dark:bg-gray-900 rounded-xl shadow p-6 max-w-3xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
@@ -43,6 +77,136 @@ export default function RegisterSettingsTab() {
         }
         className="w-full p-3 border rounded-lg bg-gray-50 dark:bg-gray-800 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-300"
       />
+    </div>
+
+    {/* Cash drawer printer */}
+    <div className="mt-10 border-t border-slate-200 pt-6">
+      <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        🖨️ {t("Cash Drawer Printer")}
+      </h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        {t("Define how the drawer pulse will be sent when cash payments are confirmed.")}
+      </p>
+
+      <div className="grid gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            {t("Interface")}
+          </label>
+          <select
+            value={printer.interface || "network"}
+            onChange={(e) => handlePrinterChange("interface", e.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-gray-50 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+          >
+            <option value="network">{t("Network (LAN/WiFi)")}</option>
+            <option value="usb">{t("USB")}</option>
+            <option value="serial">{t("Serial / COM")}</option>
+            <option value="bluetooth">{t("Bluetooth")}</option>
+          </select>
+        </div>
+
+        {printer.interface === "network" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("Printer IP")}</label>
+              <input
+                type="text"
+                value={printer.host || ""}
+                onChange={(e) => handlePrinterChange("host", e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+                placeholder="192.168.1.50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("Port")}</label>
+              <input
+                type="number"
+                value={printer.port || 9100}
+                onChange={(e) => handlePrinterChange("port", Number(e.target.value))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+                placeholder="9100"
+              />
+            </div>
+          </div>
+        )}
+
+        {printer.interface === "usb" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("Vendor ID")}</label>
+              <input
+                type="text"
+                value={printer.vendorId || ""}
+                onChange={(e) => handlePrinterChange("vendorId", e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+                placeholder="0x04b8"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("Product ID")}</label>
+              <input
+                type="text"
+                value={printer.productId || ""}
+                onChange={(e) => handlePrinterChange("productId", e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+                placeholder="0x0e15"
+              />
+            </div>
+          </div>
+        )}
+
+        {printer.interface === "serial" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("Port Path")}</label>
+              <input
+                type="text"
+                value={printer.path || ""}
+                onChange={(e) => handlePrinterChange("path", e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+                placeholder="/dev/ttyUSB0"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">{t("Baud Rate")}</label>
+              <input
+                type="number"
+                value={printer.baudRate || 9600}
+                onChange={(e) => handlePrinterChange("baudRate", Number(e.target.value))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+                placeholder="9600"
+              />
+            </div>
+          </div>
+        )}
+
+        {printer.interface === "bluetooth" && (
+          <div>
+            <label className="block text-sm font-medium mb-1">{t("Bluetooth Address")}</label>
+            <input
+              type="text"
+              value={printer.address || ""}
+              onChange={(e) => handlePrinterChange("address", e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+              placeholder="01:23:45:67:89:ab"
+            />
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium mb-1">{t("Drawer Pin")}</label>
+          <input
+            type="number"
+            value={printer.pin || 2}
+            onChange={(e) => handlePrinterChange("pin", Number(e.target.value))}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-600"
+            placeholder="2"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            {t("Most ESC/POS drawers use pin 2. Change only if your printer requires otherwise.")}
+          </p>
+        </div>
+      </div>
     </div>
 
     {/* Toggles */}

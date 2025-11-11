@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-const API_URL = import.meta.env.VITE_API_URL || "";
 import secureFetch from "../utils/secureFetch";
 
 export default function MoveTableModal({ open, onClose, onConfirm, currentTable, t }) {
@@ -7,35 +6,33 @@ export default function MoveTableModal({ open, onClose, onConfirm, currentTable,
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
 
-useEffect(() => {
-  if (!open) return;
-  setLoading(true);
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
 
-  secureFetch("/orders")
-    .then((data) => {
-      // Mark all tables 1–20, with info on whether occupied
-      const all = Array.from({ length: 20 }, (_, i) => {
-        const tableNum = i + 1;
-        const order = (Array.isArray(data) ? data : []).find((o) => {
-          if (!o) return false;
-          const normalized = Number(o.table_number);
-          const status = (o.status || "").toLowerCase();
-          return Number.isFinite(normalized) && normalized === tableNum && status !== "closed";
+    secureFetch("/orders")
+      .then((data) => {
+        const all = Array.from({ length: 20 }, (_, i) => {
+          const tableNum = i + 1;
+          const order = (Array.isArray(data) ? data : []).find((o) => {
+            if (!o) return false;
+            const normalized = Number(o.table_number);
+            const status = (o.status || "").toLowerCase();
+            return Number.isFinite(normalized) && normalized === tableNum && status !== "closed";
+          });
+          return {
+            tableNum,
+            occupied: !!order,
+          };
         });
-        return {
-          tableNum,
-          occupied: !!order,
-        };
+        setTables(all);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("❌ Failed to fetch orders:", err);
+        setLoading(false);
       });
-      setTables(all);
-      setLoading(false);
-    })
-    .catch((err) => {
-      console.error("❌ Failed to fetch orders:", err);
-      setLoading(false);
-    });
-}, [open]);
-
+  }, [open]);
 
   if (!open) return null;
 

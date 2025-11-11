@@ -5,6 +5,7 @@ import { Toaster, toast } from "react-hot-toast";
 import { Plus, Save, Download, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
+import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../../utils/cashDrawer";
 
 const currency = (amt) =>
   `₺${parseFloat(amt || 0).toLocaleString("tr-TR", {
@@ -771,6 +772,19 @@ const Payroll = () => {
       setPaymentAmount("");
       setNote("");
       fetchStaffHistory(selectedStaff);
+
+      if (isCashLabel(paymentMethod) && amt > 0) {
+        const staffEntry = staffList.find(
+          (person) => String(person.id) === String(selectedStaff)
+        );
+        const staffLabel = staffEntry?.name || "Staff";
+        await logCashRegisterEvent({
+          type: "payroll",
+          amount: amt,
+          note: `Payroll - ${staffLabel}`,
+        });
+        await openCashDrawer();
+      }
     } catch (err) {
       console.error("❌ Payment error:", err);
       toast.error("Failed to save payment");

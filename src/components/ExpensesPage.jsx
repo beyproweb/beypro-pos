@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
+import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../utils/cashDrawer";
 
 const allowedMethods = ["Cash", "Credit Card", "Bank Transfer", "Not Paid"];
 
@@ -104,6 +105,15 @@ export default function ExpensesPage() {
       setNewType("");
       setShowModal(false);
       fetchExpenses();
+
+      if (isCashLabel(payload.payment_method)) {
+        await logCashRegisterEvent({
+          type: "expense",
+          amount: payload.amount,
+          note: payload.type || payload.note || "Expense",
+        });
+        await openCashDrawer();
+      }
     } catch (err) {
       console.error("❌ Save failed", err);
       toast.error(t("❌ Failed to save"));

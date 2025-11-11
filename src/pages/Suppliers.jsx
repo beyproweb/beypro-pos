@@ -16,6 +16,7 @@ import {
 } from "../utils/api";
 import socket from "../utils/socket";
 import secureFetch from "../utils/secureFetch";
+import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../utils/cashDrawer";
 import { useHeader } from "../context/HeaderContext";
 import SupplierOverview from "../components/SupplierOverview";
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -806,6 +807,10 @@ const handleAddTransaction = async (e) => {
     toast.error(t("Please enter at least one valid ingredient row."));
     return;
   }
+  const purchaseTotal = validRows.reduce(
+    (sum, row) => sum + (parseFloat(row.total_cost) || 0),
+    0
+  );
 
   const formData = new FormData();
   formData.append("supplier_id", selectedSupplier.id);
@@ -825,6 +830,15 @@ const handleAddTransaction = async (e) => {
       await fetchTransactions(selectedSupplier.id);
       await fetchSupplierDetails(selectedSupplier.id);
       await fetchSuppliers();
+
+      if (isCashLabel(newTransaction.paymentMethod) && purchaseTotal > 0) {
+        await logCashRegisterEvent({
+          type: "supplier",
+          amount: purchaseTotal,
+          note: `${selectedSupplier?.name || "Supplier"} purchase`,
+        });
+        await openCashDrawer();
+      }
     } else {
       toast.error(result?.error || "❌ Failed to save receipt");
     }
@@ -877,6 +891,18 @@ const handlePayment = async () => {
       await fetchSupplierDetails(selectedSupplier.id);
       await fetchSuppliers();
       setPaymentModalOpen(false);
+
+      if (isCashLabel(paymentMethod)) {
+        const numericPayment = parseFloat(paymentAmount);
+        if (numericPayment > 0) {
+          await logCashRegisterEvent({
+            type: "supplier",
+            amount: numericPayment,
+            note: `${selectedSupplier?.name || "Supplier"} payment`,
+          });
+          await openCashDrawer();
+        }
+      }
     } else {
       toast.error(res?.error || "❌ Payment failed");
     }

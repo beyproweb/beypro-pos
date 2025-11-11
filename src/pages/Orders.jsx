@@ -8,6 +8,14 @@ import { v4 as uuidv4 } from "uuid";
 import secureFetch from "../utils/secureFetch";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { DEFAULT_PAYMENT_METHODS } from "../utils/paymentMethods";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import {
+  renderReceiptText,
+  printViaBridge,
+  getReceiptLayout,
+} from "../utils/receiptPrinter";
+import { fetchOrderWithItems } from "../utils/orderPrinting";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 function DrinkSettingsModal({ open, onClose, fetchDrinks, summaryByDriver = [] }) {
@@ -315,6 +323,24 @@ const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
 const [showPaymentModal, setShowPaymentModal] = useState(false);
 const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
 const [splitPayments, setSplitPayments] = useState([{ method: "", amount: "" }]);
+
+const handlePacketPrint = async (orderId) => {
+  if (!orderId) {
+    toast.warn(t("No order selected to print"));
+    return;
+  }
+  try {
+    const printable = await fetchOrderWithItems(orderId);
+    const text = renderReceiptText(printable, getReceiptLayout());
+    const ok = printViaBridge(text);
+    toast[ok ? "success" : "warn"](
+      ok ? t("Receipt sent to printer") : t("Printer bridge is not connected")
+    );
+  } catch (err) {
+    console.error("❌ Print failed:", err);
+    toast.error(t("Failed to print receipt"));
+  }
+};
 
 
 function calcOrderTotalWithExtras(order) {
@@ -1513,12 +1539,11 @@ const totalDiscount = calcOrderDiscount(order);
        <span className={`flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl font-mono font-semibold text-sm transition flex-shrink-0 ${statusVisual.timer}`}>
         <span className="text-base opacity-80"></span> {getWaitingTimer(order)}
       </span>
-          {order && order.items?.length > 0 && (
+      {order && order.items?.length > 0 && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            console.log(`🖨️ Print clicked for order #${order.id}`);
-            // handlePrintReceipt(order); // ← wire later
+            handlePacketPrint(order.id);
           }}
           className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-semibold sm:font-bold rounded-full shadow hover:brightness-105 border border-slate-300 transition flex-shrink-0"
           title={t("Print Receipt")}

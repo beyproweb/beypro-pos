@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import PhoneOrderModal from "../components/PhoneOrderModal";
 import Orders from "../pages/Orders"; // adjust path as needed!
@@ -14,6 +14,14 @@ import OrderHistory from "../components/OrderHistory";
 import { useHeader } from "../context/HeaderContext";
 const TOTAL_TABLES = 20;
 import secureFetch from "../utils/secureFetch";
+import TableActionButtons from "../components/TableActionButtons";
+import {
+  renderReceiptText,
+  printViaBridge,
+  getReceiptLayout,
+} from "../utils/receiptPrinter";
+import { fetchOrderWithItems } from "../utils/orderPrinting";
+import { openCashDrawer, logCashRegisterEvent } from "../utils/cashDrawer";
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.MODE === "development"
@@ -28,34 +36,61 @@ const isDelayed = (order) => {
 };
 
 // ✅ Improved color logic for moved/paid tables
+// ✅ FIXED: show red if any suborder has unpaid items
 const getTableColor = (order) => {
   if (!order) return "bg-gray-300 text-black";
 
+  const suborders = Array.isArray(order.suborders) ? order.suborders : [];
   const items = Array.isArray(order.items) ? order.items : [];
 
-  const allDeliveredOrExcluded = items.length > 0
-    ? items.every(
-        (i) =>
-          i.kitchen_status === "delivered" ||
-          !i.kitchen_status ||
-          i.excluded === true ||
-          i.kitchen_excluded === true
-      )
-    : false;
+  // 🔍 Check unpaid in suborders
+  const hasUnpaidSubOrder = suborders.some((sub) =>
+    Array.isArray(sub.items)
+      ? sub.items.some((i) => !i.paid_at && !i.paid)
+      : false
+  );
 
-  // 🟢 Paid orders
-  if (order.is_paid || order.status === "paid" || order.payment_status === "paid") {
-    if (allDeliveredOrExcluded) {
-      return "bg-green-500 text-white"; // ✅ fully paid and all items delivered or excluded
-    }
-    return "bg-lime-400 text-white"; // 💚 paid but some kitchen items pending
+  // 🔍 Check unpaid items in main order
+  const hasUnpaidMainItem = items.some((i) => !i.paid_at && !i.paid);
+
+  // 🟥 if any unpaid anywhere (main or sub)
+  if (hasUnpaidSubOrder || hasUnpaidMainItem) {
+    return "bg-red-500 text-white";
   }
 
-  // 🔵 Confirmed but unpaid
-  if (order.status === "confirmed") return "bg-red-500 text-white";
+  // 🟢 if all paid
+  if (
+    order.status === "paid" ||
+    order.payment_status === "paid" ||
+    order.is_paid === true
+  ) {
+    return "bg-green-500 text-white";
+  }
 
-  // ⚪ Default fallback
+  // 🟡 confirmed but unpaid (fallback)
+  if (order.status === "confirmed") {
+    return "bg-yellow-400 text-black";
+  }
+
   return "bg-gray-300 text-black";
+};
+
+// ✅ Helper: true if any suborder or item unpaid
+const hasUnpaidAnywhere = (order) => {
+  if (!order) return false;
+
+  const suborders = Array.isArray(order.suborders) ? order.suborders : [];
+  const items = Array.isArray(order.items) ? order.items : [];
+
+  const unpaidSub = suborders.some((sub) =>
+    Array.isArray(sub.items)
+      ? sub.items.some((i) => !i.paid_at && !i.paid)
+      : false
+  );
+
+  const unpaidMain = items.some((i) => !i.paid_at && !i.paid);
+
+  return unpaidSub || unpaidMain;
 };
 
 
@@ -120,8 +155,16 @@ const [entryReason, setEntryReason] = useState("");
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const { setHeader } = useHeader();
-  const [registerEntries, setRegisterEntries] = useState(0);
+const [registerEntries, setRegisterEntries] = useState(0);
   const [showRegisterLog, setShowRegisterLog] = useState(false);
+  const [showChangeForm, setShowChangeForm] = useState(false);
+  const [changeAmount, setChangeAmount] = useState("");
+  const handleOverviewMove = useCallback(() => {
+    toast.info(t("Open a specific table to use Move Table."), { autoClose: 2000 });
+  }, [t]);
+  const handleOverviewMerge = useCallback(() => {
+    toast.info(t("Open a specific table to use Merge Table."), { autoClose: 2000 });
+  }, [t]);
  
   const [todayRegisterEvents, setTodayRegisterEvents] = useState([]);
 const [todayExpenses, setTodayExpenses] = useState([]);
@@ -271,23 +314,37 @@ const visibleTabs = TAB_LIST.filter(tab => {
     setShowRegisterModal(activeTab === "register");
   }, [activeTab]);
 
-useEffect(() => {
-  const titlesByTab = {
-    tables: t("Tables"),
-    kitchen: t("Kitchen"),
-    history: t("History"),
-    packet: t("Packet"),
-    phone: t("Phone"),
-    register: t("Register"),
-  };
-  const headerTitle = titlesByTab[activeTab] || t("Orders");
-  setHeader(prev => ({
-    ...prev,
-    title: headerTitle,
-    subtitle: undefined,
-    tableNav: null,
-  }));
-}, [activeTab, setHeader, t]);
+  useEffect(() => {
+    const titlesByTab = {
+      tables: t("Tables"),
+      kitchen: t("Kitchen"),
+      history: t("History"),
+      packet: t("Packet"),
+      phone: t("Phone"),
+      register: t("Register"),
+    };
+    const headerTitle = titlesByTab[activeTab] || t("Orders");
+    const tableNav =
+      activeTab === "tables" ? (
+        <TableOverviewHeaderActions
+          t={t}
+          onMove={handleOverviewMove}
+          onMerge={handleOverviewMerge}
+        />
+      ) : null;
+    setHeader((prev) => ({
+      ...prev,
+      title: headerTitle,
+      subtitle: undefined,
+      tableNav,
+    }));
+  }, [
+    activeTab,
+    t,
+    setHeader,
+    handleOverviewMove,
+    handleOverviewMerge,
+  ]);
 
 useEffect(() => () => setHeader({}), [setHeader]);
 
@@ -587,12 +644,38 @@ const fetchOrders = async () => {
       })
     );
 
-    setOrders(ordersWithItems);
+    // ✅ Merge by table_number (combine all open orders of same table)
+    const mergedByTable = Object.values(
+      ordersWithItems.reduce((acc, order) => {
+        const key = order.table_number || `no_table_${order.id}`;
+        if (!acc[key]) {
+          acc[key] = {
+            ...order,
+            merged_ids: [order.id],
+            merged_items: [...(order.items || [])],
+          };
+        } else {
+          acc[key].merged_ids.push(order.id);
+          acc[key].items = [...(acc[key].items || []), ...(order.items || [])];
+          acc[key].merged_items = acc[key].items;
+          acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
+          // if one is unpaid, mark merged as confirmed; if all paid, mark paid
+          acc[key].status =
+            acc[key].status === "paid" && order.status === "paid"
+              ? "paid"
+              : "confirmed";
+        }
+        return acc;
+      }, {})
+    );
+
+    setOrders(mergedByTable);
   } catch (err) {
     console.error("❌ Fetch open orders failed:", err);
     toast.error("Could not load open orders");
   }
 };
+
 
 
 
@@ -665,11 +748,10 @@ const fetchClosedOrders = async () => {
 };
 
 
-
-   const fetchKitchenOrders = async () => {
+// === FIXED fetchKitchenOrders (merges same-customer orders) ===
+const fetchKitchenOrders = async () => {
   try {
     const data = await secureFetch("/kitchen-orders");
-
 
     const active = data.filter(
       (item) =>
@@ -678,13 +760,65 @@ const fetchClosedOrders = async () => {
         item.kitchen_status !== ""
     );
 
-    console.log("🍽️ Active Kitchen Orders:", active.map(i => ({
-      id: i.item_id,
-      status: i.kitchen_status,
-      table: i.table_number
-    })));
+    const buildGroupKey = (item) => {
+      const type = String(item.order_type || "").trim().toLowerCase();
+      const tableNo = item.table_number ? String(item.table_number) : "";
+      const phone = (item.customer_phone || "").replace(/\s+/g, "");
+      if (type === "table" && tableNo) {
+        return `table-${tableNo}`;
+      }
+      if ((type === "phone" || type === "packet" || type === "takeaway") && phone) {
+        return `phone-${phone}`;
+      }
+      if (item.order_id) {
+        return `order-${item.order_id}`;
+      }
+      const nameKey = (item.customer_name || "").trim().toLowerCase();
+      if (nameKey) return `name-${nameKey}`;
+      return `item-${item.item_id}`;
+    };
 
-    setKitchenOrders(active);
+    const merged = Object.values(
+      active.reduce((acc, item) => {
+        const key = buildGroupKey(item);
+        if (!acc[key]) {
+          acc[key] = {
+            ...item,
+            merged_item_ids: [item.item_id],
+            merged_products: [item.product_name],
+            total_quantity: Number(item.quantity || 0),
+            tables: item.table_number ? [item.table_number] : [],
+            order_refs: item.order_id ? [item.order_id] : [],
+            phones: item.customer_phone ? [item.customer_phone] : [],
+          };
+          return acc;
+        }
+
+        const entry = acc[key];
+        entry.merged_item_ids.push(item.item_id);
+        entry.merged_products.push(item.product_name);
+        entry.total_quantity += Number(item.quantity || 0);
+        if (item.table_number && !entry.tables.includes(item.table_number)) {
+          entry.tables.push(item.table_number);
+        }
+        if (item.order_id && !entry.order_refs.includes(item.order_id)) {
+          entry.order_refs.push(item.order_id);
+        }
+        if (item.customer_phone && !entry.phones.includes(item.customer_phone)) {
+          entry.phones.push(item.customer_phone);
+        }
+
+        if (
+          (item.kitchen_status === "ready" || item.kitchen_status === "preparing") &&
+          entry.kitchen_status !== "ready"
+        ) {
+          entry.kitchen_status = item.kitchen_status;
+        }
+        return acc;
+      }, {})
+    );
+
+    setKitchenOrders(merged);
   } catch (err) {
     console.error("❌ Fetch kitchen orders failed:", err);
   }
@@ -736,6 +870,23 @@ const fetchPhoneOrders = async () => {
     return { tableNumber, order };
   });
 
+const handlePrintOrder = async (orderId) => {
+  if (!orderId) {
+    toast.warn(t("No order selected to print"));
+    return;
+  }
+  try {
+    const printable = await fetchOrderWithItems(orderId);
+    const text = renderReceiptText(printable, getReceiptLayout());
+    const ok = printViaBridge(text);
+    toast[ok ? "success" : "warn"](
+      ok ? t("Receipt sent to printer") : t("Printer bridge is not connected")
+    );
+  } catch (err) {
+    console.error("❌ Print failed:", err);
+    toast.error(t("Failed to print receipt"));
+  }
+};
 
 
 const handleTableClick = async (table) => {
@@ -988,12 +1139,11 @@ useEffect(() => {
     </span>
 
     {/* 🖨️ Print button — show if order exists and has at least 1 item */}
-    {table.order && table.order.items?.length > 0 && (
+    {table.order && (
       <button
         onClick={(e) => {
           e.stopPropagation();
-          console.log(`🖨️ Print clicked for Table ${table.table_number}`);
-          // handlePrintReceipt(table.order); // ← wire later
+          handlePrintOrder(table.order.id);
         }}
         className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-bold rounded-full shadow hover:brightness-105 border border-slate-300"
         title={t("Print Receipt")}
@@ -1002,10 +1152,27 @@ useEffect(() => {
       </button>
     )}
 
-    {/* ✅ Paid badge & Close button */}
-    {(table.order?.status === "paid" ||
-      table.order?.payment_status === "paid" ||
-      table.order?.is_paid) && (
+  {/* ✅ Paid / Partially Paid badge */}
+{(table.order?.status === "paid" ||
+  table.order?.payment_status === "paid" ||
+  table.order?.is_paid) && (
+  <>
+    {(
+      Array.isArray(table.order?.suborders) &&
+      table.order.suborders.some(
+        (sub) =>
+          Array.isArray(sub.items) &&
+          sub.items.some((i) => !i.paid_at && !i.paid)
+      )
+    ) ||
+    (
+      Array.isArray(table.order?.items) &&
+      table.order.items.some((i) => !i.paid_at && !i.paid)
+    ) ? (
+      <span className="px-3 py-1 bg-amber-100 text-amber-800 font-bold rounded-full shadow-sm">
+        {t("Unpaid")}
+      </span>
+    ) : (
       <>
         <span className="px-3 py-1 bg-green-100 text-green-800 font-bold rounded-full shadow-sm">
           ✅ {t("Paid")}
@@ -1016,12 +1183,15 @@ useEffect(() => {
             handleCloseTable(table.order.id);
           }}
           className="px-3 py-1.5 bg-gradient-to-r from-green-400 via-blue-400 to-indigo-400 text-white font-bold rounded-full shadow hover:scale-105 transition"
-          title="Close Table"
+          title={t("Close Table")}
         >
           🔒 {t("Close")}
         </button>
       </>
     )}
+  </>
+)}
+
   </div>
 </div>
 
@@ -1117,7 +1287,6 @@ onCreateOrder={() => {
     {activeTab === "phone" && <Orders />}
     {activeTab === "packet" && <Orders hideModal={true} orders={packetOrders} />}
 
-
 {activeTab === "history" && (
       <OrderHistory
         fromDate={fromDate}
@@ -1131,9 +1300,7 @@ onCreateOrder={() => {
 
 {activeTab === "kitchen" && (
   <div className="px-3 md:px-8 py-6">
-    <h2 className="text-3xl font-extrabold bg-gradient-to-r from-indigo-500 via-blue-400 to-pink-500 text-transparent bg-clip-text mb-6">
-      👨‍🍳 {t('Kitchen Orders')}
-    </h2>
+ 
     {kitchenOrders.length === 0 ? (
       <div className="flex flex-col items-center mt-10">
         <span className="text-6xl mb-3">🥲</span>
@@ -1141,12 +1308,17 @@ onCreateOrder={() => {
       </div>
     ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-7">
-        {kitchenOrders.map(item => {
-          const orderType = String(item.order_type || "").trim().toLowerCase();
-          const takeawayNotes = item.takeaway_notes || item.notes;
-          return (
-          <div
-            key={item.item_id}
+    {kitchenOrders.map(item => {
+  const orderType = String(item.order_type || "").trim().toLowerCase();
+  const takeawayNotes = item.takeaway_notes || item.notes;
+  const displayName = Array.isArray(item.merged_products)
+    ? item.merged_products.join(", ")
+    : item.product_name;
+  const mergedKey = item.merged_item_ids ? item.merged_item_ids.join("-") : item.item_id;
+  return (
+    <div
+      key={mergedKey}
+
             className="rounded-3xl bg-gradient-to-br from-white/80 via-blue-50 to-indigo-50 border border-white/40 shadow-xl p-5 flex flex-col gap-3 hover:scale-[1.03] hover:shadow-2xl transition"
           >
             <div className="flex justify-between items-center">
@@ -1208,7 +1380,7 @@ onCreateOrder={() => {
               </div>
             </div>
             <div className="flex flex-col gap-1 text-gray-800 text-base">
-              <span className="font-semibold">{item.product_name}</span>
+              <span className="font-semibold">{displayName}</span>
               <span>{t("Qty")}: {item.quantity}</span>
               {item.note && (
                 <span className="text-xs bg-yellow-100 text-yellow-900 rounded px-2 py-1 mt-1">📝 {item.note}</span>
@@ -1544,7 +1716,11 @@ try {
         {event.type === "close" && "🔒"}
         {event.type === "expense" && "📉"}
         {event.type === "entry" && "➕"}
-        {!["open","close","expense","entry"].includes(event.type) && "📝"}
+        {event.type === "sale" && "🧾"}
+        {event.type === "supplier" && "🚚"}
+        {event.type === "payroll" && "👤"}
+        {event.type === "change" && "💵"}
+        {!["open","close","expense","entry","sale","supplier","payroll","change"].includes(event.type) && "📝"}
       </span>
       <span className="font-bold min-w-[70px] capitalize">
         {event.type}
@@ -1575,7 +1751,38 @@ try {
 
 
       {/* Action Buttons */}
-      <div className="flex justify-end gap-3 pt-4 border-t mt-7">
+      <div className="flex flex-col gap-4 pt-4 border-t mt-7">
+        {showChangeForm && (
+          <form
+            onSubmit={handleChangeCashSubmit}
+            className="flex flex-wrap items-center gap-3 bg-slate-50 rounded-xl p-3 shadow-inner"
+          >
+            <label className="text-sm font-semibold text-slate-700">
+              {t("Change Amount")}
+            </label>
+            <input
+              type="number"
+              value={changeAmount}
+              onChange={(e) => setChangeAmount(e.target.value)}
+              className="flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="₺0.00"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl bg-emerald-500 text-white font-semibold shadow hover:bg-emerald-600 transition"
+            >
+              {t("Log Change")}
+            </button>
+          </form>
+        )}
+        <div className="flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setShowChangeForm((prev) => !prev)}
+            className="flex items-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 transition"
+          >
+            {showChangeForm ? "⬆️" : "⬇️"} 💵 {t("Change Cash")}
+          </button>
         <button
         onClick={async () => {
   const type =
@@ -1616,6 +1823,7 @@ try {
             ? t('Open Register')
             : t('Close Register')}
         </button>
+        </div>
       </div>
 
       {/* Optional: subtle fade-in animation */}
@@ -1642,4 +1850,46 @@ try {
 
 
 
+}
+const handleChangeCashSubmit = async (e) => {
+  e.preventDefault();
+  const numericAmount = parseFloat(changeAmount);
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    toast.error(t("Enter a valid change amount"));
+    return;
+  }
+
+  try {
+    await logCashRegisterEvent({
+      type: "change",
+      amount: numericAmount,
+      note: t("Change given to customer"),
+    });
+    await openCashDrawer();
+    setChangeAmount("");
+    setShowChangeForm(false);
+    toast.success(t("Change recorded"));
+    refreshRegisterState();
+    const today = new Date().toISOString().slice(0, 10);
+    secureFetch(`/reports/cash-register-events?from=${today}&to=${today}`)
+      .then(setTodayRegisterEvents)
+      .catch(() => {});
+  } catch (err) {
+    console.error("❌ Failed to log change cash:", err);
+    toast.error(t("Failed to record change"));
+  }
+};
+
+function TableOverviewHeaderActions({ t, onMove, onMerge }) {
+  return (
+    <div className="hidden md:block">
+      <TableActionButtons
+        onMove={onMove}
+        onMerge={onMerge}
+        showLabels={false}
+        moveLabel={t("Move Table")}
+        mergeLabel={t("Merge Table")}
+      />
+    </div>
+  );
 }

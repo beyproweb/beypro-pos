@@ -118,7 +118,7 @@ export default function ModernHeader({
 
       {/* Right: Title + bell + other right content */}
       <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
-                {tableNav && <div className="ml-2">{tableNav}</div>}
+        {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
 
         {title && (
           <span className="text-xl md:text-2xl font-bold tracking-tight text-indigo-700 dark:text-violet-300 drop-shadow mr-1">

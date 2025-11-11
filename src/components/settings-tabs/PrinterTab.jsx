@@ -5,6 +5,7 @@
 // - Graceful browser fallback if not running under Electron
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import secureFetch from "../../utils/secureFetch";
 
 // ---------- Small helpers ----------
 const LS_KEY = "beyproSelectedPrinter";
@@ -154,6 +155,11 @@ export default function PrinterTab() {
   const [message, setMessage] = useState("");
   const [usingElectron, setUsingElectron] = useState(isElectron());
   const previewRef = useRef(null);
+  const [backendDetecting, setBackendDetecting] = useState(false);
+  const [backendPrinters, setBackendPrinters] = useState({ usb: [], serial: [], tips: [] });
+  const [lanScanResults, setLanScanResults] = useState([]);
+  const [lanScanning, setLanScanning] = useState(false);
+  const [lanConfig, setLanConfig] = useState({ base: "192.168.1", from: 10, to: 40, hosts: "" });
 
   const demoOrder = useMemo(
     () => ({
@@ -170,6 +176,7 @@ export default function PrinterTab() {
 
   useEffect(() => {
     refreshPrinters();
+    fetchBackendPrinters();
     // Listen for hot-plug events if your preload provides them
     if (window?.beypro?.onPrintersChanged) {
       const off = window.beypro.onPrintersChanged(() => refreshPrinters());
@@ -202,6 +209,56 @@ export default function PrinterTab() {
       setMessage("Could not fetch printers.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchBackendPrinters() {
+    setBackendDetecting(true);
+    try {
+      const data = await secureFetch("/printer-settings/printers");
+      setBackendPrinters(data?.printers || { usb: [], serial: [], tips: [] });
+    } catch (err) {
+      console.error("USB detection failed:", err);
+      setBackendPrinters({ usb: [], serial: [], tips: [err?.message || "Detection failed"] });
+    } finally {
+      setBackendDetecting(false);
+    }
+  }
+
+  async function runLanScan() {
+    const payload = {};
+    const trimmedBase = lanConfig.base?.trim();
+    if (trimmedBase) {
+      payload.base = trimmedBase;
+      payload.from = Number(lanConfig.from) || 1;
+      payload.to = Number(lanConfig.to) || payload.from;
+    }
+    if (lanConfig.hosts?.trim()) {
+      payload.hosts = lanConfig.hosts
+        .split(/[,\s]+/)
+        .map((ip) => ip.trim())
+        .filter(Boolean);
+    }
+    if (!payload.base && !(payload.hosts && payload.hosts.length)) {
+      setMessage("Enter a base subnet or custom hosts to scan.");
+      setStatus("error");
+      return;
+    }
+
+    setLanScanning(true);
+    try {
+      const data = await secureFetch("/printer-settings/lan-scan", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setLanScanResults(Array.isArray(data?.printers) ? data.printers : []);
+    } catch (err) {
+      console.error("LAN scan failed:", err);
+      setLanScanResults([]);
+      setStatus("error");
+      setMessage(err?.message || "LAN scan failed");
+    } finally {
+      setLanScanning(false);
     }
   }
 
@@ -262,7 +319,7 @@ async function handleTestPrint() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Printers</h1>
           <p className="text-gray-600">
-            Auto-detect USB printers on Windows and print a test receipt.
+            Detect local printers via the desktop bridge and scan LAN / USB devices from the backend.
           </p>
         </div>
 
@@ -420,6 +477,141 @@ async function handleTestPrint() {
             </div>
 
           
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="rounded-2xl border shadow-sm bg-white p-4 md:p-5 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Backend USB / Serial Detection</h2>
+            <button
+              onClick={fetchBackendPrinters}
+              className="px-3 py-2 rounded-xl border shadow-sm text-sm hover:shadow"
+              disabled={backendDetecting}
+            >
+              {backendDetecting ? "Detecting…" : "Detect"}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h3 className="font-semibold mb-2">USB printers</h3>
+              <div className="rounded-xl border bg-gray-50 max-h-48 overflow-auto p-2 text-sm">
+                {backendPrinters.usb?.length ? (
+                  backendPrinters.usb.map((p, idx) => (
+                    <div key={idx} className="py-1 border-b last:border-none">
+                      <div className="font-semibold">{p.vendorId} / {p.productId}</div>
+                      <div className="text-xs text-gray-500">{p.id}</div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500">No USB printers detected.</p>
+                )}
+              </div>
+            </div>
+            <div>
+              <h3 className="font-semibold mb-2">Serial ports</h3>
+              <div className="rounded-xl border bg-gray-50 max-h-48 overflow-auto p-2 text-sm">
+                {backendPrinters.serial?.length ? (
+                  backendPrinters.serial.map((p, idx) => (
+                    <div key={idx} className="py-1 border-b last:border-none">
+                      <div className="font-semibold">{p.path}</div>
+                      <div className="text-xs text-gray-500">{p.friendlyName || p.manufacturer || "Unknown"}</div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500">No serial devices detected.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {!!backendPrinters.tips?.length && (
+            <ul className="text-xs text-gray-500 list-disc pl-4">
+              {backendPrinters.tips.map((tip, idx) => (
+                <li key={idx}>{tip}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-2xl border shadow-sm bg-white p-4 md:p-5 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">LAN Scanner</h2>
+            <button
+              onClick={runLanScan}
+              className="px-3 py-2 rounded-xl border shadow-sm text-sm hover:shadow"
+              disabled={lanScanning}
+            >
+              {lanScanning ? "Scanning…" : "Scan"}
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-gray-500">Subnet Base</label>
+              <input
+                type="text"
+                className="w-full rounded-xl border px-3 py-2"
+                value={lanConfig.base}
+                onChange={(e) => setLanConfig((prev) => ({ ...prev, base: e.target.value }))}
+                placeholder="192.168.1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">From</label>
+              <input
+                type="number"
+                className="w-full rounded-xl border px-3 py-2"
+                value={lanConfig.from}
+                onChange={(e) => setLanConfig((prev) => ({ ...prev, from: e.target.value }))}
+                min={1}
+                max={254}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">To</label>
+              <input
+                type="number"
+                className="w-full rounded-xl border px-3 py-2"
+                value={lanConfig.to}
+                onChange={(e) => setLanConfig((prev) => ({ ...prev, to: e.target.value }))}
+                min={1}
+                max={254}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Custom IPs (comma separated)</label>
+            <input
+              type="text"
+              className="w-full rounded-xl border px-3 py-2"
+              value={lanConfig.hosts}
+              onChange={(e) => setLanConfig((prev) => ({ ...prev, hosts: e.target.value }))}
+              placeholder="192.168.1.201, 192.168.1.210"
+            />
+          </div>
+          <div className="rounded-xl border bg-gray-50 p-3 max-h-60 overflow-auto text-sm">
+            {lanScanResults.length === 0 ? (
+              <p className="text-gray-500">Scan results will appear here.</p>
+            ) : (
+              lanScanResults.map((result, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between border-b last:border-none py-1"
+                >
+                  <div>
+                    <div className="font-semibold">{result.host}:{result.port}</div>
+                    <div className="text-xs text-gray-500">
+                      {result.ok ? `Responded in ${result.latency}ms` : result.error || "unreachable"}
+                    </div>
+                  </div>
+                  <span className={result.ok ? "text-green-600" : "text-red-500"}>
+                    {result.ok ? "🟢" : "⚪️"}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

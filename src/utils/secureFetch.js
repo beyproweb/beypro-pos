@@ -67,13 +67,15 @@ export default async function secureFetch(endpoint, options = {}) {
 
   // Detect public (non-auth) routes
   const lower = endpoint.toLowerCase();
+  const lowerPath = lower.replace(/[?#].*$/, "");
   const hasQrMenuSegment = /(?:^|\/)qr-menu(?:\/|$|[?#])/.test(lower);
+  const isMeEndpoint = /(?:^|\/)me(?:\/|$)/.test(lowerPath);
   const isPublic =
     lower.includes("/products?identifier=") ||
     lower.includes("/public/") ||
     hasQrMenuSegment ||
     lower.includes("/restaurant-info") ||
-    lower.includes("/me") || // allow /me to be protected but not break public
+    isMeEndpoint || // Only treat the exact /me endpoint as public-safe
     lower.includes("/uploads/");
 
   const isFormData = options.body instanceof FormData;
