@@ -1,12 +1,17 @@
 // src/utils/socket.js
 import { io } from "socket.io-client";
 
-// 🧩 Choose backend automatically
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ||
+// 🧩 Choose backend automatically (align with secureFetch VITE_API_URL)
+const RAW =
+  import.meta.env.VITE_API_URL ||
   (import.meta.env.MODE === "development"
-    ? "http://localhost:5000"
-    : "https://beypro-backend.onrender.com");
+    ? "http://localhost:5000/api"
+    : "https://hurrypos-backend.onrender.com/api");
+
+// Normalize: strip trailing /api for socket base
+const BASE_FROM_API = String(RAW).replace(/\/api\/?$/, "");
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || BASE_FROM_API;
 
 // Initialize socket
 const socket = io(SOCKET_URL, {
