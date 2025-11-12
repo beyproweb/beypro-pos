@@ -2961,7 +2961,8 @@ const created = await postJSON(
     items: newItems,
     total,
     customer: orderType === "online" ? customerInfo : null,
-    payment_method: paymentMethod,
+    takeaway: orderType === "takeaway" ? takeaway : null,
+    paymentMethod,
   })
 );
 

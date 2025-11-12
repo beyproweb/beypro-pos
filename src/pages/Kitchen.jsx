@@ -736,7 +736,7 @@ return (
                   <div className="mt-4 flex items-end justify-between gap-3">
                     <div>
                       <div className="text-3xl font-mono font-bold text-slate-900 dark:text-white tracking-tight">
-                        {formatTimerValue(timer.secondsLeft)}
+                        {formatTimerValue(Math.max(0, (timer.total || 0) - (timer.secondsLeft || 0)))}
                       </div>
                       <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
                         {t("Total")} {formatTimerValue(timer.total)}
@@ -895,9 +895,16 @@ return (
                         </span>
                       )}
                       {first.pickup_time && (
-                        <span className="text-xs text-orange-600">
-                          🕒 {t("Pickup")}: {first.pickup_time}
-                        </span>
+                        (() => {
+                          const raw = String(first.pickup_time);
+                          const match = raw.match(/(\d{1,2}:\d{2})/);
+                          const display = match ? match[1] : raw;
+                          return (
+                            <span className="text-xs text-orange-600">
+                              🕒 {t("Pickup")}: {display}
+                            </span>
+                          );
+                        })()
                       )}
                       {(first.takeaway_notes || first.notes) && (
                         <span className="text-xs text-rose-600 truncate max-w-[220px]">
@@ -908,7 +915,7 @@ return (
                   )}
                 </div>
 
-                {/* 🕒 Live 180s countdown */}
+                {/* 🕒 Live elapsed timer (counts up from 00:00) */}
                 {(() => {
                   const arrival = orderTimers[first.order_id] || Date.now();
                   const elapsed = Math.floor((Date.now() - arrival) / 1000);
@@ -918,28 +925,16 @@ return (
                   const toneWarning = "bg-amber-500";
                   const toneNormal = "bg-[#14B8A6]";
 
-                  if (first.kitchen_status === "new") {
-                    const remaining = Math.max(0, 180 - elapsed);
-                    const mins = Math.floor(remaining / 60);
-                    const secs = remaining % 60;
-                    text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-                    colorClass =
-                      remaining === 0
-                        ? `${toneCritical} animate-pulse`
-                        : remaining <= 60
-                        ? toneWarning
-                        : toneNormal;
-                  } else {
-                    const mins = Math.floor(elapsed / 60);
-                    const secs = elapsed % 60;
-                    text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-                    colorClass =
-                      elapsed >= 1200
-                        ? `${toneCritical} animate-pulse`
-                        : elapsed >= 600
-                        ? toneWarning
-                        : toneNormal;
-                  }
+                  // Always show count-up from 0; color by age thresholds
+                  const mins = Math.floor(elapsed / 60);
+                  const secs = elapsed % 60;
+                  text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+                  colorClass =
+                    elapsed >= 1200
+                      ? `${toneCritical} animate-pulse`
+                      : elapsed >= 600
+                      ? toneWarning
+                      : toneNormal;
 
                   return (
                     <span
@@ -952,8 +947,8 @@ return (
                 })()}
               </span>
 
-              {/* Badge */}
-              {(ordersArePacket || ordersArePhone || ordersAreTakeaway) && (
+              {/* Badge (hide for takeaway to avoid duplicate label) */}
+              {(ordersArePacket || ordersArePhone) && (
                 <span
                   className={`ml-2 px-2 py-1 rounded-lg text-xs font-semibold ${groupTheme.badge}`}
                 >
@@ -961,7 +956,7 @@ return (
                     ? `Packet${first.external_id ? " · Online" : ""}`
                     : ordersArePhone
                     ? "Phone"
-                    : t("Take Away")}
+                    : null}
                 </span>
               )}
             </div>

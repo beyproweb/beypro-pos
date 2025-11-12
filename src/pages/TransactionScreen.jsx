@@ -177,7 +177,11 @@ const [debtSearchResults, setDebtSearchResults] = useState([]);
 const [debtSearchLoading, setDebtSearchLoading] = useState(false);
 const orderType = order?.order_type || (orderId ? "phone" : "table");
 const normalizedStatus = (order?.status || "").toLowerCase();
-const isDebtEligible = ["confirmed", "paid"].includes(normalizedStatus);
+// Debt can be added only when order is confirmed/paid AND there are confirmed items and no unconfirmed items
+const hasUnconfirmedItems = cartItems.some((i) => !i.confirmed);
+const hasConfirmedUnpaidItems = cartItems.some((i) => i.confirmed && !i.paid);
+const canShowDebtButton = normalizedStatus === "confirmed";
+const isDebtEligible = canShowDebtButton && !hasUnconfirmedItems && hasConfirmedUnpaidItems;
   const safeProducts = Array.isArray(products) ? products : [];
   const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
 const [excludedItems, setExcludedItems] = useState([]);
@@ -1291,10 +1295,8 @@ const fetchPhoneOrder = async (id) => {
 
     let correctedStatus = newOrder.status;
 
+    // Do not force a special "occupied" status; treat empty phone orders as confirmed
     const items = await secureFetch(`/orders/${newOrder.id}/items${identifier}`);
-    if ((!items || items.length === 0) && newOrder.order_type === "phone") {
-      correctedStatus = "occupied";
-    }
 
     if (newOrder.payment_method === "Online") correctedStatus = "paid";
 

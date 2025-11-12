@@ -759,50 +759,95 @@ function driverButtonDisabled(order) {
 
 
   function getPrepTimer(order) {
-    if (!order.prep_started_at) return "00:00";
-    const start = new Date(order.prep_started_at).getTime();
-    const end = order.kitchen_delivered_at
-      ? new Date(order.kitchen_delivered_at).getTime()
-      : Date.now();
-    const elapsed = Math.floor((end - start) / 1000);
+    // Robust elapsed calculation tolerant to timezone format issues
+    const toMs = (val) => {
+      if (!val) return NaN;
+      const a = new Date(val).getTime();
+      // try interpreting as local time (strip timezone info) if that’s closer to now
+      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+      const b = new Date(bStr).getTime();
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+      }
+      return Number.isFinite(a) ? a : b;
+    };
+
+    const startMs = toMs(order.prep_started_at);
+    if (!Number.isFinite(startMs)) return "00:00";
+    const endMs = order.kitchen_delivered_at ? toMs(order.kitchen_delivered_at) : Date.now();
+    const elapsed = Math.max(0, Math.floor((endMs - startMs) / 1000));
     const mins = Math.floor(elapsed / 60);
     const secs = elapsed % 60;
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }
   function getDeliveryTimer(order) {
-    if (!order.on_road_at) return "00:00";
-    const start = new Date(order.on_road_at).getTime();
-    const end = order.delivered_at
-      ? new Date(order.delivered_at).getTime()
-      : Date.now();
-    const elapsed = Math.floor((end - start) / 1000);
+    const toMs = (val) => {
+      if (!val) return NaN;
+      const a = new Date(val).getTime();
+      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+      const b = new Date(bStr).getTime();
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+      }
+      return Number.isFinite(a) ? a : b;
+    };
+    const startMs = toMs(order.on_road_at);
+    if (!Number.isFinite(startMs)) return "00:00";
+    const endMs = order.delivered_at ? toMs(order.delivered_at) : Date.now();
+    const elapsed = Math.max(0, Math.floor((endMs - startMs) / 1000));
     const mins = Math.floor(elapsed / 60);
     const secs = elapsed % 60;
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }
   function getWaitingTimer(order) {
-    if (!order.created_at) return "00:00";
-    const start = new Date(order.created_at).getTime();
-    const end = order.delivered_at
-      ? new Date(order.delivered_at).getTime()
-      : Date.now();
-    const elapsed = Math.floor((end - start) / 1000);
+    const toMs = (val) => {
+      if (!val) return NaN;
+      const a = new Date(val).getTime();
+      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+      const b = new Date(bStr).getTime();
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+      }
+      return Number.isFinite(a) ? a : b;
+    };
+    const startMs = toMs(order.created_at);
+    if (!Number.isFinite(startMs)) return "00:00";
+    const endMs = order.delivered_at ? toMs(order.delivered_at) : Date.now();
+    const elapsed = Math.max(0, Math.floor((endMs - startMs) / 1000));
     const mins = Math.floor(elapsed / 60);
     const secs = elapsed % 60;
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }
   function getDeliverySeconds(order) {
+    const toMs = (val) => {
+      if (!val) return NaN;
+      const a = new Date(val).getTime();
+      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+      const b = new Date(bStr).getTime();
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+      }
+      return Number.isFinite(a) ? a : b;
+    };
     if (!order.kitchen_delivered_at) return 0;
-    const start = new Date(order.kitchen_delivered_at).getTime();
-    return Math.floor((now - start) / 1000);
+    const start = toMs(order.kitchen_delivered_at);
+    return Math.max(0, Math.floor((now - start) / 1000));
   }
   function getWaitingSeconds(order) {
+    const toMs = (val) => {
+      if (!val) return NaN;
+      const a = new Date(val).getTime();
+      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+      const b = new Date(bStr).getTime();
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+      }
+      return Number.isFinite(a) ? a : b;
+    };
     if (!order.created_at) return 0;
-    const start = new Date(order.created_at).getTime();
-    const end = order.delivered_at
-      ? new Date(order.delivered_at).getTime()
-      : Date.now();
-    return Math.floor((end - start) / 1000);
+    const start = toMs(order.created_at);
+    const end = order.delivered_at ? toMs(order.delivered_at) : Date.now();
+    return Math.max(0, Math.floor((end - start) / 1000));
   }
 function countDrinksForDriver(orders, drinksList, driverId) {
   const result = {};

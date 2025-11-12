@@ -16,6 +16,7 @@ import IntegrationsTab from "../components/settings-tabs/IntegrationsTab";
 import LogFilesTab from "../components/settings-tabs/LogFilesTab";
 import AppearanceTab from "../components/settings-tabs/AppearanceTab";
 import PrinterTab from "../components/settings-tabs/PrinterTab";
+import TablesSettingsTab from "../components/settings-tabs/TablesSettingsTab";
 
 const tabComponents = {
   shop_hours: ShopHoursTab,
@@ -29,6 +30,7 @@ const tabComponents = {
   inventory: LogFilesTab,
   appearance: AppearanceTab,
   printers: PrinterTab,
+  tables: TablesSettingsTab,
 };
 
 export default function SettingsPage() {
@@ -50,6 +52,7 @@ export default function SettingsPage() {
     "settings-integrations",
     "settings-inventory",
     "settings-printers",
+    "settings-tables",
   ];
 
   // ✅ Properly check each permission

@@ -12,7 +12,7 @@ import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import OrderHistory from "../components/OrderHistory";
 import { useHeader } from "../context/HeaderContext";
-const TOTAL_TABLES = 20;
+const FALLBACK_TABLES = 20;
 import secureFetch from "../utils/secureFetch";
 import TableActionButtons from "../components/TableActionButtons";
 import {
@@ -29,6 +29,8 @@ const API_URL =
     : "https://hurrypos-backend.onrender.com/api");
 const isDelayed = (order) => {
   if (!order || order.status !== "confirmed" || !order.created_at) return false;
+  // Only treat as delayed if there is at least one item
+  if (!Array.isArray(order.items) || order.items.length === 0) return false;
   const created = new Date(order.created_at);
   const now = new Date();
   const diffMins = (now - created) / 1000 / 60;
@@ -42,6 +44,11 @@ const getTableColor = (order) => {
 
   const suborders = Array.isArray(order.suborders) ? order.suborders : [];
   const items = Array.isArray(order.items) ? order.items : [];
+
+  // 🧹 No items at all → treat as Free (neutral), not yellow
+  if (items.length === 0) {
+    return "bg-gray-300 text-black";
+  }
 
   // 🔍 Check unpaid in suborders
   const hasUnpaidSubOrder = suborders.some((sub) =>
@@ -101,8 +108,9 @@ const getDisplayTotal = (order) => {
     return order.receiptMethods.reduce((sum, m) => sum + parseFloat(m.amount || 0), 0);
   }
 
-  if (order.items?.some(i => !i.paid_at)) {
-    return order.items.filter(i => !i.paid_at)
+  if (order.items?.some(i => !i.paid_at && !i.paid)) {
+    return order.items
+      .filter(i => !i.paid_at && !i.paid)
       .reduce((sum, i) => {
         const base = i.price * i.quantity;
         const extrasTotal = Array.isArray(i.extras)
@@ -126,6 +134,7 @@ const getDisplayTotal = (order) => {
 export default function TableOverview() {
   useRegisterGuard();
   const [orders, setOrders] = useState([]);
+  const [tableConfigs, setTableConfigs] = useState([]);
   const [closedOrders, setClosedOrders] = useState([]);
   const [groupedClosedOrders, setGroupedClosedOrders] = useState({});
   const [activeTab, setActiveTab] = useState("tables");
@@ -155,6 +164,8 @@ const [entryReason, setEntryReason] = useState("");
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const { setHeader } = useHeader();
+  const hasPermission = useHasPermission;
+
 const [registerEntries, setRegisterEntries] = useState(0);
   const [showRegisterLog, setShowRegisterLog] = useState(false);
   const [showChangeForm, setShowChangeForm] = useState(false);
@@ -278,18 +289,26 @@ const TAB_TO_SIDEBAR = {
   phone: { labelKey: "Phone", defaultLabel: "Phone", path: "/tableoverview?tab=phone" },
   register: { labelKey: "Register", defaultLabel: "Register", path: "/tableoverview?tab=register" },
 };
-const visibleTabs = TAB_LIST.filter(tab => {
+const visibleTabs = TAB_LIST.filter((tab) => {
   const map = {
     phone: "phone-orders",
     packet: "packet-orders",
     kitchen: "kitchen",
     tables: "tables",
     history: "history",
-    register: "register"
+    register: "register",
   };
+
+  // ✅ Packet tab visible if staff has "packet-orders" permission
+  if (tab.id === "packet") {
+    return useHasPermission("packet-orders");
+  }
+
   const key = map[tab.id] || tab.id;
   return useHasPermission(key);
 });
+
+
 
   const handleTabDragStart = (tab) => (event) => {
     const payload = TAB_TO_SIDEBAR[tab.id];
@@ -349,18 +368,51 @@ const visibleTabs = TAB_LIST.filter(tab => {
 useEffect(() => () => setHeader({}), [setHeader]);
 
 
+// Combine logs for the Register modal without duplicating cash expenses
+// Cash expenses are already inserted into cash_register_logs when saved from Expenses page
 const combinedEvents = [
   ...(todayRegisterEvents || []),
-  ...(todayExpenses || []).map(e => ({
-    type: "expense",
-    amount: e.amount,
-    note: e.note,
-    created_at: e.created_at
-  })),
+  ...((todayExpenses || [])
+    .filter((e) => String(e.payment_method || "").toLowerCase() !== "cash")
+    .map((e) => ({
+      type: "expense",
+      amount: e.amount,
+      note: e.note || e.type || null,
+      created_at: e.created_at,
+    }))),
   ...(supplierCashPayments || []),
   ...(staffCashPayments || []),
 ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
+const handleChangeCashSubmit = async (e) => {
+  e.preventDefault();
+  if (!changeAmount || isNaN(changeAmount) || Number(changeAmount) <= 0) {
+    toast.error("Enter a valid change amount");
+    return;
+  }
+
+  try {
+    const res = await secureFetch("/reports/cash-register-log", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "change", // this will be mapped to 'expense' in backend
+        amount: Number(changeAmount),
+        note: "Change given to customer",
+      }),
+    });
+
+    toast.success("Change recorded successfully!");
+    setChangeAmount("");
+    setShowChangeForm(false);
+
+    // refresh the modal
+    setShowRegisterModal(false);
+    setTimeout(() => setShowRegisterModal(true), 350);
+  } catch (err) {
+    console.error("❌ Failed to record change:", err);
+    toast.error(err.message || "Failed to record change");
+  }
+};
 
 
 const refreshRegisterState = () => {
@@ -449,8 +501,48 @@ const [takeawayOrders, setTakeawayOrders] = useState([]);
 const fetchTakeawayOrders = async () => {
   try {
     const data = await secureFetch("/orders?type=takeaway");
-    const filtered = data.filter(o => o.status !== "closed");
-    setTakeawayOrders(filtered);
+    const filtered = Array.isArray(data) ? data.filter(o => o.status !== "closed") : [];
+
+    // Fetch items and receipt methods for accurate total display (like tables/packet)
+    const ordersWithItems = await Promise.all(
+      filtered.map(async (order) => {
+        try {
+          let items = (await secureFetch(`/orders/${order.id}/items`)).map((item) => ({
+            ...item,
+            discount_type: item.discount_type || item.discountType || null,
+            discount_value:
+              item.discount_value != null
+                ? parseFloat(item.discount_value)
+                : item.discountValue != null
+                ? parseFloat(item.discountValue)
+                : 0,
+          }));
+
+          // ✅ Fallback for online-paid orders missing item paid flags
+          const isOrderPaid =
+            order.status === "paid" || order.payment_status === "paid" || order.is_paid === true;
+          if (isOrderPaid) {
+            items = items.map((i) => ({ ...i, paid: i.paid || true }));
+          }
+
+          let receiptMethods = [];
+          if (order.receipt_id) {
+            try {
+              receiptMethods = await secureFetch(`/orders/receipt-methods/${order.receipt_id}`);
+            } catch (e) {
+              console.warn("⚠️ Failed to fetch receipt methods for takeaway order", order.id, e);
+            }
+          }
+
+          return { ...order, items, receiptMethods };
+        } catch (e) {
+          console.warn("⚠️ Failed to enrich takeaway order", order.id, e);
+          return { ...order, items: [], receiptMethods: [] };
+        }
+      })
+    );
+
+    setTakeawayOrders(ordersWithItems);
   } catch (err) {
     console.error("❌ Fetch takeaway orders failed:", err);
     toast.error("Could not load takeaway orders");
@@ -474,6 +566,7 @@ useEffect(() => {
       if (activeTab === "history") fetchClosedOrders();
       if (activeTab === "phone") fetchPhoneOrders();
       if (activeTab === "packet") fetchPacketOrders();
+      if (activeTab === "takeaway") fetchTakeawayOrders();
     }, 300);
   }
   if (!window.socket) return;
@@ -534,15 +627,13 @@ useEffect(() => {
 
   let openTime = null;
 
-  
-
-secureFetch("/reports/cash-register-status")
-  .then(data => {
-
+  secureFetch("/reports/cash-register-status")
+    .then((data) => {
       setRegisterState(data.status);
       setYesterdayCloseCash(data.yesterday_close ?? null);
       setLastOpenAt(data.last_open_at || null);
       setOpeningCash("");
+
       if (data.status === "open" || data.status === "closed") {
         openTime = data.last_open_at;
         const opening =
@@ -552,28 +643,73 @@ secureFetch("/reports/cash-register-status")
         setOpeningCash(opening);
       }
 
-return secureFetch(`/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`)
+      if (!openTime) {
+        // Register not opened today – nothing more to compute
+        setCashDataLoaded(true);
+        return null;
+      }
 
-})
-.then(async (data) => {
-  if (!data) return;
-  const logExpense = parseFloat(data[0]?.total_expense || 0);
+      return secureFetch(
+        `/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`
+      );
+    })
+    .then(async (cashTotalRes) => {
+      if (cashTotalRes === null) return; // handled above
 
-  // 🔄 Fetch additional general expenses from /expenses for today
-  const today = new Date().toISOString().slice(0, 10);
- const extraExpenses = await secureFetch(`/expenses?from=${today}&to=${today}`)
+      // ✅ Set expected cash (cash sales since register open)
+      let cashSales = parseFloat(cashTotalRes?.cash_total || 0);
 
-    .then(rows => rows.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0))
-    .catch(() => 0);
+      // Fallback: if API returned nothing (edge cases), try daily history
+      if (!Number.isFinite(cashSales) || cashSales <= 0) {
+        try {
+          const today = new Date().toISOString().slice(0, 10);
+          const hist = await secureFetch(
+            `/reports/cash-register-history?from=${today}&to=${today}`
+          );
+          const row = Array.isArray(hist)
+            ? hist.find((r) => r.date === today)
+            : null;
+          if (row && row.cash_sales != null) {
+            cashSales = parseFloat(row.cash_sales || 0);
+          }
+        } catch {
+          // ignore fallback errors
+        }
+      }
 
-  const totalExpense = logExpense + extraExpenses;
+      setExpectedCash(Number.isFinite(cashSales) ? cashSales : 0);
 
-  console.log("📉 New Daily Cash Expense (log + expenses):", totalExpense);
-  setDailyCashExpense(totalExpense);
-  setCashDataLoaded(true);
-  console.log("✅ All cash data loaded");
-})
+      // ✅ Fetch cash expenses since open (register + supplier + staff)
+      const cashExpArr = await secureFetch(
+        `/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`
+      ).catch(() => []);
+      const logExpense = parseFloat(cashExpArr?.[0]?.total_expense || 0);
 
+      // 🔄 Fetch additional general expenses (non-cash or manual entries) for today
+      const today = new Date().toISOString().slice(0, 10);
+      const extraExpenses = await secureFetch(
+        `/expenses?from=${today}&to=${today}`
+      )
+        .then((rows) =>
+          Array.isArray(rows)
+            ? rows.reduce(
+                (sum, e) => sum + (parseFloat(e.amount || 0) || 0),
+                0
+              )
+            : 0
+        )
+        .catch(() => 0);
+
+      const totalExpense = (isNaN(logExpense) ? 0 : logExpense) + extraExpenses;
+
+      console.log(
+        "📉 New Daily Cash Expense (log + expenses):",
+        totalExpense
+      );
+      setDailyCashExpense(totalExpense);
+      setCashDataLoaded(true);
+      console.log("✅ All cash data loaded");
+    })
     .catch((err) => {
       console.error("❌ Error in modal init:", err);
       toast.error("Failed to load register data");
@@ -629,7 +765,7 @@ const fetchOrders = async () => {
       openOrders.map(async (order) => {
         const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
 
-        const items = itemsRaw.map((item) => ({
+        let items = itemsRaw.map((item) => ({
           ...item,
           discount_type: item.discount_type || item.discountType || null,
           discount_value:
@@ -639,6 +775,13 @@ const fetchOrders = async () => {
               ? parseFloat(item.discountValue)
               : 0,
         }));
+
+        // ✅ Fallback: if order is marked paid but items lack paid flags, coerce for UI consistency
+        const isOrderPaid =
+          order.status === "paid" || order.payment_status === "paid" || order.is_paid === true;
+        if (isOrderPaid) {
+          items = items.map((i) => ({ ...i, paid: i.paid || true }));
+        }
 
         return { ...order, items };
       })
@@ -665,6 +808,9 @@ const fetchOrders = async () => {
               ? "paid"
               : "confirmed";
         }
+        // ✅ Derive merged paid flag from items (no unpaid items => paid)
+        const anyUnpaid = (acc[key].items || []).some((i) => !i.paid_at && !i.paid);
+        acc[key].is_paid = !anyUnpaid;
         return acc;
       }, {})
     );
@@ -864,11 +1010,33 @@ const fetchPhoneOrders = async () => {
   }
 };
 
-  const tables = Array.from({ length: TOTAL_TABLES }, (_, i) => {
-    const tableNumber = i + 1;
-    const order = orders.find((o) => o.table_number === tableNumber);
-    return { tableNumber, order };
-  });
+// Fetch table configurations when viewing tables (inside component)
+useEffect(() => {
+  if (activeTab !== "tables") return;
+  let mounted = true;
+  secureFetch("/tables")
+    .then((rows) => {
+      if (!mounted) return;
+      const arr = Array.isArray(rows) ? rows : [];
+      setTableConfigs(arr.filter((t) => t.active !== false));
+    })
+    .catch(() => setTableConfigs([]));
+  return () => {
+    mounted = false;
+  };
+}, [activeTab]);
+
+  const tables = (tableConfigs && tableConfigs.length > 0
+    ? tableConfigs.map((cfg) => ({
+        tableNumber: cfg.number,
+        order: orders.find((o) => o.table_number === cfg.number),
+      }))
+    : Array.from({ length: FALLBACK_TABLES }, (_, i) => {
+        const tableNumber = i + 1;
+        const order = orders.find((o) => o.table_number === tableNumber);
+        return { tableNumber, order };
+      })
+  ).sort((a, b) => a.tableNumber - b.tableNumber);
 
 const handlePrintOrder = async (orderId) => {
   if (!orderId) {
@@ -936,10 +1104,20 @@ if (!table.order) {
 
   const getTimeElapsed = (order) => {
     if (!order?.created_at || order.status !== "confirmed") return null;
-    const created = new Date(order.created_at);
-    const diff = now - created;
-    const mins = Math.floor(diff / 60000);
-    const secs = Math.floor((diff % 60000) / 1000);
+    const toMs = (val) => {
+      if (!val) return NaN;
+      const a = new Date(val).getTime();
+      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+      const b = new Date(bStr).getTime();
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+      }
+      return Number.isFinite(a) ? a : b;
+    };
+    const createdMs = toMs(order.created_at);
+    const diffMs = now - createdMs;
+    const mins = Math.floor(Math.max(0, diffMs) / 60000);
+    const secs = Math.floor((Math.max(0, diffMs) % 60000) / 1000);
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   };
 
@@ -1042,6 +1220,8 @@ useEffect(() => {
       {activeTab === "tables" && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-7 px-8">
           {tables.map((table) => {
+            const cfg = (tableConfigs || []).find((c) => c.number === table.tableNumber);
+            const accent = cfg?.color || null;
 
             return (
 <div
@@ -1057,8 +1237,8 @@ useEffect(() => {
   `}
   style={{
     minHeight: "200px",
-    boxShadow: "0 3px 16px 0 rgba(30,34,90,0.08)"
-
+    boxShadow: "0 3px 16px 0 rgba(30,34,90,0.08)",
+    borderColor: accent || undefined,
   }}
 >
   {/* Top Row: Table Number and Timer */}
@@ -1070,12 +1250,18 @@ useEffect(() => {
   </span>
 </div>
 
-    {table.order?.status === "confirmed" && (
+    {table.order?.status === "confirmed" && Array.isArray(table.order?.items) && table.order.items.length > 0 && (
       <span className="bg-blue-600 text-white rounded-xl px-3 py-1 font-mono text-sm shadow-md animate-pulse">
         ⏱ {getTimeElapsed(table.order)}
       </span>
     )}
   </div>
+
+  {cfg?.label && (
+    <div className="text-xs font-semibold text-slate-800/80 bg-white/60 rounded-full px-2 py-0.5 inline-block mb-1">
+      {cfg.label}
+    </div>
+  )}
 
   <div className="flex flex-col gap-2 flex-grow">
     {
@@ -1138,8 +1324,8 @@ useEffect(() => {
       ₺{getDisplayTotal(table.order).toFixed(2)}
     </span>
 
-    {/* 🖨️ Print button — show if order exists and has at least 1 item */}
-    {table.order && (
+    {/* 🖨️ Print button — only if order has items */}
+    {table.order && Array.isArray(table.order.items) && table.order.items.length > 0 && (
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -1152,23 +1338,9 @@ useEffect(() => {
       </button>
     )}
 
-  {/* ✅ Paid / Partially Paid badge */}
-{(table.order?.status === "paid" ||
-  table.order?.payment_status === "paid" ||
-  table.order?.is_paid) && (
-  <>
-    {(
-      Array.isArray(table.order?.suborders) &&
-      table.order.suborders.some(
-        (sub) =>
-          Array.isArray(sub.items) &&
-          sub.items.some((i) => !i.paid_at && !i.paid)
-      )
-    ) ||
-    (
-      Array.isArray(table.order?.items) &&
-      table.order.items.some((i) => !i.paid_at && !i.paid)
-    ) ? (
+  {/* ✅ Paid / Unpaid badge (only after items are loaded) */}
+  {Array.isArray(table.order?.items) && table.order.items.length > 0 && (
+    hasUnpaidAnywhere(table.order) ? (
       <span className="px-3 py-1 bg-amber-100 text-amber-800 font-bold rounded-full shadow-sm">
         {t("Unpaid")}
       </span>
@@ -1188,9 +1360,8 @@ useEffect(() => {
           🔒 {t("Close")}
         </button>
       </>
-    )}
-  </>
-)}
+    )
+  )}
 
   </div>
 </div>
@@ -1247,10 +1418,62 @@ useEffect(() => {
             </span>
           </div>
           <div className="font-bold text-gray-800">
-            ₺{Number(order.total || 0).toFixed(2)}
+            ₺{getDisplayTotal(order).toFixed(2)}
           </div>
           <div className="text-sm text-gray-500">
             {order.customer_name || t("Guest")}
+          </div>
+
+          {/* Status + Kitchen badges (like tables) */}
+          <div className="mt-2">
+            {/* Order status label */}
+            {order?.status && (
+              <div className="flex items-center gap-2">
+                <span className="uppercase font-extrabold tracking-wide text-orange-700">
+                  {t(order.status)}
+                </span>
+                {/* Paid / Unpaid chip */}
+                {Array.isArray(order.items) && order.items.length > 0 && (
+                  hasUnpaidAnywhere(order) ? (
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full text-xs shadow-sm">
+                      {t("Unpaid")}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-green-100 text-green-800 font-bold rounded-full text-xs shadow-sm">
+                      ✅ {t("Paid")}
+                    </span>
+                  )
+                )}
+              </div>
+            )}
+
+            {/* Kitchen status badges */}
+            {Array.isArray(order.items) && order.items.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-1">
+                {["new", "preparing", "ready", "delivered"].map((status) => {
+                  const count = order.items.filter((item) => item.kitchen_status === status).length;
+                  if (!count) return null;
+                  return (
+                    <span
+                      key={status}
+                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        status === "preparing"
+                          ? "bg-yellow-400 text-white"
+                          : status === "ready"
+                          ? "bg-blue-500 text-white"
+                          : status === "delivered"
+                          ? "bg-green-500 text-white"
+                          : status === "new"
+                          ? "bg-gray-400 text-white"
+                          : "bg-gray-300 text-black"
+                      }`}
+                    >
+                      {count} {t(status)}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       ))}
@@ -1285,7 +1508,15 @@ onCreateOrder={() => {
     )}
 
     {activeTab === "phone" && <Orders />}
-    {activeTab === "packet" && <Orders hideModal={true} orders={packetOrders} />}
+{activeTab === "packet" && (
+  hasPermission("packet-orders") ? (
+    <Orders hideModal={true} orders={packetOrders} />
+  ) : (
+    <div className="text-center mt-10 text-rose-500 font-bold">
+      🚫 {t("Access Denied: Packet Orders")}
+    </div>
+  )
+)}
 
 {activeTab === "history" && (
       <OrderHistory
@@ -1851,35 +2082,6 @@ try {
 
 
 }
-const handleChangeCashSubmit = async (e) => {
-  e.preventDefault();
-  const numericAmount = parseFloat(changeAmount);
-  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-    toast.error(t("Enter a valid change amount"));
-    return;
-  }
-
-  try {
-    await logCashRegisterEvent({
-      type: "change",
-      amount: numericAmount,
-      note: t("Change given to customer"),
-    });
-    await openCashDrawer();
-    setChangeAmount("");
-    setShowChangeForm(false);
-    toast.success(t("Change recorded"));
-    refreshRegisterState();
-    const today = new Date().toISOString().slice(0, 10);
-    secureFetch(`/reports/cash-register-events?from=${today}&to=${today}`)
-      .then(setTodayRegisterEvents)
-      .catch(() => {});
-  } catch (err) {
-    console.error("❌ Failed to log change cash:", err);
-    toast.error(t("Failed to record change"));
-  }
-};
-
 function TableOverviewHeaderActions({ t, onMove, onMerge }) {
   return (
     <div className="hidden md:block">

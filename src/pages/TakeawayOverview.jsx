@@ -18,11 +18,7 @@ export default function TakeawayOverview() {
         const data = await secureFetch(`/orders${identifier}`);
         const filtered = Array.isArray(data)
           ? data.filter(
-              (o) =>
-                o.order_type === "takeaway" &&
-                (o.status === "occupied" ||
-                  o.status === "confirmed" ||
-                  o.status === "paid")
+              (o) => o.order_type === "takeaway" && o.status !== "closed"
             )
           : [];
         setOrders(filtered);

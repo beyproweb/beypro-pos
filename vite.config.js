@@ -9,7 +9,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    base: "/",
+    // Use relative paths for production (Electron file:// protocol)
+    base: isDev ? "/" : "./",
 
     build: {
       outDir: "dist",

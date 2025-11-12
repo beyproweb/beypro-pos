@@ -220,23 +220,51 @@ export default function PaymentModal({
 
         {isSplitMode ? (
           <div className="space-y-4">
-            {normalizedMethods.map((method) => (
-              <div
-                key={method.id}
-                className="flex items-center justify-between"
-              >
-                <div className="flex items-center space-x-2">
-                  <span className="text-2xl">{method.icon}</span>
-                  <span className="font-medium">{t(method.label)}</span>
-                </div>
-                <button
-                  onClick={() => setActiveSplitMethod(method.id)}
-                  className="w-28 text-right px-4 py-3 border rounded-xl bg-gray-50 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-sm"
-                >
-                  {splits?.[method.id] ?? "0.00"}
-                </button>
-              </div>
-            ))}
+{normalizedMethods.map((method, index) => (
+  <div key={method.id} className="flex items-center justify-between">
+    <div className="flex items-center space-x-2">
+      <span className="text-2xl">{method.icon}</span>
+      <span className="font-medium">{t(method.label)}</span>
+    </div>
+    <input
+      type="number"
+      inputMode="decimal"
+      step="0.01"
+      value={splits?.[method.id] ?? ""}
+      placeholder="0.00"
+      className="w-28 text-right px-4 py-3 border rounded-xl bg-gray-50 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all duration-150 shadow-sm"
+      onFocus={(e) => {
+        setActiveSplitMethod(method.id);
+        e.target.select(); // highlight number for quick overwrite
+      }}
+      onChange={(e) => {
+        const val = parseFloat(e.target.value);
+        setSplits((prev) => ({
+          ...prev,
+          [method.id]: isNaN(val) ? 0 : val,
+        }));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const inputs = Array.from(
+            e.currentTarget
+              .closest("div.space-y-4")
+              ?.querySelectorAll("input[type='number']")
+          );
+          const currentIndex = inputs.indexOf(e.currentTarget);
+          const nextInput = inputs[currentIndex + 1];
+          if (nextInput) {
+            nextInput.focus();
+          } else {
+            e.currentTarget.blur(); // close keyboard when done
+          }
+        }
+      }}
+    />
+  </div>
+))}
+
             <div className="flex justify-between items-center my-3 px-3 py-2 bg-yellow-100 border-2 border-yellow-400 rounded-xl shadow text-lg font-bold">
               <span className="text-yellow-700">{t("Remaining")}</span>
               <span
@@ -305,61 +333,7 @@ export default function PaymentModal({
           </button>
         </div>
 
-        {activeSplitMethod && (
-          <div className="absolute top-0 left-full ml-4 w-60 z-50">
-            <div className="bg-white border p-4 rounded-xl shadow-xl">
-              <div className="grid grid-cols-3 gap-3">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0, ".", "←"].map((key) => (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      if (key === "←") {
-                        const current =
-                          splits?.[activeSplitMethod]?.toString() || "";
-                        setSplits((prev) => ({
-                          ...prev,
-                          [activeSplitMethod]:
-                            current.slice(0, -1) || "",
-                        }));
-                      } else {
-                        const current =
-                          splits?.[activeSplitMethod]?.toString() || "";
-                        setSplits((prev) => ({
-                          ...prev,
-                          [activeSplitMethod]: (
-                            current + key
-                          ).replace(/^0+(?!\.)/, ""),
-                        }));
-                      }
-                    }}
-                    className="py-3 bg-gray-100 rounded-xl text-lg font-bold hover:bg-gray-200"
-                  >
-                    {key}
-                  </button>
-                ))}
-              </div>
-              <div className="flex space-x-2 mt-4">
-                <button
-                  onClick={() =>
-                    setSplits((prev) => ({
-                      ...prev,
-                      [activeSplitMethod]: "",
-                    }))
-                  }
-                  className="w-1/2 bg-red-100 text-red-800 py-2 rounded-xl hover:bg-red-200"
-                >
-                  {t("Clear")}
-                </button>
-                <button
-                  onClick={() => setActiveSplitMethod(null)}
-                  className="w-1/2 bg-blue-600 text-white py-2 rounded-xl hover:bg-blue-700"
-                >
-                  {t("OK")}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+      
       </div>
     </div>
   );

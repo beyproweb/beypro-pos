@@ -221,7 +221,14 @@ const loadSettings = async () => {
               <Route path="stock" element={<ProtectedRoute permission="stock"><Stock /></ProtectedRoute>} />
               <Route path="production" element={<ProtectedRoute permission="production"><Production /></ProtectedRoute>} />
               <Route path="tables" element={<ProtectedRoute permission="tables"><TableOverview /></ProtectedRoute>} />
-              <Route path="tableoverview" element={<ProtectedRoute permission="tables"><TableOverview /></ProtectedRoute>} />
+<Route
+  path="tableoverview"
+  element={
+    <ProtectedRoute permission={window.location.search.includes("tab=packet") ? "packet-orders" : "tables"}>
+      <TableOverview />
+    </ProtectedRoute>
+  }
+/>
               <Route path="transaction/:tableId" element={<TransactionScreen />} />
               <Route path="transaction/phone/:orderId" element={<TransactionScreen />} />
               <Route path="reports" element={<ProtectedRoute permission="reports"><Reports /></ProtectedRoute>} />

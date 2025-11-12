@@ -1,24 +1,50 @@
 // src/components/OrderStatusScreen.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { io } from "socket.io-client";
-const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
+// Derive Socket base URL from VITE_API_URL (strip trailing /api)
+const RAW_API =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === "development"
+    ? "http://localhost:5000/api"
+    : "https://hurrypos-backend.onrender.com/api");
+const SOCKET_URL = String(RAW_API).replace(/\/api\/?$/, "");
 
 /* ---------- SOCKET.IO HOOK ---------- */
 let socket;
 export function useSocketIO(onOrderUpdate, orderId) {
   useEffect(() => {
     if (!orderId) return;
-    if (!socket) socket = io(API_URL, { transports: ["websocket"] });
+    if (!socket) {
+      try {
+        socket = io(SOCKET_URL, {
+          transports: ["websocket", "polling"],
+          withCredentials: true,
+        });
+      } catch (e) {
+        console.warn("Socket init failed:", e);
+        return;
+      }
+    }
 
     const updateHandler = (data) => {
       if (Array.isArray(data?.orderIds) && data.orderIds.includes(orderId)) onOrderUpdate?.();
       if (data?.orderId === orderId) onOrderUpdate?.();
     };
 
+    // Generic refresh on common kitchen events (covers /api/order-items/kitchen-status in kitchen.js)
     socket.on("orders_updated", onOrderUpdate);
+    socket.on("order_preparing", onOrderUpdate);
+    socket.on("order_ready", onOrderUpdate);
+    socket.on("order_delivered", onOrderUpdate);
+
+    // Also listen with a payload-aware handler (covers orders router emitting orderIds/orderId)
     socket.on("order_ready", updateHandler);
     return () => {
       socket.off("orders_updated", onOrderUpdate);
+      socket.off("order_preparing", onOrderUpdate);
+      socket.off("order_ready", onOrderUpdate);
+      socket.off("order_delivered", onOrderUpdate);
       socket.off("order_ready", updateHandler);
     };
   }, [onOrderUpdate, orderId]);
@@ -60,6 +86,7 @@ const OrderStatusScreen = ({
   const [timer, setTimer] = useState("00:00");
   const [order404, setOrder404] = useState(false);
   const intervalRef = useRef(null);
+  const joinedRestaurantRef = useRef(null);
 
   const FINISHED_STATES = ["closed", "completed", "canceled"];
 
@@ -84,22 +111,53 @@ const OrderStatusScreen = ({
 
   const fetchJSON = useCallback(
     async (path, options = {}) => {
-      const url = appendIdentifier ? appendIdentifier(buildUrl(path)) : buildUrl(path);
-      const headers = {
-        Accept: "application/json",
-        ...(options.headers || {}),
-      };
-      if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-      const res = await fetch(url, { ...options, headers });
-      let data = null;
+      const endpoint = appendIdentifier ? appendIdentifier(path) : path;
+      const absoluteUrl = appendIdentifier ? appendIdentifier(buildUrl(path)) : buildUrl(path);
+
+      // First try as fully public (no auth header)
       try {
-        data = await res.json();
+        const headers = {
+          Accept: "application/json",
+          ...(options.headers || {}),
+        };
+        if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+        const res = await fetch(absoluteUrl, { ...options, headers });
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
+        }
+
+        // If backend still requires auth for some reason, retry with token when available
+        if (res.status === 401) {
+          const token = getAuthToken();
+          if (token) {
+            try {
+              const authed = await secureFetch(endpoint, {
+                ...options,
+                headers: {
+                  ...(options.headers || {}),
+                },
+              });
+              return { res: { ok: true, status: 200 }, data: authed };
+            } catch (e) {
+              return { res, data };
+            }
+          }
+        }
+        return { res, data };
       } catch {
-        data = null;
+        // As a final fallback, try secureFetch (will attach token if present)
+        try {
+          const data = await secureFetch(endpoint, options);
+          return { res: { ok: true, status: 200 }, data };
+        } catch {
+          return { res: { ok: false, status: 0 }, data: null };
+        }
       }
-      return { res, data };
     },
-    [buildUrl]
+    [buildUrl, appendIdentifier]
   );
 
   useEffect(() => {
@@ -153,6 +211,28 @@ const OrderStatusScreen = ({
   useEffect(() => {
     fetchOrder();
   }, [orderId]);
+
+  // Join restaurant-specific Socket.IO room once we know the restaurant_id
+  useEffect(() => {
+    const rid = order?.restaurant_id;
+    if (!rid) return;
+    if (!socket) return;
+    if (joinedRestaurantRef.current === rid) return;
+    try {
+      socket.emit("join_restaurant", rid);
+      joinedRestaurantRef.current = rid;
+    } catch (e) {
+      console.warn("Failed to join restaurant room", rid, e);
+    }
+    return () => {
+      try {
+        if (joinedRestaurantRef.current) {
+          socket.emit("leave_restaurant", joinedRestaurantRef.current);
+          joinedRestaurantRef.current = null;
+        }
+      } catch {}
+    };
+  }, [order?.restaurant_id]);
 
   // Timer
   useEffect(() => {
