@@ -1,11 +1,18 @@
 // secureFetch.js
 // ✅ Unified token-aware fetch helper for Beypro frontend (with public route safety)
 
+const isElectron =
+  typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "");
+
+const DEFAULT_API = "https://hurrypos-backend.onrender.com/api";
+
 const RAW =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.MODE === "development"
+  (isElectron
+    ? DEFAULT_API
+    : import.meta.env.MODE === "development"
     ? "http://localhost:5000/api"
-    : "https://hurrypos-backend.onrender.com/api");
+    : DEFAULT_API);
 
 // ✅ Normalize to exactly one /api
 const BASE_URL =
