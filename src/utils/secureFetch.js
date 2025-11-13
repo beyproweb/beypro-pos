@@ -1,20 +1,22 @@
-// secureFetch.js
-// ✅ Unified token-aware fetch helper for Beypro frontend (with public route safety)
+// secureFetch.js — FINAL FIX FOR ELECTRON + DEV + PROD
 
 const isElectron =
   typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "");
 
-const DEFAULT_API = "https://hurrypos-backend.onrender.com/api";
+// Always use Render backend in Electron (DEV + PROD)
+const ELECTRON_API = "https://hurrypos-backend.onrender.com/api";
 
-const RAW =
+// For browser:
+const BROWSER_API =
   import.meta.env.VITE_API_URL ||
-  (isElectron
-    ? DEFAULT_API
-    : import.meta.env.MODE === "development"
+  (import.meta.env.MODE === "development"
     ? "http://localhost:5000/api"
-    : DEFAULT_API);
+    : "https://hurrypos-backend.onrender.com/api");
 
-// ✅ Normalize to exactly one /api
+// FINAL API CHOICE:
+const RAW = isElectron ? ELECTRON_API : BROWSER_API;
+
+// Normalize to exactly one /api
 const BASE_URL =
   String(RAW)
     .replace(/\/api\/?$/, "")
@@ -36,15 +38,13 @@ const cleanToken = (value) => {
   return normalized;
 };
 
-// ✅ Reads JWT token safely from every possible place
+// Read token properly
 export function getAuthToken() {
   if (!hasLocalStorage()) return "";
 
-  // 1️⃣ Direct token key
   const direct = cleanToken(localStorage.getItem("token"));
   if (direct) return direct;
 
-  // 2️⃣ Nested under beyproUser (various structures)
   try {
     const stored = JSON.parse(localStorage.getItem("beyproUser") || "{}");
     return (
@@ -52,43 +52,35 @@ export function getAuthToken() {
       cleanToken(stored?.accessToken) ||
       cleanToken(stored?.user?.token) ||
       cleanToken(stored?.user?.accessToken) ||
-      cleanToken(stored?.user?.user?.token) // ✅ Added support for /subscription login structure
+      cleanToken(stored?.user?.user?.token)
     );
   } catch {
     return "";
   }
 }
 
-/**
- * ✅ Unified secureFetch
- * Automatically omits Authorization for public endpoints like:
- *   - /api/products?identifier=...
- *   - /api/public/*
- *   - /qr-menu/*
- *   - /restaurant-info
- */
 export default async function secureFetch(endpoint, options = {}) {
   const rawToken = getAuthToken();
   const tokenHeader =
     rawToken && !rawToken.startsWith("Bearer ") ? `Bearer ${rawToken}` : rawToken;
 
-  // Detect public (non-auth) routes
   const lower = endpoint.toLowerCase();
   const lowerPath = lower.replace(/[?#].*$/, "");
   const hasQrMenuSegment = /(?:^|\/)qr-menu(?:\/|$|[?#])/.test(lower);
   const isMeEndpoint = /(?:^|\/)me(?:\/|$)/.test(lowerPath);
+
   const isPublic =
     lower.includes("/products?identifier=") ||
     lower.includes("/public/") ||
     hasQrMenuSegment ||
     lower.includes("/restaurant-info") ||
-    isMeEndpoint || // Only treat the exact /me endpoint as public-safe
+    isMeEndpoint ||
     lower.includes("/uploads/");
 
   const isFormData = options.body instanceof FormData;
 
   const headers = {
-    ...(!isPublic && tokenHeader ? { Authorization: tokenHeader } : {}), // 🚫 skip token on public
+    ...(!isPublic && tokenHeader ? { Authorization: tokenHeader } : {}),
     ...options.headers,
   };
 

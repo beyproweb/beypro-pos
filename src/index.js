@@ -1,16 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { HashRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
-import './i18n'; // i18n config
+import './i18n'; 
 import i18n from 'i18next';
 import { StockProvider } from './context/StockContext';
 import AppearanceProvider from './components/AppearanceProvider';
-const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch from "./utils/secureFetch";
 
-secureFetch('settings/localization`) // ✅ USE PROXY `/api` for backend in Vite
-  .then(res => res.json())
+secureFetch('/settings/localization')
   .then(data => {
     const lang = data.language || "English";
     return i18n.changeLanguage(lang);
@@ -23,11 +22,11 @@ secureFetch('settings/localization`) // ✅ USE PROXY `/api` for backend in Vite
     root.render(
       <React.StrictMode>
         <StockProvider>
-          <BrowserRouter>
+          <HashRouter>
             <AppearanceProvider>
               <App />
             </AppearanceProvider>
-          </BrowserRouter>
+          </HashRouter>
         </StockProvider>
       </React.StrictMode>
     );

@@ -12,7 +12,7 @@ import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import OrderHistory from "../components/OrderHistory";
 import { useHeader } from "../context/HeaderContext";
-const FALLBACK_TABLES = 20;
+
 import secureFetch from "../utils/secureFetch";
 import TableActionButtons from "../components/TableActionButtons";
 import {
@@ -143,6 +143,7 @@ export default function TableOverview() {
   const [toDate, setToDate] = useState("");
   const navigate = useNavigate();
   const alertIntervalRef = useRef(null);
+  const isMountedRef = useRef(true);
   const [now, setNow] = useState(new Date());
   const [kitchenOrders, setKitchenOrders] = useState([]); // used for kitchen
   const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
@@ -165,6 +166,14 @@ const [entryReason, setEntryReason] = useState("");
   const { t } = useTranslation();
   const { setHeader } = useHeader();
   const hasPermission = useHasPermission;
+  // compute permissions once at top level (avoid calling hooks inside loops)
+  const canSeeTablesTab = useHasPermission("tables");
+  const canSeeKitchenTab = useHasPermission("kitchen");
+  const canSeeHistoryTab = useHasPermission("history");
+  const canSeePacketTab = useHasPermission("packet-orders");
+  const canSeePhoneTab = useHasPermission("phone");
+  const canSeeRegisterTab = useHasPermission("register");
+const [activeArea, setActiveArea] = useState("ALL");
 
 const [registerEntries, setRegisterEntries] = useState(0);
   const [showRegisterLog, setShowRegisterLog] = useState(false);
@@ -225,40 +234,175 @@ const handleCloseTable = async (orderId) => {
 
 
 
-useEffect(() => {
-  if (!showRegisterModal) return;
-  const today = new Date().toISOString().slice(0, 10);
-secureFetch(`/reports/expenses?from=${today}&to=${today}`)
-  .then(setTodayExpenses)
+  const [supplierCashPayments, setSupplierCashPayments] = useState([]);
+  const [staffCashPayments, setStaffCashPayments] = useState([]);
 
-    .catch(() => setTodayExpenses([]));
-}, [showRegisterModal]);
+  const fetchRegisterStatus = useCallback(
+    () => secureFetch("/reports/cash-register-status"),
+    []
+  );
 
-useEffect(() => {
-  if (!showRegisterModal) return;
-  const today = new Date().toISOString().slice(0, 10);
-secureFetch(`/reports/cash-register-events?from=${today}&to=${today}`)
-  .then(setTodayRegisterEvents)
+  const fetchRegisterEntriesForToday = useCallback(async (today) => {
+    try {
+      const data = await secureFetch(`/reports/cash-register-history?from=${today}&to=${today}`);
+      const todayRow = Array.isArray(data)
+        ? data.find((row) => row.date === today)
+        : null;
+      setRegisterEntries(todayRow?.register_entries ? Number(todayRow.register_entries) : 0);
+    } catch (err) {
+      console.error("❌ Failed to fetch register entries:", err);
+      setRegisterEntries(0);
+    }
+  }, []);
 
-    .catch(() => setTodayRegisterEvents([]));
-}, [showRegisterModal]);
+  const fetchRegisterLogsForToday = useCallback(async (today) => {
+    const [eventsRes, expensesRes] = await Promise.allSettled([
+      secureFetch(`/reports/cash-register-events?from=${today}&to=${today}`),
+      secureFetch(`/reports/expenses?from=${today}&to=${today}`),
+    ]);
 
-const [supplierCashPayments, setSupplierCashPayments] = useState([]);
-const [staffCashPayments, setStaffCashPayments] = useState([]);
+    if (eventsRes.status === "fulfilled") {
+      setTodayRegisterEvents(eventsRes.value);
+    } else {
+      setTodayRegisterEvents([]);
+    }
 
-useEffect(() => {
-  if (!showRegisterModal) return;
-  const today = new Date().toISOString().slice(0, 10);
+    if (expensesRes.status === "fulfilled") {
+      setTodayExpenses(expensesRes.value);
+    } else {
+      setTodayExpenses([]);
+    }
+  }, []);
 
- secureFetch(`/reports/supplier-cash-payments?from=${today}&to=${today}`)
-  .then(setSupplierCashPayments)
-    .catch(() => setSupplierCashPayments([]));
+  const fetchRegisterPaymentsForToday = useCallback(async (today) => {
+    const [supplierRes, staffRes] = await Promise.allSettled([
+      secureFetch(`/reports/supplier-cash-payments?from=${today}&to=${today}`),
+      secureFetch(`/reports/staff-cash-payments?from=${today}&to=${today}`),
+    ]);
 
- secureFetch(`/reports/staff-cash-payments?from=${today}&to=${today}`)
-  .then(setStaffCashPayments)
+    if (supplierRes.status === "fulfilled") {
+      setSupplierCashPayments(Array.isArray(supplierRes.value) ? supplierRes.value : []);
+    } else {
+      setSupplierCashPayments([]);
+    }
 
-    .catch(() => setStaffCashPayments([]));
-}, [showRegisterModal]);
+    if (staffRes.status === "fulfilled") {
+      setStaffCashPayments(Array.isArray(staffRes.value) ? staffRes.value : []);
+    } else {
+      setStaffCashPayments([]);
+    }
+  }, []);
+
+  const initializeRegisterSummary = useCallback(async () => {
+    try {
+      let openTime = null;
+      const data = await fetchRegisterStatus();
+
+      setRegisterState(data.status);
+      setYesterdayCloseCash(data.yesterday_close ?? null);
+      setLastOpenAt(data.last_open_at || null);
+      setOpeningCash("");
+      setActualCash("");
+
+      if (data.status === "open" || data.status === "closed") {
+        openTime = data.last_open_at;
+        const opening =
+          data.opening_cash !== undefined && data.opening_cash !== null
+            ? data.opening_cash.toString()
+            : "";
+        setOpeningCash(opening);
+      }
+
+      if (!openTime) {
+        setCashDataLoaded(true);
+        return;
+      }
+
+      const cashTotalRes = await secureFetch(
+        `/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`
+      );
+
+      let cashSales = parseFloat(cashTotalRes?.cash_total || 0);
+
+      if (!Number.isFinite(cashSales) || cashSales <= 0) {
+        try {
+          const today = new Date().toISOString().slice(0, 10);
+          const hist = await secureFetch(
+            `/reports/cash-register-history?from=${today}&to=${today}`
+          );
+          const row = Array.isArray(hist)
+            ? hist.find((r) => r.date === today)
+            : null;
+          if (row && row.cash_sales != null) {
+            cashSales = parseFloat(row.cash_sales || 0);
+          }
+        } catch {
+          // ignore fallback errors
+        }
+      }
+
+      setExpectedCash(Number.isFinite(cashSales) ? cashSales : 0);
+
+      const cashExpArr = await secureFetch(
+        `/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`
+      ).catch(() => []);
+      const logExpense = parseFloat(cashExpArr?.[0]?.total_expense || 0);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const extraExpenses = await secureFetch(
+        `/expenses?from=${today}&to=${today}`
+      )
+        .then((rows) =>
+          Array.isArray(rows)
+            ? rows.reduce(
+                (sum, e) => sum + (parseFloat(e.amount || 0) || 0),
+                0
+              )
+            : 0
+        )
+        .catch(() => 0);
+
+      const totalExpense = (isNaN(logExpense) ? 0 : logExpense) + extraExpenses;
+
+      console.log(
+        "📉 New Daily Cash Expense (log + expenses):",
+        totalExpense
+      );
+      setDailyCashExpense(totalExpense);
+      setCashDataLoaded(true);
+      console.log("✅ All cash data loaded");
+    } catch (err) {
+      console.error("❌ Error in modal init:", err);
+      toast.error("Failed to load register data");
+    }
+  }, [fetchRegisterStatus]);
+
+  const loadRegisterData = useCallback(async () => {
+    const today = new Date().toISOString().slice(0, 10);
+
+    setCashDataLoaded(false);
+    setExpectedCash(0);
+    setDailyCashExpense(0);
+    setActualCash("");
+    setRegisterState("loading");
+
+    await Promise.all([
+      fetchRegisterLogsForToday(today),
+      fetchRegisterPaymentsForToday(today),
+      fetchRegisterEntriesForToday(today),
+      initializeRegisterSummary(),
+    ]);
+  }, [
+    fetchRegisterEntriesForToday,
+    fetchRegisterLogsForToday,
+    fetchRegisterPaymentsForToday,
+    initializeRegisterSummary,
+  ]);
+
+  useEffect(() => {
+    if (!showRegisterModal) return;
+    loadRegisterData();
+  }, [showRegisterModal, loadRegisterData]);
 
 
 const groupByDate = (orders) => {
@@ -290,22 +434,13 @@ const TAB_TO_SIDEBAR = {
   register: { labelKey: "Register", defaultLabel: "Register", path: "/tableoverview?tab=register" },
 };
 const visibleTabs = TAB_LIST.filter((tab) => {
-  const map = {
-    phone: "phone-orders",
-    packet: "packet-orders",
-    kitchen: "kitchen",
-    tables: "tables",
-    history: "history",
-    register: "register",
-  };
-
-  // ✅ Packet tab visible if staff has "packet-orders" permission
-  if (tab.id === "packet") {
-    return useHasPermission("packet-orders");
-  }
-
-  const key = map[tab.id] || tab.id;
-  return useHasPermission(key);
+  if (tab.id === "tables") return canSeeTablesTab;
+  if (tab.id === "kitchen") return canSeeKitchenTab;
+  if (tab.id === "history") return canSeeHistoryTab;
+  if (tab.id === "packet") return canSeePacketTab; // special case kept
+  if (tab.id === "phone") return canSeePhoneTab;
+  if (tab.id === "register") return canSeeRegisterTab;
+  return true;
 });
 
 
@@ -367,6 +502,10 @@ const visibleTabs = TAB_LIST.filter((tab) => {
 
 useEffect(() => () => setHeader({}), [setHeader]);
 
+useEffect(() => () => {
+  isMountedRef.current = false;
+}, []);
+
 
 // Combine logs for the Register modal without duplicating cash expenses
 // Cash expenses are already inserted into cash_register_logs when saved from Expenses page
@@ -415,9 +554,9 @@ const handleChangeCashSubmit = async (e) => {
 };
 
 
-const refreshRegisterState = () => {
- secureFetch("/reports/cash-register-status")
-   .then((data) => {
+const refreshRegisterState = useCallback(() => {
+  fetchRegisterStatus()
+    .then((data) => {
       console.log("📥 /cash-register-status response:", data);
 
       setRegisterState(data.status);
@@ -439,66 +578,59 @@ const refreshRegisterState = () => {
       console.error("❌ Failed to refresh register state:", err);
       toast.error("Could not load register status");
     });
-};
+}, [fetchRegisterStatus]);
 
 
-const fetchPacketOrders = async () => {
+const fetchPacketOrders = useCallback(async () => {
   try {
-    const [resPacket, resPhone] = await Promise.all([
-     secureFetch(`/orders?type=packet`),
-secureFetch(`/orders?type=phone`),
-
+    const [packet, phone] = await Promise.all([
+      secureFetch(`/orders?type=packet`),
+      secureFetch(`/orders?type=phone`),
     ]);
 
-    const [packet, phone] = await Promise.all([
-  secureFetch(`/orders?type=packet`),
-  secureFetch(`/orders?type=phone`),
-]);
+    const packetArray = Array.isArray(packet) ? packet : [];
+    const phoneArray = Array.isArray(phone) ? phone : [];
 
-const packetArray = Array.isArray(packet) ? packet : [];
-const phoneArray = Array.isArray(phone) ? phone : [];
+    const data = [...packetArray, ...phoneArray];
 
-const data = [...packetArray, ...phoneArray];
+    const ordersWithItems = await Promise.all(
+      data
+        .filter((o) => o.status !== "closed")
+        .map(async (order) => {
+          const items = (await secureFetch(`/orders/${order.id}/items`)).map((item) => ({
+            ...item,
+            discount_type: item.discount_type || item.discountType || null,
+            discount_value:
+              item.discount_value != null
+                ? parseFloat(item.discount_value)
+                : item.discountValue != null
+                ? parseFloat(item.discountValue)
+                : 0,
+          }));
 
-const ordersWithItems = await Promise.all(
-  data
-    .filter((o) => o.status !== "closed")
-    .map(async (order) => {
-      const items = (await secureFetch(`/orders/${order.id}/items`)).map((item) => ({
-        ...item,
-        discount_type: item.discount_type || item.discountType || null,
-        discount_value:
-          item.discount_value != null
-            ? parseFloat(item.discount_value)
-            : item.discountValue != null
-            ? parseFloat(item.discountValue)
-            : 0,
-      }));
+          let receiptMethods = [];
+          if (order.receipt_id) {
+            try {
+              receiptMethods = await secureFetch(`/orders/receipt-methods/${order.receipt_id}`);
+            } catch (e) {
+              console.warn("⚠️ Failed to fetch receipt methods for order", order.id, e);
+            }
+          }
 
-      let receiptMethods = [];
-      if (order.receipt_id) {
-        try {
-          receiptMethods = await secureFetch(`/orders/receipt-methods/${order.receipt_id}`);
-        } catch (e) {
-          console.warn("⚠️ Failed to fetch receipt methods for order", order.id, e);
-        }
-      }
-
-      return { ...order, items, receiptMethods };
-    })
-);
-
+          return { ...order, items, receiptMethods };
+        })
+    );
 
     setPacketOrders(ordersWithItems);
   } catch (err) {
     console.error("❌ Fetch packet orders failed:", err);
     toast.error("Could not load packet orders");
   }
-};
+}, []);;
 
 const [takeawayOrders, setTakeawayOrders] = useState([]);
 
-const fetchTakeawayOrders = async () => {
+const fetchTakeawayOrders = useCallback(async () => {
   try {
     const data = await secureFetch("/orders?type=takeaway");
     const filtered = Array.isArray(data) ? data.filter(o => o.status !== "closed") : [];
@@ -547,174 +679,19 @@ const fetchTakeawayOrders = async () => {
     console.error("❌ Fetch takeaway orders failed:", err);
     toast.error("Could not load takeaway orders");
   }
-};
-
-useEffect(() => {
-  if (activeTab === "takeaway") fetchTakeawayOrders();
-}, [activeTab]);
-
-
-useEffect(() => {
-  if (activeTab === "packet") fetchPacketOrders();
-}, [activeTab]);
-
-useEffect(() => {
-  function refetch() {
-    setTimeout(() => {
-      if (activeTab === "tables") fetchOrders();
-      if (activeTab === "kitchen") fetchKitchenOrders();
-      if (activeTab === "history") fetchClosedOrders();
-      if (activeTab === "phone") fetchPhoneOrders();
-      if (activeTab === "packet") fetchPacketOrders();
-      if (activeTab === "takeaway") fetchTakeawayOrders();
-    }, 300);
-  }
-  if (!window.socket) return;
-  window.socket.on("orders_updated", refetch);
-  return () => window.socket && window.socket.off("orders_updated", refetch);
-}, [activeTab]);
-
-
-
-useEffect(() => {
-  if (!showRegisterModal) return;
-  const todayStr = new Date().toISOString().slice(0, 10);
-
-secureFetch(`/reports/cash-register-history?from=${todayStr}&to=${todayStr}`)
-  .then(data => {
-    const todayRow = data.find(row => row.date === todayStr);
-    setRegisterEntries(todayRow?.register_entries ? Number(todayRow.register_entries) : 0);
-  })
-
-    .catch(err => {
-      console.error("❌ Failed to fetch register entries:", err);
-      setRegisterEntries(0);
-    });
-}, [showRegisterModal]);
-
-useEffect(() => {
-secureFetch("/reports/cash-register-status")
-  .then(data => {
-
-      setRegisterState(data.status);
-      setYesterdayCloseCash(data.yesterday_close ?? null);
-      setLastOpenAt(data.last_open_at || null);
-
-      if (data.status === "open" || data.status === "closed") {
-  setOpeningCash(""); // <-- Always start blank
-  setYesterdayCloseCash(data.yesterday_close ?? null);
-}
-
-
-      setActualCash("");
-    })
-    .catch((err) => {
-      console.error("❌ Failed to refresh register state:", err);
-      toast.error("Could not load register status");
-    });
 }, []);
 
+/* moved below loadDataForTab to avoid TDZ */
+
+
 
 
 useEffect(() => {
-  if (!showRegisterModal) return;
+  refreshRegisterState();
+}, [refreshRegisterState]);
 
-  setCashDataLoaded(false);
-  setExpectedCash(0);
-  setDailyCashExpense(0);
-  setActualCash("");
-  setRegisterState("loading");
 
-  let openTime = null;
 
-  secureFetch("/reports/cash-register-status")
-    .then((data) => {
-      setRegisterState(data.status);
-      setYesterdayCloseCash(data.yesterday_close ?? null);
-      setLastOpenAt(data.last_open_at || null);
-      setOpeningCash("");
-
-      if (data.status === "open" || data.status === "closed") {
-        openTime = data.last_open_at;
-        const opening =
-          data.opening_cash !== undefined && data.opening_cash !== null
-            ? data.opening_cash.toString()
-            : "";
-        setOpeningCash(opening);
-      }
-
-      if (!openTime) {
-        // Register not opened today – nothing more to compute
-        setCashDataLoaded(true);
-        return null;
-      }
-
-      return secureFetch(
-        `/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`
-      );
-    })
-    .then(async (cashTotalRes) => {
-      if (cashTotalRes === null) return; // handled above
-
-      // ✅ Set expected cash (cash sales since register open)
-      let cashSales = parseFloat(cashTotalRes?.cash_total || 0);
-
-      // Fallback: if API returned nothing (edge cases), try daily history
-      if (!Number.isFinite(cashSales) || cashSales <= 0) {
-        try {
-          const today = new Date().toISOString().slice(0, 10);
-          const hist = await secureFetch(
-            `/reports/cash-register-history?from=${today}&to=${today}`
-          );
-          const row = Array.isArray(hist)
-            ? hist.find((r) => r.date === today)
-            : null;
-          if (row && row.cash_sales != null) {
-            cashSales = parseFloat(row.cash_sales || 0);
-          }
-        } catch {
-          // ignore fallback errors
-        }
-      }
-
-      setExpectedCash(Number.isFinite(cashSales) ? cashSales : 0);
-
-      // ✅ Fetch cash expenses since open (register + supplier + staff)
-      const cashExpArr = await secureFetch(
-        `/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`
-      ).catch(() => []);
-      const logExpense = parseFloat(cashExpArr?.[0]?.total_expense || 0);
-
-      // 🔄 Fetch additional general expenses (non-cash or manual entries) for today
-      const today = new Date().toISOString().slice(0, 10);
-      const extraExpenses = await secureFetch(
-        `/expenses?from=${today}&to=${today}`
-      )
-        .then((rows) =>
-          Array.isArray(rows)
-            ? rows.reduce(
-                (sum, e) => sum + (parseFloat(e.amount || 0) || 0),
-                0
-              )
-            : 0
-        )
-        .catch(() => 0);
-
-      const totalExpense = (isNaN(logExpense) ? 0 : logExpense) + extraExpenses;
-
-      console.log(
-        "📉 New Daily Cash Expense (log + expenses):",
-        totalExpense
-      );
-      setDailyCashExpense(totalExpense);
-      setCashDataLoaded(true);
-      console.log("✅ All cash data loaded");
-    })
-    .catch((err) => {
-      console.error("❌ Error in modal init:", err);
-      toast.error("Failed to load register data");
-    });
-}, [showRegisterModal]);
 
 
 
@@ -741,7 +718,7 @@ useEffect(() => {
   setToDate(today);
 }, []);
 
-const fetchOrders = async () => {
+const fetchOrders = useCallback(async () => {
   console.log("🔍 Current user before fetch:", currentUser);
   console.log("🔍 Token in localStorage:", localStorage.getItem("token"));
   try {
@@ -820,7 +797,7 @@ const fetchOrders = async () => {
     console.error("❌ Fetch open orders failed:", err);
     toast.error("Could not load open orders");
   }
-};
+}, [currentUser]);
 
 
 
@@ -836,7 +813,7 @@ function hasReadyOrder(order) {
 }
 
 
-const fetchClosedOrders = async () => {
+const fetchClosedOrders = useCallback(async () => {
   const query = new URLSearchParams();
   if (fromDate) query.append("from", fromDate);
   if (toDate) query.append("to", toDate);
@@ -891,11 +868,11 @@ const fetchClosedOrders = async () => {
     console.error("❌ Fetch closed orders failed:", err);
     toast.error("Failed to load order history");
   }
-};
+}, [fromDate, toDate]);
 
 
 // === FIXED fetchKitchenOrders (merges same-customer orders) ===
-const fetchKitchenOrders = async () => {
+const fetchKitchenOrders = useCallback(async () => {
   try {
     const data = await secureFetch("/kitchen-orders");
 
@@ -968,38 +945,14 @@ const fetchKitchenOrders = async () => {
   } catch (err) {
     console.error("❌ Fetch kitchen orders failed:", err);
   }
-};
-
-
-
-
-
-    useEffect(() => {
-  if (activeTab === "kitchen" || activeTab === "open") {
-    fetchKitchenOrders();
-  }
-}, [activeTab]);
-
-
-  useEffect(() => {
-  if (activeTab === "tables") fetchOrders(); // only fetch full orders when viewing tables
-  if (activeTab === "open") fetchKitchenOrders(); // fetch only kitchen orders for open tab
-  if (activeTab === "history") fetchClosedOrders();
-}, [activeTab, fromDate, toDate]);
-
+}, []);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
 
-    useEffect(() => {
-  if (activeTab === "phone") {
-    fetchPhoneOrders();
-  }
-}, [activeTab]);
-
-const fetchPhoneOrders = async () => {
+const fetchPhoneOrders = useCallback(async () => {
   try {
     const data = await secureFetch("/orders?type=phone");
 
@@ -1008,35 +961,96 @@ const fetchPhoneOrders = async () => {
   } catch (err) {
     console.error("Fetch phone orders failed:", err);
   }
-};
+}, []);
 
 // Fetch table configurations when viewing tables (inside component)
-useEffect(() => {
-  if (activeTab !== "tables") return;
-  let mounted = true;
-  secureFetch("/tables")
-    .then((rows) => {
-      if (!mounted) return;
-      const arr = Array.isArray(rows) ? rows : [];
-      setTableConfigs(arr.filter((t) => t.active !== false));
-    })
-    .catch(() => setTableConfigs([]));
-  return () => {
-    mounted = false;
-  };
-}, [activeTab]);
+const fetchTableConfigs = useCallback(async () => {
+  try {
+    const rows = await secureFetch("/tables");
+    const arr = Array.isArray(rows) ? rows : [];
+    setTableConfigs(arr.filter((t) => t.active !== false));
+  } catch {
+    setTableConfigs([]);
+  }
+}, []);
 
-  const tables = (tableConfigs && tableConfigs.length > 0
-    ? tableConfigs.map((cfg) => ({
-        tableNumber: cfg.number,
-        order: orders.find((o) => o.table_number === cfg.number),
-      }))
-    : Array.from({ length: FALLBACK_TABLES }, (_, i) => {
-        const tableNumber = i + 1;
-        const order = orders.find((o) => o.table_number === tableNumber);
-        return { tableNumber, order };
-      })
-  ).sort((a, b) => a.tableNumber - b.tableNumber);
+
+  const loadDataForTab = useCallback(
+    (tab) => {
+      if (tab === "tables") {
+        fetchOrders();
+        fetchTableConfigs();
+        return;
+      }
+      if (tab === "kitchen" || tab === "open") {
+        fetchKitchenOrders();
+        return;
+      }
+      if (tab === "history") {
+        fetchClosedOrders();
+        return;
+      }
+      if (tab === "packet") {
+        fetchPacketOrders();
+        return;
+      }
+      if (tab === "phone") {
+        fetchPhoneOrders();
+        return;
+      }
+      if (tab === "takeaway") {
+        fetchTakeawayOrders();
+      }
+    },
+    [
+      fetchClosedOrders,
+      fetchKitchenOrders,
+      fetchOrders,
+      fetchPacketOrders,
+      fetchPhoneOrders,
+      fetchTableConfigs,
+      fetchTakeawayOrders,
+    ]
+  );
+
+// now safe to reference loadDataForTab
+useEffect(() => {
+  if (!window.socket) return;
+  const refetch = () => {
+    setTimeout(() => loadDataForTab(activeTab), 300);
+  };
+  window.socket.on("orders_updated", refetch);
+  return () => window.socket && window.socket.off("orders_updated", refetch);
+}, [activeTab, loadDataForTab]);
+
+  useEffect(() => {
+    loadDataForTab(activeTab);
+  }, [activeTab, fromDate, toDate, loadDataForTab]);
+
+  // Ensure table configs load when Tables tab is active
+  useEffect(() => {
+    if (activeTab === "tables" && (Array.isArray(tableConfigs) ? tableConfigs.length === 0 : true)) {
+      fetchTableConfigs();
+    }
+  }, [activeTab, tableConfigs.length, fetchTableConfigs]);
+
+
+const tables = tableConfigs
+  .map((cfg) => {
+    const order = orders.find((o) => o.table_number === cfg.number);
+
+    return {
+      tableNumber: cfg.number,
+      seats: cfg.seats || cfg.chairs || null,
+      area: cfg.area || "Main Hall",
+      label: cfg.label || "",
+      color: cfg.color || null,
+      order,
+    };
+  })
+  .sort((a, b) => a.tableNumber - b.tableNumber);
+
+
 
 const handlePrintOrder = async (orderId) => {
   if (!orderId) {
@@ -1059,7 +1073,7 @@ const handlePrintOrder = async (orderId) => {
 
 const handleTableClick = async (table) => {
   // Always check register state before allowing navigation
-  const data = await secureFetch("/reports/cash-register-status");
+  const data = await fetchRegisterStatus();
 
 
   if (data.status === "closed" || data.status === "unopened") {
@@ -1141,7 +1155,7 @@ await secureFetch("/orders/order-items/kitchen-status", {
 };
 
 useEffect(() => {
-  secureFetch("/reports/cash-register-status")
+  fetchRegisterStatus()
     .then((data) => {
       setRegisterState(data.status);
       setOpeningCash("");
@@ -1161,7 +1175,7 @@ useEffect(() => {
     .catch((err) => {
       console.error("❌ Failed to refresh register state:", err);
     });
-}, [location.pathname, navigate]);
+}, [fetchRegisterStatus, location.pathname, navigate]);
 
 
 
@@ -1180,6 +1194,14 @@ useEffect(() => {
     return [];
   }
 }
+
+// Group tables by area
+const groupedTables = tables.reduce((acc, tbl) => {
+  const area = tbl.area || "Main Hall";
+  if (!acc[area]) acc[area] = [];
+  acc[area].push(tbl);
+  return acc;
+}, {});
 
 
   // --- RETURN (NEW UI) ---
@@ -1215,162 +1237,223 @@ useEffect(() => {
           </button>
         ))}
       </div>
+{activeTab === "tables" && (
+  <div className="w-full flex flex-col items-center">
 
-      {/* TABS CONTENT */}
-      {activeTab === "tables" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-7 px-8">
-          {tables.map((table) => {
-            const cfg = (tableConfigs || []).find((c) => c.number === table.tableNumber);
-            const accent = cfg?.color || null;
+    {/* ================= AREA TABS ================= */}
+    <div className="flex justify-center gap-3 flex-wrap mt-4 mb-10">
 
-            return (
-<div
-  key={table.tableNumber}
-  onClick={() => handleTableClick(table)}
-  className={`
-    group relative cursor-pointer p-6 rounded-[2.5rem]
-    ${getTableColor(table.order)}
-    shadow-2xl hover:shadow-accent/50 hover:scale-[1.035] transition-all
-    duration-200 border-4 border-white/30 flex flex-col justify-between
+      {/* ALL AREAS */}
+      <button
+        onClick={() => setActiveArea("ALL")}
+        className={`
+          px-6 py-2.5 rounded-full font-semibold shadow 
+          transition-all duration-150 text-sm
+          ${activeArea === "ALL"
+            ? "bg-indigo-600 text-white scale-105 shadow-lg"
+            : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"}
+        `}
+      >
+        🌍 ALL AREAS
+      </button>
 
-    hover:z-30
-  `}
-  style={{
-    minHeight: "200px",
-    boxShadow: "0 3px 16px 0 rgba(30,34,90,0.08)",
-    borderColor: accent || undefined,
-  }}
->
-  {/* Top Row: Table Number and Timer */}
-  <div className="flex items-center justify-between mb-2">
-    <div className="flex items-center gap-2">
-  <span className="text-gray-800 dark:text-gray-100 text-lg font-bold">{t("Table")}</span>
-  <span className="text-lg font-bold text-blue-500 bg-white/60 rounded-xl px-2">
-    {table.tableNumber <= 9 ? `0${table.tableNumber}` : table.tableNumber}
-  </span>
-</div>
-
-    {table.order?.status === "confirmed" && Array.isArray(table.order?.items) && table.order.items.length > 0 && (
-      <span className="bg-blue-600 text-white rounded-xl px-3 py-1 font-mono text-sm shadow-md animate-pulse">
-        ⏱ {getTimeElapsed(table.order)}
-      </span>
-    )}
-  </div>
-
-  {cfg?.label && (
-    <div className="text-xs font-semibold text-slate-800/80 bg-white/60 rounded-full px-2 py-0.5 inline-block mb-1">
-      {cfg.label}
+      {Object.keys(groupedTables).map((area) => (
+        <button
+          key={area}
+          onClick={() => setActiveArea(area)}
+          className={`
+            px-6 py-2.5 rounded-full font-semibold shadow 
+            transition-all duration-150 text-sm
+            ${activeArea === area
+              ? "bg-blue-600 text-white scale-105 shadow-lg"
+              : "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"}
+          `}
+        >
+          {area === "Main Hall" ? "🏠" :
+           area === "Terrace" ? "🌤️" :
+           area === "Garden" ? "🌿" :
+           area === "VIP" ? "⭐" : "📍"}{" "}
+          {area}
+        </button>
+      ))}
     </div>
-  )}
 
-  <div className="flex flex-col gap-2 flex-grow">
-    {
-      // If no order at all, show Free
-      !table.order
-      // If order exists but has NO items, show Free (NOT draft)
-      || (table.order && (!table.order.items || table.order.items.length === 0))
-      ? (
-        <span className="inline-block px-4 py-1 rounded-full bg-gradient-to-r from-green-300 via-green-200 to-green-100 text-green-900 font-extrabold text-base shadow">
-          {t("Free")}
-        </span>
-      ) : (
-        <>
-          <div className="flex items-center gap-2">
-    <span className="uppercase font-extrabold tracking-wide text-white">
-  {t(table.order.status === "draft" ? "Free" : table.order.status)}
-</span>
+    {/* ================= TABLE GRID (BIGGER, CENTERED) ================= */}
+    <div className="w-full flex justify-center px-8">
+      <div className="
+        grid
+        grid-cols-1
+        sm:grid-cols-2
+        lg:grid-cols-2
+        xl:grid-cols-4
+        2xl:grid-cols-4
+        gap-8
+        place-items-center
+        w-full
+        max-w-[1600px]
+      ">
+
+        {(activeArea === "ALL" ? tables : groupedTables[activeArea]).map((table) => (
+          
+          <div
+            key={table.tableNumber}
+            onClick={() => handleTableClick(table)}
+            className={`
+              group relative cursor-pointer p-6 rounded-[2.5rem]
+              ${getTableColor(table.order)}
+              shadow-2xl hover:shadow-accent/50 hover:scale-[1.035]
+              transition-all duration-200 border-4 border-white/30
+              flex flex-col justify-between
+              w-[320px]
+              min-h-[280px]
+            `}
+            style={{
+              borderColor: table.color || "#e2e2e2",
+            }}
+          >
+
+            {/* ------- TOP ROW ------- */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-800 text-lg font-bold">{t("Table")}</span>
+                <span className="text-lg font-bold text-blue-500 bg-white/60 rounded-xl px-2">
+                  {String(table.tableNumber).padStart(2, "0")}
+                </span>
+              </div>
+
+              {table.order?.status === "confirmed" &&
+                table.order?.items?.length > 0 && (
+                <span className="bg-blue-600 text-white rounded-xl px-3 py-1 font-mono text-sm shadow-md animate-pulse">
+                  ⏱ {getTimeElapsed(table.order)}
+                </span>
+              )}
+            </div>
+
+            {/* LABEL */}
+            {table.label && (
+              <div className="text-xs font-semibold bg-white/60 text-slate-700 rounded-full px-2 py-0.5 mb-1">
+                {table.label}
+              </div>
+            )}
+
+            {/* AREA */}
+            <div className="text-[11px] bg-white/60 rounded-full px-2 py-0.5 inline-block mb-1 text-gray-600">
+              📍 {table.area}
+            </div>
+
+            {/* SEATS */}
+            {table.seats && (
+              <div className="text-[11px] bg-indigo-100 rounded-full px-2 py-0.5 inline-block mb-2 text-indigo-700">
+                🪑 {table.seats} {t("Seats")}
+              </div>
+            )}
+
+            {/* STATUS */}
+            <div className="flex flex-col gap-2 flex-grow">
+              {(!table.order || table.order.items?.length === 0) ? (
+                <span className="inline-block px-4 py-1 rounded-full bg-green-200 text-green-900 font-extrabold text-base shadow">
+                  {t("Free")}
+                </span>
+              ) : (
+                <>
+                  <span className="uppercase font-extrabold text-white tracking-wide">
+                    {t(table.order.status === "draft" ? "Free" : table.order.status)}
+                  </span>
+
+                  {/* KITCHEN BADGES */}
+                  {table.order.items && (
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {["new", "preparing", "ready", "delivered"].map((status) => {
+                        const count = table.order.items.filter(
+                          (i) => i.kitchen_status === status
+                        ).length;
+                        if (!count) return null;
+
+                        return (
+                          <span
+                            key={status}
+                            className={`px-2 py-0.5 rounded-full text-xs font-semibold
+                              ${status === "preparing"
+                                ? "bg-yellow-400 text-white"
+                                : status === "ready"
+                                ? "bg-blue-500 text-white"
+                                : status === "delivered"
+                                ? "bg-green-500 text-white"
+                                : "bg-gray-400 text-white"}
+                            `}
+                          >
+                            {count} {t(status)}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* TOTAL + ACTIONS */}
+            <div className="flex items-end justify-between mt-4">
+              {isDelayed(table.order) && (
+                <span className="text-yellow-500 font-bold animate-pulse">⚠️</span>
+              )}
+
+              <div className="flex items-center gap-3 ml-auto">
+                <span className="text-lg font-bold text-indigo-700">
+                  ₺{getDisplayTotal(table.order).toFixed(2)}
+                </span>
+
+                {table.order?.items?.length > 0 && (
+                  <>
+                    {/* PRINT */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePrintOrder(table.order.id);
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-200 text-slate-800 font-bold rounded-full shadow border border-slate-300"
+                    >
+                      🖨️
+                    </button>
+
+                    {/* UNPAID / PAID */}
+                    {hasUnpaidAnywhere(table.order) ? (
+                      <span className="px-3 py-1 bg-amber-100 text-amber-800 font-bold rounded-full shadow-sm">
+                        {t("Unpaid")}
+                      </span>
+                    ) : (
+                      <>
+                        <span className="px-3 py-1 bg-green-100 text-green-800 font-bold rounded-full shadow-sm">
+                          ✅ {t("Paid")}
+                        </span>
+
+                        {/* CLOSE TABLE */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCloseTable(table.order.id);
+                          }}
+                          className="px-3 py-1.5 bg-gradient-to-r from-green-400 to-indigo-400 text-white font-bold rounded-full shadow"
+                        >
+                          🔒 {t("Close")}
+                        </button>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
 
           </div>
-          {/* Kitchen Status Badges */}
-          {table.order && table.order.items && table.order.items.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-1">
-              {["new", "preparing", "ready", "delivered"].map((status) => {
-                const count = table.order.items.filter(
-                  (item) => item.kitchen_status === status
-                ).length;
-                if (!count) return null;
-                return (
-                  <span
-                    key={status}
-                    className={`px-2 py-0.5 rounded-full text-xs font-semibold
-                      ${status === "preparing" ? "bg-yellow-400 text-white" :
-                        status === "ready" ? "bg-blue-500 text-white" :
-                        status === "delivered" ? "bg-green-500 text-white" :
-                        status === "new" ? "bg-gray-400 text-white" :
-                        "bg-gray-300 text-black"}
-                    `}
-                  >
-                    {count} {t(status)}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )
-    }
-  </div>
+        ))}
 
-
-{/* Bottom Row: Total, alerts, and action buttons */}
-<div className="flex items-end justify-between mt-2">
-  {isDelayed(table.order) && (
-    <span className="text-yellow-500 font-bold animate-pulse drop-shadow">⚠️</span>
-  )}
-
-  <div className="flex items-center gap-3 ml-auto">
-    {/* 💰 Total */}
-    <span className="text-lg font-bold text-indigo-700 dark:text-indigo-200 tracking-wide">
-      ₺{getDisplayTotal(table.order).toFixed(2)}
-    </span>
-
-    {/* 🖨️ Print button — only if order has items */}
-    {table.order && Array.isArray(table.order.items) && table.order.items.length > 0 && (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          handlePrintOrder(table.order.id);
-        }}
-        className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-bold rounded-full shadow hover:brightness-105 border border-slate-300"
-        title={t("Print Receipt")}
-      >
-        🖨️
-      </button>
-    )}
-
-  {/* ✅ Paid / Unpaid badge (only after items are loaded) */}
-  {Array.isArray(table.order?.items) && table.order.items.length > 0 && (
-    hasUnpaidAnywhere(table.order) ? (
-      <span className="px-3 py-1 bg-amber-100 text-amber-800 font-bold rounded-full shadow-sm">
-        {t("Unpaid")}
-      </span>
-    ) : (
-      <>
-        <span className="px-3 py-1 bg-green-100 text-green-800 font-bold rounded-full shadow-sm">
-          ✅ {t("Paid")}
-        </span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleCloseTable(table.order.id);
-          }}
-          className="px-3 py-1.5 bg-gradient-to-r from-green-400 via-blue-400 to-indigo-400 text-white font-bold rounded-full shadow hover:scale-105 transition"
-          title={t("Close Table")}
-        >
-          🔒 {t("Close")}
-        </button>
-      </>
-    )
-  )}
+      </div>
+    </div>
 
   </div>
-</div>
+)}
 
-              </div>
-            );
-          })}
-        </div>
-      )}
+
 
 {activeTab === "takeaway" && (
   <div className="px-6 py-4">
@@ -1509,7 +1592,7 @@ onCreateOrder={() => {
 
     {activeTab === "phone" && <Orders />}
 {activeTab === "packet" && (
-  hasPermission("packet-orders") ? (
+  canSeePacketTab ? (
     <Orders hideModal={true} orders={packetOrders} />
   ) : (
     <div className="text-center mt-10 text-rose-500 font-bold">

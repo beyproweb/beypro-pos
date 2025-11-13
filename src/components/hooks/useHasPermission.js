@@ -6,18 +6,24 @@ export function useHasPermission(perm) {
 
   if (!currentUser) return false;
 
-  // ✅ Normalize permissions
+  // 🔥 ADMIN ALWAYS HAS FULL ACCESS
+  if (String(currentUser.role || "").toLowerCase() === "admin") {
+    return true;
+  }
+
+  // Normalize permissions array
   const perms = Array.isArray(currentUser.permissions)
-    ? currentUser.permissions.map((p) => p.toLowerCase())
+    ? currentUser.permissions.map((p) => String(p).toLowerCase())
     : [];
 
+  // 🔥 "all" = full access for superusers & admins
   if (perms.includes("all")) return true;
 
-  // ✅ Special rule: allow packet-orders even if tables denied
+  // Special rule: packet always allowed if explicitly given
   if (perm === "packet-orders" && perms.includes("packet-orders")) {
     return true;
   }
 
-  // ✅ Default permission check
-  return perms.includes(perm);
+  // Default check
+  return perms.includes(perm.toLowerCase());
 }
