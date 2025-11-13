@@ -838,12 +838,10 @@ useEffect(() => {
 
   (async () => {
     try {
-      const res = await secureFetch(`/customers?phone=${form.phone}`, {
+      const match = await secureFetch(appendIdentifier(`/customers?phone=${form.phone}`), {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       });
-      const match = await res.json();
-
       if (!match) return;
 
       if (match.name && !form.name) {
@@ -911,13 +909,18 @@ const showNewCard = !savedCard || !useSaved;
 
         {/* Form */}
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             if (!validate()) {
               setTouched({ name: true, phone: true, address: true, payment_method: true, card: true });
               return;
             }
-            /* ...submission logic unchanged... */
+            try {
+              // Optional: persist details locally for next time
+              await saveDelivery();
+            } catch {}
+            // Hand off to parent so it can continue order flow
+            onSubmit({ ...form });
           }}
           className="flex flex-col gap-4"
         >
@@ -939,9 +942,10 @@ const showNewCard = !savedCard || !useSaved;
   placeholder={t("Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)")}
   value={form.phone}
   onChange={(e) => {
-    // Allow typing any digits, limit to 10 max, keep numeric only
-    const cleaned = e.target.value.replace(/[^\d]/g, "");
-    setForm((f) => ({ ...f, phone: cleaned.slice(0, 10) }));
+    // Keep digits only, drop leading 0 (e.g., 05XXXXXXXXX → 5XXXXXXXXX), then cap at 10
+    const onlyDigits = e.target.value.replace(/[^\d]/g, "");
+    const normalized = onlyDigits.startsWith("0") ? onlyDigits.slice(1) : onlyDigits;
+    setForm((f) => ({ ...f, phone: normalized.slice(0, 10) }));
   }}
   inputMode="numeric"
 />
@@ -1046,7 +1050,12 @@ const showNewCard = !savedCard || !useSaved;
           <button
             type="button"
             onClick={saveDelivery}
-            disabled={saving || !form.name || !/^5\\d{9}$/.test(form.phone) || !form.address}
+            disabled={
+              saving ||
+              !form.name ||
+              !/^(5\\d{9}|[578]\\d{7})$/.test(form.phone) ||
+              !form.address
+            }
             className="w-full py-2 rounded-xl border border-neutral-300 bg-white text-neutral-800 font-medium hover:bg-neutral-100 transition disabled:opacity-50"
           >
             {saving ? t("Saving...") : savedOnce ? `✓ ${t("Saved")}` : t("Save for next time")}

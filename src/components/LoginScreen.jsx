@@ -3,6 +3,7 @@ import { LogIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { normalizeUser } from "../utils/normalizeUser";
+import secureFetch from "../utils/secureFetch";
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,38 +18,17 @@ const handleLogin = async (e) => {
   setLoading(true);
 
   try {
-    // ✅ Always normalize API base to end with /api
-    const RAW_BASE =
-      import.meta.env.VITE_API_URL ||
-      (import.meta.env.MODE === "development"
-        ? "http://localhost:5000/api"
-        : "https://hurrypos-backend.onrender.com/api");
-
-    const API_BASE = String(RAW_BASE)
-      .replace(/\/api\/?$/, "")
-      .replace(/\/+$/, "") + "/api";
-
     console.groupCollapsed("🔑 Login Debug");
-    console.log("➡️ Using API_BASE:", API_BASE);
+    console.log("➡️ Using secureFetch BASE (derived from VITE_API_URL/Electron)");
 
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const data = await secureFetch("/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
 
-    console.log("⬅️ Raw Response:", res.status, res.statusText);
+    console.log("⬅️ Login JSON:", data);
 
-    let data;
-    try {
-      data = await res.json();
-      console.log("⬅️ Parsed JSON:", data);
-    } catch (err) {
-      console.error("❌ Failed to parse login response JSON:", err);
-    }
-    console.groupEnd();
-
-    if (!res.ok || !data?.token) {
+    if (!data?.token) {
       throw new Error(data?.error || data?.message || "Invalid credentials");
     }
 

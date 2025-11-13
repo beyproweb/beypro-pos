@@ -1,24 +1,39 @@
 // src/utils/socket.js
 import { io } from "socket.io-client";
 
-// 🧩 Choose backend automatically (align with secureFetch VITE_API_URL)
+// 🧩 Detect environment
 const isElectron =
   typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "");
 
+// Detect if we're in dev mode (Vite dev server or electron dev tools)
+const isDev =
+  import.meta.env.MODE === "development" ||
+  (isElectron && window.location.href.includes("localhost"));
+
+// 🌍 Default production API (Render)
+const PROD_API = "https://hurrypos-backend.onrender.com/api";
+
+// 🧩 Decide which API base to use
 const RAW =
   import.meta.env.VITE_API_URL ||
-  (isElectron
-    ? "https://hurrypos-backend.onrender.com/api"
-    : import.meta.env.MODE === "development"
-    ? "http://localhost:5000/api"
-    : "https://hurrypos-backend.onrender.com/api");
+  (isDev
+    ? "http://localhost:5000/api" // local backend when dev
+    : PROD_API); // Render backend for packaged Electron or prod web
 
-// Normalize: strip trailing /api for socket base
+// Normalize: remove trailing /api for socket base
 const BASE_FROM_API = String(RAW).replace(/\/api\/?$/, "");
 
+// Allow overriding via VITE_SOCKET_URL (rarely needed)
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || BASE_FROM_API;
 
-// Initialize socket
+// 🧠 Log actual target for debugging
+console.log("🔌 [SOCKET] Environment:", {
+  isElectron,
+  isDev,
+  SOCKET_URL,
+});
+
+// Initialize socket connection
 const socket = io(SOCKET_URL, {
   transports: ["websocket", "polling"],
   reconnection: true,
@@ -49,7 +64,7 @@ socket.on("connect", () => {
     console.warn("[SOCKET] ⚠️ No restaurant_id found in localStorage on connect");
   }
 
-  // 🧩 Safety rejoin few seconds after connect (handles slow logins)
+  // 🧩 Safety rejoin few seconds after connect
   setTimeout(() => {
     const rid = getRestaurantId();
     if (rid) {
