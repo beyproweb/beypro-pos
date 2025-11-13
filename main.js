@@ -9,8 +9,12 @@ const { execFile } = require("child_process");
 // Log file (safe to call with 'app' here)
 const LOG_PATH = path.join(app.getPath("userData"), "printer-debug.log");
 function log(...args) {
-  const line = `[${new Date().toISOString()}] ${args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
-  try { fs.appendFileSync(LOG_PATH, line); } catch {}
+  const line = `[${new Date().toISOString()}] ${args
+    .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+    .join(" ")}\n`;
+  try {
+    fs.appendFileSync(LOG_PATH, line);
+  } catch {}
   console.log(...args);
 }
 
@@ -32,7 +36,9 @@ function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    const indexPath = path.join(__dirname, "dist", "index.html").replace(/\\/g, "/");
+    const indexPath = path
+      .join(__dirname, "dist", "index.html")
+      .replace(/\\/g, "/");
     win.loadURL(`file://${indexPath}#/`);
   }
 
@@ -69,48 +75,118 @@ try {
   // const modName = "printer";
   const modName = "@thesusheer/electron-printer";
   printer = require(modName);
-  log("✅ Printer module loaded:", modName, "electron", process.versions.electron, "node", process.versions.node);
+  log(
+    "✅ Printer module loaded:",
+    modName,
+    "electron",
+    process.versions.electron,
+    "node",
+    process.versions.node
+  );
 } catch (err) {
   log("❌ Failed to load printer module:", err?.message || err);
   printer = null;
 }
 
-// --- Windows PowerShell fallback ---
+// --- Windows PowerShell helper (for listing printers fallback) ---
 function psJson(cmd) {
   return new Promise((resolve, reject) => {
-    const ps = process.env.ComSpec?.toLowerCase().includes("cmd") ? "powershell.exe" : "powershell.exe";
-    execFile(ps, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `${cmd} | ConvertTo-Json -Depth 5`], { windowsHide: true }, (err, stdout, stderr) => {
-      if (err) {
-        return reject(new Error(stderr?.toString() || err.message));
+    const ps = "powershell.exe";
+    execFile(
+      ps,
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `${cmd} | ConvertTo-Json -Depth 5`,
+      ],
+      { windowsHide: true },
+      (err, stdout, stderr) => {
+        if (err) {
+          return reject(new Error(stderr?.toString() || err.message));
+        }
+        try {
+          const parsed = JSON.parse(stdout.toString() || "[]");
+          resolve(parsed);
+        } catch (e) {
+          reject(new Error("Failed to parse PowerShell JSON"));
+        }
       }
-      try {
-        const parsed = JSON.parse(stdout.toString() || "[]");
-        resolve(parsed);
-      } catch (e) {
-        reject(new Error("Failed to parse PowerShell JSON"));
-      }
-    });
+    );
   });
 }
 
 async function listPrintersFallbackWindows() {
   try {
-    const res = await psJson("Get-Printer | Select-Object Name,DriverName,PortName,Shared,Type,Default");
+    const res = await psJson(
+      "Get-Printer | Select-Object Name,DriverName,PortName,Shared,Type,Default"
+    );
     const arr = Array.isArray(res) ? res : [res];
     const mapped = arr
       .filter(Boolean)
-      .map(p => ({
+      .map((p) => ({
         name: p.Name,
         isDefault: !!p.Default,
         driver: p.DriverName || "",
         port: p.PortName || "",
-        source: "powershell"
+        source: "powershell",
       }));
     return mapped;
   } catch (e) {
     log("⚠️ PowerShell fallback failed:", e?.message || e);
     return [];
   }
+}
+
+// ---------- Shared helper: print via module.printDirect ----------
+async function rawPrintWithModule({ printerName, data, type }) {
+  if (!printer || typeof printer.printDirect !== "function") {
+    log("❌ rawPrintWithModule called but printer module unavailable");
+    return {
+      ok: false,
+      error: "Printer module unavailable. Install @thesusheer/electron-printer.",
+    };
+  }
+
+  const dataLen = data?.length ?? 0;
+  const jobType = type || "RAW";
+
+  log(
+    `➡️ rawPrintWithModule: printer="${printerName || "<default>"}" type=${jobType} bytes=${dataLen}`
+  );
+
+  return await new Promise((resolve) => {
+    try {
+      printer.printDirect({
+        data,
+        type: jobType,
+        printer: printerName || undefined, // undefined => default printer
+        docname: "Beypro Ticket",
+        success: (jobID) => {
+          log(
+            `✅ Spool accepted: jobID=${jobID} printer="${printerName}" type=${jobType} bytes=${dataLen}`
+          );
+          resolve({ ok: true, jobID });
+        },
+        error: (err) => {
+          log(
+            `❌ Spool error: printer="${printerName}" type=${jobType} bytes=${dataLen} err=${
+              err?.message || err
+            }`
+          );
+          resolve({ ok: false, error: String(err) });
+        },
+      });
+    } catch (err) {
+      log(
+        `❌ printDirect exception: printer="${printerName}" type=${jobType} bytes=${dataLen} err=${
+          err?.message || err
+        }`
+      );
+      resolve({ ok: false, error: String(err) });
+    }
+  });
 }
 
 // ---------- IPC: app/bridge info ----------
@@ -129,7 +205,7 @@ ipcMain.handle("beypro:getPrinters", async () => {
     if (printer && typeof printer.getPrinters === "function") {
       list = printer.getPrinters() || [];
       // normalize shapes
-      list = list.map(p => ({
+      list = list.map((p) => ({
         name: p.name || p.Name || "",
         isDefault: !!(p.isDefault || p.Default),
         driver: p.driverName || p.driver || p.DriverName || "",
@@ -157,50 +233,63 @@ ipcMain.handle("beypro:getPrinters", async () => {
   return list;
 });
 
-// ---------- IPC: RAW print via module (if available) ----------
-// ---------- IPC: RAW print via module (if available) ----------
+// ---------- IPC: RAW print via module (ESC/POS via driver: USB or any installed printer) ----------
 ipcMain.handle("beypro:printRaw", async (_evt, args = {}) => {
-  if (!printer || typeof printer.printDirect !== "function") {
-    log("❌ printRaw requested but printer module unavailable.");
-    return { ok: false, error: "Printer module unavailable. Use network 9100." };
-  }
   try {
     const { printerName, dataBase64, type } = args;
     if (!dataBase64) return { ok: false, error: "dataBase64 is required" };
 
     const data = Buffer.from(dataBase64, "base64");
-    const dataLen = data?.length ?? 0;
-    const jobType = type || "RAW";
-
-    log(`➡️ beypro:printRaw request: printer="${printerName}" type=${jobType} bytes=${dataLen}`);
-
-    return await new Promise((resolve) => {
-      try {
-        printer.printDirect({
-          data,
-          type: jobType,
-          printer: printerName || undefined,
-          docname: "Beypro Ticket",
-          success: (jobID) => {
-            log(`✅ Spool accepted: jobID=${jobID} printer="${printerName}" type=${jobType} bytes=${dataLen}`);
-            resolve({ ok: true, jobID });
-          },
-          error: (err) => {
-            log(`❌ Spool error: printer="${printerName}" type=${jobType} bytes=${dataLen} err=${err?.message || err}`);
-            resolve({ ok: false, error: String(err) });
-          },
-        });
-      } catch (err) {
-        log(`❌ printDirect exception: printer="${printerName}" type=${jobType} bytes=${dataLen} err=${err?.message || err}`);
-        resolve({ ok: false, error: String(err) });
-      }
-    });
+    return await rawPrintWithModule({ printerName, data, type });
   } catch (err) {
     log("❌ RAW print outer error:", err?.message || err);
     return { ok: false, error: String(err?.message || err) };
   }
 });
 
+// ---------- IPC: Windows "System printer" mode (NEW) ----------
+/**
+ * This is the "Option 2" you asked for:
+ * - Frontend can treat this as "Print via Windows system printer"
+ * - It uses the same driver-based spooler as printRaw (module.printDirect)
+ * - Main difference is semantic: you pass the Windows printer name (USB or LAN)
+ *
+ * Frontend example:
+ *   window.electron.invoke("beypro:printWindows", {
+ *     printerName: "FY-625X LAN",
+ *     dataBase64: "...ESC/POS or plain text...",
+ *     type: "RAW"
+ *   });
+ */
+ipcMain.handle("beypro:printWindows", async (_evt, args = {}) => {
+  try {
+    const { printerName, dataBase64, type } = args;
+
+    if (!dataBase64) return { ok: false, error: "dataBase64 is required" };
+    if (!printerName) {
+      // allow default printer if you want, but usually you’ll pick a specific one
+      log("⚠️ printWindows called without printerName – using default printer");
+    }
+
+    const data = Buffer.from(dataBase64, "base64");
+
+    // On Windows, this will spool via the installed driver (USB OR LAN).
+    // On other platforms it will still try, but your main use-case is win32.
+    if (!printer || typeof printer.printDirect !== "function") {
+      log("❌ printWindows requested but printer module unavailable.");
+      return {
+        ok: false,
+        error:
+          "Printer module unavailable for Windows printing. Make sure @thesusheer/electron-printer is installed.",
+      };
+    }
+
+    return await rawPrintWithModule({ printerName, data, type });
+  } catch (err) {
+    log("❌ Windows print outer error:", err?.message || err);
+    return { ok: false, error: String(err?.message || err) };
+  }
+});
 
 // ---------- IPC: TCP RAW print to network printers (port 9100) ----------
 ipcMain.handle("beypro:printNet", async (_evt, args = {}) => {
@@ -216,7 +305,9 @@ ipcMain.handle("beypro:printNet", async (_evt, args = {}) => {
       const done = (ok, extra = {}) => {
         if (finished) return;
         finished = true;
-        try { socket.destroy(); } catch {}
+        try {
+          socket.destroy();
+        } catch {}
         resolve({ ok, ...extra });
       };
       socket.setTimeout(8000);
@@ -225,7 +316,7 @@ ipcMain.handle("beypro:printNet", async (_evt, args = {}) => {
       socket.connect(port, host, () => {
         socket.write(data, (err) => {
           if (err) return done(false, { error: String(err) });
-          socket.end(() => done(true));
+        socket.end(() => done(true));
         });
       });
     });
