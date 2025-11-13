@@ -291,7 +291,11 @@ async function handleTestPrint() {
     bytes.set(cut, init.length + body.length);
     console.debug("🧾 handleTestPrint sending", { printerName: selected, bytes: bytes.length });
 
-    await printRawSafe({ data: bytes, printerName: selected });
+    const dataBase64 = btoa(String.fromCharCode(...bytes));
+await window.beypro.printWindows({
+  printerName: selected,
+  dataBase64
+});
     console.debug("🧾 handleTestPrint done");
     setStatus("ok");
     setMessage("RAW test print sent successfully.");
