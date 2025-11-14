@@ -17,7 +17,7 @@ const BROWSER_API =
 const RAW = isElectron ? ELECTRON_API : BROWSER_API;
 
 // Normalize to exactly one /api
-const BASE_URL =
+export const BASE_URL =
   String(RAW)
     .replace(/\/api\/?$/, "")
     .replace(/\/+$/, "") + "/api";

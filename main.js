@@ -13,6 +13,19 @@ const net = require("net");
 const { print } = require("pdf-to-printer");
 
 // ------------------------
+// OPTIONAL STARTUP TUNING
+// ------------------------
+// Quiet GPU-related EGL noise if desired
+if (process.env.BEYPRO_DISABLE_HW_ACCEL === "1") {
+  app.disableHardwareAcceleration();
+}
+
+// DEV ONLY: ignore certificate errors (do not enable for production)
+if (process.env.BEYPRO_IGNORE_CERT_ERRORS === "1") {
+  app.commandLine.appendSwitch("ignore-certificate-errors");
+}
+
+// ------------------------
 // WINDOW BOOTSTRAP
 // ------------------------
 let win;
@@ -31,8 +44,9 @@ function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    const indexPath = path.join(__dirname, "dist", "index.html").replace(/\\/g, "/");
-    win.loadURL(`file://${indexPath}#/`);
+    // Use loadFile with hash to avoid file:// absolute path issues
+    const filePath = path.join(__dirname, "dist", "index.html");
+    win.loadFile(filePath, { hash: "/" });
   }
 
   win.on("closed", () => (win = null));

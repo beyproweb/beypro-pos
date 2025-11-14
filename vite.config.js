@@ -7,11 +7,14 @@ export default defineConfig(({ mode }) => {
     ? "http://localhost:5000"
     : "https://hurrypos-backend.onrender.com";
 
+  // Use relative base for Electron file:// builds to avoid /assets 404s
+  const isElectronBuild = process.env.VITE_TARGET === "electron";
+
   return {
     plugins: [react()],
-    
-    // ✔ MUST be "/" for Vercel
-    base: "/",
+
+    // Keep "/" for web (Vercel). Use "./" when targeting Electron.
+    base: isElectronBuild ? "./" : "/",
 
     build: {
       outDir: "dist",
