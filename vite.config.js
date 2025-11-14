@@ -9,8 +9,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    // Use relative paths for production (Electron file:// protocol)
-    base: isDev ? "/" : "./",
+    
+    // ✔ MUST be "/" for Vercel
+    base: "/",
 
     build: {
       outDir: "dist",
