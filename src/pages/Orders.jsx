@@ -332,7 +332,7 @@ const handlePacketPrint = async (orderId) => {
   try {
     const printable = await fetchOrderWithItems(orderId);
     const text = renderReceiptText(printable, getReceiptLayout());
-    const ok = printViaBridge(text);
+    const ok = await printViaBridge(text);
     toast[ok ? "success" : "warn"](
       ok ? t("Receipt sent to printer") : t("Printer bridge is not connected")
     );

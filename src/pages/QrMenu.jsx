@@ -2609,6 +2609,36 @@ const safeSlug =
 // Only use slug as identifier for backend requests
 const restaurantIdentifier = safeSlug;
 
+  // Ensure we have a valid JWT for protected endpoints (e.g., POST /orders)
+  // Priority: ?token=... in URL, else resolve via /api/public/qr-resolve/:code using the route param :id
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlToken = params.get("token");
+      if (urlToken) {
+        storage.setItem("token", urlToken);
+        return;
+      }
+    } catch {}
+
+    // If no token present but we have a QR code identifier in the route, resolve it once
+    (async () => {
+      try {
+        const existing = getStoredToken();
+        if (existing) return; // already have a token in storage
+        if (!id) return;
+        const res = await fetch(
+          `${API_URL}/public/qr-resolve/${encodeURIComponent(id)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.qr_token) {
+          storage.setItem("token", data.qr_token);
+        }
+      } catch {}
+    })();
+  }, [id]);
+
 
   const appendIdentifier = useCallback(
     (url) => {
@@ -3447,9 +3477,18 @@ async function handleOrderAnother() {
 // ---- helpers ----
 async function postJSON(url, body) {
   try {
+    // Try to include Authorization explicitly for protected endpoints
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token");
+    const storedToken = getStoredToken();
+    const token = urlToken || storedToken || null;
+
     const json = await secureFetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(body),
     });
     return json; // secureFetch already returns parsed JSON or throws

@@ -377,7 +377,7 @@ export default function GlobalOrderAlert() {
         const order = await secureFetch(`/orders/${orderId}`);
         if (!order?.id || !shouldPrintNow(order.id)) return false;
         const text = renderReceiptText(order, layout);
-        const ok = printViaBridge(text);
+        const ok = await printViaBridge(text);
         if (!ok) toast.warn("🖨️ Beypro Bridge not connected");
         else toast.success(`🧾 Printed order #${order.id}`);
         return true;
