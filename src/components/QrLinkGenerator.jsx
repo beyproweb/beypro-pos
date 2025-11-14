@@ -21,7 +21,10 @@ export default function QrLinkGenerator() {
     const data = await res.json();
     if (data.success && data.link) {
       // ✅ Sanitize to ensure slug isn't "null"
-      const fixedLink = data.link.replace("/null/", `/${restaurantSlug || "id"}/`);
+const fixedLink = data.link
+  .replace("/null/", `/${restaurantSlug || "id"}`)
+  .replace("/qr-menu/", "/qr-menu/view/")  // new prefix
+.replace(/\/([A-Za-z0-9]+)$/, `?token=$1`);
       setLink(fixedLink);
     } else {
       alert(data.error || "Failed to generate QR link");

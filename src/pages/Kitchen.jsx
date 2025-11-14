@@ -1148,16 +1148,18 @@ return (
     {t("Preparing")}
   </button>
 
-  <button
-    onClick={() => {
-      updateKitchenStatus("delivered");
-      setPrepStart(null); // reset timer on delivered
-    }}
-    className="py-3 w-full rounded-xl shadow bg-slate-800 hover:bg-slate-700 text-white font-semibold text-base transition disabled:opacity-50"
-    disabled={selectedIds.length === 0}
-  >
-    {t("Delivered")}
-  </button>
+<button
+  onClick={() => {
+    updateKitchenStatus("delivered");
+    setPrepStart(null); // reset timer
+    setShowModal(false); // ✅ auto-close modal
+  }}
+  className="py-3 w-full rounded-xl shadow bg-slate-800 hover:bg-slate-700 text-white font-semibold text-base transition disabled:opacity-50"
+  disabled={selectedIds.length === 0}
+>
+  {t("Delivered")}
+</button>
+
 </div>
 
 {/* 🧾 Show currently preparing orders */}

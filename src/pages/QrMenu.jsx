@@ -2,6 +2,7 @@
 // src/pages/QrMenu.jsx
 import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
 import OrderStatusScreen from "../components/OrderStatusScreen";
+import ModernTableSelector from "../components/ModernTableSelector";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import secureFetch from "../utils/secureFetch";
@@ -439,8 +440,8 @@ function QrHeader({ orderType, table, onClose, t }) {
     </header>
   );
 }
-
-/* ====================== ORDER TYPE MODAL ====================== */
+/* ====================== PREMIUM LUXURY HOME PAGE ====================== */
+/* ====================== PREMIUM APPLE-STYLE HOME PAGE ====================== */
 function OrderTypeSelect({
   onSelect,
   lang,
@@ -452,163 +453,449 @@ function OrderTypeSelect({
   setShowHelp,
   platform,
 }) {
+  const phoneNumber = "+905555555555"; // 🔁 CHANGE to your restaurant phone
+  const restaurantName = "HurryBey";   // 🔁 CHANGE if needed
+  const tagline = "Fresh • Crafted • Delicious";
+  const logoUrl = "/logo192.png";      // 🔁 Your logo path
+
+  /* Open / Close logic */
+  const hours = { open: 11, close: 23 }; // 🔁 Adjust to your real opening hours
+  const now = new Date();
+  const isOpen = now.getHours() >= hours.open && now.getHours() < hours.close;
+
+  /* Hero slider data */
+  const slides = [
+    {
+      title: "Gourmet Smash Burgers",
+      subtitle: "Crispy edges, soft brioche, secret sauce.",
+      src: "https://images.unsplash.com/photo-1606755962773-d324e0deedb1",
+    },
+    {
+      title: "Signature Crispy Chicken",
+      subtitle: "Double-fried for extra crunch, juicy inside.",
+      src: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c",
+    },
+    {
+      title: "Golden Fries & Sides",
+      subtitle: "Perfectly seasoned to share… or not.",
+      src: "https://images.unsplash.com/photo-1550547660-d9450f859349",
+    },
+  ];
+
+  const [currentSlide, setCurrentSlide] = React.useState(0);
+
+  /* Auto-rotate hero */
+  React.useEffect(() => {
+    const timer = setInterval(
+      () => setCurrentSlide((s) => (s + 1) % slides.length),
+      4500
+    );
+    return () => clearInterval(timer);
+  }, [slides.length]);
+
+  /* Swipe gesture */
+  const touchStartXRef = React.useRef(null);
+  function handleTouchStart(e) {
+    touchStartXRef.current = e.touches[0].clientX;
+  }
+  function handleTouchEnd(e) {
+    const startX = touchStartXRef.current;
+    if (startX == null) return;
+    const endX = e.changedTouches[0].clientX;
+    const delta = endX - startX;
+    const threshold = 40;
+    if (delta > threshold) {
+      // swipe right → previous
+      setCurrentSlide((s) => (s - 1 + slides.length) % slides.length);
+    } else if (delta < -threshold) {
+      // swipe left → next
+      setCurrentSlide((s) => (s + 1) % slides.length);
+    }
+    touchStartXRef.current = null;
+  }
+
+  /* Parallax */
+  const [scrollY, setScrollY] = React.useState(0);
+  React.useEffect(() => {
+    const h = () => setScrollY(window.scrollY);
+    window.addEventListener("scroll", h);
+    return () => window.removeEventListener("scroll", h);
+  }, []);
+
+  /* Smooth scroll for tiny dot “tabs” (Order / Story / Reviews) */
+  function scrollToId(id) {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md text-center flex flex-col items-center">
-        <h2 className="text-2xl font-serif font-semibold text-gray-900 mb-8 border-b border-gray-200 pb-2">
-          {t("Order Type")}
-        </h2>
-<button
-  onClick={() => onSelect("takeaway")}
-  className="w-full py-4 mb-4 rounded-xl text-lg font-medium text-gray-900 bg-gradient-to-r from-[#fafafa] to-[#f5f5f5] border border-gray-200 hover:bg-white transition-all shadow-sm hover:shadow-md"
->
-  🥡 {t("Take Away")}
-</button>
+    <div className="min-h-screen w-full bg-gradient-to-b from-[#f5f5f7] via-white to-[#f3f4f6] text-gray-900 relative overflow-x-hidden">
+      {/* === HERO BACKGROUND WITH PARALLAX === */}
+      <div
+        className="absolute inset-x-0 top-0 h-[340px] sm:h-[380px] -z-10 transition-all duration-700"
+        style={{
+          backgroundImage: `url(${slides[currentSlide].src})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          transform: `translateY(${scrollY * 0.15}px)`,
+          filter: "brightness(0.75)",
+        }}
+      />
+      {/* Soft top fade into content */}
+      <div className="absolute inset-x-0 top-0 h-[340px] sm:h-[380px] -z-10 bg-gradient-to-b from-white/10 via-white/40 to-[#f5f5f7]" />
 
-        <button
-          className="w-full py-4 mb-4 rounded-xl text-lg font-medium text-gray-900 bg-gradient-to-r from-[#fafafa] to-[#f5f5f5] border border-gray-200 hover:bg-white transition-all shadow-sm hover:shadow-md"
-          onClick={() => onSelect("table")}
-        >
-          🍽️ {t("Table Order")}
-        </button>
-
-        <button
-          className="w-full py-4 rounded-xl text-lg font-medium text-gray-900 bg-gradient-to-r from-[#fafafa] to-[#f5f5f5] border border-gray-200 hover:bg-white transition-all shadow-sm hover:shadow-md"
-          onClick={() => onSelect("online")}
-        >
-          🏠 {t("Delivery")}
-        </button>
-
-        <div className="w-full mt-8 space-y-3">
-          <button
-            onClick={() => {
-              if (navigator.share) {
-                navigator
-                  .share({
-                    title: "Hurrybey Menu",
-                    text: "Discover our menu.",
-                    url: window.location.href,
-                  })
-                  .catch(() => {});
-              } else {
-                navigator.clipboard.writeText(window.location.href);
-                alert("Link copied to clipboard.");
-              }
-            }}
-            className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-100 transition"
-          >
-            🔗 {t("Share QR Menu")}
-          </button>
-
-          <button
-            onClick={() => {
-              if (canInstall) onInstallClick();
-              else setShowHelp(true);
-            }}
-            className="w-full py-3 rounded-xl border border-gray-300 text-gray-800 font-medium hover:bg-gray-100 transition"
-          >
-            📲 {t("Save QR Menu to Phone")}
-          </button>
+      {/* === TOP BAR: LOGO + MINI NAV-TABS + LANGUAGE ICON === */}
+      <header className="max-w-6xl mx-auto px-4 pt-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <img
+            src={logoUrl}
+            alt="Logo"
+            className="w-9 h-9 rounded-2xl shadow-sm bg-white object-cover"
+          />
+          <span className="text-sm font-semibold tracking-tight text-gray-800">
+            {restaurantName}
+          </span>
         </div>
 
-        {showHelp && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60">
-            <div className="bg-white rounded-2xl shadow-xl p-6 w-[90%] max-w-sm text-center">
-              <h2 className="text-xl font-serif font-semibold mb-3 text-gray-900">
-                {t("Add to Home Screen")}
-              </h2>
-              <p className="text-gray-600 text-sm">
-                {platform === "ios"
-                  ? "Tap the Share button in Safari (⬆️) and select 'Add to Home Screen'."
-                  : platform === "android"
-                  ? "Open Chrome menu (⋮) and choose 'Add to Home Screen'."
-                  : "Open this link on your phone to save the app."}
+        {/* Tiny “tabs” – no rectangles, just text + dot */}
+        <nav className="hidden sm:flex items-center gap-4 text-xs font-medium text-gray-500">
+          <button
+            onClick={() => scrollToId("order-section")}
+            className="flex items-center gap-1 hover:text-gray-900 transition"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-900" />
+            <span>Order</span>
+          </button>
+          <button
+            onClick={() => scrollToId("story-section")}
+            className="flex items-center gap-1 hover:text-gray-900 transition"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+            <span>Story</span>
+          </button>
+          <button
+            onClick={() => scrollToId("reviews-section")}
+            className="flex items-center gap-1 hover:text-gray-900 transition"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+            <span>Reviews</span>
+          </button>
+        </nav>
+
+        {/* Small globe 🔁 language is still full selector lower in page */}
+        <div className="hidden sm:flex items-center justify-center w-8 h-8 rounded-full bg-white/70 shadow border border-gray-200 text-xs">
+          🌐
+        </div>
+      </header>
+
+      {/* === MAIN HERO CONTENT === */}
+      <section
+        id="order-section"
+        className="max-w-6xl mx-auto px-4 pt-6 pb-10 flex flex-col lg:flex-row items-center gap-8"
+      >
+        {/* LEFT: TITLE, STATUS, CTAs */}
+        <div className="flex-1 max-w-xl">
+          <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 border border-white/70 shadow-sm text-xs font-medium text-gray-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            {isOpen ? "Open now • Order anytime" : "Closed • See you soon"}
+          </p>
+
+          <h1 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-serif font-bold leading-tight tracking-tight text-gray-900">
+            Smash burgers & crispy chicken that feel like an upgrade.
+          </h1>
+
+          <p className="mt-3 text-sm sm:text-base text-gray-600">
+            Order directly from the kitchen, without middlemen. Fast, fresh,
+            made just for you.
+          </p>
+
+          {/* Delivery and pickup badges */}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+              ⏱️ Delivery: 25–35 min
+            </span>
+            <span className="px-3 py-1 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-100">
+              🛍️ Pickup: ~10 min
+            </span>
+          </div>
+
+          {/* Order type buttons */}
+          <div className="mt-6 space-y-3">
+               <button
+              onClick={() => onSelect("takeaway")}
+              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all text-base font-semibold text-gray-800"
+            >
+              🥡 {t("Take Away")}
+            </button>
+            <button
+              onClick={() => onSelect("table")}
+              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all text-base font-semibold text-gray-800"
+            >
+              🍽️ {t("Table Order")}
+            </button>
+         
+            <button
+              onClick={() => onSelect("online")}
+              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all text-base font-semibold text-gray-800"
+            >
+              🛵 {t("Delivery")}
+            </button>
+          </div>
+
+          {/* Call + Share + Save */}
+          <div className="mt-5 flex flex-col sm:flex-row gap-3">
+            <a
+              href={`tel:${phoneNumber}`}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl bg-emerald-500 text-white font-semibold shadow-md hover:bg-emerald-600 transition"
+            >
+              📞 Call the restaurant
+            </a>
+
+            <button
+              onClick={() => {
+                if (navigator.share) {
+                  navigator
+                    .share({
+                      title: restaurantName,
+                      text: "Check out our HurryBey menu!",
+                      url: window.location.href,
+                    })
+                    .catch(() => {});
+                } else {
+                  navigator.clipboard.writeText(window.location.href);
+                  alert("Link copied to clipboard.");
+                }
+              }}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl bg-white/80 border border-gray-200 text-xs sm:text-sm font-medium text-gray-700 shadow-sm hover:bg-white transition"
+            >
+              🔗 {t("Share QR Menu")}
+            </button>
+          </div>
+
+          {canInstall && (
+            <button
+              onClick={onInstallClick}
+              className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/70 border border-gray-200 text-xs text-gray-700 shadow-sm hover:bg-white transition"
+            >
+              📲 {t("Save QR Menu to Phone")}
+            </button>
+          )}
+        </div>
+
+        {/* RIGHT: PHONE HERO SLIDER */}
+        <div className="flex-1 flex justify-center">
+          <div
+            className="relative w-[260px] h-[520px] sm:w-[280px] sm:h-[540px] rounded-[2.5rem] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] border border-gray-200 overflow-hidden"
+            style={{
+              transform: `translateY(${scrollY * 0.08}px)`,
+            }}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            {/* “Notch” */}
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-24 h-5 bg-gray-900/90 rounded-full opacity-80" />
+
+            {/* Slide image */}
+            <div className="mt-8 w-full h-[60%] overflow-hidden">
+              <img
+                src={slides[currentSlide].src}
+                alt={slides[currentSlide].title}
+                className="w-full h-full object-cover transition-transform duration-700 ease-out"
+              />
+            </div>
+
+            {/* Slide text */}
+            <div className="px-4 pt-3">
+              <p className="text-xs uppercase tracking-wide text-gray-400">
+                Featured
               </p>
-              <button
-                onClick={() => setShowHelp(false)}
-                className="mt-4 w-full py-2 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800"
-              >
-                OK
-              </button>
+              <h3 className="text-lg font-semibold text-gray-900 mt-1">
+                {slides[currentSlide].title}
+              </h3>
+              <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                {slides[currentSlide].subtitle}
+              </p>
+            </div>
+
+            {/* Slide dots */}
+            <div className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-1.5">
+              {slides.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setCurrentSlide(i)}
+                  className={`transition-all ${
+                    i === currentSlide
+                      ? "w-5 h-1.5 bg-gray-900 rounded-full"
+                      : "w-1.5 h-1.5 bg-gray-300 rounded-full"
+                  }`}
+                />
+              ))}
             </div>
           </div>
-        )}
-
-        <div className="w-full mt-8">
-          <label className="text-sm font-medium text-gray-700">
-            🌐 {t("Language")}
-          </label>
-          <select
-            value={lang}
-            onChange={(e) => setLang(e.target.value)}
-            className="mt-2 w-full rounded-xl px-4 py-2 border border-gray-300 text-gray-800 focus:ring-1 focus:ring-gray-400 focus:outline-none"
-          >
-            {LANGS.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.label}
-              </option>
-            ))}
-          </select>
         </div>
-      </div>
-    </div>
-  );
-}
+      </section>
 
-/* ====================== TABLE SELECT ====================== */
-function TableSelectModal({ onSelectTable, onClose, tableCount = 20, occupiedTables = [], t }) {
-  const [selected, setSelected] = React.useState(null);
+      {/* === STORY / ABOUT SECTION === */}
+      <section
+        id="story-section"
+        className="max-w-5xl mx-auto px-4 pt-4 pb-10 flex flex-col md:flex-row items-start gap-8"
+      >
+        <div className="flex-1">
+          <h2 className="text-2xl font-serif font-bold text-gray-900 mb-3">
+            Our Story
+          </h2>
+          <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
+            HurryBey started with a simple idea: take comfort food seriously.
+            We obsess over our buns, we grind our patties fresh, and we keep
+            every order honest, warm, and generous.
+          </p>
+          <p className="mt-3 text-sm sm:text-base text-gray-600 leading-relaxed">
+            From late-night cravings to family dinners, we built our kitchen to
+            feel like a trusted friend — fast enough for delivery, special
+            enough for a night out.
+          </p>
+        </div>
 
-  return (
-    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-2xl p-7 w-full max-w-md text-center relative">
-        <button
-          onClick={onClose}
-          aria-label={t("Close")}
-          className="absolute right-3 top-3 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600"
-        >
-          ×
-        </button>
+        <div className="flex-1 flex justify-center">
+          <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-lg border border-gray-200 bg-white">
+            <img
+              src="https://images.unsplash.com/photo-1551782450-a2132b4ba21d"
+              alt="Kitchen"
+              className="w-full h-40 object-cover"
+            />
+            <div className="p-4">
+              <p className="text-xs uppercase tracking-wide text-gray-400">
+                In the Kitchen
+              </p>
+              <p className="text-sm text-gray-700 mt-1">
+                Every burger is seared to order, every chicken piece is double
+                checked for that perfect crunch.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        <h2 className="text-xl font-serif font-semibold text-gray-900 mb-6 border-b border-gray-200 pb-2">
-          {t("Choose Table")}
+      {/* === CUSTOMER REVIEWS SECTION === */}
+      <section
+        id="reviews-section"
+        className="max-w-5xl mx-auto px-4 pt-2 pb-16"
+      >
+        <h2 className="text-2xl font-serif font-bold text-gray-900 mb-4">
+          What our guests say
         </h2>
 
-        <div className="grid grid-cols-4 gap-3 mb-6">
-          {[...Array(tableCount)].map((_, i) => {
-            const num = i + 1;
-            const occupied = occupiedTables.includes(num);
-            const active = selected === num;
-            return (
-              <button
-                key={i}
-                disabled={occupied}
-                onClick={() => setSelected(num)}
-                className={`py-3 rounded-xl font-medium border transition-all ${
-                  occupied
-                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                    : active
-                    ? "bg-gray-900 text-white border-gray-800"
-                    : "bg-white border-gray-200 hover:bg-gray-50"
-                }`}
-              >
-                {num}
-              </button>
-            );
-          })}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            {
+              name: "Elif",
+              text: "Best smash burger in the city. Crispy edges, soft bun – I dream about it.",
+            },
+            {
+              name: "Can",
+              text: "Delivery was fast and everything arrived hot and crunchy. 10/10.",
+            },
+            {
+              name: "Marie",
+              text: "Feels like a premium burger place but still warm and friendly.",
+            },
+          ].map((r, idx) => (
+            <div
+              key={idx}
+              className="rounded-2xl bg-white shadow-sm border border-gray-200 p-4 flex flex-col gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
+                  {r.name[0]}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {r.name}
+                  </p>
+                  <p className="text-xs text-amber-500">★★★★★</p>
+                </div>
+              </div>
+              <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                {r.text}
+              </p>
+            </div>
+          ))}
         </div>
+      </section>
 
-        <button
-          disabled={!selected}
-          onClick={() => onSelectTable(selected)}
-          className="w-full py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition disabled:opacity-40"
+      {/* === SOCIAL ICONS === */}
+      <div className="flex items-center justify-center gap-6 pb-6">
+        <a
+          href="https://instagram.com"
+          target="_blank"
+          rel="noreferrer"
+          className="w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center"
         >
-          {t("Start Order")}
-        </button>
+          <span className="text-lg">📸</span>
+        </a>
+        <a
+          href="https://tiktok.com"
+          target="_blank"
+          rel="noreferrer"
+          className="w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center"
+        >
+          <span className="text-lg">🎵</span>
+        </a>
       </div>
+
+      {/* === FLOATING MINI CART (placeholder count) === */}
+      <div className="fixed bottom-6 right-6 bg-white shadow-xl px-4 py-2.5 rounded-full border border-gray-200 flex items-center gap-2 text-xs sm:text-sm font-medium text-gray-800">
+        🛒 Cart
+        <span className="bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
+          0
+        </span>
+      </div>
+
+      {/* === LANGUAGE DROPDOWN (bottom) === */}
+      <div className="w-full max-w-md mx-auto px-4 pb-20">
+        <label className="block text-xs font-medium text-gray-500 mb-1">
+          🌐 {t("Language")}
+        </label>
+        <select
+          value={lang}
+          onChange={(e) => setLang(e.target.value)}
+          className="w-full px-4 py-3 rounded-2xl bg-white shadow-md border border-gray-300 text-gray-800 text-sm"
+        >
+          {LANGS.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* === INSTALL HELP MODAL === */}
+      {showHelp && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 text-center w-[85%] max-w-sm">
+            <h2 className="text-xl font-serif font-semibold mb-3 text-gray-900">
+              {t("Add to Home Screen")}
+            </h2>
+            <p className="text-gray-600 text-sm">
+              {platform === "ios"
+                ? "Tap the Share button (⬆️) > 'Add to Home Screen'"
+                : "From Chrome menu (⋮), choose 'Add to Home Screen'"}
+            </p>
+            <button
+              onClick={() => setShowHelp(false)}
+              className="mt-4 w-full py-2 rounded-xl bg-gray-900 text-white font-medium"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+
+
 
 /* ====================== TAKEAWAY ORDER FORM ====================== */
 function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
@@ -702,14 +989,29 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
             }
           />
 
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
-          >
-            {submitting ? t("Please wait...") : t("Continue")}
-          </button>
+      {/* Submit */}
+<button
+  type="submit"
+  disabled={submitting}
+  className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
+>
+  {submitting ? t("Please wait...") : t("Continue")}
+</button>
+
+{/* Skip button */}
+<button
+  type="button"
+  onClick={() => {
+    onSubmit(null);    // << SKIP
+  }}
+className="w-full py-3 rounded-full bg-yellow-100 text-yellow-800 
+           font-medium text-lg hover:bg-yellow-200 transition mt-2"
+
+
+>
+  Skip
+</button>
+
         </form>
       </div>
     </div>
@@ -1986,18 +2288,34 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
   
-  const { slug, id } = useParams();
-const restaurantIdOrSlug = slug && slug !== "null" ? slug : id;
+// Keep both because QrMenu uses id somewhere else (token)
+// Keep both slug and id because the route is /qr-menu/:slug/:id
+const { slug, id } = useParams();
+
+// Fix null/undefined slug
+const safeSlug =
+  slug && slug !== "null" && slug !== "undefined"
+    ? slug
+    : id && id !== "null" && id !== "undefined"
+    ? id
+    : null;
+
+// Only use slug as identifier for backend requests
+const restaurantIdentifier = safeSlug;
+
 
   const appendIdentifier = useCallback(
     (url) => {
-      if (!restaurantIdOrSlug) return url;
+      if (!restaurantIdentifier
+) return url;
       const [base, hash] = String(url).split("#");
       const separator = base.includes("?") ? "&" : "?";
-      const appended = `${base}${separator}identifier=${encodeURIComponent(restaurantIdOrSlug)}`;
+      const appended = `${base}${separator}identifier=${encodeURIComponent(restaurantIdentifier
+)}`;
       return hash ? `${appended}#${hash}` : appended;
     },
-    [restaurantIdOrSlug]
+    [restaurantIdentifier
+]
   );
 
   // 🔒 One liner to always pass identifier via secureFetch
@@ -2005,18 +2323,15 @@ const restaurantIdOrSlug = slug && slug !== "null" ? slug : id;
     return secureFetch(appendIdentifier(path), options);
   }, [appendIdentifier]);
 
- const shareUrl = useMemo(() => {
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const slugOrId = slug || id;
+const shareUrl = useMemo(() => {
+  const origin = window.location.origin;
+  const s = slug && slug !== "null" && slug !== "undefined" ? slug : null;
 
-  if (slugOrId) {
-    const token = new URLSearchParams(window.location.search).get("token") || "";
-    return origin
-      ? `${origin}/qr-menu/${slugOrId}?token=${encodeURIComponent(token)}`
-      : `/qr-menu/${slugOrId}?token=${encodeURIComponent(token)}`;
-  }
-  return origin ? `${origin}/qr-menu` : "/qr-menu";
-}, [slug, id]);
+  if (!s) return `${origin}/qr-menu`;
+
+  return `${origin}/qr-menu/${s}/scan`;
+}, [slug]);
+
 
 
   // persist language
@@ -2047,7 +2362,8 @@ const [platform, setPlatform] = useState(getPlatform());
   const [showStatus, setShowStatus] = useState(false);
   const [orderStatus, setOrderStatus] = useState("pending");
   const [orderId, setOrderId] = useState(null);
-  
+  const [tables, setTables] = useState([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
@@ -2101,6 +2417,41 @@ const [canInstall, setCanInstall] = useState(false);
     setOrderType(null);
   };
 const [showOrderStatus, setShowOrderStatus] = useState(false);
+const loadTables = async () => {
+  if (!restaurantIdentifier) {
+    setTables([]);
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${API_URL}/public/tables/${encodeURIComponent(restaurantIdentifier)}`
+    );
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const payload = await res.json();
+    const rows = Array.isArray(payload) ? payload : payload.data || [];
+
+    const normalized = rows.map((r) => ({
+      tableNumber: r.number,
+      area: r.area || "Main Hall",
+      seats: r.seats || r.chairs || 0,
+      label: r.label || "",
+      color: r.color || "",
+      active: r.active ?? true,
+    }));
+
+    setTables(normalized.filter((t) => t.active !== false));
+  } catch (err) {
+    console.warn("⚠️ Failed to fetch tables:", err);
+    setTables([]);
+  }
+};
+
+
 
 useEffect(() => {
   const handler = (e) => {
@@ -2415,8 +2766,22 @@ if (savedTable) {
 
   // QrMenu.jsx
 useEffect(() => {
-  sFetch("/category-images")
-    .then((data) => {
+  if (!restaurantIdentifier) {
+    setCategoryImages({});
+    return;
+  }
+
+  (async () => {
+    try {
+      const res = await fetch(
+        `${API_URL}/public/category-images/${encodeURIComponent(restaurantIdentifier)}`
+      );
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
       const dict = {};
       (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
         const key = (category || "").trim().toLowerCase();
@@ -2424,9 +2789,13 @@ useEffect(() => {
         dict[key] = image;
       });
       setCategoryImages(dict);
-    })
-    .catch(() => setCategoryImages({}));
-}, [sFetch]);
+    } catch (err) {
+      console.warn("⚠️ Failed to fetch public category images:", err);
+      setCategoryImages({});
+    }
+  })();
+}, [restaurantIdentifier]);
+
 
 
 
@@ -2464,16 +2833,15 @@ const loadProducts = async () => {
   try {
     let payload = null;
 
-    if (restaurantIdOrSlug) {
+    if (restaurantIdentifier
+) {
       // 👇 Always use the public endpoint; no auth required
-      const res = await fetch(
-        `${API_URL}/public/products/${encodeURIComponent(restaurantIdOrSlug)}`
-      );
-      if (!res.ok) throw new Error(`Server responded ${res.status}`);
-      payload = await res.json();
-    } else {
-      // fallback if opened from POS
-      payload = await sFetch("/products");
+const res = await fetch(
+  `${API_URL}/public/products/${encodeURIComponent(restaurantIdentifier)}`
+);
+if (!res.ok) throw new Error(`Server responded ${res.status}`);
+payload = await res.json();
+
     }
 
     assignProducts(payload);
@@ -2490,28 +2858,41 @@ const loadProducts = async () => {
   // ✅ END UPDATED BLOCK
 
   const loadExtras = async () => {
-    try {
-      const payload = await secureFetch(appendIdentifier("/extras-groups"));
-      const list = parseArray(payload);
+  if (!restaurantIdentifier) {
+    setExtrasGroups([]);
+    return;
+  }
 
-      if (cancelled) return;
-      const listArray = toArray(list);
-      setExtrasGroups(
-        listArray.map((g) => ({
-          groupName: g.groupName || g.group_name,
-          items: typeof g.items === "string" ? tryJSON(g.items) : g.items || [],
-        }))
-      );
-    } catch (err) {
-      console.warn("⚠️ Failed to fetch extras groups:", err);
-      if (cancelled) return;
-      setExtrasGroups([]);
+  try {
+    const res = await fetch(
+      `${API_URL}/public/extras-groups/${encodeURIComponent(restaurantIdentifier)}`
+    );
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
     }
-  };
+
+    const list = await res.json();
+    if (cancelled) return;
+
+    const listArray = toArray(list);
+    setExtrasGroups(
+      listArray.map((g) => ({
+        groupName: g.groupName || g.group_name,
+        items: typeof g.items === "string" ? tryJSON(g.items) : g.items || [],
+      }))
+    );
+  } catch (err) {
+    console.warn("⚠️ Failed to fetch extras groups:", err);
+    if (cancelled) return;
+    setExtrasGroups([]);
+  }
+};
+
 
   loadProducts();
   loadExtras();
-
+  loadTables(); 
   const token = getStoredToken();
   if (token) {
     sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } })
@@ -2572,11 +2953,18 @@ if (!orderType)
 
 // --- Table select (let THIS device re-open its own occupied table) ---
 if (orderType === "table" && !table) {
-  const myTable = Number(
-    storage.getItem("qr_table") ||
-    storage.getItem("qr_selected_table") ||
-    "0"
-  ) || null;
+function safeNumber(v) {
+  if (!v) return null;
+  if (v === "null" || v === "undefined") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+const myTable =
+  safeNumber(storage.getItem("qr_table")) ??
+  safeNumber(storage.getItem("qr_selected_table")) ??
+  null;
+
 
   const filteredOccupied = myTable
     ? safeOccupiedTables.filter((n) => n !== myTable)
@@ -2584,54 +2972,19 @@ if (orderType === "table" && !table) {
 
   return (
     <>
-      <TableSelectModal
-        onSelectTable={async (n) => {
-          // Try to jump straight to an existing open order on this table
-          const token = getStoredToken();
-          if (token) {
-            try {
-              const res = await secureFetch(`/orders?table_number=${n}` , {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-              });
-              if (res.ok) {
-                const raw = await res.json();
-                const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
-                // backend often excludes closed already; be defensive
-                const openOrder = list.find(o => (o?.status || "").toLowerCase() !== "closed") || list[0] || null;
+<ModernTableSelector
+  tables={tables}
+  onSelect={(tbl) => {
+    setTable(tbl.tableNumber);
+    saveSelectedTable(tbl.tableNumber);
+  }}
+  onBack={() => {
+    setOrderType(null);
+  }}
+/>
 
-                if (openOrder) {
-                  setOrderType("table");
-                  setTable(n);
-                  setOrderId(openOrder.id);
-                  setActiveOrder(openOrder);
-                  setShowStatus(true);
-                  setOrderStatus("success");
 
-                  storage.setItem("qr_active_order", JSON.stringify({ orderId: openOrder.id, orderType: "table", table: n }));
-                  storage.setItem("qr_active_order_id", String(openOrder.id));
-                  storage.setItem("qr_orderType", "table");
-                  storage.setItem("qr_table", String(n));
-                  storage.setItem("qr_show_status", "1");
-                  return; // <- IMPORTANT: stop here so status opens
-                }
-              }
-            } catch (err) {
-              console.warn("⚠️ Failed to fetch orders for table:", err);
-              // fall through
-            }
-          }
 
-          // No open order -> proceed like a fresh selection
-          setTable(n);
-          storage.setItem("qr_table", String(n));
-          storage.setItem("qr_orderType", "table");
-        }}
-        occupiedTables={filteredOccupied}
-        onClose={() => setOrderType(null)}
-        t={t}
-      />
       {statusPortal}
     </>
   );
@@ -3148,10 +3501,23 @@ return (
   setOrderType(null); // 👈 return to order type picker
 }}
 
-    onSubmit={(form) => {
-      setTakeaway(form);
-      setShowTakeawayForm(false);
-    }}
+onSubmit={(form) => {
+  if (!form) {
+    // SKIPPED
+    setTakeaway({
+      name: "",
+      phone: "",
+      pickup_time: "",
+      notes: "",
+    });
+  } else {
+    // Normal form submit
+    setTakeaway(form);
+  }
+
+  setShowTakeawayForm(false);
+}}
+
   />
 )}
 
