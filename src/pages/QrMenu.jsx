@@ -417,11 +417,11 @@ const LANGS = [
 
 
 /* ====================== HEADER ====================== */
-function QrHeader({ orderType, table, onClose, t }) {
+function QrHeader({ orderType, table, onClose, t, restaurantName }) {
   return (
     <header className="w-full sticky top-0 z-50 flex items-center justify-between bg-white/80 backdrop-blur-md border-b border-gray-200 px-6 py-4 shadow-sm">
       <span className="text-3xl font-serif font-bold text-gray-900 tracking-tight">
-        Hurrybey
+        {restaurantName || "Restaurant"}
       </span>
       <span className="text-lg font-medium text-gray-700 italic">
         {orderType === "table"
@@ -440,9 +440,10 @@ function QrHeader({ orderType, table, onClose, t }) {
     </header>
   );
 }
-/* ====================== PREMIUM LUXURY HOME PAGE ====================== */
+
 /* ====================== PREMIUM APPLE-STYLE HOME PAGE ====================== */
 function OrderTypeSelect({
+  identifier,       // 🔥 required for backend load
   onSelect,
   lang,
   setLang,
@@ -453,47 +454,93 @@ function OrderTypeSelect({
   setShowHelp,
   platform,
 }) {
-  const phoneNumber = "+905555555555"; // 🔁 CHANGE to your restaurant phone
-  const restaurantName = "HurryBey";   // 🔁 CHANGE if needed
-  const tagline = "Fresh • Crafted • Delicious";
-  const logoUrl = "/logo192.png";      // 🔁 Your logo path
 
-  /* Open / Close logic */
-  const hours = { open: 11, close: 23 }; // 🔁 Adjust to your real opening hours
-  const now = new Date();
-  const isOpen = now.getHours() >= hours.open && now.getHours() < hours.close;
+  /* ============================================================
+     1) Load Custom QR Menu Website Settings from Backend
+     ============================================================ */
+  const [custom, setCustom] = React.useState(null);
 
-  /* Hero slider data */
-  const slides = [
-    {
-      title: "Gourmet Smash Burgers",
-      subtitle: "Crispy edges, soft brioche, secret sauce.",
-      src: "https://images.unsplash.com/photo-1606755962773-d324e0deedb1",
-    },
-    {
-      title: "Signature Crispy Chicken",
-      subtitle: "Double-fried for extra crunch, juicy inside.",
-      src: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c",
-    },
-    {
-      title: "Golden Fries & Sides",
-      subtitle: "Perfectly seasoned to share… or not.",
-      src: "https://images.unsplash.com/photo-1550547660-d9450f859349",
-    },
-  ];
+  React.useEffect(() => {
+    if (!identifier) return;
 
+async function load() {
+  try {
+    const res = await fetch(
+  `${API_URL}/public/qr-menu-customization/${encodeURIComponent(identifier)}`
+);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const raw = await res.text();
+    const data = raw ? JSON.parse(raw) : {};
+    setCustom(data.customization || {});
+  } catch (err) {
+    console.error("❌ Failed to load QR customization:", err);
+    setCustom({}); // allow component to render with defaults
+  }
+}
+
+
+    load();
+  }, [identifier]);
+
+  // Keep hooks order stable; render with placeholders until loaded
+
+  /* ============================================================
+     2) Extract dynamic fields with fallbacks
+     ============================================================ */
+  const c = custom || {};
+  const restaurantName = c.title || c.main_title || "Restaurant";
+  const subtitle = c.subtitle || "Welcome";
+  const tagline = c.tagline || "Fresh • Crafted • Delicious";
+  const phoneNumber = c.phone || "";
+  const accent = c.branding_color || c.primary_color || "#4F46E5";
+  const logoUrl = c.logo || "/logo192.png";
+
+
+  const storyTitle = c.story_title || "Our Story";
+  const storyText = c.story_text || "";
+  const storyImage = c.story_image || "";
+
+  const reviews = Array.isArray(c.reviews) ? c.reviews : [];
+
+  const slides =
+    Array.isArray(c.hero_slides) && c.hero_slides.length > 0
+      ? c.hero_slides.map(s => ({
+          title: s.title,
+          subtitle: s.subtitle,
+          src: s.image,
+        }))
+      : [
+          {
+            title: "Gourmet Smash Burgers",
+            subtitle: "Crispy edges, soft brioche, secret sauce.",
+            src: "https://images.unsplash.com/photo-1606755962773-d324e0deedb1",
+          },
+        ];
+
+  const deliveryTime = c.delivery_time || "25–35 min";
+  const pickupTime = c.pickup_time || "10 min";
+
+  const isOpen = true; // dynamic opening hours next step
+
+  /* ============================================================
+     3) Local slider state
+     ============================================================ */
   const [currentSlide, setCurrentSlide] = React.useState(0);
 
-  /* Auto-rotate hero */
   React.useEffect(() => {
-    const timer = setInterval(
-      () => setCurrentSlide((s) => (s + 1) % slides.length),
-      4500
-    );
-    return () => clearInterval(timer);
+    if (slides.length > 1) {
+      const timer = setInterval(
+        () => setCurrentSlide((s) => (s + 1) % slides.length),
+        4500
+      );
+      return () => clearInterval(timer);
+    }
   }, [slides.length]);
 
-  /* Swipe gesture */
+  /* SWIPE */
   const touchStartXRef = React.useRef(null);
   function handleTouchStart(e) {
     touchStartXRef.current = e.touches[0].clientX;
@@ -501,20 +548,21 @@ function OrderTypeSelect({
   function handleTouchEnd(e) {
     const startX = touchStartXRef.current;
     if (startX == null) return;
+
     const endX = e.changedTouches[0].clientX;
     const delta = endX - startX;
     const threshold = 40;
+
     if (delta > threshold) {
-      // swipe right → previous
       setCurrentSlide((s) => (s - 1 + slides.length) % slides.length);
     } else if (delta < -threshold) {
-      // swipe left → next
       setCurrentSlide((s) => (s + 1) % slides.length);
     }
+
     touchStartXRef.current = null;
   }
 
-  /* Parallax */
+  /* PARALLAX */
   const [scrollY, setScrollY] = React.useState(0);
   React.useEffect(() => {
     const h = () => setScrollY(window.scrollY);
@@ -522,15 +570,20 @@ function OrderTypeSelect({
     return () => window.removeEventListener("scroll", h);
   }, []);
 
-  /* Smooth scroll for tiny dot “tabs” (Order / Story / Reviews) */
+  /* Smooth scroll */
   function scrollToId(id) {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  /* ============================================================
+     4) Render the UI (same structure, now dynamic)
+     ============================================================ */
+
   return (
     <div className="min-h-screen w-full bg-gradient-to-b from-[#f5f5f7] via-white to-[#f3f4f6] text-gray-900 relative overflow-x-hidden">
-      {/* === HERO BACKGROUND WITH PARALLAX === */}
+
+      {/* === HERO BACKGROUND === */}
       <div
         className="absolute inset-x-0 top-0 h-[340px] sm:h-[380px] -z-10 transition-all duration-700"
         style={{
@@ -541,10 +594,10 @@ function OrderTypeSelect({
           filter: "brightness(0.75)",
         }}
       />
-      {/* Soft top fade into content */}
+
       <div className="absolute inset-x-0 top-0 h-[340px] sm:h-[380px] -z-10 bg-gradient-to-b from-white/10 via-white/40 to-[#f5f5f7]" />
 
-      {/* === TOP BAR: LOGO + MINI NAV-TABS + LANGUAGE ICON === */}
+      {/* === TOP BAR === */}
       <header className="max-w-6xl mx-auto px-4 pt-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <img
@@ -557,43 +610,27 @@ function OrderTypeSelect({
           </span>
         </div>
 
-        {/* Tiny “tabs” – no rectangles, just text + dot */}
+        {/* Tiny dot navigation */}
         <nav className="hidden sm:flex items-center gap-4 text-xs font-medium text-gray-500">
-          <button
-            onClick={() => scrollToId("order-section")}
-            className="flex items-center gap-1 hover:text-gray-900 transition"
-          >
+          <button onClick={() => scrollToId("order-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
             <span className="w-1.5 h-1.5 rounded-full bg-gray-900" />
             <span>Order</span>
           </button>
-          <button
-            onClick={() => scrollToId("story-section")}
-            className="flex items-center gap-1 hover:text-gray-900 transition"
-          >
+          <button onClick={() => scrollToId("story-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
             <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
             <span>Story</span>
           </button>
-          <button
-            onClick={() => scrollToId("reviews-section")}
-            className="flex items-center gap-1 hover:text-gray-900 transition"
-          >
+          <button onClick={() => scrollToId("reviews-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
             <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
             <span>Reviews</span>
           </button>
         </nav>
-
-        {/* Small globe 🔁 language is still full selector lower in page */}
-        <div className="hidden sm:flex items-center justify-center w-8 h-8 rounded-full bg-white/70 shadow border border-gray-200 text-xs">
-          🌐
-        </div>
       </header>
 
-      {/* === MAIN HERO CONTENT === */}
-      <section
-        id="order-section"
-        className="max-w-6xl mx-auto px-4 pt-6 pb-10 flex flex-col lg:flex-row items-center gap-8"
-      >
-        {/* LEFT: TITLE, STATUS, CTAs */}
+      {/* === MAIN HERO SECTION === */}
+      <section id="order-section" className="max-w-6xl mx-auto px-4 pt-6 pb-10 flex flex-col lg:flex-row items-center gap-8">
+
+        {/* LEFT */}
         <div className="flex-1 max-w-xl">
           <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 border border-white/70 shadow-sm text-xs font-medium text-gray-600">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -601,69 +638,69 @@ function OrderTypeSelect({
           </p>
 
           <h1 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-serif font-bold leading-tight tracking-tight text-gray-900">
-            Smash burgers & crispy chicken that feel like an upgrade.
+            {restaurantName}
           </h1>
 
-          <p className="mt-3 text-sm sm:text-base text-gray-600">
-            Order directly from the kitchen, without middlemen. Fast, fresh,
-            made just for you.
-          </p>
+          <p className="mt-2 text-lg font-light text-gray-600">{subtitle}</p>
 
-          {/* Delivery and pickup badges */}
+          <p className="mt-3 text-sm sm:text-base text-gray-600">{tagline}</p>
+
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
-              ⏱️ Delivery: 25–35 min
+              ⏱️ Delivery: {deliveryTime}
             </span>
             <span className="px-3 py-1 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-100">
-              🛍️ Pickup: ~10 min
+              🛍️ Pickup: {pickupTime}
             </span>
           </div>
 
-          {/* Order type buttons */}
+          {/* ORDER BUTTONS */}
           <div className="mt-6 space-y-3">
-               <button
-              onClick={() => onSelect("takeaway")}
-              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all text-base font-semibold text-gray-800"
-            >
-              🥡 {t("Take Away")}
-            </button>
             <button
               onClick={() => onSelect("table")}
-              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all text-base font-semibold text-gray-800"
+              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg transition text-base font-semibold text-gray-800"
             >
               🍽️ {t("Table Order")}
             </button>
-         
+
+            <button
+              onClick={() => onSelect("takeaway")}
+              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg transition text-base font-semibold text-gray-800"
+            >
+              🥡 {t("Take Away")}
+            </button>
+
             <button
               onClick={() => onSelect("online")}
-              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg hover:-translate-y-0.5 transition-all text-base font-semibold text-gray-800"
+              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg transition text-base font-semibold text-gray-800"
             >
               🛵 {t("Delivery")}
             </button>
           </div>
 
-          {/* Call + Share + Save */}
+          {/* CALL + SHARE */}
           <div className="mt-5 flex flex-col sm:flex-row gap-3">
-            <a
-              href={`tel:${phoneNumber}`}
-              className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl bg-emerald-500 text-white font-semibold shadow-md hover:bg-emerald-600 transition"
-            >
-              📞 Call the restaurant
-            </a>
+            {phoneNumber && (
+              <a
+                href={`tel:${phoneNumber}`}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-white font-semibold shadow-md"
+                style={{ backgroundColor: accent }}
+              >
+                📞 Call the restaurant
+              </a>
+            )}
 
             <button
               onClick={() => {
                 if (navigator.share) {
-                  navigator
-                    .share({
-                      title: restaurantName,
-                      text: "Check out our HurryBey menu!",
-                      url: window.location.href,
-                    })
-                    .catch(() => {});
+                  navigator.share({
+                    title: restaurantName,
+                    text: "Check out our menu!",
+                    url: window.location.href,
+                  });
                 } else {
                   navigator.clipboard.writeText(window.location.href);
-                  alert("Link copied to clipboard.");
+                  alert("Link copied.");
                 }
               }}
               className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl bg-white/80 border border-gray-200 text-xs sm:text-sm font-medium text-gray-700 shadow-sm hover:bg-white transition"
@@ -671,31 +708,18 @@ function OrderTypeSelect({
               🔗 {t("Share QR Menu")}
             </button>
           </div>
-
-          {canInstall && (
-            <button
-              onClick={onInstallClick}
-              className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/70 border border-gray-200 text-xs text-gray-700 shadow-sm hover:bg-white transition"
-            >
-              📲 {t("Save QR Menu to Phone")}
-            </button>
-          )}
         </div>
 
-        {/* RIGHT: PHONE HERO SLIDER */}
+        {/* RIGHT PREVIEW PHONE */}
         <div className="flex-1 flex justify-center">
           <div
             className="relative w-[260px] h-[520px] sm:w-[280px] sm:h-[540px] rounded-[2.5rem] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] border border-gray-200 overflow-hidden"
-            style={{
-              transform: `translateY(${scrollY * 0.08}px)`,
-            }}
+            style={{ transform: `translateY(${scrollY * 0.08}px)` }}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            {/* “Notch” */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 w-24 h-5 bg-gray-900/90 rounded-full opacity-80" />
 
-            {/* Slide image */}
             <div className="mt-8 w-full h-[60%] overflow-hidden">
               <img
                 src={slides[currentSlide].src}
@@ -704,7 +728,6 @@ function OrderTypeSelect({
               />
             </div>
 
-            {/* Slide text */}
             <div className="px-4 pt-3">
               <p className="text-xs uppercase tracking-wide text-gray-400">
                 Featured
@@ -717,7 +740,6 @@ function OrderTypeSelect({
               </p>
             </div>
 
-            {/* Slide dots */}
             <div className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-1.5">
               {slides.map((_, i) => (
                 <button
@@ -735,78 +757,47 @@ function OrderTypeSelect({
         </div>
       </section>
 
-      {/* === STORY / ABOUT SECTION === */}
-      <section
-        id="story-section"
-        className="max-w-5xl mx-auto px-4 pt-4 pb-10 flex flex-col md:flex-row items-start gap-8"
-      >
+      {/* === STORY SECTION === */}
+      <section id="story-section" className="max-w-5xl mx-auto px-4 pt-4 pb-10 flex flex-col md:flex-row items-start gap-8">
+
         <div className="flex-1">
           <h2 className="text-2xl font-serif font-bold text-gray-900 mb-3">
-            Our Story
+            {storyTitle}
           </h2>
-          <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
-            HurryBey started with a simple idea: take comfort food seriously.
-            We obsess over our buns, we grind our patties fresh, and we keep
-            every order honest, warm, and generous.
-          </p>
-          <p className="mt-3 text-sm sm:text-base text-gray-600 leading-relaxed">
-            From late-night cravings to family dinners, we built our kitchen to
-            feel like a trusted friend — fast enough for delivery, special
-            enough for a night out.
+          <p className="text-sm sm:text-base text-gray-600 leading-relaxed whitespace-pre-line">
+            {storyText}
           </p>
         </div>
 
-        <div className="flex-1 flex justify-center">
-          <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-lg border border-gray-200 bg-white">
-            <img
-              src="https://images.unsplash.com/photo-1551782450-a2132b4ba21d"
-              alt="Kitchen"
-              className="w-full h-40 object-cover"
-            />
-            <div className="p-4">
-              <p className="text-xs uppercase tracking-wide text-gray-400">
-                In the Kitchen
-              </p>
-              <p className="text-sm text-gray-700 mt-1">
-                Every burger is seared to order, every chicken piece is double
-                checked for that perfect crunch.
-              </p>
+        {storyImage && (
+          <div className="flex-1 flex justify-center">
+            <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-lg border border-gray-200 bg-white">
+              <img
+                src={storyImage}
+                alt={storyTitle}
+                className="w-full h-40 object-cover"
+              />
             </div>
           </div>
-        </div>
+        )}
       </section>
 
-      {/* === CUSTOMER REVIEWS SECTION === */}
-      <section
-        id="reviews-section"
-        className="max-w-5xl mx-auto px-4 pt-2 pb-16"
-      >
+      {/* === REVIEWS === */}
+      <section id="reviews-section" className="max-w-5xl mx-auto px-4 pt-2 pb-16">
         <h2 className="text-2xl font-serif font-bold text-gray-900 mb-4">
           What our guests say
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
-            {
-              name: "Elif",
-              text: "Best smash burger in the city. Crispy edges, soft bun – I dream about it.",
-            },
-            {
-              name: "Can",
-              text: "Delivery was fast and everything arrived hot and crunchy. 10/10.",
-            },
-            {
-              name: "Marie",
-              text: "Feels like a premium burger place but still warm and friendly.",
-            },
-          ].map((r, idx) => (
-            <div
-              key={idx}
-              className="rounded-2xl bg-white shadow-sm border border-gray-200 p-4 flex flex-col gap-2"
-            >
+          {reviews.length === 0 && (
+            <p className="text-gray-500 text-sm">No reviews yet.</p>
+          )}
+
+          {reviews.map((r, idx) => (
+            <div key={idx} className="rounded-2xl bg-white shadow-sm border border-gray-200 p-4 flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
-                  {r.name[0]}
+                  {(r.name || "?")[0]}
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-900">
@@ -823,76 +814,43 @@ function OrderTypeSelect({
         </div>
       </section>
 
-      {/* === SOCIAL ICONS === */}
+      {/* === SOCIAL LINKS === */}
       <div className="flex items-center justify-center gap-6 pb-6">
-        <a
-          href="https://instagram.com"
-          target="_blank"
-          rel="noreferrer"
-          className="w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center"
-        >
-          <span className="text-lg">📸</span>
-        </a>
-        <a
-          href="https://tiktok.com"
-          target="_blank"
-          rel="noreferrer"
-          className="w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center"
-        >
-          <span className="text-lg">🎵</span>
-        </a>
+
+        {c.social_instagram && (
+          <a
+            href={c.social_instagram}
+            target="_blank"
+            rel="noreferrer"
+            className="w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center"
+          >
+            <span className="text-lg">📸</span>
+          </a>
+        )}
+
+        {c.social_tiktok && (
+          <a
+            href={c.social_tiktok}
+            target="_blank"
+            rel="noreferrer"
+            className="w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center"
+          >
+            <span className="text-lg">🎵</span>
+          </a>
+        )}
       </div>
 
-      {/* === FLOATING MINI CART (placeholder count) === */}
-      <div className="fixed bottom-6 right-6 bg-white shadow-xl px-4 py-2.5 rounded-full border border-gray-200 flex items-center gap-2 text-xs sm:text-sm font-medium text-gray-800">
+      {/* Mini cart unchanged */}
+      <div className="fixed bottom-6 right-6 bg-white shadow-xl px-4 py-2.5 rounded-full border border-gray-200 flex items-center gap-2 text-xs font-medium text-gray-800">
         🛒 Cart
         <span className="bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
           0
         </span>
       </div>
-
-      {/* === LANGUAGE DROPDOWN (bottom) === */}
-      <div className="w-full max-w-md mx-auto px-4 pb-20">
-        <label className="block text-xs font-medium text-gray-500 mb-1">
-          🌐 {t("Language")}
-        </label>
-        <select
-          value={lang}
-          onChange={(e) => setLang(e.target.value)}
-          className="w-full px-4 py-3 rounded-2xl bg-white shadow-md border border-gray-300 text-gray-800 text-sm"
-        >
-          {LANGS.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* === INSTALL HELP MODAL === */}
-      {showHelp && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 text-center w-[85%] max-w-sm">
-            <h2 className="text-xl font-serif font-semibold mb-3 text-gray-900">
-              {t("Add to Home Screen")}
-            </h2>
-            <p className="text-gray-600 text-sm">
-              {platform === "ios"
-                ? "Tap the Share button (⬆️) > 'Add to Home Screen'"
-                : "From Chrome menu (⋮), choose 'Add to Home Screen'"}
-            </p>
-            <button
-              onClick={() => setShowHelp(false)}
-              className="mt-4 w-full py-2 rounded-xl bg-gray-900 text-white font-medium"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
+
 
 
 
@@ -2340,7 +2298,8 @@ const shareUrl = useMemo(() => {
   const t = useMemo(() => makeT(lang), [lang]);
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-const [platform, setPlatform] = useState(getPlatform());
+  const [platform, setPlatform] = useState(getPlatform());
+  const [brandName, setBrandName] = useState("");
 
   const [table, setTable] = useState(null);
   const [customerInfo, setCustomerInfo] = useState(null);
@@ -2356,6 +2315,20 @@ const [platform, setPlatform] = useState(getPlatform());
       return [];
     }
   });
+
+  // Load public customization to extract the brand title for header
+  useEffect(() => {
+    if (!restaurantIdentifier) return;
+    (async () => {
+      try {
+        const res = await secureFetch(`/public/qr-menu-customization/${encodeURIComponent(restaurantIdentifier)}`);
+        const c = res?.customization || {};
+        setBrandName(c.title || c.main_title || "");
+      } catch (err) {
+        // ignore, fallback handled in QrHeader
+      }
+    })();
+  }, [restaurantIdentifier]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [occupiedTables, setOccupiedTables] = useState([]);
@@ -2925,25 +2898,28 @@ payload = await res.json();
 if (!orderType)
   return (
     <>
-   <OrderTypeSelect
- onSelect={(type) => {
+<OrderTypeSelect
+   identifier={restaurantIdentifier}   // REQUIRED 🔥🔥🔥
+onSelect={(type) => {
   setOrderType(type);
+
   if (type === "online") {
     setShowDeliveryForm(true);
-  } else if (type === "takeaway") {
+  }
+  if (type === "takeaway") {
     setShowTakeawayForm(true);
   }
 }}
-
-  lang={lang}
-  setLang={setLang}
-  t={t}
-  onInstallClick={handleInstallClick}
-  canInstall={canInstall}
-  showHelp={showHelp}
-  setShowHelp={setShowHelp}
-  platform={platform}
+   lang={lang}
+   setLang={setLang}
+   t={t}
+   onInstallClick={handleInstallClick}   
+   canInstall={canInstall}
+   showHelp={showHelp}
+   setShowHelp={setShowHelp}
+   platform={platform}
 />
+
 
 
 
@@ -3411,6 +3387,7 @@ return (
       table={table}
       onClose={handleCloseOrderPage}
       t={t}
+      restaurantName={brandName}
     />
 
     <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
