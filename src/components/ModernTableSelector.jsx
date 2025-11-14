@@ -78,12 +78,16 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack }) {
                 Table {String(tbl.tableNumber).padStart(2, "0")}
               </span>
 
-              <span className="
-                px-3 py-1 rounded-full text-xs font-semibold 
-                bg-gray-900 text-white
-              ">
-                {tbl.label || "Standard"}
-              </span>
+              {(() => {
+                const lbl = (tbl.label ?? "").toString().trim();
+                return lbl && lbl.toLowerCase() !== "standard";
+              })() ? (
+                <span
+                  className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-900 text-white"
+                >
+                  {(tbl.label ?? "").toString().trim()}
+                </span>
+              ) : null}
             </div>
 
             {/* AREA LABEL */}

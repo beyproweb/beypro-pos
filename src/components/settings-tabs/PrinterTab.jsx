@@ -31,6 +31,23 @@ async function getPrintersSafe() {
   } catch (e) {
     console.error("getPrintersSafe error:", e);
   }
+
+  // Fallback: attempt local Windows spooler bridge (if installed and running)
+  try {
+    const res = await fetch("http://127.0.0.1:7777/win/printers", {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.ok && Array.isArray(data.printers)) {
+        return data.printers.map((name) => ({ name, isDefault: false }));
+      }
+    }
+  } catch (err) {
+    // ignore — bridge likely not running
+  }
+
   // Browser fallback (no listing possible)
   return [];
 }
@@ -281,9 +298,9 @@ async function handleTestPrint() {
   try {
     // Minimal, reliable ESC/POS: ESC @ (init) + text + feed + full cut
     const enc = new TextEncoder();
-    const init = Uint8Array.from([0x1B, 0x40]);           // ESC @
+    const init = Uint8Array.from([0x1b, 0x40]); // ESC @
     const body = enc.encode("Beypro Test\nMerhaba Yazıcı!\n\n\n");
-    const cut  = Uint8Array.from([0x1D, 0x56, 0x00]);      // GS V 0 (full cut)
+    const cut = Uint8Array.from([0x1d, 0x56, 0x00]); // GS V 0 (full cut)
 
     const bytes = new Uint8Array(init.length + body.length + cut.length);
     bytes.set(init, 0);
@@ -291,14 +308,38 @@ async function handleTestPrint() {
     bytes.set(cut, init.length + body.length);
     console.debug("🧾 handleTestPrint sending", { printerName: selected, bytes: bytes.length });
 
-    const dataBase64 = btoa(String.fromCharCode(...bytes));
-await window.beypro.printWindows({
-  printerName: selected,
-  dataBase64
-});
-    console.debug("🧾 handleTestPrint done");
-    setStatus("ok");
-    setMessage("RAW test print sent successfully.");
+    // 1) Try Electron RAW path if available
+    try {
+      await printRawSafe({ data: bytes, printerName: selected });
+      console.debug("🧾 RAW test via preload ok");
+      setStatus("ok");
+      setMessage("RAW test print sent successfully.");
+      return;
+    } catch (e1) {
+      console.warn("printRawSafe failed, trying local bridge…", e1);
+    }
+
+    // 2) Fallback to local Windows spooler bridge
+    try {
+      const dataBase64 = btoa(String.fromCharCode(...bytes));
+      const res = await fetch("http://127.0.0.1:7777/win/print-raw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ printerName: selected, dataBase64 }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || `HTTP ${res.status}`);
+      }
+      console.debug("🧾 RAW test via local bridge ok");
+      setStatus("ok");
+      setMessage("RAW test print sent successfully (bridge).");
+      return;
+    } catch (e2) {
+      console.warn("Local bridge print failed:", e2);
+    }
+
+    throw new Error("No available print bridge (Electron/local) detected.");
   } catch (err) {
     setStatus("error");
     setMessage(`Print failed: ${err?.message || err}`);

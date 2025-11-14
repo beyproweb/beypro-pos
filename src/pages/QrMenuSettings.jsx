@@ -19,6 +19,13 @@ export default function QrMenuSettings() {
   tagline: "",
   phone: "",
   primary_color: "#4F46E5",
+  // New customization defaults
+  enable_popular: true,
+  qr_theme: "auto", // auto | light | dark
+  loyalty_enabled: false,
+  loyalty_goal: 10,
+  loyalty_reward_text: "Free Menu Item",
+  loyalty_color: "#F59E0B",
   hero_slides: [],
   story_title: "",
   story_text: "",
@@ -63,6 +70,8 @@ async function uploadHeroImage(e, index) {
   }
 }
 
+
+
 async function uploadStoryImage(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -93,6 +102,8 @@ function addReview() {
   }));
 }
 
+
+
 async function saveAllCustomization() {
   try {
     await secureFetch("/settings/qr-menu-customization", {
@@ -107,33 +118,46 @@ async function saveAllCustomization() {
 
   // ✅ Load products and short QR link
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const prodData = await secureFetch("/products");
-        setProducts(Array.isArray(prodData) ? prodData : prodData?.data || []);
+  const loadData = async () => {
+    try {
+      // 1) Load products
+      const prodData = await secureFetch("/products");
+      setProducts(Array.isArray(prodData) ? prodData : prodData?.data || []);
 
-        const disData = await secureFetch("/settings/qr-menu-disabled");
-        if (Array.isArray(disData)) setDisabledIds(disData);
-        else if (typeof disData === "object" && disData?.disabled) setDisabledIds(disData.disabled);
+      // 2) Load disabled products
+      const disData = await secureFetch("/settings/qr-menu-disabled");
+      if (Array.isArray(disData)) setDisabledIds(disData);
+      else if (typeof disData === "object" && disData?.disabled)
+        setDisabledIds(disData.disabled);
 
-        // ✅ fetch short QR link (no JWT)
-        setLoadingLink(true);
-        const token = localStorage.getItem("token");
-const linkRes = await secureFetch("/settings/qr-link", {
-  headers: { Authorization: `Bearer ${token}` },
-});
-
-        if (linkRes?.success && linkRes.link) setQrUrl(linkRes.link);
-        else toast.error(t("Failed to generate QR link"));
-      } catch (err) {
-        console.error("❌ Failed to load QR settings:", err);
-        toast.error(t("Failed to load QR menu data"));
-      } finally {
-        setLoadingLink(false);
+      // ✅ 3) LOAD QR MENU CUSTOMIZATION (THE FIX)
+      const customRes = await secureFetch("/settings/qr-menu-customization");
+      if (customRes?.success && customRes.customization) {
+        setSettings((prev) => ({
+          ...prev,
+          ...customRes.customization,
+        }));
       }
-    };
-    loadData();
-  }, [t]);
+
+      // 4) Load short QR link
+      setLoadingLink(true);
+      const token = localStorage.getItem("token");
+      const linkRes = await secureFetch("/settings/qr-link", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (linkRes?.success && linkRes.link) setQrUrl(linkRes.link);
+
+    } catch (err) {
+      console.error("❌ Failed to load QR settings:", err);
+      toast.error(t("Failed to load QR menu data"));
+    } finally {
+      setLoadingLink(false);
+    }
+  };
+
+  loadData();
+}, [t]);
+
 
   const toggleDisable = async (productId) => {
     const updated = disabledIds.includes(productId)
@@ -419,6 +443,78 @@ const linkRes = await secureFetch("/settings/qr-link", {
           >
             ➕ {t("Add Slide")}
           </button>
+        </div>
+
+        {/* POPULAR + THEME */}
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-2xl border">
+            <label className="font-semibold block mb-2">Popular This Week</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={!!settings.enable_popular}
+                onChange={(e) => updateField("enable_popular", e.target.checked)}
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-300">Automatically shows trending products based on orders.</span>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-2xl border">
+            <label className="font-semibold block mb-2">Theme</label>
+            <select
+              value={settings.qr_theme || "auto"}
+              onChange={(e) => updateField("qr_theme", e.target.value)}
+              className="w-full p-3 rounded-xl border bg-white dark:bg-zinc-900"
+            >
+              <option value="auto">Auto</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+        </div>
+
+        {/* LOYALTY PROGRAM */}
+        <div className="mt-10 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+          <h3 className="text-xl font-bold mb-3 text-indigo-600">Loyalty Program</h3>
+          <div className="flex items-center gap-3 mb-4">
+            <input
+              id="loyalty_enabled"
+              type="checkbox"
+              checked={!!settings.loyalty_enabled}
+              onChange={(e) => updateField("loyalty_enabled", e.target.checked)}
+            />
+            <label htmlFor="loyalty_enabled" className="font-medium">Enable Loyalty</label>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="font-semibold">Stamps needed</label>
+              <input
+                type="number"
+                min="1"
+                value={settings.loyalty_goal || 10}
+                onChange={(e) => updateField("loyalty_goal", Number(e.target.value))}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="font-semibold">Reward Description</label>
+              <input
+                type="text"
+                value={settings.loyalty_reward_text || ""}
+                onChange={(e) => updateField("loyalty_reward_text", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="font-semibold">Loyalty Card Color</label>
+              <input
+                type="color"
+                value={settings.loyalty_color || "#F59E0B"}
+                onChange={(e) => updateField("loyalty_color", e.target.value)}
+                className="w-20 h-12 p-1 rounded-xl border"
+              />
+            </div>
+          </div>
         </div>
 
         {/* STORY */}

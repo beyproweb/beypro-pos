@@ -6,6 +6,8 @@ import ModernTableSelector from "../components/ModernTableSelector";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import secureFetch from "../utils/secureFetch";
+import { UtensilsCrossed, Soup, Bike, Phone, Share2 } from "lucide-react";
+import { Instagram, Music2, Globe } from "lucide-react";
 
 const RAW_API = import.meta.env.VITE_API_URL || "";
 const API_ROOT = RAW_API.replace(/\/+$/, "");
@@ -316,6 +318,33 @@ const DICT = {
     "Use a new card": "Use a new card",
     "Saved card": "Saved card",
     "Please select a payment method before continuing.": "Please select a payment method before continuing.",
+    // Missing keys added for QR menu flow
+    "Take Away": "Take Away",
+    "Take Away Information": "Take Away Information",
+    "Call Us": "Call Us",
+    Share: "Share",
+    "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)": "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)",
+    "Pickup Time": "Pickup Time",
+    "Notes (optional)": "Notes (optional)",
+    "Delivery Information": "Delivery Information",
+    "Payment Method": "Payment Method",
+    "Saved Card": "Saved Card",
+    "Use Saved": "Use Saved",
+    "Use New": "Use New",
+    "Saving...": "Saving...",
+    Saved: "Saved",
+    "Save for next time": "Save for next time",
+    "No products available.": "No products available.",
+    "Previously ordered": "Previously ordered",
+    Locked: "Locked",
+    "New items": "New items",
+    "No new items yet.": "No new items yet.",
+    Payment: "Payment",
+    "Pay Online Now": "Pay Online Now",
+    "Card at Table": "Card at Table",
+    "Cash at Table": "Cash at Table",
+    "Clear New Items": "Clear New Items",
+    "Link copied.": "Link copied.",
     // ✅ Added translations
     "Share QR Menu": "Share QR Menu",
     "Save QR Menu to Phone": "Save QR Menu to Phone",
@@ -381,6 +410,33 @@ const DICT = {
     "Use a new card": "Yeni kart kullan",
     "Saved card": "Kayıtlı kart",
     "Please select a payment method before continuing.": "Lütfen devam etmeden önce bir ödeme yöntemi seçin.",
+    // Missing keys added for QR menu flow
+    "Take Away": "Gel Al",
+    "Take Away Information": "Gel Al Bilgileri",
+    "Call Us": "Bizi Ara",
+    Share: "Paylaş",
+    "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)": "Telefon (🇹🇷 5XXXXXXXXX veya 🇲🇺 7/8XXXXXXX)",
+    "Pickup Time": "Alış Zamanı",
+    "Notes (optional)": "Notlar (opsiyonel)",
+    "Delivery Information": "Teslimat Bilgileri",
+    "Payment Method": "Ödeme Yöntemi",
+    "Saved Card": "Kayıtlı Kart",
+    "Use Saved": "Kayıtlıyı Kullan",
+    "Use New": "Yeni Kullan",
+    "Saving...": "Kaydediliyor...",
+    Saved: "Kaydedildi",
+    "Save for next time": "Sonraki için kaydet",
+    "No products available.": "Ürün yok.",
+    "Previously ordered": "Önceden sipariş edildi",
+    Locked: "Kilitli",
+    "New items": "Yeni ürünler",
+    "No new items yet.": "Henüz yeni ürün yok.",
+    Payment: "Ödeme",
+    "Pay Online Now": "Şimdi Online Öde",
+    "Card at Table": "Masada Kart",
+    "Cash at Table": "Masada Nakit",
+    "Clear New Items": "Yeni Ürünleri Temizle",
+    "Link copied.": "Bağlantı kopyalandı.",
     // ✅ Added translations
     "Share QR Menu": "QR Menüyü Paylaş",
     "Save QR Menu to Phone": "QR Menüyü Telefona Kaydet",
@@ -415,9 +471,32 @@ const LANGS = [
 ];
 
 
+/* ====================== LANGUAGE SWITCHER ====================== */
+function LanguageSwitcher({ lang, setLang, t }) {
+  return (
+    <div className="flex items-center gap-2">
+      <label className="hidden sm:block text-[11px] uppercase tracking-[0.15em] text-gray-500">
+        {t("Language")}
+      </label>
+      <select
+        value={lang}
+        onChange={(e) => setLang(e.target.value)}
+        className="appearance-none rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 shadow-sm hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300"
+        aria-label={t("Language")}
+      >
+        {LANGS.map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 
 /* ====================== HEADER ====================== */
-function QrHeader({ orderType, table, onClose, t, restaurantName }) {
+function QrHeader({ orderType, table, onClose, t, restaurantName, lang, setLang }) {
   return (
     <header className="w-full sticky top-0 z-50 flex items-center justify-between bg-white/80 backdrop-blur-md border-b border-gray-200 px-6 py-4 shadow-sm">
       <span className="text-3xl font-serif font-bold text-gray-900 tracking-tight">
@@ -430,13 +509,16 @@ function QrHeader({ orderType, table, onClose, t, restaurantName }) {
             : t("Table Order (short)")
           : t("Online Order")}
       </span>
-      <button
-        onClick={onClose}
-        aria-label={t("Close")}
-        className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 transition-all"
-      >
-        ×
-      </button>
+      <div className="flex items-center gap-2">
+        <LanguageSwitcher lang={lang} setLang={setLang} t={t} />
+        <button
+          onClick={onClose}
+          aria-label={t("Close")}
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 transition-all"
+        >
+          ×
+        </button>
+      </div>
     </header>
   );
 }
@@ -497,6 +579,23 @@ async function load() {
   const phoneNumber = c.phone || "";
   const accent = c.branding_color || c.primary_color || "#4F46E5";
   const logoUrl = c.logo || "/logo192.png";
+  const themeMode = (c.qr_theme || "auto").toLowerCase();
+  const [isDark, setIsDark] = React.useState(() =>
+    themeMode === "dark" || (themeMode === "auto" && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  );
+  React.useEffect(() => {
+    if (themeMode === "auto") {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const handler = () => setIsDark(mq.matches);
+      handler();
+      mq.addEventListener ? mq.addEventListener('change', handler) : mq.addListener(handler);
+      return () => {
+        mq.removeEventListener ? mq.removeEventListener('change', handler) : mq.removeListener(handler);
+      };
+    } else {
+      setIsDark(themeMode === "dark");
+    }
+  }, [themeMode]);
 
 
   const storyTitle = c.story_title || "Our Story";
@@ -504,6 +603,81 @@ async function load() {
   const storyImage = c.story_image || "";
 
   const reviews = Array.isArray(c.reviews) ? c.reviews : [];
+
+  // ===== Popular This Week (optional) =====
+  const [popularProducts, setPopularProducts] = React.useState([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    async function loadPopular() {
+      try {
+        if (!identifier || !c.enable_popular) return;
+        const [prodRes, popRes] = await Promise.all([
+          fetch(`${API_URL}/public/products/${encodeURIComponent(identifier)}`),
+          fetch(`${API_URL}/public/popular/${encodeURIComponent(identifier)}`),
+        ]);
+        if (!prodRes.ok || !popRes.ok) return;
+        const all = await prodRes.json();
+        const pop = await popRes.json();
+        const ids = Array.isArray(pop?.product_ids) ? pop.product_ids : [];
+        if (ids.length === 0) return setPopularProducts([]);
+        const idIndex = new Map(ids.map((id, i) => [Number(id), i]));
+        const merged = (Array.isArray(all) ? all : []).filter(p => idIndex.has(Number(p.id)));
+        merged.sort((a,b) => idIndex.get(Number(a.id)) - idIndex.get(Number(b.id)));
+        if (!cancelled) setPopularProducts(merged);
+      } catch (e) {
+        if (!cancelled) setPopularProducts([]);
+      }
+    }
+    loadPopular();
+    return () => { cancelled = true; };
+  }, [identifier, c.enable_popular]);
+
+  // ===== Loyalty (optional) =====
+  const [deviceId, setDeviceId] = React.useState(() => {
+    try {
+      const existing = storage.getItem("qr_device_id");
+      if (existing) return existing;
+      const id = makeToken();
+      storage.setItem("qr_device_id", id);
+      return id;
+    } catch {
+      return makeToken();
+    }
+  });
+  const [loyalty, setLoyalty] = React.useState({ enabled: false, points: 0, goal: 10, reward_text: "", color: "#F59E0B" });
+  React.useEffect(() => {
+    let cancelled = false;
+    async function loadLoyalty() {
+      try {
+        if (!identifier || !c.loyalty_enabled) return;
+        const url = `${API_URL}/public/loyalty/${encodeURIComponent(identifier)}?fp=${encodeURIComponent(deviceId)}`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setLoyalty({
+          enabled: !!data.enabled,
+          points: Number(data.points || 0),
+          goal: Number(data.goal || 10),
+          reward_text: data.reward_text || "",
+          color: data.color || "#F59E0B",
+        });
+      } catch {}
+    }
+    loadLoyalty();
+    return () => { cancelled = true; };
+  }, [identifier, c.loyalty_enabled, deviceId]);
+  const handleStamp = async () => {
+    try {
+      const res = await fetch(`${API_URL}/public/loyalty/${encodeURIComponent(identifier)}/add`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fingerprint: deviceId, points: 1 })
+      });
+      const data = await res.json();
+      if (res.ok && typeof data.points !== 'undefined') {
+        setLoyalty((s) => ({ ...s, points: Number(data.points) }));
+      }
+    } catch {}
+  };
 
   const slides =
     Array.isArray(c.hero_slides) && c.hero_slides.length > 0
@@ -580,113 +754,178 @@ async function load() {
      4) Render the UI (same structure, now dynamic)
      ============================================================ */
 
-  return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-[#f5f5f7] via-white to-[#f3f4f6] text-gray-900 relative overflow-x-hidden">
+return (
+  <div className={`${isDark ? 'dark' : ''}`}>
+  <div className="min-h-screen w-full bg-gradient-to-b from-white via-[#fafafa] to-[#f5f5f7] text-gray-900 dark:from-neutral-900 dark:via-neutral-900 dark:to-black dark:text-neutral-100 relative overflow-x-hidden">
 
-      {/* === HERO BACKGROUND === */}
-      <div
-        className="absolute inset-x-0 top-0 h-[340px] sm:h-[380px] -z-10 transition-all duration-700"
-        style={{
-          backgroundImage: `url(${slides[currentSlide].src})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          transform: `translateY(${scrollY * 0.15}px)`,
-          filter: "brightness(0.75)",
-        }}
-      />
+    {/* === HERO BACKGROUND === */}
+    <div
+      className="absolute inset-x-0 top-0 h-[420px] sm:h-[480px] -z-10 transition-all duration-700"
+      style={{
+        backgroundImage: `url(${slides[currentSlide].src})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        transform: `translateY(${scrollY * 0.15}px)`,
+        filter: "brightness(0.6)",
+      }}
+    />
+    <div className="absolute inset-x-0 top-0 h-[420px] sm:h-[480px] -z-10 bg-gradient-to-b from-white/70 via-white/80 to-white" />
 
-      <div className="absolute inset-x-0 top-0 h-[340px] sm:h-[380px] -z-10 bg-gradient-to-b from-white/10 via-white/40 to-[#f5f5f7]" />
-
-      {/* === TOP BAR === */}
-      <header className="max-w-6xl mx-auto px-4 pt-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <img
-            src={logoUrl}
-            alt="Logo"
-            className="w-9 h-9 rounded-2xl shadow-sm bg-white object-cover"
-          />
-          <span className="text-sm font-semibold tracking-tight text-gray-800">
-            {restaurantName}
-          </span>
+    {/* === TOP BAR === */}
+    <header className="max-w-6xl mx-auto px-4 pt-5 flex items-center justify-between gap-3">
+      {/* Mini brand */}
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-xs font-serif">
+          ✦
         </div>
-
-        {/* Tiny dot navigation */}
-        <nav className="hidden sm:flex items-center gap-4 text-xs font-medium text-gray-500">
-          <button onClick={() => scrollToId("order-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
-            <span className="w-1.5 h-1.5 rounded-full bg-gray-900" />
-            <span>Order</span>
-          </button>
-          <button onClick={() => scrollToId("story-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
-            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-            <span>Story</span>
-          </button>
-          <button onClick={() => scrollToId("reviews-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
-            <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-            <span>Reviews</span>
-          </button>
-        </nav>
-      </header>
-
-      {/* === MAIN HERO SECTION === */}
-      <section id="order-section" className="max-w-6xl mx-auto px-4 pt-6 pb-10 flex flex-col lg:flex-row items-center gap-8">
-
-        {/* LEFT */}
-        <div className="flex-1 max-w-xl">
-          <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 border border-white/70 shadow-sm text-xs font-medium text-gray-600">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            {isOpen ? "Open now • Order anytime" : "Closed • See you soon"}
+        <div className="leading-tight">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
+            Signature Dining
           </p>
-
-          <h1 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-serif font-bold leading-tight tracking-tight text-gray-900">
+          <p className="text-sm font-medium text-gray-900 line-clamp-1">
             {restaurantName}
-          </h1>
+          </p>
+        </div>
+      </div>
 
-          <p className="mt-2 text-lg font-light text-gray-600">{subtitle}</p>
+      {/* Dot nav */}
+      <nav className="hidden sm:flex items-center gap-5 text-xs font-medium text-gray-600">
+        <button onClick={() => scrollToId("order-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
+          <span className="w-1.5 h-1.5 rounded-full bg-gray-900" />
+          Order
+        </button>
+        <button onClick={() => scrollToId("story-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
+          <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+          Story
+        </button>
+        <button onClick={() => scrollToId("reviews-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
+          <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+          Reviews
+        </button>
+      </nav>
 
-          <p className="mt-3 text-sm sm:text-base text-gray-600">{tagline}</p>
+      {/* Language Switcher */}
+      <div className="shrink-0">
+        <LanguageSwitcher lang={lang} setLang={setLang} t={t} />
+      </div>
+    </header>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
-              ⏱️ Delivery: {deliveryTime}
-            </span>
-            <span className="px-3 py-1 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-100">
-              🛍️ Pickup: {pickupTime}
-            </span>
+    {/* === HERO SECTION === */}
+    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-10 pb-24 space-y-10">
+
+      {/* TITLE & TAGLINE */}
+      <div className="max-w-3xl">
+        <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 border border-gray-200 shadow-sm text-[11px] font-medium text-gray-700">
+          <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
+          {isOpen ? "Open now • Order anytime" : "Currently closed"}
+        </p>
+
+        <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-tight tracking-tight text-gray-900">
+          {restaurantName}
+        </h1>
+
+        <p className="mt-3 text-lg font-light text-gray-600">{subtitle}</p>
+        <p className="mt-3 text-base text-gray-500 max-w-xl">{tagline}</p>
+
+        {/* ORDER TYPE BUTTONS — moved under main title for mobile-first */}
+        <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl">
+          <button
+            onClick={() => onSelect("takeaway")}
+            className="py-5 rounded-2xl bg-gray-900 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
+          >
+            <UtensilsCrossed className="w-6 h-6" />
+            <span className="text-xs font-semibold tracking-wide">{t("Take Away")}</span>
+          </button>
+          <button
+            onClick={() => onSelect("table")}
+            className="py-5 rounded-2xl bg-gray-800 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
+          >
+            <Soup className="w-6 h-6" />
+            <span className="text-xs font-semibold tracking-wide">{t("Table Order")}</span>
+          </button>
+          <button
+            onClick={() => onSelect("online")}
+            className="py-5 rounded-2xl bg-red-600 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
+          >
+            <Bike className="w-6 h-6" />
+            <span className="text-xs font-semibold tracking-wide">{t("Delivery")}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* LOYALTY CARD (optional) */}
+      {loyalty.enabled && (
+        <div className="mt-2 rounded-3xl border border-amber-200/70 dark:border-amber-800/50 bg-white/80 dark:bg-amber-950/20 p-5 shadow-sm max-w-3xl">
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-semibold">⭐ Loyalty Card</div>
+            <button
+              onClick={handleStamp}
+              style={{ backgroundColor: loyalty.color }}
+              className="px-4 py-2 rounded-full text-white font-semibold shadow hover:opacity-90 transition"
+            >Stamp my card</button>
+          </div>
+          <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">Reward: {loyalty.reward_text || 'Free Menu Item'}</div>
+          <div className="mt-3 flex items-center gap-1">
+            {Array.from({ length: loyalty.goal || 10 }).map((_, i) => {
+              const filled = i < Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10);
+              return (
+                <span key={i}
+                  className={`w-5 h-5 rounded-full border ${filled ? 'bg-amber-500 border-amber-600' : 'bg-transparent border-amber-400'} inline-block`}
+                />
+              );
+            })}
+            <span className="ml-2 text-sm text-gray-500">({Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10)}/{loyalty.goal})</span>
+          </div>
+        </div>
+      )}
+
+      {/* FEATURED CARD + BUTTON GRID (now single-column; featured moved below Popular) */}
+      <div className="grid grid-cols-1 gap-8 items-stretch">
+
+        {/* LEFT — DELIVERY / PICKUP / CTA */}
+        <div className="space-y-5">
+
+          {/* INFO BOXES */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="rounded-2xl bg-white border border-gray-200 px-3 py-3 shadow-sm">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400">Delivery</p>
+              <p className="mt-1 text-sm font-semibold text-emerald-600">⏱️ {deliveryTime}</p>
+              <p className="mt-1 text-[11px] text-gray-500">Fast doorstep service</p>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-gray-200 px-3 py-3 shadow-sm">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400">Pickup</p>
+              <p className="mt-1 text-sm font-semibold text-sky-600">🛍️ {pickupTime}</p>
+              <p className="mt-1 text-[11px] text-gray-500">Ready on arrival</p>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-gray-200 px-3 py-3 shadow-sm">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-gray-400">Rating</p>
+              <p className="mt-1 text-sm font-semibold text-amber-600">★★★★★</p>
+              <p className="mt-1 text-[11px] text-gray-500">Guest favorites</p>
+            </div>
           </div>
 
-          {/* ORDER BUTTONS */}
-          <div className="mt-6 space-y-3">
-            <button
-              onClick={() => onSelect("table")}
-              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg transition text-base font-semibold text-gray-800"
-            >
-              🍽️ {t("Table Order")}
-            </button>
+          {/* ORDER BUTTONS moved under main title (removed here for cleaner mobile layout) */}
 
-            <button
-              onClick={() => onSelect("takeaway")}
-              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg transition text-base font-semibold text-gray-800"
-            >
-              🥡 {t("Take Away")}
-            </button>
+          {/* Popular This Week — turned into a simple carousel */}
+          {c.enable_popular && popularProducts.length > 0 && (
+            <PopularCarousel title="⭐ Popular This Week" items={popularProducts} />
+          )}
 
-            <button
-              onClick={() => onSelect("online")}
-              className="w-full py-4 rounded-2xl bg-white shadow-md border border-gray-200 hover:shadow-lg transition text-base font-semibold text-gray-800"
-            >
-              🛵 {t("Delivery")}
-            </button>
-          </div>
+          {/* Featured card moved below Popular */}
+          <FeaturedCard slides={slides} currentSlide={currentSlide} setCurrentSlide={setCurrentSlide} />
 
           {/* CALL + SHARE */}
-          <div className="mt-5 flex flex-col sm:flex-row gap-3">
+          <div className="mt-5 flex flex-col sm:flex-row gap-4">
             {phoneNumber && (
               <a
                 href={`tel:${phoneNumber}`}
-                className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-white font-semibold shadow-md"
+                className="flex-1 py-4 rounded-2xl bg-black text-white font-semibold shadow-md flex items-center justify-center gap-2 hover:shadow-lg hover:-translate-y-1 transition-all"
                 style={{ backgroundColor: accent }}
               >
-                📞 Call the restaurant
+                <Phone className="w-5 h-5" />
+                {t("Call Us")}
               </a>
             )}
 
@@ -700,155 +939,138 @@ async function load() {
                   });
                 } else {
                   navigator.clipboard.writeText(window.location.href);
-                  alert("Link copied.");
+                  alert(t("Link copied."));
                 }
               }}
-              className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl bg-white/80 border border-gray-200 text-xs sm:text-sm font-medium text-gray-700 shadow-sm hover:bg-white transition"
+              className="flex-1 py-4 rounded-2xl bg-white border border-gray-300 text-gray-900 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 hover:-translate-y-1 transition-all"
             >
-              🔗 {t("Share QR Menu")}
+              <Share2 className="w-5 h-5" />
+              {t("Share")}
             </button>
           </div>
         </div>
 
-        {/* RIGHT PREVIEW PHONE */}
-        <div className="flex-1 flex justify-center">
-          <div
-            className="relative w-[260px] h-[520px] sm:w-[280px] sm:h-[540px] rounded-[2.5rem] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] border border-gray-200 overflow-hidden"
-            style={{ transform: `translateY(${scrollY * 0.08}px)` }}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-24 h-5 bg-gray-900/90 rounded-full opacity-80" />
+        {/* Featured card moved above; right column removed */}
+      </div>
+    </section>
 
-            <div className="mt-8 w-full h-[60%] overflow-hidden">
-              <img
-                src={slides[currentSlide].src}
-                alt={slides[currentSlide].title}
-                className="w-full h-full object-cover transition-transform duration-700 ease-out"
-              />
-            </div>
-
-            <div className="px-4 pt-3">
-              <p className="text-xs uppercase tracking-wide text-gray-400">
-                Featured
-              </p>
-              <h3 className="text-lg font-semibold text-gray-900 mt-1">
-                {slides[currentSlide].title}
-              </h3>
-              <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                {slides[currentSlide].subtitle}
-              </p>
-            </div>
-
-            <div className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-1.5">
-              {slides.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setCurrentSlide(i)}
-                  className={`transition-all ${
-                    i === currentSlide
-                      ? "w-5 h-1.5 bg-gray-900 rounded-full"
-                      : "w-1.5 h-1.5 bg-gray-300 rounded-full"
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* === STORY SECTION === */}
-      <section id="story-section" className="max-w-5xl mx-auto px-4 pt-4 pb-10 flex flex-col md:flex-row items-start gap-8">
-
-        <div className="flex-1">
-          <h2 className="text-2xl font-serif font-bold text-gray-900 mb-3">
+    {/* === STORY SECTION (B: TEXT LEFT — IMAGE RIGHT) === */}
+    <section id="story-section" className="max-w-6xl mx-auto px-4 pt-4 pb-14">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
+        
+        {/* TEXT LEFT */}
+        <div>
+          <h2 className="text-3xl font-serif font-bold text-gray-900 mb-3">
             {storyTitle}
           </h2>
-          <p className="text-sm sm:text-base text-gray-600 leading-relaxed whitespace-pre-line">
+          <p className="text-base text-gray-600 leading-relaxed whitespace-pre-line">
             {storyText}
           </p>
         </div>
 
+        {/* IMAGE RIGHT */}
         {storyImage && (
-          <div className="flex-1 flex justify-center">
+          <div className="flex justify-center">
             <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-lg border border-gray-200 bg-white">
               <img
                 src={storyImage}
                 alt={storyTitle}
-                className="w-full h-40 object-cover"
+                className="w-full h-48 object-cover"
               />
             </div>
           </div>
         )}
-      </section>
+      </div>
+    </section>
 
-      {/* === REVIEWS === */}
-      <section id="reviews-section" className="max-w-5xl mx-auto px-4 pt-2 pb-16">
-        <h2 className="text-2xl font-serif font-bold text-gray-900 mb-4">
-          What our guests say
-        </h2>
+    {/* === REVIEWS === */}
+    <section id="reviews-section" className="max-w-6xl mx-auto px-4 pt-2 pb-16">
+      <h2 className="text-3xl font-serif font-bold text-gray-900 mb-4">
+        What our guests say
+      </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {reviews.length === 0 && (
-            <p className="text-gray-500 text-sm">No reviews yet.</p>
-          )}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {reviews.length === 0 && (
+          <p className="text-gray-500 text-sm">No reviews yet.</p>
+        )}
 
-          {reviews.map((r, idx) => (
-            <div key={idx} className="rounded-2xl bg-white shadow-sm border border-gray-200 p-4 flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
-                  {(r.name || "?")[0]}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {r.name}
-                  </p>
-                  <p className="text-xs text-amber-500">★★★★★</p>
-                </div>
+        {reviews.map((r, idx) => (
+          <div
+            key={idx}
+            className="rounded-2xl bg-white shadow-md border border-gray-200 p-4 flex flex-col gap-2"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
+                {(r.name || "?")[0]}
               </div>
-              <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                {r.text}
-              </p>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{r.name}</p>
+                <p className="text-xs text-amber-500">★★★★★</p>
+              </div>
             </div>
-          ))}
-        </div>
-      </section>
-
-      {/* === SOCIAL LINKS === */}
-      <div className="flex items-center justify-center gap-6 pb-6">
-
-        {c.social_instagram && (
-          <a
-            href={c.social_instagram}
-            target="_blank"
-            rel="noreferrer"
-            className="w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center"
-          >
-            <span className="text-lg">📸</span>
-          </a>
-        )}
-
-        {c.social_tiktok && (
-          <a
-            href={c.social_tiktok}
-            target="_blank"
-            rel="noreferrer"
-            className="w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center"
-          >
-            <span className="text-lg">🎵</span>
-          </a>
-        )}
+            <p className="text-sm text-gray-600 mt-1">{r.text}</p>
+          </div>
+        ))}
       </div>
+    </section>
 
-      {/* Mini cart unchanged */}
-      <div className="fixed bottom-6 right-6 bg-white shadow-xl px-4 py-2.5 rounded-full border border-gray-200 flex items-center gap-2 text-xs font-medium text-gray-800">
-        🛒 Cart
-        <span className="bg-rose-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
-          0
-        </span>
-      </div>
+    {/* === SOCIAL ICONS === */}
+    <div className="flex items-center justify-center gap-6 pb-10">
+      {c.social_instagram && (
+        <a
+          href={c.social_instagram}
+          target="_blank"
+          rel="noreferrer"
+          className="w-10 h-10 rounded-full bg-white shadow-md border border-gray-200 
+                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+                     transition-all"
+        >
+          <Instagram className="w-5 h-5 text-gray-700" />
+        </a>
+      )}
+
+      {c.social_tiktok && (
+        <a
+          href={c.social_tiktok}
+          target="_blank"
+          rel="noreferrer"
+          className="w-10 h-10 rounded-full bg-white shadow-md border border-gray-200 
+                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+                     transition-all"
+        >
+          <Music2 className="w-5 h-5 text-gray-700" />
+        </a>
+      )}
+
+      {c.social_website && (
+        <a
+          href={c.social_website}
+          target="_blank"
+          rel="noreferrer"
+          className="w-10 h-10 rounded-full bg-white shadow-md border border-gray-200 
+                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+                     transition-all"
+        >
+          <Globe className="w-5 h-5 text-gray-700" />
+        </a>
+      )}
     </div>
+
+    {/* === MINI CART (unchanged logic) === */}
+    <div className="fixed bottom-6 right-6 bg-white shadow-xl px-4 py-2.5 rounded-full border border-gray-200 flex items-center gap-2 text-xs font-medium text-gray-800">
+      🛒 Cart
+      <span className="bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
+        0
+      </span>
+    </div>
+  </div>
+  </div>
   );
+
+
+
+
+
 }
 
 
@@ -967,7 +1189,7 @@ className="w-full py-3 rounded-full bg-yellow-100 text-yellow-800
 
 
 >
-  Skip
+  Fast Order
 </button>
 
         </form>
@@ -1460,6 +1682,132 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
         </div>
       </div>
     </nav>
+  );
+}
+
+
+/* ====================== POPULAR CAROUSEL ====================== */
+function PopularCarousel({ title, items }) {
+  const scrollRef = React.useRef(null);
+  const [canLeft, setCanLeft] = React.useState(false);
+  const [canRight, setCanRight] = React.useState(false);
+
+  const check = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanLeft(el.scrollLeft > 10);
+    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 10);
+  }, []);
+
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    return () => {
+      el.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
+  }, [check]);
+
+  const scrollBy = (amount) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: amount, behavior: "smooth" });
+  };
+
+  return (
+    <div className="mt-6">
+      <h3 className="text-base font-semibold mb-2">{title}</h3>
+      <div className="relative">
+        {canLeft && (
+          <button
+            onClick={() => scrollBy(-260)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white/90 border border-neutral-200 shadow-sm hover:shadow-md"
+            aria-label="Prev"
+          >
+            <ChevronLeft className="w-5 h-5 text-neutral-700" />
+          </button>
+        )}
+        {canRight && (
+          <button
+            onClick={() => scrollBy(260)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white/90 border border-neutral-200 shadow-sm hover:shadow-md"
+            aria-label="Next"
+          >
+            <ChevronRight className="w-5 h-5 text-neutral-700" />
+          </button>
+        )}
+        <div
+          ref={scrollRef}
+          className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth scrollbar-none"
+        >
+          {items.map((p) => (
+            <div
+              key={p.id}
+              className="min-w-[180px] sm:min-w-[200px] bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-2xl shadow-sm snap-start"
+            >
+              <div className="w-full h-28 overflow-hidden rounded-t-2xl bg-gray-100 dark:bg-neutral-800">
+                {p.image ? (
+                  <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400">No Image</div>
+                )}
+              </div>
+              <div className="p-3">
+                <div className="text-sm font-semibold line-clamp-1">{p.name}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">₺{Number(p.price).toFixed(2)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ====================== FEATURED CARD (Moved below Popular) ====================== */
+function FeaturedCard({ slides, currentSlide, setCurrentSlide }) {
+  if (!Array.isArray(slides) || slides.length === 0) return null;
+  return (
+    <div className="flex items-stretch">
+      <div className="w-full rounded-3xl overflow-hidden border border-gray-200 bg-white shadow-lg">
+        <div className="w-full h-64 sm:h-72 overflow-hidden">
+          <img
+            src={slides[currentSlide].src}
+            alt={slides[currentSlide].title}
+            className="w-full h-full object-cover transition-all duration-700 ease-out"
+          />
+        </div>
+
+        <div className="px-5 py-4">
+          <p className="text-[10px] uppercase tracking-[0.22em] text-gray-500">Featured</p>
+          <h3 className="text-lg font-semibold text-gray-900 mt-1">
+            {slides[currentSlide].title}
+          </h3>
+          <p className="text-sm text-gray-500 mt-1 line-clamp-2">
+            {slides[currentSlide].subtitle}
+          </p>
+        </div>
+
+        <div className="pb-4 flex items-center justify-center gap-1.5">
+          {slides.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentSlide(i)}
+              className={`transition-all ${
+                i === currentSlide
+                  ? "w-5 h-1.5 bg-gray-900 rounded-full"
+                  : "w-1.5 h-1.5 bg-gray-300 rounded-full"
+              }`}
+              aria-label={`Go to slide ${i + 1}`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2336,6 +2684,7 @@ const shareUrl = useMemo(() => {
   const [orderStatus, setOrderStatus] = useState("pending");
   const [orderId, setOrderId] = useState(null);
   const [tables, setTables] = useState([]);
+  const [isDarkMain, setIsDarkMain] = React.useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
@@ -3381,13 +3730,16 @@ function handleReset() {
   
 
 return (
-  <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
+  <div className={`${isDarkMain ? 'dark' : ''}`}>
+  <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-neutral-900 dark:to-black flex flex-col">
     <QrHeader
       orderType={orderType}
       table={table}
       onClose={handleCloseOrderPage}
       t={t}
       restaurantName={brandName}
+      lang={lang}
+      setLang={setLang}
     />
 
     <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
@@ -3501,6 +3853,7 @@ onSubmit={(form) => {
 
 
 
+  </div>
   </div>
 );
 
