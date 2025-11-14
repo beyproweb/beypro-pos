@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from "react";
 import { ChevronLeft } from "lucide-react";
 
-export default function ModernTableSelector({ tables = [], onSelect, onBack }) {
+export default function ModernTableSelector({ tables = [], onSelect, onBack, occupiedNumbers = [], occupiedLabel = 'Occupied' }) {
   // Group tables by area
   const grouped = useMemo(() => {
     return tables.reduce((acc, t) => {
@@ -15,6 +15,7 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack }) {
 
   const areas = Object.keys(grouped);
   const [activeArea, setActiveArea] = useState(areas[0] || "Main Hall");
+  const occupiedSet = useMemo(() => new Set((occupiedNumbers || []).map((n) => Number(n))), [occupiedNumbers]);
 
   return (
     <div className="min-h-screen w-full px-4 py-6 bg-gradient-to-br from-[#fafafa] to-[#f0f2f5]">
@@ -61,16 +62,20 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack }) {
 
       {/* TABLE GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5 pb-20">
-        {grouped[activeArea]?.map((tbl) => (
+        {grouped[activeArea]?.map((tbl) => {
+          const isOcc = occupiedSet.has(Number(tbl.tableNumber));
+          return (
           <button
             key={tbl.tableNumber}
-            onClick={() => onSelect(tbl)}
-            className="
+            onClick={() => { if (!isOcc) onSelect(tbl); }}
+            disabled={isOcc}
+            className={`
               w-full p-5 rounded-3xl bg-white/70 backdrop-blur-xl border border-gray-200 
               shadow-[0_3px_12px_rgba(0,0,0,0.06)] hover:shadow-xl
               hover:-translate-y-1 transition-all duration-300
               text-left flex flex-col gap-3
-            "
+              ${isOcc ? 'opacity-60 cursor-not-allowed ring-1 ring-red-200 hover:translate-y-0 hover:shadow-[0_3px_12px_rgba(0,0,0,0.06)]' : ''}
+            `}
           >
             {/* TABLE TITLE */}
             <div className="flex justify-between items-center">
@@ -78,7 +83,11 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack }) {
                 Table {String(tbl.tableNumber).padStart(2, "0")}
               </span>
 
-              {(() => {
+              {isOcc ? (
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white">
+                  {occupiedLabel}
+                </span>
+              ) : (() => {
                 const lbl = (tbl.label ?? "").toString().trim();
                 return lbl && lbl.toLowerCase() !== "standard";
               })() ? (
@@ -108,7 +117,7 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack }) {
               ></div>
             )}
           </button>
-        ))}
+        );})}
       </div>
     </div>
   );

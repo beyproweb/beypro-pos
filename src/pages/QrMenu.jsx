@@ -3329,6 +3329,8 @@ const myTable =
     <>
 <ModernTableSelector
   tables={tables}
+  occupiedNumbers={filteredOccupied}
+  occupiedLabel={t("Occupied")}
   onSelect={(tbl) => {
     setTable(tbl.tableNumber);
     saveSelectedTable(tbl.tableNumber);
@@ -3578,6 +3580,15 @@ async function handleSubmitOrder() {
 
     if (orderType === "table" && !table) {
       throw new Error("Please select a table.");
+    }
+
+    // Prevent creating a new table order if that table is already occupied by another session
+    // (allow if appending to existing orderId; below branch handles append)
+    if (!orderId && orderType === "table") {
+      const nTable = Number(table);
+      if (safeOccupiedTables.includes(nTable)) {
+        throw new Error("This table is currently occupied. Please contact staff.");
+      }
     }
 
     // ---------- APPEND to existing order ----------
