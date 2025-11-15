@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import PrinterTab from "../components/settings-tabs/PrinterTab";
+import PrinterTabModern from "../components/settings-tabs/PrinterTabModern";
 
 export default function PrintersPage() {
   const { t } = useTranslation();
@@ -17,7 +17,7 @@ export default function PrintersPage() {
           </p>
         </header>
         <div className="p-4 sm:p-6">
-          <PrinterTab />
+          <PrinterTabModern />
         </div>
       </div>
     </div>

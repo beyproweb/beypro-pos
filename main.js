@@ -6,7 +6,6 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const os = require("os");
 const net = require("net");
 
 // MAIN PRINTER ENGINE (used by ALL Windows printers)
@@ -23,6 +22,107 @@ if (process.env.BEYPRO_DISABLE_HW_ACCEL === "1") {
 // DEV ONLY: ignore certificate errors (do not enable for production)
 if (process.env.BEYPRO_IGNORE_CERT_ERRORS === "1") {
   app.commandLine.appendSwitch("ignore-certificate-errors");
+}
+
+const STORE_FILENAME = "printer-config.json";
+const DEFAULT_LOCAL_CONFIG = {
+  receiptPrinter: "",
+  kitchenPrinter: "",
+  layout: {
+    logoUrl: "",
+    showLogo: true,
+    headerTitle: "Beypro POS",
+    headerSubtitle: "Hurrybey · Receipt",
+    showHeader: true,
+    showFooter: true,
+    footerText: "Teşekkür ederiz! / Thank you!",
+    showQr: true,
+    qrText: "Scan to share feedback",
+    qrUrl: "https://hurrybey.com/feedback",
+    alignment: "left",
+    paperWidth: "80mm",
+    spacing: 1.25,
+    showTaxes: true,
+    showDiscounts: true,
+    taxLabel: "Tax",
+    discountLabel: "Discount",
+    showItemModifiers: true,
+    itemFontSize: 14,
+    margin: 12,
+    includeTotals: true,
+  },
+  defaults: {
+    cut: true,
+    cashDrawer: false,
+  },
+  customLines: [],
+  lastSynced: null,
+};
+
+let userDataPath = null;
+app.whenReady().then(() => {
+  userDataPath = app.getPath("userData");
+});
+
+function getPrinterStorePath() {
+  const base = userDataPath || app.getPath("userData");
+  return path.join(base, STORE_FILENAME);
+}
+
+function readPrinterStore() {
+  try {
+    const filePath = getPrinterStorePath();
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.warn("Failed to read printer config cache:", err);
+  }
+  return {};
+}
+
+function writePrinterStore(data) {
+  try {
+    const filePath = getPrinterStorePath();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+    return true;
+  } catch (err) {
+    console.error("Failed to persist printer config:", err);
+    return false;
+  }
+}
+
+function normalizePrinterConfig(payload = {}, updateTimestamp = false) {
+  const layoutOverride =
+    payload.layout && typeof payload.layout === "object" ? payload.layout : {};
+  const defaultsOverride =
+    payload.defaults && typeof payload.defaults === "object" ? payload.defaults : {};
+  const merged = {
+    ...DEFAULT_LOCAL_CONFIG,
+    ...payload,
+    defaults: {
+      ...DEFAULT_LOCAL_CONFIG.defaults,
+      ...defaultsOverride,
+    },
+    layout: {
+      ...DEFAULT_LOCAL_CONFIG.layout,
+      ...layoutOverride,
+    },
+  };
+  merged.customLines = Array.isArray(payload.customLines)
+    ? payload.customLines
+    : merged.customLines;
+  if (updateTimestamp) {
+    merged.lastSynced = new Date().toISOString();
+  }
+  return merged;
+}
+
+function getLocalPrinterConfig() {
+  const stored = readPrinterStore();
+  return normalizePrinterConfig(stored, false);
 }
 
 // ------------------------
@@ -145,4 +245,15 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     sock.on("error", (err) => resolve({ ok: false, error: err.message }));
     sock.on("timeout", () => resolve({ ok: false, error: "timeout" }));
   });
+});
+
+ipcMain.handle("beypro:getPrinterConfig", () => {
+  const config = getLocalPrinterConfig();
+  return { ok: true, config };
+});
+
+ipcMain.handle("beypro:setPrinterConfig", (_evt, payload = {}) => {
+  const normalized = normalizePrinterConfig(payload, true);
+  writePrinterStore(normalized);
+  return { ok: true, config: normalized };
 });

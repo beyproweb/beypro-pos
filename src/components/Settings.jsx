@@ -15,7 +15,7 @@ import UserManagementTab from "../components/settings-tabs/UserManagementTab";
 import IntegrationsTab from "../components/settings-tabs/IntegrationsTab";
 import LogFilesTab from "../components/settings-tabs/LogFilesTab";
 import AppearanceTab from "../components/settings-tabs/AppearanceTab";
-import PrinterTab from "../components/settings-tabs/PrinterTab";
+import PrinterTabModern from "../components/settings-tabs/PrinterTabModern";
 import TablesSettingsTab from "../components/settings-tabs/TablesSettingsTab";
 
 const tabComponents = {
@@ -29,7 +29,7 @@ const tabComponents = {
   integrations: IntegrationsTab,
   inventory: LogFilesTab,
   appearance: AppearanceTab,
-  printers: PrinterTab,
+  printers: PrinterTabModern,
   tables: TablesSettingsTab,
 };
 

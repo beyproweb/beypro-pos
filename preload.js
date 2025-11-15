@@ -5,4 +5,6 @@ contextBridge.exposeInMainWorld("beypro", {
   printRaw: (args) => ipcRenderer.invoke("beypro:printRaw", args),
   printWindows: (args) => ipcRenderer.invoke("beypro:printWindows", args),
   printNet: (args) => ipcRenderer.invoke("beypro:printNet", args),
+  getPrinterConfig: () => ipcRenderer.invoke("beypro:getPrinterConfig"),
+  setPrinterConfig: (settings) => ipcRenderer.invoke("beypro:setPrinterConfig", settings),
 });
