@@ -26,7 +26,7 @@ export default function Suppliers() {
   const [transactions, setTransactions] = useState([]);
 const [newTransaction, setNewTransaction] = useState({
   rows: [
-    { ingredient: "", quantity: "", unit: "kg", total_cost: "" }, // ✅ default one row
+    { ingredient: "", quantity: "", unit: "kg", total_cost: "", expiry_date: "" }, // ✅ default one row
   ],
   paymentStatus: "Due",
   paymentMethod: "Due",
@@ -651,6 +651,37 @@ const combinedDue = useMemo(() => {
     return parsed.toLocaleString();
   };
 
+  const getReceiptExpirySummary = (txn) => {
+    const expiryDates = (txn?.items || [])
+      .map((item) => {
+        if (!item?.expiry_date) return null;
+        const parsed = new Date(item.expiry_date);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+      })
+      .filter(Boolean);
+
+    if (!expiryDates.length) return null;
+
+    const earliest = expiryDates.reduce((prev, curr) =>
+      curr < prev ? curr : prev
+    );
+    const formattedDate = earliest.toLocaleDateString();
+    const now = Date.now();
+    const diffMs = earliest.getTime() - now;
+    const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    if (daysLeft <= 0) {
+      return `${t("Expired on")} ${formattedDate}`;
+    }
+
+    if (daysLeft <= 3) {
+      const dayWord = daysLeft === 1 ? t("day") : t("days");
+      return `${t("Expires in")} ${daysLeft} ${dayWord}`;
+    }
+
+    return `${t("Expires on")} ${formattedDate}`;
+  };
+
   const priceAlerts = useMemo(() => {
     if (!supplierTransactions.length) return [];
 
@@ -848,7 +879,7 @@ const handleAddTransaction = async (e) => {
   }
 
   setNewTransaction({
-    rows: [{ ingredient: "", quantity: "", unit: "kg", total_cost: "" }],
+    rows: [{ ingredient: "", quantity: "", unit: "kg", total_cost: "", expiry_date: "" }],
     paymentMethod: "Due",
   });
   setReceiptFile(null);
@@ -1472,7 +1503,7 @@ name}: {formattedSelectedSupplierDue} ₺
         <div className="my-4 border-t border-dashed border-slate-300 dark:border-slate-700"></div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6 items-end">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7 items-end">
         {/* Ingredient */}
         <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
           {t("Ingredient")}
@@ -1527,6 +1558,21 @@ name}: {formattedSelectedSupplierDue} ₺
           </select>
         </label>
 
+        {/* Expiry date */}
+        <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+          {t("Expiry date")}
+          <input
+            type="date"
+            value={row.expiry_date || ""}
+            onChange={(e) => {
+              const updated = [...newTransaction.rows];
+              updated[idx].expiry_date = e.target.value;
+              setNewTransaction({ ...newTransaction, rows: updated });
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          />
+        </label>
+
         {/* Total cost */}
         <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
           {t("Total cost (₺)")}
@@ -1561,7 +1607,7 @@ name}: {formattedSelectedSupplierDue} ₺
               const updated = [...newTransaction.rows];
               updated.splice(idx, 1);
               if (updated.length === 0)
-                updated.push({ ingredient: "", quantity: "", unit: "kg", total_cost: "" });
+                updated.push({ ingredient: "", quantity: "", unit: "kg", total_cost: "", expiry_date: "" });
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
             className="inline-flex items-center gap-2 rounded-full border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-600/40 dark:text-rose-300 dark:hover:bg-rose-900/30 transition"
@@ -1584,7 +1630,7 @@ name}: {formattedSelectedSupplierDue} ₺
       ...newTransaction,
       rows: [
         ...(newTransaction.rows || []),
-        { ingredient: "", quantity: "", unit: "kg", total_cost: "" },
+        { ingredient: "", quantity: "", unit: "kg", total_cost: "", expiry_date: "" },
       ],
     })
   }
@@ -2014,6 +2060,16 @@ name}: {formattedSelectedSupplierDue} ₺
                                 <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500">
                                   {getLocalizedDate(resolveTxnDate(receiptTxn))}
                                 </span>
+                                {(() => {
+                                  const expiryLabel = getReceiptExpirySummary(receiptTxn);
+                                  return (
+                                    expiryLabel && (
+                                      <span className="text-[11px] font-normal text-amber-600 dark:text-amber-300">
+                                        {expiryLabel}
+                                      </span>
+                                    )
+                                  );
+                                })()}
                               </div>
                               <button
                                 type="button"
@@ -2509,6 +2565,16 @@ notes || "—"}
                                   <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500">
                                     {getLocalizedDate(resolveTxnDate(receiptTxn))}
                                   </span>
+                                  {(() => {
+                                    const expiryLabel = getReceiptExpirySummary(receiptTxn);
+                                    return (
+                                      expiryLabel && (
+                                        <span className="text-[11px] font-normal text-amber-600 dark:text-amber-300">
+                                          {expiryLabel}
+                                        </span>
+                                      )
+                                    );
+                                  })()}
                                 </div>
                                 <button
                                   type="button"

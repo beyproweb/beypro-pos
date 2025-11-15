@@ -29,6 +29,7 @@ const DEFAULT_SOUNDS = {
   stock_low: "warning.mp3",
   stock_restocked: "pop.mp3",
   driver_assigned: "horn.mp3",
+  stock_expiry: "alarm.mp3",
 };
 
 const DEFAULT_NOTIFICATIONS = {
@@ -117,9 +118,16 @@ export default function GlobalOrderAlert() {
       "stock_low",
       "stock_restocked",
       "driver_assigned",
+      "stock_expiry",
     ],
     []
   );
+
+  const alertEventKeyMap = {
+    stock_low: "stock_low",
+    stock_restocked: "stock_restocked",
+    stock_expiry: "stock_expiry",
+  };
 
   const resolveSoundSrc = useCallback(
     (key) => {
@@ -367,6 +375,18 @@ export default function GlobalOrderAlert() {
     ]
   );
 
+
+  useEffect(() => {
+    const handleAlertEvent = (payload) => {
+      if (!payload?.message) return;
+      const key =
+        alertEventKeyMap[payload.type] || alertEventKeyMap.stock_low || "stock_expiry";
+      notify(key, payload.message);
+    };
+
+    socket.on("alert_event", handleAlertEvent);
+    return () => socket.off("alert_event", handleAlertEvent);
+  }, [notify]);
 
 
   /* Print helper */

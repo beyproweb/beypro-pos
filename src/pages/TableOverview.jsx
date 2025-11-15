@@ -173,6 +173,7 @@ const [entryReason, setEntryReason] = useState("");
   const canSeePacketTab = useHasPermission("packet-orders");
   const canSeePhoneTab = useHasPermission("phone");
   const canSeeRegisterTab = useHasPermission("register");
+  const canSeeTakeawayTab = useHasPermission("takeaway");
 const [activeArea, setActiveArea] = useState("ALL");
 
 const [registerEntries, setRegisterEntries] = useState(0);
@@ -434,6 +435,7 @@ const TAB_TO_SIDEBAR = {
   register: { labelKey: "Register", defaultLabel: "Register", path: "/tableoverview?tab=register" },
 };
 const visibleTabs = TAB_LIST.filter((tab) => {
+  if (tab.id === "takeaway") return canSeeTakeawayTab;
   if (tab.id === "tables") return canSeeTablesTab;
   if (tab.id === "kitchen") return canSeeKitchenTab;
   if (tab.id === "history") return canSeeHistoryTab;
@@ -442,6 +444,13 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   if (tab.id === "register") return canSeeRegisterTab;
   return true;
 });
+
+useEffect(() => {
+  if (visibleTabs.length === 0) return;
+  if (!visibleTabs.some((tab) => tab.id === activeTab)) {
+    setActiveTab(visibleTabs[0].id);
+  }
+}, [visibleTabs, activeTab]);
 
 
 

@@ -13,6 +13,7 @@ export default function QrMenuSettings() {
   const [search, setSearch] = useState("");
   const [loadingLink, setLoadingLink] = useState(false);
   const qrRef = useRef();
+  const [savingDelivery, setSavingDelivery] = useState(false);
   const [settings, setSettings] = useState({
   main_title: "",
   subtitle: "",
@@ -34,6 +35,7 @@ export default function QrMenuSettings() {
   social_instagram: "",
   social_tiktok: "",
   social_website: "",
+  delivery_enabled: true,
 });
 
 function updateField(key, value) {
@@ -172,6 +174,25 @@ async function saveAllCustomization() {
       toast.success(t("Saved successfully!"));
     } catch {
       toast.error(t("Failed to save changes"));
+    }
+  };
+
+  const toggleDelivery = async () => {
+    const nextValue = !settings.delivery_enabled;
+    updateField("delivery_enabled", nextValue);
+    setSavingDelivery(true);
+    try {
+      await secureFetch("/settings/qr-menu-delivery", {
+        method: "POST",
+        body: JSON.stringify({ delivery_enabled: nextValue }),
+      });
+      toast.success(nextValue ? t("Delivery is open") : t("Delivery is closed"));
+    } catch (err) {
+      console.error("❌ Failed to toggle delivery:", err);
+      toast.error(t("Failed to save delivery setting"));
+      updateField("delivery_enabled", !nextValue);
+    } finally {
+      setSavingDelivery(false);
     }
   };
 
@@ -396,6 +417,37 @@ async function saveAllCustomization() {
               onChange={(e) => updateField("phone", e.target.value)}
               className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-800"
             />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="font-semibold">{t("Delivery Ordering")}</label>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <span
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  settings.delivery_enabled
+                    ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                    : "bg-rose-100 text-rose-700 border border-rose-200"
+                }`}
+              >
+                {settings.delivery_enabled
+                  ? t("Delivery is open")
+                  : t("Delivery is closed")}
+              </span>
+              <button
+                className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
+                onClick={toggleDelivery}
+                disabled={savingDelivery}
+              >
+                {settings.delivery_enabled
+                  ? t("Close Delivery")
+                  : t("Open Delivery")}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {t(
+                "Toggle whether delivery/online ordering appears in the QR menu order picker."
+              )}
+            </p>
           </div>
 
           <div>

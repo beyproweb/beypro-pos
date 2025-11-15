@@ -18,6 +18,7 @@ export default function NotificationsTab() {
     payment_made: "Payment Made",
     stock_low: "Stock Low",
     stock_restocked: "New Stock",
+    stock_expiry: "Expiry Alert",
     order_delayed: "Delayed Order Alert",
     driver_arrived: "Driver Delivered",
     driver_assigned: "Driver Assigned",
@@ -42,6 +43,7 @@ export default function NotificationsTab() {
     order_delayed: "alarm.mp3",
     driver_arrived: "horn.mp3",
     driver_assigned: "horn.mp3",
+    stock_expiry: "alarm.mp3",
   };
 
   const defaultConfig = {

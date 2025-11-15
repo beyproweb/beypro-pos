@@ -1,24 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useSetting } from "../components/hooks/useSetting";
 import { normalizeUser } from "../utils/normalizeUser";
-import { getAuthToken } from "../utils/secureFetch";
-
-// Always point to the API base (ending in /api)
-const RAW_API =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.MODE === "development"
-    ? "http://localhost:5000/api"
-    : "https://hurrypos-backend.onrender.com/api");
-
-const API_BASE = (() => {
-  const base = String(RAW_API || "").trim();
-  if (!base) return "/api";
-  return (
-    base
-      .replace(/\/api\/?$/, "")
-      .replace(/\/+$/, "") + "/api"
-  );
-})();
+import { getAuthToken, BASE_URL as API_BASE } from "../utils/secureFetch";
+import { safeNavigate } from "../utils/navigation";
 export const AuthContext = createContext();
 
 export function useAuth() {
@@ -82,7 +66,7 @@ useEffect(() => {
           localStorage.removeItem("beyproUser");
           setCurrentUser(null);
           if (!window.location.pathname.includes("/login")) {
-            window.location.href = "/login";
+           safeNavigate("/login");
           }
           return null;
         }
@@ -149,10 +133,12 @@ useEffect(() => {
             return nextUser;
           });
         } else {
-          console.warn("⚠️ No valid user returned from /me");
-          setCurrentUser(null);
-          localStorage.removeItem("beyproUser");
-        }
+  console.warn("⚠️ No valid user returned from /me");
+  setCurrentUser(null);
+  localStorage.removeItem("beyproUser");
+  safeNavigate("/login");   // ✅ FIX
+}
+
       })
       .catch((err) => {
         console.warn("⚠️ Backend not reachable, using cached user:", err.message);

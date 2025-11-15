@@ -168,25 +168,37 @@ export const StockProvider = ({ children }) => {
       const grouped = Object.values(
         refreshed.reduce((acc, item) => {
           const key = `${item.name.toLowerCase()}_${item.unit}`;
-          if (!acc[key]) {
-            acc[key] = {
-              name: item.name,
-              quantity: 0,
-              unit: item.unit,
-              suppliers: new Set(),
-              critical_quantity: item.critical_quantity || 0,
-              reorder_quantity: item.reorder_quantity || 0,
-              supplier_id: item.supplier_id || null,
-              supplier_name: item.supplier_name || "",
-              stock_id: item.id,
-            };
+        if (!acc[key]) {
+          acc[key] = {
+            name: item.name,
+            quantity: 0,
+            unit: item.unit,
+            suppliers: new Set(),
+            critical_quantity: item.critical_quantity || 0,
+            reorder_quantity: item.reorder_quantity || 0,
+            supplier_id: item.supplier_id || null,
+            supplier_name: item.supplier_name || "",
+            stock_id: item.id,
+            expiry_date: item.expiry_date || null,
+          };
+        }
+        acc[key].quantity += parseFloat(item.quantity);
+        acc[key].suppliers.add(item.supplier_name);
+        if (item.expiry_date) {
+          const candidate = new Date(item.expiry_date);
+          if (!Number.isNaN(candidate.getTime())) {
+            const existing = acc[key].expiry_date
+              ? new Date(acc[key].expiry_date)
+              : null;
+            if (!existing || candidate < existing) {
+              acc[key].expiry_date = item.expiry_date;
+            }
           }
-          acc[key].quantity += parseFloat(item.quantity);
-          acc[key].suppliers.add(item.supplier_name);
-          return acc;
-        }, {})
-      ).map((i) => ({
-        ...i,
+        }
+        return acc;
+      }, {})
+    ).map((i) => ({
+      ...i,
         supplier: Array.from(i.suppliers).join(", "),
       }));
 

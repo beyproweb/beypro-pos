@@ -1,5 +1,6 @@
 // src/utils/socket.js
 import { io } from "socket.io-client";
+import { BASE_URL } from "./secureFetch";
 
 // 🧩 Detect environment
 const isElectron =
@@ -10,18 +11,8 @@ const isDev =
   import.meta.env.MODE === "development" ||
   (isElectron && window.location.href.includes("localhost"));
 
-// 🌍 Default production API (Render)
-const PROD_API = "https://hurrypos-backend.onrender.com/api";
-
-// 🧩 Decide which API base to use
-const RAW =
-  import.meta.env.VITE_API_URL ||
-  (isDev
-    ? "http://localhost:5000/api" // local backend when dev
-    : PROD_API); // Render backend for packaged Electron or prod web
-
-// Normalize: remove trailing /api for socket base
-const BASE_FROM_API = String(RAW).replace(/\/api\/?$/, "");
+// Normalize: remove trailing /api for socket base using the same base as secureFetch
+const BASE_FROM_API = String(BASE_URL).replace(/\/api\/?$/, "");
 
 // Allow overriding via VITE_SOCKET_URL (rarely needed)
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || BASE_FROM_API;

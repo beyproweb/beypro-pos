@@ -99,7 +99,7 @@ const QUICK_ACCESS_CONFIG = [
     path: "/staff?tab=payroll",
     color: "bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500",
     icon: "CreditCard",
-    permission: "staff",
+    permission: "staff-payroll",
   },
   {
     id: "task",
@@ -433,8 +433,8 @@ const fetchSummaryStats = useCallback(async () => {
       if (permissionKey && currentUser.permissions?.includes(permissionKey))
         return true;
       if (!permissionKey) return false;
-      return currentUser.permissions?.some((perm) =>
-        permissionKey.includes(perm.toLowerCase())
+      return currentUser.permissions?.some(
+        (perm) => permissionKey === perm.toLowerCase()
       );
     });
   }, [orderedConfigs, currentUser]);

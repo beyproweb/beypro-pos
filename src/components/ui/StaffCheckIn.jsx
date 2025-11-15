@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Html5QrcodeScanner } from "html5-qrcode";
-import { QRCodeCanvas } from "qrcode.react";
 import { Toaster, toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
@@ -16,13 +15,11 @@ const StaffCheckIn = () => {
   const [role, setRole] = useState("");
   const [phone, setPhone] = useState("");
   const [staffList, setStaffList] = useState([]);
-  const [selectedStaffId, setSelectedStaffId] = useState("");
   const [attendanceList, setAttendanceList] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [scanMode, setScanMode] = useState("");
   const [isCameraActive, setIsCameraActive] = useState(false);
   const containerRef = useRef(null);
-  const [selectedStaffProfile, setSelectedStaffProfile] = useState(null);
   const [filter, setFilter] = useState("day");
 
   useEffect(() => {
@@ -82,7 +79,6 @@ const StaffCheckIn = () => {
       const payload = {
         staffId,
         deviceId: "BeyproDevice001",
-        wifiVerified: true,
         action,
       };
       const data = await secureFetch("/staff/checkin", {
@@ -118,26 +114,9 @@ const StaffCheckIn = () => {
       stopScanner();
     } catch (err) {
       console.error("❌ Error during check-in/out:", err);
-      toast.error("Error during check-in/out.");
+      toast.error(err?.message || "Error during check-in/out.");
       stopScanner();
     }
-  };
-
-  const deleteStaff = async (staffId) => {
-    if (!window.confirm("Are you sure you want to delete this staff member?")) return;
-    try {
-      await secureFetch(`/staff/${staffId}`, { method: "DELETE" });
-      toast.success("Staff member deleted successfully");
-      fetchStaff();
-      setSelectedStaffProfile(null);
-    } catch (err) {
-      console.error("❌ Error deleting staff:", err);
-      toast.error("Error deleting staff member");
-    }
-  };
-
-  const handleStaffDeletion = () => {
-    if (selectedStaffId) deleteStaff(selectedStaffId);
   };
 
   const fetchStaff = async () => {
@@ -311,45 +290,6 @@ const StaffCheckIn = () => {
         {t("Status")}: {status}
       </p>
       <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">{message}</p>
-
-      <div className="border p-4 rounded-lg shadow bg-white dark:bg-gray-800">
-        <h3 className="text-2xl font-semibold mb-4">
-          {t("Generate QR Code / View Profile")}
-        </h3>
-        <select
-          className="block w-full p-2 border rounded mb-4"
-          onChange={(e) => setSelectedStaffId(parseInt(e.target.value, 10))}
-          value={selectedStaffId}
-        >
-          <option value="">{t("Select Staff")}</option>
-          {staffList.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} - {s.role}
-            </option>
-          ))}
-        </select>
-        {selectedStaffId && (
-          <div className="flex flex-col items-center space-y-4">
-            <QRCodeCanvas
-              value={String(selectedStaffId)}
-              size={256}
-              bgColor="#ffffff"
-              fgColor="#000000"
-              level="H"
-              includeMargin
-            />
-            <p className="text-lg font-medium">
-              {t("QR Code for Staff ID")}: {selectedStaffId}
-            </p>
-            <button
-              onClick={handleStaffDeletion}
-              className="mt-2 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition"
-            >
-              {t("Delete Staff")}
-            </button>
-          </div>
-        )}
-      </div>
 
       <div className="mt-6">
         <h3 className="text-2xl font-semibold mb-4">{t("Active Staff")}</h3>

@@ -109,6 +109,66 @@ useEffect(() => {
     return reorder > 0 && Number(item.quantity ?? 0) <= reorder;
   }).length;
 
+  const expiryColorMap = {
+    danger: "text-rose-600 dark:text-rose-300",
+    warning: "text-amber-600 dark:text-amber-200",
+    ok: "text-emerald-600 dark:text-emerald-300",
+    info: "text-slate-600 dark:text-slate-300",
+  };
+
+  const expiryBadgeColorMap = {
+    danger: "bg-rose-500/10 text-rose-600 dark:bg-rose-500/30 dark:text-rose-200",
+    warning: "bg-amber-500/10 text-amber-600 dark:bg-amber-500/30 dark:text-amber-200",
+    ok: "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/30 dark:text-emerald-200",
+    info: "bg-slate-200/70 text-slate-600 dark:bg-slate-700/40 dark:text-slate-200",
+  };
+
+  const getExpiryMeta = (expiryDate) => {
+    if (!expiryDate) {
+      return {
+        label: t("No expiry date"),
+        severity: "info",
+        badge: null,
+      };
+    }
+    const parsed = new Date(expiryDate);
+    if (Number.isNaN(parsed.getTime())) {
+      return {
+        label: t("No expiry date"),
+        severity: "info",
+        badge: null,
+      };
+    }
+
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const diffMs = parsed.getTime() - Date.now();
+    const daysLeft = Math.ceil(diffMs / msPerDay);
+    const formattedDate = parsed.toLocaleDateString();
+
+    if (daysLeft <= 0) {
+      return {
+        label: `${t("Expired on")} ${formattedDate}`,
+        severity: "danger",
+        badge: t("Expired"),
+      };
+    }
+
+    if (daysLeft <= 3) {
+      const dayWord = daysLeft === 1 ? t("day") : t("days");
+      return {
+        label: `${t("Expires in")} ${daysLeft} ${dayWord}`,
+        severity: "warning",
+        badge: t("Expiring soon"),
+      };
+    }
+
+    return {
+      label: `${t("Expires on")} ${formattedDate}`,
+      severity: "ok",
+      badge: t("Fresh inventory"),
+    };
+  };
+
   const handleCriticalChange = async (index, value) => {
     console.log("🔥 handleCriticalChange called for index", index, "value", value);
 
@@ -523,6 +583,11 @@ const suppliersList = Array.from(
               const pricePerUnit = priceLookup.get(key) || 0;
               const itemValue =
                 (Number(item.quantity) || 0) * (Number(pricePerUnit) || 0);
+              const expiryMeta = getExpiryMeta(item.expiry_date);
+              const expiryColor =
+                expiryColorMap[expiryMeta.severity] || expiryColorMap.info;
+              const badgeClass =
+                expiryBadgeColorMap[expiryMeta.severity] || expiryBadgeColorMap.info;
               const isLowStock =
                 item.critical_quantity !== null &&
                 item.critical_quantity !== undefined &&
@@ -591,6 +656,21 @@ const suppliersList = Array.from(
                             : "—"}
                         </p>
                       </div>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between gap-4 border-t border-slate-200/70 pt-3 text-sm text-slate-500 dark:border-slate-800/60 dark:text-slate-300">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                          {t("Expiry")}
+                        </span>
+                        <span className={`text-sm font-semibold ${expiryColor}`}>
+                          {expiryMeta.label}
+                        </span>
+                      </div>
+                      {expiryMeta.badge && (
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>
+                          {expiryMeta.badge}
+                        </span>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">

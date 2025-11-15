@@ -31,6 +31,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { hasPermission } from "../utils/permissions";
 import { useTranslation } from "react-i18next";
+import { safeNavigate } from "../utils/navigation";
 
 export const SIDEBAR_WIDTH_OPEN = 224;
 export const SIDEBAR_WIDTH_COLLAPSED = 72;
@@ -197,7 +198,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
   function handleLogout() {
     setIsOpen?.(false);
     localStorage.removeItem("beyproUser");
-    window.location = "/login";
+    safeNavigate("/login");
   }
 
   const handleHideItem = (labelKey) => (event) => {

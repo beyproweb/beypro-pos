@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import secureFetch, { getAuthToken } from "../../utils/secureFetch";
+import { safeNavigate } from "../../utils/navigation";
 
 export default function SubscriptionTab() {
   const { t } = useTranslation();
@@ -227,7 +228,7 @@ useEffect(() => {
         });
         if (sub?.success) {
           toast.success(t("🎉 Subscription registered! Welcome to Beypro."));
-          setTimeout(() => (window.location.href = "/"), 1200);
+          setTimeout(() => safeNavigate("/"), 1200);
         } else {
           toast.success(t("Registration successful. Please login."));
         }

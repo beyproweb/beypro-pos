@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import StaffCheckIn from '../components/ui/StaffCheckIn';
 import StaffSchedule from '../components/ui/StaffSchedule';
 import Payroll from '../components/ui/Payroll';
+import { useHasPermission } from "../components/hooks/useHasPermission";
 
 import Modal from 'react-modal';
 import { Toaster, toast } from 'react-hot-toast';
@@ -20,7 +21,7 @@ const Staff = () => {
   const location = useLocation();
   const [savedAutoPayment, setSavedAutoPayment] = useState(null);
 
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTabId, setActiveTabId] = useState("checkin");
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [isSendShiftModalOpen, setIsSendShiftModalOpen] = useState(false);
   const [name, setName] = useState('');
@@ -57,17 +58,32 @@ const Staff = () => {
   const [repeatType, setRepeatType] = useState('none');
   const [repeatTime, setRepeatTime] = useState('09:00');
 
+  const canCheckIn = useHasPermission("staff-checkin");
+  const canSchedule = useHasPermission("staff-schedule");
+  const canPayroll = useHasPermission("staff-payroll");
+  const canSendShift = useHasPermission("staff-send-shift");
+  const canAddStaff = useHasPermission("staff-add");
+  const canPayment = useHasPermission("staff-payment");
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const requestedTab = params.get("tab");
-    if (requestedTab === "payroll") {
-      setActiveTab(2);
-    } else if (requestedTab === "schedule") {
-      setActiveTab(1);
-    } else if (requestedTab === "checkin") {
-      setActiveTab(0);
+    if (!requestedTab) return;
+
+    const normalized = requestedTab.toLowerCase().trim();
+    const match =
+      normalized === "checkin" && canCheckIn
+        ? "checkin"
+        : normalized === "schedule" && canSchedule
+        ? "schedule"
+        : normalized === "payroll" && canPayroll
+        ? "payroll"
+        : null;
+
+    if (match) {
+      setActiveTabId(match);
     }
-  }, [location.search]);
+  }, [location.search, canCheckIn, canSchedule, canPayroll]);
 
   // ✅ Load staff
   useEffect(() => {
@@ -194,11 +210,28 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
     }
   };
 
-  const tabs = [
-    { title: t("Check-In/Check-Out"), component: <StaffCheckIn /> },
-    { title: t("Staff Schedule"), component: <StaffSchedule /> },
-    { title: t("Payroll"), component: <Payroll /> },
+  const tabDefinitions = [
+    { id: "checkin", title: t("Check-In/Check-Out"), component: <StaffCheckIn /> },
+    { id: "schedule", title: t("Staff Schedule"), component: <StaffSchedule /> },
+    { id: "payroll", title: t("Payroll"), component: <Payroll /> },
   ];
+
+  const accessibleTabs = [
+    canCheckIn ? tabDefinitions[0] : null,
+    canSchedule ? tabDefinitions[1] : null,
+    canPayroll ? tabDefinitions[2] : null,
+  ].filter(Boolean);
+
+  const activeTabContent =
+    accessibleTabs.find((tab) => tab.id === activeTabId)?.component ||
+    accessibleTabs[0]?.component;
+
+  useEffect(() => {
+    if (!accessibleTabs.length) return;
+    if (!accessibleTabs.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId(accessibleTabs[0].id);
+    }
+  }, [accessibleTabs, activeTabId]);
 
   return (
     <div className="p-6 space-y-1 relative dark:bg-900 text-gray-800 dark:text-white text-base transition-colors">
@@ -207,12 +240,12 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
 <div className="flex justify-center mb-4 w-full">
   <div className="flex flex-wrap items-center justify-center gap-4 w-full max-w-7xl">
     {/* Tabs */}
-    {tabs.map((tab, index) => (
+    {accessibleTabs.map((tab) => (
       <button
-        key={index}
-        onClick={() => setActiveTab(index)}
+        key={tab.id}
+        onClick={() => setActiveTabId(tab.id)}
         className={`px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold shadow transition-all duration-300
-          ${activeTab === index
+          ${activeTabId === tab.id
             ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white'
             : 'bg-gray-300 text-gray-800 hover:bg-blue-400 hover:text-white'}
         `}
@@ -221,40 +254,49 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
       </button>
     ))}
 
-    {/* --- SEND SHIFT --- */}
-    <button
-      onClick={() => setIsSendShiftModalOpen(true)}
-      className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow hover:brightness-110 transition-all"
-    >
-      {t("Send Shift")}
-    </button>
+    {canSendShift && (
+      <button
+        onClick={() => setIsSendShiftModalOpen(true)}
+        className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow hover:brightness-110 transition-all"
+      >
+        {t("Send Shift")}
+      </button>
+    )}
 
-    {/* --- ADD STAFF --- */}
-    <button
-      onClick={() => setShowAddStaff(!showAddStaff)}
-      className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow hover:brightness-110 transition-all"
-    >
-      {showAddStaff ? t("Close Add Staff") : t("Add Staff")}
-    </button>
-    {/* --- ADD PAYMENT BUTTON --- */}
-    <button
-      onClick={()=>setIsModalOpen(true)}
-      className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-green-400 to-blue-500 text-white shadow hover:brightness-110 transition-all"
-    >
-      {t("Payment")}
-    </button>
+    {canAddStaff && (
+      <button
+        onClick={() => setShowAddStaff(!showAddStaff)}
+        className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow hover:brightness-110 transition-all"
+      >
+        {showAddStaff ? t("Close Add Staff") : t("Add Staff")}
+      </button>
+    )}
+    {canPayment && (
+      <button
+        onClick={() => setIsModalOpen(true)}
+        className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-green-400 to-blue-500 text-white shadow hover:brightness-110 transition-all"
+      >
+        {t("Payment")}
+      </button>
+    )}
   </div>
 </div>
 
 
       {/* Main Content */}
       <div className="bg-transparent">
-        {tabs[activeTab].component}
+        {activeTabContent ? (
+          activeTabContent
+        ) : (
+          <div className="p-6 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900 text-center text-gray-600 dark:text-gray-400">
+            {t("You have limited access. Please contact your admin for more permissions.")}
+          </div>
+        )}
         <div className="mt-4">{/* Add extra content here if needed */}</div>
       </div>
 
       {/* Add Staff Modal */}
-      {showAddStaff && (
+      {canAddStaff && showAddStaff && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
           <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 w-96 text-gray-800 dark:text-white">
             <h3 className="text-xl font-bold mb-4">{t("Add New Staff")}</h3>
@@ -308,7 +350,7 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
       )}
 
       {/* Send Shift Modal (unchanged) */}
-      {isSendShiftModalOpen && (
+      {canSendShift && isSendShiftModalOpen && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
           <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 w-96 text-gray-800 dark:text-white">
             <h3 className="text-xl font-bold mb-4">{t("Send Shift Schedule")}</h3>
@@ -371,9 +413,10 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
       )}
 
          {/* ---------------------- ADD PAYMENT MODAL ---------------------- */}
-      <Modal
-        isOpen={isModalOpen}
-        onRequestClose={()=>setIsModalOpen(false)}
+      {canPayment && (
+        <Modal
+          isOpen={isModalOpen}
+          onRequestClose={()=>setIsModalOpen(false)}
         className="bg-white dark:bg-slate-900 p-8 rounded-2xl outline-none w-full max-w-lg mx-auto mt-20 shadow-2xl border border-blue-200 max-h-[90vh] overflow-y-auto z-[1002]"
         overlayClassName="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-start z-[1001]"
       >
@@ -584,6 +627,7 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
         </>
         )}
       </Modal>
+      )}
       {/* ---------------------- END PAYMENT MODAL ---------------------- */}
 
       {/* ---------------------- END PAYMENT MODAL ---------------------- */}

@@ -1,14 +1,9 @@
 // src/components/OrderStatusScreen.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { io } from "socket.io-client";
-import secureFetch, { getAuthToken } from "../utils/secureFetch";
-// Derive Socket base URL from VITE_API_URL (strip trailing /api)
-const RAW_API =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.MODE === "development"
-    ? "http://localhost:5000/api"
-    : "https://hurrypos-backend.onrender.com/api");
-const SOCKET_URL = String(RAW_API).replace(/\/api\/?$/, "");
+import secureFetch, { getAuthToken, BASE_URL } from "../utils/secureFetch";
+// Use the same base as secureFetch to avoid env drift
+const SOCKET_URL = String(BASE_URL).replace(/\/api\/?$/, "");
 
 /* ---------- SOCKET.IO HOOK ---------- */
 let socket;

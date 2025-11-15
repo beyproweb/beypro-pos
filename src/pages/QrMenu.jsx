@@ -525,7 +525,7 @@ function QrHeader({ orderType, table, onClose, t, restaurantName, lang, setLang 
 
 /* ====================== PREMIUM APPLE-STYLE HOME PAGE ====================== */
 function OrderTypeSelect({
-  identifier,       // 🔥 required for backend load
+  identifier, // 🔥 required for backend load
   onSelect,
   lang,
   setLang,
@@ -535,6 +535,8 @@ function OrderTypeSelect({
   showHelp,
   setShowHelp,
   platform,
+  onPopularClick,
+  onCustomizationLoaded,
 }) {
 
   /* ============================================================
@@ -557,9 +559,11 @@ async function load() {
     const raw = await res.text();
     const data = raw ? JSON.parse(raw) : {};
     setCustom(data.customization || {});
+    onCustomizationLoaded?.(data.customization || {});
   } catch (err) {
     console.error("❌ Failed to load QR customization:", err);
     setCustom({}); // allow component to render with defaults
+    onCustomizationLoaded?.({});
   }
 }
 
@@ -573,10 +577,14 @@ async function load() {
      2) Extract dynamic fields with fallbacks
      ============================================================ */
   const c = custom || {};
+  React.useEffect(() => {
+    onCustomizationLoaded?.(custom || {});
+  }, [custom, onCustomizationLoaded]);
   const restaurantName = c.title || c.main_title || "Restaurant";
   const subtitle = c.subtitle || "Welcome";
   const tagline = c.tagline || "Fresh • Crafted • Delicious";
   const phoneNumber = c.phone || "";
+  const allowDelivery = c.delivery_enabled !== false;
   const accent = c.branding_color || c.primary_color || "#4F46E5";
   const logoUrl = c.logo || "/logo192.png";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
@@ -755,7 +763,7 @@ async function load() {
      ============================================================ */
 
 return (
-  <div className={`${isDark ? 'dark' : ''}`}>
+  <div className={`${isDark ? 'dark ' : ''}flex-1`}>
   <div className="min-h-screen w-full bg-gradient-to-b from-white via-[#fafafa] to-[#f5f5f7] text-gray-900 dark:from-neutral-900 dark:via-neutral-900 dark:to-black dark:text-neutral-100 relative overflow-x-hidden">
 
     {/* === HERO BACKGROUND === */}
@@ -844,11 +852,18 @@ return (
             <span className="text-xs font-semibold tracking-wide">{t("Table Order")}</span>
           </button>
           <button
-            onClick={() => onSelect("online")}
-            className="py-5 rounded-2xl bg-red-600 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
+            onClick={() => allowDelivery && onSelect("online")}
+            disabled={!allowDelivery}
+            className={`py-5 rounded-2xl text-white shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
+              allowDelivery
+                ? "bg-red-600 hover:shadow-lg hover:-translate-y-1"
+                : "bg-red-200 text-red-600 cursor-not-allowed"
+            }`}
           >
             <Bike className="w-6 h-6" />
-            <span className="text-xs font-semibold tracking-wide">{t("Delivery")}</span>
+            <span className="text-xs font-semibold tracking-wide">
+              {allowDelivery ? t("Delivery") : t("Delivery is closed")}
+            </span>
           </button>
         </div>
       </div>
@@ -910,7 +925,11 @@ return (
 
           {/* Popular This Week — turned into a simple carousel */}
           {c.enable_popular && popularProducts.length > 0 && (
-            <PopularCarousel title="⭐ Popular This Week" items={popularProducts} />
+            <PopularCarousel
+              title="⭐ Popular This Week"
+              items={popularProducts}
+              onProductClick={onPopularClick}
+            />
           )}
 
           {/* Featured card moved below Popular */}
@@ -971,12 +990,24 @@ return (
         {/* IMAGE RIGHT */}
         {storyImage && (
           <div className="flex justify-center">
-            <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-lg border border-gray-200 bg-white">
-              <img
-                src={storyImage}
-                alt={storyTitle}
-                className="w-full h-48 object-cover"
-              />
+            <div
+              className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-lg border border-gray-200 bg-white"
+              style={{
+                backgroundImage: storyImage
+                  ? `linear-gradient(135deg, rgba(255,255,255,0.9), rgba(229,231,235,0.8)), url(${storyImage})`
+                  : undefined,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }}
+            >
+              <div className="relative w-full h-48 flex items-center justify-center bg-white/70 backdrop-blur-sm">
+                <img
+                  src={storyImage}
+                  alt={storyTitle}
+                  className="h-full w-full max-w-full object-contain"
+                  style={{ objectPosition: "center" }}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -1558,6 +1589,67 @@ const showNewCard = !savedCard || !useSaved;
 }
 
 
+function OrderTypePromptModal({
+  product,
+  onSelect,
+  onClose,
+  t,
+  deliveryEnabled = true,
+}) {
+  if (!product) return null;
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4 py-6">
+      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.25em] text-gray-400">{t("Order Type")}</p>
+            <h3 className="mt-1 text-2xl font-semibold text-gray-900">{product.name}</h3>
+            <p className="text-xs text-gray-500">Select how you'd like to order this item.</p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="text-2xl leading-none text-gray-400 hover:text-gray-700"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            onClick={() => onSelect?.("takeaway")}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:border-neutral-900 hover:text-gray-900 shadow-sm transition"
+          >
+            <UtensilsCrossed className="w-5 h-5" />
+            {t("Take Away")}
+          </button>
+          <button
+            onClick={() => onSelect?.("table")}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-gradient-to-r from-neutral-900 to-neutral-700 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95"
+          >
+            <Soup className="w-5 h-5" />
+            {t("Table Order")}
+          </button>
+          {deliveryEnabled ? (
+            <button
+              onClick={() => onSelect?.("online")}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-red-500"
+            >
+              <Bike className="w-5 h-5" />
+              {t("Delivery")}
+            </button>
+          ) : (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">
+              {t("Delivery is closed")}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /* ====================== SMART CATEGORY BAR (auto-center on click + arrows) ====================== */
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -1687,7 +1779,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
 
 
 /* ====================== POPULAR CAROUSEL ====================== */
-function PopularCarousel({ title, items }) {
+function PopularCarousel({ title, items, onProductClick }) {
   const scrollRef = React.useRef(null);
   const [canLeft, setCanLeft] = React.useState(false);
   const [canRight, setCanRight] = React.useState(false);
@@ -1746,7 +1838,16 @@ function PopularCarousel({ title, items }) {
           {items.map((p) => (
             <div
               key={p.id}
-              className="min-w-[180px] sm:min-w-[200px] bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-2xl shadow-sm snap-start"
+              role={onProductClick ? "button" : undefined}
+              tabIndex={onProductClick ? 0 : undefined}
+              onClick={() => onProductClick?.(p)}
+              onKeyDown={(event) => {
+                if (onProductClick && (event.key === "Enter" || event.key === " ")) {
+                  event.preventDefault();
+                  onProductClick(p);
+                }
+              }}
+              className="min-w-[180px] sm:min-w-[200px] bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-2xl shadow-sm snap-start cursor-pointer"
             >
               <div className="w-full h-28 overflow-hidden rounded-t-2xl bg-gray-100 dark:bg-neutral-800">
                 {p.image ? (
@@ -1818,7 +1919,7 @@ function ProductGrid({ products, onProductClick, t }) {
   const productList = Array.isArray(products) ? products : [];
 
   return (
-    <main className="w-full max-w-7xl mx-auto pt-6 pb-32 px-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+    <main className="w-full max-w-none mx-auto pt-6 pb-32 grid gap-4 sm:gap-5 lg:gap-6 xl:gap-8 [grid-template-columns:repeat(auto-fit,minmax(160px,1fr))] sm:[grid-template-columns:repeat(auto-fit,minmax(180px,1fr))] md:[grid-template-columns:repeat(auto-fit,minmax(200px,1fr))] xl:[grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
       {productList.length === 0 && (
         <div className="col-span-full text-center text-neutral-400 font-medium text-lg py-12 italic">
           {t("No products available.")}
@@ -2723,10 +2824,15 @@ const shareUrl = useMemo(() => {
   const [paymentMethod, setPaymentMethod] = useState(
   () => storage.getItem("qr_payment_method") || "online"
 );
-  const [orderType, setOrderType] = useState(
-  () => storage.getItem("qr_orderType") || null
-);
+  const [orderType, setOrderType] = useState(null);
   const [showTakeawayForm, setShowTakeawayForm] = useState(false);
+  const [orderSelectCustomization, setOrderSelectCustomization] = useState({
+    delivery_enabled: true,
+  });
+  const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+  const [pendingPopularProduct, setPendingPopularProduct] = useState(null);
+  const [showOrderTypePrompt, setShowOrderTypePrompt] = useState(false);
+  const [suppressMenuFlash, setSuppressMenuFlash] = useState(true);
 
   const safeProducts = useMemo(() => toArray(products), [products]);
   const safeCategories = useMemo(() => toArray(categories), [categories]);
@@ -2838,6 +2944,11 @@ window.location.href = shareUrl;
   setShowQrPrompt(false);
 }
 
+useEffect(() => {
+  const timer = setTimeout(() => setSuppressMenuFlash(false), 250);
+  return () => clearTimeout(timer);
+}, []);
+
 // When switching order type, choose a sensible default
 useEffect(() => {
   if (orderType === "table" && !["online","card","sodexo","multinet","cash"].includes(paymentMethod)) {
@@ -2872,8 +2983,6 @@ const statusPortal = showStatus
     )
   : null;
   // show Delivery Info form first, every time Delivery is chosen
-// show Delivery Info form only when starting a brand-new online order
-const [showDeliveryForm, setShowDeliveryForm] = useState(false);
 useEffect(() => {
   const hasActive = !!(orderId || storage.getItem("qr_active_order_id"));
   if (orderType === "online" && !hasActive) {
@@ -3271,36 +3380,73 @@ payload = await res.json();
 
 
 
+const triggerOrderType = useCallback(
+  (type) => {
+    setOrderType(type);
+    if (type === "online") {
+      setShowDeliveryForm(true);
+    }
+    if (type === "takeaway") {
+      setShowTakeawayForm(true);
+    }
+  },
+  [setOrderType, setShowDeliveryForm, setShowTakeawayForm]
+);
 
+const handlePopularProductClick = useCallback(
+  (product) => {
+    if (!product) return;
+    setPendingPopularProduct(product);
+    setShowOrderTypePrompt(true);
+  },
+  [setPendingPopularProduct, setShowOrderTypePrompt]
+);
+
+useEffect(() => {
+  if (!orderType || !pendingPopularProduct) return;
+  const targetCategory = (pendingPopularProduct.category || "").trim();
+  if (targetCategory) {
+    setActiveCategory(targetCategory);
+  }
+  setSelectedProduct(pendingPopularProduct);
+  setShowAddModal(true);
+  setPendingPopularProduct(null);
+}, [orderType, pendingPopularProduct, setActiveCategory, setSelectedProduct, setShowAddModal]);
 
 // --- Order type select (show modal here too if needed) ---
 if (!orderType)
   return (
     <>
-<OrderTypeSelect
-   identifier={restaurantIdentifier}   // REQUIRED 🔥🔥🔥
-onSelect={(type) => {
-  setOrderType(type);
+      <OrderTypeSelect
+        identifier={restaurantIdentifier}
+        onSelect={triggerOrderType}
+        lang={lang}
+        setLang={setLang}
+        t={t}
+        onInstallClick={handleInstallClick}
+        canInstall={canInstall}
+        showHelp={showHelp}
+        setShowHelp={setShowHelp}
+        platform={platform}
+        onPopularClick={handlePopularProductClick}
+        onCustomizationLoaded={setOrderSelectCustomization}
+      />
 
-  if (type === "online") {
-    setShowDeliveryForm(true);
-  }
-  if (type === "takeaway") {
-    setShowTakeawayForm(true);
-  }
-}}
-   lang={lang}
-   setLang={setLang}
-   t={t}
-   onInstallClick={handleInstallClick}   
-   canInstall={canInstall}
-   showHelp={showHelp}
-   setShowHelp={setShowHelp}
-   platform={platform}
-/>
-
-
-
+      {showOrderTypePrompt && pendingPopularProduct && (
+        <OrderTypePromptModal
+          product={pendingPopularProduct}
+          t={t}
+          onClose={() => {
+            setShowOrderTypePrompt(false);
+            setPendingPopularProduct(null);
+          }}
+          onSelect={(type) => {
+            triggerOrderType(type);
+            setShowOrderTypePrompt(false);
+          }}
+          deliveryEnabled={orderSelectCustomization.delivery_enabled !== false}
+        />
+      )}
 
       {statusPortal}
     </>
@@ -3780,8 +3926,12 @@ function handleReset() {
   
 
 return (
-  <div className={`${isDarkMain ? 'dark' : ''}`}>
-  <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-neutral-900 dark:to-black flex flex-col">
+  <>
+    <div
+      className={`${isDarkMain ? "dark " : ""}flex-1`}
+      style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
+    >
+      <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-neutral-900 dark:to-black flex flex-col">
     <QrHeader
       orderType={orderType}
       table={table}
@@ -3903,8 +4053,12 @@ onSubmit={(form) => {
 
 
 
+    </div>
   </div>
-  </div>
+    {suppressMenuFlash && (
+      <div className="fixed inset-0 z-[120] bg-white" aria-hidden="true" />
+    )}
+  </>
 );
 
 }

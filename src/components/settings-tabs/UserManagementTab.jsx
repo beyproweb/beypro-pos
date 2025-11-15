@@ -1,5 +1,6 @@
 // src/components/UserManagementTab.jsx
 import React, { useState, useEffect } from "react";
+import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import RolePermissionModal from "../settings-tabs/RolePermissionModal";
@@ -30,21 +31,34 @@ export default function UserManagementTab() {
   const [currentPage, setCurrentPage] = useState(0);
   const STAFF_PER_PAGE = 5;
   useEffect(() => {
-  const fetchRoles = async () => {
-    try {
-      const res = await secureFetch("/settings/users");
-      if (res?.roles) {
-        setUsersConfig(res);
-        console.log("✅ Loaded roles from DB:", res.roles);
-      } else {
-        console.warn("⚠️ No roles found in DB, using defaults");
+    const fetchRoles = async () => {
+      try {
+        const res = await secureFetch("/settings/users");
+        if (res) {
+          setUsersConfig((prev) => ({
+            ...prev,
+            ...res,
+            roles: res.roles || prev.roles,
+            pinRequired:
+              typeof res.pinRequired === "boolean" ? res.pinRequired : prev.pinRequired,
+            allowedWifiIps: Array.isArray(res.allowedWifiIps)
+              ? res.allowedWifiIps
+              : prev.allowedWifiIps,
+          }));
+
+          if (res.roles) {
+            console.log("✅ Loaded roles from DB:", Object.keys(res.roles));
+          } else {
+            console.warn("⚠️ Loaded users settings but no roles were returned.");
+          }
+        }
+      } catch (err) {
+        console.error("❌ Failed to fetch roles:", err);
       }
-    } catch (err) {
-      console.error("❌ Failed to fetch roles:", err);
-    }
-  };
-  fetchRoles();
-}, []);
+    };
+
+    fetchRoles();
+  }, []);
 
   useEffect(() => {
     if (editingStaffId) {
@@ -77,7 +91,9 @@ export default function UserManagementTab() {
       driver: ["delivery"],
     },
     pinRequired: true,
+    allowedWifiIps: [],
   });
+  const [allowedIpInput, setAllowedIpInput] = useState("");
 
   const [newUser, setNewUser] = useState({
     id: "",
@@ -90,9 +106,13 @@ export default function UserManagementTab() {
     salary: "",
     avatar: "",
   });
+  const [qrStaffId, setQrStaffId] = useState("");
 
   const roles = Object.keys(usersConfig.roles).map((r) => r.toLowerCase());
   const deletableRoles = roles.filter((role) => role !== "admin");
+  const allowedIps = Array.isArray(usersConfig.allowedWifiIps)
+    ? usersConfig.allowedWifiIps
+    : [];
 
   const DEFAULT_AVATAR =
     "https://www.pngkey.com/png/full/115-1150152_default-profile-picture-avatar-png-green.png";
@@ -103,6 +123,16 @@ export default function UserManagementTab() {
       return DEFAULT_AVATAR;
     if (url.startsWith("http")) return url;
     return DEFAULT_AVATAR;
+  };
+
+  const isValidIp = (value) => {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return false;
+
+    const ipv4 =
+      /^(25[0-5]|2[0-4]\d|[01]?\d?\d)(\.(25[0-5]|2[0-4]\d|[01]?\d?\d)){3}$/;
+    const ipv6 = /^[0-9a-fA-F:.]+$/;
+    return ipv4.test(trimmed) || ipv6.test(trimmed);
   };
 
   const fetchStaff = async () => {
@@ -126,9 +156,11 @@ export default function UserManagementTab() {
         method: "POST",
         body: JSON.stringify(data),
       });
+      return true;
     } catch (err) {
       console.error("❌ Failed to save roles:", err);
       toast.error("Failed to save roles to settings.");
+      return false;
     }
   };
 
@@ -202,6 +234,47 @@ export default function UserManagementTab() {
     toast.success("✅ Role settings saved!");
   };
 
+  const handleAddAllowedIp = async () => {
+    const trimmed = allowedIpInput.trim();
+    if (!trimmed) {
+      toast.error(t("Please enter an IP address."));
+      return;
+    }
+
+    if (!isValidIp(trimmed)) {
+      toast.error(t("Enter a valid IPv4 or IPv6 address."));
+      return;
+    }
+
+    if (allowedIps.includes(trimmed)) {
+      toast.info(t("This IP address is already whitelisted."));
+      return;
+    }
+
+    const updated = {
+      ...usersConfig,
+      allowedWifiIps: [...allowedIps, trimmed],
+    };
+
+    setUsersConfig(updated);
+    const saved = await saveRolesToSettings(updated);
+    if (saved) {
+      toast.success(t("Wi-Fi IP whitelist updated."));
+      setAllowedIpInput("");
+    }
+  };
+
+  const handleRemoveAllowedIp = async (ipToRemove) => {
+    const updatedIps = allowedIps.filter((entry) => entry !== ipToRemove);
+    const updated = { ...usersConfig, allowedWifiIps: updatedIps };
+
+    setUsersConfig(updated);
+    const saved = await saveRolesToSettings(updated);
+    if (saved) {
+      toast.success(t("Wi-Fi IP removed from whitelist."));
+    }
+  };
+
   const handleAddUser = async () => {
     const { id, name, role, phone, address, email, pin, salary, avatar } =
       newUser;
@@ -250,16 +323,25 @@ export default function UserManagementTab() {
     }
   };
 
-  const handleDeleteStaff = async () => {
-    if (!selectedStaffId) return;
-    const confirmDelete = window.confirm("Are you sure?");
+  const handleDeleteStaffRecord = async (staffIdToDelete) => {
+    const targetId = staffIdToDelete || selectedStaffId;
+    if (!targetId) return;
+
+    const confirmDelete = window.confirm(
+      t("Are you sure you want to delete this staff member? This cannot be undone.")
+    );
     if (!confirmDelete) return;
 
     try {
-      await secureFetch(`/staff/${selectedStaffId}`, { method: "DELETE" });
+      await secureFetch(`/staff/${targetId}`, { method: "DELETE" });
       toast.success("🗑️ Staff deleted");
       fetchStaff();
-      setSelectedStaffId("");
+      if (targetId === selectedStaffId) {
+        setSelectedStaffId("");
+      }
+      if (targetId === qrStaffId) {
+        setQrStaffId("");
+      }
     } catch (err) {
       console.error("❌ Error deleting staff:", err);
       toast.error("Failed to delete staff");
@@ -293,12 +375,121 @@ export default function UserManagementTab() {
         </label>
       </div>
 
-          {/* Add New Staff */}
-    <div className="mb-14">
-      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
-        ➕ {t("Add New Staff User")}
-      </h3>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="mb-12 border-b pb-6 border-indigo-100 dark:border-indigo-800">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+            {t("Restrict QR check-ins to a Wi-Fi IP")}
+          </h3>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {allowedIps.length
+              ? `${allowedIps.length} ${t("IPs configured")}`
+              : t("No restriction")}
+          </span>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {t(
+            "Enter the public IP address of your restaurant Wi-Fi so staff QR check-ins/check-outs only work when they are connected to that network."
+          )}
+        </p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <label className="sr-only">{t("Allowed Wi-Fi IP")}</label>
+            <input
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-gray-800 dark:text-white"
+              placeholder={t("e.g. 203.0.113.45")}
+              value={allowedIpInput}
+              onChange={(e) => setAllowedIpInput(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleAddAllowedIp}
+            className="px-5 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition"
+          >
+            {t("Add IP")}
+          </button>
+        </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {allowedIps.length ? (
+          allowedIps.map((ip) => (
+            <span
+              key={ip}
+              className="flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200 text-sm"
+            >
+              <span>{ip}</span>
+              <button
+                  type="button"
+                  onClick={() => handleRemoveAllowedIp(ip)}
+                  className="ml-1 text-xs text-indigo-500 hover:text-indigo-700 dark:text-indigo-300 dark:hover:text-indigo-100"
+                  aria-label={`Remove ${ip}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))
+          ) : (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {t("No Wi-Fi IP restrictions are currently configured.")}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-10">
+        <div className="border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-gray-900 shadow-sm p-6">
+          <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-3">
+            {t("Generate QR Code / View Profile")}
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            {t("Choose a staff member to preview their QR code and profile quickly.")}
+          </p>
+          <select
+            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
+            value={qrStaffId}
+            onChange={(e) => setQrStaffId(e.target.value)}
+          >
+            <option value="">{t("Select Staff")}</option>
+            {staffList.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} - {s.role}
+              </option>
+            ))}
+          </select>
+          {qrStaffId ? (
+            <div className="mt-6 flex flex-col items-center gap-3">
+              <QRCodeCanvas
+                value={String(qrStaffId)}
+                size={200}
+                bgColor="#ffffff"
+                fgColor="#000000"
+                level="H"
+                includeMargin
+              />
+              <p className="text-lg font-medium text-gray-800 dark:text-white">
+                {t("QR Code for Staff ID")}: {qrStaffId}
+              </p>
+              <button
+                type="button"
+                onClick={() => handleDeleteStaffRecord(qrStaffId)}
+                className="px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition"
+              >
+                {t("Delete Staff")}
+              </button>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+              {t("Select a staff member to generate their QR code.")}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Add New Staff */}
+      <div className="mb-14">
+        <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
+          ➕ {t("Add New Staff User")}
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         {[
           { key: "id", label: t("ID") },
           { key: "name", label: t("Full Name") },

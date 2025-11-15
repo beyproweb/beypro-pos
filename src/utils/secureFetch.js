@@ -67,15 +67,13 @@ export default async function secureFetch(endpoint, options = {}) {
   const lower = endpoint.toLowerCase();
   const lowerPath = lower.replace(/[?#].*$/, "");
   const hasQrMenuSegment = /(?:^|\/)qr-menu(?:\/|$|[?#])/.test(lower);
-  const isMeEndpoint = /(?:^|\/)me(?:\/|$)/.test(lowerPath);
 
 const isPublic =
   lower.includes("/products?identifier=") ||
   lower.includes("/public/") ||
-  lower.includes("/tables?identifier=") ||   // ✅ ADD THIS LINE
+  lower.includes("/tables?identifier=") ||
   hasQrMenuSegment ||
   lower.includes("/restaurant-info") ||
-  isMeEndpoint ||
   lower.includes("/uploads/");
 
 

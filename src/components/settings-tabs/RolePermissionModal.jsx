@@ -1,5 +1,6 @@
 // src/components/RolePermissionModal.jsx
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 // ✅ Keep all permission keys lowercase
 const PERMISSION_LABELS = {
@@ -49,10 +50,19 @@ const PERMISSION_LABELS = {
   register: "Cash Register",
   payments: "Payments",
   history: "Order History",
+  "staff-checkin": "Check-In/Check-Out",
+  "staff-schedule": "Staff Schedule",
+  "staff-payroll": "Payroll",
+  "staff-send-shift": "Send Shift",
+  "staff-add": "Add Staff",
+  "staff-payment": "Payment",
+  takeaway: "Take Away",
 };
 
 
 const ALL_PERMISSIONS = Object.keys(PERMISSION_LABELS);
+const modalRoot =
+  typeof document !== "undefined" ? document.body : null;
 
 export default function RolePermissionModal({
   role,
@@ -87,8 +97,10 @@ export default function RolePermissionModal({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-indigo-900/80 via-indigo-700/40 to-blue-400/30 backdrop-blur-md">
+  if (!modalRoot) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-gradient-to-br from-indigo-900/80 via-indigo-700/40 to-blue-400/30 backdrop-blur-md">
       <div className="relative w-full max-w-2xl rounded-3xl shadow-2xl bg-white/80 dark:bg-gray-900/90 border border-indigo-400/30 p-7">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-2xl font-extrabold text-indigo-700 dark:text-accent tracking-tight">
@@ -169,6 +181,7 @@ export default function RolePermissionModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    modalRoot
   );
 }

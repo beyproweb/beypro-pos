@@ -2,13 +2,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Wrench, Plus, Loader, User, CheckCircle, Clock, Trash2, Edit3, Play, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import secureFetch from "../utils/secureFetch";
+import secureFetch, { BASE_URL } from "../utils/secureFetch";
 import socket from "../utils/socket";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 
-const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:5000/api")
-  .toString().replace(/\/+$/, "");
-const ORIGIN = API_BASE.replace(/\/api$/, ""); // for photo_url like /uploads/...
+const ORIGIN = String(BASE_URL).replace(/\/api\/?$/, "");
 
 export default function MaintenanceTracker() {
   const { t } = useTranslation();

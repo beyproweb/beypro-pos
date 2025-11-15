@@ -1,6 +1,6 @@
 // src/App.jsx
 
-import { Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "react-router-dom";
 import React, { useEffect, useState } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import Layout from "./components/Layout";
@@ -44,6 +44,7 @@ import QrMenuSettings from "./pages/QrMenuSettings";
 import UserManagementPage from "./pages/UserManagementPage";
 import PrintersPage from "./pages/PrintersPage";
 import TakeawayOverview from "./pages/TakeawayOverview";
+import { setNavigator } from "./utils/navigation";
 
 
 const SETTINGS_TAB_PERMISSIONS = {
@@ -82,6 +83,10 @@ const API_URL =
 const isAuthenticated = () => !!localStorage.getItem("beyproUser");
 
 export default function App() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    setNavigator(navigate);
+  }, [navigate]);
   const [lowStockAlerts, setLowStockAlerts] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("beyproBellNotifications") || "[]");

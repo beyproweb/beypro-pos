@@ -21,13 +21,14 @@ secureFetch('/settings/localization')
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(
       <React.StrictMode>
-        <StockProvider>
-          <HashRouter>
-            <AppearanceProvider>
-              <App />
-            </AppearanceProvider>
-          </HashRouter>
-        </StockProvider>
+      <HashRouter>
+  <StockProvider>
+    <AppearanceProvider>
+      <App />
+    </AppearanceProvider>
+  </StockProvider>
+</HashRouter>
+
       </React.StrictMode>
     );
   });
