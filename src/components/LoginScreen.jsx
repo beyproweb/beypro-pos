@@ -3,7 +3,7 @@ import { LogIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { normalizeUser } from "../utils/normalizeUser";
-import secureFetch from "../utils/secureFetch";
+import { BASE_URL } from "../utils/secureFetch";
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -11,78 +11,53 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
-  
-const handleLogin = async (e) => {
-  e.preventDefault();
-  setError("");
-  setLoading(true);
 
-  try {
-    console.groupCollapsed("🔑 Login Debug");
-    console.log("➡️ Using secureFetch BASE (derived from VITE_API_URL/Electron)");
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-   const data = await fetch(`${import.meta.env.VITE_API_URL}/auth/register`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ full_name, email, password, business_name }),
-}).then(r => r.json());
+    try {
+      const response = await fetch(`${BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
+      });
 
+      const data = await response.json();
+      if (!response.ok || !data?.token) {
+        throw new Error(data?.error || data?.message || "Invalid credentials");
+      }
 
-    console.log("⬅️ Login JSON:", data);
+      const normalizedUser = normalizeUser({
+        ...data.user,
+        token: data.token,
+      });
 
-    if (!data?.token) {
-      throw new Error(data?.error || data?.message || "Invalid credentials");
+      if (!normalizedUser) {
+        throw new Error("Invalid user payload");
+      }
+
+      localStorage.setItem("token", data.token);
+      if (normalizedUser.restaurant_id) {
+        localStorage.setItem("restaurant_id", normalizedUser.restaurant_id);
+      } else {
+        localStorage.removeItem("restaurant_id");
+      }
+
+      localStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
+      setCurrentUser(normalizedUser);
+      navigate("/dashboard");
+    } catch (err) {
+      console.error("❌ Login failed:", err);
+      setError(err.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
-
-    // ✅ Save JWT for secureFetch
-    localStorage.setItem("token", data.token);
-    console.log("💾 Token saved to localStorage:", data.token);
-
-    // ✅ Extract user safely
-    const userData = data.user?.user || data.user || {};
-    console.log("👤 Normalizing user from payload:", userData);
-
-    // ✅ Save tenant/restaurant_id
-    if (userData.restaurant_id) {
-      localStorage.setItem("restaurant_id", userData.restaurant_id);
-      console.log("💾 Tenant restaurant_id saved:", userData.restaurant_id);
-    }
-
-    // ✅ Normalize user data
-    const role = userData.role?.toLowerCase() || "staff";
-    let permissions = Array.isArray(userData.permissions)
-      ? userData.permissions.map((p) => p.toLowerCase())
-      : [];
-
-    if (role === "admin") {
-      permissions = ["all"];
-    }
-
-    const normalizedUser = {
-      id: userData.id,
-      name: userData.name,
-      email: userData.email,
-      role,
-      restaurant_id: userData.restaurant_id,
-      permissions,
-      token: data.token,
-    };
-
-    // ✅ Save normalized user
-    localStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
-    console.log("💾 Normalized user saved:", normalizedUser);
-
-    setCurrentUser(normalizedUser);
-    console.info("✅ Login success, navigating to /dashboard");
-    navigate("/dashboard");
-  } catch (err) {
-    console.error("❌ Login failed:", err);
-    setError(err.message || "Login failed");
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   return (
     <div className="flex flex-col lg:flex-row h-screen w-screen bg-gray-50">
