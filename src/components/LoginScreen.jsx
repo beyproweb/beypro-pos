@@ -21,10 +21,12 @@ const handleLogin = async (e) => {
     console.groupCollapsed("🔑 Login Debug");
     console.log("➡️ Using secureFetch BASE (derived from VITE_API_URL/Electron)");
 
-    const data = await secureFetch("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
+   const data = await fetch(`${import.meta.env.VITE_API_URL}/auth/register`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ full_name, email, password, business_name }),
+}).then(r => r.json());
+
 
     console.log("⬅️ Login JSON:", data);
 

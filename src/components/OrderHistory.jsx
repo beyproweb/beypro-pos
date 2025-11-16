@@ -25,7 +25,7 @@ export default function OrderHistory({
     [paymentMethods]
   );
   const [closedOrders, setClosedOrders] = useState([]);
-  const [groupedClosedOrders, setGroupedClosedOrders] = useState({});
+  const [showCancellationsOnly, setShowCancellationsOnly] = useState(false);
   const [editingPaymentOrderId, setEditingPaymentOrderId] = useState(null);
   const [paymentMethodDraft, setPaymentMethodDraft] = useState({});
   const { t } = useTranslation();
@@ -85,20 +85,30 @@ const fetchClosedOrders = async () => {
 
     const nonEmptyOrders = enriched.filter(order => Array.isArray(order.items) && order.items.length > 0);
 
-    const grouped = nonEmptyOrders.reduce((acc, order) => {
-      const date = new Date(order.created_at).toLocaleDateString();
-      if (!acc[date]) acc[date] = [];
-      acc[date].push(order);
-      return acc;
-    }, {});
-
     setClosedOrders(nonEmptyOrders);
-    setGroupedClosedOrders(grouped);
   } catch (err) {
     console.error("❌ Fetch closed orders failed:", err);
     toast.error("Failed to load order history");
   }
 };
+
+const filteredOrders = useMemo(() => {
+  if (showCancellationsOnly) {
+    return closedOrders.filter((order) => order.status === "cancelled");
+  }
+  return closedOrders;
+}, [closedOrders, showCancellationsOnly]);
+
+const groupedClosedOrders = useMemo(() => {
+  return filteredOrders.reduce((acc, order) => {
+    const dateKey = order.created_at
+      ? new Date(order.created_at).toLocaleDateString()
+      : "Unknown";
+    if (!acc[dateKey]) acc[dateKey] = [];
+    acc[dateKey].push(order);
+    return acc;
+  }, {});
+}, [filteredOrders]);
 
 function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
   let arr = draft || [];
@@ -124,6 +134,10 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
     // eslint-disable-next-line
   }, [fromDate, toDate]);
 
+  const historyEmptyMessage = showCancellationsOnly
+    ? t("No cancelled orders found for the selected range.")
+    : t("No order history found for the selected range.");
+
   return (
     <div className="px-3 md:px-8 py-6">
       {/* Header and filters */}
@@ -148,6 +162,17 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => setShowCancellationsOnly((prev) => !prev)}
+            className={`rounded-xl border-2 px-3 py-1 text-sm font-semibold transition ${
+              showCancellationsOnly
+                ? "border-rose-500 bg-rose-600 text-white hover:bg-rose-700"
+                : "border-rose-100 bg-rose-50 text-rose-700 hover:bg-rose-100"
+            }`}
+          >
+            {showCancellationsOnly ? t("Showing Cancellations") : t("Show Cancellations")}
+          </button>
         </div>
       </div>
 
@@ -155,7 +180,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
       {Object.entries(groupedClosedOrders).length === 0 ? (
         <div className="flex flex-col items-center mt-20">
           <span className="text-6xl mb-2">🗂️</span>
-          <span className="text-xl text-gray-400 font-semibold">{t("No order history found for the selected range.")}</span>
+          <span className="text-xl text-gray-400 font-semibold">{historyEmptyMessage}</span>
         </div>
       ) : (
         Object.entries(groupedClosedOrders).map(([date, orders]) => (
@@ -177,7 +202,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             {/* Order Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
               {orders
-  .filter((order) => {
+.filter((order) => {
     if (paymentFilter === "All") return true;
     const target = (paymentFilter || "").toLowerCase();
     const normalize = (val) => (val || "").toLowerCase();
@@ -195,7 +220,12 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
 
     return normalize(order.payment_method) === target;
   })
-  .map(order => (
+  .map((order) => {
+    const normalizedStatus = (order.status || "").toLowerCase();
+    const isOrderCancelled = ["cancelled", "canceled"].includes(normalizedStatus);
+    const paymentEditingAllowed = !isOrderCancelled;
+    const showPaymentEditor = paymentEditingAllowed && editingPaymentOrderId === order.id;
+    return (
     <div
       key={order.id}
       className="rounded-3xl bg-gradient-to-br from-white/90 via-blue-50 to-indigo-50 border border-white/60 shadow-xl p-6 flex flex-col gap-4 transition hover:scale-[1.02] hover:shadow-2xl"
@@ -241,10 +271,31 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
               {t("Debt Paid")}
             </span>
           )}
-        </div>
       </div>
+    </div>
 
-      <hr className="my-2" />
+    {order.status === "cancelled" && (
+      <div className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700 transition">
+        <p className="font-semibold text-rose-800">{t("Cancellation Reason")}:</p>
+        <p className="text-xs text-rose-700">
+          {order.cancellation_reason || t("No reason provided")}
+        </p>
+        {order.cancelled_at && (
+          <p className="mt-1 text-xs text-rose-500">
+            {t("Cancelled at")}:{" "}
+            {new Date(order.cancelled_at).toLocaleString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            })}
+          </p>
+        )}
+      </div>
+    )}
+
+    <hr className="my-2" />
 
       {/* --- Items List --- */}
       <div>
@@ -338,7 +389,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
       {/* --- Payment Methods - EDITABLE (Split or Single) --- */}
 <div className="flex flex-wrap gap-2 items-center mt-2">
   {order.receiptMethods?.length > 0 ? (
-    editingPaymentOrderId === order.id ? (
+    showPaymentEditor ? (
       <>
         {(paymentMethodDraft[order.id] || order.receiptMethods).map((m, idx, arr) => (
           <span key={idx} className="inline-flex items-center gap-1 px-3 py-2 bg-white rounded-xl border-2 border-blue-200 shadow text-lg font-bold mr-2">
@@ -504,19 +555,27 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
           ))}
         </span>
         <button
-          className="ml-2 px-2 py-1 bg-fuchsia-500 text-white rounded text-base font-bold"
+          className={`ml-2 px-2 py-1 rounded text-base font-bold ${
+            paymentEditingAllowed
+              ? "bg-fuchsia-500 text-white"
+              : "bg-slate-200 text-slate-500 cursor-not-allowed"
+          }`}
           onClick={() => {
+            if (!paymentEditingAllowed) return;
             setEditingPaymentOrderId(order.id);
-            setPaymentMethodDraft(pm => ({
+            setPaymentMethodDraft((pm) => ({
               ...pm,
-              [order.id]: order.receiptMethods.map(obj => ({ ...obj }))
+              [order.id]: order.receiptMethods.map((obj) => ({ ...obj })),
             }));
           }}
-        >{t("Edit Splits")} ✏️</button>
+          disabled={!paymentEditingAllowed}
+        >
+          {t("Edit Splits")} ✏️
+        </button>
       </>
     )
   ) : (
-    editingPaymentOrderId === order.id ? (
+    showPaymentEditor ? (
       Array.isArray(paymentMethodDraft[order.id]) ? (
         <>
           {paymentMethodDraft[order.id].map((m, idx, arr) => (
@@ -744,12 +803,18 @@ await secureFetch(`/orders/${order.id}`, {
       )
     ) : (
       <span
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-blue-300 bg-white/80 shadow text-lg font-extrabold text-blue-700 cursor-pointer"
+        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-blue-300 bg-white/80 shadow text-lg font-extrabold text-blue-700 ${
+          paymentEditingAllowed ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+        }`}
         onClick={() => {
+          if (!paymentEditingAllowed) return;
           setEditingPaymentOrderId(order.id);
-          setPaymentMethodDraft(pm => ({ ...pm, [order.id]: order.payment_method }));
+          setPaymentMethodDraft((pm) => ({
+            ...pm,
+            [order.id]: order.payment_method,
+          }));
         }}
-        title="Edit payment method"
+        title={t("Edit payment method")}
       >
         {order.payment_method || "UNKNOWN"}
         <span className="ml-2 text-gray-400">✏️</span>
@@ -760,7 +825,8 @@ await secureFetch(`/orders/${order.id}`, {
 
 
     </div>
-  ))}
+  );
+})}
 
             </div>
           </div>

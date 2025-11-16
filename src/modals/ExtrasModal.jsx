@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 
 export default function ExtrasModal({
   showExtrasModal,
@@ -9,14 +8,11 @@ export default function ExtrasModal({
   selectedExtras,
   setSelectedExtras,
   extrasGroups,            // [{ id, group_name, items:[{id,name,extraPrice|price}] }]
-  setCartItems,
-  cartItems,
-  editingCartItemIndex,
-  setEditingCartItemIndex,
   note,
   setNote,
   fullTotal,
   t,
+  onConfirmAddToCart,
 }) {
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   useEffect(() => {
@@ -316,163 +312,12 @@ export default function ExtrasModal({
                 const productQty = selectedProduct.quantity || 1;
                 const trimmedNote = (note || "").trim();
 
-                // ✅ Ensure extras always carry correct unit + amount
-                const validExtras = selectedExtras
-                  .filter((ex) => ex.quantity > 0)
-                  .map((ex) => ({
-                    ...ex,
-                    quantity: Number(ex.quantity),
-                    price: Number(ex.price ?? ex.extraPrice ?? 0),
-                    amount:
-  ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
-    ? Number(ex.amount)
-    : 1,
-
-                    unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase(),
-                  }));
-
-                const itemPrice = Number(selectedProduct.price); // base price only
-                const extrasRefs =
-                  selectedProduct.extrasGroupRefs ||
-                  (hasGroupRefs
-                    ? {
-                        ids: Array.from(selectedGroupIds),
-                        names: Array.from(selectedGroupNames),
-                      }
-                    : null);
-                const extrasKey = JSON.stringify(validExtras);
-                const baseUniqueId = `${selectedProduct.id}-NO_EXTRAS`;
-                const isPlain = validExtras.length === 0 && trimmedNote.length === 0;
-                const uniqueId = isPlain ? baseUniqueId : `${selectedProduct.id}-${extrasKey}-${uuidv4()}`;
-
-                if (editingCartItemIndex !== null) {
-                  setCartItems((prev) => {
-                    const updated = [...prev];
-                    const existing = updated[editingCartItemIndex] || {};
-                    const persistedRefs =
-                      extrasRefs ||
-                      existing.extrasGroupRefs ||
-                      (Array.isArray(selectedProduct?.selectedExtrasGroup) || Array.isArray(selectedProduct?.selectedExtrasGroupNames)
-                        ? {
-                            ids: Array.isArray(selectedProduct.selectedExtrasGroup)
-                              ? selectedProduct.selectedExtrasGroup.map((id) => Number(id)).filter(Number.isFinite)
-                              : [],
-                            names: Array.isArray(selectedProduct.selectedExtrasGroupNames)
-                              ? selectedProduct.selectedExtrasGroupNames
-                                  .map((name) =>
-                                    normalizeGroupKey(
-                                      typeof name === "string" ? name : String(name || "")
-                                    )
-                                  )
-                                  .filter(Boolean)
-                              : [],
-                          }
-                        : null);
-
-                    updated[editingCartItemIndex] = {
-                      ...updated[editingCartItemIndex],
-                      quantity: productQty,
-                      price: itemPrice,
-                      extras: validExtras,    // ✅ carries unit + amount
-                      unique_id: uniqueId,
-                      note: trimmedNote || null,
-                      ...(persistedRefs
-                        ? {
-                            extrasGroupRefs: persistedRefs,
-                            selectedExtrasGroup: persistedRefs.ids,
-                            selected_extras_group: persistedRefs.ids,
-                            selectedExtrasGroupNames: persistedRefs.names,
-                          }
-                        : {}),
-                    };
-                    return updated;
-                  });
-                  setEditingCartItemIndex(null);
-                } else {
-                  if (isPlain) {
-                    setCartItems((prev) => {
-                      const existingIndex = prev.findIndex(
-                        (item) =>
-                          item.unique_id === baseUniqueId &&
-                          !item.confirmed &&
-                          !item.paid
-                      );
-
-	                      if (existingIndex !== -1) {
-	                        return prev.map((item, idx) =>
-	                          idx === existingIndex
-	                            ? {
-	                                ...item,
-	                                quantity: item.quantity + productQty,
-	                                ...(extrasRefs && !item.extrasGroupRefs
-	                                  ? {
-	                                      extrasGroupRefs: extrasRefs,
-	                                      selectedExtrasGroup: extrasRefs.ids,
-	                                      selected_extras_group: extrasRefs.ids,
-	                                      selectedExtrasGroupNames: extrasRefs.names,
-	                                    }
-	                                  : {}),
-	                              }
-	                            : item
-	                        );
-	                      }
-
-                      const hasLocked = prev.some(
-                        (item) =>
-                          item.unique_id === baseUniqueId &&
-                          (item.confirmed || item.paid)
-                      );
-
-                      const finalUniqueId = hasLocked
-                        ? `${baseUniqueId}-${uuidv4()}`
-                        : baseUniqueId;
-
-	                      return [
-	                        ...prev,
-	                        {
-	                          id: selectedProduct.id,
-	                          name: selectedProduct.name,
-	                          price: itemPrice,
-	                          quantity: productQty,
-	                          ingredients: selectedProduct.ingredients || [],
-	                          extras: [],
-	                          unique_id: finalUniqueId,
-	                          note: null,
-	                          ...(extrasRefs
-	                            ? {
-	                                extrasGroupRefs: extrasRefs,
-	                                selectedExtrasGroup: extrasRefs.ids,
-	                                selected_extras_group: extrasRefs.ids,
-	                                selectedExtrasGroupNames: extrasRefs.names,
-	                              }
-	                            : {}),
-	                        },
-	                      ];
-	                    });
-	                  } else {
-	                    setCartItems((prev) => [
-	                      ...prev,
-	                      {
-	                        id: selectedProduct.id,
-	                        name: selectedProduct.name,
-	                        price: itemPrice,
-	                        quantity: productQty,
-	                        ingredients: selectedProduct.ingredients || [],
-	                        extras: validExtras,   // ✅ carries unit + amount
-	                        unique_id: uniqueId,
-	                        note: trimmedNote || null,
-	                        ...(extrasRefs
-	                          ? {
-	                              extrasGroupRefs: extrasRefs,
-	                              selectedExtrasGroup: extrasRefs.ids,
-	                              selected_extras_group: extrasRefs.ids,
-	                              selectedExtrasGroupNames: extrasRefs.names,
-	                            }
-	                          : {}),
-	                      },
-	                    ]);
-	                  }
-	                }
+                onConfirmAddToCart?.({
+                  product: selectedProduct,
+                  quantity: productQty,
+                  extras: selectedExtras,
+                  note: trimmedNote,
+                });
 
                 setShowExtrasModal(false);
                 setSelectedExtras([]);

@@ -119,6 +119,48 @@ const normalizeExtrasGroupSelection = (raw) => {
     names: Array.from(names),
   };
 };
+const deriveExtrasGroupRefs = (product) => {
+  if (!product || typeof product !== "object") return null;
+
+  const ids = new Set();
+  const names = new Set();
+
+  const addId = (value) => {
+    const num = Number(value);
+    if (Number.isFinite(num)) ids.add(num);
+  };
+
+  const addName = (value) => {
+    const norm = normalizeGroupKey(value);
+    if (norm) names.add(norm);
+  };
+
+  const extrasRefs = product.extrasGroupRefs || {};
+  const extrasIds = Array.isArray(extrasRefs.ids) ? extrasRefs.ids : [];
+  const extrasNames = Array.isArray(extrasRefs.names) ? extrasRefs.names : [];
+
+  extrasIds.forEach(addId);
+  extrasNames.forEach(addName);
+
+  const selectionIds = Array.isArray(product.selectedExtrasGroup)
+    ? product.selectedExtrasGroup
+    : Array.isArray(product.selected_extras_group)
+    ? product.selected_extras_group
+    : [];
+  selectionIds.forEach(addId);
+
+  const selectionNames = Array.isArray(product.selectedExtrasGroupNames)
+    ? product.selectedExtrasGroupNames
+    : [];
+  selectionNames.forEach(addName);
+
+  if (ids.size === 0 && names.size === 0) return null;
+
+  return {
+    ids: Array.from(ids),
+    names: Array.from(names),
+  };
+};
 const categoryIcons = {
   Meat: "🍔",
   Pizza: "🍕",
@@ -131,6 +173,33 @@ const categoryIcons = {
   // Default:
   default: "🍔"
 };
+
+const normalizeSuborderItems = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      console.warn("⚠️ Failed to parse suborder items", err);
+      return [];
+    }
+  }
+  return [];
+};
+
+const isCancelledStatus = (status) => {
+  const normalized = String(status || "").toLowerCase();
+  return normalized === "cancelled" || normalized === "canceled";
+};
+
+const isActiveTableStatus = (status) => {
+  const normalized = String(status || "").toLowerCase();
+  return !["closed", "cancelled", "canceled"].includes(normalized);
+};
+
+const isPaidItem = (item) => Boolean(item && (item.paid || item.paid_at));
 
 export default function TransactionScreen() {
   useRegisterGuard();
@@ -164,18 +233,48 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const extrasGroupsPromiseRef = useRef(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [subOrders, setSubOrders] = useState([]);
+  const suborderItems = useMemo(() => {
+    if (!Array.isArray(subOrders)) return [];
+    return subOrders.flatMap((sub) => normalizeSuborderItems(sub?.items));
+  }, [subOrders]);
   const [activeSplitMethod, setActiveSplitMethod] = useState(null);
   const [note, setNote] = useState("");
-const [toast, setToast] = useState({ show: false, message: "" });
-const [isDebtSaving, setIsDebtSaving] = useState(false);
-const [showDebtModal, setShowDebtModal] = useState(false);
-const [debtForm, setDebtForm] = useState({ name: "", phone: "" });
-const [debtError, setDebtError] = useState("");
-const [debtLookupLoading, setDebtLookupLoading] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [refundMethodId, setRefundMethodId] = useState("");
+  const [toast, setToast] = useState({ show: false, message: "" });
+  const [isDebtSaving, setIsDebtSaving] = useState(false);
+  const [showDebtModal, setShowDebtModal] = useState(false);
+  const [debtForm, setDebtForm] = useState({ name: "", phone: "" });
+  const [debtError, setDebtError] = useState("");
+  const [debtLookupLoading, setDebtLookupLoading] = useState(false);
+  const hasUnconfirmedCartItems = useMemo(
+    () => cartItems.some((item) => !item.confirmed),
+    [cartItems]
+  );
+  const hasConfirmedCartUnpaid = useMemo(
+    () => cartItems.some((item) => item.confirmed && !isPaidItem(item)),
+    [cartItems]
+  );
+  const allCartItemsPaid = useMemo(
+    () => cartItems.every((item) => isPaidItem(item)),
+    [cartItems]
+  );
+  const hasSuborderUnpaid = useMemo(
+    () => suborderItems.some((item) => !isPaidItem(item)),
+    [suborderItems]
+  );
+  const allSuborderPaid = useMemo(
+    () => suborderItems.every((item) => isPaidItem(item)),
+    [suborderItems]
+  );
 const [debtSearch, setDebtSearch] = useState("");
 const [debtSearchResults, setDebtSearchResults] = useState([]);
 const [debtSearchLoading, setDebtSearchLoading] = useState(false);
-const orderType = order?.order_type || (orderId ? "phone" : "table");
+const orderType = String(
+  order?.order_type || (orderId ? "phone" : "table") || "table"
+).toLowerCase();
 const normalizedStatus = (order?.status || "").toLowerCase();
 // Debt can be added only when order is confirmed/paid AND there are confirmed items and no unconfirmed items
 const hasUnconfirmedItems = cartItems.some((i) => !i.confirmed);
@@ -380,24 +479,19 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const hasImg = !!catSrc;
 
   const baseClasses =
-    "flex flex-col items-center justify-center gap-1 rounded-xl border px-3 py-3 text-center transition";
-  const widthClass =
-    variant === "mobile"
-      ? "min-w-[120px] snap-start"
-      : "w-full";
+    "flex flex-col items-center justify-center gap-1 rounded-md border px-1.5 py-2 text-center transition select-none";
+const widthClass =
+  variant === "mobile"
+    ? "min-w-[100px] max-w-[110px] snap-start"
+    : "w-full";
+  const activeClasses = "border-indigo-500 bg-white shadow";
+  const inactiveClasses = "border-slate-200 hover:border-indigo-300 hover:bg-slate-50";
 
-  const activeClasses =
-    "border-indigo-500 bg-white shadow-md";
+  const imageClasses = "h-10 w-10 object-cover rounded-md"; // bigger ✔
+  const iconClasses = "text-[20px] leading-tight";           // bigger ✔
 
-  const inactiveClasses =
-    "border-blue-100 hover:border-indigo-200 hover:bg-blue-50";
-
-  const imageClasses =
-    "mb-1 h-10 w-10 rounded-lg border object-cover shadow-sm lg:self-center";
-
-  const iconClasses = "mb-1 text-xl lg:self-center";
-
-  const labelClasses = "text-sm font-semibold text-slate-800 text-center";
+  const labelClasses =
+    "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[75px]"; // bigger ✔
 
   return (
     <button
@@ -418,6 +512,9 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
   );
 };
 
+
+
+
 const hasExtras = (item) => Array.isArray(item.extras) && item.extras.length > 0;
 const [categoryImages, setCategoryImages] = useState({});
 // Calculate extras total and final price in the Add to Cart modal
@@ -437,11 +534,29 @@ const [showMoveTableModal, setShowMoveTableModal] = useState(false);
 const { currentUser } = useAuth();
 // 1. Add drinksList state at the top
 const [drinksList, setDrinksList] = useState([]);
-const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+  const [isFloatingCartOpen, setIsFloatingCartOpen] = useState(false);
 const cartScrollRef = useRef(null);
 const lastVisibleCartItemRef = useRef(null);
 const [expandedCartItems, setExpandedCartItems] = useState(() => new Set());
 const [selectedCartItemIds, setSelectedCartItemIds] = useState(() => new Set());
+const clearCartState = useCallback(() => {
+  setCartItems([]);
+  setReceiptItems([]);
+  setSelectedForPayment([]);
+  setSelectedCartItemIds(new Set());
+  setShowPaymentModal(false);
+  setExpandedCartItems(new Set());
+  setSubOrders([]);
+  setActiveSplitMethod(null);
+  setEditingCartItemIndex(null);
+  setSelectedProduct(null);
+  setSelectedExtras([]);
+  setNote("");
+  setIsSplitMode(false);
+  setShowExtrasModal(false);
+  setSelectedPaymentMethod("");
+  setIsFloatingCartOpen(false);
+}, []);
 
 
   const fetchExtrasGroupsOnce = useCallback(async () => {
@@ -608,7 +723,6 @@ useLayoutEffect(() => {
 
   if (unpaidItems.length === 0) {
     lastVisibleCartItemRef.current = null;
-    if (selectedCartItemIds.size > 0) setSelectedCartItemIds(new Set());
     return;
   }
 
@@ -711,9 +825,7 @@ useEffect(() => {
 useEffect(() => {
   setSelectedCartItemIds((prev) => {
     const validKeys = new Set(
-      cartItems
-        .filter((item) => !item.paid)
-        .map((item) => String(item.unique_id || item.id))
+      cartItems.map((item) => String(item.unique_id || item.id))
     );
 
     let changed = false;
@@ -916,7 +1028,7 @@ useEffect(() => {
   };
 }, []);
 
-  const safeParseExtras = (extras) => {
+  const safeParseExtras = useCallback((extras) => {
     try {
       if (Array.isArray(extras)) return extras;
       if (typeof extras === "string" && extras.trim() !== "") {
@@ -928,24 +1040,61 @@ useEffect(() => {
       console.error("❌ Error parsing extras:", err);
       return [];
     }
-  };
+  }, []);
+
+  const computeItemLineTotal = useCallback(
+    (item) => {
+      const extrasList = safeParseExtras(item.extras);
+      const extrasTotal = (Array.isArray(extrasList) ? extrasList : []).reduce(
+        (acc, ex) => {
+          const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+          const qty = Number(ex.quantity) || 1;
+          return acc + price * qty;
+        },
+        0
+      );
+      const basePrice = parseFloat(item.price) || 0;
+      const quantity = Number(item.quantity) || 1;
+      return (basePrice + extrasTotal) * quantity;
+    },
+    [safeParseExtras]
+  );
 
   // 💡 Compute total of selected cart items
-const selectedItemsTotal = cartItems
-  .filter((item) => selectedCartItemIds.has(String(item.unique_id || item.id)))
-  .reduce((sum, item) => {
-    const extrasList = safeParseExtras(item.extras);
-    const perItemExtrasTotal = (Array.isArray(extrasList) ? extrasList : []).reduce((acc, ex) => {
-      const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-      const qty = Number(ex.quantity) || 1;
-      return acc + price * qty;
+  const selectedItemsTotal = cartItems
+    .filter((item) => selectedCartItemIds.has(String(item.unique_id || item.id)))
+    .reduce((sum, item) => sum + computeItemLineTotal(item), 0);
+
+  const totalPaidAmount = useMemo(() => {
+    return cartItems.reduce((sum, item) => {
+      if (!item.paid) return sum;
+      return sum + computeItemLineTotal(item);
     }, 0);
-    const basePrice = parseFloat(item.price) || 0;
-    const quantity = Number(item.quantity) || 1;
-    return sum + (basePrice + perItemExtrasTotal) * quantity;
-  }, 0);
-    // --- New split payment state ---
-  const [splits, setSplits] = useState({});
+  }, [cartItems, computeItemLineTotal]);
+
+  const selectedPaidRefundAmount = useMemo(() => {
+    if (!selectedCartItemIds.size) return 0;
+    const keys = new Set(Array.from(selectedCartItemIds, (id) => String(id)));
+    return cartItems.reduce((sum, item) => {
+      const key = String(item.unique_id || item.id);
+      if (!keys.has(key) || !item.paid) return sum;
+      return sum + computeItemLineTotal(item);
+    }, 0);
+  }, [cartItems, selectedCartItemIds, computeItemLineTotal]);
+
+  const refundAmount = selectedPaidRefundAmount > 0 ? selectedPaidRefundAmount : totalPaidAmount;
+  const hasPaidItems = refundAmount > 0;
+  const isUnpaidPaymentMethod =
+    (order?.payment_method || "").toLowerCase().trim() === "unpaid";
+  const shouldShowRefundMethod = hasPaidItems && !isUnpaidPaymentMethod;
+  const selectedCartItems = useMemo(() => {
+    if (!selectedCartItemIds.size) return [];
+    const keys = new Set(Array.from(selectedCartItemIds, (id) => String(id)));
+    return cartItems.filter((item) => keys.has(String(item.unique_id || item.id)));
+  }, [cartItems, selectedCartItemIds]);
+ 
+// --- New split payment state ---
+const [splits, setSplits] = useState({});
 
   const resolvePaymentLabel = useCallback(
     (id) => getPaymentMethodLabel(paymentMethods, id),
@@ -980,6 +1129,126 @@ const selectedItemsTotal = cartItems
       return next;
     });
   }, [paymentMethods]);
+
+  const getDefaultRefundMethod = useCallback(() => {
+    if (!paymentMethods.length) return "";
+    const normalizedOrderPayment = (order?.payment_method || "").trim().toLowerCase();
+    if (!normalizedOrderPayment) {
+      return paymentMethods[0].id;
+    }
+    const match = paymentMethods.find((method) => {
+      const label = (method.label || "").trim().toLowerCase();
+      const id = (method.id || "").trim().toLowerCase();
+      return label === normalizedOrderPayment || id === normalizedOrderPayment;
+    });
+    return match?.id || paymentMethods[0].id;
+  }, [order?.payment_method, paymentMethods]);
+
+  useEffect(() => {
+    if (!paymentMethods.length) return;
+    setRefundMethodId((prev) => {
+      if (prev && paymentMethods.some((method) => method.id === prev)) {
+        return prev;
+      }
+      return getDefaultRefundMethod();
+    });
+  }, [getDefaultRefundMethod, paymentMethods]);
+
+  const openCancelModal = useCallback(() => {
+    if (!order?.id) return;
+    setCancelReason("");
+    setRefundMethodId(getDefaultRefundMethod());
+    setShowCancelModal(true);
+  }, [getDefaultRefundMethod, order?.id]);
+
+  const closeCancelModal = useCallback(() => {
+    setShowCancelModal(false);
+    setCancelReason("");
+  }, []);
+
+  const handleCancelConfirm = async () => {
+    if (!order?.id) {
+      showToast(t("Select an order first"));
+      return;
+    }
+    const trimmedReason = cancelReason.trim();
+    if (!trimmedReason) {
+      showToast(t("Enter a cancellation reason."));
+      return;
+    }
+    const selectedItemsForCancel = selectedCartItems
+      .map((item) => item.unique_id || item.id)
+      .filter(Boolean)
+      .map(String);
+    const isPartialCancel = selectedItemsForCancel.length > 0;
+
+    setCancelLoading(true);
+    try {
+      const payload = { reason: trimmedReason };
+      if (shouldShowRefundMethod && refundMethodId) {
+        payload.refund_method = refundMethodId;
+      }
+      if (isPartialCancel) {
+        payload.items = selectedItemsForCancel;
+      }
+
+      const cancelResult = await secureFetch(`/orders/${order.id}/cancel`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+
+      const orderIsCancelled = cancelResult?.orderCancelled ?? !isPartialCancel;
+      const refundTargetAmount = isPartialCancel
+        ? selectedPaidRefundAmount
+        : refundAmount;
+      if (refundTargetAmount > 0 && shouldShowRefundMethod) {
+        const refundLabel =
+          getPaymentMethodLabel(paymentMethods, refundMethodId) ||
+          refundMethodId ||
+          t("Unknown");
+        const note = order?.id
+          ? `Refund for Order #${order.id} (${refundLabel})`
+          : t("Refund recorded");
+        try {
+          await logCashRegisterEvent({
+            type: "expense",
+            amount: Number(refundTargetAmount.toFixed(2)),
+            note,
+          });
+        } catch (logErr) {
+          console.warn("⚠️ Refund log failed:", logErr);
+        }
+      }
+      if (orderIsCancelled) {
+        showToast(t("Order cancelled"));
+        clearCartState();
+        setOrder((prev) => (prev ? { ...prev, status: "cancelled" } : prev));
+        closeCancelModal();
+        return;
+      }
+
+      showToast(t("Selected items cancelled"));
+      await fetchOrderItems(order.id);
+      setOrder((prev) =>
+        prev
+          ? {
+              ...prev,
+              total:
+                typeof cancelResult?.newTotal === "number"
+                  ? cancelResult.newTotal
+                  : prev.total,
+            }
+          : prev
+      );
+      setSelectedCartItemIds(new Set());
+      closeCancelModal();
+    } catch (err) {
+      console.error("❌ Cancel order failed:", err);
+      showToast(err?.message || t("Failed to cancel order"));
+    } finally {
+      setCancelLoading(false);
+    }
+  };
 
 
 // New: payment confirm with splits (cleaned)
@@ -1231,6 +1500,13 @@ useEffect(() => {
 }, [order?.id]);
 
 useEffect(() => {
+  if (!order) return;
+  if (!isCancelledStatus(order.status)) return;
+
+  clearCartState();
+}, [order?.status, clearCartState]);
+
+useEffect(() => {
   // Whenever a new table/order is opened, reset discount
   setDiscountValue(0);
   setDiscountType("percent");
@@ -1272,132 +1548,28 @@ const fetchTakeawayOrder = async (id) => {
   }
 };
 
-useEffect(() => {
-  // 🧹 1️⃣ Clear previous table state instantly when switching tables
-  setOrder(null);
-  setCartItems([]);
-  setReceiptItems([]);
-  setLoading(true);
-
-
-
-
-  // ✅ Fetch order for phone/packet (QRMenu online orders also land here)
-const fetchPhoneOrder = async (id) => {
-  try {
-    const restaurantSlug =
-      localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
-    const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
-
-    let newOrder = await secureFetch(`/orders/${id}${identifier}`);
-    const reopened = await reopenOrderIfNeeded(newOrder);
-    if (reopened) newOrder = reopened;
-
-    let correctedStatus = newOrder.status;
-
-    // Do not force a special "occupied" status; treat empty phone orders as confirmed
-    const items = await secureFetch(`/orders/${newOrder.id}/items${identifier}`);
-
-    if (newOrder.payment_method === "Online") correctedStatus = "paid";
-
-    setOrder({ ...newOrder, status: correctedStatus });
-    await fetchOrderItems(newOrder.id);
-    setLoading(false);
-  } catch (err) {
-    console.error("❌ Error fetching phone/packet order:", err);
-    setLoading(false);
-  }
-};
-
-  // ✅ Create or fetch table order
-const createOrFetchTableOrder = async (tableNumber) => {
-  try {
-    const ordersResponse = await secureFetch(
-      identifier
-        ? `/orders?table_number=${tableNumber}&identifier=${restaurantSlug}`
-        : `/orders?table_number=${tableNumber}`
-    );
-
-    const orders = Array.isArray(ordersResponse) ? ordersResponse : [];
-
-    // 🧩 Prefer the most recent order that is still open (paid tables should reopen with their last order)
-    const sortedOrders = [...orders].sort((a, b) => {
-      const aTime = new Date(a?.updated_at || a?.created_at || 0).getTime();
-      const bTime = new Date(b?.updated_at || b?.created_at || 0).getTime();
-      return bTime - aTime;
-    });
-
-    const activeOrder = sortedOrders.find((o) => {
-      const status = (o.status || "").toLowerCase();
-      return status !== "closed";
-    });
-
-    let newOrder = activeOrder || null;
-
-    if (!newOrder) {
-      const unpaidClosed = sortedOrders.find(
-        (o) => (o.status || "").toLowerCase() === "closed" && !o.is_paid
-      );
-      if (unpaidClosed) {
-        const reopened = await reopenOrderIfNeeded(unpaidClosed);
-        if (reopened) newOrder = reopened;
-      }
-    }
-
-    if (!newOrder) {
-      // No prior order for this table — create a fresh one
-      newOrder = await secureFetch(`/orders${identifier}`, {
-        method: "POST",
-        body: JSON.stringify({
-          table_number: tableNumber,
-          order_type: "table",
-          total: 0,
-          items: [],
-        }),
-      });
-    }
-
-    // 🧠 Normalize backend status (treat online payments as paid for UI)
-    let correctedStatus = newOrder.status;
-    if (newOrder.payment_method === "Online") correctedStatus = "paid";
-
-    setOrder({ ...newOrder, status: correctedStatus });
-
-    // ✅ Always fetch items (even for paid)
-    await fetchOrderItems(newOrder.id);
-
-    setLoading(false);
-  } catch (err) {
-    console.error("❌ Error creating/fetching table order:", err);
-    setLoading(false);
-  }
-};
-
-
-  // 💡 3️⃣ Choose proper loader based on params
-  if (orderId) fetchPhoneOrder(orderId);
-  else if (tableId) createOrFetchTableOrder(tableId);
-  else if (location.pathname.includes("/transaction/") && initialOrder?.order_type === "takeaway") 
-  fetchTakeawayOrder(initialOrder.id);
-}, [tableId, orderId]);
-
-const fetchOrderItems = async (orderId) => {
+const fetchOrderItems = async (orderId, options = {}) => {
+  const { orderTypeOverride, sourceOverride } = options;
   try {
     const items = await secureFetch(`/orders/${orderId}/items${identifier}`);
 
     if (!Array.isArray(items)) {
       console.error("❌ Expected items to be an array but got:", items);
-      return;
+      return [];
     }
 
     const formatted = items.map((item) => {
       let extras = safeParseExtras(item.extras);
       const qty = parseInt(item.quantity, 10) || 1;
 
-      // 🧩 FIX for QRMenu overcounted addons
-      // When extras were pre-multiplied for each quantity (e.g., total 100 instead of 50)
-      // divide each extra’s price by product quantity once to normalize
-      if (order?.order_type === "table" && order?.source === "qr" && qty > 1) {
+      const effectiveOrderType = orderTypeOverride ?? order?.order_type;
+      const effectiveSource = sourceOverride ?? order?.source;
+
+      if (
+        effectiveOrderType === "table" &&
+        effectiveSource === "qr" &&
+        qty > 1
+      ) {
         extras = extras.map((ex) => ({
           ...ex,
           price: (parseFloat(ex.price || ex.extraPrice || 0) / qty).toFixed(2),
@@ -1415,7 +1587,9 @@ const fetchOrderItems = async (orderId) => {
           ? JSON.parse(item.ingredients || "[]")
           : [],
         extras,
-        unique_id: item.unique_id || `${item.product_id}-${JSON.stringify(extras || [])}-${uuidv4()}`,
+        unique_id:
+          item.unique_id ||
+          `${item.product_id}-${JSON.stringify(extras || [])}-${uuidv4()}`,
         confirmed: item.confirmed ?? true,
         paid: !!item.paid_at,
         payment_method: item.payment_method ?? "Unknown",
@@ -1425,17 +1599,115 @@ const fetchOrderItems = async (orderId) => {
     });
 
     setCartItems(formatted);
-
-    // ✅ Keep paid items separately for receipts/history
     setReceiptItems(formatted.filter((i) => i.paid));
 
-    console.log(
-      `📦 Loaded ${formatted.length} items (${formatted.filter(i => i.paid).length} paid)`
-    );
+    return formatted;
   } catch (err) {
     console.error("❌ Failed to fetch items:", err);
+    return [];
   }
 };
+
+const fetchPhoneOrder = async (id) => {
+  try {
+    const restaurantSlug =
+      localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
+    const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
+
+    let newOrder = await secureFetch(`/orders/${id}${identifier}`);
+    const reopened = await reopenOrderIfNeeded(newOrder);
+    if (reopened) newOrder = reopened;
+
+    let correctedStatus = newOrder.status;
+
+    if (newOrder.payment_method === "Online") correctedStatus = "paid";
+
+    setOrder({ ...newOrder, status: correctedStatus });
+    await fetchOrderItems(newOrder.id);
+    setLoading(false);
+  } catch (err) {
+    console.error("❌ Error fetching phone/packet order:", err);
+    setLoading(false);
+  }
+};
+
+const createOrFetchTableOrder = async (tableNumber) => {
+  try {
+    const ordersResponse = await secureFetch(
+      identifier
+        ? `/orders?table_number=${tableNumber}&identifier=${restaurantSlug}`
+        : `/orders?table_number=${tableNumber}`
+    );
+
+    const orders = Array.isArray(ordersResponse) ? ordersResponse : [];
+
+    const sortedOrders = [...orders].sort((a, b) => {
+      const aTime = new Date(a?.updated_at || a?.created_at || 0).getTime();
+      const bTime = new Date(b?.updated_at || b?.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+
+    const activeOrder = sortedOrders.find((o) => isActiveTableStatus(o.status));
+
+    let newOrder = activeOrder || null;
+
+    if (!newOrder) {
+      const unpaidClosed = sortedOrders.find(
+        (o) => (o.status || "").toLowerCase() === "closed" && !o.is_paid
+      );
+      if (unpaidClosed) {
+        const reopened = await reopenOrderIfNeeded(unpaidClosed);
+        if (reopened) newOrder = reopened;
+      }
+    }
+
+    if (!newOrder) {
+      newOrder = await secureFetch(`/orders${identifier}`, {
+        method: "POST",
+        body: JSON.stringify({
+          table_number: tableNumber,
+          order_type: "table",
+          total: 0,
+          items: [],
+        }),
+      });
+    }
+
+    let correctedStatus = newOrder.status;
+    if (newOrder.payment_method === "Online") correctedStatus = "paid";
+
+    setOrder({ ...newOrder, status: correctedStatus });
+
+    await fetchOrderItems(newOrder.id, {
+      orderTypeOverride: newOrder.order_type,
+      sourceOverride: newOrder.source,
+    });
+
+    setLoading(false);
+  } catch (err) {
+    console.error("❌ Error creating/fetching table order:", err);
+    setLoading(false);
+  }
+};
+
+useEffect(() => {
+  setOrder(null);
+  setCartItems([]);
+  setReceiptItems([]);
+  setLoading(true);
+
+  if (orderId) {
+    fetchPhoneOrder(orderId);
+  } else if (tableId) {
+    createOrFetchTableOrder(tableId);
+  } else if (
+    location.pathname.includes("/transaction/") &&
+    initialOrder?.order_type === "takeaway"
+  ) {
+    fetchTakeawayOrder(initialOrder.id);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [tableId, orderId]);
 
   const calculateTotal = () =>
     cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -1604,7 +1876,7 @@ const handleMultifunction = async () => {
   }
 
   // 2️⃣ Confirm unconfirmed items first
- if (cartItems.some(i => !i.confirmed)) {
+  if (hasUnconfirmedCartItems) {
   const updated = await updateOrderStatus("confirmed", total);
   if (!updated) return;
 
@@ -1670,7 +1942,7 @@ if (orderType === "takeaway" && getButtonLabel() === "Confirm") {
 if (
   order.status === "confirmed" &&
   (orderType === "table" || orderType === "takeaway") &&
-  cartItems.some(i => !i.paid && i.confirmed)
+  (hasConfirmedCartUnpaid || hasSuborderUnpaid)
 ) {
   if (paymentIds.length === 0) {
     showToast(t("No items available to pay"));
@@ -1681,7 +1953,7 @@ if (
 }
 
 // 4️⃣ Try to close if all items are paid — OR any phone order ready to close
-const allPaid = safeCartItems.every((i) => i.paid);
+const allPaidIncludingSuborders = allCartItemsPaid && allSuborderPaid;
 
 if (orderType === "phone" && order.status !== "closed") {
   // ✅ Allow phone orders to close after payment
@@ -1698,7 +1970,7 @@ if (orderType === "phone" && order.status !== "closed") {
 
 // 🧠 For table orders → close ONLY when user manually presses “Close”
 // 🧠 For table orders → close ONLY when all items are delivered
-if (getButtonLabel() === "Close" && (order.status === "paid" || allPaid)) {
+if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncludingSuborders)) {
   const allDelivered = cartItems.every(
     (i) =>
       i.kitchen_status === "delivered" ||
@@ -1855,12 +2127,16 @@ const confirmPayment = async (method, payIds = null) => {
         cleanedSplits[label] = val;
       }
     });
+    const receiptMethodsPayload =
+      Object.keys(cleanedSplits).length > 0
+        ? cleanedSplits
+        : { [methodLabel]: paidTotal };
     await secureFetch(`/orders/receipt-methods${identifier}`, {
       method: "POST",
       body: JSON.stringify({
         order_id: order.id,
         receipt_id: receiptId,
-        methods: cleanedSplits,
+        methods: receiptMethodsPayload,
       }),
     });
 
@@ -1919,11 +2195,8 @@ const getButtonLabel = () => {
     return "Close";
   }
 
-  const hasUnconfirmed = cartItems.some((i) => !i.confirmed);
-  const hasUnpaid = cartItems.some((i) => !i.paid && i.confirmed);
-
-  if (hasUnconfirmed) return "Confirm";
-  if (hasUnpaid) return "Pay";
+  if (hasUnconfirmedCartItems) return "Confirm";
+  if (hasConfirmedCartUnpaid || hasSuborderUnpaid) return "Pay";
   return "Close";
 };
 
@@ -1932,21 +2205,232 @@ function showToast(message) {
   setTimeout(() => setToast({ show: false, message: "" }), 3500);
 }
 
+useEffect(() => {
+  if (!socket) return;
+  const handleOrderCancelled = (payload) => {
+    const cancelledId = typeof payload?.orderId === "number" ? payload.orderId : Number(payload?.orderId);
+    if (!order?.id || !Number.isFinite(cancelledId) || cancelledId !== order.id) return;
+    showToast(t("Order cancelled"));
+    clearCartState();
+    setOrder((prev) => (prev ? { ...prev, status: "cancelled" } : prev));
+  };
+  socket.on("order_cancelled", handleOrderCancelled);
+  return () => socket.off("order_cancelled", handleOrderCancelled);
+}, [order?.id, t, clearCartState]);
+
+useEffect(() => {
+  if (!isCancelledStatus(normalizedStatus)) return;
+
+  if (orderType === "phone") {
+    navigate("/orders");
+    return;
+  }
+
+  if (orderType === "table") {
+    if (!tableId) {
+      navigate("/tableoverview");
+      return;
+    }
+    clearCartState();
+    setLoading(true);
+    createOrFetchTableOrder(tableId);
+    return;
+  }
+
+  navigate("/tableoverview");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [normalizedStatus, orderType, tableId, navigate, clearCartState]);
+
 
 const selectedForPaymentTotal = cartItems
   .filter(i => selectedForPayment.includes(i.unique_id))
   .reduce((sum, i) => sum + i.price * i.quantity, 0);
 
+const finalizeCartItem = useCallback(
+  ({ product, quantity = 1, extras = [], note = "", editingIndex = null }) => {
+    if (!order || !product) return;
+
+    const productQty = Math.max(1, Number(quantity) || 1);
+    const trimmedNote = (note || "").trim();
+
+    const validExtras = (Array.isArray(extras) ? extras : [])
+      .filter((ex) => Number(ex?.quantity) > 0)
+      .map((ex) => ({
+        ...ex,
+        quantity: Number(ex.quantity),
+        price: Number(ex.price ?? ex.extraPrice ?? 0) || 0,
+        amount:
+          ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
+            ? Number(ex.amount)
+            : 1,
+        unit:
+          typeof ex.unit === "string" && ex.unit.trim() !== ""
+            ? ex.unit.trim().toLowerCase()
+            : "",
+      }));
+
+    const itemPrice = Number(product.price) || 0;
+    const extrasGroupRefs = deriveExtrasGroupRefs(product);
+    const extrasKey = JSON.stringify(validExtras);
+    const baseUniqueId = `${product.id}-NO_EXTRAS`;
+    const isPlain = validExtras.length === 0 && trimmedNote.length === 0;
+    const uniqueId = isPlain
+      ? baseUniqueId
+      : `${product.id}-${extrasKey}-${uuidv4()}`;
+
+    if (editingIndex !== null) {
+      setCartItems((prev) => {
+        const updated = [...prev];
+        const existing = updated[editingIndex] || {};
+        const fallbackRefs = deriveExtrasGroupRefs(existing);
+        const persistedRefs =
+          extrasGroupRefs || existing.extrasGroupRefs || fallbackRefs;
+
+        updated[editingIndex] = {
+          ...existing,
+          quantity: productQty,
+          price: itemPrice,
+          extras: validExtras,
+          unique_id: uniqueId,
+          note: trimmedNote || null,
+          ...(persistedRefs
+            ? {
+                extrasGroupRefs: persistedRefs,
+                selectedExtrasGroup: persistedRefs.ids,
+                selected_extras_group: persistedRefs.ids,
+                selectedExtrasGroupNames: persistedRefs.names,
+              }
+            : {}),
+        };
+        return updated;
+      });
+      setEditingCartItemIndex(null);
+      return;
+    }
+
+    if (isPlain) {
+      setCartItems((prev) => {
+        const existingIndex = prev.findIndex(
+          (item) =>
+            item.unique_id === baseUniqueId &&
+            !item.confirmed &&
+            !item.paid
+        );
+
+        if (existingIndex !== -1) {
+          return prev.map((item, idx) =>
+            idx === existingIndex
+              ? {
+                  ...item,
+                  quantity: item.quantity + productQty,
+                  ...(extrasGroupRefs && !item.extrasGroupRefs
+                    ? {
+                        extrasGroupRefs,
+                        selectedExtrasGroup: extrasGroupRefs.ids,
+                        selected_extras_group: extrasGroupRefs.ids,
+                        selectedExtrasGroupNames: extrasGroupRefs.names,
+                      }
+                    : {}),
+                }
+              : item
+          );
+        }
+
+        const hasLocked = prev.some(
+          (item) =>
+            item.unique_id === baseUniqueId &&
+            (item.confirmed || item.paid)
+        );
+
+        const finalUniqueId = hasLocked
+          ? `${baseUniqueId}-${uuidv4()}`
+          : baseUniqueId;
+
+        return [
+          ...prev,
+          {
+            id: product.id,
+            name: product.name,
+            price: itemPrice,
+            quantity: productQty,
+            ingredients: product.ingredients || [],
+            extras: [],
+            unique_id: finalUniqueId,
+            note: null,
+            ...(extrasGroupRefs
+              ? {
+                  extrasGroupRefs,
+                  selectedExtrasGroup: extrasGroupRefs.ids,
+                  selected_extras_group: extrasGroupRefs.ids,
+                  selectedExtrasGroupNames: extrasGroupRefs.names,
+                }
+              : {}),
+          },
+        ];
+      });
+      return;
+    }
+
+    setCartItems((prev) => [
+      ...prev,
+      {
+        id: product.id,
+        name: product.name,
+        price: itemPrice,
+        quantity: productQty,
+        ingredients: product.ingredients || [],
+        extras: validExtras,
+        unique_id: uniqueId,
+        note: trimmedNote || null,
+        ...(extrasGroupRefs
+          ? {
+              extrasGroupRefs,
+              selectedExtrasGroup: extrasGroupRefs.ids,
+              selected_extras_group: extrasGroupRefs.ids,
+              selectedExtrasGroupNames: extrasGroupRefs.names,
+            }
+          : {}),
+      },
+    ]);
+  },
+  [order, setCartItems, setEditingCartItemIndex]
+);
+
 const addToCart = async (product) => {
   if (!order) return;
 
-  // 🧠 Always try to find extras, but open modal even if none are matched
   const selection = normalizeExtrasGroupSelection([
     product.extrasGroupRefs,
     product.selectedExtrasGroup,
     product.selected_extras_group,
     product.selectedExtrasGroupNames,
   ]);
+
+  const baseIds = Array.isArray(selection.ids) ? [...selection.ids] : [];
+  const baseNames = Array.isArray(selection.names) ? [...selection.names] : [];
+
+  setNote("");
+  setSelectedExtras([]);
+
+  const baseProduct = {
+    ...product,
+    quantity: 1,
+    extrasGroupRefs: { ids: baseIds, names: baseNames },
+    selectedExtrasGroup: baseIds,
+    selected_extras_group: baseIds,
+    selectedExtrasGroupNames: baseNames,
+    modalExtrasGroups: [],
+  };
+
+  if (product.show_add_to_cart_modal === false) {
+    finalizeCartItem({
+      product: baseProduct,
+      quantity: 1,
+      extras: [],
+      note: "",
+    });
+    return;
+  }
 
   let match = null;
   try {
@@ -1955,18 +2439,15 @@ const addToCart = async (product) => {
     console.error("❌ Extras group fetch failed:", err);
   }
 
-  // ✅ Always open modal (even if extras empty)
-  const idsForModal = match?.matchedIds?.length ? match.matchedIds : selection.ids;
-  const namesForModal = Array.from(new Set([
-    ...(selection.names || []),
-    ...(match?.matchedNames || []),
-  ]));
+  const idsForModal = match?.matchedIds?.length ? match.matchedIds : baseIds;
+  const namesForModal = Array.from(
+    new Set([...baseNames, ...(match?.matchedNames || [])])
+  );
 
   const modalExtrasGroups = match?.matchedGroups || [];
 
   const productForModal = {
-    ...product,
-    quantity: 1,
+    ...baseProduct,
     extrasGroupRefs: { ids: idsForModal, names: namesForModal },
     selectedExtrasGroup: idsForModal,
     selected_extras_group: idsForModal,
@@ -1974,11 +2455,22 @@ const addToCart = async (product) => {
     modalExtrasGroups,
   };
 
-  setNote("");
   setSelectedProduct(productForModal);
-  setSelectedExtras([]);
   setShowExtrasModal(true);
 };
+
+const handleExtrasModalConfirm = useCallback(
+  ({ product, quantity, extras, note }) => {
+    finalizeCartItem({
+      product,
+      quantity,
+      extras,
+      note,
+      editingIndex: editingCartItemIndex,
+    });
+  },
+  [finalizeCartItem, editingCartItemIndex]
+);
 
 
 
@@ -2210,58 +2702,83 @@ const renderCartContent = (variant = "desktop") => {
   const debtButtonClass =
     "flex-1 min-w-0 rounded-lg bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed";
 
+  const cancelButtonClass =
+    "rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-center text-sm font-semibold text-rose-600 transition hover:bg-rose-100";
+  const canShowCancelButton = ["confirmed", "paid", "unpaid"].includes(normalizedStatus);
+
   const actionControls = isDesktop ? (
-    <div className="flex gap-3">
-      <button
-        onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
-        className={baseButtonClass}
-      >
-        {t("Clear")}
-      </button>
-      <button onClick={handleMultifunction} className={primaryButtonClass}>
-        {t(getButtonLabel())}
-      </button>
-      {isDebtEligible && (
+    <div className="flex w-full flex-col gap-3">
+      <div className="flex gap-3">
         <button
-          onClick={handleOpenDebtModal}
-          className={debtButtonClass}
-          disabled={isDebtSaving}
+          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
+          className={baseButtonClass}
         >
-          {isDebtSaving ? t("Saving...") : t("Add to Debt")}
+          {t("Clear")}
+        </button>
+        <button onClick={handleMultifunction} className={primaryButtonClass}>
+          {t(getButtonLabel())}
+        </button>
+        {isDebtEligible && (
+          <button
+            onClick={handleOpenDebtModal}
+            className={debtButtonClass}
+            disabled={isDebtSaving}
+          >
+            {isDebtSaving ? t("Saving...") : t("Add to Debt")}
+          </button>
+        )}
+      </div>
+      {canShowCancelButton && (
+        <button
+          type="button"
+          onClick={openCancelModal}
+          className={`w-full ${cancelButtonClass}`}
+        >
+          {t("Cancel")}
         </button>
       )}
-  
     </div>
   ) : (
-    <div className="flex flex-wrap gap-2">
-      <button
-        onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
-        className={`${baseButtonClass} flex-1 min-w-[120px]`}
-      >
-        {t("Clear")}
-      </button>
-      <button
-        onClick={handleCartPrint}
-        className={`${baseButtonClass} flex-1 min-w-[120px]`}
-        title={t("Print Receipt")}
-      >
-        {t("Print")}
-      </button>
-      {isDebtEligible && (
+    <div className="flex w-full flex-col gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
-          onClick={handleOpenDebtModal}
-          className={`${debtButtonClass} flex-1 min-w-[120px]`}
-          disabled={isDebtSaving}
+          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
+          className={`${baseButtonClass} flex-1 min-w-[120px]`}
         >
-          {isDebtSaving ? t("Saving...") : t("Add to Debt")}
+          {t("Clear")}
+        </button>
+        <button
+          onClick={handleCartPrint}
+          className={`${baseButtonClass} flex-1 min-w-[120px]`}
+          title={t("Print Receipt")}
+        >
+          {t("Print")}
+        </button>
+        {isDebtEligible && (
+          <button
+            onClick={handleOpenDebtModal}
+            className={`${debtButtonClass} flex-1 min-w-[120px]`}
+            disabled={isDebtSaving}
+          >
+            {isDebtSaving ? t("Saving...") : t("Add to Debt")}
+          </button>
+        )}
+        <button
+          onClick={handleMultifunction}
+          className={`${primaryButtonClass} flex-1 min-w-[120px]`}
+        >
+          {t(getButtonLabel())}
+        </button>
+      </div>
+      {canShowCancelButton && (
+        <button
+          type="button"
+          onClick={openCancelModal}
+          className={`${cancelButtonClass} flex-1 min-w-[120px]`}
+        >
+          {t("Cancel")}
         </button>
       )}
-      <button
-        onClick={handleMultifunction}
-        className={`${primaryButtonClass} flex-1 min-w-[120px]`}
-      >
-        {t(getButtonLabel())}
-      </button>
     </div>
   );
 
@@ -2302,7 +2819,7 @@ const renderCartContent = (variant = "desktop") => {
       {!isDesktop && (
         <button
           type="button"
-          onClick={() => setIsMobileCartOpen(false)}
+          onClick={() => setIsFloatingCartOpen(false)}
           className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm"
           aria-label={t("Close")}
         >
@@ -2380,14 +2897,13 @@ const cardGradient = item.paid
 >
   <div className="flex items-center justify-between gap-1">
     <div className="flex items-center gap-1 flex-1">
-      <input
-        type="checkbox"
-        className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-        checked={isSelected}
-        disabled={item.paid}
-        onChange={() => toggleCartItemSelection(selectionKey)}
-        onClick={(e) => e.stopPropagation()}
-      />
+            <input
+              type="checkbox"
+              className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              checked={isSelected}
+              onChange={() => toggleCartItemSelection(selectionKey)}
+              onClick={(e) => e.stopPropagation()}
+            />
       <span
         className="truncate font-semibold text-slate-800 flex-1"
         onClick={() => toggleCartItemExpansion(itemKey)}
@@ -2618,123 +3134,86 @@ const cardGradient = item.paid
 };
   if (loading) return <p className="p-4 text-center">{t("Loading...")}</p>;
 
-return (
-  <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
-    <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-x-hidden">
-<section className="flex flex-1 min-h-0 flex-col gap-6 pb-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:overflow-hidden">
-        {/* === Left: Categories + Products === */}
-        <div className="flex min-h-0 flex-col gap-4 lg:flex-row lg:gap-3 lg:overflow-hidden">
-          {/* Categories */}
-          <aside className="w-full lg:w-[28%] lg:min-w-[210px] lg:max-w-[230px]">
-            {/* Mobile horizontal scroller */}
-            <div className="rounded-2xl bg-white/90 p-4 shadow-sm ring-1 ring-indigo-100 lg:hidden">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-800">
-                  {activeCategory ? t(activeCategory) : t("Categories")}
-                </h2>
-                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
-                  {categories.length}
-                </span>
-              </div>
-              <div className="-mx-1 flex gap-3 overflow-x-auto pb-1 pr-1 snap-x snap-mandatory [scrollbar-width:none] [-ms-overflow-style:none]">
-                {categories.map((cat, idx) => (
-                  <div key={`mobile-cat-${cat}-${idx}`} className="px-1">
-                    {renderCategoryButton(cat, idx, "mobile")}
-                  </div>
-                ))}
-              </div>
-            </div>
+  return (
+    <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
+      <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-x-hidden">
+  <section className="flex flex-1 min-h-0 flex-row gap-2 pb-4 overflow-hidden">
 
-            {/* Desktop grid */}
-            <div className="hidden h-full flex-col rounded-3xl bg-gradient-to-br from-indigo-50 via-sky-50 to-blue-100 p-4 shadow-lg ring-1 ring-indigo-100 lg:flex">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold text-indigo-700">
-                  {t("Categories")}
-                </h2>
-                <span className="rounded-full bg-white px-2 py-1 text-sm font-semibold text-indigo-700 shadow">
-                  {categories.length} {t("Total")}
-                </span>
-              </div>
+    {/* === LEFT: CART PANEL (desktop only) === */}
+    <div className="hidden lg:block w-[30%] min-w-[320px] max-w-[380px] h-full overflow-hidden">
+      <div className="sticky top-0 h-full">{renderCartContent("desktop")}</div>
+    </div>
 
-              <div className="mt-4 flex-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-indigo-200">
-                <div className="grid grid-cols-2 gap-2">
-                  {categories.map((cat, idx) => renderCategoryButton(cat, idx))}
-                </div>
-              </div>
-            </div>
-          </aside>
-
-          {/* Products */}
-          <article className="flex min-h-0 flex-1 flex-col rounded-3xl bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-100 p-4 sm:p-5 shadow-lg ring-1 ring-teal-100">
-            <div className="hidden items-center justify-between lg:flex">
-              <h2 className="text-xl font-semibold text-slate-800">
-                {activeCategory ? t(activeCategory) : t("Products")}
-              </h2>
-              <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700">
-                {productsInActiveCategory.length} {t("Products")}
-              </span>
-            </div>
-
-            <div className="mb-3 flex items-center justify-between lg:hidden">
-              <h2 className="text-base font-semibold text-slate-800">
-                {activeCategory ? t(activeCategory) : t("Products")}
-              </h2>
-              <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold text-indigo-600">
-                {productsInActiveCategory.length}
-              </span>
-            </div>
-
-            <div className="flex-1 overflow-hidden rounded-3xl bg-transparent p-3">
-              <div className="h-full overflow-y-auto pr-1">
-                <div className="grid grid-cols-2 gap-3 pb-16 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4">
-                  {productsInActiveCategory.length > 0 ? (
-                    productsInActiveCategory.map((product) => (
-                      <button
-                        key={product.id}
-                        onClick={() => addToCart(product)}
-                        className="flex w-full flex-col items-center gap-2 rounded-2xl border border-emerald-100 bg-white/80 p-3 text-center shadow-sm transition-all hover:border-indigo-300 hover:bg-white hover:shadow-md"
-                      >
-                        <img
-                          src={
-                            product.image ||
-                            "https://via.placeholder.com/100?text=🍔"
-                          }
-                          alt={product.name}
-                          className="h-20 w-20 rounded-xl border object-cover shadow"
-                        />
-                        <p className="text-sm font-semibold text-slate-700 line-clamp-2">
-                          {product.name}
-                        </p>
-                        <span className="text-base font-bold text-indigo-600">
-                          ₺{parseFloat(product.price).toFixed(2)}
-                        </span>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="col-span-full rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm font-semibold text-slate-400">
-                      {t("No products in this category.")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </article>
+    {/* === CENTER: VERTICAL CATEGORY BAR === */}
+  <aside className="w-[10%] min-w-[85px] max-w-[110px] bg-white rounded-xl shadow-md ring-1 ring-slate-200 p-2 overflow-hidden">
+    <div className="flex flex-col gap-2 overflow-y-auto max-h-[calc(100vh-140px)] pr-1 
+                    scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-transparent">
+      {categories.map((cat, idx) => (
+        <div key={idx}>
+          {renderCategoryButton(cat, idx, "vertical")}
         </div>
+      ))}
+    </div>
+  </aside>
 
-        {/* === Right: Cart (sticky and aligned) === */}
-<div className="hidden lg:block h-full">
-  <div className="sticky top-0">{renderCartContent("desktop")}</div>
-</div>
 
-      </section>
+    {/* === RIGHT: PRODUCTS GRID === */}
+    <article className="flex-1 min-w-0 flex flex-col rounded-2xl bg-white shadow-lg ring-1 ring-slate-200 p-3 overflow-hidden">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xl font-semibold text-slate-800">
+          {activeCategory ? t(activeCategory) : t("Products")}
+        </h2>
+        <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700">
+          {productsInActiveCategory.length} {t("Products")}
+        </span>
+      </div>
+
+      {/* Product Grid */}
+      <div className="flex-1 overflow-y-auto pr-1">
+  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1">
+    {productsInActiveCategory.map((product) => (
+      <button
+        key={product.id}
+        onClick={() => addToCart(product)}
+        className="
+          flex flex-col items-center gap-1
+          rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm
+          hover:bg-indigo-50
+          w-full                           /* <— fix overlapping */
+        "
+      >
+        <img
+          src={product.image || 'https://via.placeholder.com/100?text=🍔'}
+          alt={product.name}
+          className="
+            w-full aspect-square object-cover rounded-md   /* <— MOBILE FIX */
+            lg:h-16 lg:w-16 lg:rounded-xl lg:border lg:object-cover lg:shadow /* unchanged desktop */
+          "
+        />
+        <p className="text-sm font-semibold text-slate-700 text-center line-clamp-2 leading-tight">
+          {product.name}
+        </p>
+        <span className="text-base font-bold text-indigo-600">
+          ₺{parseFloat(product.price).toFixed(2)}
+        </span>
+      </button>
+    ))}
+  </div>
+
+      </div>
+    </article>
+  </section>
+
     </div>
 
       <div
-        className={`lg:hidden fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] transition-transform duration-300 ${isMobileCartOpen ? "translate-y-[120%]" : "translate-y-0"}`}
+        className={`lg:hidden fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[120%]" : "translate-y-0"}`}
       >
         <button
           type="button"
-          onClick={() => setIsMobileCartOpen(true)}
+          onClick={() => setIsFloatingCartOpen(true)}
           className="flex w-full items-center justify-between rounded-3xl bg-indigo-600 px-5 py-4 text-white shadow-2xl"
         >
           <div className="flex flex-col">
@@ -2755,14 +3234,14 @@ return (
       </div>
 
       <div
-        className={`lg:hidden fixed inset-0 z-50 transition-all duration-300 ${isMobileCartOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+        className={`lg:hidden fixed inset-0 z-50 transition-all duration-300 ${isFloatingCartOpen ? "pointer-events-auto" : "pointer-events-none"}`}
       >
         <div
-          className={`absolute inset-0 bg-slate-900/60 transition-opacity duration-300 ${isMobileCartOpen ? "opacity-100" : "opacity-0"}`}
-          onClick={() => setIsMobileCartOpen(false)}
+          className={`absolute inset-0 bg-slate-900/60 transition-opacity duration-300 ${isFloatingCartOpen ? "opacity-100" : "opacity-0"}`}
+          onClick={() => setIsFloatingCartOpen(false)}
         />
         <div
-          className={`absolute inset-x-0 bottom-0 transition-transform duration-300 ${isMobileCartOpen ? "translate-y-0" : "translate-y-full"}`}
+          className={`absolute inset-x-0 bottom-0 transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-0" : "translate-y-full"}`}
         >
           {renderCartContent("mobile")}
         </div>
@@ -2798,6 +3277,124 @@ return (
   staffId={currentUser?.staff_id ?? currentUser?.id ?? null}
   navigate={navigate}
 />
+
+{showCancelModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
+    <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 dark:bg-zinc-900 dark:border-zinc-700">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-1">
+            {t("Cancel Order")}
+          </p>
+          <p className="text-lg font-bold text-slate-900 dark:text-white">
+            {(() => {
+              const orderType = (order?.order_type || order?.__cardType || "table").toLowerCase();
+              if (orderType === "packet") return t("Packet Order");
+              if (orderType === "phone") return t("Phone Order");
+              if (orderType === "takeaway") return t("Takeaway Order");
+              const tableNumber = order?.table_number || order?.tableNumber || "";
+              return `${t("Table")} ${tableNumber || order?.id || ""}`.trim();
+            })()}
+          </p>
+          <p className="text-sm text-rose-500 mt-1">
+            #{order?.id || "-"} • {order?.customer_name || t("Guest")}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={closeCancelModal}
+          className="text-slate-400 hover:text-slate-600 dark:text-slate-300"
+        >
+          ✕
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-3 dark:text-slate-300">
+        {t("The cancellation reason will be recorded for auditing.")}
+      </p>
+
+      {selectedCartItems.length > 0 && (
+        <div className="mb-3 space-y-2 rounded-2xl border border-amber-100 bg-amber-50/80 p-4 text-xs text-amber-700">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-amber-500">
+            {t("Selected items")}
+          </p>
+          <ul className="space-y-1 text-[12px]">
+            {selectedCartItems.map((item) => {
+              const totalPrice = (Number(item.price) || 0) * (Number(item.quantity) || 1);
+              return (
+                <li
+                  key={item.unique_id || `${item.id}-${item.name}`}
+                  className="flex items-center justify-between font-semibold text-amber-700"
+                >
+                  <span className="truncate">{item.name}</span>
+                  <span className="text-amber-600">
+                    ×{item.quantity || 1} — ₺{totalPrice.toFixed(2)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs text-amber-500">
+            {t("Only the highlighted items will be removed from the order. Leave everything unchecked to cancel the full order.")}
+          </p>
+        </div>
+      )}
+
+      {hasPaidItems ? (
+        <div className="space-y-3 rounded-2xl border border-dashed border-rose-100 bg-rose-50/60 p-4 mb-3">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-rose-500">
+            {t("Refund Method")}
+            <select
+              className="mt-1 w-full rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm text-rose-600 focus:border-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-100"
+              value={refundMethodId}
+              onChange={(event) => setRefundMethodId(event.target.value)}
+            >
+              {paymentMethods.map((method) => (
+                <option key={method.id} value={method.id}>
+                  {method.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-rose-500">
+            {t("Refund amount")}: ₺{refundAmount.toFixed(2)}
+          </p>
+        </div>
+      ) : (
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-300">
+          {t("No paid items detected. This will simply cancel the order.")}
+        </p>
+      )}
+
+      <textarea
+        rows={4}
+        value={cancelReason}
+        onChange={(event) => setCancelReason(event.target.value)}
+        placeholder={t("Why is the order being cancelled?")}
+        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 focus:outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-100"
+      />
+
+      <div className="mt-5 flex flex-wrap justify-end gap-3">
+        <button
+          type="button"
+          onClick={closeCancelModal}
+          className="rounded-2xl border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition dark:border-zinc-700 dark:text-slate-200"
+        >
+          {t("Back")}
+        </button>
+        <button
+          type="button"
+          onClick={handleCancelConfirm}
+          disabled={cancelLoading || !cancelReason.trim()}
+          className={`rounded-2xl px-5 py-2 text-sm font-semibold text-white transition ${cancelLoading || !cancelReason.trim()
+            ? "cursor-not-allowed bg-rose-200 dark:bg-rose-400/70"
+            : "bg-rose-600 hover:bg-rose-700"}`}
+        >
+          {cancelLoading ? t("Cancelling...") : t("Confirm Cancellation")}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
 {showDebtModal && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -2906,14 +3503,11 @@ return (
   showExtrasModal={showExtrasModal}
   setShowExtrasModal={setShowExtrasModal}
   selectedProduct={selectedProduct}
-  setSelectedProduct={setSelectedProduct}  // ← ADD THIS LINE
+  setSelectedProduct={setSelectedProduct}
   selectedExtras={selectedExtras}
   setSelectedExtras={setSelectedExtras}
   extrasGroups={extrasGroups}
-  setCartItems={setCartItems}
-  cartItems={cartItems}
-  editingCartItemIndex={editingCartItemIndex}
-  setEditingCartItemIndex={setEditingCartItemIndex}
+  onConfirmAddToCart={handleExtrasModalConfirm}
 
   note={note}
   setNote={setNote}

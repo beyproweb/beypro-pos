@@ -101,6 +101,18 @@ const hasUnpaidAnywhere = (order) => {
 };
 
 
+const normalizeOrderStatus = (status) => {
+  if (!status) return "";
+  const normalized = String(status).toLowerCase();
+  return normalized === "occupied" ? "confirmed" : normalized;
+};
+
+const isOrderCancelledOrCanceled = (status) => {
+  const normalized = normalizeOrderStatus(status);
+  return normalized === "cancelled" || normalized === "canceled";
+};
+
+
 const getDisplayTotal = (order) => {
   if (!order) return 0;
 
@@ -741,11 +753,15 @@ const fetchOrders = useCallback(async () => {
     }
 
     const openOrders = data
-      .filter((o) => o.status !== "closed")
-      .map((order) => ({
-        ...order,
-        total: order.status === "paid" ? 0 : parseFloat(order.total || 0),
-      }));
+      .filter((o) => o.status !== "closed" && o.status !== "cancelled")
+      .map((order) => {
+        const status = normalizeOrderStatus(order.status);
+        return {
+          ...order,
+          status,
+          total: status === "paid" ? 0 : parseFloat(order.total || 0),
+        };
+      });
 
     const ordersWithItems = await Promise.all(
       openOrders.map(async (order) => {
@@ -1046,7 +1062,11 @@ useEffect(() => {
 
 const tables = tableConfigs
   .map((cfg) => {
-    const order = orders.find((o) => o.table_number === cfg.number);
+    const order = orders.find(
+      (o) =>
+        o.table_number === cfg.number &&
+        !isOrderCancelledOrCanceled(o.status)
+    );
 
     return {
       tableNumber: cfg.number,
@@ -1081,71 +1101,68 @@ const handlePrintOrder = async (orderId) => {
 
 
 const handleTableClick = async (table) => {
-  // Always check register state before allowing navigation
   const data = await fetchRegisterStatus();
-
 
   if (data.status === "closed" || data.status === "unopened") {
     toast.error("Register must be open to access tables!", {
       position: "top-center",
       autoClose: 2500,
-      hideProgressBar: false,
     });
-    // Optionally, open the register modal here:
     setActiveTab("register");
     setShowRegisterModal(true);
     return;
   }
 
-  // ... existing logic:
-if (!table.order) {
-  try {
-    const orderData = {
-      table_number: table.tableNumber,
-      order_type: "table",
-      total: 0,
-      items: [],
-    };
+  // 🔥 FIXED: treat cancelled or empty orders as FREE
+  const isCancelledOrder = isOrderCancelledOrCanceled(table.order?.status);
 
-    const newOrder = await secureFetch("/orders", {
-      method: "POST",
-      body: JSON.stringify(orderData),
-    });
+  if (
+    !table.order ||
+    isCancelledOrder ||
+    !Array.isArray(table.order.items) ||
+    table.order.items.length === 0
+  ) {
+    try {
+      const newOrder = await secureFetch("/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          table_number: table.tableNumber,
+          order_type: "table",
+          total: 0,
+          items: [],
+        }),
+      });
 
-    navigate(`/transaction/${table.tableNumber}`, { state: { order: newOrder } });
-  } catch (err) {
-    console.error("Create order failed:", err);
-    toast.error("Failed to create order");
+      navigate(`/transaction/${table.tableNumber}`, { state: { order: newOrder } });
+    } catch (err) {
+      console.error("Create order failed:", err);
+      toast.error("Failed to create order");
+    }
+  } else {
+    navigate(`/transaction/${table.tableNumber}`, { state: { order: table.order } });
   }
-} else {
-  navigate(`/transaction/${table.tableNumber}`, { state: { order: table.order } });
-}
-
 };
 
 
 
-  const getTimeElapsed = (order) => {
-    if (!order?.created_at || order.status !== "confirmed") return null;
-    const toMs = (val) => {
-      if (!val) return NaN;
-      const a = new Date(val).getTime();
-      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
-      const b = new Date(bStr).getTime();
-      if (Number.isFinite(a) && Number.isFinite(b)) {
-        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
-      }
-      return Number.isFinite(a) ? a : b;
-    };
-    const createdMs = toMs(order.created_at);
-    const diffMs = now - createdMs;
-    const mins = Math.floor(Math.max(0, diffMs) / 60000);
-    const secs = Math.floor((Math.max(0, diffMs) % 60000) / 1000);
-    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+const getTimeElapsed = (order) => {
+  if (!order?.created_at || order.status !== "confirmed") return null;
+  const toMs = (val) => {
+    if (!val) return NaN;
+    const a = new Date(val).getTime();
+    const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+    const b = new Date(bStr).getTime();
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+    }
+    return Number.isFinite(a) ? a : b;
   };
-
-
-
+  const createdMs = toMs(order.created_at);
+  const diffMs = now - createdMs;
+  const mins = Math.floor(Math.max(0, diffMs) / 60000);
+  const secs = Math.floor((Math.max(0, diffMs) % 60000) / 1000);
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+};
  const markMultipleAsDelivered = async (itemIds) => {
   try {
     new Audio("/sound-ready.mp3").play(); // 🔊 Play instantly

@@ -52,6 +52,7 @@ export default function ProductForm({ onSuccess, initialData = null, categories 
     promo_end: "",
     // IMPORTANT: store group IDs here
     selected_extras_group: [],
+    show_add_to_cart_modal: true,
   });
   const [estimatedCost, setEstimatedCost] = useState(0);
 
@@ -433,6 +434,7 @@ const handleSubmit = async (e) => {
       })
       .filter(Boolean),
     selected_extras_group: groupIds,
+    show_add_to_cart_modal: product.show_add_to_cart_modal !== false,
   };
 
   try {
@@ -471,6 +473,7 @@ const handleSubmit = async (e) => {
       promo_start: "",
       promo_end: "",
       selected_extras_group: [],
+      show_add_to_cart_modal: true,
     });
 
     setImageFile(null);
@@ -672,6 +675,16 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
               className="w-5 h-5 rounded"
             />
             <span>{t("Visible on Website")}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              name="show_add_to_cart_modal"
+              checked={product.show_add_to_cart_modal !== false}
+              onChange={handleChange}
+              className="w-5 h-5 rounded"
+            />
+            <span>{t("Show Add-to-Cart confirmation modal")}</span>
           </div>
         </section>
 
