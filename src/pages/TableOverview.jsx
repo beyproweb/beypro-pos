@@ -1295,7 +1295,7 @@ const groupedTables = tables.reduce((acc, tbl) => {
               : "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"}
           `}
         >
-          {area === "Main Hall" ? "🏠" :
+          {area === "Hall" ? "🏠" :
            area === "Terrace" ? "🌤️" :
            area === "Garden" ? "🌿" :
            area === "VIP" ? "⭐" : "📍"}{" "}
