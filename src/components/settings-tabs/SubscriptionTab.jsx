@@ -237,7 +237,10 @@ useEffect(() => {
         toast.success(t("Registration successful. Please login."));
       }
     } catch (error) {
-      console.error("Error:", error);
+      console.error("❌ Registration request failed", {
+        message: error?.message,
+        details: error?.details,
+      });
       toast.error(t("❌ All fields required."));
     } finally {
       setLoading(false);

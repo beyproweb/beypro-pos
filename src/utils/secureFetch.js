@@ -90,18 +90,33 @@ const isPublic =
 
   const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const fullUrl = `${BASE_URL}${path}`;
+  const method = String(options.method || "GET").toUpperCase();
+  const requestMeta = {
+    endpoint,
+    method,
+    url: fullUrl,
+  };
 
   const res = await fetch(fullUrl, { ...options, headers });
   const ctype = res.headers.get("content-type") || "";
 
   if (!ctype.includes("application/json")) {
     const text = await res.text();
-    throw new Error(
-      `❌ Response from ${fullUrl} was not JSON (${res.status}). First bytes: ${text.slice(0, 80)}`
+    const err = new Error(
+      `❌ Response from ${fullUrl} was not JSON (${res.status}). First bytes: ${text.slice(
+        0,
+        80
+      )}`
     );
+    err.details = { ...requestMeta, status: res.status, responseText: text.slice(0, 200) };
+    throw err;
   }
 
   const json = await res.json();
-  if (!res.ok) throw new Error(json?.error || `❌ Request failed [${res.status}]`);
+  if (!res.ok) {
+    const err = new Error(json?.error || `❌ Request failed [${res.status}]`);
+    err.details = { ...requestMeta, status: res.status, body: json };
+    throw err;
+  }
   return json;
 }
