@@ -2328,6 +2328,7 @@ function CartDrawer({
   t,
 }) {
   const [show, setShow] = useState(false);
+  const { formatCurrency } = useCurrency();
 
   const cartArray = toArray(cart);
   const cartLength = cartArray.length;
