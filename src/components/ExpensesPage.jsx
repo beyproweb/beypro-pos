@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../utils/cashDrawer";
+import { useCurrency } from "../context/CurrencyContext";
 
 const allowedMethods = ["Cash", "Credit Card", "Bank Transfer", "Not Paid"];
 
@@ -24,6 +25,7 @@ export default function ExpensesPage() {
   const { currentUser } = useAuth();
   const [visibleDetails, setVisibleDetails] = useState(null);
   const { t } = useTranslation();
+  const { formatCurrency, config } = useCurrency();
 
   // ✅ Fetch expense types
   const fetchExpenseTypes = async () => {
@@ -182,11 +184,11 @@ export default function ExpensesPage() {
               <div>
                 <h2 className="text-xl font-semibold mb-1">{type}</h2>
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                  ₺{totalForType.toFixed(2)}
+                  {formatCurrency(totalForType)}
                 </p>
                 {dueTotal > 0 && (
                   <p className="text-sm text-red-500 font-semibold mt-1">
-                    {t("Due")}: ₺{dueTotal.toFixed(2)}
+                    {t("Due")}: {formatCurrency(dueTotal)}
                   </p>
                 )}
               </div>
@@ -213,7 +215,9 @@ export default function ExpensesPage() {
                           className="border-b border-gray-300 dark:border-gray-700 pb-1"
                         >
                           <div className="flex justify-between">
-                            <span className="font-medium">₺{e.amount}</span>
+                            <span className="font-medium">
+                              {formatCurrency(Number(e.amount || 0))}
+                            </span>
                             <span className="text-xs text-gray-500">
                               {e.payment_method}
                             </span>
@@ -275,7 +279,7 @@ export default function ExpensesPage() {
 
             <input
               className="w-full p-2 mb-3 border rounded dark:bg-gray-900 dark:text-white"
-              placeholder={t("Amount (₺)")}
+              placeholder={t("Amount")}
               type="number"
               value={form.amount}
               onChange={(e) => setForm({ ...form, amount: e.target.value })}

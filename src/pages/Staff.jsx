@@ -10,15 +10,14 @@ import { Plus, Save } from 'lucide-react';
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 import { useLocation } from "react-router-dom";
+import { useCurrency } from "../context/CurrencyContext";
 const API_URL = import.meta.env.VITE_API_URL || "";
 Modal.setAppElement('#root');
-
-// Helper for ₺ currency formatting
-const currency = (amt) => `₺${parseFloat(amt || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`;
 
 const Staff = () => {
   const { t } = useTranslation();
   const location = useLocation();
+  const { config } = useCurrency();
   const [savedAutoPayment, setSavedAutoPayment] = useState(null);
 
   const [activeTabId, setActiveTabId] = useState("checkin");
@@ -327,7 +326,10 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
             </select>
             {salaryModel === 'hourly' && (
               <>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">{t("Hourly Rate")} (₺):</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {t("Hourly Rate")} {config?.symbol ? `(${config.symbol})` : ""}
+                  :
+                </label>
                 <input
                   type="number"
                   placeholder={t("Hourly Rate")}

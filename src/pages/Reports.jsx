@@ -30,6 +30,7 @@ import useCashRegisterSnapshot from "../hooks/reports/useCashRegisterSnapshot";
 import DateRangeSelector from "../components/reports/DateRangeSelector";
 import SectionState from "../components/reports/SectionState";
 import secureFetch from "../utils/secureFetch";
+import { useCurrency } from "../context/CurrencyContext";
 
 function calcOrderTotalWithExtras(order) {
   if (!order?.items) return 0;
@@ -46,6 +47,7 @@ function calcOrderTotalWithExtras(order) {
 
 export default function Reports() {
   const { t } = useTranslation();
+  const { formatCurrency, config } = useCurrency();
   const hasDashboardAccess = useHasPermission("dashboard");
 
   if (!hasDashboardAccess) {
@@ -455,7 +457,7 @@ export default function Reports() {
               <div className="text-3xl font-bold tracking-wide mt-1">
                 {label.includes("Items") || label.includes("Orders")
                   ? value.toLocaleString()
-                  : `₺${value.toLocaleString()}`}
+                  : formatCurrency(value)}
               </div>
             </div>
           ))}
@@ -522,15 +524,15 @@ export default function Reports() {
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>{t("Opening Cash")}</span>
-                          <span>₺{parseFloat(row.opening_cash || 0).toLocaleString()}</span>
+                          <span>{formatCurrency(parseFloat(row.opening_cash || 0))}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>{t("Sales")}</span>
-                          <span>₺{parseFloat(row.sales_total || 0).toLocaleString()}</span>
+                          <span>{formatCurrency(parseFloat(row.sales_total || 0))}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>{t("Expenses")}</span>
-                          <span>₺{expensesForDay.toLocaleString()}</span>
+                          <span>{formatCurrency(expensesForDay)}</span>
                         </div>
                         <details className="text-xs text-gray-600 dark:text-gray-300">
                           <summary className="cursor-pointer underline font-medium">
@@ -543,7 +545,7 @@ export default function Reports() {
                                   {event.type === "expense" ? "💸" : "💰"} {event.reason}
                                 </span>
                                 <span>
-                                  ₺{parseFloat(event.amount || 0).toLocaleString()}
+                                  {formatCurrency(parseFloat(event.amount || 0))}
                                 </span>
                               </li>
                             ))}
@@ -588,7 +590,7 @@ export default function Reports() {
                     {emoji} {method}
                   </div>
                   <div className="mt-2 text-lg font-bold text-blue-600 dark:text-blue-400">
-                    ₺{value.toLocaleString()}
+                    {formatCurrency(value)}
                   </div>
                   <div className="text-xs text-gray-500">{(percent || 0).toFixed(1)}%</div>
                 </div>
@@ -596,7 +598,7 @@ export default function Reports() {
             })}
           </div>
           <div className="mt-6 text-right text-base font-bold text-indigo-600 dark:text-indigo-400 border-t pt-4 border-gray-300 dark:border-gray-700">
-            🧮 {t("Total Payments")}: ₺{totalPayments.toLocaleString()}
+            🧮 {t("Total Payments")}: {formatCurrency(totalPayments)}
           </div>
         </ChartCard>
       </SectionState>
@@ -613,19 +615,21 @@ export default function Reports() {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
             <div className="bg-blue-100 dark:bg-blue-900 rounded-lg p-3">
-              🍽️ {t("Dine-in")}: <b>₺{dineInTotal.toLocaleString()}</b>
+              🍽️ {t("Dine-in")}: <b>{formatCurrency(dineInTotal)}</b>
             </div>
             <div className="bg-green-100 dark:bg-green-900 rounded-lg p-3">
               📱 {t("Online")}:{" "}
               <b>
-                ₺
-                {Object.values(onlinePlatforms || {})
-                  .reduce((sum, platform) => sum + (platform.total || 0), 0)
-                  .toLocaleString()}
+                {formatCurrency(
+                  Object.values(onlinePlatforms || {}).reduce(
+                    (sum, platform) => sum + (platform.total || 0),
+                    0
+                  )
+                )}
               </b>
             </div>
             <div className="bg-yellow-100 dark:bg-yellow-900 rounded-lg p-3">
-              ☎️ {t("Phone")}: <b>₺{phoneTotal.toLocaleString()}</b>
+              ☎️ {t("Phone")}: <b>{formatCurrency(phoneTotal)}</b>
             </div>
           </div>
         </Card>
@@ -653,14 +657,16 @@ export default function Reports() {
                       : platform}
                   </span>
                   <span className="text-blue-600 dark:text-blue-300 font-bold">
-                    ₺{(data.total || 0).toLocaleString()}
+                    {formatCurrency(data.total || 0)}
                   </span>
                 </summary>
                 <ul className="mt-2 space-y-1 text-sm">
                   {(data.payments || []).map((payment, index) => (
                     <li key={`${platform}-${index}`} className="flex justify-between px-2">
                       <span>{payment.method}</span>
-                      <span className="font-semibold">₺{payment.total.toLocaleString()}</span>
+                      <span className="font-semibold">
+                        {formatCurrency(payment.total)}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -711,8 +717,12 @@ export default function Reports() {
                         <td className="px-3 py-2 font-medium">{staff.staff_name}</td>
                         <td className="px-3 py-2 text-right">{ordersHandled}</td>
                         <td className="px-3 py-2 text-right">{itemsSold}</td>
-                        <td className="px-3 py-2 text-right">₺{totalSales.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right">₺{avgOrderValue.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {formatCurrency(totalSales)}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {formatCurrency(avgOrderValue)}
+                        </td>
                       </tr>
                     );
                   })
@@ -726,8 +736,16 @@ export default function Reports() {
               <BarChart data={staffData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="staff_name" />
-                <YAxis tickFormatter={(value) => `₺${Number(value || 0).toLocaleString()}`} />
-                <ReTooltip formatter={(value) => `₺${Number(value || 0).toLocaleString()}`} />
+                <YAxis
+                  tickFormatter={(value) =>
+                    formatCurrency(Number(value || 0))
+                  }
+                />
+                <ReTooltip
+                  formatter={(value) =>
+                    formatCurrency(Number(value || 0))
+                  }
+                />
                 <Bar dataKey="total_sales" fill="#6366F1" />
               </BarChart>
             </ResponsiveContainer>
@@ -804,13 +822,12 @@ export default function Reports() {
                     </button>
                   </div>
                   <p className="text-xl font-extrabold mt-1">
-                    ₺
-                    {(
+                    {formatCurrency(
                       categoryDetails[category.category]?.reduce(
                         (sum, item) => sum + item.total,
                         0
                       ) || 0
-                    ).toLocaleString()}
+                    )}
                   </p>
                   {expandedCategories[category.category] &&
                     categoryDetails[category.category] && (
@@ -829,7 +846,9 @@ export default function Reports() {
                               </a>{" "}
                               x{item.quantity}
                             </span>
-                            <span className="tabular-nums">₺{item.total.toFixed(2)}</span>
+                            <span className="tabular-nums">
+                              {formatCurrency(item.total)}
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -838,7 +857,7 @@ export default function Reports() {
               ))}
             </div>
             <div className="mt-4 text-right text-base font-bold text-indigo-600 dark:text-indigo-400 border-t pt-3 border-gray-300 dark:border-gray-700">
-              {t("Total Category Sales")}: ₺{totalCategorySales.toLocaleString()}
+              {t("Total Category Sales")}: {formatCurrency(totalCategorySales)}
             </div>
           </ChartCard>
         </div>
@@ -886,7 +905,7 @@ export default function Reports() {
           }
         >
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={categoryTrends} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <BarChart data={categoryTrends} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis
                 dataKey="date"
@@ -895,8 +914,16 @@ export default function Reports() {
                   return date.toLocaleDateString(undefined, { weekday: "short" });
                 }}
               />
-              <YAxis tickFormatter={(value) => `₺${value.toLocaleString()}`} />
-              <ReTooltip formatter={(value) => `₺${parseFloat(value).toFixed(2)}`} />
+              <YAxis
+                tickFormatter={(value) =>
+                  formatCurrency(Number(value || 0))
+                }
+              />
+              <ReTooltip
+                formatter={(value) =>
+                  formatCurrency(parseFloat(value || 0))
+                }
+              />
               <Legend />
               {allCategories.map((category, index) => (
                 <Bar
@@ -957,14 +984,14 @@ export default function Reports() {
                   ref={yMinRef}
                   defaultValue="1000"
                   className="w-24 text-sm px-2 py-1 rounded border"
-                  placeholder={`₺ ${t("Min")}`}
+                  placeholder={`${config?.symbol || ""} ${t("Min")}`}
                 />
                 <span className="text-sm">–</span>
                 <input
                   ref={yMaxRef}
                   defaultValue="150000"
                   className="w-28 text-sm px-2 py-1 rounded border"
-                  placeholder={`₺ ${t("Max")}`}
+                  placeholder={`${config?.symbol || ""} ${t("Max")}`}
                 />
                 <Button size="sm" variant="outline" onClick={applyYRange}>
                   {t("Apply")}
@@ -995,7 +1022,12 @@ export default function Reports() {
                       return label;
                     }}
                   />
-                  <YAxis domain={[yMin, yMax]} tickFormatter={(value) => `₺${(value / 1000).toFixed(0)}k`} />
+                  <YAxis
+                    domain={[yMin, yMax]}
+                    tickFormatter={(value) =>
+                      formatCurrency(value, { decimals: 0 })
+                    }
+                  />
                   <ReTooltip />
                   <Area type="monotone" dataKey="sales" stroke="#6366F1" fill="#6366F1" fillOpacity={0.2} />
                 </AreaChart>
@@ -1012,7 +1044,12 @@ export default function Reports() {
                       return label;
                     }}
                   />
-                  <YAxis domain={[yMin, yMax]} tickFormatter={(value) => `₺${(value / 1000).toFixed(0)}k`} />
+                  <YAxis
+                    domain={[yMin, yMax]}
+                    tickFormatter={(value) =>
+                      formatCurrency(value, { decimals: 0 })
+                    }
+                  />
                   <ReTooltip />
                   <Line type="monotone" dataKey="sales" stroke="#6366F1" strokeWidth={2} dot={{ r: 2 }} />
                 </LineChart>
@@ -1043,12 +1080,14 @@ export default function Reports() {
                 className="flex justify-between text-sm border-b border-gray-200 dark:border-gray-700 pb-1"
               >
                 <span>{type}</span>
-                <span className="font-semibold">₺{total.toLocaleString()}</span>
+                <span className="font-semibold">
+                  {formatCurrency(total)}
+                </span>
               </div>
             ))}
           </div>
           <div className="mt-4 text-right text-base font-bold text-indigo-600 dark:text-indigo-400 border-t pt-3 border-gray-300 dark:border-gray-700">
-            {t("Total Expenses")}: ₺{extraExpenses.toLocaleString()}
+            {t("Total Expenses")}: {formatCurrency(extraExpenses)}
           </div>
         </ChartCard>
       </SectionState>
@@ -1101,19 +1140,19 @@ export default function Reports() {
                       <div className="flex justify-between px-2">
                         <span className="text-gray-500">{t("Net Sales")}</span>
                         <span className="font-bold text-blue-600 dark:text-blue-300">
-                          ₺{profitValue.toLocaleString()}
+                          {formatCurrency(profitValue)}
                         </span>
                       </div>
                       <div className="flex justify-between px-2">
                         <span className="text-gray-500">{t("Expenses")}</span>
                         <span className="font-bold text-red-500">
-                          ₺{loss.toLocaleString()}
+                          {formatCurrency(loss)}
                         </span>
                       </div>
                       <div className="flex justify-between px-2">
                         <span className="text-gray-500">{t("Profit")}</span>
                         <span className={`font-bold ${profitColor}`}>
-                          ₺{net.toLocaleString()}
+                          {formatCurrency(net)}
                         </span>
                       </div>
                       <div className="flex justify-between px-2">

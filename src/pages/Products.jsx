@@ -4,6 +4,7 @@ import Modal from "react-modal";
 import { useTranslation } from "react-i18next";
 import { Plus, Trash2, Filter, Edit3, Layers } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
+import { useCurrency } from "../context/CurrencyContext";
 
 const API_URL =
   import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com";
@@ -22,6 +23,7 @@ const cardGradients = [
 
 export default function Products() {
   const { t } = useTranslation();
+  const { formatCurrency, config } = useCurrency();
 
   // ---------- State ----------
   const [products, setProducts] = useState([]);
@@ -478,7 +480,7 @@ const handleRenameCategory = async (original, value) => {
                 </div>
 
                 <div className="text-2xl font-extrabold mt-2 text-indigo-600 dark:text-indigo-400 tracking-tight">
-                  ₺{product.price}
+                  {formatCurrency(Number(product.price || 0))}
                 </div>
 
                 {product.tags && (
@@ -515,7 +517,9 @@ const handleRenameCategory = async (original, value) => {
                     <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs">
                       {product.discount_type === "percentage"
                         ? `-%${product.discount_value}`
-                        : `₺${product.discount_value} off`}
+                        : `${formatCurrency(
+                            Number(product.discount_value || 0)
+                          )} off`}
                     </span>
                   )}
                 </div>
@@ -543,13 +547,15 @@ const handleRenameCategory = async (original, value) => {
     <div className="mt-2 text-xs font-semibold space-y-1">
       <div className="text-gray-500">
         {t("Cost Price")}:{" "}
-        <span className="text-rose-700">₺{cost.toFixed(2)}</span>
+        <span className="text-rose-700">
+          {formatCurrency(cost)}
+        </span>
       </div>
       <div className="text-gray-500">
         {t(profitLabel)}:{" "}
         <span className={isLoss ? "text-red-600" : "text-blue-700"}>
-          {isLoss ? "-₺" : "₺"}
-          {Math.abs(profit).toFixed(2)}
+          {isLoss ? "-" : ""}
+          {formatCurrency(Math.abs(profit))}
         </span>
       </div>
       <div className="text-gray-500 flex items-center gap-2">
@@ -798,7 +804,7 @@ const handleRenameCategory = async (original, value) => {
                   {/* Price */}
                   <input
                     type="number"
-                    placeholder={t("₺ Price")}
+                    placeholder={t("Price")}
                     value={item.price}
                     onChange={(e) => {
                       const updated = [...extrasGroups];

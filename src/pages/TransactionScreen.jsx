@@ -31,7 +31,7 @@ import {
 } from "../utils/receiptPrinter";
 import { fetchOrderWithItems } from "../utils/orderPrinting";
 import TableActionButtons from "../components/TableActionButtons";
-
+import { useCurrency } from "../context/CurrencyContext";
 const normalizeGroupKey = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim().toLowerCase().replace(/\s+/g, " ");
@@ -204,6 +204,7 @@ const isPaidItem = (item) => Boolean(item && (item.paid || item.paid_at));
 export default function TransactionScreen() {
   useRegisterGuard();
   const paymentMethods = usePaymentMethods();
+  const { formatCurrency } = useCurrency();
   const { tableId, orderId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -2556,6 +2557,8 @@ const hasAnySplit = Object.values(splits || {}).some(
 );
 const shouldDisablePay = hasAnySplit && sumOfSplits !== totalDue;
 
+
+
 function ReceiptGroup({ receiptId, items, groupIdx }) {
   const icons = {
     Cash: "💵",
@@ -2566,7 +2569,8 @@ function ReceiptGroup({ receiptId, items, groupIdx }) {
   };
 
   const initialGuess = items[0]?.payment_method || "Unknown";
-const [methodLabel, setMethodLabel] = useState(`${icons[initialGuess]} ${initialGuess}`);
+  const [methodLabel, setMethodLabel] = useState(`${icons[initialGuess]} ${initialGuess}`);
+  const { formatCurrency } = useCurrency();
 
 useEffect(() => {
   const fetchMethods = async () => {
@@ -2583,8 +2587,8 @@ useEffect(() => {
         .filter((m) => m.payment_method && m.payment_method !== "Split")
         .map((m) => {
           const icon = icons[m.payment_method] || "❓";
-          const amount = parseFloat(m.amount).toFixed(2);
-          return `${icon} ${m.payment_method} ₺${amount}`;
+          const amount = formatCurrency(parseFloat(m.amount));
+          return `${icon} ${m.payment_method} ${amount}`;
         })
         .join(" + ");
 
@@ -2620,7 +2624,7 @@ return (
               {item.name}
             </span>
             <span className="font-bold text-gray-800 flex flex-col items-end text-base sm:text-lg">
-              ₺{(item.price * item.quantity).toFixed(2)}
+              {formatCurrency(item.price * item.quantity)}
               <span className="text-xs text-red-600 font-extrabold mt-1">{t("paid")}</span>
             </span>
           </div>
@@ -2630,8 +2634,11 @@ return (
             <ul className="ml-2 mt-1 text-xs sm:text-sm text-gray-600 list-disc list-inside">
               {item.extras.map((ex, idx) => (
                 <li key={idx}>
-                  {ex.name} ×{ex.quantity || 1} – ₺
-                  {(parseFloat(ex.price || ex.extraPrice) * (ex.quantity || 1)).toFixed(2)}
+                  {ex.name} ×{ex.quantity || 1} –{" "}
+                  {formatCurrency(
+                    (parseFloat(ex.price || ex.extraPrice) || 0) *
+                      (ex.quantity || 1)
+                  )}
                 </li>
               ))}
             </ul>
@@ -2921,7 +2928,7 @@ const cardGradient = item.paid
         {isExpanded ? "▲" : "▼"}
       </button>
       <span className="font-semibold text-indigo-600 whitespace-nowrap">
-        ₺{lineTotal.toFixed(2)}
+        {formatCurrency(lineTotal)}
       </span>
     </div>
   </div>
@@ -2938,7 +2945,7 @@ const cardGradient = item.paid
               (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * extraQty;
             return (
               <li key={`${item.unique_id}-extra-${i2}`}>
-                {ex.name} ×{extraQty} – ₺{extraTotal.toFixed(2)}
+                {ex.name} ×{extraQty} – {formatCurrency(extraTotal)}
               </li>
             );
           })}
@@ -3067,7 +3074,9 @@ const cardGradient = item.paid
   <footer className="space-y-2 border-t border-slate-200 bg-slate-50 px-3 py-2 shadow-inner">
     <div className="flex justify-between text-xs font-medium text-slate-600">
       <span>{t("Subtotal")}:</span>
-      <span className="text-slate-900">₺{calculateDiscountedTotal().toFixed(2)}</span>
+      <span className="text-slate-900">
+        {formatCurrency(calculateDiscountedTotal())}
+      </span>
     </div>
 
     {discountValue > 0 && (
@@ -3076,9 +3085,9 @@ const cardGradient = item.paid
           {t("Discount")}{" "}
           {discountType === "percent"
             ? `(${discountValue}%)`
-            : `(-₺${discountValue})`}
+            : `(-${formatCurrency(discountValue)})`}
         </span>
-        <span>-₺{discountValue}</span>
+        <span>-{formatCurrency(discountValue)}</span>
       </div>
     )}
 
@@ -3093,10 +3102,9 @@ const cardGradient = item.paid
     :
   </span>
   <span>
-    ₺
     {selectedCartItemIds.size > 0
-      ? selectedItemsTotal.toFixed(2)
-      : calculateDiscountedTotal().toFixed(2)}
+      ? formatCurrency(selectedItemsTotal)
+      : formatCurrency(calculateDiscountedTotal())}
   </span>
 </div>
 
@@ -3196,7 +3204,7 @@ const cardGradient = item.paid
           {product.name}
         </p>
         <span className="text-base font-bold text-indigo-600">
-          ₺{parseFloat(product.price).toFixed(2)}
+          {formatCurrency(parseFloat(product.price))}
         </span>
       </button>
     ))}
@@ -3221,7 +3229,7 @@ const cardGradient = item.paid
               {t("Total")}
             </span>
             <span className="text-2xl font-bold">
-              ₺{calculateDiscountedTotal().toFixed(2)}
+              {formatCurrency(calculateDiscountedTotal())}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -3327,7 +3335,7 @@ const cardGradient = item.paid
                 >
                   <span className="truncate">{item.name}</span>
                   <span className="text-amber-600">
-                    ×{item.quantity || 1} — ₺{totalPrice.toFixed(2)}
+                    ×{item.quantity || 1} — {formatCurrency(totalPrice)}
                   </span>
                 </li>
               );
@@ -3356,7 +3364,7 @@ const cardGradient = item.paid
             </select>
           </label>
           <p className="text-xs text-rose-500">
-            {t("Refund amount")}: ₺{refundAmount.toFixed(2)}
+            {t("Refund amount")}: {formatCurrency(refundAmount)}
           </p>
         </div>
       ) : (

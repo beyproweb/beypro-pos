@@ -3,6 +3,7 @@
 import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "react-router-dom";
 import React, { useEffect, useState } from "react";
 import { AuthProvider } from "./context/AuthContext";
+import { CurrencyProvider } from "./context/CurrencyContext";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
@@ -146,6 +147,7 @@ const loadSettings = async () => {
 
   return (
     <AuthProvider>
+      <CurrencyProvider>
       <AppearanceProvider>
         <div className="flex h-screen">
           <Routes>
@@ -286,6 +288,7 @@ const loadSettings = async () => {
 
      
       </AppearanceProvider>
+      </CurrencyProvider>
     </AuthProvider>
   );
 }

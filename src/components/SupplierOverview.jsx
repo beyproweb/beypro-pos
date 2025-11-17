@@ -1,7 +1,9 @@
 // components/SupplierOverview.jsx
 import React, { useMemo, useState } from "react";
+import { useCurrency } from "../context/CurrencyContext";
 
 export default function SupplierOverview({ suppliers = [], t }) {
+  const { formatCurrency } = useCurrency();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
 
@@ -45,11 +47,15 @@ export default function SupplierOverview({ suppliers = [], t }) {
         </div>
         <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 p-4 text-white shadow">
           <p className="text-sm font-semibold">{t("Total Outstanding Dues")}</p>
-          <p className="text-3xl font-bold mt-2">{totalDue.toLocaleString()} ₺</p>
+          <p className="text-3xl font-bold mt-2">
+            {formatCurrency(totalDue)}
+          </p>
         </div>
         <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 p-4 text-white shadow">
           <p className="text-sm font-semibold">{t("Total Paid (Recorded)")}</p>
-          <p className="text-3xl font-bold mt-2">{totalPaid.toLocaleString()} ₺</p>
+          <p className="text-3xl font-bold mt-2">
+            {formatCurrency(totalPaid)}
+          </p>
         </div>
       </div>
 
@@ -132,10 +138,10 @@ export default function SupplierOverview({ suppliers = [], t }) {
                       {s.name}
                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                      {spent.toLocaleString()} ₺
+                      {formatCurrency(spent)}
                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                      {paid.toLocaleString()} ₺
+                      {formatCurrency(paid)}
                     </td>
                     <td
                       className={`px-4 py-3 font-semibold ${
@@ -144,7 +150,7 @@ export default function SupplierOverview({ suppliers = [], t }) {
                           : "text-emerald-600 dark:text-emerald-400"
                       }`}
                     >
-                      {due.toLocaleString()} ₺
+                      {formatCurrency(due)}
                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
                       {lastDate}

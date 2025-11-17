@@ -3,9 +3,11 @@ import { useTranslation } from "react-i18next";
 import { Card } from "../components/ui/card";
 import { CalendarIcon } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
+import { useCurrency } from "../context/CurrencyContext";
 
 export default function CashRegisterHistory() {
   const { t } = useTranslation();
+  const { formatCurrency } = useCurrency();
   const [history, setHistory] = useState([]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -91,14 +93,34 @@ export default function CashRegisterHistory() {
               return (
                 <tr key={i} className="border-t border-gray-200 dark:border-gray-700">
                   <td className="p-2">{r.date}</td>
-                  <td className="p-2 text-blue-600">₺{!isNaN(open) ? open.toFixed(2) : "-"}</td>
-                  <td className="p-2 text-green-600">₺{!isNaN(close) ? close.toFixed(2) : "-"}</td>
-                  <td className="p-2 text-accent">₺{!isNaN(r.cash_sales) ? Number(r.cash_sales).toFixed(2) : "-"}</td>
-                  <td className="p-2 text-red-500">₺{!isNaN(r.supplier_expenses) ? Number(r.supplier_expenses).toFixed(2) : "-"}</td>
-                  <td className="p-2 text-red-500">₺{!isNaN(r.staff_expenses) ? Number(r.staff_expenses).toFixed(2) : "-"}</td>
-                  <td className="p-2 text-red-500">₺{!isNaN(r.register_expenses) ? Number(r.register_expenses).toFixed(2) : "-"}</td>
+                  <td className="p-2 text-blue-600">
+                    {!isNaN(open) ? formatCurrency(open) : "-"}
+                  </td>
+                  <td className="p-2 text-green-600">
+                    {!isNaN(close) ? formatCurrency(close) : "-"}
+                  </td>
+                  <td className="p-2 text-accent">
+                    {!isNaN(r.cash_sales)
+                      ? formatCurrency(Number(r.cash_sales))
+                      : "-"}
+                  </td>
+                  <td className="p-2 text-red-500">
+                    {!isNaN(r.supplier_expenses)
+                      ? formatCurrency(Number(r.supplier_expenses))
+                      : "-"}
+                  </td>
+                  <td className="p-2 text-red-500">
+                    {!isNaN(r.staff_expenses)
+                      ? formatCurrency(Number(r.staff_expenses))
+                      : "-"}
+                  </td>
+                  <td className="p-2 text-red-500">
+                    {!isNaN(r.register_expenses)
+                      ? formatCurrency(Number(r.register_expenses))
+                      : "-"}
+                  </td>
                   <td className={`p-2 font-semibold ${net >= 0 ? "text-green-500" : "text-red-600"}`}>
-                    ₺{net.toFixed(2)}
+                    {formatCurrency(net)}
                   </td>
                 </tr>
               );

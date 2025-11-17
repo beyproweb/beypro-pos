@@ -70,8 +70,8 @@ function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
-function formatCurrency(value = 0) {
-  return `${value.toFixed(2)} ₺`;
+function formatCurrency(value = 0, symbol = "₺") {
+  return `${value.toFixed(2)} ${symbol}`;
 }
 
 function mergePrinterConfig(base, override) {
@@ -117,7 +117,9 @@ function buildTestTicket(layout, order = SAMPLE_ORDER, customLines = []) {
   ];
   if (layout.showTaxes) {
     lines.push(
-      `${layout.taxLabel || "Tax"} (${layout.taxRate || 0}%): ${formatCurrency(taxAmount)}`
+      `${layout.taxLabel || "Tax"} (${layout.taxRate || 0}%): ${formatCurrency(
+        taxAmount
+      )}`
     );
   }
   if (layout.showDiscounts) {

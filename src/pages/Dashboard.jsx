@@ -4,6 +4,7 @@ import secureFetch from "../utils/secureFetch";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
+import { useCurrency } from "../context/CurrencyContext";
 
 import { useNavigate } from 'react-router-dom';
 import {
@@ -575,6 +576,7 @@ const fetchSummaryStats = useCallback(async () => {
 function BusinessSnapshot({ summary = {}, onRefresh }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { formatCurrency } = useCurrency();
 
   const snap = {
     dailySales: summary.dailySales ?? 0,
@@ -616,7 +618,7 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
             <BarChart className="text-green-500 w-7 h-7" />
             <div>
               <div className="text-2xl font-extrabold">
-                ₺{snap.dailySales.toLocaleString()}
+                {formatCurrency(snap.dailySales)}
               </div>
               <div className="text-xs text-gray-500">{t("Sales today")}</div>
             </div>
@@ -688,11 +690,17 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
             </div>
           </div>
           <div className="flex gap-4 text-sm font-semibold">
-            <span className="text-green-600">₺{snap.cash}</span>
+            <span className="text-green-600">
+              {formatCurrency(snap.cash)}
+            </span>
             <span className="text-gray-400">{t("Cash")}</span>
-            <span className="text-blue-600">₺{snap.card}</span>
+            <span className="text-blue-600">
+              {formatCurrency(snap.card)}
+            </span>
             <span className="text-gray-400">{t("Card")}</span>
-            <span className="text-pink-600">₺{snap.online}</span>
+            <span className="text-pink-600">
+              {formatCurrency(snap.online)}
+            </span>
             <span className="text-gray-400">{t("Online")}</span>
           </div>
         </MiniCard>

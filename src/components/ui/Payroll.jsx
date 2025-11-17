@@ -6,11 +6,7 @@ import { Plus, Save, Download, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
 import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../../utils/cashDrawer";
-
-const currency = (amt) =>
-  `₺${parseFloat(amt || 0).toLocaleString("tr-TR", {
-    minimumFractionDigits: 2,
-  })}`;
+import { useCurrency } from "../../context/CurrencyContext";
 const dateStr = (d) => new Date(d).toLocaleDateString("tr-TR");
 
 function calcDueHistory(totalSalaryDue, payments = []) {
@@ -300,6 +296,7 @@ const StaffCard = ({
   onClear,
 }) => {
   const { t } = useTranslation();
+  const { formatCurrency } = useCurrency();
   const history = staffHistory || {};
   const breakdown = Array.isArray(history.weeklyCheck)
     ? history.weeklyCheck
@@ -519,7 +516,7 @@ const StaffCard = ({
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="px-3 py-1 rounded-full bg-white text-blue-900 font-semibold shadow-sm">
-                {currency(autoPaymentInfo.amount || 0)}
+                {formatCurrency(autoPaymentInfo.amount || 0)}
               </span>
               <span className="px-3 py-1 rounded-full bg-white text-blue-900 font-medium shadow-sm">
                 {repeatLabel} @ {autoPaymentInfo.repeat_time || "--:--"}
@@ -585,7 +582,7 @@ const StaffCard = ({
     ? dateStr(pay.scheduled_date)
     : "-"}
 </td>
-                    <td className="p-3">{currency(pay.amount)}</td>
+                    <td className="p-3">{formatCurrency(pay.amount)}</td>
                     <td className="p-3">{pay.payment_method || "-"}</td>
                     <td className="p-3">
                       {pay.auto ? (
@@ -599,7 +596,7 @@ const StaffCard = ({
                       )}
                     </td>
                     <td className="p-3">{pay.note || "-"}</td>
-                    <td className="p-3">{currency(pay.dueAfter)}</td>
+                    <td className="p-3">{formatCurrency(pay.dueAfter)}</td>
                   </tr>
                 ))
               ) : (

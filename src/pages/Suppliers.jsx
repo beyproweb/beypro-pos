@@ -19,6 +19,7 @@ import secureFetch from "../utils/secureFetch";
 import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../utils/cashDrawer";
 import { useHeader } from "../context/HeaderContext";
 import SupplierOverview from "../components/SupplierOverview";
+import { useCurrency } from "../context/CurrencyContext";
 const API_URL = import.meta.env.VITE_API_URL || "";
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
@@ -81,6 +82,7 @@ const [newTransaction, setNewTransaction] = useState({
   const [receiptFile, setReceiptFile] = useState(null);
   const [latestTransaction, setLatestTransaction] = useState(null);
   const containerRef = useRef(null);
+  const { formatCurrency, config } = useCurrency();
 
   useEffect(() => {
     setHeader(prev => ({
@@ -598,17 +600,6 @@ const projectedBalance = useMemo(() => {
     return sortedTransactions.filter((txn) => txn?.receipt_url).slice(0, 3);
   }, [sortedTransactions]);
 
-  const formatCurrency = (value) => {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) {
-      return "0.00";
-    }
-    return numeric.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
-
   // Combined due = existing supplier due + current new order total
 const combinedDue = useMemo(() => {
   const existingDue = Number(selectedSupplier?.total_due || 0);
@@ -1084,10 +1075,7 @@ id}`, {
     });
   };
 
-  const formattedTotalDues = totalAllDues.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  const formattedTotalDues = formatCurrency(totalAllDues);
 
   const selectedSupplierDue = Number(selectedSupplier?.total_due ?? 0);
   const formattedSelectedSupplierDue = selectedSupplierDue.toLocaleString(
@@ -1250,7 +1238,7 @@ id}`, {
                   {t("Total outstanding dues")}
                 </p>
                 <p className="mt-2 text-3xl font-semibold sm:text-4xl">
-                  {formattedTotalDues} ₺
+                  {formattedTotalDues}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-sm text-white/80">
@@ -1261,8 +1249,7 @@ id}`, {
                 {selectedSupplier && (
                   <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 font-semibold">
                     <span className="h-2.5 w-2.5 rounded-full bg-white/60" />
-                    {selectedSupplier?.
-name}: {formattedSelectedSupplierDue} ₺
+                    {selectedSupplier?.name}: {formattedSelectedSupplierDue}
                   </span>
                 )}
               </div>
@@ -1380,7 +1367,7 @@ name}: {formattedSelectedSupplierDue} ₺
       <div className="flex items-center justify-between">
         <p>{t("Due")}</p>
         <p className="text-lg font-bold text-rose-500 dark:text-rose-300">
-          {formattedSelectedSupplierDue} ₺
+          {formattedSelectedSupplierDue}
         </p>
       </div>
     </div>
@@ -1468,7 +1455,9 @@ name}: {formattedSelectedSupplierDue} ₺
                             {t("Purchasing & Receipts")}
                           </h2>
                           <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {t("Capture deliveries, attach receipts, and keep balances current.")}
+                            {t(
+                              "Capture deliveries, attach receipts, and keep balances current."
+                            )}
                           </p>
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-2 text-right shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
@@ -1476,7 +1465,7 @@ name}: {formattedSelectedSupplierDue} ₺
                             {t("Projected balance")}
                           </p>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(projectedBalance)} ₺
+                            {formatCurrency(projectedBalance)}
                           </p>
                         </div>
                       </div>
@@ -1596,7 +1585,9 @@ name}: {formattedSelectedSupplierDue} ₺
           <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
             {t("Unit price")}
           </p>
-          <p className="text-lg mt-1">{unitPrice} ₺</p>
+          <p className="text-lg mt-1">
+            {formatCurrency(parseFloat(unitPrice || 0))}
+          </p>
         </div>
 
         {/* 🗑️ Remove Row Button */}
@@ -1663,7 +1654,7 @@ name}: {formattedSelectedSupplierDue} ₺
             : "text-emerald-600 dark:text-emerald-400"
         }`}
       >
-        +{formatCurrency(totalOrder)} ₺
+        +{formatCurrency(totalOrder)}
       </p>
       <p className="text-xs text-slate-400 dark:text-slate-500">
         {t("Total added to outstanding balance (all items)")}
@@ -1747,7 +1738,7 @@ name}: {formattedSelectedSupplierDue} ₺
       </p>
       <p>
         <span className="font-semibold">{t("Total Cost")}:</span>{" "}
-        ₺{Number(latestTransaction.total_cost).toFixed(2)}
+        {formatCurrency(Number(latestTransaction.total_cost || 0))}
       </p>
       <p>
         <span className="font-semibold">{t("Payment Method")}:</span>{" "}
@@ -1798,7 +1789,7 @@ name}: {formattedSelectedSupplierDue} ₺
           {t("Outstanding")}
         </p>
         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-          {formatCurrency(supplierFinancials.outstanding)} ₺
+          {formatCurrency(supplierFinancials.outstanding)}
         </p>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
@@ -1806,7 +1797,7 @@ name}: {formattedSelectedSupplierDue} ₺
           {t("Total purchases")}
         </p>
         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-          {formatCurrency(supplierFinancials.totalPurchases)} ₺
+          {formatCurrency(supplierFinancials.totalPurchases)}
         </p>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
@@ -1814,7 +1805,7 @@ name}: {formattedSelectedSupplierDue} ₺
           {t("Payments made")}
         </p>
         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-          {formatCurrency(supplierFinancials.totalPaid)} ₺
+          {formatCurrency(supplierFinancials.totalPaid)}
         </p>
       </div>
     </div>
@@ -1894,10 +1885,10 @@ name}: {formattedSelectedSupplierDue} ₺
                             {isPayment
                               ? `${t("Payment recorded")} – ${formatCurrency(
                                   amountPaid
-                                )} ₺`
+                                )}`
                               : `${
                                   txn.ingredient || t("Compiled Receipt")
-                                } – ${formatCurrency(totalCost)} ₺`}
+                                } – ${formatCurrency(totalCost)}`}
                           </p>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {txn.payment_method ? txn.payment_method : ""}
@@ -1929,9 +1920,14 @@ name}: {formattedSelectedSupplierDue} ₺
                                   </span>
                                   <span className="text-slate-500 dark:text-slate-400">
                                     {item.quantity} {item.unit} ×{" "}
-                                    {Number(item.price_per_unit).toFixed(2)}₺ ={" "}
+                                    {formatCurrency(
+                                      Number(item.price_per_unit || 0)
+                                    )}{" "}
+                                    ={" "}
                                     <strong className="text-slate-900 dark:text-white">
-                                      {Number(item.total_cost).toFixed(2)}₺
+                                      {formatCurrency(
+                                        Number(item.total_cost || 0)
+                                      )}
                                     </strong>
                                   </span>
                                 </li>
@@ -1950,11 +1946,11 @@ name}: {formattedSelectedSupplierDue} ₺
                           }
                         >
                           {change < 0 ? "−" : "+"}
-                          {formatCurrency(Math.abs(change))} ₺
+                          {formatCurrency(Math.abs(change))}
                         </span>
                         <span className="text-slate-700 dark:text-slate-200">
                           {t("Balance after this")}:{" "}
-                          {formatCurrency(runningBalance)} ₺
+                          {formatCurrency(runningBalance)}
                         </span>
                       </div>
                     </div>
@@ -2023,13 +2019,13 @@ name}: {formattedSelectedSupplierDue} ₺
                         <div className="flex items-center justify-between">
                           <span>{t("Spend this month")}</span>
                           <strong className="text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.monthPurchases)} ₺
+                            {formatCurrency(supplierFinancials.monthPurchases)}
                           </strong>
                         </div>
                         <div className="flex items-center justify-between">
                           <span>{t("Payments made")}</span>
                           <strong className="text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.monthPayments)} ₺
+                            {formatCurrency(supplierFinancials.monthPayments)}
                           </strong>
                         </div>
                         <div className="flex items-center justify-between">
@@ -2041,7 +2037,7 @@ name}: {formattedSelectedSupplierDue} ₺
                                 : "text-emerald-600 dark:text-emerald-400"
                             }`}
                           >
-                            {formatCurrency(projectedBalance)} ₺
+                            {formatCurrency(projectedBalance)}
                           </strong>
                         </div>
                       </div>
@@ -2138,21 +2134,13 @@ name}: {formattedSelectedSupplierDue} ₺
                                 <span>
                                   {t("Latest price")}:{" "}
                                   <strong className="text-slate-700 dark:text-slate-200">
-                                    {alert.latestPrice.toLocaleString(undefined, {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}{" "}
-                                    ₺
+                                    {formatCurrency(alert.latestPrice)}
                                   </strong>
                                 </span>
                                 <span>
                                   {t("Baseline")}:{" "}
                                   <strong className="text-slate-700 dark:text-slate-200">
-                                    {alert.comparisonPrice.toLocaleString(undefined, {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}{" "}
-                                    ₺
+                                    {formatCurrency(alert.comparisonPrice)}
                                   </strong>
                                 </span>
                                 <span>
@@ -2357,35 +2345,35 @@ name}: {formattedSelectedSupplierDue} ₺
                       </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                            {t("Outstanding")}
-                          </p>
-                          <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.outstanding)} ₺
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                            {t("Total purchases")}
-                          </p>
-                          <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.totalPurchases)} ₺
+                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                           {t("Outstanding")}
+                         </p>
+                         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                            {formatCurrency(supplierFinancials.outstanding)}
                           </p>
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                            {t("Payments made")}
-                          </p>
-                          <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.totalPaid)} ₺
+                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                           {t("Total purchases")}
+                         </p>
+                         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                            {formatCurrency(supplierFinancials.totalPurchases)}
                           </p>
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                            {t("Month spend")}
+                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                           {t("Payments made")}
+                         </p>
+                         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                            {formatCurrency(supplierFinancials.totalPaid)}
                           </p>
-                          <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.monthPurchases)} ₺
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                           {t("Month spend")}
+                         </p>
+                         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                            {formatCurrency(supplierFinancials.monthPurchases)}
                           </p>
                         </div>
                       </div>
@@ -2466,7 +2454,7 @@ notes || "—"}
                                 {t("Outstanding balance")}
                               </p>
                               <p className="mt-2 text-3xl font-semibold">
-                                {formatCurrency(supplierFinancials.outstanding)} ₺
+                                {formatCurrency(supplierFinancials.outstanding)}
                               </p>
                             </div>
                             <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
@@ -2528,13 +2516,13 @@ notes || "—"}
                           <div className="flex items-center justify-between">
                             <span>{t("Spend this month")}</span>
                             <strong className="text-slate-900 dark:text-white">
-                              {formatCurrency(supplierFinancials.monthPurchases)} ₺
+                              {formatCurrency(supplierFinancials.monthPurchases)}
                             </strong>
                           </div>
                           <div className="flex items-center justify-between">
                             <span>{t("Payments received")}</span>
                             <strong className="text-slate-900 dark:text-white">
-                              {formatCurrency(supplierFinancials.monthPayments)} ₺
+                              {formatCurrency(supplierFinancials.monthPayments)}
                             </strong>
                           </div>
                           <div className="flex items-center justify-between">
@@ -2546,7 +2534,7 @@ notes || "—"}
                                   : "text-emerald-600 dark:text-emerald-400"
                               }`}
                             >
-                              {formatCurrency(projectedBalance)} ₺
+                              {formatCurrency(projectedBalance)}
                             </strong>
                           </div>
                         </div>
@@ -2963,7 +2951,7 @@ notes || ""}
     combinedDue > 0 ? "text-red-600" : "text-green-500"
   }`}
 >
-  {combinedDue.toFixed(2)}₺
+  {formatCurrency(combinedDue)}
 </div>
 
       </div>
@@ -3001,7 +2989,9 @@ notes || ""}
       {t("Remaining After Payment")}:
     </span>
     <div className="text-lg font-bold text-red-500">
-      {Math.max(0, combinedDue - parseFloat(paymentAmount || 0)).toFixed(2)}₺
+      {formatCurrency(
+        Math.max(0, combinedDue - parseFloat(paymentAmount || 0))
+      )}
     </div>
   </>
 ) : (

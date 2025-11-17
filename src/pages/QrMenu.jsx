@@ -6,6 +6,7 @@ import ModernTableSelector from "../components/ModernTableSelector";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import secureFetch from "../utils/secureFetch";
+import { useCurrency } from "../context/CurrencyContext";
 import { UtensilsCrossed, Soup, Bike, Phone, Share2 } from "lucide-react";
 import { Instagram, Music2, Globe } from "lucide-react";
 
@@ -1780,6 +1781,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
 
 /* ====================== POPULAR CAROUSEL ====================== */
 function PopularCarousel({ title, items, onProductClick }) {
+  const { formatCurrency } = useCurrency();
   const scrollRef = React.useRef(null);
   const [canLeft, setCanLeft] = React.useState(false);
   const [canRight, setCanRight] = React.useState(false);
@@ -1858,7 +1860,9 @@ function PopularCarousel({ title, items, onProductClick }) {
               </div>
               <div className="p-3">
                 <div className="text-sm font-semibold line-clamp-1">{p.name}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-300">₺{Number(p.price).toFixed(2)}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  {formatCurrency(Number(p.price))}
+                </div>
               </div>
             </div>
           ))}
@@ -1916,6 +1920,7 @@ function FeaturedCard({ slides, currentSlide, setCurrentSlide }) {
 
 /* ====================== PRODUCT GRID (Luxury Fine Dining Style) ====================== */
 function ProductGrid({ products, onProductClick, t }) {
+  const { formatCurrency } = useCurrency();
   const productList = Array.isArray(products) ? products : [];
 
   return (
@@ -1952,7 +1957,7 @@ function ProductGrid({ products, onProductClick, t }) {
               {product.name}
             </h3>
             <p className="text-[15px] font-semibold text-neutral-600 group-hover:text-neutral-800 transition-colors">
-              ₺{parseFloat(product.price).toFixed(2)}
+              {formatCurrency(parseFloat(product.price || 0))}
             </p>
           </div>
 
@@ -1971,6 +1976,7 @@ function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   const [note, setNote] = useState("");
+  const { formatCurrency } = useCurrency();
 
   useEffect(() => {
     if (!open) return;
@@ -2137,7 +2143,7 @@ return createPortal(
             {product.name}
           </div>
           <div className="text-lg font-semibold text-neutral-600">
-            ₺{basePrice.toFixed(2)}
+            {formatCurrency(basePrice)}
           </div>
         </div>
       </div>
@@ -2193,7 +2199,7 @@ return createPortal(
                         {item.name}
                       </div>
                       <div className="text-xs text-neutral-500 font-medium mt-0.5">
-                        ₺{unit.toFixed(2)}
+                        {formatCurrency(unit)}
                       </div>
                       <div className="mt-2 flex items-center justify-center gap-2">
                         <button
@@ -2273,7 +2279,10 @@ return createPortal(
       {/* Footer */}
       <div className="border-t border-neutral-200 px-6 py-4 flex items-center justify-between bg-white/90 backdrop-blur-sm">
         <div className="text-lg font-medium text-neutral-900">
-          {t('Total')}: <span className="font-semibold">₺{lineTotal.toFixed(2)}</span>
+          {t('Total')}:{" "}
+          <span className="font-semibold">
+            {formatCurrency(lineTotal)}
+          </span>
         </div>
         <button
           onClick={() => {
@@ -2429,8 +2438,8 @@ return (
                                       key={j}
                                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
                                     >
-                                      {ex.name} ×{ex.quantity || 1} ₺
-                                      {line.toFixed(2)}
+                                      {ex.name} ×{ex.quantity || 1}{" "}
+                                      {formatCurrency(line)}
                                     </span>
                                   );
                                 })}
@@ -2444,7 +2453,7 @@ return (
                           </div>
                           <div className="text-right shrink-0">
                             <div className="font-medium text-neutral-700">
-                              ₺{lineTotal(item).toFixed(2)}
+                              {formatCurrency(lineTotal(item))}
                             </div>
                             <div className="text-[10px] text-neutral-400 mt-1">
                               {t("Locked")}
@@ -2491,8 +2500,8 @@ return (
                                       key={j}
                                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
                                     >
-                                      {ex.name} ×{ex.quantity || 1} ₺
-                                      {line.toFixed(2)}
+                                      {ex.name} ×{ex.quantity || 1}{" "}
+                                      {formatCurrency(line)}
                                     </span>
                                   );
                                 })}
@@ -2506,7 +2515,7 @@ return (
                           </div>
                           <div className="text-right shrink-0">
                             <div className="font-medium text-neutral-700">
-                              ₺{lineTotal(item).toFixed(2)}
+                              {formatCurrency(lineTotal(item))}
                             </div>
                             <button
                               onClick={() => removeItem(i, true)}
@@ -2533,7 +2542,7 @@ return (
                   {t("Total")}:
                 </span>
                 <span className="text-lg font-semibold text-neutral-900">
-                  ₺{total.toFixed(2)}
+                  {useCurrency().formatCurrency(total)}
                 </span>
               </div>
 

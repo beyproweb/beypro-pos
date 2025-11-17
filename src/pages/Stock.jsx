@@ -5,9 +5,11 @@ import socket from "../utils/socket";
 import { useTranslation } from "react-i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import secureFetch from "../utils/secureFetch";
+import { useCurrency } from "../context/CurrencyContext";
 
 export default function Stock() {
   const { t } = useTranslation();
+  const { formatCurrency } = useCurrency();
   const [selectedSupplier, setSelectedSupplier] = useState("__all__");
   const [searchTerm, setSearchTerm] = useState("");
   const { groupedData, fetchStock, loading, handleAddToCart, setGroupedData } =
@@ -251,15 +253,12 @@ const suppliersList = Array.from(
     ...groupedData.map(i => i.supplier_name).filter(Boolean),
   ])
 );
-  const formattedStockValue = totalStockValue.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  const formattedStockValue = formatCurrency(totalStockValue);
 
   const statCards = [
     {
       title: t("Stock Value"),
-      value: `${formattedStockValue} ₺`,
+      value: formattedStockValue,
       description: t("Estimated replacement cost"),
       accent: "from-indigo-500 to-purple-500",
       icon: (
@@ -393,7 +392,7 @@ const suppliersList = Array.from(
                 {t("Total Stock Value")}
               </p>
               <p className="mt-2 text-3xl font-semibold sm:text-4xl">
-                {formattedStockValue} ₺
+                {formattedStockValue}
               </p>
               <p className="mt-2 text-sm text-white/70">
                 {t("Live data synced with supplier inputs.")}
@@ -636,10 +635,7 @@ const suppliersList = Array.from(
                         </p>
                         <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
                           {pricePerUnit
-                            ? `${pricePerUnit.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })} ₺`
+                            ? formatCurrency(pricePerUnit)
                             : "—"}
                         </p>
                       </div>
@@ -648,12 +644,7 @@ const suppliersList = Array.from(
                           {t("Total Value")}
                         </p>
                         <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                          {itemValue
-                            ? `${itemValue.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })} ₺`
-                            : "—"}
+                          {itemValue ? formatCurrency(itemValue) : "—"}
                         </p>
                       </div>
                     </div>

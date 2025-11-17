@@ -525,7 +525,7 @@ export default function UserManagementTab() {
         />
         <input
           className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-          placeholder={t("Salary (₺)")}
+          placeholder={t("Salary")}
           value={newUser.salary}
           onChange={(e) => setNewUser({ ...newUser, salary: e.target.value })}
         />
@@ -743,7 +743,7 @@ export default function UserManagementTab() {
                 { key: "email", placeholder: "Email" },
                 { key: "phone", placeholder: "Phone" },
                 { key: "address", placeholder: "Address" },
-                { key: "salary", placeholder: "Salary (₺)" },
+                { key: "salary", placeholder: "Salary" },
               ].map(({ key, placeholder }) => (
                 <input
                   key={key}

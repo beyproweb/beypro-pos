@@ -13,12 +13,11 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
+import { useCurrency } from "../context/CurrencyContext";
 
 // Small helpers
 const titleCase = (s = "") =>
   s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-
-const fmtPrice = (n) => (Number.isFinite(+n) ? `₺${(+n).toFixed(2)}` : "-");
 
 const Spark = ({ points = [] }) => {
   // simple mini sparkline (no external libs)
@@ -41,6 +40,7 @@ const Spark = ({ points = [] }) => {
 
 export default function Ingredient() {
   const { t } = useTranslation();
+  const { formatCurrency } = useCurrency();
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
@@ -234,9 +234,15 @@ export default function Ingredient() {
 
                 {/* Price side */}
                 <div className="text-right">
-                  <div className="text-xl font-bold leading-6">{fmtPrice(curr)}</div>
+                  <div className="text-xl font-bold leading-6">
+                    {Number.isFinite(curr) ? formatCurrency(curr) : "-"}
+                  </div>
                   <div className="text-[12px] opacity-70">
-                    {prev != null ? `${t("Prev")}: ${fmtPrice(prev)}` : "—"}
+                    {prev != null
+                      ? `${t("Prev")}: ${
+                          Number.isFinite(prev) ? formatCurrency(prev) : "-"
+                        }`
+                      : "—"}
                   </div>
 
                   <div className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium">
@@ -332,7 +338,11 @@ export default function Ingredient() {
                                     })
                                   : "—"}
                               </td>
-                              <td className="px-3 py-2">{fmtPrice(h.price)}</td>
+                              <td className="px-3 py-2">
+                                {Number.isFinite(+h.price)
+                                  ? formatCurrency(+h.price)
+                                  : "-"}
+                              </td>
                               <td className="px-3 py-2">{h.reason || "—"}</td>
                             </tr>
                           ))}

@@ -19,6 +19,7 @@ const defaultReceiptLayout = {
 };
 
 import secureFetch from "./secureFetch";
+import { formatWithActiveCurrency } from "./currency";
 
 let layoutCache = defaultReceiptLayout;
 let cachedRegisterSettings = null;
@@ -108,11 +109,11 @@ export function renderReceiptText(order, providedLayout) {
 
   if (order?.tax_value) {
     tax = addMoney(order.tax_value);
-    add(`TAX: ${tax.toFixed(2)} TL`);
+    add(`TAX: ${formatWithActiveCurrency(tax)}`);
   }
 
   add("--------------------------------");
-  add(`TOTAL: ${(total + tax).toFixed(2)} TL`);
+  add(`TOTAL: ${formatWithActiveCurrency(total + tax)}`);
   if (order?.payment_method) {
     add(`PAYMENT: ${String(order.payment_method).toUpperCase()}`);
   }

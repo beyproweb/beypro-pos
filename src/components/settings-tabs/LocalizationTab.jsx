@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
-
-const currencyOptions = ["₺ TRY", "€ EUR", "$ USD", "£ GBP"];
+import { CURRENCY_KEYS } from "../../utils/currency";
+import { useCurrency } from "../../context/CurrencyContext";
 const languageOptions = [
   { label: "English", code: "en" },
   { label: "Turkish", code: "tr" },
@@ -13,8 +13,9 @@ const languageOptions = [
 
 export default function LocalizationTab() {
   const { t, i18n } = useTranslation();
+  const { currencyKey, setCurrencyKey, config } = useCurrency();
   const [language, setLanguage] = useState("English");
-  const [currency, setCurrency] = useState("₺ TRY");
+  const [currency, setCurrency] = useState(currencyKey || "₺ TRY");
 
   // ✅ Load current localization settings
   useEffect(() => {
@@ -27,7 +28,10 @@ export default function LocalizationTab() {
           setLanguage(langLabel);
           i18n.changeLanguage(data.language);
         }
-        if (data.currency) setCurrency(data.currency);
+        if (data.currency) {
+          setCurrency(data.currency);
+          setCurrencyKey(data.currency);
+        }
       })
       .catch((err) => {
         console.warn("⚠️ Failed to load localization:", err);
@@ -46,6 +50,7 @@ export default function LocalizationTab() {
       });
 
       i18n.changeLanguage(selectedLang); // apply immediately
+      setCurrencyKey(currency); // apply currency immediately
       toast.success("✅ Localization saved successfully!");
     } catch (err) {
       console.error("❌ Failed to save localization:", err);
@@ -89,14 +94,17 @@ export default function LocalizationTab() {
         {/* Currency Selector */}
         <div className="bg-indigo-50 dark:bg-indigo-900 p-4 rounded-xl border border-indigo-200 dark:border-indigo-600 shadow">
           <label className="block mb-2 font-medium text-gray-700 dark:text-gray-200">
-            {t("💱 Currency")}
+            {t("💱 Currency")}{" "}
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              ({config?.symbol || "₺"})
+            </span>
           </label>
           <select
             value={currency}
             onChange={(e) => setCurrency(e.target.value)}
             className="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
           >
-            {currencyOptions.map((cur) => (
+            {CURRENCY_KEYS.map((cur) => (
               <option key={cur} value={cur}>
                 {cur}
               </option>

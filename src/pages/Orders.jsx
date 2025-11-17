@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import secureFetch from "../utils/secureFetch";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { DEFAULT_PAYMENT_METHODS } from "../utils/paymentMethods";
+import { useCurrency } from "../context/CurrencyContext";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import {
@@ -312,6 +313,7 @@ export default function Orders({ orders: propOrders, hideModal = false }) {
   const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
   const [activeTab, setActiveTab] = useState("phone");
   const { t } = useTranslation();
+  const { formatCurrency, config } = useCurrency();
   const [showDrinkModal, setShowDrinkModal] = useState(false);
 const [drinksList, setDrinksList] = useState([]);
 const [driverReport, setDriverReport] = useState(null);
@@ -1096,7 +1098,7 @@ const renderPaymentModal = () => {
                 min="0"
                 step="0.01"
                 className="w-28 rounded-xl border border-slate-200 px-4 py-2 text-base text-right font-mono bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400"
-                placeholder="₺0.00"
+                placeholder={`${config?.symbol || ""}0.00`}
                 value={pay.amount}
                 onChange={(e) => {
                   const value = e.target.value;
@@ -1135,14 +1137,19 @@ const renderPaymentModal = () => {
         {/* Total Summary */}
         <div className="bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl shadow-inner text-center">
   <span className="text-2xl sm:text-4xl text-emerald-700 font-extrabold font-mono tracking-tight">
-    ₺{grandTotal.toFixed(2)}
+    {formatCurrency(grandTotal)}
 
 
           </span>
           <span className="text-sm sm:text-base text-slate-600 flex gap-2 items-center">
             Split Amount Paid:&nbsp;
             <span className="text-lg sm:text-xl font-semibold text-slate-900 font-mono">
-              ₺{splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0).toFixed(2)}
+              {formatCurrency(
+                splitPayments.reduce(
+                  (sum, p) => sum + Number(p.amount || 0),
+                  0
+                )
+              )}
             </span>
           </span>
           {/* Remaining Balance */}
@@ -1160,9 +1167,9 @@ const renderPaymentModal = () => {
                 }`}
               >
                 {remaining > 0
-                  ? `Remaining: ₺${remaining.toFixed(2)}`
+                  ? `Remaining: ${formatCurrency(remaining)}`
                   : remaining < 0
-                  ? `Overpaid: ₺${Math.abs(remaining).toFixed(2)}`
+                  ? `Overpaid: ${formatCurrency(Math.abs(remaining))}`
                   : ``}
               </div>
             );
@@ -1306,15 +1313,24 @@ return (
               </div>
               <div>
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">Total Sales</div>
-                <div className="text-xl sm:text-4xl font-extrabold text-slate-900">₺{driverReport.total_sales?.toFixed(2)}</div>
+                <div className="text-xl sm:text-4xl font-extrabold text-slate-900">
+                  {driverReport.total_sales != null
+                    ? formatCurrency(driverReport.total_sales)
+                    : "-"}
+                </div>
               </div>
               <div>
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">By Payment Method</div>
                 <div className="flex flex-wrap gap-2">
-                  {Object.entries(driverReport.sales_by_method).map(([method, amt]) =>
-                    <span key={method} className="bg-slate-100 border border-slate-200 shadow-sm px-3 py-1 rounded-lg font-semibold text-sm text-slate-700">
-                      {method}: ₺{amt.toFixed(2)}
-                    </span>
+                  {Object.entries(driverReport.sales_by_method).map(
+                    ([method, amt]) => (
+                      <span
+                        key={method}
+                        className="bg-slate-100 border border-slate-200 shadow-sm px-3 py-1 rounded-lg font-semibold text-sm text-slate-700"
+                      >
+                        {method}: {formatCurrency(amt)}
+                      </span>
+                    )
                   )}
                 </div>
               </div>
@@ -1337,7 +1353,9 @@ return (
     <tr key={ord.id} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
       <td className="p-3 text-slate-700">{ord.customer_name || "-"}</td>
       <td className="p-3 text-slate-500">{ord.customer_address || "-"}</td>
-      <td className="p-3 text-slate-900 font-semibold">₺{parseFloat(ord.total).toFixed(2)}</td>
+      <td className="p-3 text-slate-900 font-semibold">
+        {formatCurrency(parseFloat(ord.total || 0))}
+      </td>
       <td className="p-3 text-slate-600">{ord.payment_method}</td>
       <td className="p-3 text-slate-500">{ord.delivered_at ? new Date(ord.delivered_at).toLocaleTimeString() : "-"}</td>
       <td className="p-3 text-slate-500">
@@ -1715,7 +1733,7 @@ const totalDiscount = calcOrderDiscount(order);
           <span
             className={`text-base sm:text-xl font-semibold font-mono px-3 py-1 rounded-xl border transition whitespace-nowrap ${statusVisual.priceTag}`}
           >
-            ₺{Number(item.price).toFixed(2)}
+            {formatCurrency(Number(item.price || 0))}
           </span>
         </div>
 
@@ -1734,7 +1752,7 @@ const totalDiscount = calcOrderDiscount(order);
                   </span>
                 </span>
                 <span className="font-mono text-center sm:text-right w-full sm:w-auto">
-                  ₺{((ex.price || 0) * (ex.quantity || 1)).toFixed(2)}
+                  {formatCurrency((ex.price || 0) * (ex.quantity || 1))}
                 </span>
               </div>
             ))}
@@ -1803,7 +1821,7 @@ const totalDiscount = calcOrderDiscount(order);
                bg-emerald-50 border border-emerald-200 px-3 sm:px-5 rounded-2xl text-right sm:ml-auto
                w-auto whitespace-nowrap flex-shrink-0"
   >
-    &nbsp;₺{discountedTotal.toFixed(2)}
+    &nbsp;{formatCurrency(discountedTotal)}
   </span>
 </div>
 
@@ -2003,6 +2021,7 @@ const totalDiscount = calcOrderDiscount(order);
 // --- Show items for each phone order ---
 function OrderItems({ orderId }) {
   const [items, setItems] = useState([]);
+  const { formatCurrency } = useCurrency();
   useEffect(() => {
     fetch(`/orders/${orderId}/items`)
       .then((res) => res.json())
@@ -2020,8 +2039,8 @@ function OrderItems({ orderId }) {
 </span>
 
             <span className="text-slate-700 font-mono">
-  ₺{(parseFloat(item.price) * item.quantity).toFixed(2)}
-</span>
+              {formatCurrency((parseFloat(item.price) || 0) * item.quantity)}
+            </span>
 
           </div>
           {/* --- EXTRAS --- */}

@@ -22,6 +22,7 @@ import {
 } from "../utils/receiptPrinter";
 import { fetchOrderWithItems } from "../utils/orderPrinting";
 import { openCashDrawer, logCashRegisterEvent } from "../utils/cashDrawer";
+import { useCurrency } from "../context/CurrencyContext";
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.MODE === "development"
@@ -145,6 +146,7 @@ const getDisplayTotal = (order) => {
 
 export default function TableOverview() {
   useRegisterGuard();
+  const { formatCurrency, config } = useCurrency();
   const [orders, setOrders] = useState([]);
   const [tableConfigs, setTableConfigs] = useState([]);
   const [closedOrders, setClosedOrders] = useState([]);
@@ -1426,7 +1428,7 @@ const groupedTables = tables.reduce((acc, tbl) => {
 
               <div className="flex items-center gap-3 ml-auto">
                 <span className="text-lg font-bold text-indigo-700">
-                  ₺{getDisplayTotal(table.order).toFixed(2)}
+                  {formatCurrency(getDisplayTotal(table.order))}
                 </span>
 
                 {table.order?.items?.length > 0 && (
@@ -1527,7 +1529,7 @@ const groupedTables = tables.reduce((acc, tbl) => {
             </span>
           </div>
           <div className="font-bold text-gray-800">
-            ₺{getDisplayTotal(order).toFixed(2)}
+            {formatCurrency(getDisplayTotal(order))}
           </div>
           <div className="text-sm text-gray-500">
             {order.customer_name || t("Guest")}
@@ -1741,10 +1743,10 @@ onCreateOrder={() => {
             {ex.name}
           </span>
           <span className="text-gray-500">
-            @ ₺{unitPrice.toFixed(2)}
+            @ {formatCurrency(unitPrice)}
           </span>
           <span className="ml-2 text-blue-900 font-semibold">
-            ₺{total}
+            {formatCurrency(total)}
           </span>
         </li>
       );
@@ -1817,11 +1819,12 @@ onCreateOrder={() => {
               value={openingCash}
               onChange={e => setOpeningCash(e.target.value)}
               className="w-full p-5 rounded-2xl border-2 border-blue-300 text-lg shadow-lg focus:border-blue-500 outline-none transition"
-              placeholder="₺0.00"
+              placeholder={`${config?.symbol || ""}0.00`}
             />
             {yesterdayCloseCash !== null && (
               <div className="text-blue-700 text-sm mt-2">
-                🔒 Last Closing: ₺{parseFloat(yesterdayCloseCash).toFixed(2)}
+                🔒 Last Closing:{" "}
+                {formatCurrency(parseFloat(yesterdayCloseCash || 0))}
               </div>
             )}
           </div>
@@ -1830,11 +1833,15 @@ onCreateOrder={() => {
             <div className="bg-gradient-to-r from-white via-blue-50 to-indigo-50 border border-gray-200 rounded-3xl p-5 mt-2 shadow-md space-y-2">
               <div className="flex justify-between items-center font-semibold">
                 <span>💼 {t("Opening")}</span>
-                <span className="text-green-700 tabular-nums">₺{parseFloat(openingCash).toFixed(2)}</span>
+                <span className="text-green-700 tabular-nums">
+                  {formatCurrency(parseFloat(openingCash || 0))}
+                </span>
               </div>
               <div className="flex justify-between items-center font-semibold">
                 <span>🔒 {t("Last Closing")}</span>
-                <span className="text-blue-700 tabular-nums">₺{parseFloat(yesterdayCloseCash).toFixed(2)}</span>
+                <span className="text-blue-700 tabular-nums">
+                  {formatCurrency(parseFloat(yesterdayCloseCash || 0))}
+                </span>
               </div>
               <div className={`flex justify-between items-center font-semibold ${
                 parseFloat(openingCash) !== parseFloat(yesterdayCloseCash)
@@ -1843,7 +1850,10 @@ onCreateOrder={() => {
               }`}>
                 <span>🔁 {t("Difference")}</span>
                 <span>
-                  ₺{(parseFloat(openingCash) - parseFloat(yesterdayCloseCash)).toFixed(2)}
+                  {formatCurrency(
+                    parseFloat(openingCash || 0) -
+                      parseFloat(yesterdayCloseCash || 0)
+                  )}
                 </span>
               </div>
             </div>
@@ -1870,21 +1880,29 @@ const netCash = opening + expected + entryTotal - expense;
               <div className="space-y-4 text-base font-semibold">
                 <div className="flex justify-between items-center">
                   <span className="flex items-center gap-2 text-green-700"><span className="bg-green-400 text-white rounded-full px-2 py-1">💼</span> {t('Opening')}</span>
-                  <span className="tabular-nums text-green-800">₺{opening.toFixed(2)}</span>
+                  <span className="tabular-nums text-green-800">
+                    {formatCurrency(opening)}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="flex items-center gap-2 text-yellow-700"><span className="bg-yellow-400 text-white rounded-full px-2 py-1">💰</span> {t('Cash Sales')}</span>
-                  <span className="tabular-nums text-yellow-800">₺{expected.toFixed(2)}</span>
+                  <span className="tabular-nums text-yellow-800">
+                    {formatCurrency(expected)}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="flex items-center gap-2 text-orange-700"><span className="bg-orange-400 text-white rounded-full px-2 py-1">📉</span> {t('Cash Expenses')}</span>
-                  <span className="tabular-nums text-orange-800">₺{expense.toFixed(2)}</span>
+                  <span className="tabular-nums text-orange-800">
+                    {formatCurrency(expense)}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
   <span className="flex items-center gap-2 text-lime-700">
     <span className="bg-lime-400 text-white rounded-full px-2 py-1">➕</span> {t('Cash Entries')}
   </span>
-  <span className="tabular-nums text-lime-800">₺{entryTotal.toFixed(2)}</span>
+  <span className="tabular-nums text-lime-800">
+    {formatCurrency(entryTotal)}
+  </span>
 </div>
 
                 <div className="h-[1px] w-full bg-gradient-to-r from-blue-200 to-fuchsia-200 rounded-full opacity-60 my-3" />
@@ -1894,7 +1912,7 @@ const netCash = opening + expected + entryTotal - expense;
                     {t('Net Expected Cash')}
                   </span>
                   <span className="tabular-nums text-blue-900 font-extrabold text-2xl">
-                    ₺{netCash.toFixed(2)}
+                    {formatCurrency(netCash)}
                   </span>
                 </div>
               </div>
@@ -1916,14 +1934,19 @@ const netCash = opening + expected + entryTotal - expense;
                     ? "border-green-500"
                     : "border-red-500"}
                 `}
-                placeholder="₺0.00"
+                placeholder={`${config?.symbol || ""}0.00`}
               />
               {actualCash && (
                 parseFloat(actualCash) === netCash
                   ? <p className="text-green-600 font-semibold mt-2">{t('Cash matches perfectly.')}</p>
-                  : <p className="text-red-600 font-semibold mt-2">
-                      ❌ {t('Difference')}: ₺{Math.abs(parseFloat(actualCash) - netCash).toFixed(2)}
-                    </p>
+                  : (
+                      <p className="text-red-600 font-semibold mt-2">
+                        ❌ {t("Difference")}:{" "}
+                        {formatCurrency(
+                          Math.abs(parseFloat(actualCash || 0) - netCash)
+                        )}
+                      </p>
+                    )
               )}
             </div>
            {registerState === "open" && (
@@ -1987,7 +2010,9 @@ try {
         }}
         className="flex flex-col gap-2 bg-white/70 rounded-2xl p-4 shadow border border-lime-200"
       >
-        <label className="font-semibold text-gray-800">Amount (₺):</label>
+        <label className="font-semibold text-gray-800">
+          Amount ({config?.symbol || ""}):
+        </label>
         <input
           type="number"
           min="0"
@@ -1995,7 +2020,7 @@ try {
           value={entryAmount}
           onChange={e => setEntryAmount(e.target.value)}
           className="p-3 rounded-xl border-2 border-lime-300 focus:border-lime-500 text-lg mb-1"
-          placeholder="₺0.00"
+          placeholder={`${config?.symbol || ""}0.00`}
           required
         />
         <label className="font-semibold text-gray-800">Reason / Note:</label>
@@ -2066,7 +2091,7 @@ try {
         {event.type}
       </span>
       <span className="tabular-nums min-w-[85px] text-blue-900 font-semibold">
-        {event.amount ? `₺${parseFloat(event.amount).toFixed(2)}` : ""}
+        {event.amount ? formatCurrency(parseFloat(event.amount)) : ""}
       </span>
       <span className={`
         flex-1
@@ -2105,7 +2130,7 @@ try {
               value={changeAmount}
               onChange={(e) => setChangeAmount(e.target.value)}
               className="flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="₺0.00"
+              placeholder={`${config?.symbol || ""}0.00`}
             />
             <button
               type="submit"
