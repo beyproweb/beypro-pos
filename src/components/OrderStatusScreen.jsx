@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { io } from "socket.io-client";
 import secureFetch, { getAuthToken, BASE_URL } from "../utils/secureFetch";
+import { useCurrency } from "../context/CurrencyContext";
 // Use the same base as secureFetch to avoid env drift
 const SOCKET_URL = String(BASE_URL).replace(/\/api\/?$/, "");
 
@@ -82,6 +83,7 @@ const OrderStatusScreen = ({
   const [order404, setOrder404] = useState(false);
   const intervalRef = useRef(null);
   const joinedRestaurantRef = useRef(null);
+  const { formatCurrency } = useCurrency();
 
   const FINISHED_STATES = ["closed", "completed", "canceled"];
 
@@ -326,11 +328,10 @@ const OrderStatusScreen = ({
                               ➕ {ex.name} ×{ex.quantity || 1}
                             </span>
                             <span>
-                              ₺
-                              {(
+                              {formatCurrency(
                                 (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
-                                (ex.quantity || 1)
-                              ).toFixed(2)}
+                                  (ex.quantity || 1)
+                              )}
                             </span>
                           </div>
                         ))}
@@ -347,7 +348,7 @@ const OrderStatusScreen = ({
                   <div className="text-right pl-3">
                     <div className="font-semibold text-gray-800">×{item.quantity}</div>
                     <div className="text-sm text-indigo-600 font-medium mt-1">
-                      ₺{(item.price * item.quantity).toFixed(2)}
+                      {formatCurrency((item.price || 0) * (item.quantity || 1))}
                     </div>
                   </div>
                 </div>
@@ -360,7 +361,9 @@ const OrderStatusScreen = ({
         <div className="mt-6 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-4 shadow-inner">
           <div className="flex justify-between text-base font-semibold text-gray-800">
             <span>{t("Grand Total")}:</span>
-            <span className="text-fuchsia-700 font-bold">₺{total.toFixed(2)}</span>
+            <span className="text-fuchsia-700 font-bold">
+              {formatCurrency(total)}
+            </span>
           </div>
         </div>
 
