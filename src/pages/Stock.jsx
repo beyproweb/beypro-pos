@@ -14,7 +14,6 @@ export default function Stock() {
   const [searchTerm, setSearchTerm] = useState("");
   const { groupedData, fetchStock, loading, handleAddToCart, setGroupedData } =
     useStock();
-  const [ingredientPrices, setIngredientPrices] = useState([]);
   
   // Only allow users with "settings" permission
   const hasStockAccess = useHasPermission("stock");
@@ -33,18 +32,9 @@ useEffect(() => {
 
 
 
-  // Fetch stock and prices on mount
+  // Fetch stock on mount
   useEffect(() => {
     fetchStock();
-    secureFetch("/ingredient-prices")
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setIngredientPrices(data);
-        } else {
-          setIngredientPrices([]);
-        }
-      })
-      .catch(() => setIngredientPrices([]));
   }, []);
 
   // Realtime update on socket
@@ -64,36 +54,13 @@ useEffect(() => {
     fetchStock();
   }, []);
 
-  // Compute merged stock data with price_per_unit injected
-  const { mergedStock, priceLookup } = useMemo(() => {
-    const priceMap = new Map();
-    const merged = groupedData.map((item) => {
-      const match = ingredientPrices.find(
-        (p) =>
-          p.name?.toLowerCase() === item.name?.toLowerCase() &&
-          p.unit === item.unit
-      );
-      const price_per_unit = Number(match?.price_per_unit) || 0;
-      const key =
-        item.stock_id || item.id || `${item.name?.toLowerCase()}_${item.unit}`;
-      if (key) {
-        priceMap.set(key, price_per_unit);
-      }
-      return {
-        ...item,
-        price_per_unit,
-      };
-    });
-    return { mergedStock: merged, priceLookup: priceMap };
-  }, [groupedData, ingredientPrices]);
-
   const totalStockValue = useMemo(() => {
-    return mergedStock.reduce(
+    return groupedData.reduce(
       (acc, item) =>
         acc + (Number(item.quantity) || 0) * (Number(item.price_per_unit) || 0),
       0
     );
-  }, [mergedStock]);
+  }, [groupedData]);
 
   const totalItems = groupedData.length;
   const totalUnitsOnHand = groupedData.reduce(
@@ -579,7 +546,7 @@ const suppliersList = Array.from(
                 item.stock_id ||
                 item.id ||
                 `${item.name?.toLowerCase()}_${item.unit}`;
-              const pricePerUnit = priceLookup.get(key) || 0;
+              const pricePerUnit = Number(item.price_per_unit) || 0;
               const itemValue =
                 (Number(item.quantity) || 0) * (Number(pricePerUnit) || 0);
               const expiryMeta = getExpiryMeta(item.expiry_date);

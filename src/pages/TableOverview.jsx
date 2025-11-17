@@ -430,7 +430,7 @@ const groupByDate = (orders) => {
 };
 
 const TAB_LIST = [
-  { id: "takeaway", label: "Take Away", icon: "⚡" }, 
+  { id: "takeaway", label: "Pre Order", icon: "⚡" }, 
   { id: "tables", label: "Tables", icon: "🍽️" },
   { id: "kitchen", label: "All Orders", icon: "👨‍🍳" },
   { id: "history", label: "History", icon: "📘" },
@@ -1485,7 +1485,7 @@ const groupedTables = tables.reduce((acc, tbl) => {
 
 {activeTab === "takeaway" && (
   <div className="px-6 py-4">
-    <h2 className="text-2xl font-bold text-orange-600 mb-5">🥡 {t("Takeaway Orders")}</h2>
+    <h2 className="text-2xl font-bold text-orange-600 mb-5">🥡 {t("Pre Orders")}</h2>
 
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {/* ➕ New Takeaway Card */}
@@ -1509,7 +1509,7 @@ const groupedTables = tables.reduce((acc, tbl) => {
         className="border-2 border-dashed border-orange-400 rounded-3xl p-8 flex flex-col items-center justify-center text-orange-500 hover:bg-orange-50 transition"
       >
         <span className="text-5xl mb-2">➕</span>
-        <span className="font-semibold text-lg">{t("New Takeaway")}</span>
+        <span className="font-semibold text-lg">{t("New Pre-Orders")}</span>
       </button>
 
       {/* Existing Takeaway Orders */}
@@ -1534,6 +1534,18 @@ const groupedTables = tables.reduce((acc, tbl) => {
           <div className="text-sm text-gray-500">
             {order.customer_name || t("Guest")}
           </div>
+
+          {/* Pre-order scheduling info */}
+          {order.pickup_time && (
+            <div className="mt-1 text-xs text-orange-700">
+              🕒 {t("Pickup")}: {order.pickup_time}
+            </div>
+          )}
+          {order.customer_address && (
+            <div className="mt-0.5 text-xs text-emerald-700">
+              🚚 {t("Delivery")}: {order.customer_address}
+            </div>
+          )}
 
           {/* Status + Kitchen badges (like tables) */}
           <div className="mt-2">
@@ -1686,7 +1698,7 @@ onCreateOrder={() => {
     </>
   ) : orderType === "takeaway" ? (
     <>
-      <span>🥡 {t("Take Away")}</span>
+      <span>🥡 {t("Pre Order")}</span>
       {item.customer_name && (
         <span className="text-sm text-slate-700">👤 {item.customer_name}</span>
       )}
@@ -1702,7 +1714,7 @@ onCreateOrder={() => {
         <span className="text-xs text-rose-600">📝 {takeawayNotes}</span>
       )}
       <span className="ml-1 px-2 py-0.5 rounded bg-orange-100 text-orange-700 text-xs font-bold">
-        {t("Take Away")}
+        {t("Pre Order")}
       </span>
     </>
   ) : (

@@ -163,44 +163,67 @@ export const StockProvider = ({ children }) => {
         }
       }
 
-      // Regroup for UI
+      // Regroup for UI (include price_per_unit so Stock page can show value)
       const refreshed = await secureFetch("/stock");
       const grouped = Object.values(
         refreshed.reduce((acc, item) => {
           const key = `${item.name.toLowerCase()}_${item.unit}`;
-        if (!acc[key]) {
-          acc[key] = {
-            name: item.name,
-            quantity: 0,
-            unit: item.unit,
-            suppliers: new Set(),
-            critical_quantity: item.critical_quantity || 0,
-            reorder_quantity: item.reorder_quantity || 0,
-            supplier_id: item.supplier_id || null,
-            supplier_name: item.supplier_name || "",
-            stock_id: item.id,
-            expiry_date: item.expiry_date || null,
-          };
-        }
-        acc[key].quantity += parseFloat(item.quantity);
-        acc[key].suppliers.add(item.supplier_name);
-        if (item.expiry_date) {
-          const candidate = new Date(item.expiry_date);
-          if (!Number.isNaN(candidate.getTime())) {
-            const existing = acc[key].expiry_date
-              ? new Date(acc[key].expiry_date)
-              : null;
-            if (!existing || candidate < existing) {
-              acc[key].expiry_date = item.expiry_date;
+          const quantity = parseFloat(item.quantity) || 0;
+          const pricePerUnit = Number(item.price_per_unit) || 0;
+
+          if (!acc[key]) {
+            acc[key] = {
+              name: item.name,
+              quantity: 0,
+              unit: item.unit,
+              suppliers: new Set(),
+              critical_quantity: item.critical_quantity || 0,
+              reorder_quantity: item.reorder_quantity || 0,
+              supplier_id: item.supplier_id || null,
+              supplier_name: item.supplier_name || "",
+              stock_id: item.id,
+              expiry_date: item.expiry_date || null,
+              // track aggregate value to compute average price per unit
+              _total_value: 0,
+            };
+          }
+
+          acc[key].quantity += quantity;
+          acc[key].suppliers.add(item.supplier_name);
+          acc[key]._total_value += quantity * pricePerUnit;
+
+          if (item.expiry_date) {
+            const candidate = new Date(item.expiry_date);
+            if (!Number.isNaN(candidate.getTime())) {
+              const existing = acc[key].expiry_date
+                ? new Date(acc[key].expiry_date)
+                : null;
+              if (!existing || candidate < existing) {
+                acc[key].expiry_date = item.expiry_date;
+              }
             }
           }
-        }
-        return acc;
-      }, {})
-    ).map((i) => ({
-      ...i,
-        supplier: Array.from(i.suppliers).join(", "),
-      }));
+          return acc;
+        }, {})
+      ).map((i) => {
+        const totalValue = i._total_value || 0;
+        const qty = i.quantity || 0;
+        const avgPricePerUnit = qty ? totalValue / qty : 0;
+
+        return {
+          name: i.name,
+          quantity: i.quantity,
+          unit: i.unit,
+          critical_quantity: i.critical_quantity,
+          reorder_quantity: i.reorder_quantity,
+          supplier_id: i.supplier_id,
+          supplier_name: i.supplier_name,
+          stock_id: i.stock_id,
+          expiry_date: i.expiry_date,
+          supplier: Array.from(i.suppliers).join(", "),
+          price_per_unit: avgPricePerUnit,
+        };
+      });
 
       setGroupedData(grouped);
     } catch (error) {

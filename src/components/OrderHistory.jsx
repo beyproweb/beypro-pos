@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 const API_URL = import.meta.env.VITE_API_URL || "";
 import secureFetch from "../utils/secureFetch";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
+import { useCurrency } from "../context/CurrencyContext";
 
 const FALLBACK_PAYMENT_OPTIONS = [
   "Cash",
@@ -29,6 +30,7 @@ export default function OrderHistory({
   const [editingPaymentOrderId, setEditingPaymentOrderId] = useState(null);
   const [paymentMethodDraft, setPaymentMethodDraft] = useState({});
   const { t } = useTranslation();
+  const { formatCurrency } = useCurrency();
 
   function calculateGrandTotal(items = []) {
   let total = 0;
@@ -312,12 +314,19 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                       )}
                     </div>
                     <div className="flex gap-2 text-sm text-gray-700 mt-0.5">
-                      <span className="bg-blue-100 text-blue-700 rounded px-2 py-0.5 font-mono">{t("Unit")}: ₺{parseFloat(item.price).toFixed(2)}</span>
-                      <span className="bg-indigo-100 text-indigo-700 rounded px-2 py-0.5 font-mono">{t("Qty")}: {item.quantity}</span>
+                      <span className="bg-blue-100 text-blue-700 rounded px-2 py-0.5 font-mono">
+                        {t("Unit")}:{" "}
+                        {formatCurrency(parseFloat(item.price) || 0)}
+                      </span>
+                      <span className="bg-indigo-100 text-indigo-700 rounded px-2 py-0.5 font-mono">
+                        {t("Qty")}: {item.quantity}
+                      </span>
                     </div>
                   </div>
                   <span className="text-lg font-extrabold text-indigo-800 text-right min-w-[90px] pl-4">
-                    ₺{(parseFloat(item.price) * item.quantity).toFixed(2)}
+                    {formatCurrency(
+                      (parseFloat(item.price) || 0) * (item.quantity || 1)
+                    )}
                   </span>
                 </div>
                 {/* --- EXTRAS (align under main price, full-width indent) --- */}
@@ -333,10 +342,12 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                         <div key={exIdx} className="flex flex-row items-center justify-between">
                           <div className="flex items-center gap-2 text-blue-700 text-xs">
                             <span>➕ {ex.name}{extraQty > 1 && <span> ({extraQty}x)</span>}</span>
-                            <span className="text-gray-500">@ ₺{unitPrice.toFixed(2)}</span>
+                            <span className="text-gray-500">
+                              @ {formatCurrency(unitPrice || 0)}
+                            </span>
                           </div>
                           <span className="ml-2 text-base text-blue-900 font-semibold min-w-[64px] text-right">
-                            ₺{lineTotal}
+                            {formatCurrency(parseFloat(lineTotal) || 0)}
                           </span>
                         </div>
                       );
@@ -370,7 +381,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                   · {payment.payment_method || t("Payment")}
                 </span>
                 <span className="font-semibold text-slate-900 dark:text-white">
-                  ₺{Number(payment.amount || 0).toFixed(2)}
+                  {formatCurrency(Number(payment.amount || 0))}
                 </span>
               </div>
             ))}
@@ -382,7 +393,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
       <div className="flex items-center justify-between mt-4 border-t border-indigo-100 pt-3">
         <span className="font-extrabold text-xl text-indigo-900">{t("Total")}</span>
         <span className="font-extrabold text-2xl text-indigo-900 tracking-wide">
-          ₺{calculateGrandTotal(order.items).toFixed(2)}
+          {formatCurrency(calculateGrandTotal(order.items))}
         </span>
       </div>
 
@@ -438,7 +449,11 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
 />
 
             <span className="text-indigo-800 font-extrabold ml-1">
-              ₺{parseFloat(paymentMethodDraft[order.id]?.[idx]?.amount ?? m.amount).toFixed(2)}
+              {formatCurrency(
+                parseFloat(
+                  paymentMethodDraft[order.id]?.[idx]?.amount ?? m.amount
+                ) || 0
+              )}
             </span>
             {((paymentMethodDraft[order.id] || order.receiptMethods).length > 1) && (
               <button
@@ -542,17 +557,22 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
     ) : (
       <>
         <span className="flex flex-wrap gap-2">
-          {order.receiptMethods.filter(pm => parseFloat(pm.amount) > 0).map((m, idx, arr) => (
-            <span key={idx} className="flex items-center gap-1 px-3 py-2 rounded-xl border-2 border-blue-300 bg-white/80 shadow text-lg font-extrabold text-blue-700">
-              {m.payment_method}
-              <span className="ml-2 font-extrabold text-indigo-900 text-lg">
-                ₺{parseFloat(m.amount).toFixed(2)}
+          {order.receiptMethods
+            .filter((pm) => parseFloat(pm.amount) > 0)
+            .map((m, idx, arr) => (
+              <span
+                key={idx}
+                className="flex items-center gap-1 px-3 py-2 rounded-xl border-2 border-blue-300 bg-white/80 shadow text-lg font-extrabold text-blue-700"
+              >
+                {m.payment_method}
+                <span className="ml-2 font-extrabold text-indigo-900 text-lg">
+                  {formatCurrency(parseFloat(m.amount) || 0)}
+                </span>
+                {idx !== arr.length - 1 && (
+                  <span className="mx-1 font-bold text-fuchsia-500">+</span>
+                )}
               </span>
-              {idx !== arr.length - 1 && (
-                <span className="mx-1 font-bold text-fuchsia-500">+</span>
-              )}
-            </span>
-          ))}
+            ))}
         </span>
         <button
           className={`ml-2 px-2 py-1 rounded text-base font-bold ${
@@ -617,7 +637,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 className="border rounded px-2 py-1 text-base w-20 mr-2"
               />
               <span className="text-indigo-800 font-extrabold ml-1">
-                ₺{parseFloat(m.amount).toFixed(2)}
+                {formatCurrency(parseFloat(m.amount) || 0)}
               </span>
               {arr.length > 1 && (
                 <button

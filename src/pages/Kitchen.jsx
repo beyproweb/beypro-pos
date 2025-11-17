@@ -427,14 +427,12 @@ useEffect(() => {
   })();
 }, []);
 
+// ✅ Always fetch kitchen orders (even if there are no drivers)
 useEffect(() => {
-  if (!Array.isArray(drivers) || drivers.length === 0) return;
-
   fetchKitchenOrders();
   const interval = setInterval(fetchKitchenOrders, 10000);
   return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [drivers]); // <-- close it properly
+}, []);
 
 // ✅ Now start the next useEffect separately
 useEffect(() => {

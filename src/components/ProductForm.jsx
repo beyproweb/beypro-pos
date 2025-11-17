@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import secureFetch from "../utils/secureFetch";
+import { useCurrency } from "../context/CurrencyContext";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const normalizeUnit = (u) => {
   if (!u) return "";
@@ -34,6 +35,7 @@ const convertPrice = (basePrice, supplierUnit, targetUnit) => {
 export default function ProductForm({ onSuccess, initialData = null, categories = [] }) {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
+  const { formatCurrency } = useCurrency();
   const [product, setProduct] = useState({
     name: "",
     price: "",
@@ -600,7 +602,7 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
             {/* RIGHT COLUMN: Price + Prep Time */}
             <div>
               <label className="block">
-                <span className="font-medium">{t("Price (₺)")}</span>
+                <span className="font-medium">{t("Price")}</span>
                 <input
                   type="number"
                   name="price"
@@ -770,7 +772,7 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
 
                     {cost !== null && (
                       <span className="ml-2 text-sm font-bold text-rose-600">
-                        ₺{cost.toFixed(2)}
+                        {formatCurrency(cost)}
                       </span>
                     )}
 
@@ -795,7 +797,7 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
             </div>
               {/* Cost per unit */}
           <p className="text-sm text-rose-600 font-semibold mt-2">
-            {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
+            {t("Cost per unit")}: {formatCurrency(estimatedCost)}
           </p>
           </details>
         </section>
@@ -897,7 +899,8 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
               <ul className="list-disc list-inside text-sm space-y-1">
                 {product.extras.map((ex, idx) => (
                   <li key={idx}>
-                    {ex.name} — ₺{parseFloat(ex.extraPrice || 0).toFixed(2)}
+                    {ex.name} —{" "}
+                    {formatCurrency(parseFloat(ex.extraPrice || 0) || 0)}
                   </li>
                 ))}
               </ul>
@@ -994,10 +997,10 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
                   {product.name || t("Untitled")}
                 </h4>
                 <p className="text-gray-600 text-sm">
-                  ₺{product.price ? Number(product.price).toFixed(2) : "0.00"}
+                  {formatCurrency(product.price ? Number(product.price) : 0)}
                 </p>
                 <p className="text-xs text-rose-600 font-semibold">
-                  {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
+                  {t("Cost per unit")}: {formatCurrency(estimatedCost)}
                 </p>
               </div>
             </div>
@@ -1026,10 +1029,10 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
                 {product.name || t("Untitled")}
               </h4>
               <p className="text-gray-600 text-sm">
-                ₺{product.price ? Number(product.price).toFixed(2) : "0.00"}
+                {formatCurrency(product.price ? Number(product.price) : 0)}
               </p>
               <p className="text-xs text-rose-600 font-semibold">
-                {t("Cost per unit")}: ₺{estimatedCost.toFixed(2)}
+                {t("Cost per unit")}: {formatCurrency(estimatedCost)}
               </p>
               {product.description && (
                 <p className="text-xs text-gray-500 line-clamp-3">

@@ -1,12 +1,13 @@
 // src/pages/QrMenu.jsx
 // src/pages/QrMenu.jsx
 import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
-import OrderStatusScreen from "../components/OrderStatusScreen";
+import OrderStatusScreen, { useSocketIO as useOrderSocket } from "../components/OrderStatusScreen";
 import ModernTableSelector from "../components/ModernTableSelector";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
+import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { UtensilsCrossed, Soup, Bike, Phone, Share2 } from "lucide-react";
 import { Instagram, Music2, Globe } from "lucide-react";
 
@@ -320,8 +321,11 @@ const DICT = {
     "Saved card": "Saved card",
     "Please select a payment method before continuing.": "Please select a payment method before continuing.",
     // Missing keys added for QR menu flow
-    "Take Away": "Take Away",
-    "Take Away Information": "Take Away Information",
+    "Pre Order": "Pre Order",
+    "Pre Order Information": "Pre Order Information",
+    "Pickup / Delivery Date": "Pickup / Delivery Date",
+    "Pickup / Delivery": "Pickup / Delivery",
+    Pickup: "Pickup",
     "Call Us": "Call Us",
     Share: "Share",
     "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)": "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)",
@@ -412,8 +416,11 @@ const DICT = {
     "Saved card": "Kayıtlı kart",
     "Please select a payment method before continuing.": "Lütfen devam etmeden önce bir ödeme yöntemi seçin.",
     // Missing keys added for QR menu flow
-    "Take Away": "Gel Al",
-    "Take Away Information": "Gel Al Bilgileri",
+    "Pre Order": "Ön Sipariş",
+    "Pre Order Information": "Ön Sipariş Bilgileri",
+    "Pickup / Delivery Date": "Alış / Teslim Tarihi",
+    "Pickup / Delivery": "Alış / Teslim Şekli",
+    Pickup: "Gel Al",
     "Call Us": "Bizi Ara",
     Share: "Paylaş",
     "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)": "Telefon (🇹🇷 5XXXXXXXXX veya 🇲🇺 7/8XXXXXXX)",
@@ -843,7 +850,7 @@ return (
             className="py-5 rounded-2xl bg-gray-900 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
           >
             <UtensilsCrossed className="w-6 h-6" />
-            <span className="text-xs font-semibold tracking-wide">{t("Take Away")}</span>
+            <span className="text-xs font-semibold tracking-wide">{t("Pre Order")}</span>
           </button>
           <button
             onClick={() => onSelect("table")}
@@ -1111,11 +1118,26 @@ return (
 
 /* ====================== TAKEAWAY ORDER FORM ====================== */
 function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
-  const [form, setForm] = useState({ name: "", phone: "", pickup_time: "", notes: "" });
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    pickup_date: "",
+    pickup_time: "",
+    mode: "pickup", // "pickup" | "delivery"
+    address: "",
+    notes: "",
+  });
   const [touched, setTouched] = useState({});
 
-  const valid = form.name && /^(5\d{9}|[578]\d{7})$/.test(form.phone)
- && form.pickup_time;
+  const requiresAddress = form.mode === "delivery";
+  const phoneValid = /^(5\d{9}|[578]\d{7})$/.test(form.phone);
+  const valid =
+    form.name &&
+    phoneValid &&
+    form.pickup_date &&
+    form.pickup_time &&
+    (!requiresAddress || (form.address || "").trim().length > 0);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -1131,7 +1153,7 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
 
         {/* Title */}
         <h2 className="text-2xl font-serif font-semibold text-neutral-900 mb-6 border-b border-neutral-200 pb-2">
-          {t("Take Away Information")}
+          {t("Pre Order Information")}
         </h2>
 
         {/* Form */}
@@ -1139,7 +1161,13 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
           onSubmit={(e) => {
             e.preventDefault();
             if (!valid) {
-              setTouched({ name: true, phone: true, pickup_time: true });
+              setTouched({
+                name: true,
+                phone: true,
+                pickup_date: true,
+                pickup_time: true,
+                address: requiresAddress,
+              });
               return;
             }
             onSubmit(form);
@@ -1154,27 +1182,42 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
 
-       {/* Phone */}
-<input
-  className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 ${
-    touched.phone && !/^(5\d{9}|[578]\d{7})$/.test(form.phone)
-      ? "border-red-500"
-      : "border-neutral-300"
-  }`}
-  placeholder={t("Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)")}
-  value={form.phone}
-  onChange={(e) => {
-    const clean = e.target.value.replace(/[^\d]/g, ""); // allow only digits
-    // Decide max length based on first digit
-    let maxLen = 10;
-    if (/^[78]/.test(clean)) maxLen = 8; // Mauritius landline/mobile
-    const trimmed = clean.slice(0, maxLen);
-    setForm((f) => ({ ...f, phone: trimmed }));
-  }}
-  inputMode="numeric"
-  maxLength={10}
-/>
+          {/* Phone */}
+          <input
+            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 ${
+              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300"
+            }`}
+            placeholder={t("Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)")}
+            value={form.phone}
+            onChange={(e) => {
+              const clean = e.target.value.replace(/[^\d]/g, ""); // allow only digits
+              // Decide max length based on first digit
+              let maxLen = 10;
+              if (/^[78]/.test(clean)) maxLen = 8; // Mauritius landline/mobile
+              const trimmed = clean.slice(0, maxLen);
+              setForm((f) => ({ ...f, phone: trimmed }));
+            }}
+            inputMode="numeric"
+            maxLength={10}
+          />
 
+          {/* Pickup / Delivery Date */}
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">
+              {t("Pickup / Delivery Date")}
+            </label>
+            <input
+              type="date"
+              min={today}
+              className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400 ${
+                touched.pickup_date && !form.pickup_date ? "border-red-500" : "border-neutral-300"
+              }`}
+              value={form.pickup_date}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, pickup_date: e.target.value }))
+              }
+            />
+          </div>
 
           {/* Pickup Time */}
           <div>
@@ -1183,13 +1226,60 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
             </label>
             <input
               type="time"
-              className="w-full rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400"
+              className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400 ${
+                touched.pickup_time && !form.pickup_time ? "border-red-500" : "border-neutral-300"
+              }`}
               value={form.pickup_time}
               onChange={(e) =>
                 setForm((f) => ({ ...f, pickup_time: e.target.value }))
               }
             />
           </div>
+
+          {/* Pickup / Delivery toggle */}
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">
+              {t("Pickup / Delivery")}
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, mode: "pickup" }))}
+                className={`py-2.5 rounded-xl text-sm font-semibold border ${
+                  form.mode === "pickup"
+                    ? "bg-neutral-900 text-white border-neutral-900"
+                    : "bg-white text-neutral-700 border-neutral-300"
+                }`}
+              >
+                🛍️ {t("Pickup")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, mode: "delivery" }))}
+                className={`py-2.5 rounded-xl text-sm font-semibold border ${
+                  form.mode === "delivery"
+                    ? "bg-neutral-900 text-white border-neutral-900"
+                    : "bg-white text-neutral-700 border-neutral-300"
+                }`}
+              >
+                🛵 {t("Delivery")}
+              </button>
+            </div>
+          </div>
+
+          {/* Address (only for delivery) */}
+          {form.mode === "delivery" && (
+            <textarea
+              className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 resize-none h-20 ${
+                touched.address && !form.address ? "border-red-500" : "border-neutral-300"
+              }`}
+              placeholder={t("Address")}
+              value={form.address}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, address: e.target.value }))
+              }
+            />
+          )}
 
           {/* Notes */}
           <textarea
@@ -1622,7 +1712,7 @@ function OrderTypePromptModal({
             className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:border-neutral-900 hover:text-gray-900 shadow-sm transition"
           >
             <UtensilsCrossed className="w-5 h-5" />
-            {t("Take Away")}
+            {t("Pre Order")}
           </button>
           <button
             onClick={() => onSelect?.("table")}
@@ -2326,14 +2416,20 @@ function CartDrawer({
   submitting,
   onOrderAnother,
   t,
+  hasActiveOrder,
+  orderScreenStatus,
+  onShowStatus,
 }) {
   const [show, setShow] = useState(false);
   const { formatCurrency } = useCurrency();
+  const paymentMethods = usePaymentMethods();
 
   const cartArray = toArray(cart);
   const cartLength = cartArray.length;
   const prevItems = cartArray.filter((i) => i.locked);
   const newItems  = cartArray.filter((i) => !i.locked);
+  const newItemsCount = newItems.length;
+  const hasNewItems = newItemsCount > 0;
 
   const lineTotal = (item) => {
     const base = parseFloat(item.price) || 0;
@@ -2345,6 +2441,15 @@ function CartDrawer({
   };
 
   const total = newItems.reduce((sum, item) => sum + lineTotal(item), 0);
+
+  const statusLabel = useMemo(() => {
+    if (!hasActiveOrder || !orderScreenStatus) return null;
+    const s = (orderScreenStatus || "").toLowerCase();
+    if (["new", "pending", "confirmed", "preparing"].includes(s)) return t("Preparing");
+    if (["ready"].includes(s)) return t("Ready for Pickup");
+    if (["delivered", "served"].includes(s)) return t("Delivered");
+    return null;
+  }, [hasActiveOrder, orderScreenStatus, t]);
 
   // 👂 close by global event
   useEffect(() => {
@@ -2370,15 +2475,40 @@ function CartDrawer({
 return (
   <>
     {/* Floating cart button */}
-    {!show && cartLength > 0 && (
+    {!show && (cartLength > 0 || hasActiveOrder) && (
       <button
         onClick={() => {
-          storage.setItem("qr_cart_auto_open", "1");
-          setShow(true);
+          if (hasNewItems) {
+            storage.setItem("qr_cart_auto_open", "1");
+            setShow(true);
+          } else if (hasActiveOrder && onShowStatus) {
+            onShowStatus();
+          } else {
+            setShow(true);
+          }
         }}
-        className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-neutral-900 text-white font-medium tracking-wide py-3 px-8 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.15)] hover:scale-105 transition-all z-50"
+        className={`fixed bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-full font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
+          hasActiveOrder
+            ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
+            : "bg-neutral-900 text-white hover:scale-105"
+        }`}
       >
-        🛒 {t("View Cart")} ({cartLength})
+        <span className="text-xl">🛒</span>
+        <div className="flex flex-col items-start">
+          <span className="text-sm">
+            {hasNewItems ? t("View Cart") : t("Your Order")}
+          </span>
+          {hasActiveOrder && statusLabel && (
+            <span className="text-[11px] uppercase tracking-wide opacity-90">
+              {statusLabel}
+            </span>
+          )}
+        </div>
+        {hasNewItems && (
+          <span className="ml-3 inline-flex items-center justify-center rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
+            {newItemsCount}
+          </span>
+        )}
       </button>
     )}
 
@@ -2557,21 +2687,14 @@ return (
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value)}
                 >
-                  {orderType === "table" ? (
-                    <>
-                      <option value="online">
-                        🌐 {t("Pay Online Now")}
+                  {/* POS-configured payment methods; filter for QR usage */}
+                  {paymentMethods
+                    .filter((m) => m.enabled !== false)
+                    .map((method) => (
+                      <option key={method.id} value={method.id}>
+                        {method.icon ? `${method.icon} ` : ""}{method.label}
                       </option>
-                      <option value="card">💳 {t("Card at Table")}</option>
-                      <option value="cash">💵 {t("Cash at Table")}</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="cash">💵 {t("Cash")}</option>
-                      <option value="card">💳 {t("Credit Card")}</option>
-                      <option value="online">🌐 {t("Online Payment")}</option>
-                    </>
-                  )}
+                    ))}
                 </select>
               </div>
 
@@ -2831,9 +2954,14 @@ const shareUrl = useMemo(() => {
   const [categoryImages, setCategoryImages] = useState({});
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState(
-  () => storage.getItem("qr_payment_method") || "online"
-);
+  const [orderScreenStatus, setOrderScreenStatus] = useState(null);
+  const paymentMethods = usePaymentMethods();
+  const [paymentMethod, setPaymentMethod] = useState(() => {
+    const stored = storage.getItem("qr_payment_method");
+    if (stored) return stored;
+    // Fallback: first enabled method from settings, else "online"
+    return (paymentMethods.find((m) => m.enabled !== false)?.id) || "online";
+  });
   const [orderType, setOrderType] = useState(null);
   const [showTakeawayForm, setShowTakeawayForm] = useState(false);
   const [orderSelectCustomization, setOrderSelectCustomization] = useState({
@@ -2849,6 +2977,11 @@ const shareUrl = useMemo(() => {
   const safeExtrasGroups = useMemo(() => toArray(extrasGroups), [extrasGroups]);
   const safeCart = useMemo(() => toArray(cart), [cart]);
   const safeOccupiedTables = useMemo(() => toArray(occupiedTables), [occupiedTables]);
+  const hasActiveOrder = useMemo(() => {
+    if (!activeOrder) return false;
+    const s = (activeOrder.status || "").toLowerCase();
+    return !["closed", "completed", "canceled"].includes(s);
+  }, [activeOrder]);
   const productsInActiveCategory = useMemo(
     () =>
       safeProducts.filter(
@@ -2859,10 +2992,14 @@ const shareUrl = useMemo(() => {
     [safeProducts, activeCategory]
   );
 
-  // 🥡 Take Away fields
+  // 🥡 Pre-order (takeaway) fields
 const [takeaway, setTakeaway] = useState({
   name: "",
+  phone: "",
+  pickup_date: "",
   pickup_time: "",
+  mode: "pickup", // "pickup" | "delivery"
+  address: "",
   notes: "",
 });
 const restaurantSlug =
@@ -2883,6 +3020,8 @@ const [canInstall, setCanInstall] = useState(false);
     setCustomerInfo(null);
     setTable(null);
     setOrderType(null);
+    setActiveOrder(null);
+    setOrderScreenStatus(null);
   };
 const [showOrderStatus, setShowOrderStatus] = useState(false);
 const loadTables = async () => {
@@ -2961,13 +3100,13 @@ useEffect(() => {
 
 // When switching order type, choose a sensible default
 useEffect(() => {
-  if (orderType === "table" && !["online","card","sodexo","multinet","cash"].includes(paymentMethod)) {
-    setPaymentMethod("card");
+  // Ensure paymentMethod always matches one of the configured methods
+  const allowedIds = paymentMethods.map((m) => m.id);
+  if (!allowedIds.length) return;
+  if (!paymentMethod || !allowedIds.includes(paymentMethod)) {
+    setPaymentMethod(allowedIds[0]);
   }
-  if (orderType === "online" && !["online","card","cash"].includes(paymentMethod)) {
-    setPaymentMethod("online");
-  }
-}, [orderType]);
+}, [paymentMethods, paymentMethod]);
 
 useEffect(() => {
   storage.setItem("qr_payment_method", paymentMethod);
@@ -3145,6 +3284,9 @@ if (order) {
   setOrderStatus("success");
   setShowStatus(true);
 
+  setActiveOrder(order);
+  setOrderScreenStatus(status);
+
   const type = order.order_type === "table" ? "table" : "online";
   setOrderType(type);
   setTable(type === "table" ? Number(order.table_number) || null : null);
@@ -3208,6 +3350,9 @@ if (savedTable) {
         setOrderStatus("success");
         setShowStatus(true);
 
+        setActiveOrder(openOrder);
+        setOrderScreenStatus(status);
+
         storage.setItem("qr_active_order_id", String(openOrder.id));
         storage.setItem("qr_orderType", "table");
         storage.setItem("qr_show_status", "1");
@@ -3233,6 +3378,43 @@ if (savedTable) {
   })();
 }, [appendIdentifier]);
 
+  // 🔄 Keep a lightweight, real-time summary of the active order status
+  const refreshOrderScreenStatus = useCallback(async () => {
+    if (!orderId) return;
+    try {
+      const token = getStoredToken();
+      const opts = token
+        ? { headers: { Authorization: `Bearer ${token}` } }
+        : {};
+      const res = await secureFetch(appendIdentifier(`/orders/${orderId}`), opts);
+      if (!res || res.ok === false) return;
+
+      const data = typeof res.json === "function" ? await res.json() : res;
+      setActiveOrder(data || null);
+
+      const s = (data?.status || "").toLowerCase();
+      if (!s) {
+        setOrderScreenStatus(null);
+        return;
+      }
+      setOrderScreenStatus(s);
+
+      if (["closed", "completed", "canceled"].includes(s)) {
+        // Backend closed the order – mark it inactive for the floating cart
+        setActiveOrder(null);
+      }
+    } catch (err) {
+      console.warn("⚠️ Failed to refresh QR order status:", err);
+    }
+  }, [orderId, appendIdentifier]);
+
+  // Listen to kitchen/order events over Socket.IO and refresh summary
+  useOrderSocket(refreshOrderScreenStatus, orderId);
+
+  // Also refresh once whenever orderId changes (e.g. after first submit)
+  useEffect(() => {
+    refreshOrderScreenStatus();
+  }, [refreshOrderScreenStatus]);
 
 
   // QrMenu.jsx
@@ -3674,6 +3856,14 @@ function buildOrderPayload({ orderType, table, items, total, customer, takeaway,
   const isOnline = orderType === "online";
   const isTable = orderType === "table";
 
+  const pickupDate = takeaway?.pickup_date;
+  const pickupTime = takeaway?.pickup_time;
+  const combinedPickupTime =
+    pickupDate && pickupTime
+      ? `${pickupDate} ${pickupTime}`
+      : pickupTime || pickupDate || null;
+  const isTakeawayDelivery = isTakeaway && !!(takeaway && takeaway.mode === "delivery");
+
   return {
     table_number: isTable ? Number(table) : null,
     order_type: isOnline ? "packet" : isTakeaway ? "takeaway" : "table",
@@ -3689,9 +3879,11 @@ function buildOrderPayload({ orderType, table, items, total, customer, takeaway,
       : customer?.phone || null,
     customer_address: isOnline
       ? customer?.address || null
+      : isTakeawayDelivery
+      ? takeaway?.address || null
       : null,
     pickup_time: isTakeaway
-      ? takeaway?.pickup_time || null
+      ? combinedPickupTime
       : null,
     notes: isTakeaway
       ? takeaway?.notes || null
@@ -3929,6 +4121,8 @@ function handleReset() {
   setOrderId(null);
   setOrderType(null);
   setCustomerInfo(null);
+  setActiveOrder(null);
+  setOrderScreenStatus(null);
   storage.removeItem("qr_active_order");
 }
 
@@ -3978,16 +4172,27 @@ return (
 
 
     <CartDrawer
-  cart={safeCart}
-  setCart={setCart}
-  onSubmitOrder={handleSubmitOrder}
-  orderType={orderType}                 // ✅ add this
-  paymentMethod={paymentMethod}
-  setPaymentMethod={setPaymentMethod}
-  submitting={submitting}
-  onOrderAnother={handleOrderAnother}
-  t={t}
-/>
+      cart={safeCart}
+      setCart={setCart}
+      onSubmitOrder={handleSubmitOrder}
+      orderType={orderType}
+      paymentMethod={paymentMethod}
+      setPaymentMethod={setPaymentMethod}
+      submitting={submitting}
+      onOrderAnother={handleOrderAnother}
+      t={t}
+      hasActiveOrder={hasActiveOrder}
+      orderScreenStatus={orderScreenStatus}
+      onShowStatus={() => {
+        const savedId = Number(storage.getItem("qr_active_order_id")) || null;
+        if (!orderId && savedId) {
+          setOrderId(savedId);
+        }
+        setOrderStatus("success");
+        setShowStatus(true);
+        storage.setItem("qr_show_status", "1");
+      }}
+    />
 
 
     <AddToCartModal
@@ -4036,27 +4241,28 @@ return (
     submitting={submitting}
     t={t}
     onClose={() => {
-  setShowTakeawayForm(false);
-  setOrderType(null); // 👈 return to order type picker
-}}
+      setShowTakeawayForm(false);
+      setOrderType(null); // 👈 return to order type picker
+    }}
+    onSubmit={(form) => {
+      if (!form) {
+        // SKIPPED
+        setTakeaway({
+          name: "",
+          phone: "",
+          pickup_date: "",
+          pickup_time: "",
+          mode: "pickup",
+          address: "",
+          notes: "",
+        });
+      } else {
+        // Normal form submit
+        setTakeaway(form);
+      }
 
-onSubmit={(form) => {
-  if (!form) {
-    // SKIPPED
-    setTakeaway({
-      name: "",
-      phone: "",
-      pickup_time: "",
-      notes: "",
-    });
-  } else {
-    // Normal form submit
-    setTakeaway(form);
-  }
-
-  setShowTakeawayForm(false);
-}}
-
+      setShowTakeawayForm(false);
+    }}
   />
 )}
 

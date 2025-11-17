@@ -183,7 +183,7 @@ const loadSettings = async () => {
                 )
               }
             >
-              <Route index element={<Navigate to="/dashboard" />} />
+              <Route index element={<Navigate to="/tables" />} />
               <Route path="dashboard" element={<ProtectedRoute permission="dashboard"><Dashboard /></ProtectedRoute>} />
               <Route
                 path="customer-insights"

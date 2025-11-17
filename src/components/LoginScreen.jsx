@@ -50,7 +50,7 @@ export default function LoginScreen() {
 
       localStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
       setCurrentUser(normalizedUser);
-      navigate("/dashboard");
+      navigate("/tables");
     } catch (err) {
       console.error("❌ Login failed:", err);
       setError(err.message || "Login failed");
