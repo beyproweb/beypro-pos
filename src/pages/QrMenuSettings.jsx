@@ -14,6 +14,8 @@ export default function QrMenuSettings() {
   const [loadingLink, setLoadingLink] = useState(false);
   const qrRef = useRef();
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [tables, setTables] = useState([]);
+  const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
   const [settings, setSettings] = useState({
   main_title: "",
   subtitle: "",
@@ -160,6 +162,20 @@ async function saveAllCustomization() {
   loadData();
 }, [t]);
 
+  // Load tables for per-table QR codes
+  useEffect(() => {
+    const loadTables = async () => {
+      try {
+        const data = await secureFetch("/tables");
+        const arr = Array.isArray(data) ? data : data?.data || [];
+        setTables(arr);
+      } catch (err) {
+        console.error("❌ Failed to load tables for QR:", err);
+      }
+    };
+    loadTables();
+  }, []);
+
 
   const toggleDisable = async (productId) => {
     const updated = disabledIds.includes(productId)
@@ -243,6 +259,60 @@ async function saveAllCustomization() {
   const filteredProducts = products.filter(
     (p) => !search || p.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const loadTableQr = async (number) => {
+    setTableQr((prev) => ({
+      ...prev,
+      [number]: { ...(prev[number] || {}), loading: true },
+    }));
+    try {
+      const res = await secureFetch(`/tables/${number}/qr-token`);
+      if (res?.url) {
+        setTableQr((prev) => ({
+          ...prev,
+          [number]: { ...prev[number], url: res.url, loading: false },
+        }));
+      } else {
+        setTableQr((prev) => ({
+          ...prev,
+          [number]: { ...(prev[number] || {}), loading: false },
+        }));
+        toast.error(t("Failed to generate table QR link"));
+      }
+    } catch (err) {
+      console.error("❌ Failed to generate table QR:", err);
+      setTableQr((prev) => ({
+        ...prev,
+        [number]: { ...(prev[number] || {}), loading: false },
+      }));
+      toast.error(t("Failed to generate table QR link"));
+    }
+  };
+
+  const copyTableQr = (number) => {
+    const url = tableQr[number]?.url;
+    if (!url) return;
+    navigator.clipboard.writeText(url);
+    toast.info(t("QR link copied!"));
+  };
+
+  const printTableQr = (number, canvasId) => {
+    const url = tableQr[number]?.url;
+    if (!url) return;
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const png = canvas.toDataURL("image/png");
+    const win = window.open("", "_blank");
+    win.document.write(`
+      <html><head><title>${t("Print QR Code")}</title></head>
+      <body style="text-align:center;font-family:sans-serif">
+        <img src="${png}" style="margin-top:30px;width:260px;height:260px;" />
+        <div style="margin-top:10px;font-size:16px">${url}</div>
+        <script>window.onload=()=>window.print()</script>
+      </body></html>
+    `);
+    win.document.close();
+  };
 
  return (
   <div className="max-w-5xl mx-auto px-4 py-10">
@@ -523,6 +593,80 @@ async function saveAllCustomization() {
               <option value="dark">Dark</option>
             </select>
           </div>
+        </div>
+
+        {/* TABLE-SPECIFIC QR CODES */}
+        <div className="mt-10 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+          <h3 className="text-xl font-bold mb-3 text-indigo-600">
+            {t("Table QR Codes")}
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+            {t("Generate QR codes that open the menu directly for a specific table.")}
+          </p>
+          {tables.length === 0 ? (
+            <div className="text-gray-400 text-sm">
+              {t("No tables configured yet. Go to the Tables page to add tables.")}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[360px] overflow-y-auto">
+              {tables.map((tbl) => {
+                const n = tbl.number || tbl.tableNumber;
+                const key = String(n);
+                const info = tableQr[key] || {};
+                const canvasId = `table-qr-${key}`;
+                return (
+                  <div
+                    key={key}
+                    className="flex gap-4 items-center bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-blue-100 dark:border-zinc-700"
+                  >
+                    <div className="flex flex-col items-center">
+                      {info.url ? (
+                        <QRCodeCanvas
+                          id={canvasId}
+                          value={info.url}
+                          size={110}
+                        />
+                      ) : (
+                        <div className="w-[110px] h-[110px] flex items-center justify-center text-xs text-gray-400 border border-dashed rounded-xl">
+                          {t("No QR yet")}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => (info.url ? printTableQr(key, canvasId) : loadTableQr(key))}
+                        className="mt-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-indigo-500 text-white hover:bg-indigo-600 transition disabled:opacity-60"
+                        disabled={info.loading}
+                      >
+                        {info.loading
+                          ? t("Please wait...")
+                          : info.url
+                          ? t("Print")
+                          : t("Generate QR")}
+                      </button>
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-sm">
+                        {t("Table")} {n}
+                        {tbl.label ? ` – ${tbl.label}` : ""}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1 break-all">
+                        {info.url || t("QR link will appear here")}
+                      </div>
+                      {info.url && (
+                        <button
+                          type="button"
+                          onClick={() => copyTableQr(key)}
+                          className="mt-2 inline-flex items-center text-xs font-semibold text-blue-600 hover:text-blue-800"
+                        >
+                          {t("Copy link")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* LOYALTY PROGRAM */}

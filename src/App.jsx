@@ -151,8 +151,11 @@ const loadSettings = async () => {
       <AppearanceProvider>
         <div className="flex h-screen">
           <Routes>
-            {/* PUBLIC: QR Menu */}
-<Route path="/qr-menu/:slug/:id" element={<QrMenu />} />
+            {/* PUBLIC: QR Menu (legacy slug-based link) */}
+            <Route path="/qr-menu/:slug/:id" element={<QrMenu />} />
+            {/* PUBLIC: Dual QR entry points */}
+            <Route path="/qr" element={<QrMenu />} />
+            <Route path="/menu" element={<QrMenu />} />
 
             {/* PUBLIC: Login */}
             <Route

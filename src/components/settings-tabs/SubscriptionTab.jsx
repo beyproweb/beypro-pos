@@ -15,6 +15,8 @@ export default function SubscriptionTab() {
     taxId: "",
     businessName: "",
     posLocation: "",
+    posLocationLat: "",
+    posLocationLng: "",
     usageType: "",
     cardNumber: "",
     expiry: "",
@@ -85,31 +87,44 @@ useEffect(() => {
       const res = await secureFetch("me");
       if (!mounted) return;
 
-      if (res?.user) {
-        const u = res.user;
+      console.log("🔍 Raw API response from /me:", res);
+
+      // Handle both response formats: direct user object OR res.user
+      const u = res?.user || res;
+      
+      if (u && (u.id || u.email || u.name)) {
+        console.log("📋 User object from response:", u);
 
         // ✅ Map all backend fields (including new ones)
-        setForm((prev) => ({
-          ...prev,
-          fullName: u.full_name || u.fullName || prev.fullName,
-          email: u.email || prev.email,
-          phone: u.phone || prev.phone || "",
-          businessName: u.business_name || u.businessName || "",
-          posLocation: u.pos_location || prev.posLocation || "",
-          usageType: u.usage_type || prev.usageType || "",
-          efatura: u.efatura ?? prev.efatura ?? false,
-          invoiceTitle: u.invoice_title || prev.invoiceTitle || "",
-          taxOffice: u.tax_office || prev.taxOffice || "",
-          invoiceType: u.invoice_type || prev.invoiceType || "",
-          cardNumber: u.card_number || prev.cardNumber || "",
-          expiry: u.expiry || prev.expiry || "",
-          cvv: u.cvv || prev.cvv || "",
-          billingCycle: u.billing_cycle || prev.billingCycle || "monthly",
-          activePlan: u.active_plan || u.plan || prev.activePlan,
-        }));
+        const formData = {
+          fullName: u.full_name || u.fullName || u.name || "",
+          email: u.email || "",
+          phone: u.phone || "",
+          taxId: u.tax_id || u.taxId || "",
+          businessName: u.business_name || u.businessName || u.restaurant_name || "",
+          posLocation: u.pos_location || u.posLocation || "",
+          posLocationLat: u.pos_location_lat || u.posLocationLat || "",
+          posLocationLng: u.pos_location_lng || u.posLocationLng || "",
+          usageType: u.usage_type || u.usageType || "",
+          efatura: u.efatura ?? false,
+          invoiceTitle: u.invoice_title || u.invoiceTitle || "",
+          taxOffice: u.tax_office || u.taxOffice || "",
+          invoiceType: u.invoice_type || u.invoiceType || "",
+          cardNumber: u.card_number || u.cardNumber || "",
+          expiry: u.expiry || "",
+          cvv: u.cvv || "",
+          billingCycle: u.billing_cycle || u.billingCycle || "monthly",
+          activePlan: u.active_plan || u.plan || u.subscription_plan || "basic",
+          password: "",
+          confirmPassword: "",
+        };
 
+        console.log("✅ Populated form data:", formData);
+        
+        setForm(formData);
         setIsLoggedIn(true);
       } else {
+        console.log("❌ No valid user data found in response");
         setIsLoggedIn(false);
       }
     } catch (err) {
@@ -155,6 +170,8 @@ useEffect(() => {
   cvv: form.cvv || "",
   phone: form.phone || "",
   posLocation: form.posLocation || "",
+  posLocationLat: form.posLocationLat ? parseFloat(form.posLocationLat) : null,
+  posLocationLng: form.posLocationLng ? parseFloat(form.posLocationLng) : null,
   usageType: form.usageType || "",
   efatura: form.efatura || false,
   invoiceTitle: form.invoiceTitle || "",
@@ -320,6 +337,27 @@ return (
               className="p-3 rounded-lg border w-full shadow-sm"
             />
 
+            <div className="grid md:grid-cols-2 gap-4">
+              <input
+                name="posLocationLat"
+                type="number"
+                step="0.0000001"
+                value={form.posLocationLat}
+                onChange={handleChange}
+                placeholder={t("Latitude (e.g., 38.0872)")}
+                className="p-3 rounded-lg border w-full shadow-sm"
+              />
+              <input
+                name="posLocationLng"
+                type="number"
+                step="0.0000001"
+                value={form.posLocationLng}
+                onChange={handleChange}
+                placeholder={t("Longitude (e.g., 27.7288)")}
+                className="p-3 rounded-lg border w-full shadow-sm"
+              />
+            </div>
+
             <select
               name="usageType"
               value={form.usageType}
@@ -434,6 +472,17 @@ return (
             />
           </div>
         </section>
+
+        {/* ---------------- Update Account Button ---------------- */}
+        <div className="flex justify-center pt-8">
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-lg font-bold rounded-2xl shadow-xl hover:scale-[1.03] transition-transform duration-200 disabled:opacity-60"
+          >
+            {loading ? "💾 Updating..." : "💾 Update Account"}
+          </button>
+        </div>
 
         {/* ---------------- Upgrade Account Section ---------------- */}
         <section className="space-y-6 pt-16">
@@ -552,7 +601,7 @@ return (
           disabled={loading}
           className="w-full max-w-md py-3 md:py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-lg font-bold rounded-2xl shadow-xl hover:scale-[1.05] transition-transform duration-300 disabled:opacity-60"
         >
-          🚀 {t("Subscribe Now")}
+          🚀 {t("Upgrade")}
         </button>
       )}
     </div>

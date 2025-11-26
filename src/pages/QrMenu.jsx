@@ -214,6 +214,33 @@ function clearSavedTable() {
   storage.removeItem(TABLE_KEY);
 }
 
+// Read QR mode from current URL: "table" | "delivery" | null
+function getQrModeFromLocation() {
+  if (typeof window === "undefined") return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const m = (params.get("mode") || "").toLowerCase();
+    if (m === "table" || m === "delivery") return m;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Read table number from current URL (for table QR links)
+function getTableFromLocation() {
+  if (typeof window === "undefined") return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("table");
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 /* ====================== SMALL HELPERS ====================== */
 function detectBrand(num) {
   const n = (num || "").replace(/\s+/g, "");
@@ -2840,8 +2867,22 @@ const safeSlug =
     ? id
     : null;
 
-// Only use slug as identifier for backend requests
-const restaurantIdentifier = safeSlug;
+// Identifier used for public QR menu endpoints (slug, qr_code_id, or explicit identifier query)
+let restaurantIdentifier = safeSlug;
+if (!restaurantIdentifier && typeof window !== "undefined") {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    restaurantIdentifier =
+      params.get("identifier") ||
+      params.get("tenant_id") ||
+      params.get("tenant") ||
+      params.get("restaurant_id") ||
+      params.get("restaurant") ||
+      null;
+  } catch {
+    restaurantIdentifier = null;
+  }
+}
 
   // Ensure we have a valid JWT for protected endpoints (e.g., POST /orders)
   // Priority: ?token=... in URL, else resolve via /api/public/qr-resolve/:code using the route param :id
@@ -2873,19 +2914,35 @@ const restaurantIdentifier = safeSlug;
     })();
   }, [id]);
 
+  // QR entry mode: "table" (scanned at a table) or "delivery" (generic menu link)
+  const [qrMode] = useState(() => getQrModeFromLocation());
+  // If table QR link encodes the table number, keep it around for defaults
+  const [initialTableFromUrl] = useState(() => getTableFromLocation());
 
   const appendIdentifier = useCallback(
     (url) => {
-      if (!restaurantIdentifier
-) return url;
       const [base, hash] = String(url).split("#");
-      const separator = base.includes("?") ? "&" : "?";
-      const appended = `${base}${separator}identifier=${encodeURIComponent(restaurantIdentifier
-)}`;
+      const hasQuery = base.includes("?");
+      const hasIdentifier = /[?&]identifier=/.test(base);
+      const hasMode = /[?&]mode=/.test(base);
+
+      const parts = [];
+      if (restaurantIdentifier && !hasIdentifier) {
+        parts.push(
+          `identifier=${encodeURIComponent(restaurantIdentifier)}`
+        );
+      }
+      if (qrMode && !hasMode) {
+        parts.push(`mode=${encodeURIComponent(qrMode)}`);
+      }
+
+      if (!parts.length) return url;
+
+      const separator = hasQuery ? "&" : "?";
+      const appended = `${base}${separator}${parts.join("&")}`;
       return hash ? `${appended}#${hash}` : appended;
     },
-    [restaurantIdentifier
-]
+    [restaurantIdentifier, qrMode]
   );
 
   // 🔒 One liner to always pass identifier via secureFetch
@@ -2913,7 +2970,11 @@ const shareUrl = useMemo(() => {
   const [platform, setPlatform] = useState(getPlatform());
   const [brandName, setBrandName] = useState("");
 
-  const [table, setTable] = useState(null);
+  const [table, setTable] = useState(() => {
+    // Prefer explicit table number from QR link, else start empty
+    const fromUrl = getTableFromLocation();
+    return fromUrl ?? null;
+  });
   const [customerInfo, setCustomerInfo] = useState(null);
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
@@ -2962,7 +3023,23 @@ const shareUrl = useMemo(() => {
     // Fallback: first enabled method from settings, else "online"
     return (paymentMethods.find((m) => m.enabled !== false)?.id) || "online";
   });
-  const [orderType, setOrderType] = useState(null);
+  const [orderType, setOrderType] = useState(() => {
+    // For QR links we can pre-lock the flow
+    const mode = getQrModeFromLocation();
+    if (mode === "table") return "table";
+    if (mode === "delivery") return "online";
+
+    // Fallback: any previously stored type
+    try {
+      const saved = storage.getItem("qr_orderType");
+      if (saved === "table" || saved === "online" || saved === "takeaway") {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  });
   const [showTakeawayForm, setShowTakeawayForm] = useState(false);
   const [orderSelectCustomization, setOrderSelectCustomization] = useState({
     delivery_enabled: true,
@@ -3018,8 +3095,25 @@ const [canInstall, setCanInstall] = useState(false);
     setOrderId(null);
     setCart([]);
     setCustomerInfo(null);
-    setTable(null);
-    setOrderType(null);
+    if (qrMode === "table") {
+      // In table mode always stay in table flow
+      const urlTable = initialTableFromUrl;
+      if (urlTable) {
+        setTable(urlTable);
+        saveSelectedTable(urlTable);
+      } else {
+        setTable(null); // will re-open table selector
+      }
+      setOrderType("table");
+    } else if (qrMode === "delivery") {
+      // Delivery QR only supports online orders
+      setTable(null);
+      setOrderType("online");
+    } else {
+      // Generic QR menu → back to type chooser
+      setTable(null);
+      setOrderType(null);
+    }
     setActiveOrder(null);
     setOrderScreenStatus(null);
   };
@@ -3191,11 +3285,8 @@ async function handleCloseOrderPage() {
 
   // 🧩 2. If no active order or it's closed → reset everything
   if (cartIsEmpty) {
-    setShowStatus(false);
-    setOrderStatus("pending");
     resetTableIfEmptyCart();
-    setTable(null);
-    setOrderType(null);
+    resetToTypePicker();
     return;
   }
 
@@ -3218,7 +3309,7 @@ async function allItemsDelivered(id) {
   try {
     const token = getStoredToken();
     if (!token) return false;
-    const ir = await secureFetch(`/orders/${id}/items`, {
+    const ir = await secureFetch(appendIdentifier(`/orders/${id}/items`), {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!ir.ok) return false;
@@ -3307,7 +3398,7 @@ if (savedTable) {
   const token = getStoredToken();
   if (token) {
     try {
-      const q = await secureFetch(`/orders?table_number=${savedTable}`, {
+      const q = await secureFetch(appendIdentifier(`/orders?table_number=${savedTable}`), {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -3366,17 +3457,13 @@ if (savedTable) {
 
 
       // 3️⃣ Nothing to restore
-      setOrderType(null);
-      setTable(null);
-      setShowStatus(false);
+      resetToTypePicker();
     } catch (err) {
       console.error("❌ QRMenu restore failed:", err);
-      setOrderType(null);
-      setTable(null);
-      setShowStatus(false);
+      resetToTypePicker();
     }
   })();
-}, [appendIdentifier]);
+}, [appendIdentifier, qrMode, initialTableFromUrl]);
 
   // 🔄 Keep a lightweight, real-time summary of the active order status
   const refreshOrderScreenStatus = useCallback(async () => {
@@ -3748,7 +3835,7 @@ async function handleOrderAnother() {
         const token = getStoredToken();
         if (token) {
           try {
-            const q = await secureFetch(`/orders?table_number=${tNo}` , {
+            const q = await secureFetch(appendIdentifier(`/orders?table_number=${tNo}`) , {
               headers: { Authorization: `Bearer ${token}` },
             });
             if (q.ok) {
@@ -3963,7 +4050,7 @@ await postJSON(appendIdentifier("/orders/order-items"), {
 
       // Save/patch the chosen payment method on the order (ignore if backend doesn't support)
       try {
-     await secureFetch(`/orders/${orderId}/status`, {
+     await secureFetch(appendIdentifier(`/orders/${orderId}/status`), {
   method: "PUT",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ payment_method: paymentMethod }),
@@ -3975,7 +4062,7 @@ await postJSON(appendIdentifier("/orders/order-items"), {
       if (paymentMethod === "online") {
         await startOnlinePaymentSession(orderId);
         try {
-         await secureFetch(`/orders/${orderId}/status` , {
+         await secureFetch(appendIdentifier(`/orders/${orderId}/status`) , {
            method: "PUT",
            headers: { "Content-Type": "application/json" },
            body: JSON.stringify({
@@ -4060,7 +4147,7 @@ const created = await postJSON(
       await startOnlinePaymentSession(newId);
           // 🔑 Immediately mark order as Paid Online
      try {
-       await secureFetch(`/orders/${newId}/status` , {
+       await secureFetch(appendIdentifier(`/orders/${newId}/status`) , {
          method: "PUT",
          headers: { "Content-Type": "application/json" },
          body: JSON.stringify({
