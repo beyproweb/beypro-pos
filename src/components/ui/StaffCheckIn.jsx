@@ -27,6 +27,15 @@ const StaffCheckIn = () => {
     fetchAttendance();
   }, []);
 
+  const staffLookup = useMemo(() => {
+    const map = new Map();
+    staffList.forEach((staff) => {
+      if (!staff || staff.id == null) return;
+      map.set(Number(staff.id), staff);
+    });
+    return map;
+  }, [staffList]);
+
   const startScanner = (action) => {
     if (html5QrcodeScannerInstance) return;
     setIsCameraActive(true);
@@ -302,11 +311,29 @@ const StaffCheckIn = () => {
                 : "bg-yellow-100 dark:bg-yellow-800";
               const badge = active ? "bg-green-500" : "bg-yellow-500";
               const text = active ? t("Active") : t("Checked Out (within 12 hrs)");
+              const staffIdentifier = Number(
+                r.staff_id ?? r.staffId ?? r.staff ?? r.staffID ?? NaN
+              );
+              const staffMeta = Number.isFinite(staffIdentifier)
+                ? staffLookup.get(staffIdentifier)
+                : null;
+              const displayName =
+                staffMeta?.name ||
+                r.staff_name ||
+                r.name ||
+                (Number.isFinite(staffIdentifier)
+                  ? `${t("Staff")} #${staffIdentifier}`
+                  : t("Unknown"));
               return (
                 <div key={r.id} className={`p-4 shadow rounded-lg ${bg}`}>
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="text-xl font-semibold">{r.name}</p>
+                      <p className="text-xl font-semibold">{displayName}</p>
+                      {(staffMeta?.role || r.role) && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {staffMeta?.role || r.role}
+                        </p>
+                      )}
                       <p className="text-base text-gray-700 dark:text-gray-300">
                         <span className="font-medium">Check-In:</span>{" "}
                         {new Date(r.check_in_time).toLocaleString()}
