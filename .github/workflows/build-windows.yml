@@ -97,7 +97,15 @@ jobs:
           PYTHON: ${{ env.PYTHON }}
 
       - name: Build React/Vite frontend
-        run: npm run build
+        shell: pwsh
+        run: |
+          Write-Host "🔨 Building Vite frontend..." -ForegroundColor Cyan
+          npm run build
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Vite build failed" -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "✓ Vite build successful" -ForegroundColor Green
         env:
           VITE_TARGET: electron
           VITE_API_URL: https://hurrypos-backend.onrender.com/api
@@ -116,14 +124,19 @@ jobs:
             exit 1
           }
 
-      - name: Build Windows NSIS installer
-        run: npm run desktop:build
+      - name: Build electron-builder installer
+        shell: pwsh
+        run: |
+          Write-Host "🔨 Running electron-builder..." -ForegroundColor Cyan
+          npx electron-builder --publish=never --win nsis
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ electron-builder failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "✓ electron-builder completed" -ForegroundColor Green
         env:
-          VITE_TARGET: electron
-          VITE_API_URL: https://hurrypos-backend.onrender.com/api
           PYTHON: ${{ env.PYTHON }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
 
       - name: Check electron-builder output directory
         shell: pwsh
