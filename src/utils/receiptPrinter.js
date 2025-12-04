@@ -151,11 +151,27 @@ export async function printViaBridge(text) {
           const printers = await window.beypro.getPrinters();
           console.log("📡 Available printers:", printers);
           if (Array.isArray(printers) && printers.length > 0) {
-            // Use first printer or first ready one
-            const firstReady = printers.find(p => p.status === "ready") || printers[0];
-            printerName = firstReady?.name || printers[0];
-            console.log("🔄 Auto-selected printer:", printerName);
-            localStorage.setItem("beyproSelectedPrinter", printerName);
+            const normalize = (entry) => {
+              if (!entry) return "";
+              if (typeof entry === "string") return entry;
+              if (entry.name) return entry.name;
+              return "";
+            };
+            const firstReady = printers.find((p) => {
+              if (!p) return false;
+              if (typeof p === "string") return true; // any string counts as available
+              return p.status ? p.status === "ready" : true;
+            });
+            const fallback = normalize(printers[0]);
+            const resolved = normalize(firstReady) || fallback;
+
+            if (resolved) {
+              printerName = resolved;
+              console.log("🔄 Auto-selected printer:", printerName);
+              localStorage.setItem("beyproSelectedPrinter", printerName);
+            } else {
+              console.warn("⚠️ Auto-detect found printers but none had a usable name");
+            }
           }
         } catch (detectErr) {
           console.warn("⚠️ Auto-detect failed:", detectErr?.message);
