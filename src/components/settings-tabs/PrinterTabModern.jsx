@@ -59,6 +59,7 @@ const ALIGNMENT_OPTIONS = [
 ];
 
 const PAPER_WIDTH_OPTIONS = ["58mm", "72mm", "80mm"];
+const LS_KEY_SELECTED_PRINTER = "beyproSelectedPrinter";
 
 const STATUS_MAP = {
   idle: { text: "Idle", className: "bg-gray-100 text-gray-700" },
@@ -421,9 +422,40 @@ export default function PrinterTab() {
     }
   }
 
+  function persistReceiptSelection(targetId) {
+    if (typeof window === "undefined") return;
+    try {
+      if (!targetId) {
+        localStorage.removeItem(LS_KEY_SELECTED_PRINTER);
+        return;
+      }
+      const target = allPrinters.find((printer) => printer.id === targetId);
+      if (!target) return;
+      const printerName = target.meta?.name || target.label || target.id;
+      localStorage.setItem(LS_KEY_SELECTED_PRINTER, printerName);
+    } catch (err) {
+      console.warn("Failed to persist selected printer:", err);
+    }
+  }
+
   function handleDefaultChange(field, value) {
     setPrinterConfig((prev) => ({ ...prev, [field]: value }));
+    if (field === "receiptPrinter") {
+      persistReceiptSelection(value);
+    }
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!printerConfig.receiptPrinter) return;
+    const target = allPrinters.find((printer) => printer.id === printerConfig.receiptPrinter);
+    if (!target) return;
+    const desired = target.meta?.name || target.label || target.id;
+    const stored = localStorage.getItem(LS_KEY_SELECTED_PRINTER);
+    if (stored !== desired) {
+      persistReceiptSelection(printerConfig.receiptPrinter);
+    }
+  }, [printerConfig.receiptPrinter, allPrinters]);
 
   function handleLayoutUpdate(field, value) {
     setPrinterConfig((prev) => ({
