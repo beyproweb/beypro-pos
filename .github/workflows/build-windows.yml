@@ -1,45 +1,66 @@
-name: Build Windows App
+name: Build Windows Electron v17 App
 
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      build_version:
+        description: "Build version (e.g., 17.0.0)"
+        required: false
+        default: ""
 
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Get version from tag or input
+        id: tag_version
+        shell: pwsh
+        run: |
+          if ("${{ github.event.inputs.build_version }}" -ne "") {
+            $version = "${{ github.event.inputs.build_version }}"
+          } else {
+            $version = "${{ github.ref }}".Replace("refs/tags/v", "")
+          }
+          echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "tag_version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "🏗️ Build version: $version" -ForegroundColor Green
+
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: ${{ matrix.node-version }}
+          cache: npm
 
-      - name: Setup Python (for node-gyp)
+      - name: Setup Python (for native modules)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
-
-      # ❌ No Chocolatey installs — runner already has VS 2022 + Windows SDK
+          python-version: "3.11"
 
       - name: Setup MSVC build environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      - name: Sanity check toolchain
+      - name: Verify build tools
         shell: pwsh
         run: |
-          python --version
-          node -v
-          npm -v
-          where cl.exe
+          Write-Host "✓ Python: $(python --version)" -ForegroundColor Green
+          Write-Host "✓ Node: $(node -v)" -ForegroundColor Green
+          Write-Host "✓ NPM: $(npm -v)" -ForegroundColor Green
+          Write-Host "✓ MSVC: $(where cl.exe)" -ForegroundColor Green
+          Write-Host "✓ Electron v17 target build" -ForegroundColor Cyan
 
-      - name: Configure env for native builds
+      - name: Configure environment for desktop build
         shell: pwsh
         run: |
           @"
@@ -47,28 +68,166 @@ jobs:
           GYP_MSVS_VERSION=2022
           npm_config_msvs_version=2022
           npm_config_build_from_source=true
+          npm_config_python=$env:PythonLocation\python.exe
           BEYPRO_DESKTOP=1
+          ELECTRON_CACHE=$pwd\.electron-cache
+          ELECTRON_BUILDER_CACHE=$pwd\.builder-cache
           "@ | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Install deps (desktop build, no lockfile)
-        run: npm install --include=optional
-
-      - name: Install printer module & rebuild natives for Electron
+      - name: Create cache directories
+        shell: pwsh
         run: |
-          npm install @thesusheer/electron-printer@^2.0.4 --no-save
-          npx electron-builder install-app-deps
+          New-Item -ItemType Directory -Force -Path ".electron-cache" | Out-Null
+          New-Item -ItemType Directory -Force -Path ".builder-cache" | Out-Null
 
-      - name: Build renderer (Vite)
+      - name: Install npm dependencies
+        run: npm ci --include=optional --legacy-peer-deps
+        env:
+          PYTHON: ${{ env.PYTHON }}
+
+      - name: Install Electron builder dependencies
+        run: npx electron-builder install-app-deps
+        env:
+          PYTHON: ${{ env.PYTHON }}
+
+      - name: Install printer module for Electron
+        run: |
+          npm install @thesusheer/electron-printer@^2.0.4 --no-save --legacy-peer-deps
+        env:
+          PYTHON: ${{ env.PYTHON }}
+
+      - name: Build React/Vite frontend
         run: npm run build
+        env:
+          VITE_TARGET: electron
+          VITE_API_URL: https://hurrypos-backend.onrender.com/api
+          CI: true
 
-      - name: Build Windows installer
+      - name: Build Windows NSIS installer
         run: npm run desktop:build
+        env:
+          VITE_TARGET: electron
+          VITE_API_URL: https://hurrypos-backend.onrender.com/api
+          PYTHON: ${{ env.PYTHON }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: List build artifacts
+        shell: pwsh
+        run: |
+          if (Test-Path "out") {
+            Write-Host "📦 Build Output:" -ForegroundColor Green
+            Get-ChildItem out | ForEach-Object {
+              $size = if ($_.PSIsContainer) { "[DIR]" } else { "$([Math]::Round($_.Length/1MB, 2)) MB" }
+              Write-Host "  ✓ $($_.Name) - $size" -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "⚠️  No build output found" -ForegroundColor Yellow
+          }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: windows-build
+          tag_name: v${{ env.VERSION }}
+          files: |
+            out/*.exe
+            out/*.yml
+            out/*.blockmap
+          body: |
+            # Beypro POS v${{ env.VERSION }} - Windows Build
+
+            **Release Information:**
+            - **Electron Version:** 17.0.0
+            - **Node.js:** ${{ matrix.node-version }}
+            - **Platform:** Windows NSIS Installer
+            - **Build Date:** ${{ github.event.head_commit.timestamp }}
+
+            **Key Features:**
+            - ✅ Enhanced LAN printer detection with ESC/POS fingerprinting
+            - ✅ Direct TCP 9100 printing support for network printers
+            - ✅ Improved printer type detection and routing
+            - ✅ Network printer manufacturer/model identification
+            - ✅ Automatic network discovery (192.168.x.x, 10.0.x.x ranges)
+            - ✅ Multi-fallback print routing (TCP → RAW → Bridge)
+
+            **Installation Instructions:**
+            1. Download `Beypro-POS-Setup-${{ env.VERSION }}.exe`
+            2. Run the installer
+            3. Follow the installation wizard (administrator required)
+            4. Application launches on completion
+
+            **System Requirements:**
+            - Windows 7 SP1 or later
+            - .NET Framework 4.5+
+            - Minimum 2GB RAM
+            - USB or Network ESC/POS printer (optional)
+
+            **Upgrade Notes:**
+            - Uninstall previous version before upgrading
+            - Settings are preserved during upgrade
+            - Printer configurations are maintained
+
+            **Bug Reports:**
+            Report issues at the GitHub repository with logs from `%APPDATA%\Beypro\logs`
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts to workflow
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-installer-v${{ env.VERSION }}-node${{ matrix.node-version }}
           path: |
-            dist/*.exe
-            dist/*.yml
-            dist/*.blockmap
+            out/*.exe
+            out/*.yml
+            out/*.blockmap
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Build Summary
+        shell: pwsh
+        run: |
+          Write-Host "" -ForegroundColor Green
+          Write-Host "╔════════════════════════════════════════╗" -ForegroundColor Green
+          Write-Host "║  ✅ BUILD COMPLETE - Electron v17.0.0  ║" -ForegroundColor Green
+          Write-Host "╚════════════════════════════════════════╝" -ForegroundColor Green
+          Write-Host ""
+          Write-Host "📊 Build Details:" -ForegroundColor Cyan
+          Write-Host "  Version: v${{ env.VERSION }}" -ForegroundColor Yellow
+          Write-Host "  Node.js: ${{ matrix.node-version }}" -ForegroundColor Yellow
+          Write-Host "  Platform: Windows (NSIS)" -ForegroundColor Yellow
+          Write-Host "  Status: SUCCESS ✓" -ForegroundColor Green
+          Write-Host ""
+          Write-Host "📦 Output Location:" -ForegroundColor Cyan
+          Write-Host "  ./out/ - Windows NSIS installer & metadata" -ForegroundColor Yellow
+          Write-Host ""
+          if (Test-Path "out") {
+            Write-Host "📥 Artifacts:" -ForegroundColor Cyan
+            Get-ChildItem out -Filter "*.exe" | ForEach-Object {
+              Write-Host "  ✓ $($_.Name)" -ForegroundColor Green
+            }
+            Get-ChildItem out -Filter "*.yml" | ForEach-Object {
+              Write-Host "  ✓ $($_.Name)" -ForegroundColor Green
+            }
+          }
+          Write-Host ""
+          Write-Host "🚀 Next Steps:" -ForegroundColor Cyan
+          Write-Host "  1. Download from GitHub Releases" -ForegroundColor Yellow
+          Write-Host "  2. Test installation on Windows" -ForegroundColor Yellow
+          Write-Host "  3. Verify printer detection works" -ForegroundColor Yellow
+          Write-Host "  4. Test print to network printers" -ForegroundColor Yellow
+          Write-Host ""
+
+      - name: Notify on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Write-Host ""
+          Write-Host "╔════════════════════════════════════╗" -ForegroundColor Red
+          Write-Host "║  ❌ BUILD FAILED                   ║" -ForegroundColor Red
+          Write-Host "╚════════════════════════════════════╝" -ForegroundColor Red
+          Write-Host ""
+          Write-Host "❌ Build failed. Check logs above for details." -ForegroundColor Red
+          Write-Host ""

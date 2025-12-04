@@ -160,20 +160,82 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
+// Detect if a printer name indicates it's a network printer
+function detectPrinterType(printerName = "") {
+  const lower = String(printerName).toLowerCase();
+  
+  // Network printer patterns
+  if (/network|lan|tcp|ip|[\d.]+|192\.168|10\.0|172\.16/i.test(lower)) {
+    return "network";
+  }
+  // USB patterns
+  if (/usb|thermal|pos|escpos/i.test(lower)) {
+    return "usb";
+  }
+  // Serial patterns
+  if (/serial|com\d+|tty|uart/i.test(lower)) {
+    return "serial";
+  }
+  return "unknown";
+}
+
+// Try to extract IP address from printer name
+function extractIpFromPrinterName(printerName = "") {
+  const match = String(printerName).match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+  return match ? match[1] : null;
+}
+
 // ------------------------
 // GET PRINTER LIST (Windows)
+// Enhanced to detect printer types
 // ------------------------
 ipcMain.handle("beypro:getPrinters", async () => {
   try {
     const printers = await print.getPrinters();
+    console.log("📠 Found printers:", printers);
     return printers;
   } catch (err) {
+    console.error("Failed to get printers:", err);
     return [];
   }
 });
 
+// Direct network printing via TCP 9100
+// Handles ESC/POS printers connected via LAN
+async function printNetDirect(host, port, bytes) {
+  return new Promise((resolve) => {
+    const sock = new net.Socket();
+    sock.setTimeout(5000);
+    
+    console.log(`🌐 Printing to network printer: ${host}:${port} (${bytes.length} bytes)`);
+    
+    sock.connect(port, host, () => {
+      sock.write(bytes, (err) => {
+        if (err) {
+          console.error("Network write failed:", err);
+          resolve({ ok: false, error: err.message });
+        } else {
+          console.log("✅ Network print data sent successfully");
+          sock.end(() => resolve({ ok: true }));
+        }
+      });
+    });
+    
+    sock.on("error", (err) => {
+      console.error("Network socket error:", err);
+      resolve({ ok: false, error: err.message });
+    });
+    
+    sock.on("timeout", () => {
+      console.error("Network print timeout");
+      resolve({ ok: false, error: "timeout" });
+    });
+  });
+}
+
 // ------------------------
-// RAW PRINT (USB + LAN Windows driver)
+// RAW PRINT with Network Printer Support
+// Routes network printers to TCP 9100, others to Windows driver
 // ------------------------
 ipcMain.handle("beypro:printRaw", async (_evt, args) => {
   try {
@@ -183,7 +245,21 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
 
     // convert base64 back to ESC/POS bytes
     const bytes = Buffer.from(dataBase64, "base64");
+    
+    const printerType = detectPrinterType(printerName);
+    console.log(`📠 printRaw: ${printerName} (type: ${printerType})`);
 
+    // Try network printer path if indicated by name
+    if (printerType === "network") {
+      const ip = extractIpFromPrinterName(printerName);
+      if (ip) {
+        console.log(`🌐 Routing to network printer at ${ip}`);
+        return await printNetDirect(ip, 9100, bytes);
+      }
+    }
+
+    // Fallback to Windows printer driver for USB/Serial/Unknown
+    console.log(`📤 Using Windows print driver for ${printerName}`);
     const tempFile = path.join(app.getPath("temp"), "beypro-raw.txt");
     fs.writeFileSync(tempFile, bytes);
 
@@ -194,6 +270,7 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
 
     return { ok: true };
   } catch (err) {
+    console.error("❌ printRaw failed:", err);
     return { ok: false, error: err.message };
   }
 });

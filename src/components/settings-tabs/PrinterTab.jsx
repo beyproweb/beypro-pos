@@ -3,12 +3,34 @@
 // - Modern UI with dropdown, refresh, status badge, live receipt preview, and test-print
 // - Persists selected printer in localStorage under "beyproSelectedPrinter"
 // - Graceful browser fallback if not running under Electron
+// - Supports network printer detection via TCP 9100
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import secureFetch from "../../utils/secureFetch";
 
 // ---------- Small helpers ----------
 const LS_KEY = "beyproSelectedPrinter";
+
+// Detect printer type from name
+function detectPrinterType(printerName = "") {
+  const lower = String(printerName).toLowerCase();
+  if (/network|lan|tcp|ip|[\d.]+|192\.168|10\.0|172\.16/i.test(lower)) {
+    return "network";
+  }
+  if (/usb|thermal|pos|escpos/i.test(lower)) {
+    return "usb";
+  }
+  if (/serial|com\d+|tty|uart/i.test(lower)) {
+    return "serial";
+  }
+  return "unknown";
+}
+
+// Extract IP from printer name
+function extractIpFromPrinterName(printerName = "") {
+  const match = String(printerName).match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+  return match ? match[1] : null;
+}
 
 async function getPrintersSafe() {
   try {
@@ -308,7 +330,28 @@ async function handleTestPrint() {
     bytes.set(cut, init.length + body.length);
     console.debug("🧾 handleTestPrint sending", { printerName: selected, bytes: bytes.length });
 
-    // 1) Try Electron RAW path if available
+    const printerType = detectPrinterType(selected);
+    console.log(`📠 Test print to: ${selected} (type: ${printerType})`);
+
+    // 1) For network printers, try direct TCP 9100 connection first
+    if (printerType === "network") {
+      const ip = extractIpFromPrinterName(selected);
+      if (ip && window?.beypro?.printNet) {
+        try {
+          const dataBase64 = btoa(String.fromCharCode(...bytes));
+          console.log(`🌐 Attempting network print to ${ip}:9100`);
+          await window.beypro.printNet({ host: ip, port: 9100, dataBase64 });
+          console.log("✅ Network print sent successfully");
+          setStatus("ok");
+          setMessage(`Network printer test sent to ${ip}:9100`);
+          return;
+        } catch (netErr) {
+          console.warn("Network print failed, trying RAW fallback…", netErr);
+        }
+      }
+    }
+
+    // 2) Try Electron RAW path (works for USB and network via driver)
     try {
       await printRawSafe({ data: bytes, printerName: selected });
       console.debug("🧾 RAW test via preload ok");
@@ -319,7 +362,7 @@ async function handleTestPrint() {
       console.warn("printRawSafe failed, trying local bridge…", e1);
     }
 
-    // 2) Fallback to local Windows spooler bridge
+    // 3) Fallback to local Windows spooler bridge
     try {
       const dataBase64 = btoa(String.fromCharCode(...bytes));
       const res = await fetch("http://127.0.0.1:7777/win/print-raw", {
@@ -394,7 +437,7 @@ async function handleTestPrint() {
       )}
 
       {/* Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Printer selection + actions */}
         <div className="rounded-2xl border shadow-sm bg-white p-4 md:p-5 flex flex-col gap-4">
           <div className="flex items-center justify-between">
@@ -481,29 +524,128 @@ async function handleTestPrint() {
           )}
         </div>
 
-        {/* Right: Receipt preview */}
-        <div className="rounded-2xl border shadow-sm bg-white p-4 md:p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Receipt Preview</h2>
-            <span className="text-sm text-gray-500">Demo layout</span>
+        {/* Middle: LAN Scan */}
+        <div className="rounded-2xl border shadow-sm bg-white p-4 md:p-5 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">🌐 Network Printer Scan</h2>
+            <span className="text-sm text-gray-500">
+              {lanScanning ? "Scanning…" : lanScanResults.length ? `${lanScanResults.length} found` : "Idle"}
+            </span>
           </div>
-  <div className="flex-1">
+
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-gray-600 font-medium">Base Subnet (192.168.1)</label>
+              <input
+                type="text"
+                value={lanConfig.base}
+                onChange={(e) => setLanConfig({ ...lanConfig, base: e.target.value })}
+                placeholder="192.168.123"
+                className="w-full rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={lanScanning}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-gray-600 font-medium">From</label>
+                <input
+                  type="number"
+                  value={lanConfig.from}
+                  onChange={(e) => setLanConfig({ ...lanConfig, from: parseInt(e.target.value) || 1 })}
+                  min="1"
+                  max="254"
+                  className="w-full rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={lanScanning}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-gray-600 font-medium">To</label>
+                <input
+                  type="number"
+                  value={lanConfig.to}
+                  onChange={(e) => setLanConfig({ ...lanConfig, to: parseInt(e.target.value) || lanConfig.from })}
+                  min="1"
+                  max="254"
+                  className="w-full rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={lanScanning}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-gray-600 font-medium">Custom Hosts (comma/space separated)</label>
+              <input
+                type="text"
+                value={lanConfig.hosts}
+                onChange={(e) => setLanConfig({ ...lanConfig, hosts: e.target.value })}
+                placeholder="192.168.123.100, 192.168.123.101"
+                className="w-full rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={lanScanning}
+              />
+              <p className="text-xs text-gray-500">Tip: For single IP 192.168.123.100, use base "192.168.123", from "100", to "100"</p>
+            </div>
+
+            <button
+              onClick={runLanScan}
+              disabled={lanScanning}
+              className="w-full px-4 py-3 rounded-xl bg-indigo-600 text-white font-medium shadow hover:shadow-lg active:scale-[.99] transition disabled:opacity-50"
+            >
+              {lanScanning ? "Scanning…" : "🔍 Scan for Printers"}
+            </button>
+          </div>
+
+          {lanScanResults.length > 0 && (
+            <div className="border-t pt-3">
+              <h3 className="text-sm font-semibold mb-2">Results:</h3>
+              <div className="space-y-2">
+                {lanScanResults.map((printer, idx) => {
+                  const status = printer.ok ? (printer.isEscpos ? "🟢 ESC/POS" : "🟡 Open") : "⚪️ Offline";
+                  return (
+                    <div key={idx} className="text-xs bg-gray-50 border rounded-xl p-2">
+                      <div className="font-mono font-semibold">
+                        {status} {printer.host}:{printer.port}
+                      </div>
+                      {printer.manufacturer && (
+                        <div className="text-gray-600">{printer.manufacturer} {printer.model}</div>
+                      )}
+                      {printer.latency && (
+                        <div className="text-gray-500">Latency: {printer.latency}ms</div>
+                      )}
+                      {printer.error && (
+                        <div className="text-red-600 text-xs">Error: {printer.error}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        /* Right: Receipt preview */
+          <div className="rounded-2xl border shadow-sm bg-white p-4 md:p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Receipt Preview</h2>
+              <span className="text-sm text-gray-500">Demo layout</span>
+            </div>
+            <div className="flex-1">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl border p-3">
-                  <div className="text-gray-500">Paper</div>
-                  <div className="font-semibold">80mm (Demo)</div>
+            <div className="text-gray-500">Paper</div>
+            <div className="font-semibold">80mm (Demo)</div>
                 </div>
                 <div className="rounded-xl border p-3">
-                  <div className="text-gray-500">Language</div>
-                  <div className="font-semibold">TR / EN</div>
+            <div className="text-gray-500">Language</div>
+            <div className="font-semibold">TR / EN</div>
                 </div>
                 <div className="rounded-xl border p-3">
-                  <div className="text-gray-500">Totals</div>
-                  <div className="font-semibold">Auto</div>
+            <div className="text-gray-500">Totals</div>
+            <div className="font-semibold">Auto</div>
                 </div>
                 <div className="rounded-xl border p-3">
-                  <div className="text-gray-500">Cut</div>
-                  <div className="font-semibold">Full</div>
+            <div className="text-gray-500">Cut</div>
+            <div className="font-semibold">Full</div>
                 </div>
               </div>
 
@@ -512,156 +654,18 @@ async function handleTestPrint() {
                 preview prints exactly as shown when using HTML printing.
               </p>
             </div>
-          <div className="flex items-start gap-6">
-            <div
-              ref={previewRef}
-              className="rounded-xl border bg-gray-50 p-4"
-              style={{ width: 300 }}
-            >
-              <ReceiptPreviewHTML order={demoOrder} />
-            </div>
-
-          
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="rounded-2xl border shadow-sm bg-white p-4 md:p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Backend USB / Serial Detection</h2>
-            <button
-              onClick={fetchBackendPrinters}
-              className="px-3 py-2 rounded-xl border shadow-sm text-sm hover:shadow"
-              disabled={backendDetecting}
-            >
-              {backendDetecting ? "Detecting…" : "Detect"}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h3 className="font-semibold mb-2">USB printers</h3>
-              <div className="rounded-xl border bg-gray-50 max-h-48 overflow-auto p-2 text-sm">
-                {backendPrinters.usb?.length ? (
-                  backendPrinters.usb.map((p, idx) => (
-                    <div key={idx} className="py-1 border-b last:border-none">
-                      <div className="font-semibold">{p.vendorId} / {p.productId}</div>
-                      <div className="text-xs text-gray-500">{p.id}</div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-gray-500">No USB printers detected.</p>
-                )}
-              </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">Serial ports</h3>
-              <div className="rounded-xl border bg-gray-50 max-h-48 overflow-auto p-2 text-sm">
-                {backendPrinters.serial?.length ? (
-                  backendPrinters.serial.map((p, idx) => (
-                    <div key={idx} className="py-1 border-b last:border-none">
-                      <div className="font-semibold">{p.path}</div>
-                      <div className="text-xs text-gray-500">{p.friendlyName || p.manufacturer || "Unknown"}</div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-gray-500">No serial devices detected.</p>
-                )}
+            <div className="flex items-start gap-6">
+              <div
+                ref={previewRef}
+                className="rounded-xl border bg-gray-50 p-4"
+                style={{ width: 300 }}
+              >
+                <ReceiptPreviewHTML order={demoOrder} />
               </div>
             </div>
           </div>
-
-          {!!backendPrinters.tips?.length && (
-            <ul className="text-xs text-gray-500 list-disc pl-4">
-              {backendPrinters.tips.map((tip, idx) => (
-                <li key={idx}>{tip}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="rounded-2xl border shadow-sm bg-white p-4 md:p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">LAN Scanner</h2>
-            <button
-              onClick={runLanScan}
-              className="px-3 py-2 rounded-xl border shadow-sm text-sm hover:shadow"
-              disabled={lanScanning}
-            >
-              {lanScanning ? "Scanning…" : "Scan"}
-            </button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs text-gray-500">Subnet Base</label>
-              <input
-                type="text"
-                className="w-full rounded-xl border px-3 py-2"
-                value={lanConfig.base}
-                onChange={(e) => setLanConfig((prev) => ({ ...prev, base: e.target.value }))}
-                placeholder="192.168.1"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">From</label>
-              <input
-                type="number"
-                className="w-full rounded-xl border px-3 py-2"
-                value={lanConfig.from}
-                onChange={(e) => setLanConfig((prev) => ({ ...prev, from: e.target.value }))}
-                min={1}
-                max={254}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">To</label>
-              <input
-                type="number"
-                className="w-full rounded-xl border px-3 py-2"
-                value={lanConfig.to}
-                onChange={(e) => setLanConfig((prev) => ({ ...prev, to: e.target.value }))}
-                min={1}
-                max={254}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">Custom IPs (comma separated)</label>
-            <input
-              type="text"
-              className="w-full rounded-xl border px-3 py-2"
-              value={lanConfig.hosts}
-              onChange={(e) => setLanConfig((prev) => ({ ...prev, hosts: e.target.value }))}
-              placeholder="192.168.1.201, 192.168.1.210"
-            />
-          </div>
-          <div className="rounded-xl border bg-gray-50 p-3 max-h-60 overflow-auto text-sm">
-            {lanScanResults.length === 0 ? (
-              <p className="text-gray-500">Scan results will appear here.</p>
-            ) : (
-              lanScanResults.map((result, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between border-b last:border-none py-1"
-                >
-                  <div>
-                    <div className="font-semibold">{result.host}:{result.port}</div>
-                    <div className="text-xs text-gray-500">
-                      {result.ok ? `Responded in ${result.latency}ms` : result.error || "unreachable"}
-                    </div>
-                  </div>
-                  <span className={result.ok ? "text-green-600" : "text-red-500"}>
-                    {result.ok ? "🟢" : "⚪️"}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* Footer hint */}
       <div className="text-xs text-gray-500 text-center">
         Tip: Make sure your Electron preload exposes <code>getPrinters</code> and
         either <code>printHTML</code> or <code>printRaw</code>. The selected printer
