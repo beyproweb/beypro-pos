@@ -1,4 +1,4 @@
-name: Build Windows Electron v17 App
+name: Build Windows Electron v18 App
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       build_version:
-        description: "Build version (e.g., 17.0.0)"
+        description: "Build version (e.g., 18.0.0)"
         required: false
         default: ""
 
@@ -58,7 +58,7 @@ jobs:
           Write-Host "✓ Node: $(node -v)" -ForegroundColor Green
           Write-Host "✓ NPM: $(npm -v)" -ForegroundColor Green
           Write-Host "✓ MSVC: $(where cl.exe)" -ForegroundColor Green
-          Write-Host "✓ Electron v17 target build" -ForegroundColor Cyan
+          Write-Host "✓ Electron v18 target build" -ForegroundColor Cyan
 
       - name: Configure environment for desktop build
         shell: pwsh
@@ -137,7 +137,7 @@ jobs:
             # Beypro POS v${{ env.VERSION }} - Windows Build
 
             **Release Information:**
-            - **Electron Version:** 17.0.0
+            - **Electron Version:** 18.0.0
             - **Node.js:** ${{ matrix.node-version }}
             - **Platform:** Windows NSIS Installer
             - **Build Date:** ${{ github.event.head_commit.timestamp }}
@@ -191,7 +191,7 @@ jobs:
         run: |
           Write-Host "" -ForegroundColor Green
           Write-Host "╔════════════════════════════════════════╗" -ForegroundColor Green
-          Write-Host "║  ✅ BUILD COMPLETE - Electron v17.0.0  ║" -ForegroundColor Green
+          Write-Host "║  ✅ BUILD COMPLETE - Electron v18.0.0  ║" -ForegroundColor Green
           Write-Host "╚════════════════════════════════════════╝" -ForegroundColor Green
           Write-Host ""
           Write-Host "📊 Build Details:" -ForegroundColor Cyan
