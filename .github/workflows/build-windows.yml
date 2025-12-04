@@ -128,12 +128,21 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "🔨 Running electron-builder..." -ForegroundColor Cyan
+          Write-Host "Current directory: $(Get-Location)" -ForegroundColor Gray
+          Write-Host "Files in current dir:" -ForegroundColor Gray
+          Get-ChildItem -Path . -Depth 1 -Exclude node_modules | ForEach-Object {
+            Write-Host "  - $($_.Name)" -ForegroundColor Gray
+          }
           npx electron-builder --publish=never --win nsis
           if ($LASTEXITCODE -ne 0) {
             Write-Host "❌ electron-builder failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            Write-Host "Checking for output files..." -ForegroundColor Yellow
+            Get-ChildItem . -Recurse -Include "*.exe" -Depth 5 2>/dev/null | ForEach-Object {
+              Write-Host "  Found: $($_.FullName)" -ForegroundColor Yellow
+            }
             exit 1
           }
-          Write-Host "✓ electron-builder completed" -ForegroundColor Green
+          Write-Host "✓ electron-builder completed with exit code 0" -ForegroundColor Green
         env:
           PYTHON: ${{ env.PYTHON }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -142,27 +151,37 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "🔍 Checking for build output..." -ForegroundColor Cyan
-          $searchPaths = @("out", "dist", "release", "releases")
+          $searchPaths = @("out", "dist", "release", "releases", ".")
           $found = $false
+          $foundFiles = @()
 
           foreach ($path in $searchPaths) {
             if (Test-Path $path) {
-              Write-Host "📁 Found: $path" -ForegroundColor Green
-              $files = Get-ChildItem $path -Filter "*.exe" -ErrorAction SilentlyContinue
+              Write-Host "📁 Searching in: $path" -ForegroundColor Green
+              $files = Get-ChildItem $path -Filter "*.exe" -ErrorAction SilentlyContinue -Depth 0
               if ($files) {
-                Write-Host "  ✓ Installers found: $($files.Count)" -ForegroundColor Green
+                Write-Host "  ✓ Found $($files.Count) .exe files:" -ForegroundColor Green
+                $files | ForEach-Object {
+                  Write-Host "    - $($_.FullName)" -ForegroundColor Green
+                  $foundFiles += $_.FullName
+                }
                 $found = $true
               }
             }
           }
 
           if (-not $found) {
-            Write-Host "❌ No .exe files found in any directory" -ForegroundColor Red
-            Write-Host "📋 Directory listing:" -ForegroundColor Yellow
-            Get-ChildItem . -Directory | Where-Object { $_.Name -ne "node_modules" } | ForEach-Object {
-              Write-Host "  $($_.Name)/"
+            Write-Host "⚠️  No .exe files found in any standard directory" -ForegroundColor Yellow
+            Write-Host "📋 All directories in workspace:" -ForegroundColor Yellow
+            Get-ChildItem . -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "node_modules" } | ForEach-Object {
+              Write-Host "  📁 $($_.Name)/" -ForegroundColor Gray
+              Get-ChildItem $_.FullName -File -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object {
+                Write-Host "     - $($_.Name)" -ForegroundColor Gray
+              }
             }
-            exit 1
+          } else {
+            Write-Host ""
+            Write-Host "✓ SUCCESS: Found $($foundFiles.Count) installer files" -ForegroundColor Green
           }
 
       - name: Consolidate build artifacts
