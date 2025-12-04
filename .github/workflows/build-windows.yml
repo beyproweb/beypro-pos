@@ -81,7 +81,25 @@ jobs:
           New-Item -ItemType Directory -Force -Path ".builder-cache" | Out-Null
 
       - name: Install npm dependencies
-        run: npm ci --include=optional --legacy-peer-deps
+        shell: pwsh
+        run: |
+          Write-Host "📦 Installing npm dependencies..." -ForegroundColor Cyan
+          # Use npm install instead of ci to ensure optional deps are built
+          npm install --legacy-peer-deps
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ npm install failed" -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "✓ Dependencies installed" -ForegroundColor Green
+        env:
+          PYTHON: ${{ env.PYTHON }}
+
+      - name: Rebuild optional native dependencies
+        shell: pwsh
+        run: |
+          Write-Host "🔧 Rebuilding optional native modules..." -ForegroundColor Cyan
+          npm rebuild @rollup/rollup-win32-x64-msvc --build-from-source
+          Write-Host "✓ Native modules rebuilt" -ForegroundColor Green
         env:
           PYTHON: ${{ env.PYTHON }}
 
