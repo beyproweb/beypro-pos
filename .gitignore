@@ -13,9 +13,9 @@ node_modules
 .env.test
 .env.test.local
 
-# Build outputs
+# Build outputs (but keep build directory for electron-builder assets)
 dist
-build
+out
 
 # IDE settings
 .idea
@@ -31,27 +31,6 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-
-node_modules
-
 # electron-builder outputs
 builder-effective-config.yaml
 builder-debug.yml
-
-# electron-builder outputs
-builder-effective-config.yaml
-builder-debug.yml
-
-# electron-builder outputs
-builder-effective-config.yaml
-builder-debug.yml
-
-# electron-builder outputs
-builder-effective-config.yaml
-builder-debug.yml
-
-.env
-.env.*
-
-.env
-.env.*
