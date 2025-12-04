@@ -18,6 +18,10 @@
   "build": {
     "appId": "com.beypro.pos",
     "productName": "Beypro POS",
+    "directories": {
+      "buildResources": "build",
+      "output": "out"
+    },
     "files": [
       "dist/**",
       "main.js",
@@ -34,8 +38,7 @@
       "category": "public.app-category.business"
     },
     "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": true,

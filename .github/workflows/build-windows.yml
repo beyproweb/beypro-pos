@@ -103,6 +103,19 @@ jobs:
           VITE_API_URL: https://hurrypos-backend.onrender.com/api
           CI: true
 
+      - name: Verify Vite build output
+        shell: pwsh
+        run: |
+          Write-Host "🔍 Checking Vite build output..." -ForegroundColor Cyan
+          if (Test-Path "dist") {
+            Write-Host "✓ dist/ folder found" -ForegroundColor Green
+            $files = Get-ChildItem dist -Recurse -File | Measure-Object
+            Write-Host "  Files: $($files.Count)" -ForegroundColor Yellow
+          } else {
+            Write-Host "✗ dist/ folder NOT found!" -ForegroundColor Red
+            exit 1
+          }
+
       - name: Build Windows NSIS installer
         run: npm run desktop:build
         env:
@@ -110,18 +123,71 @@ jobs:
           VITE_API_URL: https://hurrypos-backend.onrender.com/api
           PYTHON: ${{ env.PYTHON }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
-      - name: List build artifacts
+      - name: Check electron-builder output directory
         shell: pwsh
         run: |
-          if (Test-Path "out") {
-            Write-Host "📦 Build Output:" -ForegroundColor Green
-            Get-ChildItem out | ForEach-Object {
-              $size = if ($_.PSIsContainer) { "[DIR]" } else { "$([Math]::Round($_.Length/1MB, 2)) MB" }
-              Write-Host "  ✓ $($_.Name) - $size" -ForegroundColor Yellow
+          Write-Host "🔍 Checking for build output..." -ForegroundColor Cyan
+          $searchPaths = @("out", "dist", "release", "releases")
+          $found = $false
+
+          foreach ($path in $searchPaths) {
+            if (Test-Path $path) {
+              Write-Host "📁 Found: $path" -ForegroundColor Green
+              $files = Get-ChildItem $path -Filter "*.exe" -ErrorAction SilentlyContinue
+              if ($files) {
+                Write-Host "  ✓ Installers found: $($files.Count)" -ForegroundColor Green
+                $found = $true
+              }
             }
-          } else {
-            Write-Host "⚠️  No build output found" -ForegroundColor Yellow
+          }
+
+          if (-not $found) {
+            Write-Host "❌ No .exe files found in any directory" -ForegroundColor Red
+            Write-Host "📋 Directory listing:" -ForegroundColor Yellow
+            Get-ChildItem . -Directory | Where-Object { $_.Name -ne "node_modules" } | ForEach-Object {
+              Write-Host "  $($_.Name)/"
+            }
+            exit 1
+          }
+
+      - name: Consolidate build artifacts
+        shell: pwsh
+        run: |
+          Write-Host "📦 Consolidating artifacts..." -ForegroundColor Cyan
+
+          # Check if out/ exists, if not create it
+          if (-not (Test-Path "out")) {
+            New-Item -ItemType Directory -Force -Path "out" | Out-Null
+            Write-Host "Created out/ directory" -ForegroundColor Yellow
+          }
+
+          # Copy from alternative locations if needed
+          $sources = @(
+            @{ src = "dist/Beypro-POS-Setup-*.exe"; dest = "out/" },
+            @{ src = "release/*.exe"; dest = "out/" },
+            @{ src = "releases/*.exe"; dest = "out/" }
+          )
+
+          foreach ($source in $sources) {
+            $files = Get-ChildItem $source.src -ErrorAction SilentlyContinue
+            if ($files) {
+              Write-Host "Found files in $($source.src), copying..." -ForegroundColor Yellow
+              Copy-Item $source.src $source.dest -Force
+            }
+          }
+
+          # List final artifacts
+          if (Test-Path "out") {
+            $exes = Get-ChildItem out -Filter "*.exe" -ErrorAction SilentlyContinue
+            if ($exes) {
+              Write-Host "✓ Final artifacts in out/:" -ForegroundColor Green
+              $exes | ForEach-Object {
+                $size = [Math]::Round($_.Length/1MB, 2)
+                Write-Host "  - $($_.Name) ($size MB)" -ForegroundColor Green
+              }
+            }
           }
 
       - name: Create GitHub Release
