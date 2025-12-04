@@ -94,12 +94,21 @@ jobs:
         env:
           PYTHON: ${{ env.PYTHON }}
 
-      - name: Rebuild optional native dependencies
+      - name: Install Windows Rollup native module
         shell: pwsh
         run: |
-          Write-Host "🔧 Rebuilding optional native modules..." -ForegroundColor Cyan
-          npm rebuild @rollup/rollup-win32-x64-msvc --build-from-source
-          Write-Host "✓ Native modules rebuilt" -ForegroundColor Green
+          Write-Host "🔧 Installing @rollup/rollup-win32-x64-msvc..." -ForegroundColor Cyan
+          npm install @rollup/rollup-win32-x64-msvc@4.50.2 --save-dev --force
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "⚠️ npm install of rollup module returned exit code $LASTEXITCODE (trying to continue)" -ForegroundColor Yellow
+          }
+          # Verify it exists
+          if (Test-Path "node_modules/@rollup/rollup-win32-x64-msvc") {
+            Write-Host "✓ Rollup native module installed" -ForegroundColor Green
+          } else {
+            Write-Host "❌ Rollup native module not found after install!" -ForegroundColor Red
+            exit 1
+          }
         env:
           PYTHON: ${{ env.PYTHON }}
 
