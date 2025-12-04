@@ -127,50 +127,59 @@ export function renderReceiptText(order, providedLayout) {
 }
 
 export async function printViaBridge(text) {
-  // 1) Electron preload text printing (preferred)
   try {
+    // 1) Try Electron preload printText first (recommended for text-based receipts)
     if (window?.beypro?.printText) {
+      console.log("📄 Using Electron printText");
       await window.beypro.printText(text);
       return true;
     }
   } catch (err) {
-    console.warn("Electron printText failed:", err?.message || err);
+    console.warn("⚠️ Electron printText failed:", err?.message || err);
   }
 
-  // 2) LAN printing via local bridge if configured for network
   try {
-    const settings = await getRegisterSettings();
-    const cfg = settings?.cashDrawerPrinter || null;
-    if (cfg && cfg.interface === "network" && cfg.host) {
-      // Build simple ESC/POS bytes: ESC @ + text + feed + cut
-      const enc = new TextEncoder();
-      const init = Uint8Array.from([0x1b, 0x40]);
-      const body = enc.encode(String(text || "") + "\n\n\n");
-      const cut = Uint8Array.from([0x1d, 0x56, 0x00]);
-      const bytes = new Uint8Array(init.length + body.length + cut.length);
-      bytes.set(init, 0);
-      bytes.set(body, init.length);
-      bytes.set(cut, init.length + body.length);
+    // 2) Try using Electron's printRaw with ESC/POS bytes (for more control)
+    if (window?.beypro?.printRaw) {
+      console.log("🖨️ Using Electron printRaw with ESC/POS");
+      const settings = await getRegisterSettings();
+      const cfg = settings?.cashDrawerPrinter || null;
+      const printerName = localStorage.getItem("beyproSelectedPrinter");
+      
+      if (cfg || printerName) {
+        // Build ESC/POS bytes: ESC @ (reset) + text + feed + cut
+        const enc = new TextEncoder();
+        const init = Uint8Array.from([0x1b, 0x40]); // ESC @ reset
+        const body = enc.encode(String(text || "") + "\n\n\n");
+        const cut = Uint8Array.from([0x1d, 0x56, 0x00]); // GS V (cut)
+        const bytes = new Uint8Array(init.length + body.length + cut.length);
+        bytes.set(init, 0);
+        bytes.set(body, init.length);
+        bytes.set(cut, init.length + body.length);
 
-      const dataBase64 = btoa(String.fromCharCode(...bytes));
-      const res = await fetch("http://127.0.0.1:7777/tcp/print-raw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ host: cfg.host, port: cfg.port || 9100, dataBase64 }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.ok && json?.ok !== false) return true;
+        const dataBase64 = btoa(String.fromCharCode(...bytes));
+        const result = await window.beypro.printRaw({
+          printerName: printerName || (cfg?.name || "default"),
+          dataBase64,
+        });
+        
+        if (result?.ok !== false) {
+          console.log("✅ Electron printRaw succeeded");
+          return true;
+        }
+      }
     }
   } catch (err) {
-    console.warn("Local bridge TCP print failed:", err?.message || err);
+    console.warn("⚠️ Electron printRaw failed:", err?.message || err);
   }
 
-  // 3) Backend ESC/POS print via configured register printer (LAN/USB/Serial) — useful when backend is local
   try {
+    // 3) Try backend printing via configured register printer (for network/USB/Serial)
+    console.log("📡 Trying backend printer endpoint");
     const settings = await getRegisterSettings();
     const cfg = settings?.cashDrawerPrinter || null;
     if (cfg && cfg.interface) {
-      await secureFetch("/printer-settings/print", {
+      const result = await secureFetch("/printer-settings/print", {
         method: "POST",
         body: JSON.stringify({
           interface: cfg.interface,
@@ -186,38 +195,19 @@ export async function printViaBridge(text) {
           content: text,
         }),
       });
-      return true;
+      if (result?.ok !== false) {
+        console.log("✅ Backend printer succeeded");
+        return true;
+      }
     }
   } catch (err) {
-    console.warn("Backend print via configured printer failed:", err?.message || err);
+    console.warn("⚠️ Backend printer failed:", err?.message || err);
   }
 
-  // 4) Windows local bridge (spooler) – requires running beypro bridge on 127.0.0.1:7777
-  try {
-    const name = localStorage.getItem("beyproSelectedPrinter");
-    if (name) {
-      // Minimal ESC/POS: ESC @ + text + feed + full cut
-      const enc = new TextEncoder();
-      const init = Uint8Array.from([0x1b, 0x40]);
-      const body = enc.encode(String(text || "") + "\n\n\n");
-      const cut = Uint8Array.from([0x1d, 0x56, 0x00]);
-      const bytes = new Uint8Array(init.length + body.length + cut.length);
-      bytes.set(init, 0);
-      bytes.set(body, init.length);
-      bytes.set(cut, init.length + body.length);
-
-      const dataBase64 = btoa(String.fromCharCode(...bytes));
-      const res = await fetch("http://127.0.0.1:7777/win/print-raw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ printerName: name, dataBase64 }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.ok && json?.ok !== false) return true;
-    }
-  } catch (err) {
-    console.warn("Local bridge spooler print failed:", err?.message || err);
-  }
+  // 4) If nothing worked, log the failure but don't crash
+  console.error("❌ All print methods failed - no printer available");
+  return false;
+}
 
   return false;
 }
