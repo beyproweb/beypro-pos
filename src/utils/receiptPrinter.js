@@ -142,7 +142,25 @@ export async function printViaBridge(text) {
     // 2) Try using Electron's printRaw with ESC/POS bytes (for more control)
     if (window?.beypro?.printRaw) {
       console.log("🖨️ Using Electron printRaw with ESC/POS");
-      const printerName = localStorage.getItem("beyproSelectedPrinter");
+      let printerName = localStorage.getItem("beyproSelectedPrinter");
+      
+      // If no printer in localStorage, try to auto-detect one
+      if (!printerName && window?.beypro?.getPrinters) {
+        console.log("📡 No printer in localStorage, attempting auto-detect...");
+        try {
+          const printers = await window.beypro.getPrinters();
+          console.log("📡 Available printers:", printers);
+          if (Array.isArray(printers) && printers.length > 0) {
+            // Use first printer or first ready one
+            const firstReady = printers.find(p => p.status === "ready") || printers[0];
+            printerName = firstReady?.name || printers[0];
+            console.log("🔄 Auto-selected printer:", printerName);
+            localStorage.setItem("beyproSelectedPrinter", printerName);
+          }
+        } catch (detectErr) {
+          console.warn("⚠️ Auto-detect failed:", detectErr?.message);
+        }
+      }
       
       if (printerName) {
         // Build ESC/POS bytes: ESC @ (reset) + text + feed + cut
@@ -156,6 +174,7 @@ export async function printViaBridge(text) {
         bytes.set(cut, init.length + body.length);
 
         const dataBase64 = btoa(String.fromCharCode(...bytes));
+        console.log("🖨️ Printing to:", printerName);
         const result = await window.beypro.printRaw({
           printerName,
           dataBase64,
@@ -168,7 +187,7 @@ export async function printViaBridge(text) {
           console.error("❌ Electron printRaw returned error:", result?.error);
         }
       } else {
-        console.warn("⚠️ No printer selected in localStorage");
+        console.warn("⚠️ No printer available - could not detect any printers");
       }
     } else {
       console.warn("⚠️ Electron printRaw not available (not running in Electron)");
@@ -178,7 +197,7 @@ export async function printViaBridge(text) {
   }
 
   // If no Electron, don't try backend - just fail gracefully
-  console.error("❌ No printer available - must be running in Electron with a printer selected");
+  console.error("❌ No printer available");
   return false;
 }
 
