@@ -319,6 +319,12 @@ jobs:
           - USB or Network ESC/POS printer (optional)
           EOF
 
+          # Remove existing release with same tag if present
+          if gh release view "v${{ env.VERSION }}" >/dev/null 2>&1; then
+            echo "🧹 Existing release found for v${{ env.VERSION }}. Deleting before recreation..."
+            gh release delete "v${{ env.VERSION }}" -y >/dev/null 2>&1 || true
+          fi
+
           # Create release with retry logic
           RETRY_COUNT=3
           RETRY_DELAY=5
