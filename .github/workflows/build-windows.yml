@@ -11,6 +11,10 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -284,16 +288,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "📝 Creating release v${{ env.VERSION }}..."
-          
+
           # Create release notes file to avoid YAML escaping issues
           cat > /tmp/release_notes.md << 'EOF'
           # Beypro POS v${{ env.VERSION }} - Windows Build
-          
+
           **Release Information:**
           - **Electron Version:** 18.0.0
           - **Node.js:** ${{ matrix.node-version }}
           - **Platform:** Windows NSIS Installer
-          
+
           **Key Features:**
           - ✅ Enhanced LAN printer detection with ESC/POS fingerprinting
           - ✅ Direct TCP 9100 printing support for network printers
@@ -301,20 +305,20 @@ jobs:
           - ✅ Network printer manufacturer/model identification
           - ✅ Automatic network discovery (192.168.x.x, 10.0.x.x ranges)
           - ✅ Multi-fallback print routing (TCP → RAW → Bridge)
-          
+
           **Installation Instructions:**
           1. Download `Beypro-POS-Setup-${{ env.VERSION }}.exe`
           2. Run the installer
           3. Follow the installation wizard (administrator required)
           4. Application launches on completion
-          
+
           **System Requirements:**
           - Windows 7 SP1 or later
           - .NET Framework 4.5+
           - Minimum 2GB RAM
           - USB or Network ESC/POS printer (optional)
           EOF
-          
+
           # Create release with retry logic
           RETRY_COUNT=3
           RETRY_DELAY=5
@@ -339,7 +343,7 @@ jobs:
               fi
             fi
           done
-          
+
           echo "❌ Failed to create release after $RETRY_COUNT attempts"
           exit 1
 
