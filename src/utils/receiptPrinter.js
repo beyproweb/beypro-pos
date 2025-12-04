@@ -142,11 +142,9 @@ export async function printViaBridge(text) {
     // 2) Try using Electron's printRaw with ESC/POS bytes (for more control)
     if (window?.beypro?.printRaw) {
       console.log("🖨️ Using Electron printRaw with ESC/POS");
-      const settings = await getRegisterSettings();
-      const cfg = settings?.cashDrawerPrinter || null;
       const printerName = localStorage.getItem("beyproSelectedPrinter");
       
-      if (cfg || printerName) {
+      if (printerName) {
         // Build ESC/POS bytes: ESC @ (reset) + text + feed + cut
         const enc = new TextEncoder();
         const init = Uint8Array.from([0x1b, 0x40]); // ESC @ reset
@@ -159,53 +157,28 @@ export async function printViaBridge(text) {
 
         const dataBase64 = btoa(String.fromCharCode(...bytes));
         const result = await window.beypro.printRaw({
-          printerName: printerName || (cfg?.name || "default"),
+          printerName,
           dataBase64,
         });
         
         if (result?.ok !== false) {
           console.log("✅ Electron printRaw succeeded");
           return true;
+        } else {
+          console.error("❌ Electron printRaw returned error:", result?.error);
         }
+      } else {
+        console.warn("⚠️ No printer selected in localStorage");
       }
+    } else {
+      console.warn("⚠️ Electron printRaw not available (not running in Electron)");
     }
   } catch (err) {
-    console.warn("⚠️ Electron printRaw failed:", err?.message || err);
+    console.error("❌ Electron printRaw failed:", err?.message || err);
   }
 
-  try {
-    // 3) Try backend printing via configured register printer (for network/USB/Serial)
-    console.log("📡 Trying backend printer endpoint");
-    const settings = await getRegisterSettings();
-    const cfg = settings?.cashDrawerPrinter || null;
-    if (cfg && cfg.interface) {
-      const result = await secureFetch("/printer-settings/print", {
-        method: "POST",
-        body: JSON.stringify({
-          interface: cfg.interface,
-          vendorId: cfg.vendorId,
-          productId: cfg.productId,
-          path: cfg.path,
-          baudRate: cfg.baudRate,
-          host: cfg.host,
-          port: cfg.port,
-          encoding: cfg.encoding || "cp857",
-          align: "lt",
-          cut: true,
-          content: text,
-        }),
-      });
-      if (result?.ok !== false) {
-        console.log("✅ Backend printer succeeded");
-        return true;
-      }
-    }
-  } catch (err) {
-    console.warn("⚠️ Backend printer failed:", err?.message || err);
-  }
-
-  // 4) If nothing worked, log the failure but don't crash
-  console.error("❌ All print methods failed - no printer available");
+  // If no Electron, don't try backend - just fail gracefully
+  console.error("❌ No printer available - must be running in Electron with a printer selected");
   return false;
 }
 
