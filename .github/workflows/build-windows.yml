@@ -100,12 +100,17 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "🔨 Building Vite frontend..." -ForegroundColor Cyan
-          npm run build
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "❌ Vite build failed" -ForegroundColor Red
+          try {
+            npm run build 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "❌ Vite build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+              exit 1
+            }
+            Write-Host "✓ Vite build successful" -ForegroundColor Green
+          } catch {
+            Write-Host "❌ Exception: $_" -ForegroundColor Red
             exit 1
           }
-          Write-Host "✓ Vite build successful" -ForegroundColor Green
         env:
           VITE_TARGET: electron
           VITE_API_URL: https://hurrypos-backend.onrender.com/api
@@ -117,10 +122,26 @@ jobs:
           Write-Host "🔍 Checking Vite build output..." -ForegroundColor Cyan
           if (Test-Path "dist") {
             Write-Host "✓ dist/ folder found" -ForegroundColor Green
-            $files = Get-ChildItem dist -Recurse -File | Measure-Object
-            Write-Host "  Files: $($files.Count)" -ForegroundColor Yellow
+            $files = Get-ChildItem dist -Recurse -File -ErrorAction SilentlyContinue
+            $fileCount = ($files | Measure-Object).Count
+            Write-Host "  Files: $fileCount" -ForegroundColor Yellow
+            
+            if ($fileCount -eq 0) {
+              Write-Host "⚠️ WARNING: dist folder is empty!" -ForegroundColor Red
+              exit 1
+            }
+            
+            # Show first few files
+            Write-Host "  Sample files:" -ForegroundColor Yellow
+            Get-ChildItem dist -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object {
+              Write-Host "    - $($_.Name)" -ForegroundColor Gray
+            }
           } else {
             Write-Host "✗ dist/ folder NOT found!" -ForegroundColor Red
+            Write-Host "Current directory contents:" -ForegroundColor Yellow
+            Get-ChildItem . | Where-Object { $_.Name -ne "node_modules" } | ForEach-Object {
+              Write-Host "  - $($_.Name)" -ForegroundColor Gray
+            }
             exit 1
           }
 
@@ -128,16 +149,23 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "🔨 Running electron-builder..." -ForegroundColor Cyan
+          Write-Host "Command: npx electron-builder --publish=never --win nsis" -ForegroundColor Gray
           Write-Host "Current directory: $(Get-Location)" -ForegroundColor Gray
-          Write-Host "Files in current dir:" -ForegroundColor Gray
-          Get-ChildItem -Path . -Depth 1 -Exclude node_modules | ForEach-Object {
-            Write-Host "  - $($_.Name)" -ForegroundColor Gray
-          }
-          npx electron-builder --publish=never --win nsis
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "❌ electron-builder failed with exit code $LASTEXITCODE" -ForegroundColor Red
-            Write-Host "Checking for output files..." -ForegroundColor Yellow
-            Get-ChildItem . -Recurse -Include "*.exe" -Depth 5 2>/dev/null | ForEach-Object {
+          Write-Host "Python: $env:PYTHON" -ForegroundColor Gray
+          Write-Host "" -ForegroundColor Gray
+
+          # Run with output capture
+          $output = npx electron-builder --publish=never --win nsis 2>&1
+          $exitCode = $LASTEXITCODE
+
+          # Write all output
+          Write-Host $output -ForegroundColor Gray
+          Write-Host "" -ForegroundColor Gray
+
+          if ($exitCode -ne 0) {
+            Write-Host "❌ electron-builder failed with exit code $exitCode" -ForegroundColor Red
+            Write-Host "Checking for ANY output files..." -ForegroundColor Yellow
+            Get-ChildItem -Recurse -Include "*.exe", "*.yml", "*.blockmap" -Depth 10 -ErrorAction SilentlyContinue | ForEach-Object {
               Write-Host "  Found: $($_.FullName)" -ForegroundColor Yellow
             }
             exit 1
