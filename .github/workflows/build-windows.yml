@@ -277,53 +277,90 @@ jobs:
             }
           }
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+      - name: Check if release exists
+        id: check_release
         if: startsWith(github.ref, 'refs/tags/')
-        with:
-          tag_name: v${{ env.VERSION }}
-          files: |
-            out/*.exe
-            out/*.yml
-            out/*.blockmap
-          body: |
-            # Beypro POS v${{ env.VERSION }} - Windows Build
+        shell: bash
+        run: |
+          RELEASE=$(gh release view "v${{ env.VERSION }}" 2>&1 || echo "NOT_FOUND")
+          if [[ "$RELEASE" == "NOT_FOUND" ]]; then
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✓ Release does not exist, will create new one" >&2
+          else
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Release already exists" >&2
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            **Release Information:**
-            - **Electron Version:** 18.0.0
-            - **Node.js:** ${{ matrix.node-version }}
-            - **Platform:** Windows NSIS Installer
-            - **Build Date:** ${{ github.event.head_commit.timestamp }}
+      - name: Delete existing release if present
+        if: startsWith(github.ref, 'refs/tags/') && steps.check_release.outputs.exists == 'true'
+        shell: bash
+        run: |
+          echo "🗑️ Deleting existing release v${{ env.VERSION }}..."
+          gh release delete "v${{ env.VERSION }}" -y --cleanup-tag 2>/dev/null || true
+          echo "✓ Release deleted"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            **Key Features:**
-            - ✅ Enhanced LAN printer detection with ESC/POS fingerprinting
-            - ✅ Direct TCP 9100 printing support for network printers
-            - ✅ Improved printer type detection and routing
-            - ✅ Network printer manufacturer/model identification
-            - ✅ Automatic network discovery (192.168.x.x, 10.0.x.x ranges)
-            - ✅ Multi-fallback print routing (TCP → RAW → Bridge)
+      - name: Create GitHub Release with GitHub CLI
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          echo "📝 Creating release v${{ env.VERSION }}..."
+          
+          # Create release with retry logic
+          RETRY_COUNT=3
+          RETRY_DELAY=5
+          for ((i=1; i<=RETRY_COUNT; i++)); do
+            echo "Attempt $i of $RETRY_COUNT..."
+            
+            if gh release create "v${{ env.VERSION }}" \
+              --title "Beypro POS v${{ env.VERSION }} - Windows Build" \
+              --target main \
+              --draft=false \
+              --prerelease=false \
+              --notes "# Beypro POS v${{ env.VERSION }} - Windows Build
 
-            **Installation Instructions:**
-            1. Download `Beypro-POS-Setup-${{ env.VERSION }}.exe`
-            2. Run the installer
-            3. Follow the installation wizard (administrator required)
-            4. Application launches on completion
+**Release Information:**
+- **Electron Version:** 18.0.0
+- **Node.js:** ${{ matrix.node-version }}
+- **Platform:** Windows NSIS Installer
 
-            **System Requirements:**
-            - Windows 7 SP1 or later
-            - .NET Framework 4.5+
-            - Minimum 2GB RAM
-            - USB or Network ESC/POS printer (optional)
+**Key Features:**
+- ✅ Enhanced LAN printer detection with ESC/POS fingerprinting
+- ✅ Direct TCP 9100 printing support for network printers
+- ✅ Improved printer type detection and routing
+- ✅ Network printer manufacturer/model identification
+- ✅ Automatic network discovery (192.168.x.x, 10.0.x.x ranges)
+- ✅ Multi-fallback print routing (TCP → RAW → Bridge)
 
-            **Upgrade Notes:**
-            - Uninstall previous version before upgrading
-            - Settings are preserved during upgrade
-            - Printer configurations are maintained
+**Installation Instructions:**
+1. Download \`Beypro-POS-Setup-${{ env.VERSION }}.exe\`
+2. Run the installer
+3. Follow the installation wizard (administrator required)
+4. Application launches on completion
 
-            **Bug Reports:**
-            Report issues at the GitHub repository with logs from `%APPDATA%\Beypro\logs`
-          draft: false
-          prerelease: false
+**System Requirements:**
+- Windows 7 SP1 or later
+- .NET Framework 4.5+
+- Minimum 2GB RAM
+- USB or Network ESC/POS printer (optional)" \
+              out/*.exe out/*.yml out/*.blockmap 2>&1; then
+              echo "✅ Release created successfully!"
+              exit 0
+            else
+              LAST_EXIT=$?
+              echo "⚠️ Attempt $i failed with exit code $LAST_EXIT"
+              if [ $i -lt $RETRY_COUNT ]; then
+                echo "Waiting ${RETRY_DELAY}s before retry..."
+                sleep $RETRY_DELAY
+              fi
+            fi
+          done
+          
+          echo "❌ Failed to create release after $RETRY_COUNT attempts"
+          exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
