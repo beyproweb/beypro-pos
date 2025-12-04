@@ -333,8 +333,7 @@ const handleCartPrint = async () => {
     if (!Array.isArray(printable.items) || printable.items.length === 0) {
       printable.items = cartItems;
     }
-    const text = renderReceiptText(printable, getReceiptLayout());
-    const ok = await printViaBridge(text);
+    const ok = await printViaBridge("", printable);
     showToast(
       ok ? t("Receipt sent to printer") : t("Printer bridge is not connected")
     );

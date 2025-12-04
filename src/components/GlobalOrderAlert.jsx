@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { toast } from "react-toastify";
 import secureFetch from "../utils/secureFetch";
+import { fetchOrderWithItems } from "../utils/orderPrinting";
 import socket, { joinRestaurantRoom } from "../utils/socket";
 import {
   defaultReceiptLayout,
@@ -394,10 +395,11 @@ export default function GlobalOrderAlert() {
     async (orderId) => {
       if (!orderId) return false;
       try {
-        const order = await secureFetch(`/orders/${orderId}`);
+        // Fetch full order with items (same as manual print)
+        const order = await fetchOrderWithItems(orderId);
         if (!order?.id || !shouldPrintNow(order.id)) return false;
-        const text = renderReceiptText(order, layout);
-        const ok = await printViaBridge(text);
+        console.log("🖨️ Auto-printing order with items:", order.items?.length || 0);
+        const ok = await printViaBridge("", order);
         if (!ok) toast.warn("🖨️ Beypro Bridge not connected");
         else toast.success(`🧾 Printed order #${order.id}`);
         return true;

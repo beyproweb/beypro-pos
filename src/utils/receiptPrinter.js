@@ -21,6 +21,43 @@ const defaultReceiptLayout = {
 import secureFetch from "./secureFetch";
 import { formatWithActiveCurrency } from "./currency";
 
+// CP857 Turkish encoding map for ESC/POS (common Turkish characters)
+const CP857_MAP = {
+  "₺": 0x9C, // Turkish Lira
+  "ç": 0x87,
+  "ğ": 0xE5,
+  "ı": 0xA4,
+  "ö": 0x94,
+  "ş": 0x98,
+  "ü": 0x81,
+  "Ç": 0x80,
+  "Ğ": 0xE4,
+  "İ": 0xEE,
+  "Ö": 0x99,
+  "Ş": 0x9E,
+  "Ü": 0x9F,
+};
+
+// Encode text to CP857 for Turkish ESC/POS printers
+function encodeCP857(text) {
+  const result = [];
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const code = CP857_MAP[char];
+    if (code !== undefined) {
+      result.push(code);
+    } else {
+      const utf8 = new TextEncoder().encode(char);
+      if (utf8.length === 1) {
+        result.push(utf8[0]); // ASCII
+      } else {
+        result.push(0x3F); // ? fallback for unmappable chars
+      }
+    }
+  }
+  return new Uint8Array(result);
+}
+
 let layoutCache = defaultReceiptLayout;
 let cachedRegisterSettings = null;
 let fetchingRegisterPromise = null;
@@ -126,7 +163,7 @@ export function renderReceiptText(order, providedLayout) {
   return lines.join("\n");
 }
 
-export async function printViaBridge(text) {
+export async function printViaBridge(text, orderObj) {
   try {
     // 1) Try Electron preload printText first (recommended for text-based receipts)
     if (window?.beypro?.printText) {
@@ -179,10 +216,20 @@ export async function printViaBridge(text) {
       }
       
       if (printerName) {
-        // Build ESC/POS bytes: ESC @ (reset) + text + feed + cut
-        const enc = new TextEncoder();
+        // Build ESC/POS bytes with CP857 encoding for Turkish support
+        console.log("🖨️ Building ESC/POS bytes with CP857 encoding for Turkish characters");
+        
+        // Prepare receipt text - use layout if order is provided
+        let receiptText = text;
+        if (orderObj) {
+          const layout = getReceiptLayout();
+          receiptText = renderReceiptText(orderObj, layout);
+          console.log("📝 Using rendered receipt with layout customizations");
+        }
+        
+        // Build ESC/POS: ESC @ (reset) + text (CP857 encoded) + feed + cut
         const init = Uint8Array.from([0x1b, 0x40]); // ESC @ reset
-        const body = enc.encode(String(text || "") + "\n\n\n");
+        const body = encodeCP857(String(receiptText || "") + "\n\n\n");
         const cut = Uint8Array.from([0x1d, 0x56, 0x00]); // GS V (cut)
         const bytes = new Uint8Array(init.length + body.length + cut.length);
         bytes.set(init, 0);
@@ -190,7 +237,7 @@ export async function printViaBridge(text) {
         bytes.set(cut, init.length + body.length);
 
         const dataBase64 = btoa(String.fromCharCode(...bytes));
-        console.log("🖨️ Printing to:", printerName);
+        console.log("🖨️ Printing to:", printerName, `(${bytes.length} bytes)`);
         const result = await window.beypro.printRaw({
           printerName,
           dataBase64,
