@@ -209,7 +209,4 @@ export async function printViaBridge(text) {
   return false;
 }
 
-  return false;
-}
-
 export { defaultReceiptLayout };
