@@ -188,12 +188,27 @@ function extractIpFromPrinterName(printerName = "") {
 // ------------------------
 // GET PRINTER LIST (Windows)
 // Enhanced to detect printer types
+// Returns objects with name, status, isDefault properties
 // ------------------------
 ipcMain.handle("beypro:getPrinters", async () => {
   try {
     const printers = await print.getPrinters();
     console.log("📠 Found printers:", printers);
-    return printers;
+    
+    // Convert to proper format: [{name, status, isDefault}, ...]
+    const formatted = Array.isArray(printers)
+      ? printers.map((p) => {
+          const name = typeof p === 'string' ? p : p.name || String(p);
+          return {
+            name: name,
+            status: "ready",
+            isDefault: name === (process.env.DEFAULT_PRINTER || ""),
+          };
+        })
+      : [];
+    
+    console.log("📠 Formatted printers:", formatted);
+    return formatted;
   } catch (err) {
     console.error("Failed to get printers:", err);
     return [];
