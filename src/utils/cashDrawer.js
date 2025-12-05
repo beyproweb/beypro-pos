@@ -13,10 +13,12 @@ export const isCashLabel = (value = "") => {
 export async function openCashDrawer(payload = {}) {
   const now = Date.now();
   if (now - lastPulseAt < MIN_PULSE_INTERVAL) {
+    console.warn("⚠️ Drawer pulse throttled - too soon since last pulse");
     return false;
   }
 
   try {
+    console.log("📡 Opening cash drawer with payload:", payload);
     const response = await secureFetch("/cashdrawer/open", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -28,7 +30,9 @@ export async function openCashDrawer(payload = {}) {
       lastPulseAt = now;
       return true;
     } else if (response?.error) {
-      console.warn("⚠️ Cash drawer not configured:", response.error);
+      console.warn("⚠️ Cash drawer error:", response.error);
+      console.warn("   Status:", response.status);
+      console.warn("   Details:", response);
       return false;
     }
     
@@ -36,14 +40,21 @@ export async function openCashDrawer(payload = {}) {
     return true;
   } catch (err) {
     const errMsg = err?.message || String(err);
+    const statusCode = err?.status || err?.statusCode;
+    
+    console.error("❌ Cash drawer request failed");
+    console.error("   Status:", statusCode);
+    console.error("   Message:", errMsg);
+    console.error("   Full error:", err);
     
     // Check if it's a 500 error (device/config issue)
-    if (err?.status === 500 || errMsg.includes("500")) {
-      console.warn("⚠️ Cash drawer device error (500):", errMsg);
-      console.warn("   → Cash drawer printer may not be configured in register settings");
+    if (statusCode === 500 || errMsg.includes("500")) {
+      console.warn("⚠️ Cash drawer device error (500):");
+      console.warn("   → Device connection failed or not configured");
       console.warn("   → Go to Settings → Register to configure the cash drawer printer");
-    } else if (err?.status === 400 || errMsg.includes("400")) {
-      console.warn("⚠️ Cash drawer not configured:", errMsg);
+      console.warn("   → Verify: Printer IP, Port (9100), and network connectivity");
+    } else if (statusCode === 400 || errMsg.includes("400")) {
+      console.warn("⚠️ Cash drawer configuration error (400):", errMsg);
     } else {
       console.warn("⚠️ Unable to open cash drawer:", errMsg);
     }

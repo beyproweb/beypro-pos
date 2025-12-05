@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSetting, saveSetting } from "../hooks/useSetting";
-import { openCashDrawer } from "../../utils/cashDrawer";
+import secureFetch from "../../utils/secureFetch";
 
 export default function RegisterSettingsTab() {
   const { t } = useTranslation();
@@ -23,6 +23,8 @@ export default function RegisterSettingsTab() {
       address: "",
     },
   });
+
+  const [testingDrawer, setTestingDrawer] = useState(false);
 
   useSetting("register", setRegister, {
     openingCash: "500.00",
@@ -48,15 +50,62 @@ export default function RegisterSettingsTab() {
   };
 
   const handleTestDrawer = async () => {
+    if (testingDrawer) return;
+    setTestingDrawer(true);
+
     try {
-      const success = await openCashDrawer();
-      if (success) {
-        alert("✅ Cash drawer opened successfully!");
+      const printer = register.cashDrawerPrinter || {};
+
+      // Validate required fields
+      if (!printer.host || !printer.port) {
+        alert("❌ Printer IP and Port are required. Please configure them first.");
+        setTestingDrawer(false);
+        return;
+      }
+
+      console.log("🔧 Testing drawer with config:", {
+        interface: printer.interface,
+        host: printer.host,
+        port: printer.port,
+        pin: printer.pin,
+      });
+
+      // Send test request to backend with printer config
+      const response = await secureFetch("/cashdrawer/open", {
+        method: "POST",
+        body: JSON.stringify({
+          test: true,
+          printerConfig: printer,
+        }),
+      });
+
+      if (response?.success) {
+        alert("✅ Cash drawer opened successfully!\n\nYour printer is correctly configured.");
+      } else if (response?.error) {
+        alert(`⚠️ Backend Error: ${response.error}\n\nPlease check:\n• Printer IP is reachable\n• Printer port 9100 is accessible\n• Printer is powered on`);
+        console.error("Backend error details:", response);
       } else {
-        alert("⚠️ Cash drawer not configured or device error. Check the printer IP/port and register settings.");
+        alert("✅ Test command sent to printer.");
       }
     } catch (err) {
-      alert(`❌ Error: ${err?.message || err}`);
+      const statusCode = err?.status || err?.statusCode || "";
+      const errMsg = err?.message || String(err);
+
+      console.error("❌ Drawer test error:", {
+        status: statusCode,
+        message: errMsg,
+        fullError: err,
+      });
+
+      if (statusCode === 500 || errMsg.includes("500")) {
+        alert(`❌ Device Connection Error (500):\n\n${errMsg}\n\nChecklist:\n✓ Printer IP: ${register.cashDrawerPrinter?.host}\n✓ Port: ${register.cashDrawerPrinter?.port}\n✓ Can you ping the printer IP?\n✓ Is the printer powered on?`);
+      } else if (statusCode === 400 || errMsg.includes("400")) {
+        alert(`❌ Configuration Error (400):\n\n${errMsg}\n\nThe printer settings may be invalid.`);
+      } else {
+        alert(`❌ Error: ${errMsg}`);
+      }
+    } finally {
+      setTestingDrawer(false);
     }
   };
 
@@ -235,12 +284,13 @@ export default function RegisterSettingsTab() {
         <div>
           <button
             onClick={handleTestDrawer}
-            className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all"
+            disabled={testingDrawer}
+            className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-lg font-medium transition-all"
           >
-            🧾 {t("Test Drawer Open")}
+            {testingDrawer ? "⏳ Testing..." : "🧾 Test Drawer Open"}
           </button>
           <p className="text-xs text-gray-500 mt-1">
-            {t("Click to verify cash drawer opens correctly with current settings.")}
+            {t("Click to verify cash drawer opens correctly with current settings. Will show detailed debug info on error.")}
           </p>
         </div>
       </div>
