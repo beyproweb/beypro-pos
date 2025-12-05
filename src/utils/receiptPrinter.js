@@ -36,6 +36,77 @@ const ALIGNMENT_ESC_POS = {
   right: "rt",
 };
 
+const CP1254_MAP = {
+  "€": 0x80,
+  "‚": 0x82,
+  "ƒ": 0x83,
+  "„": 0x84,
+  "…": 0x85,
+  "†": 0x86,
+  "‡": 0x87,
+  "ˆ": 0x88,
+  "‰": 0x89,
+  "Š": 0x8a,
+  "‹": 0x8b,
+  "Œ": 0x8c,
+  "Ž": 0x8e,
+  "‘": 0x91,
+  "’": 0x92,
+  "“": 0x93,
+  "”": 0x94,
+  "•": 0x95,
+  "–": 0x96,
+  "—": 0x97,
+  "™": 0x99,
+  "š": 0x9a,
+  "›": 0x9b,
+  "œ": 0x9c,
+  "ž": 0x9e,
+  "Ÿ": 0x9f,
+  "Ş": 0xde,
+  "ş": 0xfe,
+  "Ğ": 0xd0,
+  "ğ": 0xf0,
+  "İ": 0xdd,
+  "ı": 0xfd,
+  "Ç": 0xc7,
+  "ç": 0xe7,
+  "Ö": 0xd6,
+  "ö": 0xf6,
+  "Ü": 0xdc,
+  "ü": 0xfc,
+  "Â": 0xc2,
+  "â": 0xe2,
+  "Ê": 0xca,
+  "ê": 0xea,
+  "Î": 0xce,
+  "î": 0xee,
+  "Û": 0xdb,
+  "û": 0xfb,
+};
+
+function encodeCP1254(text) {
+  const bytes = [];
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const codePoint = char.codePointAt(0);
+
+    if (codePoint < 0x80) {
+      bytes.push(codePoint);
+      continue;
+    }
+
+    const mapped = CP1254_MAP[char];
+    if (mapped !== undefined) {
+      bytes.push(mapped);
+      continue;
+    }
+
+    bytes.push(0x3f); // '?'
+  }
+  return new Uint8Array(bytes);
+}
+
 function coerceNumber(value) {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -346,6 +417,30 @@ function sanitizeReceiptText(input) {
     .replace(/\u200e|\u200f/g, "")
     .replace(ESC_POS_SAFE_CHAR_PATTERN, "?")
     .trimEnd();
+}
+
+const PRIVATE_LAN_REGEX = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.)/;
+
+function isPrivateLanHost(host = "") {
+  const trimmed = String(host || "").trim().toLowerCase();
+  if (!trimmed) return false;
+  if (trimmed === "localhost" || trimmed.startsWith("127.")) return true;
+  return PRIVATE_LAN_REGEX.test(trimmed);
+}
+
+function buildEscposBytes(text, { cut = true, feedLines = 3 } = {}) {
+  const normalized = `${text || ""}\n${"\n".repeat(Math.max(0, feedLines))}`;
+  const init = Uint8Array.from([0x1b, 0x40]); // ESC @ reset
+  const selectTurkish = Uint8Array.from([0x1b, 0x74, 19]); // ESC t 19 (CP1254)
+  const body = encodeCP1254(normalized);
+  const cutBytes = cut ? Uint8Array.from([0x1d, 0x56, 0x00]) : new Uint8Array(0);
+
+  const bytes = new Uint8Array(init.length + selectTurkish.length + body.length + cutBytes.length);
+  bytes.set(init, 0);
+  bytes.set(selectTurkish, init.length);
+  bytes.set(body, init.length + selectTurkish.length);
+  bytes.set(cutBytes, init.length + selectTurkish.length + body.length);
+  return bytes;
 }
 
 export function renderReceiptText(order, providedLayout) {
@@ -674,6 +769,38 @@ export async function printViaBridge(text, orderObj) {
     return false;
   }
 
+  const localBridge = typeof window !== "undefined" ? window.beypro : null;
+  if (
+    target.interface === "network" &&
+    localBridge?.printNet &&
+    (isPrivateLanHost(target.host) || localBridge?.isDesktop === true)
+  ) {
+    try {
+      const bytes = buildEscposBytes(resolvedText, {
+        cut: payload.cut,
+      });
+      const dataBase64 = btoa(String.fromCharCode(...bytes));
+      console.log("🖨️ Using local bridge for LAN printer:", {
+        host: target.host,
+        port: payload.port || 9100,
+      });
+      const result = await localBridge.printNet({
+        host: target.host,
+        port: payload.port || 9100,
+        dataBase64,
+      });
+
+      if (result?.ok === false) {
+        console.warn("⚠️ Local LAN print bridge reported failure:", result?.error);
+      } else {
+        console.log("✅ Receipt print dispatched via local bridge");
+        return true;
+      }
+    } catch (err) {
+      console.warn("⚠️ Local LAN print bridge failed, falling back to backend:", err?.message || err);
+    }
+  }
+
   try {
     console.log("🖨️ Dispatching receipt print via backend:", {
       interface: payload.interface,
@@ -697,7 +824,17 @@ export async function printViaBridge(text, orderObj) {
     console.log("✅ Receipt print job dispatched via backend");
     return true;
   } catch (err) {
-    console.error("❌ Backend receipt print failed:", err?.message || err);
+    const errMsg = err?.message || String(err);
+    console.error("❌ Backend receipt print failed:", errMsg);
+    if (
+      target.interface === "network" &&
+      isPrivateLanHost(target.host) &&
+      /ETIMEDOUT|ECONNREFUSED|ENETUNREACH/i.test(errMsg)
+    ) {
+      console.error(
+        "⚠️ Cloud backend cannot reach private LAN printer. Ensure Beypro Desktop Bridge is running on the same network or expose the printer over a reachable address."
+      );
+    }
     return false;
   }
 }
