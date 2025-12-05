@@ -145,8 +145,10 @@ function pickNumber(...values) {
   return null;
 }
 
-const formatMoney = (value) =>
-  formatWithActiveCurrency(Number.isFinite(value) ? value : 0);
+const formatMoney = (value) => {
+  const currencyKey = typeof window !== "undefined" ? (window.beyproCurrencyKey || window.beyproCurrencyLabel) : undefined;
+  return formatWithActiveCurrency(Number.isFinite(value) ? value : 0, { currencyKey });
+};
 
 const formatQuantity = (qty) => {
   if (!Number.isFinite(qty)) return "1";
@@ -184,22 +186,27 @@ export function setReceiptLayout(next) {
 }
 
 export function getReceiptLayout() {
-  if (!layoutLoaded && typeof window !== "undefined" && window.__receiptLayout) {
-    layoutCache = { ...defaultReceiptLayout, ...window.__receiptLayout };
+  if (!layoutLoaded) {
+    if (typeof window !== "undefined" && window.__receiptLayout && typeof window.__receiptLayout === "object") {
+      layoutCache = { ...defaultReceiptLayout, ...window.__receiptLayout };
+      console.log("✅ Receipt layout loaded from window.__receiptLayout");
+    }
     layoutLoaded = true;
   }
-  return layoutCache;
+  return layoutCache || { ...defaultReceiptLayout };
 }
 
 async function ensureReceiptLayout() {
-  if (layoutLoaded) return layoutCache;
+  if (layoutLoaded && layoutCache !== null) return layoutCache;
   if (layoutFetchPromise) return layoutFetchPromise;
 
   layoutFetchPromise = secureFetch("/printer-settings/1")
     .then((printer) => {
-      if (printer?.layout) {
+      if (printer?.layout && typeof printer.layout === "object") {
         setReceiptLayout(printer.layout);
+        console.log("✅ Receipt layout loaded from backend:", Object.keys(printer.layout));
       } else {
+        console.warn("⚠️ No layout data received from backend, using defaults");
         layoutLoaded = true;
       }
       return layoutCache;
@@ -553,7 +560,7 @@ export function renderReceiptText(order, providedLayout) {
           ex.amount
         );
 
-        if (exTotal === null) exTotal = qty * exQty * exPrice;
+        if (exTotal === null) exTotal = exQty * exPrice;
         if (!Number.isFinite(exTotal)) exTotal = 0;
         subtotal += exTotal;
         add(
@@ -650,7 +657,10 @@ export async function printViaBridge(text, orderObj) {
 
   if (orderObj) {
     try {
-      await ensureReceiptLayout();
+      const loaded = await ensureReceiptLayout();
+      if (!loaded) {
+        console.warn("⚠️ Receipt layout is null, will use defaults");
+      }
     } catch (err) {
       console.warn(
         "⚠️ Failed to ensure receipt layout before printing:",
@@ -658,8 +668,9 @@ export async function printViaBridge(text, orderObj) {
       );
     }
     const layout = getReceiptLayout();
+    console.log("📝 Printing with layout:", { alignment: layout.alignment, showFooter: layout.showFooter });
     resolvedText = renderReceiptText(orderObj, layout);
-    console.log("📝 Using rendered receipt with layout customizations");
+    console.log("📝 Receipt text rendered with customizations");
   }
 
   resolvedText = sanitizeReceiptText(resolvedText);
