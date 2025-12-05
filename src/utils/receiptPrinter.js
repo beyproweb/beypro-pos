@@ -207,7 +207,9 @@ export function renderReceiptText(order, providedLayout) {
   }
 
   add("--------------------------------");
-  add(`TOTAL: ${formatWithActiveCurrency(total + tax)}`);
+  const totalAmount = total + tax;
+  const formattedTotal = formatWithActiveCurrency(totalAmount);
+  add(`TOTAL: ${formattedTotal}`);
   if (
     (order?.status === "paid" || order?.payment_status === "paid") &&
     order?.payment_method
@@ -219,6 +221,11 @@ export function renderReceiptText(order, providedLayout) {
     add("--------------------------------");
     add(layout.footerText);
   }
+  
+  // Add spacing to prevent footer cropping
+  add("");
+  add("");
+  add("");
 
   return lines.join("\n");
 }

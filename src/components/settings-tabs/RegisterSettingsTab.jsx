@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSetting, saveSetting } from "../hooks/useSetting";
+import { openCashDrawer } from "../../utils/cashDrawer";
 
 export default function RegisterSettingsTab() {
   const { t } = useTranslation();
@@ -44,6 +45,19 @@ export default function RegisterSettingsTab() {
   const handleSave = async () => {
     await saveSetting("register", register);
     alert("✅ Register settings saved!");
+  };
+
+  const handleTestDrawer = async () => {
+    try {
+      const success = await openCashDrawer();
+      if (success) {
+        alert("✅ Cash drawer opened successfully!");
+      } else {
+        alert("⚠️ Cash drawer not configured or device error. Check the printer IP/port and register settings.");
+      }
+    } catch (err) {
+      alert(`❌ Error: ${err?.message || err}`);
+    }
   };
 
   const handlePrinterChange = (field, value) => {
@@ -214,6 +228,19 @@ export default function RegisterSettingsTab() {
           />
           <p className="text-xs text-gray-500 mt-1">
             {t("Most ESC/POS drawers use pin 2. Change only if your printer requires otherwise.")}
+          </p>
+        </div>
+
+        {/* Test Drawer Button */}
+        <div>
+          <button
+            onClick={handleTestDrawer}
+            className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all"
+          >
+            🧾 {t("Test Drawer Open")}
+          </button>
+          <p className="text-xs text-gray-500 mt-1">
+            {t("Click to verify cash drawer opens correctly with current settings.")}
           </p>
         </div>
       </div>
