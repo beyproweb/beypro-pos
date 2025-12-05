@@ -21,81 +21,71 @@ const defaultReceiptLayout = {
 import secureFetch from "./secureFetch";
 import { formatWithActiveCurrency } from "./currency";
 
-// CP1254 (Windows Turkish) encoding map for the ESC/POS code page 19
-const CP1254_MAP = {
-  "€": 0x80,
-  "‚": 0x82,
-  "ƒ": 0x83,
-  "„": 0x84,
-  "…": 0x85,
-  "†": 0x86,
-  "‡": 0x87,
-  "ˆ": 0x88,
-  "‰": 0x89,
-  "Š": 0x8A,
-  "‹": 0x8B,
-  "Œ": 0x8C,
-  "Ž": 0x8E,
-  "‘": 0x91,
-  "’": 0x92,
-  "“": 0x93,
-  "”": 0x94,
-  "•": 0x95,
-  "–": 0x96,
-  "—": 0x97,
-  "™": 0x99,
-  "š": 0x9A,
-  "›": 0x9B,
-  "₺": 0x9C,
-  "œ": 0x9C,
-  "ž": 0x9E,
-  "Ÿ": 0x9F,
-  "Ş": 0xDE,
-  "ş": 0xFE,
-  "Ğ": 0xD0,
-  "ğ": 0xF0,
-  "İ": 0xDD,
-  "ı": 0xFD,
-  "Ç": 0xC7,
-  "ç": 0xE7,
-  "Ö": 0xD6,
-  "ö": 0xF6,
-  "Ü": 0xDC,
-  "ü": 0xFC,
-  "Â": 0xC2,
-  "â": 0xE2,
-  "Ê": 0xCA,
-  "ê": 0xEA,
-  "Î": 0xCE,
-  "î": 0xEE,
-  "Û": 0xDB,
-  "û": 0xFB,
+const PRINTER_SETTINGS_TTL = 120000; // ms
+let printerSettingsCache = null;
+let printerSettingsFetchedAt = 0;
+let printerSettingsPromise = null;
+
+const PRINTER_DISCOVERY_TTL = 60000; // ms
+let printerDiscoveryCache = null;
+let printerDiscoveryFetchedAt = 0;
+let printerDiscoveryPromise = null;
+
+const ALIGNMENT_ESC_POS = {
+  center: "ct",
+  right: "rt",
 };
 
-function encodeCP1254(text) {
-  const bytes = [];
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const codePoint = char.codePointAt(0);
+function coerceNumber(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
 
-    if (codePoint < 0x80) {
-      bytes.push(codePoint);
-      continue;
+    const direct = Number(trimmed);
+    if (Number.isFinite(direct)) return direct;
+
+    const sanitized = trimmed.replace(/[^0-9.,-]/g, "");
+    if (sanitized) {
+      const attemptDirect = Number(sanitized);
+      if (Number.isFinite(attemptDirect)) return attemptDirect;
+
+      if (sanitized.includes(",") && sanitized.includes(".")) {
+        const commaAsThousands = Number(sanitized.replace(/,/g, ""));
+        if (Number.isFinite(commaAsThousands)) return commaAsThousands;
+      }
+
+      const normalized = sanitized.replace(/\.(?=.*[.,])/g, "").replace(/,/g, ".");
+      const parsedNormalized = Number(normalized);
+      if (Number.isFinite(parsedNormalized)) return parsedNormalized;
     }
-
-    const mapped = CP1254_MAP[char];
-    if (mapped !== undefined) {
-      bytes.push(mapped);
-      continue;
-    }
-
-    // Replace unsupported glyphs (like emoji) with '?'
-    bytes.push(0x3F);
   }
-  return new Uint8Array(bytes);
+
+  const fallback = Number(value);
+  return Number.isFinite(fallback) ? fallback : null;
 }
 
-let layoutCache = defaultReceiptLayout;
+function pickNumber(...values) {
+  for (const value of values) {
+    const parsed = coerceNumber(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+const formatMoney = (value) =>
+  formatWithActiveCurrency(Number.isFinite(value) ? value : 0);
+
+const formatQuantity = (qty) => {
+  if (!Number.isFinite(qty)) return "1";
+  if (Math.abs(qty - Math.round(qty)) < 1e-4) return String(Math.round(qty));
+  return qty.toFixed(2);
+};
+
+let layoutCache = { ...defaultReceiptLayout };
+let layoutLoaded = false;
+let layoutFetchPromise = null;
 let cachedRegisterSettings = null;
 let fetchingRegisterPromise = null;
 
@@ -115,20 +105,247 @@ async function getRegisterSettings() {
 }
 
 export function setReceiptLayout(next) {
-  layoutCache = next || defaultReceiptLayout;
+  layoutCache = { ...defaultReceiptLayout, ...(next || {}) };
+  layoutLoaded = true;
   if (typeof window !== "undefined") {
     window.__receiptLayout = layoutCache;
   }
 }
 
 export function getReceiptLayout() {
-  if (layoutCache) return layoutCache;
-  if (typeof window !== "undefined" && window.__receiptLayout) {
-    layoutCache = window.__receiptLayout;
-    return layoutCache;
+  if (!layoutLoaded && typeof window !== "undefined" && window.__receiptLayout) {
+    layoutCache = { ...defaultReceiptLayout, ...window.__receiptLayout };
+    layoutLoaded = true;
   }
-  layoutCache = defaultReceiptLayout;
   return layoutCache;
+}
+
+async function ensureReceiptLayout() {
+  if (layoutLoaded) return layoutCache;
+  if (layoutFetchPromise) return layoutFetchPromise;
+
+  layoutFetchPromise = secureFetch("/printer-settings/1")
+    .then((printer) => {
+      if (printer?.layout) {
+        setReceiptLayout(printer.layout);
+      } else {
+        layoutLoaded = true;
+      }
+      return layoutCache;
+    })
+    .catch((err) => {
+      console.warn("⚠️ Failed to load receipt layout:", err?.message || err);
+      layoutLoaded = true;
+      return layoutCache;
+    })
+    .finally(() => {
+      layoutFetchPromise = null;
+    });
+
+  return layoutFetchPromise;
+}
+
+async function getPrinterSettingsCached(force = false) {
+  const now = Date.now();
+  if (!force && printerSettingsCache && now - printerSettingsFetchedAt < PRINTER_SETTINGS_TTL) {
+    return printerSettingsCache;
+  }
+  if (printerSettingsPromise) return printerSettingsPromise;
+
+  printerSettingsPromise = secureFetch("/printer-settings/sync")
+    .then((data) => {
+      printerSettingsCache = data?.settings || null;
+      printerSettingsFetchedAt = Date.now();
+      return printerSettingsCache;
+    })
+    .catch((err) => {
+      console.warn("⚠️ Failed to load printer settings:", err?.message || err);
+      printerSettingsCache = null;
+      printerSettingsFetchedAt = 0;
+      return null;
+    })
+    .finally(() => {
+      printerSettingsPromise = null;
+    });
+
+  return printerSettingsPromise;
+}
+
+async function getPrinterDiscoveryCached(force = false) {
+  const now = Date.now();
+  if (
+    !force &&
+    printerDiscoveryCache &&
+    now - printerDiscoveryFetchedAt < PRINTER_DISCOVERY_TTL
+  ) {
+    return printerDiscoveryCache;
+  }
+  if (printerDiscoveryPromise) return printerDiscoveryPromise;
+
+  printerDiscoveryPromise = secureFetch("/printer-settings/printers")
+    .then((data) => {
+      const raw = data?.printers || {};
+      printerDiscoveryCache = {
+        usb: Array.isArray(raw.usb) ? raw.usb : [],
+        serial: Array.isArray(raw.serial) ? raw.serial : [],
+        lan: Array.isArray(raw.lan) ? raw.lan : [],
+      };
+      printerDiscoveryFetchedAt = Date.now();
+      return printerDiscoveryCache;
+    })
+    .catch((err) => {
+      console.warn("⚠️ Failed to fetch printer discovery:", err?.message || err);
+      printerDiscoveryCache = null;
+      printerDiscoveryFetchedAt = 0;
+      return null;
+    })
+    .finally(() => {
+      printerDiscoveryPromise = null;
+    });
+
+  return printerDiscoveryPromise;
+}
+
+function parseLanTarget(printerId = "") {
+  const match = /^lan:([^:]+)(?::(\d+))?$/i.exec(String(printerId));
+  if (!match) return null;
+  const host = match[1];
+  const port = Number(match[2]) || 9100;
+  if (!host) return null;
+  return { interface: "network", host, port };
+}
+
+function parseDirectTarget(printerId = "") {
+  const id = String(printerId || "").trim();
+  if (!id) return null;
+
+  if (/^lan:/i.test(id)) {
+    return parseLanTarget(id);
+  }
+
+  if (/^network:/i.test(id)) {
+    return parseLanTarget(id.replace(/^network:/i, "lan:"));
+  }
+
+  if (/^usb:/i.test(id)) {
+    const parts = id.split(":");
+    if (parts.length >= 3) {
+      const vendorId = parts[1];
+      const productId = parts[2];
+      if (vendorId && productId) {
+        return {
+          interface: "usb",
+          vendorId,
+          productId,
+        };
+      }
+    }
+  }
+
+  if (/^serial:/i.test(id)) {
+    const parts = id.split(":");
+    if (parts.length >= 2) {
+      const path = parts[1];
+      const baud = parts[2];
+      if (path) {
+        return {
+          interface: "serial",
+          path,
+          baudRate: Number(baud) || 9600,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolvePrinterFromDiscovery(printerId, discovery) {
+  if (!printerId || !discovery) return null;
+  const { usb = [], serial = [], lan = [] } = discovery;
+  const entries = [...usb, ...serial, ...lan];
+  const match = entries.find((printer) => printer?.id === printerId);
+  if (!match) return null;
+
+  switch (String(match.type || "").toLowerCase()) {
+    case "usb":
+      if (!match.vendorId || !match.productId) return null;
+      return {
+        interface: "usb",
+        vendorId: match.vendorId,
+        productId: match.productId,
+      };
+    case "serial":
+      if (!match.path) return null;
+      return {
+        interface: "serial",
+        path: match.path,
+        baudRate: Number(match.baudRate) || 9600,
+      };
+    case "lan":
+    case "network": {
+      const host = match.meta?.host || match.host;
+      const port = Number(match.meta?.port || match.port || 9100);
+      if (!host) return null;
+      return {
+        interface: "network",
+        host,
+        port,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function resolvePrinterFromRegister(printer = null) {
+  if (!printer || !printer.interface) return null;
+  const iface = String(printer.interface).toLowerCase();
+
+  if (iface === "network" || iface === "lan") {
+    if (!printer.host) return null;
+    return {
+      interface: "network",
+      host: printer.host,
+      port: Number(printer.port) || 9100,
+    };
+  }
+
+  if (iface === "usb") {
+    if (!printer.vendorId || !printer.productId) return null;
+    return {
+      interface: "usb",
+      vendorId: printer.vendorId,
+      productId: printer.productId,
+    };
+  }
+
+  if (iface === "serial") {
+    if (!printer.path) return null;
+    return {
+      interface: "serial",
+      path: printer.path,
+      baudRate: Number(printer.baudRate) || 9600,
+    };
+  }
+
+  return null;
+}
+
+function toEscAlignment(value) {
+  const key = String(value || "left").toLowerCase();
+  return ALIGNMENT_ESC_POS[key] || "lt";
+}
+
+const ESC_POS_SAFE_CHAR_PATTERN = /[^\x09\x0A\x0D\x20-\x7E₺çğıöşÇĞİÖŞÂâÊêÎîÛûÜüÖöÇçĞğŞşİı]/g;
+
+function sanitizeReceiptText(input) {
+  if (!input) return "";
+  return String(input)
+    .replace(/\r\n/g, "\n")
+    .replace(/\u200e|\u200f/g, "")
+    .replace(ESC_POS_SAFE_CHAR_PATTERN, "?")
+    .trimEnd();
 }
 
 export function renderReceiptText(order, providedLayout) {
@@ -173,43 +390,146 @@ export function renderReceiptText(order, providedLayout) {
   }
 
   add("--------------------------------");
-  let total = 0;
-  let tax = 0;
-  const addMoney = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
+  let subtotal = 0;
 
   for (const it of items) {
     const name = it.name || it.product_name || "Item";
-    const qty = addMoney(it.qty ?? it.quantity ?? 1);
-    const price = addMoney(it.price ?? 0);
-    const lineTotal = qty * price;
-    total += lineTotal;
-    add(`${qty} x ${name}  ${price.toFixed(2)} = ${lineTotal.toFixed(2)}`);
+    const qtyRaw = pickNumber(
+      it.qty,
+      it.quantity,
+      it.count,
+      it.amount_quantity,
+      it.unit_quantity,
+      1
+    );
+    const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+
+    const unitPrice = pickNumber(
+      it.unit_price,
+      it.unitPrice,
+      it.price_per_unit,
+      it.price_per_item,
+      it.base_price,
+      it.product_price,
+      it.price
+    );
+
+    let lineTotal = pickNumber(
+      it.line_total,
+      it.lineTotal,
+      it.total,
+      it.total_price,
+      it.totalPrice,
+      it.amount_total,
+      it.amount,
+      it.subtotal
+    );
+
+    if (lineTotal === null && unitPrice !== null) {
+      lineTotal = qty * unitPrice;
+    }
+    if (lineTotal === null) lineTotal = 0;
+    if (!Number.isFinite(lineTotal)) lineTotal = 0;
+
+    const effectiveUnitPrice =
+      unitPrice !== null ? unitPrice : qty ? lineTotal / qty : 0;
+
+    subtotal += lineTotal;
+    add(
+      `${formatQuantity(qty)} x ${name}  ${formatMoney(effectiveUnitPrice)} = ${formatMoney(lineTotal)}`
+    );
 
     if (Array.isArray(it.extras)) {
       for (const ex of it.extras) {
         const exName = ex.name || "extra";
-        const exQty = addMoney(ex.qty ?? ex.quantity ?? 1);
-        const exPrice = addMoney(ex.price ?? 0);
-        const exTotal = qty * exQty * exPrice;
-        total += exTotal;
-        add(`  + ${exQty} x ${exName}  ${exPrice.toFixed(2)} = ${exTotal.toFixed(2)}`);
+        const exQtyRaw = pickNumber(ex.qty, ex.quantity, 1);
+        const exQty = Number.isFinite(exQtyRaw) && exQtyRaw > 0 ? exQtyRaw : 1;
+        const exPrice = pickNumber(
+          ex.unit_price,
+          ex.unitPrice,
+          ex.price,
+          ex.amount
+        ) || 0;
+
+        let exTotal = pickNumber(
+          ex.total,
+          ex.total_price,
+          ex.amount_total,
+          ex.amount
+        );
+
+        if (exTotal === null) exTotal = qty * exQty * exPrice;
+        if (!Number.isFinite(exTotal)) exTotal = 0;
+        subtotal += exTotal;
+        add(
+          `  + ${formatQuantity(exQty)} x ${exName}  ${formatMoney(exPrice)} = ${formatMoney(exTotal)}`
+        );
       }
     }
+
     if (it.note) {
       const note = String(it.note).replace(/\s+/g, " ").trim();
       if (note) add(`  NOTE: ${note}`);
     }
   }
 
-  if (order?.tax_value) {
-    tax = addMoney(order.tax_value);
-    add(`TAX: ${formatWithActiveCurrency(tax)}`);
+  let tax = pickNumber(
+    order?.tax_value,
+    order?.tax,
+    order?.tax_total,
+    order?.taxTotal,
+    order?.vat_amount,
+    order?.vat
+  );
+  if (!Number.isFinite(tax)) tax = 0;
+
+  const orderSubtotal = pickNumber(
+    order?.subtotal,
+    order?.sub_total,
+    order?.total_without_tax,
+    order?.total_without_vat,
+    order?.net_total,
+    order?.amount_subtotal
+  );
+
+  if ((!Number.isFinite(subtotal) || subtotal <= 0) && Number.isFinite(orderSubtotal)) {
+    subtotal = orderSubtotal;
+  }
+
+  if (!Number.isFinite(subtotal)) {
+    subtotal = 0;
+  }
+
+  let orderLevelTotal = pickNumber(
+    order?.total_with_tax,
+    order?.total_with_vat,
+    order?.total,
+    order?.grand_total,
+    order?.price_total,
+    order?.amount_total,
+    order?.sum_total
+  );
+
+  if (!Number.isFinite(orderLevelTotal) || orderLevelTotal <= 0) {
+    orderLevelTotal = null;
+  }
+
+  if (orderLevelTotal !== null) {
+    if (!Number.isFinite(subtotal) || subtotal <= 0) {
+      subtotal = orderLevelTotal;
+    }
+    if ((!tax || tax <= 0) && Number.isFinite(subtotal) && orderLevelTotal > subtotal) {
+      tax = orderLevelTotal - subtotal;
+    }
+  }
+
+  if (tax > 0) {
+    add(`TAX: ${formatMoney(tax)}`);
   }
 
   add("--------------------------------");
-  const totalAmount = total + tax;
-  const formattedTotal = formatWithActiveCurrency(totalAmount);
-  add(`TOTAL: ${formattedTotal}`);
+  const finalTotal = orderLevelTotal !== null ? orderLevelTotal : subtotal + tax;
+  add(`TOTAL: ${formatMoney(finalTotal)}`);
   if (
     (order?.status === "paid" || order?.payment_status === "paid") &&
     order?.payment_method
@@ -231,112 +551,155 @@ export function renderReceiptText(order, providedLayout) {
 }
 
 export async function printViaBridge(text, orderObj) {
+  let resolvedText = text;
+
+  if (orderObj) {
+    try {
+      await ensureReceiptLayout();
+    } catch (err) {
+      console.warn(
+        "⚠️ Failed to ensure receipt layout before printing:",
+        err?.message || err
+      );
+    }
+    const layout = getReceiptLayout();
+    resolvedText = renderReceiptText(orderObj, layout);
+    console.log("📝 Using rendered receipt with layout customizations");
+  }
+
+  resolvedText = sanitizeReceiptText(resolvedText);
+  if (!resolvedText) {
+    console.warn("⚠️ No printable receipt content provided.");
+    return false;
+  }
+
+  let printerSettings = null;
   try {
-    // 1) Try Electron preload printText first (recommended for text-based receipts)
-    if (window?.beypro?.printText) {
-      console.log("📄 Using Electron printText");
-      await window.beypro.printText(text);
-      return true;
+    printerSettings = await getPrinterSettingsCached();
+    if (!printerSettings) {
+      printerSettings = await getPrinterSettingsCached(true);
     }
   } catch (err) {
-    console.warn("⚠️ Electron printText failed:", err?.message || err);
+    console.warn("⚠️ Could not read printer settings:", err?.message || err);
+  }
+
+  const candidateIds = [];
+  if (printerSettings?.receiptPrinter) candidateIds.push(printerSettings.receiptPrinter);
+  if (printerSettings?.kitchenPrinter) candidateIds.push(printerSettings.kitchenPrinter);
+
+  let target = null;
+  let discovery = null;
+
+  for (const candidate of candidateIds) {
+    if (!candidate) continue;
+
+    target = parseDirectTarget(candidate);
+    if (target) break;
+
+    const lanTarget = parseLanTarget(candidate);
+    if (lanTarget) {
+      target = lanTarget;
+      break;
+    }
+
+    if (!discovery) {
+      try {
+        discovery = await getPrinterDiscoveryCached();
+        if (!discovery) {
+          discovery = await getPrinterDiscoveryCached(true);
+        }
+      } catch (err) {
+        console.warn("⚠️ Printer discovery failed:", err?.message || err);
+      }
+    }
+
+    if (discovery) {
+      target = resolvePrinterFromDiscovery(candidate, discovery);
+      if (target) break;
+    }
+  }
+
+  if (!target) {
+    try {
+      const register = await getRegisterSettings();
+      target = resolvePrinterFromRegister(register?.cashDrawerPrinter);
+      if (target) {
+        console.log("ℹ️ Falling back to register cash drawer printer for receipts.");
+      }
+    } catch (err) {
+      console.warn("⚠️ Failed to load register settings for printer fallback:", err?.message || err);
+    }
+  }
+
+  if (!target) {
+    console.warn(
+      "⚠️ No printer configured for receipts. Update Settings → Printers to select one."
+    );
+    return false;
+  }
+
+  if (target.interface === "network" && !target.host) {
+    console.warn("⚠️ Network printer configured without host. Check printer settings.");
+    return false;
+  }
+  if (target.interface === "usb" && (!target.vendorId || !target.productId)) {
+    console.warn("⚠️ USB printer configured without vendor/product IDs.");
+    return false;
+  }
+  if (target.interface === "serial" && !target.path) {
+    console.warn("⚠️ Serial printer configured without path.");
+    return false;
+  }
+
+  const payload = {
+    interface: target.interface,
+    content: `${resolvedText}\n\n`,
+    encoding: "cp857",
+    align: toEscAlignment(printerSettings?.layout?.alignment),
+    cut: printerSettings?.defaults?.cut !== false,
+    cashdraw: printerSettings?.defaults?.cashDrawer === true,
+  };
+
+  if (target.interface === "network") {
+    payload.host = target.host;
+    payload.port = target.port || 9100;
+  } else if (target.interface === "usb") {
+    payload.vendorId = target.vendorId;
+    payload.productId = target.productId;
+  } else if (target.interface === "serial") {
+    payload.path = target.path;
+    if (target.baudRate) payload.baudRate = target.baudRate;
+  } else {
+    console.warn(`⚠️ Unsupported printer interface: ${target.interface}`);
+    return false;
   }
 
   try {
-    // 2) Try using Electron's printRaw with ESC/POS bytes (for more control)
-    if (window?.beypro?.printRaw) {
-      console.log("🖨️ Using Electron printRaw with ESC/POS");
-      let printerName = localStorage.getItem("beyproSelectedPrinter");
-      
-      // If no printer in localStorage, try to auto-detect one
-      if (!printerName && window?.beypro?.getPrinters) {
-        console.log("📡 No printer in localStorage, attempting auto-detect...");
-        try {
-          const printers = await window.beypro.getPrinters();
-          console.log("📡 Available printers:", printers);
-          if (Array.isArray(printers) && printers.length > 0) {
-            const normalize = (entry) => {
-              if (!entry) return "";
-              if (typeof entry === "string") return entry;
-              if (entry.name) return entry.name;
-              return "";
-            };
-            const firstReady = printers.find((p) => {
-              if (!p) return false;
-              if (typeof p === "string") return true; // any string counts as available
-              return p.status ? p.status === "ready" : true;
-            });
-            const fallback = normalize(printers[0]);
-            const resolved = normalize(firstReady) || fallback;
+    console.log("🖨️ Dispatching receipt print via backend:", {
+      interface: payload.interface,
+      host: payload.host,
+      port: payload.port,
+      path: payload.path,
+      vendorId: payload.vendorId,
+      productId: payload.productId,
+    });
 
-            if (resolved) {
-              printerName = resolved;
-              console.log("🔄 Auto-selected printer:", printerName);
-              localStorage.setItem("beyproSelectedPrinter", printerName);
-            } else {
-              console.warn("⚠️ Auto-detect found printers but none had a usable name");
-            }
-          }
-        } catch (detectErr) {
-          console.warn("⚠️ Auto-detect failed:", detectErr?.message);
-        }
-      }
-      
-      if (printerName) {
-        // Build ESC/POS bytes with CP1254 encoding for Turkish support
-        console.log("🖨️ Building ESC/POS bytes with CP1254 encoding for Turkish characters");
-        
-        // Prepare receipt text - use layout if order is provided
-        let receiptText = text;
-        if (orderObj) {
-          const layout = getReceiptLayout();
-          receiptText = renderReceiptText(orderObj, layout);
-          console.log("📝 Using rendered receipt with layout customizations");
-        }
-        receiptText = String(receiptText || "")
-          .replace(/\r\n/g, "\n")
-          .replace(/\u200e|\u200f/g, "")
-          .replace(/₺/g, "₺");
-        
-        // Build ESC/POS: ESC @ (reset) + text (CP857 encoded) + feed + cut
-        const init = Uint8Array.from([0x1b, 0x40]); // ESC @ reset
-        const selectTurkishCodePage = Uint8Array.from([0x1b, 0x74, 19]); // ESC t 19 (CP1254)
-        const body = encodeCP1254(`${receiptText}\n\n\n`);
-        const cut = Uint8Array.from([0x1d, 0x56, 0x00]); // GS V (cut)
-        const bytes = new Uint8Array(
-          init.length + selectTurkishCodePage.length + body.length + cut.length
-        );
-        bytes.set(init, 0);
-        bytes.set(selectTurkishCodePage, init.length);
-        bytes.set(body, init.length + selectTurkishCodePage.length);
-        bytes.set(cut, init.length + selectTurkishCodePage.length + body.length);
+    const response = await secureFetch("/printer-settings/print", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
 
-        const dataBase64 = btoa(String.fromCharCode(...bytes));
-        console.log("🖨️ Printing to:", printerName, `(${bytes.length} bytes)`);
-        const result = await window.beypro.printRaw({
-          printerName,
-          dataBase64,
-        });
-        
-        if (result?.ok !== false) {
-          console.log("✅ Electron printRaw succeeded");
-          return true;
-        } else {
-          console.error("❌ Electron printRaw returned error:", result?.error);
-        }
-      } else {
-        console.warn("⚠️ No printer available - could not detect any printers");
-      }
-    } else {
-      console.warn("⚠️ Electron printRaw not available (not running in Electron)");
+    if (response?.ok === false) {
+      console.warn("⚠️ Backend printer responded with failure:", response);
+      return false;
     }
-  } catch (err) {
-    console.error("❌ Electron printRaw failed:", err?.message || err);
-  }
 
-  // If no Electron, don't try backend - just fail gracefully
-  console.error("❌ No printer available");
-  return false;
+    console.log("✅ Receipt print job dispatched via backend");
+    return true;
+  } catch (err) {
+    console.error("❌ Backend receipt print failed:", err?.message || err);
+    return false;
+  }
 }
 
 export { defaultReceiptLayout };

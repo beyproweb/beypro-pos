@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSetting, saveSetting } from "../hooks/useSetting";
-import secureFetch from "../../utils/secureFetch";
+import { openCashDrawer } from "../../utils/cashDrawer";
 
 export default function RegisterSettingsTab() {
   const { t } = useTranslation();
@@ -63,29 +63,18 @@ export default function RegisterSettingsTab() {
         return;
       }
 
-      console.log("🔧 Testing drawer with config:", {
-        interface: printer.interface,
-        host: printer.host,
-        port: printer.port,
-        pin: printer.pin,
+      console.log("🔧 Testing drawer with config:", printer);
+
+      const success = await openCashDrawer({
+        test: true,
+        printerConfig: printer,
+        useBackendFallback: true,
       });
 
-      // Send test request to backend with printer config
-      const response = await secureFetch("/cashdrawer/open", {
-        method: "POST",
-        body: JSON.stringify({
-          test: true,
-          printerConfig: printer,
-        }),
-      });
-
-      if (response?.success) {
-        alert("✅ Cash drawer opened successfully!\n\nYour printer is correctly configured.");
-      } else if (response?.error) {
-        alert(`⚠️ Backend Error: ${response.error}\n\nPlease check:\n• Printer IP is reachable\n• Printer port 9100 is accessible\n• Printer is powered on`);
-        console.error("Backend error details:", response);
+      if (success) {
+        alert("✅ Cash drawer opened successfully!\n\nCommand delivered via backend printer service.");
       } else {
-        alert("✅ Test command sent to printer.");
+        alert("❌ Drawer did not open. Check console for detailed diagnostics.");
       }
     } catch (err) {
       const statusCode = err?.status || err?.statusCode || "";

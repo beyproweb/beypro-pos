@@ -400,7 +400,7 @@ export default function GlobalOrderAlert() {
         if (!order?.id || !shouldPrintNow(order.id)) return false;
         console.log("🖨️ Auto-printing order with items:", order.items?.length || 0);
         const ok = await printViaBridge("", order);
-        if (!ok) toast.warn("🖨️ Beypro Bridge not connected");
+        if (!ok) toast.warn("🖨️ Printer job could not be queued");
         else toast.success(`🧾 Printed order #${order.id}`);
         return true;
       } catch (err) {
