@@ -21,41 +21,78 @@ const defaultReceiptLayout = {
 import secureFetch from "./secureFetch";
 import { formatWithActiveCurrency } from "./currency";
 
-// CP857 Turkish encoding map for ESC/POS (common Turkish characters)
-const CP857_MAP = {
-  "₺": 0x9C, // Turkish Lira
-  "ç": 0x87,
-  "ğ": 0xE5,
-  "ı": 0xA4,
-  "ö": 0x94,
-  "ş": 0x98,
-  "ü": 0x81,
-  "Ç": 0x80,
-  "Ğ": 0xE4,
-  "İ": 0xEE,
-  "Ö": 0x99,
-  "Ş": 0x9E,
-  "Ü": 0x9F,
+// CP1254 (Windows Turkish) encoding map for the ESC/POS code page 19
+const CP1254_MAP = {
+  "€": 0x80,
+  "‚": 0x82,
+  "ƒ": 0x83,
+  "„": 0x84,
+  "…": 0x85,
+  "†": 0x86,
+  "‡": 0x87,
+  "ˆ": 0x88,
+  "‰": 0x89,
+  "Š": 0x8A,
+  "‹": 0x8B,
+  "Œ": 0x8C,
+  "Ž": 0x8E,
+  "‘": 0x91,
+  "’": 0x92,
+  "“": 0x93,
+  "”": 0x94,
+  "•": 0x95,
+  "–": 0x96,
+  "—": 0x97,
+  "™": 0x99,
+  "š": 0x9A,
+  "›": 0x9B,
+  "₺": 0x9C,
+  "œ": 0x9C,
+  "ž": 0x9E,
+  "Ÿ": 0x9F,
+  "Ş": 0xDE,
+  "ş": 0xFE,
+  "Ğ": 0xD0,
+  "ğ": 0xF0,
+  "İ": 0xDD,
+  "ı": 0xFD,
+  "Ç": 0xC7,
+  "ç": 0xE7,
+  "Ö": 0xD6,
+  "ö": 0xF6,
+  "Ü": 0xDC,
+  "ü": 0xFC,
+  "Â": 0xC2,
+  "â": 0xE2,
+  "Ê": 0xCA,
+  "ê": 0xEA,
+  "Î": 0xCE,
+  "î": 0xEE,
+  "Û": 0xDB,
+  "û": 0xFB,
 };
 
-// Encode text to CP857 for Turkish ESC/POS printers
-function encodeCP857(text) {
-  const result = [];
+function encodeCP1254(text) {
+  const bytes = [];
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
-    const code = CP857_MAP[char];
-    if (code !== undefined) {
-      result.push(code);
-    } else {
-      const utf8 = new TextEncoder().encode(char);
-      if (utf8.length === 1) {
-        result.push(utf8[0]); // ASCII
-      } else {
-        result.push(0x3F); // ? fallback for unmappable chars
-      }
+    const codePoint = char.codePointAt(0);
+
+    if (codePoint < 0x80) {
+      bytes.push(codePoint);
+      continue;
     }
+
+    const mapped = CP1254_MAP[char];
+    if (mapped !== undefined) {
+      bytes.push(mapped);
+      continue;
+    }
+
+    // Replace unsupported glyphs (like emoji) with '?'
+    bytes.push(0x3F);
   }
-  return new Uint8Array(result);
+  return new Uint8Array(bytes);
 }
 
 let layoutCache = defaultReceiptLayout;
@@ -96,8 +133,25 @@ export function getReceiptLayout() {
 
 export function renderReceiptText(order, providedLayout) {
   const layout = providedLayout || getReceiptLayout();
-  const items =
-    order?.suborders?.flatMap((so) => so.items || []) || order?.items || [];
+
+  const baseItems = Array.isArray(order?.items) ? order.items : [];
+  const suborderItems = Array.isArray(order?.suborders)
+    ? order.suborders.flatMap((so) => so?.items || [])
+    : [];
+
+  const itemMap = new Map();
+  const pushItem = (item) => {
+    if (!item) return;
+    const key =
+      item.unique_id ||
+      `${item.product_id || item.id || ""}:${item.created_at || item.name || itemMap.size}`;
+    if (!itemMap.has(key)) {
+      itemMap.set(key, item);
+    }
+  };
+  baseItems.forEach(pushItem);
+  suborderItems.forEach(pushItem);
+  const items = Array.from(itemMap.values());
   const lines = [];
   const add = (l = "") => lines.push(String(l));
 
@@ -141,7 +195,10 @@ export function renderReceiptText(order, providedLayout) {
         add(`  + ${exQty} x ${exName}  ${exPrice.toFixed(2)} = ${exTotal.toFixed(2)}`);
       }
     }
-    if (it.note) add(`  📝 ${it.note}`);
+    if (it.note) {
+      const note = String(it.note).replace(/\s+/g, " ").trim();
+      if (note) add(`  NOTE: ${note}`);
+    }
   }
 
   if (order?.tax_value) {
@@ -151,7 +208,10 @@ export function renderReceiptText(order, providedLayout) {
 
   add("--------------------------------");
   add(`TOTAL: ${formatWithActiveCurrency(total + tax)}`);
-  if (order?.payment_method) {
+  if (
+    (order?.status === "paid" || order?.payment_status === "paid") &&
+    order?.payment_method
+  ) {
     add(`PAYMENT: ${String(order.payment_method).toUpperCase()}`);
   }
 
@@ -216,8 +276,8 @@ export async function printViaBridge(text, orderObj) {
       }
       
       if (printerName) {
-        // Build ESC/POS bytes with CP857 encoding for Turkish support
-        console.log("🖨️ Building ESC/POS bytes with CP857 encoding for Turkish characters");
+        // Build ESC/POS bytes with CP1254 encoding for Turkish support
+        console.log("🖨️ Building ESC/POS bytes with CP1254 encoding for Turkish characters");
         
         // Prepare receipt text - use layout if order is provided
         let receiptText = text;
@@ -226,15 +286,23 @@ export async function printViaBridge(text, orderObj) {
           receiptText = renderReceiptText(orderObj, layout);
           console.log("📝 Using rendered receipt with layout customizations");
         }
+        receiptText = String(receiptText || "")
+          .replace(/\r\n/g, "\n")
+          .replace(/\u200e|\u200f/g, "")
+          .replace(/₺/g, "₺");
         
         // Build ESC/POS: ESC @ (reset) + text (CP857 encoded) + feed + cut
         const init = Uint8Array.from([0x1b, 0x40]); // ESC @ reset
-        const body = encodeCP857(String(receiptText || "") + "\n\n\n");
+        const selectTurkishCodePage = Uint8Array.from([0x1b, 0x74, 19]); // ESC t 19 (CP1254)
+        const body = encodeCP1254(`${receiptText}\n\n\n`);
         const cut = Uint8Array.from([0x1d, 0x56, 0x00]); // GS V (cut)
-        const bytes = new Uint8Array(init.length + body.length + cut.length);
+        const bytes = new Uint8Array(
+          init.length + selectTurkishCodePage.length + body.length + cut.length
+        );
         bytes.set(init, 0);
-        bytes.set(body, init.length);
-        bytes.set(cut, init.length + body.length);
+        bytes.set(selectTurkishCodePage, init.length);
+        bytes.set(body, init.length + selectTurkishCodePage.length);
+        bytes.set(cut, init.length + selectTurkishCodePage.length + body.length);
 
         const dataBase64 = btoa(String.fromCharCode(...bytes));
         console.log("🖨️ Printing to:", printerName, `(${bytes.length} bytes)`);
