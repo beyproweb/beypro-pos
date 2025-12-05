@@ -94,6 +94,23 @@ socket.on("connect_error", (err) => {
   console.error("[SOCKET] 🚫 Connection error:", err?.message || err);
 });
 
+// 🖨️ Print request from backend (Mobile app → Backend → Electron)
+socket.on("print_request", async (printData) => {
+  console.log("🖨️ [SOCKET] Print request received:", printData);
+  
+  // Try to use window-level print handler if available (set by GlobalOrderAlert)
+  if (window.__handleRemotePrint && typeof window.__handleRemotePrint === "function") {
+    try {
+      window.__handleRemotePrint(printData);
+      console.log("🖨️ [SOCKET] Print request forwarded to handler");
+    } catch (err) {
+      console.error("🖨️ [SOCKET] Failed to handle print request:", err);
+    }
+  } else {
+    console.warn("🖨️ [SOCKET] No print handler registered - print feature unavailable");
+  }
+});
+
 // 🔄 Public helper to manually rejoin (used in GlobalOrderAlert)
 export function joinRestaurantRoom() {
   const restaurantId = getRestaurantId();

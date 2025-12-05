@@ -411,6 +411,41 @@ export default function GlobalOrderAlert() {
     [layout]
   );
 
+  /* 🖨️ Register remote print handler for socket events */
+  useEffect(() => {
+    window.__handleRemotePrint = async (printData) => {
+      console.log("🖨️ [RemotePrint] Handling print request for order:", printData?.orderId);
+      try {
+        // If we have the order data directly, use it
+        if (printData?.orderId && printData?.items) {
+          // Create order object from print data
+          const order = {
+            id: printData.orderId,
+            table_number: printData.tableNumber,
+            total: printData.total,
+            items: printData.items || [],
+          };
+          console.log("🖨️ [RemotePrint] Printing directly with received data");
+          await printViaBridge("", order);
+          toast.success(`🧾 Printed order #${printData.orderId} from phone app`);
+        } else if (printData?.orderId) {
+          // Fetch order with items
+          console.log("🖨️ [RemotePrint] Fetching order details:", printData.orderId);
+          await printOrder(printData.orderId);
+        } else {
+          console.warn("🖨️ [RemotePrint] Invalid print data:", printData);
+        }
+      } catch (err) {
+        console.error("🖨️ [RemotePrint] Error:", err);
+        toast.error("🖨️ Failed to print order from phone");
+      }
+    };
+
+    return () => {
+      window.__handleRemotePrint = null;
+    };
+  }, [printOrder]);
+
   /* SOCKET EVENTS (main trigger) */
   useEffect(() => {
     const onNewOrder = async (p) => {
