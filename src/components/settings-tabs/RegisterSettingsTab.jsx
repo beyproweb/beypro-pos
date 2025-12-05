@@ -88,6 +88,16 @@ export default function RegisterSettingsTab() {
         {t("Define how the drawer pulse will be sent when cash payments are confirmed.")}
       </p>
 
+      {/* Quick Setup Guide */}
+      <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <p className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-2">💡 {t("Quick Setup Tips")}:</p>
+        <ul className="text-xs text-blue-800 dark:text-blue-300 space-y-1 ml-4 list-disc">
+          <li>{t("If your receipt printer has a cash drawer, use the same IP address and port (9100)")}</li>
+          <li>{t("Most ESC/POS printers use pin 2 for the cash drawer")}</li>
+          <li>{t("If the drawer doesn't open, check: 1) Printer IP/Port are correct, 2) Printer is connected, 3) Pin number is right")}</li>
+        </ul>
+      </div>
+
       <div className="grid gap-4">
         <div>
           <label className="block text-sm font-medium mb-1">
