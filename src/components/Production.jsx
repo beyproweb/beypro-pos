@@ -95,9 +95,10 @@ export default function Production() {
         filtered.map(async (recipe) => {
           const encodedName = encodeURIComponent(recipe.name);
           try {
-            const history = await secureFetch(
-              `/production/production-log/history?product=${encodedName}&limit=5`
-            );
+            const historyEndpoint = tenantId
+              ? `/production/production-log/history?product=${encodedName}&restaurant_id=${tenantId}&limit=5`
+              : `/production/production-log/history?product=${encodedName}&limit=5`;
+            const history = await secureFetch(historyEndpoint);
             historyAccumulator[recipe.name] = Array.isArray(history) ? history : [];
           } catch (err) {
             console.error("❌ Failed to load history:", err);
