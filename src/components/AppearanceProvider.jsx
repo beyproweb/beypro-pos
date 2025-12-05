@@ -7,7 +7,7 @@ import secureFetch from "../utils/secureFetch";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 const DEFAULT_APPEARANCE = {
-  theme: "system",
+  theme: "light",
   fontSize: "medium",
   accent: "default",
   highContrast: false,
