@@ -105,9 +105,10 @@ export default function Production() {
           }
 
           try {
-            const unstocked = await secureFetch(
-              `/production/production-log/unstocked?product=${encodedName}&limit=1`
-            );
+            const unstockedEndpoint = tenantId
+              ? `/production/production-log/unstocked?product=${encodedName}&restaurant_id=${tenantId}&limit=1`
+              : `/production/production-log/unstocked?product=${encodedName}&limit=1`;
+            const unstocked = await secureFetch(unstockedEndpoint);
             if (Array.isArray(unstocked) && unstocked.length > 0) {
               readyMap[recipe.name] = "ready";
             }
@@ -148,9 +149,10 @@ export default function Production() {
 
   const fetchProductHistory = async (productName) => {
     try {
-      const history = await secureFetch(
-        `/production/production-log/history?product=${encodeURIComponent(productName)}&limit=5`
-      );
+      const historyEndpoint = tenantId
+        ? `/production/production-log/history?product=${encodeURIComponent(productName)}&restaurant_id=${tenantId}&limit=5`
+        : `/production/production-log/history?product=${encodeURIComponent(productName)}&limit=5`;
+      const history = await secureFetch(historyEndpoint);
       setHistoryMap((prev) => ({
         ...prev,
         [productName]: Array.isArray(history) ? history : [],
@@ -163,9 +165,13 @@ export default function Production() {
   const logProduction = useCallback(
     async (payload, { swallowNotFound = false } = {}) => {
       try {
+        const enrichedPayload = {
+          ...payload,
+          restaurant_id: tenantId || null,
+        };
         await secureFetch("/production/production-log", {
           method: "POST",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(enrichedPayload),
         });
         return true;
       } catch (err) {
