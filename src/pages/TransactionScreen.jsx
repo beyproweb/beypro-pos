@@ -250,6 +250,13 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [debtForm, setDebtForm] = useState({ name: "", phone: "" });
   const [debtError, setDebtError] = useState("");
   const [debtLookupLoading, setDebtLookupLoading] = useState(false);
+  const [showReservationModal, setShowReservationModal] = useState(false);
+  const [reservationDate, setReservationDate] = useState("");
+  const [reservationTime, setReservationTime] = useState("");
+  const [reservationClients, setReservationClients] = useState("2");
+  const [reservationNotes, setReservationNotes] = useState("");
+  const [existingReservation, setExistingReservation] = useState(null);
+  const [reservationLoading, setReservationLoading] = useState(false);
   const hasUnconfirmedCartItems = useMemo(
     () => cartItems.some((item) => !item.confirmed),
     [cartItems]
@@ -283,6 +290,7 @@ const hasConfirmedUnpaidItems = cartItems.some((i) => i.confirmed && !i.paid);
 const canShowDebtButton = normalizedStatus === "confirmed";
 const isDebtEligible = canShowDebtButton && !hasUnconfirmedItems && hasConfirmedUnpaidItems;
   const safeProducts = Array.isArray(products) ? products : [];
+  const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
   const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
 const [excludedItems, setExcludedItems] = useState([]);
 const [excludedCategories, setExcludedCategories] = useState([]);
@@ -471,6 +479,144 @@ const handleAddToDebt = async () => {
   }
 };
 
+const handleSaveReservation = async () => {
+  if (!order?.id) {
+    showToast(t("Select an order first"));
+    return;
+  }
+
+  if (!reservationDate.trim() || !reservationTime.trim() || !reservationClients.trim()) {
+    showToast(t("Please fill in Date, Time, and Number of Clients"));
+    return;
+  }
+
+  setReservationLoading(true);
+  try {
+    // 1️⃣ Prepare request payload
+    const payload = {
+      reservation_date: reservationDate,
+      reservation_time: reservationTime,
+      reservation_clients: parseInt(reservationClients),
+      reservation_notes: reservationNotes,
+    };
+    
+    // Add order_id only for new reservations
+    if (!existingReservation) {
+      payload.order_id = order.id;
+    }
+
+    // Save reservation to backend
+    const endpoint = existingReservation 
+      ? `/orders/reservations/${existingReservation.id}${identifier}`
+      : `/orders/reservations${identifier}`;
+    
+    const response = await secureFetch(endpoint, {
+      method: existingReservation ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
+
+    if (!response?.success) {
+      showToast(t("Failed to save reservation"));
+      return;
+    }
+
+    // 2️⃣ If it's a new reservation (not existing), confirm unconfirmed items like confirm order button
+    if (!existingReservation) {
+      // Confirm any unconfirmed items and send to kitchen
+      if (hasUnconfirmedCartItems) {
+        // Calculate total from cart items
+        const cartTotal = safeCartItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+        const updated = await updateOrderStatus("confirmed", cartTotal);
+        if (!updated) {
+          showToast(t("Failed to confirm order items"));
+          setReservationLoading(false);
+          return;
+        }
+
+        const unconfirmedItems = safeCartItems.filter(i => !i.confirmed);
+        if (unconfirmedItems.length > 0) {
+          await secureFetch(`/orders/order-items${identifier}`, {
+            method: "POST",
+            body: JSON.stringify({
+              order_id: updated.id,
+              receipt_id: null,
+              items: unconfirmedItems.map((i) => ({
+                product_id: i.id,
+                quantity: i.quantity,
+                price: i.price,
+                ingredients: i.ingredients,
+                extras: (i.extras || []).map(ex => ({
+                  ...ex,
+                  amount: Number(ex.amount) || 1,
+                  unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase()
+                })),
+                unique_id: i.unique_id,
+                note: i.note || null,
+                confirmed: true,
+                kitchen_status: "new",
+                payment_method: null,
+                receipt_id: null,
+                discountType: discountValue > 0 ? discountType : null,
+                discountValue: discountValue > 0 ? discountValue : 0,
+              }))
+            }),
+          });
+        }
+
+        setOrder((prev) => ({ ...prev, status: "reserved" }));
+        await fetchOrderItems(updated.id);
+      }
+    }
+
+    // 3️⃣ Show success and close modal
+    showToast(
+      existingReservation
+        ? t("✅ Reservation updated")
+        : t("✅ Reservation confirmed and order sent to kitchen")
+    );
+    setShowReservationModal(false);
+    setExistingReservation(null);
+    resetReservationForm();
+  } catch (err) {
+    console.error("❌ Failed to save reservation:", err);
+    showToast(err.message || t("Failed to save reservation"));
+  } finally {
+    setReservationLoading(false);
+  }
+};
+
+const resetReservationForm = () => {
+  setReservationDate("");
+  setReservationTime("");
+  setReservationClients("2");
+  setReservationNotes("");
+};
+
+const openReservationModal = async () => {
+  // Try to fetch existing reservation for this order
+  if (order?.id) {
+    try {
+      // The endpoint returns the order with reservation fields if they exist
+      const existing = await secureFetch(`/orders/${order.id}${identifier}`);
+      if (existing?.reservation_date) {
+        // Reservation data already loaded in order object
+        setExistingReservation(existing);
+        setReservationDate(existing.reservation_date || "");
+        setReservationTime(existing.reservation_time || "");
+        setReservationClients(existing.reservation_clients?.toString() || "2");
+        setReservationNotes(existing.reservation_notes || "");
+      } else {
+        resetReservationForm();
+        setExistingReservation(null);
+      }
+    } catch (err) {
+      console.error("Failed to fetch existing reservation:", err);
+      resetReservationForm();
+      setExistingReservation(null);
+    }
+  }
+  setShowReservationModal(true);
+};
 
 const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const slug = (cat || "").trim().toLowerCase();
@@ -843,6 +989,37 @@ useEffect(() => {
     return next;
   });
 }, [cartItems]);
+
+// 🎫 Load existing reservation when order loads or changes
+useEffect(() => {
+  if (!order?.id) {
+    setExistingReservation(null);
+    resetReservationForm();
+    return;
+  }
+
+  const loadReservation = async () => {
+    try {
+      const resData = await secureFetch(`/orders/reservations/${order.id}${identifier}`);
+      if (resData?.success && resData?.reservation) {
+        setExistingReservation(resData.reservation);
+        setReservationDate(resData.reservation.reservation_date || "");
+        setReservationTime(resData.reservation.reservation_time || "");
+        setReservationClients(resData.reservation.reservation_clients?.toString() || "2");
+        setReservationNotes(resData.reservation.reservation_notes || "");
+      } else {
+        setExistingReservation(null);
+        resetReservationForm();
+      }
+    } catch (err) {
+      console.warn("Failed to load existing reservation:", err);
+      setExistingReservation(null);
+      resetReservationForm();
+    }
+  };
+
+  loadReservation();
+}, [order?.id, identifier]);
 
 // 2. Utility to split drink extras
 function splitDrinkExtras(extras, drinksList) {
@@ -1846,7 +2023,6 @@ const handleMultifunction = async () => {
   const total = cartItems
     .filter((i) => paymentIds.includes(i.unique_id))
     .reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
 
   // ✅ Allow phone orders to close even if empty
   if (cartItems.length === 0) {
@@ -2735,13 +2911,29 @@ const renderCartContent = (variant = "desktop") => {
         )}
       </div>
       {canShowCancelButton && (
-        <button
-          type="button"
-          onClick={openCancelModal}
-          className={`w-full ${cancelButtonClass}`}
-        >
-          {t("Cancel")}
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              openReservationModal();
+            }}
+            disabled={hasConfirmedCartUnpaid || allCartItemsPaid}
+            className={`w-full rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition ${
+              hasConfirmedCartUnpaid || allCartItemsPaid
+                ? "bg-blue-300 cursor-not-allowed"
+                : "bg-blue-500 hover:bg-blue-600"
+            }`}
+          >
+            {t("Reservation")}
+          </button>
+          <button
+            type="button"
+            onClick={openCancelModal}
+            className={`w-full ${cancelButtonClass}`}
+          >
+            {t("Cancel")}
+          </button>
+        </>
       )}
     </div>
   ) : (
@@ -2777,13 +2969,29 @@ const renderCartContent = (variant = "desktop") => {
         </button>
       </div>
       {canShowCancelButton && (
-        <button
-          type="button"
-          onClick={openCancelModal}
-          className={`${cancelButtonClass} flex-1 min-w-[120px]`}
-        >
-          {t("Cancel")}
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              openReservationModal();
+            }}
+            disabled={hasConfirmedCartUnpaid || allCartItemsPaid}
+            className={`w-full rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition ${
+              hasConfirmedCartUnpaid || allCartItemsPaid
+                ? "bg-blue-300 cursor-not-allowed"
+                : "bg-blue-500 hover:bg-blue-600"
+            }`}
+          >
+            {t("Reservation")}
+          </button>
+          <button
+            type="button"
+            onClick={openCancelModal}
+            className={`${cancelButtonClass} flex-1 min-w-[120px]`}
+          >
+            {t("Cancel")}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -2834,6 +3042,42 @@ const renderCartContent = (variant = "desktop") => {
       )}
     </div>
   </header>
+
+  {/* 🎫 === Reservation Badge === */}
+  {existingReservation && existingReservation.reservation_date && (
+    <div className="mx-3 mb-2 rounded-xl bg-orange-50 border border-orange-200 px-4 py-3 dark:bg-orange-900/20 dark:border-orange-800 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 text-orange-600 dark:text-orange-400 text-lg">📅</div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-bold text-orange-700 dark:text-orange-300 mb-2">
+            {t("RESERVED")}
+          </h3>
+          <div className="grid grid-cols-2 gap-2 text-xs text-orange-600 dark:text-orange-300">
+            <div>
+              <span className="font-semibold">🕐 {t("Time")}:</span>
+              <span className="ml-1">{existingReservation.reservation_time || "—"}</span>
+            </div>
+            <div>
+              <span className="font-semibold">👥 {t("Guests")}:</span>
+              <span className="ml-1">{existingReservation.reservation_clients || 0}</span>
+            </div>
+            <div className="col-span-2">
+              <span className="font-semibold">📅 {t("Date")}:</span>
+              <span className="ml-1">{existingReservation.reservation_date || "—"}</span>
+            </div>
+            {existingReservation.reservation_notes && (
+              <div className="col-span-2">
+                <span className="font-semibold">📝 {t("Notes")}:</span>
+                <p className="ml-1 text-[11px] text-orange-600 dark:text-orange-300 break-words line-clamp-2">
+                  {existingReservation.reservation_notes}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
 
   {/* === Body === */}
   <div ref={cartScrollRef} className="min-h-0 flex-1 overflow-y-auto">
@@ -3397,6 +3641,108 @@ const cardGradient = item.paid
             : "bg-rose-600 hover:bg-rose-700"}`}
         >
           {cancelLoading ? t("Cancelling...") : t("Confirm Cancellation")}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{showReservationModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
+    <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 dark:bg-zinc-900 dark:border-zinc-700">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-1">
+            {t("Make Reservation")}
+          </p>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+            {t("Reservation Details")}
+          </h2>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowReservationModal(false)}
+          className="text-slate-400 hover:text-slate-600 dark:text-slate-300"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {/* Date Field */}
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            {t("Date")}
+          </label>
+          <input
+            type="date"
+            value={reservationDate}
+            onChange={(e) => setReservationDate(e.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-100"
+          />
+        </div>
+
+        {/* Time Field */}
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            {t("Time")}
+          </label>
+          <input
+            type="time"
+            value={reservationTime}
+            onChange={(e) => setReservationTime(e.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-100"
+          />
+        </div>
+
+        {/* Number of Clients Field */}
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            {t("Number of Clients")}
+          </label>
+          <input
+            type="number"
+            placeholder="e.g., 2"
+            value={reservationClients}
+            onChange={(e) => setReservationClients(e.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-100"
+          />
+        </div>
+
+        {/* Notes Field */}
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            {t("Notes")}
+          </label>
+          <textarea
+            rows={4}
+            placeholder={t("Special requests or notes...")}
+            value={reservationNotes}
+            onChange={(e) => setReservationNotes(e.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-100"
+          />
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-wrap justify-end gap-3">
+        <button
+          type="button"
+          onClick={() => setShowReservationModal(false)}
+          className="rounded-2xl border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition dark:border-zinc-700 dark:text-slate-200"
+        >
+          {t("Cancel")}
+        </button>
+        <button
+          type="button"
+          onClick={handleSaveReservation}
+          disabled={!reservationDate.trim() || !reservationTime.trim() || !reservationClients.trim() || reservationLoading}
+          className={`rounded-2xl px-5 py-2 text-sm font-semibold text-white transition ${
+            !reservationDate.trim() || !reservationTime.trim() || !reservationClients.trim() || reservationLoading
+              ? "cursor-not-allowed bg-blue-300 dark:bg-blue-400/70"
+              : "bg-blue-600 hover:bg-blue-700"
+          }`}
+        >
+          {reservationLoading ? t("Saving...") : (existingReservation ? t("Update Reservation") : t("Confirm Reservation"))}
         </button>
       </div>
     </div>

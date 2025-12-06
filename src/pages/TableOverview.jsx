@@ -40,8 +40,19 @@ const isDelayed = (order) => {
 
 // ✅ Improved color logic for moved/paid tables
 // ✅ FIXED: show red if any suborder has unpaid items
+// ✅ NEW: show orange if table is reserved
 const getTableColor = (order) => {
   if (!order) return "bg-gray-300 text-black";
+
+  // 🟠 CHECK FOR RESERVATION - if reserved
+  if (order.status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
+    // 🟢 If reserved AND paid, show green
+    if (order.status === "paid" || order.payment_status === "paid" || order.is_paid === true) {
+      return "bg-green-500 text-white";
+    }
+    // 🟠 If reserved but not paid, show orange
+    return "bg-orange-500 text-white";
+  }
 
   const suborders = Array.isArray(order.suborders) ? order.suborders : [];
   const items = Array.isArray(order.items) ? order.items : [];
@@ -787,7 +798,20 @@ const fetchOrders = useCallback(async () => {
           items = items.map((i) => ({ ...i, paid: i.paid || true }));
         }
 
-        return { ...order, items };
+        // 🎫 Fetch reservation data if it's a reserved order or has reservation fields
+        let reservation = null;
+        try {
+          if (order.status === "reserved" || order.reservation_date) {
+            const resData = await secureFetch(`/orders/reservations/${order.id}`);
+            if (resData?.success && resData?.reservation) {
+              reservation = resData.reservation;
+            }
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch reservation for order ${order.id}:`, err);
+        }
+
+        return { ...order, items, reservation };
       })
     );
 
@@ -1386,6 +1410,25 @@ const groupedTables = tables.reduce((acc, tbl) => {
                   <span className="uppercase font-extrabold text-white tracking-wide">
                     {t(table.order.status === "draft" ? "Free" : table.order.status)}
                   </span>
+
+                  {/* RESERVATION BADGE */}
+                  {table.order.reservation && table.order.reservation.reservation_date && (
+                    <div className="mt-2 p-2 bg-white/20 rounded-lg text-xs">
+                      <div className="font-semibold text-white mb-1">🎫 RESERVED</div>
+                      <div className="flex gap-2 text-[10px] text-white/90">
+                        <div className="flex flex-col">
+                          <span className="font-semibold">🕐 {table.order.reservation.reservation_time || "—"}</span>
+                          <span className="font-semibold">👥 {table.order.reservation.reservation_clients || 0} {t("guests")}</span>
+                        </div>
+                        <div className="flex-1">
+                          <span className="font-semibold">📅 {table.order.reservation.reservation_date || "—"}</span>
+                          {table.order.reservation.reservation_notes && (
+                            <p className="text-[9px] line-clamp-1 text-white/80">📝 {table.order.reservation.reservation_notes}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* KITCHEN BADGES */}
                   {table.order.items && (

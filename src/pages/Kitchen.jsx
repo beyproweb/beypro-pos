@@ -401,7 +401,24 @@ const fetchKitchenOrders = async () => {
       table: i.table_number,
     })));
 
-    setOrders(active);
+    // 🎫 Fetch reservation data for table orders
+    const withReservations = await Promise.all(
+      active.map(async (item) => {
+        if (item.order_type === "table" && item.order_id) {
+          try {
+            const resData = await secureFetch(`/orders/reservations/${item.order_id}`);
+            if (resData?.success && resData?.reservation) {
+              return { ...item, reservation: resData.reservation };
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch reservation for order ${item.order_id}:`, err);
+          }
+        }
+        return item;
+      })
+    );
+
+    setOrders(withReservations);
   } catch (err) {
     console.error("❌ Fetch kitchen orders failed:", err);
   }
@@ -958,6 +975,42 @@ return (
                 </span>
               )}
             </div>
+
+            {/* 🎫 === Reservation Badge === */}
+            {first.reservation && first.reservation.reservation_date && (
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg px-3 py-2">
+                <div className="flex items-start gap-2">
+                  <div className="flex-shrink-0 text-orange-600 dark:text-orange-400">📅</div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-[0.05em] mb-1">
+                      {t("RESERVED")}
+                    </h4>
+                    <div className="grid grid-cols-2 gap-1.5 text-[11px] text-orange-600 dark:text-orange-300">
+                      <div>
+                        <span className="font-semibold">🕐 {t("Time")}:</span>
+                        <span className="ml-1">{first.reservation.reservation_time || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold">👥 {t("Guests")}:</span>
+                        <span className="ml-1">{first.reservation.reservation_clients || 0}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="font-semibold">📅 {t("Date")}:</span>
+                        <span className="ml-1">{first.reservation.reservation_date || "—"}</span>
+                      </div>
+                      {first.reservation.reservation_notes && (
+                        <div className="col-span-2">
+                          <span className="font-semibold">📝 {t("Notes")}:</span>
+                          <p className="ml-1 text-[10px] text-orange-600 dark:text-orange-300 break-words line-clamp-1">
+                            {first.reservation.reservation_notes}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* === Items === */}
             <div className="flex flex-col gap-5">
