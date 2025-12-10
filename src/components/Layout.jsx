@@ -63,6 +63,7 @@ export default function Layout({
     "/settings": "Settings",
     "/user-management": "User Management",
     "/printers": "Printers",
+    "/cameras": "Live Cameras",
     "/Production":"Production",
     "/staff":"Staff Management",
     "/expenses":"Expenses",

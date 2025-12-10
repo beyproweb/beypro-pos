@@ -66,6 +66,8 @@ export default function Ingredient() {
 
   useEffect(() => {
     load();
+    const interval = setInterval(load, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const filtered = useMemo(() => {
@@ -195,6 +197,7 @@ export default function Ingredient() {
           const diff = prev === null ? 0 : curr - prev;
           const pct =
             prev && prev !== 0 ? ((diff / prev) * 100).toFixed(1) : null;
+          const deltaStr = prev != null ? (diff > 0 ? `+${diff.toFixed(2)}` : `${diff.toFixed(2)}`) : null;
           const up = diff > 0;
           const down = diff < 0;
           const neutral = !up && !down;
@@ -249,13 +252,13 @@ export default function Ingredient() {
                     {up && (
                       <>
                         <ArrowUpRight className="w-4 h-4 text-red-500" />
-                        <span className="text-red-500">+{pct}%</span>
+                        <span className="text-red-500">{deltaStr} ({pct}%)</span>
                       </>
                     )}
                     {down && (
                       <>
                         <ArrowDownRight className="w-4 h-4 text-green-500" />
-                        <span className="text-green-500">{pct}%</span>
+                        <span className="text-green-500">{deltaStr} ({pct}%)</span>
                       </>
                     )}
                     {neutral && <span className="opacity-60">—</span>}

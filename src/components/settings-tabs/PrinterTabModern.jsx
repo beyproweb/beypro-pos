@@ -264,6 +264,8 @@ export default function PrinterTab() {
   const [customLineInput, setCustomLineInput] = useState("");
   const [detectedAt, setDetectedAt] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState("");
   const hasBridge = typeof window !== "undefined" && !!window.beypro;
 
   const allPrinters = useMemo(() => {
@@ -457,11 +459,32 @@ export default function PrinterTab() {
     }
   }, [printerConfig.receiptPrinter, allPrinters]);
 
-  function handleLayoutUpdate(field, value) {
-    setPrinterConfig((prev) => ({
-      ...prev,
-      layout: { ...prev.layout, [field]: value },
-    }));
+  async function handleLayoutUpdate(field, value) {
+    setPrinterConfig((prev) => {
+      const next = { ...prev, layout: { ...prev.layout, [field]: value } };
+      // Auto-save to backend
+      (async () => {
+        setOperationStatus({ level: "idle", message: `Saving ${field}…` });
+        try {
+          const remote = await secureFetch("/printer-settings/sync", {
+            method: "POST",
+            body: JSON.stringify(next),
+          });
+          if (remote?.settings) {
+            setPrinterConfig((prev2) => mergePrinterConfig(prev2, remote.settings));
+            // Broadcast layout update to all tabs
+            localStorage.setItem("beypro_receipt_layout_update", JSON.stringify({
+              layout: remote.settings.layout,
+              ts: Date.now(),
+            }));
+          }
+          setOperationStatus({ level: "ok", message: `${field} saved.` });
+        } catch (err) {
+          setOperationStatus({ level: "error", message: `Failed to save ${field}.` });
+        }
+      })();
+      return next;
+    });
   }
 
   function handleToggle(field) {
@@ -481,12 +504,47 @@ export default function PrinterTab() {
     setCustomLineInput("");
   }
 
+
   function removeCustomLine(index) {
     setPrinterConfig((prev) => {
       const copy = [...prev.customLines];
       copy.splice(index, 1);
       return { ...prev, customLines: copy };
     });
+  }
+
+  // Cloudinary upload handler
+  async function handleLogoUpload(result) {
+    if (result.event === 'success') {
+      setLogoUploading(false);
+      setLogoError("");
+      const url = result.info.secure_url;
+      // Update local state
+      setPrinterConfig((prev) => ({
+        ...prev,
+        layout: { ...prev.layout, logoUrl: url },
+      }));
+      // Save to backend
+      setOperationStatus({ level: "idle", message: "Saving logo…" });
+      try {
+        const payload = { ...printerConfig, layout: { ...printerConfig.layout, logoUrl: url } };
+        const remote = await secureFetch("/printer-settings/sync", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (remote?.settings) {
+          setPrinterConfig((prev) => mergePrinterConfig(prev, remote.settings));
+        }
+        setOperationStatus({ level: "ok", message: "Logo saved and synced." });
+      } catch (err) {
+        setOperationStatus({ level: "error", message: "Failed to save logo." });
+      }
+    } else if (result.event === 'queues-end') {
+      setLogoUploading(false);
+    } else if (result.event === 'error') {
+      setLogoUploading(false);
+      setLogoError('Upload failed. Please try again.');
+    }
   }
 
   async function handleSaveConfig() {
@@ -716,13 +774,68 @@ export default function PrinterTab() {
             </div>
             <div className="space-y-3 text-sm text-slate-600">
               <div>
-                <label className="text-xs uppercase tracking-wide text-slate-500">Logo URL</label>
+                <label className="text-xs uppercase tracking-wide text-slate-500">Shop Logo</label>
                 <input
-                  className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
-                  value={printerConfig.layout.logoUrl}
-                  onChange={(event) => handleLayoutUpdate("logoUrl", event.target.value)}
-                  placeholder="https://example.com/logo.png"
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold"
+                  disabled={logoUploading}
+                  onChange={async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    setLogoUploading(true);
+                    setLogoError("");
+                    try {
+                      const formData = new FormData();
+                      formData.append("file", file);
+                      const data = await secureFetch("/upload", {
+                        method: "POST",
+                        body: formData,
+                      });
+                      if (!data || !data.url) {
+                        setLogoError("Image upload failed!");
+                        setLogoUploading(false);
+                        return;
+                      }
+                      setPrinterConfig((prev) => ({
+                        ...prev,
+                        layout: { ...prev.layout, logoUrl: data.url },
+                      }));
+                      // Save to backend
+                      setOperationStatus({ level: "idle", message: "Saving logo…" });
+                      try {
+                        const payload = { ...printerConfig, layout: { ...printerConfig.layout, logoUrl: data.url } };
+                        const remote = await secureFetch("/printer-settings/sync", {
+                          method: "POST",
+                          body: JSON.stringify(payload),
+                        });
+                        if (remote?.settings) {
+                          setPrinterConfig((prev) => mergePrinterConfig(prev, remote.settings));
+                        }
+                        setOperationStatus({ level: "ok", message: "Logo saved and synced." });
+                      } catch (err) {
+                        setOperationStatus({ level: "error", message: "Failed to save logo." });
+                      }
+                      setLogoUploading(false);
+                    } catch (err) {
+                      setLogoError("Image upload failed!");
+                      setLogoUploading(false);
+                    }
+                  }}
                 />
+                <div className="text-xs text-slate-400 mt-1">PNG/JPG, max 2MB, square preferred</div>
+                {logoUploading && (
+                  <div className="mt-2 text-xs text-blue-600">Uploading…</div>
+                )}
+                {printerConfig.layout.logoUrl && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img src={printerConfig.layout.logoUrl} alt="Logo preview" className="h-10 w-auto rounded border" />
+                    <span className="text-xs text-slate-400">Preview</span>
+                  </div>
+                )}
+                {logoError && (
+                  <div className="mt-2 text-xs text-red-600">{logoError}</div>
+                )}
                 <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
                   Header title
                 </label>
@@ -851,13 +964,75 @@ export default function PrinterTab() {
                   onChange={(event) => handleLayoutUpdate("qrText", event.target.value)}
                 />
                 <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
-                  QR url
+                  QR url or image
                 </label>
-                <input
-                  className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
-                  value={printerConfig.layout.qrUrl}
-                  onChange={(event) => handleLayoutUpdate("qrUrl", event.target.value)}
-                />
+                <div className="flex gap-2 items-center">
+                  <input
+                    className="flex-1 rounded-2xl border px-3 py-2 text-sm"
+                    value={printerConfig.layout.qrUrl}
+                    onChange={(event) => handleLayoutUpdate("qrUrl", event.target.value)}
+                    placeholder="Paste QR URL or upload image"
+                  />
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="w-32 text-xs"
+                    style={{ minWidth: 0 }}
+                    disabled={logoUploading}
+                    onChange={async (e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      setLogoUploading(true);
+                      setLogoError("");
+                      try {
+                        const formData = new FormData();
+                        formData.append("file", file);
+                        const data = await secureFetch("/upload", {
+                          method: "POST",
+                          body: formData,
+                        });
+                        if (!data || !data.url) {
+                          setLogoError("QR image upload failed!");
+                          setLogoUploading(false);
+                          return;
+                        }
+                        setPrinterConfig((prev) => ({
+                          ...prev,
+                          layout: { ...prev.layout, qrUrl: data.url },
+                        }));
+                        // Save to backend
+                        setOperationStatus({ level: "idle", message: "Saving QR image…" });
+                        try {
+                          const payload = { ...printerConfig, layout: { ...printerConfig.layout, qrUrl: data.url } };
+                          const remote = await secureFetch("/printer-settings/sync", {
+                            method: "POST",
+                            body: JSON.stringify(payload),
+                          });
+                          if (remote?.settings) {
+                            setPrinterConfig((prev) => mergePrinterConfig(prev, remote.settings));
+                          }
+                          setOperationStatus({ level: "ok", message: "QR image saved and synced." });
+                        } catch (err) {
+                          setOperationStatus({ level: "error", message: "Failed to save QR image." });
+                        }
+                        setLogoUploading(false);
+                      } catch (err) {
+                        setLogoError("QR image upload failed!");
+                        setLogoUploading(false);
+                      }
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-slate-400 mt-1">Paste a QR code URL or upload a QR image (PNG/JPG, max 2MB)</div>
+                {printerConfig.layout.qrUrl && printerConfig.layout.qrUrl.match(/^https?:\/\/.+\.(png|jpg|jpeg)$/i) && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img src={printerConfig.layout.qrUrl} alt="QR preview" className="h-10 w-auto rounded border" />
+                    <span className="text-xs text-slate-400">QR Preview</span>
+                  </div>
+                )}
+                {logoError && (
+                  <div className="mt-2 text-xs text-red-600">{logoError}</div>
+                )}
               </div>
               <div>
                 <label className="text-xs uppercase tracking-wide text-slate-500">Footer text</label>

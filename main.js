@@ -1,4 +1,59 @@
 // ===============================
+// Image and QR code support
+const Jimp = require('jimp');
+const QRCode = require('qrcode');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+async function imageUrlToEscposBytes(url, width = 384) {
+  const res = await fetch(url);
+  const buffer = await res.buffer();
+  const image = await Jimp.read(buffer);
+  image.resize(width, Jimp.AUTO).greyscale().contrast(1).dither565();
+  image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x, y, idx) {
+    const value = this.bitmap.data[idx];
+    this.bitmap.data[idx] = value > 128 ? 255 : 0;
+  });
+  const bytes = [];
+  const height = image.bitmap.height;
+  for (let y = 0; y < height; y++) {
+    bytes.push(0x1d, 0x76, 0x30, 0x00, width / 8, 0x00, 0x01, 0x00);
+    for (let x = 0; x < width; x += 8) {
+      let byte = 0;
+      for (let b = 0; b < 8; b++) {
+        const pixel = image.getPixelColor(x + b, y);
+        const { r } = Jimp.intToRGBA(pixel);
+        if (r < 128) byte |= (1 << (7 - b));
+      }
+      bytes.push(byte);
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+async function qrStringToEscposBytes(text, width = 256) {
+  const qrDataUrl = await QRCode.toDataURL(text, { width, margin: 1 });
+  const image = await Jimp.read(Buffer.from(qrDataUrl.split(",")[1], 'base64'));
+  image.resize(width, Jimp.AUTO).greyscale().contrast(1).dither565();
+  image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x, y, idx) {
+    const value = this.bitmap.data[idx];
+    this.bitmap.data[idx] = value > 128 ? 255 : 0;
+  });
+  const bytes = [];
+  const height = image.bitmap.height;
+  for (let y = 0; y < height; y++) {
+    bytes.push(0x1d, 0x76, 0x30, 0x00, width / 8, 0x00, 0x01, 0x00);
+    for (let x = 0; x < width; x += 8) {
+      let byte = 0;
+      for (let b = 0; b < 8; b++) {
+        const pixel = image.getPixelColor(x + b, y);
+        const { r } = Jimp.intToRGBA(pixel);
+        if (r < 128) byte |= (1 << (7 - b));
+      }
+      bytes.push(byte);
+    }
+  }
+  return Buffer.from(bytes);
+}
 // BEYPRO ELECTRON MAIN PROCESS
 // FULL WORKING PRINT SYSTEM
 // ===============================
@@ -316,16 +371,43 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
 // DIRECT TCP RAW ESC/POS (9100)
 // ------------------------
 ipcMain.handle("beypro:printNet", async (_evt, args) => {
-  const { host, port = 9100, dataBase64 } = args;
+  const { host, port = 9100, dataBase64, layout } = args;
+
+  // If layout is provided, build ESC/POS bytes with logo/QR
+  let finalBytes = Buffer.from(dataBase64, "base64");
+  if (layout && typeof layout === 'object') {
+    let paperWidthPx = 384;
+    if (layout.receiptWidth === "80mm") paperWidthPx = 576;
+    if (layout.receiptWidth === "72mm") paperWidthPx = 512;
+    let logoBytes = null;
+    let qrBytes = null;
+    if (layout.showLogo && layout.logoUrl) {
+      try {
+        logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+      } catch (err) {
+        console.warn("Failed to process logo for receipt:", err?.message || err);
+      }
+    }
+    if (layout.showQr && layout.qrUrl) {
+      try {
+        qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
+      } catch (err) {
+        console.warn("Failed to process QR for receipt:", err?.message || err);
+      }
+    }
+    // Concatenate logo, text, QR
+    let merged = Buffer.alloc(0);
+    if (logoBytes) merged = Buffer.concat([merged, logoBytes]);
+    merged = Buffer.concat([merged, finalBytes]);
+    if (qrBytes) merged = Buffer.concat([merged, qrBytes]);
+    finalBytes = merged;
+  }
 
   return new Promise((resolve) => {
     const sock = new net.Socket();
     sock.setTimeout(5000);
-
-    const data = Buffer.from(dataBase64, "base64");
-
     sock.connect(port, host, () => {
-      sock.write(data, (err) => {
+      sock.write(finalBytes, (err) => {
         if (err) {
           resolve({ ok: false, error: err.message });
         } else {
@@ -333,7 +415,6 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
         }
       });
     });
-
     sock.on("error", (err) => resolve({ ok: false, error: err.message }));
     sock.on("timeout", () => resolve({ ok: false, error: "timeout" }));
   });

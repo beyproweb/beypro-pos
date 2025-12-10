@@ -16,6 +16,7 @@ import IntegrationsTab from "../components/settings-tabs/IntegrationsTab";
 import LogFilesTab from "../components/settings-tabs/LogFilesTab";
 import AppearanceTab from "../components/settings-tabs/AppearanceTab";
 import PrinterTabModern from "../components/settings-tabs/PrinterTabModern";
+import CameraTab from "../components/settings-tabs/CameraTab";
 import TablesSettingsTab from "../components/settings-tabs/TablesSettingsTab";
 
 const tabComponents = {
@@ -30,6 +31,7 @@ const tabComponents = {
   inventory: LogFilesTab,
   appearance: AppearanceTab,
   printers: PrinterTabModern,
+  cameras: CameraTab,
   tables: TablesSettingsTab,
 };
 
@@ -52,6 +54,7 @@ export default function SettingsPage() {
     "settings-integrations",
     "settings-inventory",
     "settings-printers",
+    "settings-cameras",
     "settings-tables",
   ];
 

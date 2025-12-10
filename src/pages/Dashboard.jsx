@@ -12,7 +12,7 @@ import {
   PieChart, ClipboardList, TrendingUp, FileText, Factory, Bot,
   UserCheck, Megaphone, Wrench, Star, AlertTriangle, CreditCard,
   Clock, ChevronRight, ArrowUpRight, ArrowDownRight, ChefHat,
-  UserCog, Bell, Printer, Plug
+  UserCog, Bell, Printer, Plug, Video
 } from 'lucide-react';
 import axios from "axios";
 // adjust path as needed!
@@ -226,6 +226,8 @@ export default function Dashboard() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
   const hasDashboardAccess = useHasPermission("dashboard");
+  const hasCameraAccess = useHasPermission("settings-cameras");
+  
   if (!hasDashboardAccess) {
     return (
       <div className="p-12 text-2xl text-red-600 text-center">
@@ -233,6 +235,10 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  // --- CAMERA STATE ---
+  const [cameras, setCameras] = useState([]);
+  const [camerasLoading, setCamerasLoading] = useState(true);
 
   // --- MODERN SUMMARY STATE ---
   const [summary, setSummary] = useState({
@@ -252,6 +258,48 @@ export default function Dashboard() {
     avgPrep: 14,
     salesTrend: [1100, 1400, 1900, 3250, 4520],
   });
+
+  // Load cameras
+  const loadCameras = useCallback(async () => {
+    if (!hasCameraAccess) {
+      console.log("📷 No camera access");
+      setCamerasLoading(false);
+      return;
+    }
+    console.log("📷 Loading cameras...");
+    setCamerasLoading(true);
+    try {
+      const data = await secureFetch("/api/camera/list");
+      console.log("📷 Cameras loaded:", data);
+      setCameras(Array.isArray(data) ? data.slice(0, 3) : []);
+    } catch (err) {
+      console.log("📷 Camera loading failed:", err.message);
+      console.log("📷 Using demo cameras...");
+      // Demo cameras for testing
+      setCameras([
+        {
+          id: "demo-1",
+          name: "Kitchen Camera",
+          hlsUrl: "https://test-streams.mux.dev/x36xhzz/x3izzzyzzde85dt8.m3u8",
+          enabled: true,
+          location: "Kitchen",
+          bitrate: "2500k",
+          resolution: "1920x1080",
+        },
+        {
+          id: "demo-2",
+          name: "Entrance Camera",
+          hlsUrl: "https://test-streams.mux.dev/x36xhzz/x3izzzyzzde85dt8.m3u8",
+          enabled: false,
+          location: "Entrance",
+          bitrate: "1500k",
+          resolution: "1280x720",
+        },
+      ]);
+    } finally {
+      setCamerasLoading(false);
+    }
+  }, [hasCameraAccess]);
 
 
 
@@ -328,7 +376,10 @@ const fetchSummaryStats = useCallback(async () => {
 
 
 
-  useEffect(() => { fetchSummaryStats(); }, [fetchSummaryStats]);
+  useEffect(() => { 
+    fetchSummaryStats(); 
+    loadCameras();
+  }, [fetchSummaryStats, loadCameras]);
 
   // --- ICONS FOR QUICK ACCESS ---
   const getIcon = (iconName) => {
@@ -561,6 +612,11 @@ const fetchSummaryStats = useCallback(async () => {
         </div>
       )}
 
+    {/* Live Cameras Section - Always show if permitted and has cameras or loading */}
+    {hasCameraAccess && (camerasLoading || cameras.length > 0) && (
+      <LiveCamerasSection cameras={cameras} loading={camerasLoading} onNavigate={() => navigate("/settings/cameras")} t={t} />
+    )}
+
     {/* Business Snapshot (only if user has higher-level access) */}
 {(currentUser.permissions?.includes("all") ||
   currentUser.permissions?.includes("reports")) && (
@@ -729,5 +785,132 @@ function MiniCard({ children }) {
     <div className="rounded-xl bg-white dark:bg-zinc-900/80 shadow p-4 border border-gray-100 dark:border-zinc-800">
       {children}
     </div>
+  );
+}
+
+// ---- Live Cameras Section ----
+function LiveCamerasSection({ cameras = [], loading = false, onNavigate, t }) {
+  if (loading) {
+    return (
+      <section className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Video className="w-6 h-6 text-red-500" />
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              {t("Live Cameras", "Live Cameras")}
+            </h2>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="bg-white dark:bg-zinc-900 rounded-xl h-40 animate-pulse border border-gray-100 dark:border-zinc-800"
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (!cameras || cameras.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="mb-8">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Video className="w-6 h-6 text-red-500" />
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+            {t("Live Cameras", "Live Cameras")}
+          </h2>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            ({cameras.length})
+          </span>
+        </div>
+        <button
+          onClick={onNavigate}
+          className="flex items-center gap-1 px-3 py-1 text-sm rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-200 font-semibold hover:bg-blue-200 hover:scale-105 transition"
+        >
+          {t("View All", "View All")}
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {cameras.map((camera) => (
+          <div
+            key={camera.id}
+            className="group bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-gray-100 dark:border-zinc-800 shadow-md hover:shadow-xl transition"
+          >
+            {/* Camera Placeholder/Status */}
+            <div className="w-full h-40 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-zinc-800 dark:to-zinc-700 flex items-center justify-center relative overflow-hidden">
+              <div className="absolute inset-0 bg-black/5 dark:bg-black/20" />
+              <Video className="w-16 h-16 text-gray-400 dark:text-gray-500 relative z-10" />
+              
+              {/* Live Badge */}
+              {camera.enabled && (
+                <div className="absolute top-2 right-2 flex items-center gap-1 bg-red-500 text-white px-2 py-1 rounded-full text-xs font-bold z-20">
+                  <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                  LIVE
+                </div>
+              )}
+            </div>
+
+            {/* Camera Info */}
+            <div className="p-4">
+              <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-1 truncate">
+                {camera.name}
+              </h3>
+              
+              {camera.location && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate">
+                  📍 {camera.location}
+                </p>
+              )}
+
+              {/* Camera Details */}
+              <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                {camera.resolution && (
+                  <div className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded">
+                    <span className="text-gray-600 dark:text-gray-400">Resolution</span>
+                    <div className="font-mono text-gray-900 dark:text-white">
+                      {camera.resolution}
+                    </div>
+                  </div>
+                )}
+                {camera.bitrate && (
+                  <div className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded">
+                    <span className="text-gray-600 dark:text-gray-400">Bitrate</span>
+                    <div className="font-mono text-gray-900 dark:text-white">
+                      {camera.bitrate}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Status Badge */}
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    camera.enabled ? "bg-green-500 animate-pulse" : "bg-gray-400"
+                  }`}
+                />
+                <span
+                  className={`text-xs font-medium ${
+                    camera.enabled
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-gray-500 dark:text-gray-400"
+                  }`}
+                >
+                  {camera.enabled ? "Active" : "Inactive"}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

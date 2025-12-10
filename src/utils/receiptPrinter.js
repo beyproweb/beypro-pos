@@ -19,6 +19,8 @@ const defaultReceiptLayout = {
 };
 
 import secureFetch from "./secureFetch";
+import { imageUrlToEscposBytes } from "./imageToEscpos";
+import { qrStringToEscposBytes } from "./qrToEscpos";
 import { formatWithActiveCurrency } from "./currency";
 
 const PRINTER_SETTINGS_TTL = 120000; // ms
@@ -158,6 +160,20 @@ const formatQuantity = (qty) => {
 
 let layoutCache = { ...defaultReceiptLayout };
 let layoutLoaded = false;
+
+// Listen for layout updates from other tabs/windows
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === "beypro_receipt_layout_update" && event.newValue) {
+      try {
+        const { layout } = JSON.parse(event.newValue);
+        if (layout && typeof layout === "object") {
+          setReceiptLayout(layout);
+        }
+      } catch {}
+    }
+  });
+}
 let layoutFetchPromise = null;
 let cachedRegisterSettings = null;
 let fetchingRegisterPromise = null;
@@ -653,7 +669,11 @@ export function renderReceiptText(order, providedLayout) {
 }
 
 export async function printViaBridge(text, orderObj) {
+
   let resolvedText = text;
+  let logoBytes = null;
+  let qrBytes = null;
+  let layout = null;
 
   if (orderObj) {
     try {
@@ -662,12 +682,9 @@ export async function printViaBridge(text, orderObj) {
         console.warn("⚠️ Receipt layout is null, will use defaults");
       }
     } catch (err) {
-      console.warn(
-        "⚠️ Failed to ensure receipt layout before printing:",
-        err?.message || err
-      );
+      console.warn("⚠️ Failed to ensure receipt layout before printing:", err?.message || err);
     }
-    const layout = getReceiptLayout();
+    layout = getReceiptLayout();
     console.log("📝 Printing with layout:", { alignment: layout.alignment, showFooter: layout.showFooter });
     resolvedText = renderReceiptText(orderObj, layout);
     console.log("📝 Receipt text rendered with customizations");
@@ -676,6 +693,112 @@ export async function printViaBridge(text, orderObj) {
   resolvedText = sanitizeReceiptText(resolvedText);
   if (!resolvedText) {
     console.warn("⚠️ No printable receipt content provided.");
+    return false;
+  }
+
+  // Paper size (width in pixels)
+  let paperWidthPx = 384; // default for 58mm
+  if (layout?.receiptWidth === "80mm") paperWidthPx = 576;
+  if (layout?.receiptWidth === "72mm") paperWidthPx = 512;
+
+  // Logo
+  if (layout?.showLogo && layout?.logoUrl) {
+    try {
+      logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+    } catch (err) {
+      console.warn("⚠️ Failed to load/convert logo for receipt:", err?.message || err);
+    }
+  }
+
+  // QR code
+  if (layout?.showQr && layout?.qrUrl) {
+    try {
+      qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
+    } catch (err) {
+      console.warn("⚠️ Failed to generate/convert QR for receipt:", err?.message || err);
+    }
+  }
+
+  // Build text bytes with font size, alignment, spacing
+  const textBytes = buildEscposBytes(resolvedText, {
+    cut: true,
+    feedLines: 3,
+    fontSize: layout?.fontSize || 14,
+    alignment: layout?.alignment || "left",
+    spacing: layout?.lineHeight || 1.3,
+  });
+
+  // Concatenate logo, text, QR
+  let finalBytes = [];
+  if (logoBytes) finalBytes = finalBytes.concat(Array.from(logoBytes));
+  finalBytes = finalBytes.concat(Array.from(textBytes));
+  if (qrBytes) finalBytes = finalBytes.concat(Array.from(qrBytes));
+
+  // Send bytes to printer (LAN/USB/Serial)
+  const dataBase64 = btoa(String.fromCharCode(...finalBytes));
+  // For local bridge (Electron)
+  if (
+    target.interface === "network" &&
+    localBridge?.printNet &&
+    (isPrivateLanHost(target.host) || localBridge?.isDesktop === true)
+  ) {
+    try {
+      console.log("🖨️ Using local bridge for LAN printer:", {
+        host: target.host,
+        port: payload.port || 9100,
+      });
+      const result = await localBridge.printNet({
+        host: target.host,
+        port: payload.port || 9100,
+        dataBase64,
+        layout,
+      });
+      if (result?.ok === false) {
+        console.warn("⚠️ Local LAN print bridge reported failure:", result?.error);
+      } else {
+        console.log("✅ Receipt print dispatched via local bridge");
+        return true;
+      }
+    } catch (err) {
+      console.warn("⚠️ Local LAN print bridge failed, falling back to backend:", err?.message || err);
+    }
+  }
+  // For backend
+  try {
+    console.log("🖨️ Dispatching receipt print via backend:", {
+      interface: payload.interface,
+      host: payload.host,
+      port: payload.port,
+      path: payload.path,
+      vendorId: payload.vendorId,
+      productId: payload.productId,
+    });
+    const response = await secureFetch("/printer-settings/print", {
+      method: "POST",
+      body: JSON.stringify({
+        ...payload,
+        content: dataBase64,
+        layout,
+      }),
+    });
+    if (response?.ok === false) {
+      console.warn("⚠️ Backend printer responded with failure:", response);
+      return false;
+    }
+    console.log("✅ Receipt print job dispatched via backend");
+    return true;
+  } catch (err) {
+    const errMsg = err?.message || String(err);
+    console.error("❌ Backend receipt print failed:", errMsg);
+    if (
+      target.interface === "network" &&
+      isPrivateLanHost(target.host) &&
+      /ETIMEDOUT|ECONNREFUSED|ENETUNREACH/i.test(errMsg)
+    ) {
+      console.error(
+        "⚠️ Cloud backend cannot reach private LAN printer. Ensure Beypro Desktop Bridge is running on the same network or expose the printer over a reachable address."
+      );
+    }
     return false;
   }
 

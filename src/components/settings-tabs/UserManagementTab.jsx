@@ -3,8 +3,8 @@ import React, { useState, useEffect } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
-import RolePermissionModal from "../settings-tabs/RolePermissionModal";
-import ConfirmModal from "../ui/ConfirmModal";
+import RolePermissionModal from "../../modals/RolePermissionModal";
+import ConfirmModal from "../../modals/ConfirmModal";
 import secureFetch from "../../utils/secureFetch";
 
 export default function UserManagementTab() {

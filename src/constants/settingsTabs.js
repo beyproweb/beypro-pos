@@ -10,6 +10,7 @@ export const settingsTabs = [
   { key: "inventory", label: "📁 Log Files & Activity", permission: "settings-inventory" },
   { key: "appearance", label: "🎨 Appearance & UI", permission: "settings-appearance" },
   { key: "printers", label: "🖨️ Printers", permission: "settings-printers" },
+  { key: "cameras", label: "📷 Live Cameras", permission: "settings-cameras" },
   { key: "tables", label: "🪑 Tables", permission: "settings-tables" },
 
 ];

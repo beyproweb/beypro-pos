@@ -1,62 +1,88 @@
-// src/components/RolePermissionModal.jsx
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 
 // ✅ Keep all permission keys lowercase
+// Organized by category matching pages, UI components, and modals
 const PERMISSION_LABELS = {
-  // === DASHBOARD & MAIN NAVIGATION ===
-  dashboard: "Dashboard",
-  tables: "Table Overview",
-  orders: "Orders",
-  kitchen: "Kitchen",
-  products: "Products",
-  suppliers: "Suppliers",
-  stock: "Stock",
-  production: "Production",
-  staff: "Staff",
-  task: "Task Manager",
-  reports: "Reports",
-  expenses: "Expenses",
-  "ingredient-prices": "Ingredient Prices",
-  "cash-register-history": "Cash Register History",
-  integrations: "Integrations",
-  settings: "Settings",
-  "qr-menu-settings": "QR Menu",
-  "customer-insights": "Customer Insights",
-  "marketing-campaigns": "Marketing Campaigns",
-  maintenance: "Maintenance",
+  // === MAIN PAGES (25 pages) ===
+  dashboard: "📊 Dashboard",
+  "table-overview": "🍽 Table Overview",
+  orders: "📋 Orders",
+  kitchen: "🍳 Kitchen",
+  products: "🛍 Products",
+  suppliers: "🏪 Suppliers",
+  stock: "📦 Stock",
+  "qr-menu": "🔗 QR Menu",
+  staff: "👥 Staff",
+  task: "✅ Task Manager",
+  reports: "📈 Reports",
+  "cash-register": "💰 Cash Register History",
+  "ingredient-prices": "🥘 Ingredient Prices",
+  integrations: "🔌 Integrations",
+  "customer-insights": "👤 Customer Insights",
+  "marketing-campaigns": "📢 Marketing Campaigns",
+  maintenance: "🔧 Maintenance Tracker",
+  "takeaway-overview": "🥡 Takeaway Overview",
+  "printers-page": "🖨 Printers Management",
+  "transaction-screen": "💳 Transaction Screen",
+  "user-management": "👨‍💼 User Management",
 
-  // === ORDERS & PHONE PACKET ===
-  "phone-orders": "Phone Orders",
-  "packet-orders": "Packet Orders",
-  delivery: "Delivery",
-  "driver-report": "Driver Report",
-  "drinks-settings": "Drink Settings",
-  "payment-modal": "Payment Modal",
+  // === UI COMPONENTS (5 components in /components/ui) ===
+  "staff-payroll": "💼 Payroll (UI)",
+  "staff-checkin": "🔐 Staff Check-In (UI)",
+  "staff-schedule": "📅 Staff Schedule (UI)",
+
+  // === MODALS (12 modals in /modals) ===
+  // === TRANSACTION & TABLE MODALS ===
+  "modal-move-table": "🔄 Move Table Modal",
+  "modal-merge-table": "🔀 Merge Table Modal",
+  "modal-payment": "💳 Payment Modal",
+
+  // === ORDER MODALS ===
+  "modal-phone-order": "📞 Phone Order Modal",
+  "modal-supplier-cart": "🛒 Supplier Cart Modal",
+
+  // === PRODUCT & INVENTORY MODALS ===
+  "modal-discount": "🏷 Discount Modal",
+  "modal-extras": "➕ Extras Modal",
+  "modal-recipe": "👨‍🍳 Recipe Modal",
+  "modal-stock-confirm": "✓ Stock Confirm Modal",
+
+  // === SETTINGS & MANAGEMENT MODALS ===
+  "modal-confirm": "❓ Confirm Modal",
+  "modal-kitchen-settings": "⚙️ Kitchen Settings Modal",
+  "modal-role-permission": "🔐 Role Permission Modal",
+
+  // === FEATURES & ACTIONS ===
+  "register-access": "💰 Cash Register",
+  payments: "💳 Payments",
+  delivery: "🚗 Delivery",
+  "phone-orders": "📞 Phone Orders",
+  "packet-orders": "📦 Packet Orders",
+  "camera.live": "📹 Live Camera Feed",
 
   // === SETTINGS SUB-SECTIONS ===
-  "settings-appearance": "Appearance",
-  "settings-localization": "Localization",
-  "settings-notifications": "Notifications",
-  "settings-payments": "Payments",
-  "settings-register": "Register Settings",
-  "settings-integrations": "Integrations (Settings)",
-  "settings-users": "User Management",
-  "settings-subscription": "Subscription",
-  "settings-shop-hours": "Shop Hours",
-  "settings-log-files": "Log Files",
+  settings: "⚙️ Settings",
+  "qr-menu-settings": "🔗 QR Menu Settings",
+  "settings-appearance": "🎨 Appearance",
+  "settings-localization": "🌍 Localization",
+  "settings-notifications": "🔔 Notifications",
+  "settings-payments": "💳 Payment Settings",
+  "settings-register": "💰 Register Settings",
+  "settings-integrations": "🔌 Integrations (Settings)",
+  "settings-users": "👨‍💼 User Management (Settings)",
+  "settings-subscription": "📋 Subscription",
+  "settings-shop-hours": "⏰ Shop Hours",
+  "settings-log-files": "📄 Log Files",
 
-  // === OTHERS ===
-  register: "Cash Register",
-  payments: "Payments",
-  history: "Order History",
-  "staff-checkin": "Check-In/Check-Out",
-  "staff-schedule": "Staff Schedule",
-  "staff-payroll": "Payroll",
-  "staff-send-shift": "Send Shift",
-  "staff-add": "Add Staff",
-  "staff-payment": "Payment",
-  takeaway: "Take Away",
+  // === LEGACY/DEPRECATED ===
+  production: "⚙️ Production",
+  expenses: "💸 Expenses",
+  "staff-send-shift": "📤 Send Shift",
+  "staff-add": "➕ Add Staff",
+  "staff-payment": "💳 Staff Payment",
+  "driver-report": "🚗 Driver Report",
+  "drinks-settings": "🥤 Drinks Settings",
 };
 
 

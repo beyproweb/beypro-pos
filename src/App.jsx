@@ -44,6 +44,7 @@ import secureFetch from "./utils/secureFetch";
 import QrMenuSettings from "./pages/QrMenuSettings";
 import UserManagementPage from "./pages/UserManagementPage";
 import PrintersPage from "./pages/PrintersPage";
+import CamerasPage from "./pages/CamerasPage";
 import TakeawayOverview from "./pages/TakeawayOverview";
 import { setNavigator } from "./utils/navigation";
 
@@ -52,6 +53,7 @@ const SETTINGS_TAB_PERMISSIONS = {
   notifications: "settings-notifications",
   users: "settings-users",
   printers: "settings-printers",
+  cameras: "settings-cameras",
   shop_hours: "settings-shop-hours",
   localization: "settings-localization",
   subscription: "settings-subscription",
@@ -263,6 +265,14 @@ const loadSettings = async () => {
                 element={
                   <ProtectedRoute permission="settings-printers">
                     <PrintersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="cameras"
+                element={
+                  <ProtectedRoute permission="settings-cameras">
+                    <CamerasPage />
                   </ProtectedRoute>
                 }
               />

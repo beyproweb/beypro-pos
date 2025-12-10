@@ -5,7 +5,7 @@ import { saveAs } from "file-saver";
 import { toast } from "react-toastify"; // make sure you imported toast
 import 'react-toastify/dist/ReactToastify.css';
 import io from "socket.io-client";
-import SupplierCartModal from "../components/SupplierCartModal";
+import SupplierCartModal from "../modals/SupplierCartModal";
 import SupplierScheduledCart from "../components/SupplierScheduledCart";
 import { useTranslation } from "react-i18next";
 import {

@@ -24,6 +24,17 @@ export function CurrencyProvider({ children }) {
     }
   });
 
+  // Listen for currency changes from other tabs/windows
+  useEffect(() => {
+    const handler = (event) => {
+      if (event.key === "beyproCurrency" && event.newValue) {
+        setCurrencyKey(event.newValue);
+      }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+
   const [config, setConfig] = useState(() => getCurrencyConfig(currencyKey));
 
   // Keep global window helpers in sync for non-React utilities

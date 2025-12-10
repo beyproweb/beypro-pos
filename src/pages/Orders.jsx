@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo  } from "react";
 import { geocodeAddress } from '../utils/geocode';
 import LiveRouteMap from "../components/LiveRouteMap";
 import socket from "../utils/socket";
-import PhoneOrderModal from "../components/PhoneOrderModal";
+import PhoneOrderModal from "../modals/PhoneOrderModal";
 import { useTranslation } from "react-i18next";
 import { v4 as uuidv4 } from "uuid";
 import secureFetch from "../utils/secureFetch";

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import PhoneOrderModal from "../components/PhoneOrderModal";
+import PhoneOrderModal from "../modals/PhoneOrderModal";
 import Orders from "../pages/Orders"; // adjust path as needed!
 import { useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
