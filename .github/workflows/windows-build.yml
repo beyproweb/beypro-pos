@@ -15,20 +15,23 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: "18"
+      - name: Set sharp install options
+        run: npm config set sharp_binary_host "https://npm.taobao.org/mirrors/sharp"
+      - name: Install windows-build-tools
+        run: npm install --global windows-build-tools
+        shell: cmd
       - name: Install dependencies
         run: npm install
       - name: Build Electron app
-        run: npm run build
-      - name: Package Electron app for Windows
-        run: npm run dist:win
+        run: npm run desktop:build
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: windows-app
-          path: dist/*.exe
+          path: out/*.exe
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/*.exe
+          files: out/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
