@@ -734,73 +734,7 @@ export async function printViaBridge(text, orderObj) {
   finalBytes = finalBytes.concat(Array.from(textBytes));
   if (qrBytes) finalBytes = finalBytes.concat(Array.from(qrBytes));
 
-  // Send bytes to printer (LAN/USB/Serial)
-  const dataBase64 = btoa(String.fromCharCode(...finalBytes));
-  // For local bridge (Electron)
-  if (
-    target.interface === "network" &&
-    localBridge?.printNet &&
-    (isPrivateLanHost(target.host) || localBridge?.isDesktop === true)
-  ) {
-    try {
-      console.log("🖨️ Using local bridge for LAN printer:", {
-        host: target.host,
-        port: payload.port || 9100,
-      });
-      const result = await localBridge.printNet({
-        host: target.host,
-        port: payload.port || 9100,
-        dataBase64,
-        layout,
-      });
-      if (result?.ok === false) {
-        console.warn("⚠️ Local LAN print bridge reported failure:", result?.error);
-      } else {
-        console.log("✅ Receipt print dispatched via local bridge");
-        return true;
-      }
-    } catch (err) {
-      console.warn("⚠️ Local LAN print bridge failed, falling back to backend:", err?.message || err);
-    }
-  }
-  // For backend
-  try {
-    console.log("🖨️ Dispatching receipt print via backend:", {
-      interface: payload.interface,
-      host: payload.host,
-      port: payload.port,
-      path: payload.path,
-      vendorId: payload.vendorId,
-      productId: payload.productId,
-    });
-    const response = await secureFetch("/printer-settings/print", {
-      method: "POST",
-      body: JSON.stringify({
-        ...payload,
-        content: dataBase64,
-        layout,
-      }),
-    });
-    if (response?.ok === false) {
-      console.warn("⚠️ Backend printer responded with failure:", response);
-      return false;
-    }
-    console.log("✅ Receipt print job dispatched via backend");
-    return true;
-  } catch (err) {
-    const errMsg = err?.message || String(err);
-    console.error("❌ Backend receipt print failed:", errMsg);
-    if (
-      target.interface === "network" &&
-      isPrivateLanHost(target.host) &&
-      /ETIMEDOUT|ECONNREFUSED|ENETUNREACH/i.test(errMsg)
-    ) {
-      console.error(
-        "⚠️ Cloud backend cannot reach private LAN printer. Ensure Beypro Desktop Bridge is running on the same network or expose the printer over a reachable address."
-      );
-    }
-    return false;
-  }
+  // (Printing will continue after resolving the target below)
 
   let printerSettings = null;
   try {
