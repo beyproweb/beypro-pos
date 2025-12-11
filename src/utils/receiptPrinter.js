@@ -8,7 +8,8 @@ const defaultReceiptLayout = {
   headerText: "Beypro POS - HurryBey",
   footerText: "Thank you for your order! / Teşekkürler!",
   alignment: "left",
-  shopAddress: "Your Shop Address\n123 Street Name, İzmir",
+  shopAddress: "",
+  shopAddressFontSize: 11,
   extras: [
     { label: "Instagram", value: "@yourshop" },
     { label: "Tax No", value: "1234567890" },
@@ -164,7 +165,7 @@ let layoutLoaded = false;
 // Listen for layout updates from other tabs/windows
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
-    if (event.key === "beypro_receipt_layout_update" && event.newValue) {
+    if (event.key && event.key.startsWith("beypro_receipt_layout_update") && event.newValue) {
       try {
         const { layout } = JSON.parse(event.newValue);
         if (layout && typeof layout === "object") {
@@ -320,6 +321,12 @@ function parseDirectTarget(printerId = "") {
 
   if (/^network:/i.test(id)) {
     return parseLanTarget(id.replace(/^network:/i, "lan:"));
+  }
+
+  if (/^windows:/i.test(id)) {
+    const parts = id.split(":");
+    const name = parts.slice(1, parts.length - 1).join(":") || parts[1];
+    return name ? { interface: "windows", name } : null;
   }
 
   if (/^usb:/i.test(id)) {
@@ -506,6 +513,9 @@ export function renderReceiptText(order, providedLayout) {
     const headerLine = layout.headerText || layout.headerTitle || "Beypro POS";
     add(headerLine);
     if (layout.headerSubtitle) add(layout.headerSubtitle);
+  }
+  if (layout.shopAddress) {
+    add(layout.shopAddress.replace(/\s+/g, " ").trim());
   }
   if (layout.shopAddress) add(layout.shopAddress.replace(/\n/g, " "));
   add(new Date(order?.created_at || Date.now()).toLocaleString());
@@ -759,6 +769,7 @@ export async function printViaBridge(text, orderObj) {
   if (logoBytes) finalBytes = finalBytes.concat(Array.from(logoBytes));
   finalBytes = finalBytes.concat(Array.from(textBytes));
   if (qrBytes) finalBytes = finalBytes.concat(Array.from(qrBytes));
+  const finalBase64 = btoa(String.fromCharCode(...finalBytes));
 
   // (Printing will continue after resolving the target below)
 
@@ -840,6 +851,23 @@ export async function printViaBridge(text, orderObj) {
     return false;
   }
 
+  if (target.interface === "windows" && typeof window !== "undefined" && window.beypro) {
+    try {
+      const res = await window.beypro.printWindows({
+        printerName: target.name,
+        dataBase64: finalBase64,
+        layout,
+      });
+      if (res?.ok) {
+        console.log("✅ Receipt print dispatched via Windows driver");
+        return true;
+      }
+      console.warn("⚠️ Windows driver print reported failure:", res?.error);
+    } catch (err) {
+      console.warn("⚠️ Windows driver print failed, falling back to backend:", err?.message || err);
+    }
+  }
+
   const payload = {
     interface: target.interface,
     content: `${resolvedText}\n\n`,
@@ -847,6 +875,8 @@ export async function printViaBridge(text, orderObj) {
     align: toEscAlignment(printerSettings?.layout?.alignment),
     cut: printerSettings?.defaults?.cut !== false,
     cashdraw: printerSettings?.defaults?.cashDrawer === true,
+    dataBase64: finalBase64,
+    layout,
   };
 
   if (target.interface === "network") {

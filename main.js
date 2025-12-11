@@ -80,6 +80,7 @@ if (process.env.BEYPRO_IGNORE_CERT_ERRORS === "1") {
 }
 
 const STORE_FILENAME = "printer-config.json";
+const TENANT_KEY_DEFAULT = "default";
 const DEFAULT_LOCAL_CONFIG = {
   receiptPrinter: "",
   kitchenPrinter: "",
@@ -122,6 +123,11 @@ app.whenReady().then(() => {
 function getPrinterStorePath() {
   const base = userDataPath || app.getPath("userData");
   return path.join(base, STORE_FILENAME);
+}
+
+function tenantKey(id) {
+  if (!id) return TENANT_KEY_DEFAULT;
+  return String(id);
 }
 
 function readPrinterStore() {
@@ -175,9 +181,14 @@ function normalizePrinterConfig(payload = {}, updateTimestamp = false) {
   return merged;
 }
 
-function getLocalPrinterConfig() {
+function getLocalPrinterConfig(tenantId = null) {
   const stored = readPrinterStore();
-  return normalizePrinterConfig(stored, false);
+  // Backward compatibility: if no tenants map, stored is the config
+  if (!stored.tenants) {
+    return normalizePrinterConfig(stored, false);
+  }
+  const key = tenantKey(tenantId || stored.lastTenant);
+  return normalizePrinterConfig(stored.tenants[key] || {}, false);
 }
 
 // ------------------------
@@ -455,13 +466,25 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
   });
 });
 
-ipcMain.handle("beypro:getPrinterConfig", () => {
-  const config = getLocalPrinterConfig();
+ipcMain.handle("beypro:getPrinterConfig", (_evt, tenantId = null) => {
+  const config = getLocalPrinterConfig(tenantId);
   return { ok: true, config };
 });
 
 ipcMain.handle("beypro:setPrinterConfig", (_evt, payload = {}) => {
-  const normalized = normalizePrinterConfig(payload, true);
-  writePrinterStore(normalized);
+  const tenantId = payload?.tenantId;
+  const settings = payload?.settings || payload || {};
+  const normalized = normalizePrinterConfig(settings, true);
+
+  const store = readPrinterStore();
+  const key = tenantKey(tenantId || store.lastTenant || TENANT_KEY_DEFAULT);
+  const nextStore = {
+    ...store,
+    tenants: { ...(store.tenants || {}) },
+    lastTenant: key,
+  };
+  nextStore.tenants[key] = normalized;
+
+  writePrinterStore(nextStore);
   return { ok: true, config: normalized };
 });

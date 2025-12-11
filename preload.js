@@ -5,8 +5,8 @@ contextBridge.exposeInMainWorld("beypro", {
   printRaw: (args) => ipcRenderer.invoke("beypro:printRaw", args),
   printWindows: (args) => ipcRenderer.invoke("beypro:printWindows", args),
   printNet: (args) => ipcRenderer.invoke("beypro:printNet", args),
-  getPrinterConfig: () => ipcRenderer.invoke("beypro:getPrinterConfig"),
-  setPrinterConfig: (settings) => ipcRenderer.invoke("beypro:setPrinterConfig", settings),
+  getPrinterConfig: (tenantId) => ipcRenderer.invoke("beypro:getPrinterConfig", tenantId),
+  setPrinterConfig: (tenantId, settings) => ipcRenderer.invoke("beypro:setPrinterConfig", { tenantId, settings }),
   // Alias for direct network printing
   printDirect: (args) => ipcRenderer.invoke("beypro:printNet", args),
 });

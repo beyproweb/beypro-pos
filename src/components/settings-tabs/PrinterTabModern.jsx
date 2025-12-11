@@ -13,6 +13,8 @@ const DEFAULT_LAYOUT = {
   qrText: "Scan for menu & feedback",
   qrUrl: "https://hurrybey.com",
   alignment: "center",
+  shopAddress: "",
+  shopAddressFontSize: 11,
   paperWidth: "80mm",
   spacing: 1.22,
   itemFontSize: 14,
@@ -60,6 +62,10 @@ const ALIGNMENT_OPTIONS = [
 
 const PAPER_WIDTH_OPTIONS = ["58mm", "72mm", "80mm"];
 const LS_KEY_SELECTED_PRINTER = "beyproSelectedPrinter";
+const getSelectedPrinterKey = (tenantId) =>
+  tenantId ? `${LS_KEY_SELECTED_PRINTER}_${tenantId}` : LS_KEY_SELECTED_PRINTER;
+const getLayoutBroadcastKey = (tenantId) =>
+  tenantId ? `beypro_receipt_layout_update_${tenantId}` : "beypro_receipt_layout_update";
 
 const STATUS_MAP = {
   idle: { text: "Idle", className: "bg-gray-100 text-gray-700" },
@@ -198,6 +204,14 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           <div className="text-xs font-normal text-slate-500">{layout.headerSubtitle}</div>
         </div>
       )}
+      {layout.shopAddress ? (
+        <div
+          className="mb-2 text-center text-slate-500"
+          style={{ fontSize: layout.shopAddressFontSize || 11 }}
+        >
+          {layout.shopAddress}
+        </div>
+      ) : null}
       <div className="border-y border-dashed border-slate-200 py-2 text-[12px]">
         {items.map((item, idx) => (
           <div key={idx} className="flex justify-between py-1">
@@ -269,6 +283,9 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
 }
 
 export default function PrinterTab() {
+  const tenantId =
+    typeof window !== "undefined" ? window.localStorage.getItem("restaurant_id") : null;
+
   // Helper: open receipt preview in native print dialog
   function openNativePrintPreview() {
     const receiptHtml = document.getElementById('beypro-receipt-preview')?.outerHTML;
@@ -366,7 +383,7 @@ export default function PrinterTab() {
     setLoadingConfig(true);
     try {
       const local = hasBridge
-        ? await window.beypro.getPrinterConfig().catch(() => ({ config: null }))
+        ? await window.beypro.getPrinterConfig(tenantId).catch(() => ({ config: null }))
         : { config: null };
       const remote = await secureFetch("/printer-settings/sync").catch((err) => {
         console.warn("Remote printer settings unavailable:", err);
@@ -386,6 +403,25 @@ export default function PrinterTab() {
         }
       }
       setPrinterConfig(config);
+      // Hydrate address from /me if missing
+      if (!config.layout.shopAddress) {
+        try {
+          const me = await secureFetch("me");
+          const userObj = me?.user || me;
+          const addr =
+            userObj?.pos_location ||
+            userObj?.posLocation ||
+            userObj?.restaurant_pos_location ||
+            userObj?.restaurant?.pos_location;
+          if (addr) {
+            setPrinterConfig((prev) =>
+              mergePrinterConfig(prev, { layout: { ...prev.layout, shopAddress: addr } })
+            );
+          }
+        } catch (err) {
+          console.warn("⚠️ Could not hydrate address from /me:", err?.message || err);
+        }
+      }
       if (!operationStatus.message.includes("Offline")) {
         setOperationStatus({ level: "ok", message: "Printer preferences ready" });
       }
@@ -459,13 +495,13 @@ export default function PrinterTab() {
     if (typeof window === "undefined") return;
     try {
       if (!targetId) {
-        localStorage.removeItem(LS_KEY_SELECTED_PRINTER);
+        localStorage.removeItem(getSelectedPrinterKey(tenantId));
         return;
       }
       const target = allPrinters.find((printer) => printer.id === targetId);
       if (!target) return;
       const printerName = target.meta?.name || target.label || target.id;
-      localStorage.setItem(LS_KEY_SELECTED_PRINTER, printerName);
+      localStorage.setItem(getSelectedPrinterKey(tenantId), printerName);
     } catch (err) {
       console.warn("Failed to persist selected printer:", err);
     }
@@ -484,7 +520,7 @@ export default function PrinterTab() {
     const target = allPrinters.find((printer) => printer.id === printerConfig.receiptPrinter);
     if (!target) return;
     const desired = target.meta?.name || target.label || target.id;
-    const stored = localStorage.getItem(LS_KEY_SELECTED_PRINTER);
+    const stored = localStorage.getItem(getSelectedPrinterKey(tenantId));
     if (stored !== desired) {
       persistReceiptSelection(printerConfig.receiptPrinter);
     }
@@ -503,8 +539,8 @@ export default function PrinterTab() {
           });
           if (remote?.settings) {
             setPrinterConfig((prev2) => mergePrinterConfig(prev2, remote.settings));
-            // Broadcast layout update to all tabs
-            localStorage.setItem("beypro_receipt_layout_update", JSON.stringify({
+            // Broadcast layout update to all tabs for this tenant
+            localStorage.setItem(getLayoutBroadcastKey(tenantId), JSON.stringify({
               layout: remote.settings.layout,
               ts: Date.now(),
             }));
@@ -585,7 +621,7 @@ export default function PrinterTab() {
     try {
       let updated = payload;
       if (hasBridge) {
-        const local = await window.beypro.setPrinterConfig(payload);
+        const local = await window.beypro.setPrinterConfig(tenantId, payload);
         if (local?.config) {
           updated = mergePrinterConfig(updated, local.config);
         }
@@ -890,6 +926,16 @@ export default function PrinterTab() {
                   value={printerConfig.layout.headerSubtitle}
                   onChange={(event) => handleLayoutUpdate("headerSubtitle", event.target.value)}
                 />
+                <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
+                  Address
+                </label>
+                <textarea
+                  className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
+                  rows={2}
+                  value={printerConfig.layout.shopAddress}
+                  onChange={(event) => handleLayoutUpdate("shopAddress", event.target.value)}
+                  placeholder="123 Street, City"
+                />
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="text-xs uppercase tracking-wide text-slate-500">Alignment</label>
@@ -948,6 +994,25 @@ export default function PrinterTab() {
                   />
                   <div className="text-xs uppercase tracking-wide text-slate-400">
                     {printerConfig.layout.itemFontSize}px
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">
+                    Address font size
+                  </label>
+                  <input
+                    type="range"
+                    min={9}
+                    max={18}
+                    step={1}
+                    className="w-full"
+                    value={printerConfig.layout.shopAddressFontSize || 11}
+                    onChange={(event) =>
+                      handleLayoutUpdate("shopAddressFontSize", Number(event.target.value))
+                    }
+                  />
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    {(printerConfig.layout.shopAddressFontSize || 11)}px
                   </div>
                 </div>
               </div>

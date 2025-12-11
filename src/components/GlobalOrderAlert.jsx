@@ -103,6 +103,11 @@ export default function GlobalOrderAlert() {
   const [notif, setNotif] = useState(DEFAULT_NOTIFICATIONS);
   const [layout, setLayout] = useState(defaultReceiptLayout);
   const hasBridge = typeof window !== "undefined" && !!window.beypro;
+  const tenantId =
+    typeof window !== "undefined" ? window.localStorage.getItem("restaurant_id") : null;
+  const layoutBroadcastKey = tenantId
+    ? `beypro_receipt_layout_update_${tenantId}`
+    : "beypro_receipt_layout_update";
 
   const audioRefs = useRef({});
   const [audioUnlocked, setAudioUnlocked] = useState(false);
@@ -397,7 +402,7 @@ export default function GlobalOrderAlert() {
   function openNativePrintPreview(order) {
     if (!order) return;
     // Use the same logic as PrinterTabModern test print
-    const layoutData = window.localStorage.getItem('beypro_receipt_layout_update');
+    const layoutData = window.localStorage.getItem(layoutBroadcastKey);
     let customLayout = layout;
     if (layoutData) {
       try {
