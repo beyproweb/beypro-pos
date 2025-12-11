@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import secureFetch from "../../utils/secureFetch";
+import { imageUrlToEscposBytes } from "../../utils/imageToEscpos";
+import { qrStringToEscposBytes } from "../../utils/qrToEscpos";
 
 const DEFAULT_LAYOUT = {
   logoUrl: "",
@@ -651,16 +653,47 @@ export default function PrinterTab() {
       setTestStatus({ level: "error", message: "Select a default printer first." });
       return;
     }
-    const ticket = buildTestTicket(printerConfig.layout, SAMPLE_ORDER, printerConfig.customLines);
-    const bytes = buildEscposBytes(ticket, {
-      alignment: printerConfig.layout.alignment || "left",
+    const layout = printerConfig.layout;
+    const ticket = buildTestTicket(layout, SAMPLE_ORDER, printerConfig.customLines);
+    const textBytes = buildEscposBytes(ticket, {
+      alignment: layout.alignment || "left",
     });
+    let finalBytes = Array.from(textBytes);
+    let paperWidthPx = 384;
+    if (layout.paperWidth === "80mm") paperWidthPx = 576;
+    if (layout.paperWidth === "72mm") paperWidthPx = 512;
+    try {
+      if (layout.showLogo && layout.logoUrl) {
+        const logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+        const centerCmd = Uint8Array.from([0x1b, 0x61, 0x01]);
+        const leftCmd = Uint8Array.from([0x1b, 0x61, 0x00]);
+        finalBytes = Array.from(centerCmd)
+          .concat(Array.from(logoBytes))
+          .concat(Array.from(leftCmd))
+          .concat(finalBytes);
+      }
+    } catch (err) {
+      console.warn("⚠️ Test print logo failed:", err?.message || err);
+    }
+    try {
+      if (layout.showQr && layout.qrUrl) {
+        const qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
+        const centerCmd = Uint8Array.from([0x1b, 0x61, 0x01]);
+        const leftCmd = Uint8Array.from([0x1b, 0x61, 0x00]);
+        finalBytes = finalBytes
+          .concat(Array.from(centerCmd))
+          .concat(Array.from(qrBytes))
+          .concat(Array.from(leftCmd));
+      }
+    } catch (err) {
+      console.warn("⚠️ Test print QR failed:", err?.message || err);
+    }
+    const dataBase64 = btoa(String.fromCharCode(...finalBytes));
     setTestStatus({ level: "idle", message: "Sending test print…" });
 
     try {
       if (target.type === "windows") {
         if (!hasBridge) throw new Error("Windows printing requires the desktop bridge.");
-        const dataBase64 = btoa(String.fromCharCode(...bytes));
         const res = await window.beypro.printWindows({
           printerName: target.meta.name,
           dataBase64,
@@ -671,7 +704,6 @@ export default function PrinterTab() {
         }
       } else if (target.type === "lan") {
         if (!hasBridge) throw new Error("LAN printing requires the desktop bridge.");
-        const dataBase64 = btoa(String.fromCharCode(...bytes));
         const { host, port = 9100 } = target.meta;
         const res = await window.beypro.printNet({
           host,
@@ -695,6 +727,8 @@ export default function PrinterTab() {
               : "lt",
           cut: printerConfig.defaults.cut,
           cashdraw: printerConfig.defaults.cashDrawer,
+          dataBase64,
+          layout,
         };
         if (target.type === "usb") {
           payload.vendorId = target.meta.vendorId;

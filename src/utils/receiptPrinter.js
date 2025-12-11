@@ -907,7 +907,7 @@ export async function printViaBridge(text, orderObj) {
       const result = await localBridge.printNet({
         host: target.host,
         port: payload.port || 9100,
-        dataBase64: textDataBase64,
+        dataBase64: finalBase64,
         layout,
       });
 
