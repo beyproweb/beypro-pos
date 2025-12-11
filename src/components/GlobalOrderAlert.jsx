@@ -102,6 +102,7 @@ function shouldPrintNow(orderId, windowMs = 10000) {
 export default function GlobalOrderAlert() {
   const [notif, setNotif] = useState(DEFAULT_NOTIFICATIONS);
   const [layout, setLayout] = useState(defaultReceiptLayout);
+  const hasBridge = typeof window !== "undefined" && !!window.beypro;
 
   const audioRefs = useRef({});
   const [audioUnlocked, setAudioUnlocked] = useState(false);
@@ -323,8 +324,9 @@ export default function GlobalOrderAlert() {
   useEffect(() => {
     (async () => {
       try {
-        const printer = await secureFetch("/printer-settings/1");
-        if (printer?.layout) setLayout((old) => ({ ...old, ...printer.layout }));
+        const printer = await secureFetch("/printer-settings/sync");
+        const nextLayout = printer?.settings?.layout || printer?.layout;
+        if (nextLayout) setLayout((old) => ({ ...old, ...nextLayout }));
       } catch {
         /* ignore */
       }
@@ -391,14 +393,103 @@ export default function GlobalOrderAlert() {
 
 
   /* Print helper */
+  // Print preview helper
+  function openNativePrintPreview(order) {
+    if (!order) return;
+    // Use the same logic as PrinterTabModern test print
+    const layoutData = window.localStorage.getItem('beypro_receipt_layout_update');
+    let customLayout = layout;
+    if (layoutData) {
+      try {
+        const parsed = JSON.parse(layoutData);
+        if (parsed?.layout) customLayout = { ...customLayout, ...parsed.layout };
+      } catch {}
+    }
+    // Normalize items array from different API shapes
+    const itemsRaw = order.items || order.order_items || order.items_list || order.itemsArray || [];
+    const items = Array.isArray(itemsRaw)
+      ? itemsRaw.map((it) => {
+          // normalize extras (may be JSON string or array)
+          let extras = it.extras || it.item_extras || it.extras_list || [];
+          if (typeof extras === "string") {
+            try {
+              extras = JSON.parse(extras || "[]");
+            } catch {
+              extras = [];
+            }
+          }
+          if (!Array.isArray(extras)) extras = [];
+          extras = extras.map((ex) => ({
+            name: ex.name || ex.extra_name || ex.product_name || String(ex).slice(0, 32),
+            quantity: Number(ex.quantity ?? ex.qty ?? 1) || 1,
+            price: Number(ex.price ?? ex.extraPrice ?? ex.unit_price ?? 0) || 0,
+          }));
+
+          return {
+            name: it.name || it.item_name || it.product_name || it.product || "Item",
+            quantity: Number(it.quantity ?? it.qty ?? it.count ?? 1) || 1,
+            price: Number(it.price ?? it.unit_price ?? it.total_price ?? 0) || 0,
+            extras,
+            note: it.note || it.item_note || it.comment || it.notes || "",
+          };
+        })
+      : [];
+    const customLines = order.customLines || customLayout.customLines || [];
+    const subTotal = items.reduce((sum, item) => sum + (item.quantity || 1) * (item.price || 0), 0);
+    const taxAmount = customLayout.showTaxes ? (subTotal * (customLayout.taxRate || 0)) / 100 : 0;
+    const discountAmount = customLayout.showDiscounts ? (subTotal * (customLayout.discountRate || 0)) / 100 : 0;
+    const total = subTotal + taxAmount - discountAmount;
+    const logoHtml = customLayout.showLogo && customLayout.logoUrl ? `<img src='${customLayout.logoUrl}' alt='Logo' style='display:block;margin:0 auto 12px;height:48px;max-width:100px;object-fit:contain;'/>` : '';
+    const qrHtml = customLayout.showQr && customLayout.qrUrl && customLayout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i)
+      ? `<img src='${customLayout.qrUrl}' alt='QR' style='display:block;margin:12px auto 0;height:64px;width:64px;object-fit:contain;border-radius:12px;border:1px dashed #cbd5e1;background:#fff;'/>`
+      : customLayout.showQr ? `<div style='height:64px;width:64px;margin:12px auto 0;background:#0f172a;border-radius:12px;'></div>` : '';
+    const html = `
+      <div style='width:280px;margin:0 auto;padding:16px;border-radius:16px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;font-size:${customLayout.itemFontSize}px;line-height:${customLayout.spacing};text-align:${customLayout.alignment};font-family:sans-serif;'>
+        ${logoHtml}
+        ${customLayout.showHeader ? `<div style='margin-bottom:8px;text-align:center;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#1e293b;'>${customLayout.headerTitle || ''}<div style='font-size:12px;font-weight:400;color:#64748b;'>${customLayout.headerSubtitle || ''}</div></div>` : ''}
+        <div style='border-top:1px dashed #e2e8f0;border-bottom:1px dashed #e2e8f0;padding:8px 0;font-size:12px;'>
+          ${items.map(item => {
+            const main = `<div style='display:flex;justify-content:space-between;padding:4px 0;'><span>${item.quantity} × ${item.name}</span><span>${(item.price * item.quantity).toFixed(2)} ₺</span></div>`;
+            const extrasHtml = (item.extras && item.extras.length)
+              ? `<div style='padding-left:8px;font-size:11px;color:#64748b;margin-top:4px;'>${item.extras.map(ex => `<div style="display:flex;justify-content:space-between;"><span>+ ${ex.quantity}x ${ex.name}</span><span>${(ex.price * ex.quantity).toFixed(2)} ₺</span></div>`).join('')}</div>`
+              : '';
+            const noteHtml = item.note ? `<div style='padding-left:8px;font-size:11px;font-style:italic;color:#b45309;margin-top:4px;'>NOTE: ${item.note}</div>` : '';
+            return main + extrasHtml + noteHtml;
+          }).join('')}
+        </div>
+        <div style='margin-top:12px;font-size:12px;'>
+          <div style='display:flex;justify-content:space-between;'><span>Subtotal</span><span>${subTotal.toFixed(2)} ₺</span></div>
+          ${customLayout.showTaxes ? `<div style='display:flex;justify-content:space-between;color:#64748b;'><span>${customLayout.taxLabel || ''} (${customLayout.taxRate || 0}%)</span><span>${taxAmount.toFixed(2)} ₺</span></div>` : ''}
+          ${customLayout.showDiscounts ? `<div style='display:flex;justify-content:space-between;color:#64748b;'><span>${customLayout.discountLabel || ''} (${customLayout.discountRate || 0}%)</span><span>-${discountAmount.toFixed(2)} ₺</span></div>` : ''}
+          <div style='display:flex;justify-content:space-between;font-weight:600;'><span>Total</span><span>${total.toFixed(2)} ₺</span></div>
+        </div>
+        ${customLines && customLines.length ? `<div style='margin-top:12px;font-size:11px;color:#64748b;'>${customLines.map(line => `<div>${line}</div>`).join('')}</div>` : ''}
+        ${qrHtml}
+        ${customLayout.showQr && customLayout.qrText ? `<div style='font-size:10px;text-transform:uppercase;color:#64748b;margin-top:4px;'>${customLayout.qrText}</div>` : ''}
+        ${customLayout.showQr && customLayout.qrUrl && !customLayout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i) ? `<div style='font-size:8px;color:#94a3b8;'>${customLayout.qrUrl}</div>` : ''}
+        ${customLayout.showFooter ? `<div style='margin-top:12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.2em;color:#64748b;'>${customLayout.footerText || ''}</div>` : ''}
+      </div>
+    `;
+    const printWindow = window.open('', '_blank', 'width=400,height=600');
+    if (!printWindow) return;
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>Receipt Preview</title></head><body onload='window.print();'>${html}</body></html>`);
+    printWindow.document.close();
+  }
+
   const printOrder = useCallback(
     async (orderId) => {
       if (!orderId) return false;
       try {
         // Fetch full order with items (same as manual print)
         const order = await fetchOrderWithItems(orderId);
-        if (!order?.id || !shouldPrintNow(order.id)) return false;
+        if (!order?.id) return false;
         console.log("🖨️ Auto-printing order with items:", order.items?.length || 0);
+        // If running in desktop (Electron) with bridge available, skip preview and print directly.
+        if (!hasBridge) {
+          // web: open native preview before printing
+          openNativePrintPreview(order);
+        }
+        if (!shouldPrintNow(order.id)) return false;
         const ok = await printViaBridge("", order);
         if (!ok) toast.warn("🖨️ Printer job could not be queued");
         else toast.success(`🧾 Printed order #${order.id}`);

@@ -350,9 +350,39 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
 // ------------------------
 ipcMain.handle("beypro:printWindows", async (_evt, args) => {
   try {
-    const { printerName, dataBase64 } = args;
+    const { printerName, dataBase64, layout } = args;
 
-    const bytes = Buffer.from(dataBase64, "base64");
+    let bytes = Buffer.from(dataBase64, "base64");
+    if (layout && typeof layout === "object") {
+      let paperWidthPx = 384;
+      console.log("🖼️ printWindows received layout:", { showLogo: layout.showLogo, logoUrl: layout.logoUrl, showQr: layout.showQr, qrUrl: layout.qrUrl });
+      if (layout.receiptWidth === "80mm") paperWidthPx = 576;
+      if (layout.receiptWidth === "72mm") paperWidthPx = 512;
+      let logoBytes = null;
+      let qrBytes = null;
+      if (layout.showLogo && layout.logoUrl) {
+        try {
+          logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+        } catch (err) {
+          console.warn("Failed to process logo for Windows receipt:", err?.message || err);
+        }
+      }
+      if (layout.showQr && layout.qrUrl) {
+        try {
+          qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
+        } catch (err) {
+          console.warn("Failed to process QR for Windows receipt:", err?.message || err);
+        }
+      }
+      let merged = Buffer.alloc(0);
+      const centerCmd = Buffer.from([0x1b, 0x61, 0x01]);
+      const leftCmd = Buffer.from([0x1b, 0x61, 0x00]);
+      if (logoBytes) merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd]);
+      merged = Buffer.concat([merged, bytes]);
+      if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd]);
+      bytes = merged;
+    }
+
     const tempFile = path.join(app.getPath("temp"), "beypro-windows.txt");
     fs.writeFileSync(tempFile, bytes);
 
@@ -377,11 +407,13 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
   let finalBytes = Buffer.from(dataBase64, "base64");
   if (layout && typeof layout === 'object') {
     let paperWidthPx = 384;
+    console.log('🖼️ printNet received layout:', { showLogo: layout.showLogo, logoUrl: layout.logoUrl, showQr: layout.showQr, qrUrl: layout.qrUrl });
     if (layout.receiptWidth === "80mm") paperWidthPx = 576;
     if (layout.receiptWidth === "72mm") paperWidthPx = 512;
     let logoBytes = null;
     let qrBytes = null;
     if (layout.showLogo && layout.logoUrl) {
+      console.log('🖼️ Processing logo URL in main:', layout.logoUrl);
       try {
         logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
       } catch (err) {
@@ -389,17 +421,20 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
       }
     }
     if (layout.showQr && layout.qrUrl) {
+      console.log('🔳 Processing QR in main:', layout.qrUrl);
       try {
         qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
       } catch (err) {
         console.warn("Failed to process QR for receipt:", err?.message || err);
       }
     }
-    // Concatenate logo, text, QR
+    // Concatenate logo (centered), text, QR (centered)
     let merged = Buffer.alloc(0);
-    if (logoBytes) merged = Buffer.concat([merged, logoBytes]);
+    const centerCmd = Buffer.from([0x1b, 0x61, 0x01]); // ESC a 1
+    const leftCmd = Buffer.from([0x1b, 0x61, 0x00]); // ESC a 0
+    if (logoBytes) merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd]);
     merged = Buffer.concat([merged, finalBytes]);
-    if (qrBytes) merged = Buffer.concat([merged, qrBytes]);
+    if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd]);
     finalBytes = merged;
   }
 

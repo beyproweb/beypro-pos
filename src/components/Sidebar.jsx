@@ -364,46 +364,47 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     >
 
       {/* Logo */}
-     <div className={`flex items-center gap-2 justify-center py-2 transition-all ${isOpen ? "pl-3" : ""}`}>
-  <button
-    onClick={() => setIsOpen((prev) => !prev)}
-    title={t(isOpen ? "Collapse sidebar" : "Expand sidebar", {
-      defaultValue: isOpen ? "Collapse sidebar" : "Expand sidebar",
-    })}
-    className={`
-      relative flex flex-col items-center justify-center
-      rounded-lg outline-none focus:ring-2 focus:ring-fuchsia-400
-      transition-transform duration-200
-      ${isOpen ? "w-8 h-8 md:w-14 md:h-14" : "w-10 h-10"}
-      bg-white/5 hover:bg-white/10 border border-white/20 shadow-lg
-      hover:scale-105 active:scale-95
-    `}
-  >
-    <span
-      className={`
-        block w-6 h-0.5 bg-white rounded transition-transform duration-200
-        ${isOpen ? "translate-y-1.5 rotate-45" : "-translate-y-1.5"}
-      `}
-    />
-    <span
-      className={`
-        block w-6 h-0.5 bg-white rounded mb-1.5 mt-1.5 transition-opacity duration-200
-        ${isOpen ? "opacity-0" : "opacity-100"}
-      `}
-    />
-    <span
-      className={`
-        block w-6 h-0.5 bg-white rounded transition-transform duration-200
-        ${isOpen ? "-translate-y-1.5 -rotate-45" : "translate-y-1.5"}
-      `}
-    />
-    <span className="sr-only">
-      {t(isOpen ? "Collapse sidebar" : "Expand sidebar", {
-        defaultValue: isOpen ? "Collapse sidebar" : "Expand sidebar",
-      })}
-    </span>
-  </button>
-</div>
+      <div className={`flex items-center gap-2 justify-center py-2 transition-all ${isOpen ? "pl-3" : ""}`}>
+        <button
+          onClick={() => setIsOpen((prev) => !prev)}
+          title={t(isOpen ? "Collapse sidebar" : "Expand sidebar", {
+            defaultValue: isOpen ? "Collapse sidebar" : "Expand sidebar",
+          })}
+          className={`
+            relative flex flex-col items-center justify-center
+            rounded-lg outline-none focus:ring-2 focus:ring-fuchsia-400
+            transition-transform duration-200
+            ${isOpen ? "w-8 h-8 md:w-14 md:h-14" : "w-10 h-10"}
+            bg-white/5 hover:bg-white/10 border border-white/20 shadow-lg
+            hover:scale-105 active:scale-95
+          `}
+        >
+          <span
+            className={`
+              block w-6 h-0.5 bg-white rounded transition-transform duration-200
+              ${isOpen ? "translate-y-1.5 rotate-45" : "-translate-y-1.5"}
+            `}
+          />
+          <span
+            className={`
+              block w-6 h-0.5 bg-white rounded mb-1.5 mt-1.5 transition-opacity duration-200
+              ${isOpen ? "opacity-0" : "opacity-100"}
+            `}
+          />
+          <span
+            className={`
+              block w-6 h-0.5 bg-white rounded transition-transform duration-200
+              ${isOpen ? "-translate-y-1.5 -rotate-45" : "translate-y-1.5"}
+            `}
+          />
+          <span className="sr-only">
+            {t(isOpen ? "Collapse sidebar" : "Expand sidebar", {
+              defaultValue: isOpen ? "Collapse sidebar" : "Expand sidebar",
+            })}
+          </span>
+        </button>
+      </div>
+      {/* User name will be shown at the bottom below logout */}
 
 
       {/* Menu */}
@@ -481,15 +482,17 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
       </nav>
 
-      <div className="mt-auto mb-6 flex flex-col items-center gap-2 px-4 text-center">
+      <div className="mb-6 flex flex-col items-center gap-2 px-4 text-center">
         <span
           className="text-2xl font-extrabold tracking-wide select-none bg-gradient-to-r from-blue-200 via-fuchsia-200 to-indigo-200 bg-clip-text text-transparent drop-shadow-lg"
         >
           Beypro
         </span>
-        <span className="text-xs uppercase tracking-[0.3em] text-white/60">
-          Dashboard
-        </span>
+        {currentUser?.name && (
+          <span className="text-xs uppercase tracking-[0.3em] text-white/60 truncate max-w-[180px]">
+            {currentUser.name}
+          </span>
+        )}
       </div>
     </aside>
   );

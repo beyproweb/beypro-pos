@@ -216,11 +216,12 @@ async function ensureReceiptLayout() {
   if (layoutLoaded && layoutCache !== null) return layoutCache;
   if (layoutFetchPromise) return layoutFetchPromise;
 
-  layoutFetchPromise = secureFetch("/printer-settings/1")
+  layoutFetchPromise = secureFetch("/printer-settings/sync")
     .then((printer) => {
-      if (printer?.layout && typeof printer.layout === "object") {
-        setReceiptLayout(printer.layout);
-        console.log("✅ Receipt layout loaded from backend:", Object.keys(printer.layout));
+      const layout = printer?.settings?.layout || printer?.layout;
+      if (layout && typeof layout === "object") {
+        setReceiptLayout(layout);
+        console.log("✅ Receipt layout loaded from backend sync:", Object.keys(layout));
       } else {
         console.warn("⚠️ No layout data received from backend, using defaults");
         layoutLoaded = true;
@@ -451,18 +452,29 @@ function isPrivateLanHost(host = "") {
   return PRIVATE_LAN_REGEX.test(trimmed);
 }
 
-function buildEscposBytes(text, { cut = true, feedLines = 3 } = {}) {
+function buildEscposBytes(text, { cut = true, feedLines = 3, alignment = 'left' } = {}) {
   const normalized = `${text || ""}\n${"\n".repeat(Math.max(0, feedLines))}`;
   const init = Uint8Array.from([0x1b, 0x40]); // ESC @ reset
   const selectTurkish = Uint8Array.from([0x1b, 0x74, 19]); // ESC t 19 (CP1254)
   const body = encodeCP1254(normalized);
   const cutBytes = cut ? Uint8Array.from([0x1d, 0x56, 0x00]) : new Uint8Array(0);
+  // Alignment: use ESC a n to set alignment: 0=left,1=center,2=right
+  const alignMap = { left: 0x00, center: 0x01, right: 0x02 };
+  const alignCmd = Uint8Array.from([0x1b, 0x61, alignMap[alignment] || 0x00]);
 
-  const bytes = new Uint8Array(init.length + selectTurkish.length + body.length + cutBytes.length);
-  bytes.set(init, 0);
-  bytes.set(selectTurkish, init.length);
-  bytes.set(body, init.length + selectTurkish.length);
-  bytes.set(cutBytes, init.length + selectTurkish.length + body.length);
+  const bytes = new Uint8Array(
+    init.length + selectTurkish.length + alignCmd.length + body.length + cutBytes.length
+  );
+  let offset = 0;
+  bytes.set(init, offset);
+  offset += init.length;
+  bytes.set(selectTurkish, offset);
+  offset += selectTurkish.length;
+  bytes.set(alignCmd, offset);
+  offset += alignCmd.length;
+  bytes.set(body, offset);
+  offset += body.length;
+  bytes.set(cutBytes, offset);
   return bytes;
 }
 
@@ -490,7 +502,11 @@ export function renderReceiptText(order, providedLayout) {
   const lines = [];
   const add = (l = "") => lines.push(String(l));
 
-  if (layout.showHeader) add(layout.headerText || "Beypro POS");
+  if (layout.showHeader) {
+    const headerLine = layout.headerText || layout.headerTitle || "Beypro POS";
+    add(headerLine);
+    if (layout.headerSubtitle) add(layout.headerSubtitle);
+  }
   if (layout.shopAddress) add(layout.shopAddress.replace(/\n/g, " "));
   add(new Date(order?.created_at || Date.now()).toLocaleString());
   add(`Order #${order?.id || "-"}`);
@@ -685,7 +701,15 @@ export async function printViaBridge(text, orderObj) {
       console.warn("⚠️ Failed to ensure receipt layout before printing:", err?.message || err);
     }
     layout = getReceiptLayout();
-    console.log("📝 Printing with layout:", { alignment: layout.alignment, showFooter: layout.showFooter });
+    console.log("📝 Printing with layout:", {
+      alignment: layout.alignment,
+      showFooter: layout.showFooter,
+      showLogo: layout.showLogo,
+      logoUrl: layout.logoUrl,
+      showQr: layout.showQr,
+      qrUrl: layout.qrUrl,
+      receiptWidth: layout.receiptWidth,
+    });
     resolvedText = renderReceiptText(orderObj, layout);
     console.log("📝 Receipt text rendered with customizations");
   }
@@ -723,10 +747,12 @@ export async function printViaBridge(text, orderObj) {
   const textBytes = buildEscposBytes(resolvedText, {
     cut: true,
     feedLines: 3,
-    fontSize: layout?.fontSize || 14,
     alignment: layout?.alignment || "left",
-    spacing: layout?.lineHeight || 1.3,
   });
+
+  // base64 of text bytes — send this plus `layout` to bridge/backend so
+  // image/QR conversion happens in Electron/main or backend where Jimp is available.
+  const textDataBase64 = btoa(String.fromCharCode(...textBytes));
 
   // Concatenate logo, text, QR
   let finalBytes = [];
@@ -844,10 +870,6 @@ export async function printViaBridge(text, orderObj) {
     (isPrivateLanHost(target.host) || localBridge?.isDesktop === true)
   ) {
     try {
-      const bytes = buildEscposBytes(resolvedText, {
-        cut: payload.cut,
-      });
-      const dataBase64 = btoa(String.fromCharCode(...bytes));
       console.log("🖨️ Using local bridge for LAN printer:", {
         host: target.host,
         port: payload.port || 9100,
@@ -855,7 +877,8 @@ export async function printViaBridge(text, orderObj) {
       const result = await localBridge.printNet({
         host: target.host,
         port: payload.port || 9100,
-        dataBase64,
+        dataBase64: textDataBase64,
+        layout,
       });
 
       if (result?.ok === false) {
@@ -881,7 +904,11 @@ export async function printViaBridge(text, orderObj) {
 
     const response = await secureFetch("/printer-settings/print", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...payload,
+        content: textDataBase64,
+        layout,
+      }),
     });
 
     if (response?.ok === false) {

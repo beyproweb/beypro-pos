@@ -104,15 +104,8 @@ export default function ModernHeader({
         </button>
       </div>
 
-      {/* Center: Welcome + sticky subtitle (no flicker) */}
+      {/* Center: sticky subtitle (no flicker) */}
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4 gap-1">
-        {userName && (
-          <span className="hidden md:inline-flex text-lg font-bold text-blue-700 dark:text-blue-200 bg-white/70 dark:bg-zinc-800/50 rounded-xl px-4 py-1 shadow">
-            👋 Welcome, {userName}
-          </span>
-        )}
-        
-        {/* 👇 StickySubtitle ensures customer name/address never disappear */}
         <StickySubtitle text={subtitle} />
       </div>
 

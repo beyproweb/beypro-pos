@@ -139,15 +139,26 @@ function buildTestTicket(layout, order = SAMPLE_ORDER, customLines = []) {
   return lines.join("\n");
 }
 
-function buildEscposBytes(text) {
+// Build ESC/POS bytes with alignment + Turkish codepage (matches receiptPrinter util)
+function buildEscposBytes(text, { alignment = "left", cut = true, feedLines = 3 } = {}) {
+  const normalized = `${text || ""}\n${"\n".repeat(Math.max(0, feedLines))}`;
+  const init = Uint8Array.from([0x1b, 0x40]); // reset
+  const selectTurkish = Uint8Array.from([0x1b, 0x74, 19]); // CP1254
+  const alignMap = { left: 0x00, center: 0x01, right: 0x02 };
+  const alignCmd = Uint8Array.from([0x1b, 0x61, alignMap[alignment] || 0x00]);
   const encoder = new TextEncoder();
-  const init = Uint8Array.from([0x1b, 0x40]);
-  const body = encoder.encode(text.endsWith("\n") ? text : `${text}\n\n`);
-  const cut = Uint8Array.from([0x1d, 0x56, 0x00]);
-  const bytes = new Uint8Array(init.length + body.length + cut.length);
-  bytes.set(init, 0);
-  bytes.set(body, init.length);
-  bytes.set(cut, init.length + body.length);
+  const body = encoder.encode(normalized.endsWith("\n") ? normalized : `${normalized}\n`);
+  const cutBytes = cut ? Uint8Array.from([0x1d, 0x56, 0x00]) : new Uint8Array(0);
+
+  const bytes = new Uint8Array(
+    init.length + selectTurkish.length + alignCmd.length + body.length + cutBytes.length
+  );
+  let offset = 0;
+  bytes.set(init, offset); offset += init.length;
+  bytes.set(selectTurkish, offset); offset += selectTurkish.length;
+  bytes.set(alignCmd, offset); offset += alignCmd.length;
+  bytes.set(body, offset); offset += body.length;
+  bytes.set(cutBytes, offset);
   return bytes;
 }
 
@@ -232,9 +243,20 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
       )}
       {layout.showQr && (
         <div className="mt-4 flex flex-col items-center gap-1 rounded-2xl border border-dashed border-slate-300 p-3 text-[10px] uppercase text-slate-500">
-          <div className="h-16 w-16 rounded-xl bg-slate-900" />
+          {layout.qrUrl && layout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i) ? (
+            <img
+              src={layout.qrUrl}
+              alt="QR"
+              className="h-16 w-16 rounded-xl object-contain bg-white border"
+              style={{ background: '#fff' }}
+            />
+          ) : (
+            <div className="h-16 w-16 rounded-xl bg-slate-900" />
+          )}
           <div className="text-[9px]">{layout.qrText}</div>
-          <div className="text-[8px] text-slate-400">{layout.qrUrl}</div>
+          {layout.qrUrl && !layout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i) && (
+            <div className="text-[8px] text-slate-400">{layout.qrUrl}</div>
+          )}
         </div>
       )}
       {layout.showFooter && (
@@ -247,6 +269,15 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
 }
 
 export default function PrinterTab() {
+  // Helper: open receipt preview in native print dialog
+  function openNativePrintPreview() {
+    const receiptHtml = document.getElementById('beypro-receipt-preview')?.outerHTML;
+    if (!receiptHtml) return;
+    const printWindow = window.open('', '_blank', 'width=400,height=600');
+    if (!printWindow) return;
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>Receipt Preview</title><style>body{background:#fff;margin:0;padding:20px;} .rounded-2xl{border-radius:1rem;} .border{border:1px solid #e2e8f0;} .shadow-inner{box-shadow:inset 0 1px 2px #0001;} .text-slate-900{color:#0f172a;} .p-4{padding:1rem;} .mx-auto{margin-left:auto;margin-right:auto;} .mb-3{margin-bottom:.75rem;} .h-12{height:3rem;} .w-auto{width:auto;} .object-contain{object-fit:contain;} .text-center{text-align:center;} .text-sm{font-size:.875rem;} .font-semibold{font-weight:600;} .uppercase{text-transform:uppercase;} .tracking-wide{letter-spacing:.05em;} .text-slate-800{color:#1e293b;} .text-xs{font-size:.75rem;} .font-normal{font-weight:400;} .text-slate-500{color:#64748b;} .border-y{border-top:1px dashed #e2e8f0;border-bottom:1px dashed #e2e8f0;} .py-2{padding-top:.5rem;padding-bottom:.5rem;} .text-[12px]{font-size:12px;} .flex{display:flex;} .justify-between{justify-content:space-between;} .py-1{padding-top:.25rem;padding-bottom:.25rem;} .mt-3{margin-top:.75rem;} .space-y-1 > :not([hidden]) ~ :not([hidden]){margin-top:.25rem;} .text-sm{font-size:.875rem;} .font-semibold{font-weight:600;} .rounded-2xl{border-radius:1rem;} .border-dashed{border-style:dashed;} .border-slate-300{border-color:#cbd5e1;} .p-3{padding:0.75rem;} .text-[10px]{font-size:10px;} .uppercase{text-transform:uppercase;} .tracking-[0.2em]{letter-spacing:0.2em;} .text-slate-500{color:#64748b;} .mt-4{margin-top:1rem;} .flex-col{flex-direction:column;} .items-center{align-items:center;} .gap-1{gap:0.25rem;} .rounded-xl{border-radius:0.75rem;} .bg-slate-900{background:#0f172a;} .text-[9px]{font-size:9px;} .text-[8px]{font-size:8px;} .text-slate-400{color:#94a3b8;} .mt-3{margin-top:.75rem;} .text-center{text-align:center;} .tracking-[0.2em]{letter-spacing:0.2em;} .text-slate-500{color:#64748b;}</style></head><body onload='window.print();'>${receiptHtml}</body></html>`);
+    printWindow.document.close();
+  }
   const [usbPrinters, setUsbPrinters] = useState([]);
   const [serialPrinters, setSerialPrinters] = useState([]);
   const [windowsPrinters, setWindowsPrinters] = useState([]);
@@ -577,6 +608,7 @@ export default function PrinterTab() {
   }
 
   async function handleTestPrint() {
+    openNativePrintPreview();
     const targetId = printerConfig.receiptPrinter || printerConfig.kitchenPrinter;
     const target = allPrinters.find((printer) => printer.id === targetId);
     if (!target) {
@@ -584,7 +616,9 @@ export default function PrinterTab() {
       return;
     }
     const ticket = buildTestTicket(printerConfig.layout, SAMPLE_ORDER, printerConfig.customLines);
-    const bytes = buildEscposBytes(ticket);
+    const bytes = buildEscposBytes(ticket, {
+      alignment: printerConfig.layout.alignment || "left",
+    });
     setTestStatus({ level: "idle", message: "Sending test print…" });
 
     try {
@@ -594,6 +628,7 @@ export default function PrinterTab() {
         const res = await window.beypro.printWindows({
           printerName: target.meta.name,
           dataBase64,
+          layout: printerConfig.layout,
         });
         if (!res?.ok) {
           throw new Error(res?.error || "Windows driver rejected the job.");
@@ -606,6 +641,7 @@ export default function PrinterTab() {
           host,
           port,
           dataBase64,
+          layout: printerConfig.layout,
         });
         if (!res?.ok) {
           throw new Error(res?.error || "LAN printer did not respond.");
@@ -766,11 +802,13 @@ export default function PrinterTab() {
           </div>
           <div className="grid gap-4 lg:grid-cols-[1fr,1fr]">
             <div className="flex justify-center">
-              <ReceiptPreview
-                layout={printerConfig.layout}
-                order={SAMPLE_ORDER}
-                customLines={printerConfig.customLines}
-              />
+              <div id="beypro-receipt-preview">
+                <ReceiptPreview
+                  layout={printerConfig.layout}
+                  order={SAMPLE_ORDER}
+                  customLines={printerConfig.customLines}
+                />
+              </div>
             </div>
             <div className="space-y-3 text-sm text-slate-600">
               <div>
