@@ -1,6 +1,6 @@
 {
   "name": "hurryposdash",
-  "version": "19.6.6",
+  "version": "20.0.0",
   "private": true,
   "main": "main.js",
   "proxy": "http://localhost:5000",
