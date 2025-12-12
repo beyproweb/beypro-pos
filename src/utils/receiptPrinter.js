@@ -575,9 +575,13 @@ export function renderReceiptText(order, providedLayout) {
     if (layout.headerSubtitle) add(layout.headerSubtitle);
   }
   if (layout.shopAddress) {
-    add(layout.shopAddress.replace(/\s+/g, " ").trim());
+    String(layout.shopAddress)
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .forEach((l) => add(l));
   }
-  if (layout.shopAddress) add(layout.shopAddress.replace(/\n/g, " "));
   add(new Date(order?.created_at || Date.now()).toLocaleString());
   add(`Order #${order?.id || "-"}`);
 
@@ -760,6 +764,30 @@ export async function printViaBridge(text, orderObj) {
   let logoBytes = null;
   let qrBytes = null;
   let layout = null;
+  const jobKey =
+    orderObj && (orderObj.id || orderObj.order_id)
+      ? `order:${orderObj.id || orderObj.order_id}`
+      : null;
+
+  // Basic de-duplication: avoid printing the same order multiple times
+  // within a very short window from this renderer (covers cases where
+  // multiple callers trigger print for the same order almost simultaneously).
+  if (typeof window !== "undefined" && jobKey) {
+    const orderId = jobKey;
+    const now = Date.now();
+    if (!window.__beyproPrintGuard) {
+      window.__beyproPrintGuard = {};
+    }
+    const lastTs = window.__beyproPrintGuard[orderId] || 0;
+    if (now - lastTs < 1500) {
+      console.warn(
+        "⚠️ Skipping duplicate printViaBridge call for order within 1.5s window:",
+        orderId
+      );
+      return false;
+    }
+    window.__beyproPrintGuard[orderId] = now;
+  }
 
   if (orderObj) {
     try {
@@ -796,24 +824,6 @@ export async function printViaBridge(text, orderObj) {
   if (widthSetting === "80mm") paperWidthPx = 576;
   if (widthSetting === "72mm") paperWidthPx = 512;
 
-  // Logo
-  if (layout?.showLogo && layout?.logoUrl) {
-    try {
-      logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
-    } catch (err) {
-      console.warn("⚠️ Failed to load/convert logo for receipt:", err?.message || err);
-    }
-  }
-
-  // QR code
-  if (layout?.showQr && layout?.qrUrl) {
-    try {
-      qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
-    } catch (err) {
-      console.warn("⚠️ Failed to generate/convert QR for receipt:", err?.message || err);
-    }
-  }
-
   // Build text bytes with font size, alignment, spacing
   const textBytes = buildEscposBytes(resolvedText, {
     cut: true,
@@ -831,16 +841,10 @@ export async function printViaBridge(text, orderObj) {
       : [],
   });
 
-  // base64 of text bytes — send this plus `layout` to bridge/backend so
-  // image/QR conversion happens in Electron/main or backend where Jimp is available.
+  // base64 of text bytes — by default we only send text bytes and let the
+  // Electron main process compose logo/QR when using the local desktop bridge.
   const textDataBase64 = toBase64(textBytes);
-
-  // Concatenate logo, text, QR
-  let finalBytes = [];
-  if (logoBytes) finalBytes = finalBytes.concat(Array.from(logoBytes));
-  finalBytes = finalBytes.concat(Array.from(textBytes));
-  if (qrBytes) finalBytes = finalBytes.concat(Array.from(qrBytes));
-  const finalBase64 = toBase64(finalBytes);
+  const textBase64 = textDataBase64;
 
   // (Printing will continue after resolving the target below)
 
@@ -924,18 +928,22 @@ export async function printViaBridge(text, orderObj) {
 
   if (target.interface === "windows" && typeof window !== "undefined" && window.beypro) {
     try {
+      console.log("🖨️ Using Windows bridge (printWindows) — sending text bytes and layout to main for composition");
       const res = await window.beypro.printWindows({
         printerName: target.name,
-        dataBase64: finalBase64,
+        dataBase64: textBase64,
         layout,
+        jobKey,
       });
       if (res?.ok) {
         console.log("✅ Receipt print dispatched via Windows driver");
         return true;
       }
-      console.warn("⚠️ Windows driver print reported failure:", res?.error);
+      console.warn("⚠️ Windows driver print reported failure — will not fallback to backend:", res?.error);
+      return false;
     } catch (err) {
-      console.warn("⚠️ Windows driver print failed, falling back to backend:", err?.message || err);
+      console.warn("⚠️ Windows driver print failed — will not fallback to backend:", err?.message || err);
+      return false;
     }
   }
 
@@ -946,7 +954,6 @@ export async function printViaBridge(text, orderObj) {
     align: toEscAlignment(printerSettings?.layout?.alignment),
     cut: printerSettings?.defaults?.cut !== false,
     cashdraw: printerSettings?.defaults?.cashDrawer === true,
-    dataBase64: finalBase64,
     layout,
   };
 
@@ -971,30 +978,60 @@ export async function printViaBridge(text, orderObj) {
     (isPrivateLanHost(target.host) || localBridge?.isDesktop === true)
   ) {
     try {
-      console.log("🖨️ Using local bridge for LAN printer:", {
+      console.log("🖨️ Using local bridge for LAN printer — sending text bytes and layout to main for composition:", {
         host: target.host,
         port: payload.port || 9100,
       });
       const result = await localBridge.printNet({
         host: target.host,
         port: payload.port || 9100,
-        dataBase64: finalBase64,
+        dataBase64: textBase64,
         layout,
+        jobKey,
       });
 
       if (result?.ok === false) {
-        console.warn("⚠️ Local LAN print bridge reported failure:", result?.error);
+        console.warn("⚠️ Local LAN print bridge reported failure — will not fallback to backend:", result?.error);
+        return false;
       } else {
         console.log("✅ Receipt print dispatched via local bridge");
         return true;
       }
     } catch (err) {
-      console.warn("⚠️ Local LAN print bridge failed, falling back to backend:", err?.message || err);
+      console.warn("⚠️ Local LAN print bridge failed — will not fallback to backend:", err?.message || err);
+      return false;
     }
   }
-
+  // If we reached here, we will dispatch via backend. In this path we MUST
+  // send final raw ESC/POS bytes (logo + text + QR) because the backend will
+  // not perform layout composition when `dataBase64` is provided.
   try {
-    console.log("🖨️ Dispatching receipt print via backend:", {
+    // Compose logo/QR in renderer for backend submission
+    let finalBytes = Array.from(textBytes);
+    if (layout?.showLogo && layout?.logoUrl) {
+      try {
+        const logoBytesLocal = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+        const centerCmd = [0x1b, 0x61, 0x01];
+        const leftCmd = [0x1b, 0x61, 0x00];
+        finalBytes = Array.from(centerCmd).concat(Array.from(logoBytesLocal)).concat(Array.from(leftCmd)).concat(finalBytes);
+      } catch (err) {
+        console.warn("⚠️ Failed to load/convert logo for backend print:", err?.message || err);
+      }
+    }
+    if (layout?.showQr && layout?.qrUrl) {
+      try {
+        const qrBytesLocal = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
+        const centerCmd = [0x1b, 0x61, 0x01];
+        const leftCmd = [0x1b, 0x61, 0x00];
+        finalBytes = finalBytes.concat(Array.from(centerCmd)).concat(Array.from(qrBytesLocal)).concat(Array.from(leftCmd));
+      } catch (err) {
+        console.warn("⚠️ Failed to generate/convert QR for backend print:", err?.message || err);
+      }
+    }
+
+    const finalBase64 = toBase64(Uint8Array.from(finalBytes));
+
+    console.log("🖨️ Dispatching receipt print via backend (final raw bytes):", {
       interface: payload.interface,
       host: payload.host,
       port: payload.port,
@@ -1007,8 +1044,8 @@ export async function printViaBridge(text, orderObj) {
       method: "POST",
       body: JSON.stringify({
         ...payload,
-        content: textDataBase64,
-        layout,
+        dataBase64: finalBase64,
+        jobKey,
       }),
     });
 

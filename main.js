@@ -63,6 +63,24 @@ const path = require("path");
 const fs = require("fs");
 const net = require("net");
 
+// Simple in-memory de-dupe for recent jobs (jobKey => timestamp)
+const RECENT_JOB_TTL = 10000; // ms
+const recentJobs = new Map();
+function isRecentJob(jobKey) {
+  if (!jobKey) return false;
+  const now = Date.now();
+  const last = recentJobs.get(jobKey);
+  if (last && now - last < RECENT_JOB_TTL) return true;
+  recentJobs.set(jobKey, now);
+  // prune occasionally
+  if (recentJobs.size > 200) {
+    for (const [k, ts] of recentJobs) {
+      if (now - ts > RECENT_JOB_TTL) recentJobs.delete(k);
+    }
+  }
+  return false;
+}
+
 // MAIN PRINTER ENGINE (used by ALL Windows printers)
 const { print } = require("pdf-to-printer");
 
@@ -320,7 +338,12 @@ async function printNetDirect(host, port, bytes) {
 // ------------------------
 ipcMain.handle("beypro:printRaw", async (_evt, args) => {
   try {
-    const { printerName, dataBase64 } = args;
+    const { printerName, dataBase64, jobKey } = args;
+
+    if (jobKey && isRecentJob(jobKey)) {
+      console.log(`⚠️ Skipping duplicate printRaw for jobKey=${jobKey}`);
+      return { ok: true, deduped: true };
+    }
 
     if (!dataBase64) return { ok: false, error: "Missing dataBase64" };
 
@@ -361,7 +384,12 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
 // ------------------------
 ipcMain.handle("beypro:printWindows", async (_evt, args) => {
   try {
-    const { printerName, dataBase64, layout } = args;
+    const { printerName, dataBase64, layout, jobKey } = args;
+
+    if (jobKey && isRecentJob(jobKey)) {
+      console.log(`⚠️ Skipping duplicate printWindows for jobKey=${jobKey}`);
+      return { ok: true, deduped: true };
+    }
 
     let bytes = Buffer.from(dataBase64, "base64");
     if (layout && typeof layout === "object") {
@@ -413,7 +441,12 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
 // DIRECT TCP RAW ESC/POS (9100)
 // ------------------------
 ipcMain.handle("beypro:printNet", async (_evt, args) => {
-  const { host, port = 9100, dataBase64, layout } = args;
+  const { host, port = 9100, dataBase64, layout, jobKey } = args;
+
+  if (jobKey && isRecentJob(jobKey)) {
+    console.log(`⚠️ Skipping duplicate printNet for jobKey=${jobKey}`);
+    return { ok: true, deduped: true };
+  }
 
   // If layout is provided, build ESC/POS bytes with logo/QR
   let finalBytes = Buffer.from(dataBase64, "base64");

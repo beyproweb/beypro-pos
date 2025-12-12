@@ -7,33 +7,28 @@ const DEFAULT_LAYOUT = {
   logoUrl: "",
   showLogo: true,
   headerTitle: "Beypro POS",
-  headerSubtitle: "Modern receipts that mirror your brand",
+  headerSubtitle: "Hurrybey · Receipt",
   showHeader: true,
   showFooter: true,
-  footerText: "Thank you for your order! / Teşekkürler!",
+  footerText: "Teşekkür ederiz! / Thank you!",
   showQr: true,
-  qrText: "Scan for menu & feedback",
-  qrUrl: "https://hurrybey.com",
-  alignment: "center",
-  shopAddress: "",
-  shopAddressFontSize: 11,
+  qrText: "Scan to share feedback",
+  qrUrl: "https://hurrybey.com/feedback",
+  alignment: "left",
   paperWidth: "80mm",
-  spacing: 1.22,
-  itemFontSize: 14,
-  taxRate: 18,
-  discountRate: 5,
+  spacing: 1.25,
   showTaxes: true,
   showDiscounts: true,
-  showItemModifiers: true,
   taxLabel: "Tax",
   discountLabel: "Discount",
-};
-
-const DEFAULT_LAN_CONFIG = {
-  base: "192.168.1",
-  from: 1,
-  to: 20,
-  hosts: "",
+  taxRate: 0,
+  discountRate: 0,
+  showItemModifiers: true,
+  itemFontSize: 14,
+  shopAddress: "",
+  shopAddressFontSize: 11,
+  margin: 12,
+  includeTotals: true,
 };
 
 const createDefaultLayout = () => ({ ...DEFAULT_LAYOUT });
@@ -646,7 +641,8 @@ export default function PrinterTab() {
   }
 
   async function handleTestPrint() {
-    openNativePrintPreview();
+    // Only open the native print preview in web (no desktop bridge).
+    if (!hasBridge) openNativePrintPreview();
     const targetId = printerConfig.receiptPrinter || printerConfig.kitchenPrinter;
     const target = allPrinters.find((printer) => printer.id === targetId);
     if (!target) {
@@ -658,40 +654,17 @@ export default function PrinterTab() {
     const textBytes = buildEscposBytes(ticket, {
       alignment: layout.alignment || "left",
     });
-    let finalBytes = Array.from(textBytes);
+    const textBase64 =
+      typeof Buffer !== "undefined"
+        ? Buffer.from(textBytes).toString("base64")
+        : btoa(String.fromCharCode(...textBytes));
+    let finalBase64 = textBase64;
     let paperWidthPx = 384;
     if (layout.paperWidth === "80mm") paperWidthPx = 576;
     if (layout.paperWidth === "72mm") paperWidthPx = 512;
-    try {
-      if (layout.showLogo && layout.logoUrl) {
-        const logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
-        const centerCmd = Uint8Array.from([0x1b, 0x61, 0x01]);
-        const leftCmd = Uint8Array.from([0x1b, 0x61, 0x00]);
-        finalBytes = Array.from(centerCmd)
-          .concat(Array.from(logoBytes))
-          .concat(Array.from(leftCmd))
-          .concat(finalBytes);
-      }
-    } catch (err) {
-      console.warn("⚠️ Test print logo failed:", err?.message || err);
-    }
-    try {
-      if (layout.showQr && layout.qrUrl) {
-        const qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
-        const centerCmd = Uint8Array.from([0x1b, 0x61, 0x01]);
-        const leftCmd = Uint8Array.from([0x1b, 0x61, 0x00]);
-        finalBytes = finalBytes
-          .concat(Array.from(centerCmd))
-          .concat(Array.from(qrBytes))
-          .concat(Array.from(leftCmd));
-      }
-    } catch (err) {
-      console.warn("⚠️ Test print QR failed:", err?.message || err);
-    }
-    const dataBase64 =
-      typeof Buffer !== "undefined"
-        ? Buffer.from(Uint8Array.from(finalBytes)).toString("base64")
-        : btoa(String.fromCharCode(...Uint8Array.from(finalBytes)));
+    // Decide composition strategy: if using desktop bridge for printing (windows/lan),
+    // send text bytes + layout so Electron main composes logo/QR.
+    // If no bridge or printing via backend/USB/Serial, compose images here and send final raw bytes.
     setTestStatus({ level: "idle", message: "Sending test print…" });
 
     try {
@@ -730,8 +703,7 @@ export default function PrinterTab() {
               : "lt",
           cut: printerConfig.defaults.cut,
           cashdraw: printerConfig.defaults.cashDrawer,
-          dataBase64,
-          layout,
+          dataBase64: finalBase64,
         };
         if (target.type === "usb") {
           payload.vendorId = target.meta.vendorId;

@@ -44,8 +44,6 @@ function toRasterBytes(canvas) {
     bytes.push(0x0a);
   }
 
-  // Cut
-  bytes.push(0x1d, 0x56, 0x00);
   return new Uint8Array(bytes);
 }
 
