@@ -11,6 +11,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      - name: Print package.json app version
+        id: print_pkg_version
+        shell: pwsh
+        run: |
+          try {
+            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+            Write-Host "📦 package.json version: $($pkg.version)" -ForegroundColor Cyan
+            echo "PACKAGE_JSON_VERSION=$($pkg.version)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } catch {
+            Write-Host "⚠️ Failed to read package.json version: $_" -ForegroundColor Yellow
+          }
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
