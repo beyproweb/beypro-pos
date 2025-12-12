@@ -41,6 +41,14 @@ const createDefaultPrinterConfig = () => ({
   lastSynced: null,
 });
 
+// Default subnet + range for LAN scans; keeps the input populated to avoid undefined errors.
+const DEFAULT_LAN_CONFIG = {
+  base: "192.168.1",
+  from: 10,
+  to: 40,
+  hosts: "",
+};
+
 const SAMPLE_ORDER = {
   store: "Hurrybey Gıda",
   date: new Date().toLocaleString(),
