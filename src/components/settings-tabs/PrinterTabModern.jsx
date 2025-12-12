@@ -688,7 +688,10 @@ export default function PrinterTab() {
     } catch (err) {
       console.warn("⚠️ Test print QR failed:", err?.message || err);
     }
-    const dataBase64 = btoa(String.fromCharCode(...finalBytes));
+    const dataBase64 =
+      typeof Buffer !== "undefined"
+        ? Buffer.from(Uint8Array.from(finalBytes)).toString("base64")
+        : btoa(String.fromCharCode(...Uint8Array.from(finalBytes)));
     setTestStatus({ level: "idle", message: "Sending test print…" });
 
     try {

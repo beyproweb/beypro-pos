@@ -367,8 +367,9 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
     if (layout && typeof layout === "object") {
       let paperWidthPx = 384;
       console.log("🖼️ printWindows received layout:", { showLogo: layout.showLogo, logoUrl: layout.logoUrl, showQr: layout.showQr, qrUrl: layout.qrUrl });
-      if (layout.receiptWidth === "80mm") paperWidthPx = 576;
-      if (layout.receiptWidth === "72mm") paperWidthPx = 512;
+      const widthSetting = layout.receiptWidth || layout.paperWidth;
+      if (widthSetting === "80mm") paperWidthPx = 576;
+      if (widthSetting === "72mm") paperWidthPx = 512;
       let logoBytes = null;
       let qrBytes = null;
       if (layout.showLogo && layout.logoUrl) {
@@ -419,8 +420,9 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
   if (layout && typeof layout === 'object') {
     let paperWidthPx = 384;
     console.log('🖼️ printNet received layout:', { showLogo: layout.showLogo, logoUrl: layout.logoUrl, showQr: layout.showQr, qrUrl: layout.qrUrl });
-    if (layout.receiptWidth === "80mm") paperWidthPx = 576;
-    if (layout.receiptWidth === "72mm") paperWidthPx = 512;
+    const widthSetting = layout.receiptWidth || layout.paperWidth;
+    if (widthSetting === "80mm") paperWidthPx = 576;
+    if (widthSetting === "72mm") paperWidthPx = 512;
     let logoBytes = null;
     let qrBytes = null;
     if (layout.showLogo && layout.logoUrl) {

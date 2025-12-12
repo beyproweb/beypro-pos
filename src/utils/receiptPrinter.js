@@ -15,6 +15,7 @@ const defaultReceiptLayout = {
     { label: "Tax No", value: "1234567890" },
   ],
   showPacketCustomerInfo: true,
+  paperWidth: "58mm",
   receiptWidth: "58mm",
   receiptHeight: "",
 };
@@ -159,6 +160,21 @@ const formatQuantity = (qty) => {
   return qty.toFixed(2);
 };
 
+function toBase64(bytes) {
+  const buf = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes || []);
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(buf).toString("base64");
+  }
+  // Browser fallback: chunk to avoid call stack limits
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < buf.length; i += chunkSize) {
+    const chunk = buf.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}
+
 let layoutCache = { ...defaultReceiptLayout };
 let layoutLoaded = false;
 
@@ -196,6 +212,12 @@ async function getRegisterSettings() {
 
 export function setReceiptLayout(next) {
   layoutCache = { ...defaultReceiptLayout, ...(next || {}) };
+  if (!layoutCache.receiptWidth && layoutCache.paperWidth) {
+    layoutCache.receiptWidth = layoutCache.paperWidth;
+  }
+  if (!layoutCache.paperWidth && layoutCache.receiptWidth) {
+    layoutCache.paperWidth = layoutCache.receiptWidth;
+  }
   layoutLoaded = true;
   if (typeof window !== "undefined") {
     window.__receiptLayout = layoutCache;
@@ -445,6 +467,8 @@ function sanitizeReceiptText(input) {
   if (!input) return "";
   return String(input)
     .replace(/\r\n/g, "\n")
+    // ESC/POS codepages in use (CP1254/CP857) lack the ₺ glyph; replace with ASCII-safe token
+    .replace(/\u20ba/g, "TL")
     .replace(/\u200e|\u200f/g, "")
     .replace(ESC_POS_SAFE_CHAR_PATTERN, "?")
     .trimEnd();
@@ -459,30 +483,66 @@ function isPrivateLanHost(host = "") {
   return PRIVATE_LAN_REGEX.test(trimmed);
 }
 
-function buildEscposBytes(text, { cut = true, feedLines = 3, alignment = 'left' } = {}) {
+function buildEscposBytes(
+  text,
+  {
+    cut = true,
+    feedLines = 3,
+    alignment = 'left',
+    fontSize,
+    lineSpacing,
+    addressFontSize,
+    addressLines = [],
+  } = {}
+) {
   const normalized = `${text || ""}\n${"\n".repeat(Math.max(0, feedLines))}`;
-  const init = Uint8Array.from([0x1b, 0x40]); // ESC @ reset
-  const selectTurkish = Uint8Array.from([0x1b, 0x74, 19]); // ESC t 19 (CP1254)
-  const body = encodeCP1254(normalized);
-  const cutBytes = cut ? Uint8Array.from([0x1d, 0x56, 0x00]) : new Uint8Array(0);
-  // Alignment: use ESC a n to set alignment: 0=left,1=center,2=right
+  const lines = normalized.split("\n");
+  const init = [0x1b, 0x40]; // ESC @ reset
+  const selectTurkish = [0x1b, 0x74, 19]; // ESC t 19 (CP1254)
   const alignMap = { left: 0x00, center: 0x01, right: 0x02 };
-  const alignCmd = Uint8Array.from([0x1b, 0x61, alignMap[alignment] || 0x00]);
+  const alignCmd = [0x1b, 0x61, alignMap[alignment] || 0x00]; // ESC a n
+  const cutBytes = cut ? [0x1d, 0x56, 0x00] : [];
 
-  const bytes = new Uint8Array(
-    init.length + selectTurkish.length + alignCmd.length + body.length + cutBytes.length
+  const fontSizeToCmd = (px) => {
+    if (!px) return 0x00; // normal
+    if (px >= 22) return 0x11; // double width + height
+    if (px >= 18) return 0x01; // double height
+    return 0x00;
+  };
+
+  const sizeCmd = (px) => [0x1d, 0x21, fontSizeToCmd(px)]; // GS ! n
+  const baseSize = sizeCmd(fontSize);
+  const addressSize = addressFontSize ? sizeCmd(addressFontSize) : baseSize;
+  const addressLineSet = new Set(
+    Array.isArray(addressLines)
+      ? addressLines.map((l) => String(l || "").trim()).filter(Boolean)
+      : []
   );
-  let offset = 0;
-  bytes.set(init, offset);
-  offset += init.length;
-  bytes.set(selectTurkish, offset);
-  offset += selectTurkish.length;
-  bytes.set(alignCmd, offset);
-  offset += alignCmd.length;
-  bytes.set(body, offset);
-  offset += body.length;
-  bytes.set(cutBytes, offset);
-  return bytes;
+
+  const spacingCmd =
+    typeof lineSpacing === "number" && Number.isFinite(lineSpacing)
+      ? [0x1b, 0x33, Math.max(0, Math.min(255, Math.round(30 * lineSpacing)))]
+      : null;
+
+  const bytes = [];
+  bytes.push(...init, ...selectTurkish, ...alignCmd);
+  if (spacingCmd) bytes.push(...spacingCmd);
+  bytes.push(...baseSize);
+
+  let currentSize = baseSize[2];
+  for (const line of lines) {
+    const trimmed = String(line || "").trim();
+    const desiredSize = addressLineSet.has(trimmed) ? addressSize : baseSize;
+    if (desiredSize[2] !== currentSize) {
+      bytes.push(...desiredSize);
+      currentSize = desiredSize[2];
+    }
+    const body = encodeCP1254(`${line}\n`);
+    bytes.push(...body);
+  }
+
+  bytes.push(...cutBytes);
+  return Uint8Array.from(bytes);
 }
 
 export function renderReceiptText(order, providedLayout) {
@@ -731,9 +791,10 @@ export async function printViaBridge(text, orderObj) {
   }
 
   // Paper size (width in pixels)
+  const widthSetting = layout?.receiptWidth || layout?.paperWidth;
   let paperWidthPx = 384; // default for 58mm
-  if (layout?.receiptWidth === "80mm") paperWidthPx = 576;
-  if (layout?.receiptWidth === "72mm") paperWidthPx = 512;
+  if (widthSetting === "80mm") paperWidthPx = 576;
+  if (widthSetting === "72mm") paperWidthPx = 512;
 
   // Logo
   if (layout?.showLogo && layout?.logoUrl) {
@@ -758,18 +819,28 @@ export async function printViaBridge(text, orderObj) {
     cut: true,
     feedLines: 3,
     alignment: layout?.alignment || "left",
+    fontSize: layout?.fontSize,
+    lineSpacing: layout?.spacing || layout?.lineHeight,
+    addressFontSize: layout?.shopAddressFontSize,
+    addressLines: layout?.shopAddress
+      ? String(layout.shopAddress)
+          .replace(/\r/g, "")
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+      : [],
   });
 
   // base64 of text bytes — send this plus `layout` to bridge/backend so
   // image/QR conversion happens in Electron/main or backend where Jimp is available.
-  const textDataBase64 = btoa(String.fromCharCode(...textBytes));
+  const textDataBase64 = toBase64(textBytes);
 
   // Concatenate logo, text, QR
   let finalBytes = [];
   if (logoBytes) finalBytes = finalBytes.concat(Array.from(logoBytes));
   finalBytes = finalBytes.concat(Array.from(textBytes));
   if (qrBytes) finalBytes = finalBytes.concat(Array.from(qrBytes));
-  const finalBase64 = btoa(String.fromCharCode(...finalBytes));
+  const finalBase64 = toBase64(finalBytes);
 
   // (Printing will continue after resolving the target below)
 

@@ -14,11 +14,12 @@ function toRasterBytesFromCanvas(canvas) {
     const sliceHeight = Math.min(24, height - y);
     bytes.push(0x1b, 0x2a, 0x21, widthBytes & 0xff, (widthBytes >> 8) & 0xff);
 
-    for (let x = 0; x < widthBytes * 8; x++) {
+    for (let xb = 0; xb < widthBytes; xb++) {
       for (let k = 0; k < sliceHeight; k++) {
         let byte = 0;
+        const basePx = xb * 8;
         for (let b = 0; b < 8; b++) {
-          const px = x + b;
+          const px = basePx + b;
           if (px >= width) continue;
           const idx = ((y + k) * width + px) * 4;
           const val = data[idx]; // already monochrome
