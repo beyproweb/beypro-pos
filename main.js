@@ -1,27 +1,46 @@
 // ===============================
 // Image and QR code support
-const Jimp = require('jimp');
-const QRCode = require('qrcode');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+// Jimp ships ESM/CJS hybrids; resolve the actual Jimp class across shapes.
+const JimpModule = require("jimp");
+const Jimp = JimpModule.default || JimpModule.Jimp || JimpModule;
+const QRCode = require("qrcode");
+
+// Prefer built-in fetch (Node 18+); fallback to node-fetch for Electron/Node 16
+let fetch = globalThis.fetch;
+if (!fetch) {
+  fetch = async (...args) => {
+    try {
+      const mod = await import('node-fetch');
+      return mod.default(...args);
+    } catch (err) {
+      console.error("❌ Failed to load fetch; install 'node-fetch' to enable logo/QR downloads.", err);
+      throw err;
+    }
+  };
+}
 
 async function imageUrlToEscposBytes(url, width = 384) {
   const res = await fetch(url);
-  const buffer = await res.buffer();
+  const arrayBuffer = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
   const image = await Jimp.read(buffer);
-  image.resize(width, Jimp.AUTO).greyscale().contrast(1).dither565();
-  image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x, y, idx) {
-    const value = this.bitmap.data[idx];
-    this.bitmap.data[idx] = value > 128 ? 255 : 0;
-  });
+  // Jimp 1.6 supports resize/greyscale/contrast; dither565 is not available in this build.
+  image.resize({ w: width }); // maintain aspect ratio
+  image.greyscale();
+  image.contrast(1);
   const bytes = [];
-  const height = image.bitmap.height;
-  for (let y = 0; y < height; y++) {
-    bytes.push(0x1d, 0x76, 0x30, 0x00, width / 8, 0x00, 0x01, 0x00);
-    for (let x = 0; x < width; x += 8) {
+  const { width: w, height: h, data } = image.bitmap;
+  const widthBytes = Math.ceil(w / 8);
+  for (let y = 0; y < h; y++) {
+    bytes.push(0x1d, 0x76, 0x30, 0x00, widthBytes & 0xff, (widthBytes >> 8) & 0xff, 0x01, 0x00);
+    for (let xb = 0; xb < widthBytes; xb++) {
       let byte = 0;
+      const basePx = xb * 8;
       for (let b = 0; b < 8; b++) {
-        const pixel = image.getPixelColor(x + b, y);
-        const { r } = Jimp.intToRGBA(pixel);
+        const px = basePx + b;
+        if (px >= w) continue;
+        const idx = (y * w + px) * 4;
+        const r = data[idx]; // greyscale already applied
         if (r < 128) byte |= (1 << (7 - b));
       }
       bytes.push(byte);
@@ -33,20 +52,22 @@ async function imageUrlToEscposBytes(url, width = 384) {
 async function qrStringToEscposBytes(text, width = 256) {
   const qrDataUrl = await QRCode.toDataURL(text, { width, margin: 1 });
   const image = await Jimp.read(Buffer.from(qrDataUrl.split(",")[1], 'base64'));
-  image.resize(width, Jimp.AUTO).greyscale().contrast(1).dither565();
-  image.scan(0, 0, image.bitmap.width, image.bitmap.height, function(x, y, idx) {
-    const value = this.bitmap.data[idx];
-    this.bitmap.data[idx] = value > 128 ? 255 : 0;
-  });
+  image.resize({ w: width }); // maintain aspect ratio
+  image.greyscale();
+  image.contrast(1);
   const bytes = [];
-  const height = image.bitmap.height;
-  for (let y = 0; y < height; y++) {
-    bytes.push(0x1d, 0x76, 0x30, 0x00, width / 8, 0x00, 0x01, 0x00);
-    for (let x = 0; x < width; x += 8) {
+  const { width: w, height: h, data } = image.bitmap;
+  const widthBytes = Math.ceil(w / 8);
+  for (let y = 0; y < h; y++) {
+    bytes.push(0x1d, 0x76, 0x30, 0x00, widthBytes & 0xff, (widthBytes >> 8) & 0xff, 0x01, 0x00);
+    for (let xb = 0; xb < widthBytes; xb++) {
       let byte = 0;
+      const basePx = xb * 8;
       for (let b = 0; b < 8; b++) {
-        const pixel = image.getPixelColor(x + b, y);
-        const { r } = Jimp.intToRGBA(pixel);
+        const px = basePx + b;
+        if (px >= w) continue;
+        const idx = (y * w + px) * 4;
+        const r = data[idx];
         if (r < 128) byte |= (1 << (7 - b));
       }
       bytes.push(byte);
@@ -82,7 +103,7 @@ function isRecentJob(jobKey) {
 }
 
 // MAIN PRINTER ENGINE (used by ALL Windows printers)
-const { print } = require("pdf-to-printer");
+const { print, getPrinters } = require("pdf-to-printer");
 
 // ------------------------
 // OPTIONAL STARTUP TUNING
@@ -276,7 +297,7 @@ function extractIpFromPrinterName(printerName = "") {
 // ------------------------
 ipcMain.handle("beypro:getPrinters", async () => {
   try {
-    const printers = await print.getPrinters();
+    const printers = await getPrinters();
     console.log("📠 Found printers:", printers);
     
     // Convert to proper format: [{name, status, isDefault}, ...]
@@ -385,6 +406,13 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
 ipcMain.handle("beypro:printWindows", async (_evt, args) => {
   try {
     const { printerName, dataBase64, layout, jobKey } = args;
+
+    console.log("📥 printWindows invoked:", {
+      printerName,
+      hasLayout: !!layout,
+      hasData: !!dataBase64,
+      jobKey,
+    });
 
     if (jobKey && isRecentJob(jobKey)) {
       console.log(`⚠️ Skipping duplicate printWindows for jobKey=${jobKey}`);

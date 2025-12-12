@@ -4,31 +4,28 @@ import { imageUrlToEscposBytes } from "../../utils/imageToEscpos";
 import { qrStringToEscposBytes } from "../../utils/qrToEscpos";
 
 const DEFAULT_LAYOUT = {
-  logoUrl: "",
-  showLogo: true,
-  headerTitle: "Beypro POS",
-  headerSubtitle: "Hurrybey · Receipt",
-  showHeader: true,
-  showFooter: true,
-  footerText: "Teşekkür ederiz! / Thank you!",
-  showQr: true,
-  qrText: "Scan to share feedback",
-  qrUrl: "https://hurrybey.com/feedback",
-  alignment: "left",
-  paperWidth: "80mm",
-  spacing: 1.25,
-  showTaxes: true,
-  showDiscounts: true,
-  taxLabel: "Tax",
-  discountLabel: "Discount",
-  taxRate: 0,
-  discountRate: 0,
-  showItemModifiers: true,
-  itemFontSize: 14,
+  headerTitle: "Hurrybey Gıda",
+  headerSubtitle: "POS Receipt",
   shopAddress: "",
   shopAddressFontSize: 11,
-  margin: 12,
-  includeTotals: true,
+  alignment: "left",
+  paperWidth: "58mm",
+  spacing: 1.2,
+  itemFontSize: 13,
+  showHeader: true,
+  showFooter: true,
+  showLogo: false,
+  logoUrl: "",
+  showQr: false,
+  qrText: "",
+  qrUrl: "",
+  showTaxes: false,
+  taxLabel: "Tax",
+  taxRate: 8,
+  showDiscounts: false,
+  discountLabel: "Discount",
+  discountRate: 0,
+  footerText: "Thank you for your order!",
 };
 
 const createDefaultLayout = () => ({ ...DEFAULT_LAYOUT });
@@ -40,14 +37,6 @@ const createDefaultPrinterConfig = () => ({
   customLines: [],
   lastSynced: null,
 });
-
-// Default subnet + range for LAN scans; keeps the input populated to avoid undefined errors.
-const DEFAULT_LAN_CONFIG = {
-  base: "192.168.1",
-  from: 10,
-  to: 40,
-  hosts: "",
-};
 
 const SAMPLE_ORDER = {
   store: "Hurrybey Gıda",
@@ -66,6 +55,12 @@ const ALIGNMENT_OPTIONS = [
 ];
 
 const PAPER_WIDTH_OPTIONS = ["58mm", "72mm", "80mm"];
+const DEFAULT_LAN_CONFIG = {
+  base: "",
+  from: 1,
+  to: 254,
+  hosts: "",
+};
 const LS_KEY_SELECTED_PRINTER = "beyproSelectedPrinter";
 const getSelectedPrinterKey = (tenantId) =>
   tenantId ? `${LS_KEY_SELECTED_PRINTER}_${tenantId}` : LS_KEY_SELECTED_PRINTER;
@@ -531,6 +526,31 @@ export default function PrinterTab() {
     }
   }, [printerConfig.receiptPrinter, allPrinters]);
 
+  // Restore persisted selection when printers are discovered (including LAN)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = localStorage.getItem(getSelectedPrinterKey(tenantId));
+      if (!stored) return;
+
+      // Try to find a matching printer by meta.name or label or id.
+      // This will succeed for LAN printers where label is "host:port".
+      const found = allPrinters.find((p) => {
+        const name = p.meta?.name || p.label || p.id;
+        return name === stored;
+      });
+
+      if (found && printerConfig.receiptPrinter !== found.id) {
+        setPrinterConfig((prev) => ({ ...prev, receiptPrinter: found.id }));
+        // ensure persisted representation is in sync (will write name)
+        persistReceiptSelection(found.id);
+      }
+    } catch (err) {
+      console.warn("Failed to restore persisted printer selection:", err);
+    }
+    // run whenever discovered printers change or the current selection changes
+  }, [allPrinters, printerConfig.receiptPrinter]);
+
   async function handleLayoutUpdate(field, value) {
     setPrinterConfig((prev) => {
       const next = { ...prev, layout: { ...prev.layout, [field]: value } };
@@ -680,7 +700,7 @@ export default function PrinterTab() {
         if (!hasBridge) throw new Error("Windows printing requires the desktop bridge.");
         const res = await window.beypro.printWindows({
           printerName: target.meta.name,
-          dataBase64,
+          dataBase64: textBase64,
           layout: printerConfig.layout,
         });
         if (!res?.ok) {
@@ -692,7 +712,7 @@ export default function PrinterTab() {
         const res = await window.beypro.printNet({
           host,
           port,
-          dataBase64,
+          dataBase64: textBase64,
           layout: printerConfig.layout,
         });
         if (!res?.ok) {
@@ -1230,7 +1250,7 @@ export default function PrinterTab() {
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <div className="rounded-2xl border border-slate-100 p-3">
               <div className="flex items-center justify-between text-sm font-semibold">
-                <span>Windows printers</span>
+                <span>Windows and printers</span>
                 <span className="text-xs text-slate-500">{windowsPrinters.length} detected</span>
               </div>
               <div className="mt-3 space-y-2 text-xs text-slate-600">

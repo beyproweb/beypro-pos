@@ -633,46 +633,102 @@ export function renderReceiptText(order, providedLayout) {
       it.subtotal
     );
 
-    if (lineTotal === null && unitPrice !== null) {
-      lineTotal = qty * unitPrice;
-    }
-    if (lineTotal === null) lineTotal = 0;
-    if (!Number.isFinite(lineTotal)) lineTotal = 0;
-
-    const effectiveUnitPrice =
-      unitPrice !== null ? unitPrice : qty ? lineTotal / qty : 0;
-
-    subtotal += lineTotal;
-    add(
-      `${formatQuantity(qty)} x ${name}  ${formatMoney(effectiveUnitPrice)} = ${formatMoney(lineTotal)}`
-    );
+    const extrasDetails = [];
+    let extrasPerUnit = 0;
 
     if (Array.isArray(it.extras)) {
       for (const ex of it.extras) {
         const exName = ex.name || "extra";
         const exQtyRaw = pickNumber(ex.qty, ex.quantity, 1);
         const exQty = Number.isFinite(exQtyRaw) && exQtyRaw > 0 ? exQtyRaw : 1;
-        const exPrice = pickNumber(
+        const exUnitPrice = pickNumber(
           ex.unit_price,
           ex.unitPrice,
           ex.price,
+          ex.extraPrice,
           ex.amount
-        ) || 0;
+        );
 
-        let exTotal = pickNumber(
+        let exLineTotal = pickNumber(
           ex.total,
           ex.total_price,
           ex.amount_total,
           ex.amount
         );
 
-        if (exTotal === null) exTotal = exQty * exPrice;
-        if (!Number.isFinite(exTotal)) exTotal = 0;
-        subtotal += exTotal;
-        add(
-          `  + ${formatQuantity(exQty)} x ${exName}  ${formatMoney(exPrice)} = ${formatMoney(exTotal)}`
-        );
+        let perItemContribution = 0;
+        if (Number.isFinite(exUnitPrice)) {
+          perItemContribution = exUnitPrice * exQty;
+          if (Number.isFinite(perItemContribution)) {
+            extrasPerUnit += perItemContribution;
+          }
+        }
+
+        if (!Number.isFinite(exLineTotal)) {
+          exLineTotal = qty > 0 ? perItemContribution * qty : perItemContribution;
+        } else if (!Number.isFinite(exUnitPrice) && qty > 0) {
+          const derivedPerItem = exLineTotal / qty;
+          if (Number.isFinite(derivedPerItem)) {
+            extrasPerUnit += derivedPerItem;
+            perItemContribution = derivedPerItem;
+          }
+        }
+
+        if (!Number.isFinite(exLineTotal)) exLineTotal = 0;
+
+        const displayQty = qty > 0 ? exQty * qty : exQty;
+        const displayUnit =
+          Number.isFinite(exUnitPrice) && exUnitPrice !== null
+            ? exUnitPrice
+            : displayQty > 0
+            ? exLineTotal / displayQty
+            : exLineTotal;
+
+        extrasDetails.push({
+          name: exName,
+          qty: displayQty,
+          unitPrice: displayUnit,
+          total: exLineTotal,
+        });
       }
+    }
+
+    const extrasForQty = extrasPerUnit * qty;
+    const baseComponent =
+      Number.isFinite(unitPrice) && unitPrice !== null ? unitPrice * qty : null;
+
+    if (!Number.isFinite(lineTotal)) {
+      lineTotal = null;
+    }
+
+    if (lineTotal === null) {
+      const basePart = Number.isFinite(baseComponent) ? baseComponent : 0;
+      lineTotal = basePart + (Number.isFinite(extrasForQty) ? extrasForQty : 0);
+    } else if (
+      Number.isFinite(baseComponent) &&
+      Number.isFinite(extrasForQty) &&
+      extrasForQty > 0
+    ) {
+      const baseOnly = baseComponent;
+      if (Math.abs(lineTotal - baseOnly) < 0.01) {
+        lineTotal = baseOnly + extrasForQty;
+      }
+    }
+
+    if (!Number.isFinite(lineTotal)) lineTotal = 0;
+
+    const effectiveUnitPrice =
+      qty > 0 ? lineTotal / qty : lineTotal;
+
+    subtotal += lineTotal;
+    add(
+      `${formatQuantity(qty)} x ${name}  ${formatMoney(effectiveUnitPrice)} = ${formatMoney(lineTotal)}`
+    );
+
+    for (const detail of extrasDetails) {
+      add(
+        `  + ${formatQuantity(detail.qty)} x ${detail.name}  ${formatMoney(detail.unitPrice)} = ${formatMoney(detail.total)}`
+      );
     }
 
     if (it.note) {
