@@ -77,6 +77,47 @@ function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
+function derivePrinterAliases(raw) {
+  if (!raw && raw !== 0) return [];
+  const value = String(raw).trim();
+  if (!value) return [];
+  const aliases = [value];
+  const match = value.match(/^(windows|lan|usb|serial):(.+)$/i);
+  if (match) {
+    const rest = match[2];
+    aliases.push(rest);
+    aliases.push(rest.replace(/:\d+$/, ""));
+  } else {
+    aliases.push(value.replace(/:\d+$/, ""));
+  }
+  return aliases.filter(Boolean);
+}
+
+function findPrinterMatch(printers, ...candidates) {
+  const normalizedCandidates = candidates
+    .filter((candidate) => candidate || candidate === 0)
+    .flatMap((candidate) => derivePrinterAliases(candidate))
+    .map((candidate) => candidate.toLowerCase());
+  if (!normalizedCandidates.length) return null;
+  for (const target of normalizedCandidates) {
+    const match = printers.find((printer) => {
+      const sources = [
+        printer.id,
+        printer.label,
+        printer.meta?.name,
+        printer.meta?.label,
+        printer.meta?.path,
+        printer.meta?.friendlyName,
+      ]
+        .filter((value) => value || value === 0)
+        .map((value) => String(value).trim().toLowerCase());
+      return sources.some((source) => source === target);
+    });
+    if (match) return match;
+  }
+  return null;
+}
+
 function formatCurrency(value = 0, symbol = "₺") {
   return `${value.toFixed(2)} ${symbol}`;
 }
@@ -526,6 +567,38 @@ export default function PrinterTab() {
     }
   }, [printerConfig.receiptPrinter, allPrinters]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!allPrinters.length) return;
+    let storedReceiptName = null;
+    try {
+      storedReceiptName = localStorage.getItem(getSelectedPrinterKey(tenantId));
+    } catch {
+      storedReceiptName = null;
+    }
+    setPrinterConfig((prev) => {
+      const updates = {};
+      if (!allPrinters.find((printer) => printer.id === prev.receiptPrinter)) {
+        const receiptMatch = findPrinterMatch(
+          allPrinters,
+          prev.receiptPrinter,
+          storedReceiptName
+        );
+        if (receiptMatch) {
+          updates.receiptPrinter = receiptMatch.id;
+        }
+      }
+      if (!allPrinters.find((printer) => printer.id === prev.kitchenPrinter)) {
+        const kitchenMatch = findPrinterMatch(allPrinters, prev.kitchenPrinter);
+        if (kitchenMatch) {
+          updates.kitchenPrinter = kitchenMatch.id;
+        }
+      }
+      if (!Object.keys(updates).length) return prev;
+      return { ...prev, ...updates };
+    });
+  }, [allPrinters, tenantId, setPrinterConfig]);
+
   // Restore persisted selection when printers are discovered (including LAN)
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -775,7 +848,7 @@ export default function PrinterTab() {
               onClick={refreshDetections}
               disabled={detecting}
             >
-              {detecting ? "Detecting…" : "Refresh all"}
+              {detecting ? "Detecting…" : "Refresh"}
             </button>
             <span
               className={classNames(

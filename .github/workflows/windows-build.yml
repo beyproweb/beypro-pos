@@ -33,32 +33,6 @@ jobs:
         shell: cmd
       - name: Install dependencies
         run: npm install
-
-      - name: Ensure Electron version from package.json and install it
-        shell: pwsh
-        run: |
-          try {
-            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-            $ver = $pkg.devDependencies.electron
-            if (-not $ver) { $ver = $pkg.dependencies.electron }
-            if (-not $ver) {
-              Write-Host "⚠️ No electron entry in package.json dependencies/devDependencies" -ForegroundColor Yellow
-              exit 0
-            }
-            $ver = $ver -replace '^[\^~v]+' , ''
-            Write-Host "🔎 Detected Electron version in package.json: $ver" -ForegroundColor Cyan
-            echo "ELECTRON_CI_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            Write-Host "📥 Installing electron@$ver (no-save) to ensure exact runtime version in CI" -ForegroundColor Cyan
-            npm install --no-save ("electron@" + $ver) --legacy-peer-deps
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "⚠️ npm install electron@$ver failed (exit code $LASTEXITCODE)" -ForegroundColor Yellow
-              exit 1
-            }
-            Write-Host "✓ electron@$ver installed" -ForegroundColor Green
-          } catch {
-            Write-Host "⚠️ Failed to read/install electron version: $_" -ForegroundColor Yellow
-            exit 1
-          }
       - name: Build Electron app
         run: npm run desktop:build
       - name: Upload Windows artifact
