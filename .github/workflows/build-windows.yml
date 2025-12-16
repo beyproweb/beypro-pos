@@ -156,7 +156,7 @@ jobs:
           }
         env:
           VITE_TARGET: electron
-          VITE_API_URL: https://hurrypos-backend.onrender.com/api
+          VITE_API_URL: https://api.beypro.com/api
           CI: true
 
       - name: Verify Vite build output

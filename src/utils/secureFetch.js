@@ -4,14 +4,14 @@ const isElectron =
   typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "");
 
 // Always use Render backend in Electron (DEV + PROD)
-const ELECTRON_API = "https://hurrypos-backend.onrender.com/api";
+const ELECTRON_API = "https://api.beypro.com/api";
 
 // For browser:
 const BROWSER_API =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.MODE === "development"
     ? "http://localhost:5000/api"
-    : "https://hurrypos-backend.onrender.com/api");
+    : "https://api.beypro.com/api");
 
 // FINAL API CHOICE:
 const RAW = isElectron ? ELECTRON_API : BROWSER_API;

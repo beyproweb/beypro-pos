@@ -27,7 +27,7 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.MODE === "development"
     ? "http://localhost:5000/api"
-    : "https://hurrypos-backend.onrender.com/api");
+    : "https://api.beypro.com/api");
 const isDelayed = (order) => {
   if (!order || order.status !== "confirmed" || !order.created_at) return false;
   // Only treat as delayed if there is at least one item
