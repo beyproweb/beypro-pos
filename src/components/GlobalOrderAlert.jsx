@@ -430,17 +430,30 @@ export default function GlobalOrderAlert() {
             price: Number(ex.price ?? ex.extraPrice ?? ex.unit_price ?? 0) || 0,
           }));
 
+          const qty = Number(it.quantity ?? it.qty ?? it.count ?? 1) || 1;
+          const basePrice = Number(it.price ?? it.unit_price ?? it.total_price ?? 0) || 0;
+          const extrasPerUnit = extras.reduce(
+            (sum, ex) => sum + (ex.price || 0) * (ex.quantity || 1),
+            0
+          );
+
           return {
             name: it.name || it.item_name || it.product_name || it.product || "Item",
-            quantity: Number(it.quantity ?? it.qty ?? it.count ?? 1) || 1,
-            price: Number(it.price ?? it.unit_price ?? it.total_price ?? 0) || 0,
+            quantity: qty,
+            price: basePrice,
             extras,
+            extrasPerUnit,
             note: it.note || it.item_note || it.comment || it.notes || "",
           };
         })
       : [];
     const customLines = order.customLines || customLayout.customLines || [];
-    const subTotal = items.reduce((sum, item) => sum + (item.quantity || 1) * (item.price || 0), 0);
+    const subTotal = items.reduce((sum, item) => {
+      const qty = item.quantity || 1;
+      const base = item.price || 0;
+      const extrasPerUnit = item.extrasPerUnit || 0;
+      return sum + qty * (base + extrasPerUnit);
+    }, 0);
     const taxAmount = customLayout.showTaxes ? (subTotal * (customLayout.taxRate || 0)) / 100 : 0;
     const discountAmount = customLayout.showDiscounts ? (subTotal * (customLayout.discountRate || 0)) / 100 : 0;
     const total = subTotal + taxAmount - discountAmount;
@@ -454,9 +467,22 @@ export default function GlobalOrderAlert() {
         ${customLayout.showHeader ? `<div style='margin-bottom:8px;text-align:center;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#1e293b;'>${customLayout.headerTitle || ''}<div style='font-size:12px;font-weight:400;color:#64748b;'>${customLayout.headerSubtitle || ''}</div></div>` : ''}
         <div style='border-top:1px dashed #e2e8f0;border-bottom:1px dashed #e2e8f0;padding:8px 0;font-size:12px;'>
           ${items.map(item => {
-            const main = `<div style='display:flex;justify-content:space-between;padding:4px 0;'><span>${item.quantity} × ${item.name}</span><span>${(item.price * item.quantity).toFixed(2)} ₺</span></div>`;
+            const qty = item.quantity || 1;
+            const base = item.price || 0;
+            const extrasPerUnit = item.extrasPerUnit || 0;
+            const perItemTotal = base + extrasPerUnit;
+            const lineTotal = perItemTotal * qty;
+            const main = `<div style='display:flex;justify-content:space-between;padding:4px 0;'><span>${qty} × ${item.name}</span><span>${lineTotal.toFixed(2)} ₺</span></div>`;
             const extrasHtml = (item.extras && item.extras.length)
-              ? `<div style='padding-left:8px;font-size:11px;color:#64748b;margin-top:4px;'>${item.extras.map(ex => `<div style="display:flex;justify-content:space-between;"><span>+ ${ex.quantity}x ${ex.name}</span><span>${(ex.price * ex.quantity).toFixed(2)} ₺</span></div>`).join('')}</div>`
+              ? `<div style='padding-left:8px;font-size:11px;color:#64748b;margin-top:4px;'>${item.extras
+                  .map(ex => {
+                    const perItemQty = ex.quantity || 1;
+                    const totalQty = perItemQty * qty;
+                    const unit = ex.price || 0;
+                    const extraTotal = unit * totalQty;
+                    return `<div style="display:flex;justify-content:space-between;"><span>+ ${totalQty}x ${ex.name}</span><span>${extraTotal.toFixed(2)} ₺</span></div>`;
+                  })
+                  .join('')}</div>`
               : '';
             const noteHtml = item.note ? `<div style='padding-left:8px;font-size:11px;font-style:italic;color:#b45309;margin-top:4px;'>NOTE: ${item.note}</div>` : '';
             return main + extrasHtml + noteHtml;
