@@ -825,7 +825,15 @@ export async function printViaBridge(text, orderObj) {
       receiptWidth: layout.receiptWidth,
     });
     resolvedText = renderReceiptText(orderObj, layout);
-    console.log("📝 Receipt text rendered with customizations");
+    // Append any custom footer lines configured for this printer
+    const customLines =
+      printerSettings && Array.isArray(printerSettings.customLines)
+        ? printerSettings.customLines.filter((l) => typeof l === "string" && l.trim().length > 0)
+        : [];
+    if (customLines.length) {
+      resolvedText = `${resolvedText}\n\n${customLines.join("\n")}`;
+    }
+    console.log("📝 Receipt text rendered with customizations (including custom lines)");
   }
 
   resolvedText = sanitizeReceiptText(resolvedText);
