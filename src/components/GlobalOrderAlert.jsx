@@ -13,6 +13,7 @@ import { fetchOrderWithItems } from "../utils/orderPrinting";
 import socket, { joinRestaurantRoom } from "../utils/socket";
 import {
   defaultReceiptLayout,
+  computeReceiptSummary,
   renderReceiptText,
   printViaBridge,
   setReceiptLayout,
@@ -410,52 +411,19 @@ export default function GlobalOrderAlert() {
         if (parsed?.layout) customLayout = { ...customLayout, ...parsed.layout };
       } catch {}
     }
-    // Normalize items array from different API shapes
-    const itemsRaw = order.items || order.order_items || order.items_list || order.itemsArray || [];
-    const items = Array.isArray(itemsRaw)
-      ? itemsRaw.map((it) => {
-          // normalize extras (may be JSON string or array)
-          let extras = it.extras || it.item_extras || it.extras_list || [];
-          if (typeof extras === "string") {
-            try {
-              extras = JSON.parse(extras || "[]");
-            } catch {
-              extras = [];
-            }
-          }
-          if (!Array.isArray(extras)) extras = [];
-          extras = extras.map((ex) => ({
-            name: ex.name || ex.extra_name || ex.product_name || String(ex).slice(0, 32),
-            quantity: Number(ex.quantity ?? ex.qty ?? 1) || 1,
-            price: Number(ex.price ?? ex.extraPrice ?? ex.unit_price ?? 0) || 0,
-          }));
-
-          const qty = Number(it.quantity ?? it.qty ?? it.count ?? 1) || 1;
-          const basePrice = Number(it.price ?? it.unit_price ?? it.total_price ?? 0) || 0;
-          const extrasPerUnit = extras.reduce(
-            (sum, ex) => sum + (ex.price || 0) * (ex.quantity || 1),
-            0
-          );
-
-          return {
-            name: it.name || it.item_name || it.product_name || it.product || "Item",
-            quantity: qty,
-            price: basePrice,
-            extras,
-            extrasPerUnit,
-            note: it.note || it.item_note || it.comment || it.notes || "",
-          };
-        })
-      : [];
+    // Compute items/totals using the same math as ESC/POS receipts
+    const summary = computeReceiptSummary(order);
+    const items = Array.isArray(summary.items) ? summary.items : [];
     const customLines = order.customLines || customLayout.customLines || [];
-    const subTotal = items.reduce((sum, item) => {
-      const qty = item.quantity || 1;
-      const base = item.price || 0;
-      const extrasPerUnit = item.extrasPerUnit || 0;
-      return sum + qty * (base + extrasPerUnit);
-    }, 0);
-    const taxAmount = customLayout.showTaxes ? (subTotal * (customLayout.taxRate || 0)) / 100 : 0;
-    const discountAmount = customLayout.showDiscounts ? (subTotal * (customLayout.discountRate || 0)) / 100 : 0;
+    const subTotal = Number(summary.subtotal || 0);
+    const taxAmount = customLayout.showTaxes ? Number(summary.tax || 0) : 0;
+    const rawDiscount =
+      order.discount_value ??
+      order.discount ??
+      order.discount_total ??
+      0;
+    const discountAmount =
+      customLayout.showDiscounts ? Number(rawDiscount) || 0 : 0;
     const total = subTotal + taxAmount - discountAmount;
     const logoHtml = customLayout.showLogo && customLayout.logoUrl ? `<img src='${customLayout.logoUrl}' alt='Logo' style='display:block;margin:0 auto 12px;height:48px;max-width:100px;object-fit:contain;'/>` : '';
     const qrHtml = customLayout.showQr && customLayout.qrUrl && customLayout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i)
@@ -467,20 +435,15 @@ export default function GlobalOrderAlert() {
         ${customLayout.showHeader ? `<div style='margin-bottom:8px;text-align:center;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#1e293b;'>${customLayout.headerTitle || ''}<div style='font-size:12px;font-weight:400;color:#64748b;'>${customLayout.headerSubtitle || ''}</div></div>` : ''}
         <div style='border-top:1px dashed #e2e8f0;border-bottom:1px dashed #e2e8f0;padding:8px 0;font-size:12px;'>
           ${items.map(item => {
-            const qty = item.quantity || 1;
-            const base = item.price || 0;
-            const extrasPerUnit = item.extrasPerUnit || 0;
-            const perItemTotal = base + extrasPerUnit;
-            const lineTotal = perItemTotal * qty;
+            const qty = item.qty || item.quantity || 1;
+            const lineTotal = Number(item.lineTotal || 0);
             const main = `<div style='display:flex;justify-content:space-between;padding:4px 0;'><span>${qty} × ${item.name}</span><span>${lineTotal.toFixed(2)} ₺</span></div>`;
-            const extrasHtml = (item.extras && item.extras.length)
-              ? `<div style='padding-left:8px;font-size:11px;color:#64748b;margin-top:4px;'>${item.extras
-                  .map(ex => {
-                    const perItemQty = ex.quantity || 1;
-                    const totalQty = perItemQty * qty;
-                    const unit = ex.price || 0;
-                    const extraTotal = unit * totalQty;
-                    return `<div style="display:flex;justify-content:space-between;"><span>+ ${totalQty}x ${ex.name}</span><span>${extraTotal.toFixed(2)} ₺</span></div>`;
+            const extrasHtml = (item.extrasDetails && item.extrasDetails.length)
+              ? `<div style='padding-left:8px;font-size:11px;color:#64748b;margin-top:4px;'>${item.extrasDetails
+                  .map(detail => {
+                    const totalQty = detail.qty || 1;
+                    const extraTotal = Number(detail.total || 0);
+                    return `<div style="display:flex;justify-content:space-between;"><span>+ ${totalQty}x ${detail.name}</span><span>${extraTotal.toFixed(2)} ₺</span></div>`;
                   })
                   .join('')}</div>`
               : '';

@@ -564,52 +564,21 @@ function buildEscposBytes(
   return Uint8Array.from(bytes);
 }
 
-export function renderReceiptText(order, providedLayout) {
-  const layout = providedLayout || getReceiptLayout();
-
+// Shared receipt math so ESC/POS text and HTML previews use
+// exactly the same item/extra totals (including extras × quantity).
+export function computeReceiptSummary(order) {
   const baseItems = Array.isArray(order?.items) ? order.items : [];
   const suborderItems = Array.isArray(order?.suborders)
     ? order.suborders.flatMap((so) => so?.items || [])
     : [];
 
-  // Keep all items (base + suborders) without deduping so receipt matches cart
-  const items = [...baseItems, ...suborderItems];
-  const hasItems = items.length > 0;
-  const lines = [];
-  const add = (l = "") => lines.push(String(l));
+  const rawItems = [...baseItems, ...suborderItems];
+  const hasItems = rawItems.length > 0;
 
-  if (layout.showHeader) {
-    const headerLine = layout.headerText || layout.headerTitle || "Beypro POS";
-    add(headerLine);
-    if (layout.headerSubtitle) add(layout.headerSubtitle);
-  }
-  if (layout.shopAddress) {
-    String(layout.shopAddress)
-      .replace(/\r/g, "")
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .forEach((l) => add(l));
-  }
-  add(new Date(order?.created_at || Date.now()).toLocaleString());
-  add(`Order #${order?.id || "-"}`);
-
-  if (layout.showPacketCustomerInfo && (order?.customer || order?.customer_name)) {
-    add(`Cust: ${order.customer || order.customer_name}`);
-    if (order.customer_phone) add(`Phone: ${order.customer_phone}`);
-    if (order.address || order.customer_address) {
-      add(
-        `Addr: ${(order.address || order.customer_address || "")
-          .replace(/\s+/g, " ")
-          .trim()}`
-      );
-    }
-  }
-
-  add("--------------------------------");
+  const items = [];
   let subtotal = 0;
 
-  for (const it of items) {
+  for (const it of rawItems) {
     const name = it.name || it.product_name || "Item";
     const qtyRaw = pickNumber(
       it.qty,
@@ -621,7 +590,6 @@ export function renderReceiptText(order, providedLayout) {
     );
     const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
 
-    // Base item price (per unit, excluding extras) – match cart logic
     const unitPrice = pickNumber(
       it.price,
       it.unit_price,
@@ -635,7 +603,6 @@ export function renderReceiptText(order, providedLayout) {
     const baseComponent =
       Number.isFinite(unitPrice) && unitPrice !== null ? unitPrice * qty : 0;
 
-    // Extras per unit (for a single product), then scaled by qty – match cart logic
     const extrasDetails = [];
     let extrasPerUnit = 0;
 
@@ -656,6 +623,7 @@ export function renderReceiptText(order, providedLayout) {
           Number.isFinite(exUnitPrice) && Number.isFinite(exQty)
             ? exUnitPrice * exQty
             : 0;
+
         if (Number.isFinite(perUnitExtra)) {
           extrasPerUnit += perUnitExtra;
         }
@@ -676,23 +644,32 @@ export function renderReceiptText(order, providedLayout) {
     const lineTotal = baseComponent + extrasForQty;
 
     const effectiveUnitPrice =
-      Number.isFinite(unitPrice) && unitPrice !== null ? unitPrice : (qty > 0 ? lineTotal / qty : lineTotal);
+      Number.isFinite(unitPrice) && unitPrice !== null
+        ? unitPrice
+        : qty > 0
+        ? lineTotal / qty
+        : lineTotal;
 
     subtotal += lineTotal;
-    add(
-      `${formatQuantity(qty)} x ${name}  ${formatMoney(effectiveUnitPrice)} = ${formatMoney(lineTotal)}`
-    );
 
-    for (const detail of extrasDetails) {
-      add(
-        `  + ${formatQuantity(detail.qty)} x ${detail.name}  ${formatMoney(detail.unitPrice)} = ${formatMoney(detail.total)}`
-      );
-    }
+    const note =
+      (it.note ||
+        it.item_note ||
+        it.comment ||
+        it.notes ||
+        "")
+        .toString()
+        .replace(/\s+/g, " ")
+        .trim();
 
-    if (it.note) {
-      const note = String(it.note).replace(/\s+/g, " ").trim();
-      if (note) add(`  NOTE: ${note}`);
-    }
+    items.push({
+      name,
+      qty,
+      unitPrice: effectiveUnitPrice,
+      lineTotal,
+      extrasDetails,
+      note,
+    });
   }
 
   let tax = pickNumber(
@@ -705,9 +682,6 @@ export function renderReceiptText(order, providedLayout) {
   );
   if (!Number.isFinite(tax)) tax = 0;
 
-  // If we have concrete items, trust the computed subtotal (including extras)
-  // and ignore order-level totals which may exclude extras.
-  // Only fall back to order-level fields when there are NO items (edge cases).
   if (!hasItems) {
     const orderSubtotal = pickNumber(
       order?.subtotal,
@@ -750,13 +724,75 @@ export function renderReceiptText(order, providedLayout) {
     subtotal = 0;
   }
 
-  if (tax > 0) {
-    add(`TAX: ${formatMoney(tax)}`);
+  const finalTotal = subtotal + (Number.isFinite(tax) ? tax : 0);
+
+  return {
+    items,
+    subtotal,
+    tax,
+    total: finalTotal,
+  };
+}
+
+export function renderReceiptText(order, providedLayout) {
+  const layout = providedLayout || getReceiptLayout();
+  const summary = computeReceiptSummary(order);
+
+  const lines = [];
+  const add = (l = "") => lines.push(String(l));
+
+  if (layout.showHeader) {
+    const headerLine = layout.headerText || layout.headerTitle || "Beypro POS";
+    add(headerLine);
+    if (layout.headerSubtitle) add(layout.headerSubtitle);
+  }
+  if (layout.shopAddress) {
+    String(layout.shopAddress)
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .forEach((l) => add(l));
+  }
+  add(new Date(order?.created_at || Date.now()).toLocaleString());
+  add(`Order #${order?.id || "-"}`);
+
+  if (layout.showPacketCustomerInfo && (order?.customer || order?.customer_name)) {
+    add(`Cust: ${order.customer || order.customer_name}`);
+    if (order.customer_phone) add(`Phone: ${order.customer_phone}`);
+    if (order.address || order.customer_address) {
+      add(
+        `Addr: ${(order.address || order.customer_address || "")
+          .replace(/\s+/g, " ")
+          .trim()}`
+      );
+    }
   }
 
   add("--------------------------------");
-  const finalTotal = subtotal + (Number.isFinite(tax) ? tax : 0);
-  add(`TOTAL: ${formatMoney(finalTotal)}`);
+
+  for (const item of summary.items) {
+    add(
+      `${formatQuantity(item.qty)} x ${item.name}  ${formatMoney(item.unitPrice)} = ${formatMoney(item.lineTotal)}`
+    );
+
+    for (const detail of item.extrasDetails) {
+      add(
+        `  + ${formatQuantity(detail.qty)} x ${detail.name}  ${formatMoney(detail.unitPrice)} = ${formatMoney(detail.total)}`
+      );
+    }
+
+    if (item.note) {
+      add(`  NOTE: ${item.note}`);
+    }
+  }
+
+  if (summary.tax > 0) {
+    add(`TAX: ${formatMoney(summary.tax)}`);
+  }
+
+  add("--------------------------------");
+  add(`TOTAL: ${formatMoney(summary.total)}`);
   if (
     (order?.status === "paid" || order?.payment_status === "paid") &&
     order?.payment_method
