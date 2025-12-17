@@ -83,6 +83,7 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
+const { spawn } = require("child_process");
 
 // Simple in-memory de-dupe for recent jobs (jobKey => timestamp)
 const RECENT_JOB_TTL = 10000; // ms
@@ -103,7 +104,7 @@ function isRecentJob(jobKey) {
 }
 
 // MAIN PRINTER ENGINE (used by ALL Windows printers)
-const { print, getPrinters } = require("pdf-to-printer");
+const { getPrinters } = require("pdf-to-printer");
 
 // ------------------------
 // OPTIONAL STARTUP TUNING
@@ -192,6 +193,98 @@ function writePrinterStore(data) {
     console.error("Failed to persist printer config:", err);
     return false;
   }
+}
+
+function escapeForPowerShellLiteral(str = "") {
+  return String(str).replace(/'/g, "''");
+}
+
+function sendRawToWindowsPrinter(printerName, dataBuffer) {
+  return new Promise((resolve) => {
+    if (process.platform !== "win32") {
+      return resolve({ ok: false, error: "Windows raw printing is only available on Windows." });
+    }
+    if (!printerName) {
+      return resolve({ ok: false, error: "printerName is required" });
+    }
+    if (!dataBuffer || !Buffer.isBuffer(dataBuffer) || !dataBuffer.length) {
+      return resolve({ ok: false, error: "Missing raw data for printer job." });
+    }
+
+    const safePrinter = escapeForPowerShellLiteral(printerName);
+    const base64 = escapeForPowerShellLiteral(dataBuffer.toString("base64"));
+    const psScript = `
+Add-Type -Language CSharp -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public class RawPrinterHelper {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+  public class DOCINFOA {
+    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+    [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
+  }
+
+  [DllImport("winspool.Drv", SetLastError=true, CharSet=CharSet.Ansi)]
+  public static extern bool OpenPrinter(string szPrinter, out IntPtr hPrinter, IntPtr pd);
+  [DllImport("winspool.Drv", SetLastError=true)] public static extern bool ClosePrinter(IntPtr hPrinter);
+  [DllImport("winspool.Drv", SetLastError=true, CharSet=CharSet.Ansi)]
+  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, [In] DOCINFOA di);
+  [DllImport("winspool.Drv", SetLastError=true)] public static extern bool EndDocPrinter(IntPtr hPrinter);
+  [DllImport("winspool.Drv", SetLastError=true)] public static extern bool StartPagePrinter(IntPtr hPrinter);
+  [DllImport("winspool.Drv", SetLastError=true)] public static extern bool EndPagePrinter(IntPtr hPrinter);
+  [DllImport("winspool.Drv", SetLastError=true)]
+  public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+
+  public static bool SendBytesToPrinter(string printerName, byte[] bytes) {
+    IntPtr h;
+    if (!OpenPrinter(printerName, out h, IntPtr.Zero)) return false;
+    var di = new DOCINFOA { pDocName = "Beypro RAW", pDataType = "RAW" };
+    if (!StartDocPrinter(h, 1, di)) { ClosePrinter(h); return false; }
+    if (!StartPagePrinter(h))      { EndDocPrinter(h); ClosePrinter(h); return false; }
+    IntPtr p = Marshal.AllocHGlobal(bytes.Length);
+    Marshal.Copy(bytes, 0, p, bytes.Length);
+    int written = 0;
+    bool ok = WritePrinter(h, p, bytes.Length, out written);
+    Marshal.FreeHGlobal(p);
+    EndPagePrinter(h);
+    EndDocPrinter(h);
+    ClosePrinter(h);
+    return ok && written == bytes.Length;
+  }
+}
+"@
+$bytes = [Convert]::FromBase64String('${base64}')
+$ok = [RawPrinterHelper]::SendBytesToPrinter('${safePrinter}', $bytes)
+if ($ok) { Write-Output '{"ok":true}' } else { Write-Output '{"ok":false,"error":"WritePrinter failed"}' }
+`;
+
+    const ps = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+      { windowsHide: true }
+    );
+
+    let stdout = "";
+    let stderr = "";
+    ps.stdout.on("data", (chunk) => (stdout += chunk.toString()));
+    ps.stderr.on("data", (chunk) => (stderr += chunk.toString()));
+    ps.on("close", () => {
+      if (stderr && !stdout) {
+        return resolve({ ok: false, error: stderr.trim() });
+      }
+      if (!stdout) {
+        return resolve({ ok: false, error: "No spooler response" });
+      }
+      try {
+        const parsed = JSON.parse(stdout.trim());
+        resolve(parsed);
+      } catch (err) {
+        resolve({ ok: false, error: "Unexpected spooler response", detail: stdout.trim() || stderr.trim(), detailError: err.message });
+      }
+    });
+  });
 }
 
 function normalizePrinterConfig(payload = {}, updateTimestamp = false) {
@@ -384,16 +477,13 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
     }
 
     // Fallback to Windows printer driver for USB/Serial/Unknown
-    console.log(`📤 Using Windows print driver for ${printerName}`);
-    const tempFile = path.join(app.getPath("temp"), "beypro-raw.txt");
-    fs.writeFileSync(tempFile, bytes);
-
-    await print(tempFile, {
-      printer: printerName,
-      win32: ["raw"]
-    });
-
-    return { ok: true };
+    console.log(`📤 Using Windows spooler for ${printerName}`);
+    const result = await sendRawToWindowsPrinter(printerName, bytes);
+    if (result?.ok) {
+      return { ok: true };
+    }
+    console.error("❌ Windows spooler printRaw failed:", result?.error || result);
+    return { ok: false, error: result?.error || "Spooler error" };
   } catch (err) {
     console.error("❌ printRaw failed:", err);
     return { ok: false, error: err.message };
@@ -451,15 +541,11 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       bytes = merged;
     }
 
-    const tempFile = path.join(app.getPath("temp"), "beypro-windows.txt");
-    fs.writeFileSync(tempFile, bytes);
-
-    await print(tempFile, {
-      printer: printerName,
-      win32: ["raw"],
-    });
-
-    return { ok: true };
+    const result = await sendRawToWindowsPrinter(printerName, bytes);
+    if (result?.ok) {
+      return { ok: true };
+    }
+    return { ok: false, error: result?.error || "Spooler error" };
   } catch (err) {
     return { ok: false, error: err.message };
   }

@@ -483,6 +483,11 @@ function isPrivateLanHost(host = "") {
   return PRIVATE_LAN_REGEX.test(trimmed);
 }
 
+function isCashLike(value = "") {
+  const normalized = String(value || "").toLowerCase();
+  return ["cash", "nakit", "peşin", "pesin"].some((token) => normalized.includes(token));
+}
+
 function buildEscposBytes(
   text,
   {
@@ -1026,6 +1031,14 @@ export async function printViaBridge(text, orderObj) {
     console.warn(`⚠️ Unsupported printer interface: ${target.interface}`);
     return false;
   }
+
+  const paymentLabel =
+    orderObj?.payment_method ||
+    orderObj?.paymentMethod ||
+    (Array.isArray(orderObj?.receipt_methods) ? Object.keys(orderObj.receipt_methods).join("+") : "");
+  const shouldPulseDrawer =
+    printerSettings?.defaults?.cashDrawer === true && isCashLike(paymentLabel);
+  payload.cashdraw = shouldPulseDrawer;
 
   const localBridge = typeof window !== "undefined" ? window.beypro : null;
   if (

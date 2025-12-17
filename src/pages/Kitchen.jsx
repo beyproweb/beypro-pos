@@ -1289,7 +1289,7 @@ return (
           <div className="p-6 sm:p-8 space-y-6">
             <header className="space-y-2">
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                ⏱ {t("Kitchen Timers")}
+                ⏱ {t("Timers")}
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 max-w-2xl">
                 {t("Keep prep stations synchronized across mobile and tablet screens. Timers run in the background even when you close this panel.")}

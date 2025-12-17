@@ -187,23 +187,36 @@ function buildTestTicket(layout, order = SAMPLE_ORDER, customLines = []) {
 }
 
 // Build ESC/POS bytes with alignment + Turkish codepage (matches receiptPrinter util)
-function buildEscposBytes(text, { alignment = "left", cut = true, feedLines = 3 } = {}) {
+function buildEscposBytes(
+  text,
+  { alignment = "left", cut = true, feedLines = 3, fontSize } = {}
+) {
   const normalized = `${text || ""}\n${"\n".repeat(Math.max(0, feedLines))}`;
   const init = Uint8Array.from([0x1b, 0x40]); // reset
   const selectTurkish = Uint8Array.from([0x1b, 0x74, 19]); // CP1254
   const alignMap = { left: 0x00, center: 0x01, right: 0x02 };
   const alignCmd = Uint8Array.from([0x1b, 0x61, alignMap[alignment] || 0x00]);
+  // GS ! n font sizing (bit3 width, bit4 height)
+  const mode =
+    fontSize && fontSize >= 22 ? 0x11 : fontSize && fontSize >= 18 ? 0x01 : 0x00;
+  const sizeCmd = Uint8Array.from([0x1d, 0x21, mode]);
   const encoder = new TextEncoder();
   const body = encoder.encode(normalized.endsWith("\n") ? normalized : `${normalized}\n`);
   const cutBytes = cut ? Uint8Array.from([0x1d, 0x56, 0x00]) : new Uint8Array(0);
 
   const bytes = new Uint8Array(
-    init.length + selectTurkish.length + alignCmd.length + body.length + cutBytes.length
+    init.length +
+      selectTurkish.length +
+      alignCmd.length +
+      sizeCmd.length +
+      body.length +
+      cutBytes.length
   );
   let offset = 0;
   bytes.set(init, offset); offset += init.length;
   bytes.set(selectTurkish, offset); offset += selectTurkish.length;
   bytes.set(alignCmd, offset); offset += alignCmd.length;
+  bytes.set(sizeCmd, offset); offset += sizeCmd.length;
   bytes.set(body, offset); offset += body.length;
   bytes.set(cutBytes, offset);
   return bytes;
@@ -754,6 +767,7 @@ export default function PrinterTab() {
     const ticket = buildTestTicket(layout, SAMPLE_ORDER, printerConfig.customLines);
     const textBytes = buildEscposBytes(ticket, {
       alignment: layout.alignment || "left",
+      fontSize: layout.fontSize,
     });
     const textBase64 =
       typeof Buffer !== "undefined"
