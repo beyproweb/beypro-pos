@@ -1738,23 +1738,30 @@ const totalDiscount = calcOrderDiscount(order);
 
         {item.extras?.length > 0 && (
           <div className="ml-3 sm:ml-6 mt-2 flex flex-col gap-1">
-            {item.extras.map((ex, i) => (
-              <div
-                key={i}
-                className={`flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 px-3 py-1 rounded-xl text-base font-medium transition ${statusVisual.extrasRow}`}
-                style={{ fontSize: "1.08em" }}
-              >
-                <span className="flex items-center gap-2 font-semibold">
-                  ➕ {ex.name}
-                  <span className="ml-2 font-semibold text-inherit text-base sm:text-lg tracking-wide">
-                    ×{ex.quantity || 1}
+            {item.extras.map((ex, i) => {
+              const perItemQty = ex.quantity || 1;
+              const itemQty = item.quantity || 1;
+              const totalQty = perItemQty * itemQty;
+              const unit = parseFloat(ex.price || ex.extraPrice || 0) || 0;
+              const lineTotal = unit * totalQty;
+              return (
+                <div
+                  key={i}
+                  className={`flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 px-3 py-1 rounded-xl text-base font-medium transition ${statusVisual.extrasRow}`}
+                  style={{ fontSize: "1.08em" }}
+                >
+                  <span className="flex items-center gap-2 font-semibold">
+                    ➕ {ex.name}
+                    <span className="ml-2 font-semibold text-inherit text-base sm:text-lg tracking-wide">
+                      ×{totalQty}
+                    </span>
                   </span>
-                </span>
-                <span className="font-mono text-center sm:text-right w-full sm:w-auto">
-                  {formatCurrency((ex.price || 0) * (ex.quantity || 1))}
-                </span>
-              </div>
-            ))}
+                  <span className="font-mono text-center sm:text-right w-full sm:w-auto">
+                    {formatCurrency(lineTotal)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
 

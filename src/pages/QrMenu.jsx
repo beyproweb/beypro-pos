@@ -2587,16 +2587,19 @@ return (
                             {item.extras?.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {item.extras.map((ex, j) => {
+                                  const perItemQty = ex.quantity || 1;
+                                  const itemQty = item.quantity || 1;
+                                  const totalQty = perItemQty * itemQty;
                                   const unit =
                                     parseFloat(ex.price ?? ex.extraPrice ?? 0) ||
                                     0;
-                                  const line = unit * (ex.quantity || 1);
+                                  const line = unit * totalQty;
                                   return (
                                     <span
                                       key={j}
                                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
                                     >
-                                      {ex.name} ×{ex.quantity || 1}{" "}
+                                      {ex.name} ×{totalQty}{" "}
                                       {formatCurrency(line)}
                                     </span>
                                   );
@@ -2649,16 +2652,19 @@ return (
                             {item.extras?.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {item.extras.map((ex, j) => {
+                                  const perItemQty = ex.quantity || 1;
+                                  const itemQty = item.quantity || 1;
+                                  const totalQty = perItemQty * itemQty;
                                   const unit =
                                     parseFloat(ex.price ?? ex.extraPrice ?? 0) ||
                                     0;
-                                  const line = unit * (ex.quantity || 1);
+                                  const line = unit * totalQty;
                                   return (
                                     <span
                                       key={j}
                                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
                                     >
-                                      {ex.name} ×{ex.quantity || 1}{" "}
+                                      {ex.name} ×{totalQty}{" "}
                                       {formatCurrency(line)}
                                     </span>
                                   );

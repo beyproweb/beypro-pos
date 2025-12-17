@@ -2807,15 +2807,19 @@ return (
           {/* --- Extras (if any) --- */}
           {item.extras?.length > 0 && (
             <ul className="ml-2 mt-1 text-xs sm:text-sm text-gray-600 list-disc list-inside">
-              {item.extras.map((ex, idx) => (
-                <li key={idx}>
-                  {ex.name} ×{ex.quantity || 1} –{" "}
-                  {formatCurrency(
-                    (parseFloat(ex.price || ex.extraPrice) || 0) *
-                      (ex.quantity || 1)
-                  )}
-                </li>
-              ))}
+              {item.extras.map((ex, idx) => {
+                const exQtyPerItem = ex.quantity || 1;
+                const itemQty = item.quantity || 1;
+                const totalQty = exQtyPerItem * itemQty;
+                const unit =
+                  parseFloat(ex.price || ex.extraPrice || 0) || 0;
+                const lineTotal = unit * totalQty;
+                return (
+                  <li key={idx}>
+                    {ex.name} ×{totalQty} – {formatCurrency(lineTotal)}
+                  </li>
+                );
+              })}
             </ul>
           )}
 
