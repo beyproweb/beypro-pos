@@ -573,10 +573,8 @@ export function renderReceiptText(order, providedLayout) {
     : [];
 
   // Keep all items (base + suborders) without deduping so receipt matches cart
-  const items = [
-    ...baseItems,
-    ...suborderItems,
-  ];
+  const items = [...baseItems, ...suborderItems];
+  const hasItems = items.length > 0;
   const lines = [];
   const add = (l = "") => lines.push(String(l));
 
@@ -707,44 +705,49 @@ export function renderReceiptText(order, providedLayout) {
   );
   if (!Number.isFinite(tax)) tax = 0;
 
-  const orderSubtotal = pickNumber(
-    order?.subtotal,
-    order?.sub_total,
-    order?.total_without_tax,
-    order?.total_without_vat,
-    order?.net_total,
-    order?.amount_subtotal
-  );
+  // If we have concrete items, trust the computed subtotal (including extras)
+  // and ignore order-level totals which may exclude extras.
+  // Only fall back to order-level fields when there are NO items (edge cases).
+  if (!hasItems) {
+    const orderSubtotal = pickNumber(
+      order?.subtotal,
+      order?.sub_total,
+      order?.total_without_tax,
+      order?.total_without_vat,
+      order?.net_total,
+      order?.amount_subtotal
+    );
 
-  if ((!Number.isFinite(subtotal) || subtotal <= 0) && Number.isFinite(orderSubtotal)) {
-    subtotal = orderSubtotal;
+    if ((!Number.isFinite(subtotal) || subtotal <= 0) && Number.isFinite(orderSubtotal)) {
+      subtotal = orderSubtotal;
+    }
+
+    let orderLevelTotal = pickNumber(
+      order?.total_with_tax,
+      order?.total_with_vat,
+      order?.total,
+      order?.grand_total,
+      order?.price_total,
+      order?.amount_total,
+      order?.sum_total
+    );
+
+    if (!Number.isFinite(orderLevelTotal) || orderLevelTotal <= 0) {
+      orderLevelTotal = null;
+    }
+
+    if (orderLevelTotal !== null) {
+      if (!Number.isFinite(subtotal) || subtotal <= 0) {
+        subtotal = orderLevelTotal;
+      }
+      if ((!tax || tax <= 0) && Number.isFinite(subtotal) && orderLevelTotal > subtotal) {
+        tax = orderLevelTotal - subtotal;
+      }
+    }
   }
 
   if (!Number.isFinite(subtotal)) {
     subtotal = 0;
-  }
-
-  let orderLevelTotal = pickNumber(
-    order?.total_with_tax,
-    order?.total_with_vat,
-    order?.total,
-    order?.grand_total,
-    order?.price_total,
-    order?.amount_total,
-    order?.sum_total
-  );
-
-  if (!Number.isFinite(orderLevelTotal) || orderLevelTotal <= 0) {
-    orderLevelTotal = null;
-  }
-
-  if (orderLevelTotal !== null) {
-    if (!Number.isFinite(subtotal) || subtotal <= 0) {
-      subtotal = orderLevelTotal;
-    }
-    if ((!tax || tax <= 0) && Number.isFinite(subtotal) && orderLevelTotal > subtotal) {
-      tax = orderLevelTotal - subtotal;
-    }
   }
 
   if (tax > 0) {
@@ -752,7 +755,7 @@ export function renderReceiptText(order, providedLayout) {
   }
 
   add("--------------------------------");
-  const finalTotal = orderLevelTotal !== null ? orderLevelTotal : subtotal + tax;
+  const finalTotal = subtotal + (Number.isFinite(tax) ? tax : 0);
   add(`TOTAL: ${formatMoney(finalTotal)}`);
   if (
     (order?.status === "paid" || order?.payment_status === "paid") &&
