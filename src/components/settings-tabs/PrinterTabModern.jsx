@@ -122,6 +122,75 @@ function formatCurrency(value = 0, symbol = "₺") {
   return `${value.toFixed(2)} ${symbol}`;
 }
 
+const CP1254_MAP = {
+  "€": 0x80,
+  "‚": 0x82,
+  "ƒ": 0x83,
+  "„": 0x84,
+  "…": 0x85,
+  "†": 0x86,
+  "‡": 0x87,
+  "ˆ": 0x88,
+  "‰": 0x89,
+  "Š": 0x8a,
+  "‹": 0x8b,
+  "Œ": 0x8c,
+  "Ž": 0x8e,
+  "‘": 0x91,
+  "’": 0x92,
+  "“": 0x93,
+  "”": 0x94,
+  "•": 0x95,
+  "–": 0x96,
+  "—": 0x97,
+  "™": 0x99,
+  "š": 0x9a,
+  "›": 0x9b,
+  "œ": 0x9c,
+  "ž": 0x9e,
+  "Ÿ": 0x9f,
+  "Ş": 0xde,
+  "ş": 0xfe,
+  "Ğ": 0xd0,
+  "ğ": 0xf0,
+  "İ": 0xdd,
+  "ı": 0xfd,
+  "Ç": 0xc7,
+  "ç": 0xe7,
+  "Ö": 0xd6,
+  "ö": 0xf6,
+  "Ü": 0xdc,
+  "ü": 0xfc,
+  "Â": 0xc2,
+  "â": 0xe2,
+  "Ê": 0xca,
+  "ê": 0xea,
+  "Î": 0xce,
+  "î": 0xee,
+  "Û": 0xdb,
+  "û": 0xfb,
+};
+
+function encodeCP1254(text) {
+  const cleaned = String(text || "").replace(/\u20ba/g, "TL"); // ₺ -> TL
+  const bytes = [];
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const char = cleaned[i];
+    const codePoint = char.codePointAt(0);
+    if (codePoint < 0x80) {
+      bytes.push(codePoint);
+      continue;
+    }
+    const mapped = CP1254_MAP[char];
+    if (mapped !== undefined) {
+      bytes.push(mapped);
+      continue;
+    }
+    bytes.push(0x3f); // '?'
+  }
+  return Uint8Array.from(bytes);
+}
+
 function mergePrinterConfig(base, override) {
   if (!override) return base;
   const merged = {
@@ -189,7 +258,7 @@ function buildTestTicket(layout, order = SAMPLE_ORDER, customLines = []) {
 // Build ESC/POS bytes with alignment + Turkish codepage (matches receiptPrinter util)
 function buildEscposBytes(
   text,
-  { alignment = "left", cut = true, feedLines = 3, fontSize } = {}
+  { alignment = "left", cut = true, feedLines = 3, fontSize, lineSpacing } = {}
 ) {
   const normalized = `${text || ""}\n${"\n".repeat(Math.max(0, feedLines))}`;
   const init = Uint8Array.from([0x1b, 0x40]); // reset
@@ -200,8 +269,11 @@ function buildEscposBytes(
   const mode =
     fontSize && fontSize >= 22 ? 0x11 : fontSize && fontSize >= 18 ? 0x01 : 0x00;
   const sizeCmd = Uint8Array.from([0x1d, 0x21, mode]);
-  const encoder = new TextEncoder();
-  const body = encoder.encode(normalized.endsWith("\n") ? normalized : `${normalized}\n`);
+  const spacingCmd =
+    typeof lineSpacing === "number" && Number.isFinite(lineSpacing)
+      ? Uint8Array.from([0x1b, 0x33, Math.max(0, Math.min(255, Math.round(30 * lineSpacing)))])
+      : null;
+  const body = encodeCP1254(normalized.endsWith("\n") ? normalized : `${normalized}\n`);
   const cutBytes = cut ? Uint8Array.from([0x1d, 0x56, 0x00]) : new Uint8Array(0);
 
   const bytes = new Uint8Array(
@@ -209,6 +281,7 @@ function buildEscposBytes(
       selectTurkish.length +
       alignCmd.length +
       sizeCmd.length +
+      (spacingCmd ? spacingCmd.length : 0) +
       body.length +
       cutBytes.length
   );
@@ -217,6 +290,9 @@ function buildEscposBytes(
   bytes.set(selectTurkish, offset); offset += selectTurkish.length;
   bytes.set(alignCmd, offset); offset += alignCmd.length;
   bytes.set(sizeCmd, offset); offset += sizeCmd.length;
+  if (spacingCmd) {
+    bytes.set(spacingCmd, offset); offset += spacingCmd.length;
+  }
   bytes.set(body, offset); offset += body.length;
   bytes.set(cutBytes, offset);
   return bytes;
@@ -768,6 +844,7 @@ export default function PrinterTab() {
     const textBytes = buildEscposBytes(ticket, {
       alignment: layout.alignment || "left",
       fontSize: layout.fontSize,
+      lineSpacing: layout.spacing || layout.lineHeight,
     });
     const textBase64 =
       typeof Buffer !== "undefined"

@@ -199,6 +199,17 @@ function escapeForPowerShellLiteral(str = "") {
   return String(str).replace(/'/g, "''");
 }
 
+function receiptWidthToPx(widthSetting) {
+  if (widthSetting === "80mm") return 576;
+  if (widthSetting === "72mm" || widthSetting === "70mm") return 512;
+  const numeric = Number(String(widthSetting || "").replace(/[^0-9.]/g, ""));
+  if (Number.isFinite(numeric) && numeric > 0) {
+    if (numeric >= 75) return 576;
+    if (numeric >= 68) return 512; // ~70/72mm
+  }
+  return 384;
+}
+
 function sendRawToWindowsPrinter(printerName, dataBuffer) {
   return new Promise((resolve) => {
     if (process.platform !== "win32") {
@@ -495,7 +506,7 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
 // ------------------------
 ipcMain.handle("beypro:printWindows", async (_evt, args) => {
   try {
-    const { printerName, dataBase64, layout, jobKey } = args;
+    const { printerName, dataBase64, layout, jobKey, cashdraw } = args;
 
     console.log("📥 printWindows invoked:", {
       printerName,
@@ -511,11 +522,9 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
 
     let bytes = Buffer.from(dataBase64, "base64");
     if (layout && typeof layout === "object") {
-      let paperWidthPx = 384;
       console.log("🖼️ printWindows received layout:", { showLogo: layout.showLogo, logoUrl: layout.logoUrl, showQr: layout.showQr, qrUrl: layout.qrUrl });
       const widthSetting = layout.receiptWidth || layout.paperWidth;
-      if (widthSetting === "80mm") paperWidthPx = 576;
-      if (widthSetting === "72mm") paperWidthPx = 512;
+      const paperWidthPx = receiptWidthToPx(widthSetting);
       let logoBytes = null;
       let qrBytes = null;
       if (layout.showLogo && layout.logoUrl) {
@@ -538,7 +547,13 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       if (logoBytes) merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd]);
       merged = Buffer.concat([merged, bytes]);
       if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd]);
+      if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
+      merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
       bytes = merged;
+    } else {
+      // no layout, still optionally pulse drawer and cut at end
+      if (cashdraw) bytes = Buffer.concat([bytes, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
+      bytes = Buffer.concat([bytes, Buffer.from([0x1d, 0x56, 0x00])]);
     }
 
     const result = await sendRawToWindowsPrinter(printerName, bytes);
@@ -555,7 +570,7 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
 // DIRECT TCP RAW ESC/POS (9100)
 // ------------------------
 ipcMain.handle("beypro:printNet", async (_evt, args) => {
-  const { host, port = 9100, dataBase64, layout, jobKey } = args;
+  const { host, port = 9100, dataBase64, layout, jobKey, cashdraw } = args;
 
   if (jobKey && isRecentJob(jobKey)) {
     console.log(`⚠️ Skipping duplicate printNet for jobKey=${jobKey}`);
@@ -565,11 +580,9 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
   // If layout is provided, build ESC/POS bytes with logo/QR
   let finalBytes = Buffer.from(dataBase64, "base64");
   if (layout && typeof layout === 'object') {
-    let paperWidthPx = 384;
     console.log('🖼️ printNet received layout:', { showLogo: layout.showLogo, logoUrl: layout.logoUrl, showQr: layout.showQr, qrUrl: layout.qrUrl });
     const widthSetting = layout.receiptWidth || layout.paperWidth;
-    if (widthSetting === "80mm") paperWidthPx = 576;
-    if (widthSetting === "72mm") paperWidthPx = 512;
+    const paperWidthPx = receiptWidthToPx(widthSetting);
     let logoBytes = null;
     let qrBytes = null;
     if (layout.showLogo && layout.logoUrl) {
@@ -595,7 +608,12 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     if (logoBytes) merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd]);
     merged = Buffer.concat([merged, finalBytes]);
     if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd]);
+    if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
+    merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
     finalBytes = merged;
+  } else {
+    if (cashdraw) finalBytes = Buffer.concat([finalBytes, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
+    finalBytes = Buffer.concat([finalBytes, Buffer.from([0x1d, 0x56, 0x00])]);
   }
 
   return new Promise((resolve) => {

@@ -488,6 +488,20 @@ function isCashLike(value = "") {
   return ["cash", "nakit", "peşin", "pesin"].some((token) => normalized.includes(token));
 }
 
+const CUT_CMD = [0x1d, 0x56, 0x00];
+const DRAWER_PULSE_CMD = [0x1b, 0x70, 0x00, 0x32, 0x32]; // pin 2, ~50ms
+
+function receiptWidthToPx(widthSetting) {
+  if (widthSetting === "80mm") return 576;
+  if (widthSetting === "72mm" || widthSetting === "70mm") return 512;
+  const numeric = Number(String(widthSetting || "").replace(/[^0-9.]/g, ""));
+  if (Number.isFinite(numeric) && numeric > 0) {
+    if (numeric >= 75) return 576;
+    if (numeric >= 68) return 512; // treat 68-74 as ~70/72mm class
+  }
+  return 384; // default 58mm
+}
+
 function buildEscposBytes(
   text,
   {
@@ -558,19 +572,11 @@ export function renderReceiptText(order, providedLayout) {
     ? order.suborders.flatMap((so) => so?.items || [])
     : [];
 
-  const itemMap = new Map();
-  const pushItem = (item) => {
-    if (!item) return;
-    const key =
-      item.unique_id ||
-      `${item.product_id || item.id || ""}:${item.created_at || item.name || itemMap.size}`;
-    if (!itemMap.has(key)) {
-      itemMap.set(key, item);
-    }
-  };
-  baseItems.forEach(pushItem);
-  suborderItems.forEach(pushItem);
-  const items = Array.from(itemMap.values());
+  // Keep all items (base + suborders) without deduping so receipt matches cart
+  const items = [
+    ...baseItems,
+    ...suborderItems,
+  ];
   const lines = [];
   const add = (l = "") => lines.push(String(l));
 
@@ -617,113 +623,62 @@ export function renderReceiptText(order, providedLayout) {
     );
     const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
 
+    // Base item price (per unit, excluding extras) – match cart logic
     const unitPrice = pickNumber(
+      it.price,
       it.unit_price,
       it.unitPrice,
       it.price_per_unit,
       it.price_per_item,
       it.base_price,
-      it.product_price,
-      it.price
+      it.product_price
     );
 
-    let lineTotal = pickNumber(
-      it.line_total,
-      it.lineTotal,
-      it.total,
-      it.total_price,
-      it.totalPrice,
-      it.amount_total,
-      it.amount,
-      it.subtotal
-    );
+    const baseComponent =
+      Number.isFinite(unitPrice) && unitPrice !== null ? unitPrice * qty : 0;
 
+    // Extras per unit (for a single product), then scaled by qty – match cart logic
     const extrasDetails = [];
     let extrasPerUnit = 0;
 
     if (Array.isArray(it.extras)) {
       for (const ex of it.extras) {
         const exName = ex.name || "extra";
-        const exQtyRaw = pickNumber(ex.qty, ex.quantity, 1);
+        const exQtyRaw = pickNumber(ex.quantity, ex.qty, 1);
         const exQty = Number.isFinite(exQtyRaw) && exQtyRaw > 0 ? exQtyRaw : 1;
         const exUnitPrice = pickNumber(
-          ex.unit_price,
-          ex.unitPrice,
           ex.price,
           ex.extraPrice,
+          ex.unit_price,
+          ex.unitPrice,
           ex.amount
         );
 
-        let exLineTotal = pickNumber(
-          ex.total,
-          ex.total_price,
-          ex.amount_total,
-          ex.amount
-        );
-
-        let perItemContribution = 0;
-        if (Number.isFinite(exUnitPrice)) {
-          perItemContribution = exUnitPrice * exQty;
-          if (Number.isFinite(perItemContribution)) {
-            extrasPerUnit += perItemContribution;
-          }
+        const perUnitExtra =
+          Number.isFinite(exUnitPrice) && Number.isFinite(exQty)
+            ? exUnitPrice * exQty
+            : 0;
+        if (Number.isFinite(perUnitExtra)) {
+          extrasPerUnit += perUnitExtra;
         }
 
-        if (!Number.isFinite(exLineTotal)) {
-          exLineTotal = qty > 0 ? perItemContribution * qty : perItemContribution;
-        } else if (!Number.isFinite(exUnitPrice) && qty > 0) {
-          const derivedPerItem = exLineTotal / qty;
-          if (Number.isFinite(derivedPerItem)) {
-            extrasPerUnit += derivedPerItem;
-            perItemContribution = derivedPerItem;
-          }
-        }
-
-        if (!Number.isFinite(exLineTotal)) exLineTotal = 0;
-
-        const displayQty = qty > 0 ? exQty * qty : exQty;
-        const displayUnit =
-          Number.isFinite(exUnitPrice) && exUnitPrice !== null
-            ? exUnitPrice
-            : displayQty > 0
-            ? exLineTotal / displayQty
-            : exLineTotal;
+        const totalForLine =
+          Number.isFinite(perUnitExtra) && qty > 0 ? perUnitExtra * qty : 0;
 
         extrasDetails.push({
           name: exName,
-          qty: displayQty,
-          unitPrice: displayUnit,
-          total: exLineTotal,
+          qty: exQty * qty,
+          unitPrice: Number.isFinite(exUnitPrice) ? exUnitPrice : 0,
+          total: totalForLine,
         });
       }
     }
 
-    const extrasForQty = extrasPerUnit * qty;
-    const baseComponent =
-      Number.isFinite(unitPrice) && unitPrice !== null ? unitPrice * qty : null;
-
-    if (!Number.isFinite(lineTotal)) {
-      lineTotal = null;
-    }
-
-    if (lineTotal === null) {
-      const basePart = Number.isFinite(baseComponent) ? baseComponent : 0;
-      lineTotal = basePart + (Number.isFinite(extrasForQty) ? extrasForQty : 0);
-    } else if (
-      Number.isFinite(baseComponent) &&
-      Number.isFinite(extrasForQty) &&
-      extrasForQty > 0
-    ) {
-      const baseOnly = baseComponent;
-      if (Math.abs(lineTotal - baseOnly) < 0.01) {
-        lineTotal = baseOnly + extrasForQty;
-      }
-    }
-
-    if (!Number.isFinite(lineTotal)) lineTotal = 0;
+    const extrasForQty = Number.isFinite(extrasPerUnit) ? extrasPerUnit * qty : 0;
+    const lineTotal = baseComponent + extrasForQty;
 
     const effectiveUnitPrice =
-      qty > 0 ? lineTotal / qty : lineTotal;
+      Number.isFinite(unitPrice) && unitPrice !== null ? unitPrice : (qty > 0 ? lineTotal / qty : lineTotal);
 
     subtotal += lineTotal;
     add(
@@ -881,13 +836,11 @@ export async function printViaBridge(text, orderObj) {
 
   // Paper size (width in pixels)
   const widthSetting = layout?.receiptWidth || layout?.paperWidth;
-  let paperWidthPx = 384; // default for 58mm
-  if (widthSetting === "80mm") paperWidthPx = 576;
-  if (widthSetting === "72mm") paperWidthPx = 512;
+  const paperWidthPx = receiptWidthToPx(widthSetting);
 
   // Build text bytes with font size, alignment, spacing
   const textBytes = buildEscposBytes(resolvedText, {
-    cut: true,
+    cut: false, // handle cut after logo/QR composition to avoid mid-receipt cuts
     feedLines: 3,
     alignment: layout?.alignment || "left",
     fontSize: layout?.fontSize,
@@ -1056,6 +1009,7 @@ export async function printViaBridge(text, orderObj) {
         port: payload.port || 9100,
         dataBase64: textBase64,
         layout,
+        cashdraw: shouldPulseDrawer,
         jobKey,
       });
 
@@ -1097,6 +1051,10 @@ export async function printViaBridge(text, orderObj) {
         console.warn("⚠️ Failed to generate/convert QR for backend print:", err?.message || err);
       }
     }
+    if (shouldPulseDrawer) {
+      finalBytes = finalBytes.concat(DRAWER_PULSE_CMD);
+    }
+    finalBytes = finalBytes.concat(CUT_CMD);
 
     const finalBase64 = toBase64(Uint8Array.from(finalBytes));
 
