@@ -14,9 +14,9 @@ const DEFAULT_LAYOUT = {
   itemFontSize: 13,
   showHeader: true,
   showFooter: true,
-  showLogo: false,
+  showLogo: true,
   logoUrl: "",
-  showQr: false,
+  showQr: true,
   qrText: "",
   qrUrl: "",
   showTaxes: false,
@@ -387,19 +387,22 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
       )}
       {layout.showQr && (
         <div className="mt-4 flex flex-col items-center gap-1 rounded-2xl border border-dashed border-slate-300 p-3 text-[10px] uppercase text-slate-500">
-          {layout.qrUrl && layout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i) ? (
+          {layout.qrUrl ? (
             <img
               src={layout.qrUrl}
               alt="QR"
               className="h-16 w-16 rounded-xl object-contain bg-white border"
-              style={{ background: '#fff' }}
+              style={{ background: "#fff" }}
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
             />
           ) : (
             <div className="h-16 w-16 rounded-xl bg-slate-900" />
           )}
           <div className="text-[9px]">{layout.qrText}</div>
-          {layout.qrUrl && !layout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i) && (
-            <div className="text-[8px] text-slate-400">{layout.qrUrl}</div>
+          {layout.qrUrl && (
+            <div className="text-[8px] text-slate-400 break-all">{layout.qrUrl}</div>
           )}
         </div>
       )}
@@ -715,7 +718,14 @@ export default function PrinterTab() {
 
   async function handleLayoutUpdate(field, value) {
     setPrinterConfig((prev) => {
-      const next = { ...prev, layout: { ...prev.layout, [field]: value } };
+      const layoutPatch = { ...prev.layout, [field]: value };
+      if (field === "logoUrl" && value) {
+        layoutPatch.showLogo = true;
+      }
+      if (field === "qrUrl" && value) {
+        layoutPatch.showQr = true;
+      }
+      const next = { ...prev, layout: layoutPatch };
       // Auto-save to backend
       (async () => {
         setOperationStatus({ level: "idle", message: `Saving ${field}…` });
@@ -776,12 +786,12 @@ export default function PrinterTab() {
       // Update local state
       setPrinterConfig((prev) => ({
         ...prev,
-        layout: { ...prev.layout, logoUrl: url },
+        layout: { ...prev.layout, logoUrl: url, showLogo: true },
       }));
       // Save to backend
       setOperationStatus({ level: "idle", message: "Saving logo…" });
       try {
-        const payload = { ...printerConfig, layout: { ...printerConfig.layout, logoUrl: url } };
+        const payload = { ...printerConfig, layout: { ...printerConfig.layout, logoUrl: url, showLogo: true } };
         const remote = await secureFetch("/printer-settings/sync", {
           method: "POST",
           body: JSON.stringify(payload),
@@ -1074,12 +1084,12 @@ export default function PrinterTab() {
                       }
                       setPrinterConfig((prev) => ({
                         ...prev,
-                        layout: { ...prev.layout, logoUrl: data.url },
+                        layout: { ...prev.layout, logoUrl: data.url, showLogo: true },
                       }));
                       // Save to backend
                       setOperationStatus({ level: "idle", message: "Saving logo…" });
                       try {
-                        const payload = { ...printerConfig, layout: { ...printerConfig.layout, logoUrl: data.url } };
+                        const payload = { ...printerConfig, layout: { ...printerConfig.layout, logoUrl: data.url, showLogo: true } };
                         const remote = await secureFetch("/printer-settings/sync", {
                           method: "POST",
                           body: JSON.stringify(payload),
@@ -1302,12 +1312,12 @@ export default function PrinterTab() {
                         }
                         setPrinterConfig((prev) => ({
                           ...prev,
-                          layout: { ...prev.layout, qrUrl: data.url },
+                          layout: { ...prev.layout, qrUrl: data.url, showQr: true },
                         }));
                         // Save to backend
                         setOperationStatus({ level: "idle", message: "Saving QR image…" });
                         try {
-                          const payload = { ...printerConfig, layout: { ...printerConfig.layout, qrUrl: data.url } };
+                          const payload = { ...printerConfig, layout: { ...printerConfig.layout, qrUrl: data.url, showQr: true } };
                           const remote = await secureFetch("/printer-settings/sync", {
                             method: "POST",
                             body: JSON.stringify(payload),
@@ -1328,7 +1338,7 @@ export default function PrinterTab() {
                   />
                 </div>
                 <div className="text-xs text-slate-400 mt-1">Paste a QR code URL or upload a QR image (PNG/JPG, max 2MB)</div>
-                {printerConfig.layout.qrUrl && printerConfig.layout.qrUrl.match(/^https?:\/\/.+\.(png|jpg|jpeg)$/i) && (
+                {printerConfig.layout.qrUrl && (
                   <div className="mt-2 flex items-center gap-2">
                     <img src={printerConfig.layout.qrUrl} alt="QR preview" className="h-10 w-auto rounded border" />
                     <span className="text-xs text-slate-400">QR Preview</span>

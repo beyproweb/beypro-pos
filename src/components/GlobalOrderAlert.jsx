@@ -443,9 +443,11 @@ export default function GlobalOrderAlert() {
           .replace(/\\r/g, "")
           .trim()}</div>`
       : "";
-    const qrHtml = customLayout.showQr && customLayout.qrUrl && customLayout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i)
-      ? `<img src='${customLayout.qrUrl}' alt='QR' style='display:block;margin:12px auto 0;height:64px;width:64px;object-fit:contain;border-radius:12px;border:1px dashed #cbd5e1;background:#fff;'/>`
-      : customLayout.showQr ? `<div style='height:64px;width:64px;margin:12px auto 0;background:#0f172a;border-radius:12px;'></div>` : '';
+    const qrHtml = customLayout.showQr
+      ? customLayout.qrUrl
+        ? `<img src='${customLayout.qrUrl}' alt='QR' style='display:block;margin:12px auto 0;height:64px;width:64px;object-fit:contain;border-radius:12px;border:1px dashed #cbd5e1;background:#fff;'/>`
+        : `<div style='height:64px;width:64px;margin:12px auto 0;background:#0f172a;border-radius:12px;'></div>`
+      : '';
     const html = `
       <div style='width:280px;margin:0 auto;padding:16px;border-radius:16px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;font-size:${customLayout.itemFontSize}px;line-height:${customLayout.spacing};text-align:${customLayout.alignment};font-family:sans-serif;'>
         ${logoHtml}
@@ -479,7 +481,7 @@ export default function GlobalOrderAlert() {
         ${customLines && customLines.length ? `<div style='margin-top:12px;font-size:11px;color:#64748b;'>${customLines.map(line => `<div>${line}</div>`).join('')}</div>` : ''}
         ${qrHtml}
         ${customLayout.showQr && customLayout.qrText ? `<div style='font-size:10px;text-transform:uppercase;color:#64748b;margin-top:4px;'>${customLayout.qrText}</div>` : ''}
-        ${customLayout.showQr && customLayout.qrUrl && !customLayout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i) ? `<div style='font-size:8px;color:#94a3b8;'>${customLayout.qrUrl}</div>` : ''}
+        ${customLayout.showQr && customLayout.qrUrl ? `<div style='font-size:8px;color:#94a3b8;word-break:break-all;'>${customLayout.qrUrl}</div>` : ''}
         ${customLayout.showFooter ? `<div style='margin-top:12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.2em;color:#64748b;'>${customLayout.footerText || ''}</div>` : ''}
       </div>
     `;
