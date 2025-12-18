@@ -154,6 +154,11 @@ const formatMoney = (value) => {
   return formatWithActiveCurrency(Number.isFinite(value) ? value : 0, { currencyKey });
 };
 
+export function formatReceiptMoney(value) {
+  const amount = Number.isFinite(value) ? value : Number(value) || 0;
+  return `${amount.toFixed(2)} TL`;
+}
+
 const formatQuantity = (qty) => {
   if (!Number.isFinite(qty)) return "1";
   if (Math.abs(qty - Math.round(qty)) < 1e-4) return String(Math.round(qty));
@@ -502,6 +507,28 @@ function receiptWidthToPx(widthSetting) {
   return 384; // default 58mm
 }
 
+function getReceiptLineWidth(layout) {
+  const widthSetting = layout?.receiptWidth || layout?.paperWidth;
+  const px = receiptWidthToPx(widthSetting);
+  if (px >= 576) return 42;
+  if (px >= 512) return 38;
+  return 32;
+}
+
+function formatLine(left, right, width) {
+  const leftStr = String(left ?? "");
+  const rightStr = String(right ?? "");
+  if (!rightStr) return leftStr;
+  const minGap = 1;
+  const space = width - leftStr.length - rightStr.length;
+  if (space >= minGap) {
+    return `${leftStr}${" ".repeat(space)}${rightStr}`;
+  }
+  const maxLeft = Math.max(0, width - rightStr.length - minGap);
+  const trimmedLeft = leftStr.slice(0, maxLeft);
+  return `${trimmedLeft} ${rightStr}`.trimEnd();
+}
+
 function buildEscposBytes(
   text,
   {
@@ -737,12 +764,26 @@ export function computeReceiptSummary(order) {
 export function renderReceiptText(order, providedLayout) {
   const layout = providedLayout || getReceiptLayout();
   const summary = computeReceiptSummary(order);
+  const lineWidth = getReceiptLineWidth(layout);
+  const divider = "-".repeat(lineWidth);
+  const customLines = Array.isArray(layout?.customLines)
+    ? layout.customLines.filter((line) => typeof line === "string" && line.trim().length > 0)
+    : [];
+  const showTaxes = layout?.showTaxes === true;
+  const showDiscounts = layout?.showDiscounts === true;
+  const taxLabel = layout?.taxLabel || "Tax";
+  const taxRate = Number(layout?.taxRate ?? 0) || 0;
+  const discountLabel = layout?.discountLabel || "Discount";
+  const discountRate = Number(layout?.discountRate ?? 0) || 0;
+  const discountAmount = showDiscounts
+    ? pickNumber(order?.discount_value, order?.discount, order?.discount_total, 0) || 0
+    : 0;
 
   const lines = [];
   const add = (l = "") => lines.push(String(l));
 
   if (layout.showHeader) {
-    const headerLine = layout.headerText || layout.headerTitle || "Beypro POS";
+    const headerLine = layout.headerTitle || layout.headerText || "Beypro POS";
     add(headerLine);
     if (layout.headerSubtitle) add(layout.headerSubtitle);
   }
@@ -754,32 +795,21 @@ export function renderReceiptText(order, providedLayout) {
       .filter(Boolean)
       .forEach((l) => add(l));
   }
-  add(new Date(order?.created_at || Date.now()).toLocaleString());
-  add(`Order #${order?.id || "-"}`);
-
-  if (layout.showPacketCustomerInfo && (order?.customer || order?.customer_name)) {
-    add(`Cust: ${order.customer || order.customer_name}`);
-    if (order.customer_phone) add(`Phone: ${order.customer_phone}`);
-    if (order.address || order.customer_address) {
-      add(
-        `Addr: ${(order.address || order.customer_address || "")
-          .replace(/\s+/g, " ")
-          .trim()}`
-      );
-    }
+  if (layout.showHeader || layout.shopAddress) {
+    add("");
   }
 
-  add("--------------------------------");
+  add(divider);
 
   for (const item of summary.items) {
-    add(
-      `${formatQuantity(item.qty)} x ${item.name}  ${formatMoney(item.unitPrice)} = ${formatMoney(item.lineTotal)}`
-    );
+    const left = `${formatQuantity(item.qty)} x ${item.name}`;
+    const right = formatReceiptMoney(item.lineTotal);
+    add(formatLine(left, right, lineWidth));
 
     for (const detail of item.extrasDetails) {
-      add(
-        `  + ${formatQuantity(detail.qty)} x ${formatMoney(detail.unitPrice)} ${detail.name}  ${formatMoney(detail.total)}`
-      );
+      const extraLeft = `+ ${formatQuantity(detail.qty)}x ${formatReceiptMoney(detail.unitPrice)} ${detail.name}`;
+      const extraRight = formatReceiptMoney(detail.total);
+      add(formatLine(extraLeft, extraRight, lineWidth));
     }
 
     if (item.note) {
@@ -787,21 +817,35 @@ export function renderReceiptText(order, providedLayout) {
     }
   }
 
-  if (summary.tax > 0) {
-    add(`TAX: ${formatMoney(summary.tax)}`);
+  add(divider);
+  add(formatLine("Subtotal", formatReceiptMoney(summary.subtotal), lineWidth));
+  if (showTaxes) {
+    add(formatLine(`${taxLabel} (${taxRate}%)`, formatReceiptMoney(summary.tax), lineWidth));
+  }
+  if (showDiscounts) {
+    add(
+      formatLine(
+        `${discountLabel} (${discountRate}%)`,
+        `-${formatReceiptMoney(discountAmount)}`,
+        lineWidth
+      )
+    );
+  }
+  add(formatLine("Total", formatReceiptMoney(summary.total - discountAmount), lineWidth));
+
+  if (customLines.length) {
+    add("");
+    customLines.forEach((line) => add(line));
   }
 
-  add("--------------------------------");
-  add(`TOTAL: ${formatMoney(summary.total)}`);
-  if (
-    (order?.status === "paid" || order?.payment_status === "paid") &&
-    order?.payment_method
-  ) {
-    add(`PAYMENT: ${String(order.payment_method).toUpperCase()}`);
+  if (layout.showQr && layout.qrText) {
+    add(layout.qrText);
+  }
+  if (layout.showQr && layout.qrUrl && !/^https?:\/\/.*\.(png|jpg|jpeg)$/i.test(layout.qrUrl)) {
+    add(layout.qrUrl);
   }
 
   if (layout.showFooter && layout.footerText) {
-    add("--------------------------------");
     add(layout.footerText);
   }
   
@@ -844,6 +888,16 @@ export async function printViaBridge(text, orderObj) {
     window.__beyproPrintGuard[orderId] = now;
   }
 
+  let printerSettings = null;
+  try {
+    printerSettings = await getPrinterSettingsCached();
+    if (!printerSettings) {
+      printerSettings = await getPrinterSettingsCached(true);
+    }
+  } catch (err) {
+    console.warn("⚠️ Could not read printer settings:", err?.message || err);
+  }
+
   if (orderObj) {
     try {
       const loaded = await ensureReceiptLayout();
@@ -854,6 +908,11 @@ export async function printViaBridge(text, orderObj) {
       console.warn("⚠️ Failed to ensure receipt layout before printing:", err?.message || err);
     }
     layout = getReceiptLayout();
+    const customLines =
+      printerSettings && Array.isArray(printerSettings.customLines)
+        ? printerSettings.customLines.filter((l) => typeof l === "string" && l.trim().length > 0)
+        : [];
+    layout = customLines.length ? { ...layout, customLines } : layout;
     console.log("📝 Printing with layout:", {
       alignment: layout.alignment,
       showFooter: layout.showFooter,
@@ -864,15 +923,11 @@ export async function printViaBridge(text, orderObj) {
       receiptWidth: layout.receiptWidth,
     });
     resolvedText = renderReceiptText(orderObj, layout);
-    // Append any custom footer lines configured for this printer
-    const customLines =
-      printerSettings && Array.isArray(printerSettings.customLines)
-        ? printerSettings.customLines.filter((l) => typeof l === "string" && l.trim().length > 0)
-        : [];
-    if (customLines.length) {
-      resolvedText = `${resolvedText}\n\n${customLines.join("\n")}`;
-    }
     console.log("📝 Receipt text rendered with customizations (including custom lines)");
+  }
+
+  if (!layout) {
+    layout = getReceiptLayout();
   }
 
   resolvedText = sanitizeReceiptText(resolvedText);
@@ -890,7 +945,7 @@ export async function printViaBridge(text, orderObj) {
     cut: false, // handle cut after logo/QR composition to avoid mid-receipt cuts
     feedLines: 3,
     alignment: layout?.alignment || "left",
-    fontSize: layout?.fontSize,
+    fontSize: layout?.itemFontSize || layout?.fontSize,
     lineSpacing: layout?.spacing || layout?.lineHeight,
     addressFontSize: layout?.shopAddressFontSize,
     addressLines: layout?.shopAddress
@@ -908,16 +963,6 @@ export async function printViaBridge(text, orderObj) {
   const textBase64 = textDataBase64;
 
   // (Printing will continue after resolving the target below)
-
-  let printerSettings = null;
-  try {
-    printerSettings = await getPrinterSettingsCached();
-    if (!printerSettings) {
-      printerSettings = await getPrinterSettingsCached(true);
-    }
-  } catch (err) {
-    console.warn("⚠️ Could not read printer settings:", err?.message || err);
-  }
 
   const candidateIds = [];
   if (printerSettings?.receiptPrinter) candidateIds.push(printerSettings.receiptPrinter);

@@ -14,6 +14,7 @@ import socket, { joinRestaurantRoom } from "../utils/socket";
 import {
   defaultReceiptLayout,
   computeReceiptSummary,
+  formatReceiptMoney,
   renderReceiptText,
   printViaBridge,
   setReceiptLayout,
@@ -454,14 +455,14 @@ export default function GlobalOrderAlert() {
           ${items.map(item => {
             const qty = item.qty || item.quantity || 1;
             const lineTotal = Number(item.lineTotal || 0);
-            const main = `<div style='display:flex;justify-content:space-between;padding:4px 0;'><span>${qty} × ${item.name}</span><span>${lineTotal.toFixed(2)} ₺</span></div>`;
+            const main = `<div style='display:flex;justify-content:space-between;padding:4px 0;'><span>${qty} × ${item.name}</span><span>${formatReceiptMoney(lineTotal)}</span></div>`;
             const extrasHtml = (item.extrasDetails && item.extrasDetails.length)
               ? `<div style='padding-left:8px;font-size:11px;color:#64748b;margin-top:4px;'>${item.extrasDetails
                   .map(detail => {
                     const totalQty = detail.qty || 1;
                     const unit = Number(detail.unitPrice || 0);
                     const extraTotal = Number(detail.total || 0);
-                    return `<div style="display:flex;justify-content:space-between;"><span>+ ${totalQty}x ${unit.toFixed(2)} ₺ ${detail.name}</span><span>${extraTotal.toFixed(2)} ₺</span></div>`;
+                    return `<div style="display:flex;justify-content:space-between;"><span>+ ${totalQty}x ${formatReceiptMoney(unit)} ${detail.name}</span><span>${formatReceiptMoney(extraTotal)}</span></div>`;
                   })
                   .join('')}</div>`
               : '';
@@ -470,10 +471,10 @@ export default function GlobalOrderAlert() {
           }).join('')}
         </div>
         <div style='margin-top:12px;font-size:12px;'>
-          <div style='display:flex;justify-content:space-between;'><span>Subtotal</span><span>${subTotal.toFixed(2)} ₺</span></div>
-          ${customLayout.showTaxes ? `<div style='display:flex;justify-content:space-between;color:#64748b;'><span>${customLayout.taxLabel || ''} (${customLayout.taxRate || 0}%)</span><span>${taxAmount.toFixed(2)} ₺</span></div>` : ''}
-          ${customLayout.showDiscounts ? `<div style='display:flex;justify-content:space-between;color:#64748b;'><span>${customLayout.discountLabel || ''} (${customLayout.discountRate || 0}%)</span><span>-${discountAmount.toFixed(2)} ₺</span></div>` : ''}
-          <div style='display:flex;justify-content:space-between;font-weight:600;'><span>Total</span><span>${total.toFixed(2)} ₺</span></div>
+          <div style='display:flex;justify-content:space-between;'><span>Subtotal</span><span>${formatReceiptMoney(subTotal)}</span></div>
+          ${customLayout.showTaxes ? `<div style='display:flex;justify-content:space-between;color:#64748b;'><span>${customLayout.taxLabel || ''} (${customLayout.taxRate || 0}%)</span><span>${formatReceiptMoney(taxAmount)}</span></div>` : ''}
+          ${customLayout.showDiscounts ? `<div style='display:flex;justify-content:space-between;color:#64748b;'><span>${customLayout.discountLabel || ''} (${customLayout.discountRate || 0}%)</span><span>-${formatReceiptMoney(discountAmount)}</span></div>` : ''}
+          <div style='display:flex;justify-content:space-between;font-weight:600;'><span>Total</span><span>${formatReceiptMoney(total)}</span></div>
         </div>
         ${customLines && customLines.length ? `<div style='margin-top:12px;font-size:11px;color:#64748b;'>${customLines.map(line => `<div>${line}</div>`).join('')}</div>` : ''}
         ${qrHtml}
