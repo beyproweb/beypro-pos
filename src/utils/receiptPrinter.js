@@ -216,13 +216,30 @@ async function getRegisterSettings() {
 }
 
 export function setReceiptLayout(next) {
-  layoutCache = { ...defaultReceiptLayout, ...(next || {}) };
-  if (!layoutCache.receiptWidth && layoutCache.paperWidth) {
+  const incoming = next || {};
+  layoutCache = { ...defaultReceiptLayout, ...incoming };
+
+  // Keep paperWidth/receiptWidth in sync.
+  // Important: the backend usually stores `paperWidth` only; but defaultReceiptLayout
+  // includes `receiptWidth` ("58mm"). If we don't overwrite it, printing gets stuck at 58mm.
+  const hasIncomingPaperWidth =
+    Object.prototype.hasOwnProperty.call(incoming, "paperWidth") && incoming.paperWidth;
+  const hasIncomingReceiptWidth =
+    Object.prototype.hasOwnProperty.call(incoming, "receiptWidth") && incoming.receiptWidth;
+
+  if (hasIncomingPaperWidth) {
     layoutCache.receiptWidth = layoutCache.paperWidth;
-  }
-  if (!layoutCache.paperWidth && layoutCache.receiptWidth) {
+  } else if (hasIncomingReceiptWidth) {
     layoutCache.paperWidth = layoutCache.receiptWidth;
+  } else {
+    if (!layoutCache.receiptWidth && layoutCache.paperWidth) {
+      layoutCache.receiptWidth = layoutCache.paperWidth;
+    }
+    if (!layoutCache.paperWidth && layoutCache.receiptWidth) {
+      layoutCache.paperWidth = layoutCache.receiptWidth;
+    }
   }
+
   layoutLoaded = true;
   if (typeof window !== "undefined") {
     window.__receiptLayout = layoutCache;
