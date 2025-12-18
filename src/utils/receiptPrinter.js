@@ -778,7 +778,7 @@ export function renderReceiptText(order, providedLayout) {
 
     for (const detail of item.extrasDetails) {
       add(
-        `  + ${formatQuantity(detail.qty)} x ${detail.name}  ${formatMoney(detail.unitPrice)} = ${formatMoney(detail.total)}`
+        `  + ${formatQuantity(detail.qty)} x ${formatMoney(detail.unitPrice)} ${detail.name}  ${formatMoney(detail.total)}`
       );
     }
 

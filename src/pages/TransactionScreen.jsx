@@ -3187,12 +3187,15 @@ const cardGradient = item.paid
       {normalizedExtras.length > 0 && (
         <ul className="space-y-0.5 text-xs text-slate-600">
           {normalizedExtras.map((ex, i2) => {
-            const extraQty = Number(ex.quantity) || 1;
-            const extraTotal =
-              (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * extraQty;
+            const extraQtyPerItem = Number(ex.quantity) || 1;
+            const unit =
+              parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+            const totalQty = extraQtyPerItem * quantity;
+            const lineTotal = unit * totalQty;
             return (
               <li key={`${item.unique_id}-extra-${i2}`}>
-                {ex.name} ×{extraQty} – {formatCurrency(extraTotal)}
+                + {totalQty}x {formatCurrency(unit)} {ex.name} —{" "}
+                {formatCurrency(lineTotal)}
               </li>
             );
           })}

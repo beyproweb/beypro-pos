@@ -331,8 +331,19 @@ export default function GlobalOrderAlert() {
     (async () => {
       try {
         const printer = await secureFetch("/printer-settings/sync");
-        const nextLayout = printer?.settings?.layout || printer?.layout;
-        if (nextLayout) setLayout((old) => ({ ...old, ...nextLayout }));
+        const nextLayout = printer?.settings?.layout || printer?.layout || {};
+        const customLines = Array.isArray(printer?.settings?.customLines)
+          ? printer.settings.customLines
+          : Array.isArray(printer?.customLines)
+          ? printer.customLines
+          : null;
+        if (nextLayout || customLines) {
+          setLayout((old) => ({
+            ...old,
+            ...(nextLayout || {}),
+            ...(Array.isArray(customLines) ? { customLines } : {}),
+          }));
+        }
       } catch {
         /* ignore */
       }
@@ -426,13 +437,19 @@ export default function GlobalOrderAlert() {
       customLayout.showDiscounts ? Number(rawDiscount) || 0 : 0;
     const total = subTotal + taxAmount - discountAmount;
     const logoHtml = customLayout.showLogo && customLayout.logoUrl ? `<img src='${customLayout.logoUrl}' alt='Logo' style='display:block;margin:0 auto 12px;height:48px;max-width:100px;object-fit:contain;'/>` : '';
+    const addressHtml = customLayout.shopAddress
+      ? `<div style='margin-bottom:8px;text-align:center;color:#64748b;font-size:${customLayout.shopAddressFontSize || 11}px;white-space:pre-line;'>${String(customLayout.shopAddress)
+          .replace(/\\r/g, "")
+          .trim()}</div>`
+      : "";
     const qrHtml = customLayout.showQr && customLayout.qrUrl && customLayout.qrUrl.match(/^https?:\/\/.*\.(png|jpg|jpeg)$/i)
       ? `<img src='${customLayout.qrUrl}' alt='QR' style='display:block;margin:12px auto 0;height:64px;width:64px;object-fit:contain;border-radius:12px;border:1px dashed #cbd5e1;background:#fff;'/>`
       : customLayout.showQr ? `<div style='height:64px;width:64px;margin:12px auto 0;background:#0f172a;border-radius:12px;'></div>` : '';
     const html = `
       <div style='width:280px;margin:0 auto;padding:16px;border-radius:16px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;font-size:${customLayout.itemFontSize}px;line-height:${customLayout.spacing};text-align:${customLayout.alignment};font-family:sans-serif;'>
         ${logoHtml}
-        ${customLayout.showHeader ? `<div style='margin-bottom:8px;text-align:center;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#1e293b;'>${customLayout.headerTitle || ''}<div style='font-size:12px;font-weight:400;color:#64748b;'>${customLayout.headerSubtitle || ''}</div></div>` : ''}
+        ${customLayout.showHeader ? `<div style='margin-bottom:4px;text-align:center;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#1e293b;'>${customLayout.headerTitle || ''}<div style='font-size:12px;font-weight:400;color:#64748b;'>${customLayout.headerSubtitle || ''}</div></div>` : ''}
+        ${addressHtml}
         <div style='border-top:1px dashed #e2e8f0;border-bottom:1px dashed #e2e8f0;padding:8px 0;font-size:12px;'>
           ${items.map(item => {
             const qty = item.qty || item.quantity || 1;
@@ -442,8 +459,9 @@ export default function GlobalOrderAlert() {
               ? `<div style='padding-left:8px;font-size:11px;color:#64748b;margin-top:4px;'>${item.extrasDetails
                   .map(detail => {
                     const totalQty = detail.qty || 1;
+                    const unit = Number(detail.unitPrice || 0);
                     const extraTotal = Number(detail.total || 0);
-                    return `<div style="display:flex;justify-content:space-between;"><span>+ ${totalQty}x ${detail.name}</span><span>${extraTotal.toFixed(2)} ₺</span></div>`;
+                    return `<div style="display:flex;justify-content:space-between;"><span>+ ${totalQty}x ${unit.toFixed(2)} ₺ ${detail.name}</span><span>${extraTotal.toFixed(2)} ₺</span></div>`;
                   })
                   .join('')}</div>`
               : '';
