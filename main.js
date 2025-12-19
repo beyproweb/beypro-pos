@@ -241,8 +241,21 @@ function sendRawToWindowsPrinter(printerName, dataBuffer) {
       return resolve({ ok: false, error: "Missing raw data for printer job." });
     }
 
+    // Large jobs can blow up the PowerShell command line; spill to a temp file when big.
+    const MAX_INLINE_BYTES = 60000;
+    let tempFile = null;
+    if (dataBuffer.length > MAX_INLINE_BYTES) {
+      try {
+        tempFile = path.join(app.getPath("temp"), `beypro-print-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`);
+        fs.writeFileSync(tempFile, dataBuffer);
+      } catch (err) {
+        return resolve({ ok: false, error: `Failed to write temp print file: ${err.message}` });
+      }
+    }
+
     const safePrinter = escapeForPowerShellLiteral(printerName);
-    const base64 = escapeForPowerShellLiteral(dataBuffer.toString("base64"));
+    const base64 = tempFile ? null : escapeForPowerShellLiteral(dataBuffer.toString("base64"));
+    const safePath = tempFile ? escapeForPowerShellLiteral(tempFile) : null;
     const psScript = `
 Add-Type -Language CSharp -TypeDefinition @"
 using System;
@@ -285,7 +298,7 @@ public class RawPrinterHelper {
   }
 }
 "@
-$bytes = [Convert]::FromBase64String('${base64}')
+$bytes = ${tempFile ? `[IO.File]::ReadAllBytes('${safePath}')` : `[Convert]::FromBase64String('${base64}')`}
 $ok = [RawPrinterHelper]::SendBytesToPrinter('${safePrinter}', $bytes)
 if ($ok) { Write-Output '{"ok":true}' } else { Write-Output '{"ok":false,"error":"WritePrinter failed"}' }
 `;
@@ -301,6 +314,9 @@ if ($ok) { Write-Output '{"ok":true}' } else { Write-Output '{"ok":false,"error"
     ps.stdout.on("data", (chunk) => (stdout += chunk.toString()));
     ps.stderr.on("data", (chunk) => (stderr += chunk.toString()));
     ps.on("close", () => {
+      if (tempFile) {
+        try { fs.unlinkSync(tempFile); } catch {}
+      }
       if (stderr && !stdout) {
         return resolve({ ok: false, error: stderr.trim() });
       }
