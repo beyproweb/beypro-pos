@@ -680,6 +680,38 @@ const isKitchenExcludedItem = useCallback(
   [excludedKitchenCategories, excludedKitchenIds]
 );
 
+const normalizeItemName = (value) =>
+  (value || "").replace(/[\s\-]/g, "").toLowerCase();
+
+const getRelevantOrderItems = useCallback(
+  (order) => {
+    if (!order || !Array.isArray(order.items)) return [];
+    return order.items.filter((item) => {
+      const normalizedName = normalizeItemName(
+        item.name || item.order_item_name || item.product_name
+      );
+      return (
+        !isKitchenExcludedItem(item) &&
+        !normalizedDrinkNames.includes(normalizedName)
+      );
+    });
+  },
+  [isKitchenExcludedItem, normalizedDrinkNames]
+);
+
+const areDriverItemsDelivered = (order) => {
+  const relevant = getRelevantOrderItems(order);
+  if (relevant.length === 0) return true;
+  return relevant.every((item) => {
+    const status = (item.kitchen_status || "").toLowerCase();
+    return (
+      status === "delivered" ||
+      status === "packet_delivered" ||
+      status === "ready"
+    );
+  });
+};
+
 useEffect(() => {
   secureFetch("/kitchen/compile-settings")
     .then((res) => res.json())
@@ -707,40 +739,6 @@ useEffect(() => {
   // Driver Button Logic
   const handleDriverMultifunction = async (order) => {
   setUpdating(prev => ({ ...prev, [order.id]: true }));
-
-  // Normalize frontend drink names (remove spaces/dashes, lowercase)
-  const drinksLower = drinksList.map(d =>
-    d.replace(/[\s\-]/g, "").toLowerCase()
-  );
-
-  // Build list of “non-drink” items (ignore any whose normalized name is in drinksLower)
-const normalizeItemName = (value) =>
-  (value || "").replace(/[\s\-]/g, "").toLowerCase();
-
-const getRelevantOrderItems = useCallback(
-  (order) => {
-    if (!order || !Array.isArray(order.items)) return [];
-    return order.items.filter((item) => {
-      const normalizedName = normalizeItemName(
-        item.name || item.order_item_name || item.product_name
-      );
-      return (
-        !isKitchenExcludedItem(item) &&
-        !normalizedDrinkNames.includes(normalizedName)
-      );
-    });
-  },
-  [isKitchenExcludedItem, normalizedDrinkNames]
-);
-
-const areDriverItemsDelivered = (order) => {
-  const relevant = getRelevantOrderItems(order);
-  if (relevant.length === 0) return true;
-  return relevant.every((item) => {
-    const status = (item.kitchen_status || "").toLowerCase();
-    return status === "delivered" || status === "packet_delivered" || status === "ready";
-  });
-};
 
 // ✅ Pick up: allow as soon as all non-drink items are delivered
 const allNonDrinksDelivered = areDriverItemsDelivered(order);
