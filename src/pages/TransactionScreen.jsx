@@ -3229,7 +3229,7 @@ const cardGradient = item.paid
         {isExpanded ? "▲" : "▼"}
       </button>
       <span className="font-semibold text-indigo-600 whitespace-nowrap">
-        {formatCurrency(baseTotal)}
+        {formatCurrency(lineTotal)}
       </span>
     </div>
   </div>
@@ -3242,7 +3242,7 @@ const cardGradient = item.paid
         <div className="space-y-0.5">
           <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
             <span>{t("Extras")}</span>
-            <span className="text-indigo-600">{formatCurrency(extrasTotal)}</span>
+            <span className="text-slate-800">{formatCurrency(extrasTotal)}</span>
           </div>
           <ul className="space-y-0.5 text-xs text-slate-600">
             {normalizedExtras.map((ex, i2) => {

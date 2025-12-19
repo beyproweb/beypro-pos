@@ -819,13 +819,9 @@ export function renderReceiptText(order, providedLayout) {
   add(divider);
 
   for (const item of summary.items) {
-    // Show base unit price only; extras are itemized separately.
+    // Show full line total (base + extras) on the main line
     const left = `${formatQuantity(item.qty)} x ${item.name}`;
-    const extrasTotalForItem = Array.isArray(item.extrasDetails)
-      ? item.extrasDetails.reduce((sum, ex) => sum + (Number(ex.total) || 0), 0)
-      : 0;
-    const baseAmount = Math.max(0, (Number(item.lineTotal) || 0) - extrasTotalForItem);
-    const right = formatReceiptMoney(baseAmount);
+    const right = formatReceiptMoney(item.lineTotal);
     add(formatLine(left, right, lineWidth));
 
     for (const detail of item.extrasDetails) {
