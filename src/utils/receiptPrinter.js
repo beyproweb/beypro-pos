@@ -512,6 +512,7 @@ function isCashLike(value = "") {
 
 const CUT_CMD = [0x1d, 0x56, 0x00];
 const DRAWER_PULSE_CMD = [0x1b, 0x70, 0x00, 0x32, 0x32]; // pin 2, ~50ms
+const FEED_AFTER_IMAGE_CMD = [0x1b, 0x64, 0x05]; // ESC d 5
 
 function receiptWidthToPx(widthSetting) {
   if (widthSetting === "80mm") return 576;
@@ -1155,7 +1156,11 @@ export async function printViaBridge(text, orderObj) {
         const qrBytesLocal = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
         const centerCmd = [0x1b, 0x61, 0x01];
         const leftCmd = [0x1b, 0x61, 0x00];
-        finalBytes = finalBytes.concat(Array.from(centerCmd)).concat(Array.from(qrBytesLocal)).concat(Array.from(leftCmd));
+        finalBytes = finalBytes
+          .concat(Array.from(centerCmd))
+          .concat(Array.from(qrBytesLocal))
+          .concat(Array.from(leftCmd))
+          .concat(FEED_AFTER_IMAGE_CMD);
       } catch (err) {
         console.warn("⚠️ Failed to generate/convert QR for backend print:", err?.message || err);
       }

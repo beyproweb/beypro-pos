@@ -457,6 +457,9 @@ async function printNetDirect(host, port, bytes) {
   });
 }
 
+const FEED_AFTER_IMAGE_LINES = 5;
+const FEED_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_IMAGE_LINES]); // ESC d n
+
 // ------------------------
 // RAW PRINT with Network Printer Support
 // Routes network printers to TCP 9100, others to Windows driver
@@ -546,7 +549,7 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       const leftCmd = Buffer.from([0x1b, 0x61, 0x00]);
       if (logoBytes) merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd]);
       merged = Buffer.concat([merged, bytes]);
-      if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd]);
+      if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd, FEED_CMD]);
       if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
       merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
       bytes = merged;
@@ -607,7 +610,7 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     const leftCmd = Buffer.from([0x1b, 0x61, 0x00]); // ESC a 0
     if (logoBytes) merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd]);
     merged = Buffer.concat([merged, finalBytes]);
-    if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd]);
+    if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd, FEED_CMD]);
     if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
     merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
     finalBytes = merged;

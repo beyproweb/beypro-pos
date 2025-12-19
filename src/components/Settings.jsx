@@ -18,6 +18,7 @@ import AppearanceTab from "../components/settings-tabs/AppearanceTab";
 import PrinterTabModern from "../components/settings-tabs/PrinterTabModern";
 import CameraTab from "../components/settings-tabs/CameraTab";
 import TablesSettingsTab from "../components/settings-tabs/TablesSettingsTab";
+import TransactionsTab from "../components/settings-tabs/TransactionsTab";
 
 const tabComponents = {
   shop_hours: ShopHoursTab,
@@ -33,6 +34,7 @@ const tabComponents = {
   printers: PrinterTabModern,
   cameras: CameraTab,
   tables: TablesSettingsTab,
+  transactions: TransactionsTab,
 };
 
 export default function SettingsPage() {
@@ -56,6 +58,7 @@ export default function SettingsPage() {
     "settings-printers",
     "settings-cameras",
     "settings-tables",
+    "settings-transactions",
   ];
 
   // ✅ Properly check each permission

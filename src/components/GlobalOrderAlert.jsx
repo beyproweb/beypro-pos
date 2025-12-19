@@ -19,6 +19,8 @@ import {
   printViaBridge,
   setReceiptLayout,
 } from "../utils/receiptPrinter";
+import { useSetting } from "./hooks/useSetting";
+import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
 
 /* ------------------------------------------
  * Helpers: sounds, cooldowns, defaults
@@ -104,6 +106,9 @@ function shouldPrintNow(orderId, windowMs = 10000) {
 export default function GlobalOrderAlert() {
   const [notif, setNotif] = useState(DEFAULT_NOTIFICATIONS);
   const [layout, setLayout] = useState(defaultReceiptLayout);
+  const [transactionSettings, setTransactionSettings] = useState(
+    DEFAULT_TRANSACTION_SETTINGS
+  );
   const hasBridge = typeof window !== "undefined" && !!window.beypro;
   const tenantId =
     typeof window !== "undefined" ? window.localStorage.getItem("restaurant_id") : null;
@@ -116,6 +121,7 @@ export default function GlobalOrderAlert() {
   const [soundQueue, setSoundQueue] = useState([]);
   const soundPlayingRef = useRef(false);
   const lastSoundAtRef = useRef({});
+  useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
 
   const eventKeys = useMemo(
     () => [
@@ -556,7 +562,16 @@ export default function GlobalOrderAlert() {
   useEffect(() => {
     const onNewOrder = async (p) => {
       const id = p?.order?.id || p?.orderId || p?.id;
+      const type = String(p?.order?.order_type || p?.order_type || "")
+        .trim()
+        .toLowerCase();
+      const isPacketType = ["packet", "phone", "online"].includes(type);
+      const skipPrint =
+        (type === "table" && transactionSettings.disableAutoPrintTable) ||
+        (isPacketType && transactionSettings.disableAutoPrintPacket);
+
       notify("new_order", "🔔 New order received");
+      if (skipPrint) return;
       if (id) await printOrder(id);
     };
     const onPreparing = () => notify("order_preparing", "👩‍🍳 Order set to preparing");
@@ -596,7 +611,7 @@ const onPaid = (p) => {
       socket.off("stock_restocked", onRestocked);
       socket.off("driver_assigned", onDriverAssigned);
     };
-  }, [notify, printOrder]);
+  }, [notify, printOrder, transactionSettings.disableAutoPrintPacket, transactionSettings.disableAutoPrintTable]);
 
   /* POLLING (fallback only if socket disconnected) */
   const prevSetRef = useRef({

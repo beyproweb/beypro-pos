@@ -13,6 +13,7 @@ export default function ExtrasModal({
   fullTotal,
   t,
   onConfirmAddToCart,
+  presetNotes = ["No ketchup", "Extra spicy", "Sauce on side", "Well done"],
 }) {
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   useEffect(() => {
@@ -139,6 +140,7 @@ export default function ExtrasModal({
   });
 
   const groupTabs = allowedGroups.map(g => g.groupName || String(g.id));
+  const safeNote = typeof note === "string" ? note : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -272,16 +274,21 @@ export default function ExtrasModal({
           <div>
             <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-100 mb-1">📝 {t("Notes")}</h3>
             <div className="flex flex-wrap gap-2 mb-2">
-              {['No ketchup', 'Extra spicy', 'Sauce on side', 'Well done'].map((preset) => (
+              {presetNotes.map((preset) => (
                 <button
                   key={preset}
                   onClick={() =>
                     setNote((prev) =>
-                      prev.includes(preset) ? prev.replace(preset, '').trim() : `${prev} ${preset}`.trim()
+                      (() => {
+                        const current = typeof prev === "string" ? prev : "";
+                        return current.includes(preset)
+                          ? current.replace(preset, "").trim()
+                          : `${current} ${preset}`.trim();
+                      })()
                     )
                   }
                   className={`px-3 py-1 rounded-full border text-xs font-semibold transition
-                    ${note.includes(preset)
+                    ${safeNote.includes(preset)
                       ? 'bg-blue-100 border-blue-400 text-blue-800'
                       : 'bg-gray-100 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-600 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-indigo-700'
                   }`}
@@ -292,7 +299,7 @@ export default function ExtrasModal({
             </div>
             <textarea
               rows={2}
-              value={note}
+              value={safeNote}
               onChange={(e) => setNote(e.target.value)}
               placeholder={t("Custom notes, e.g. 'no bun', 'extra napkins'...")}
               className="w-full border border-blue-100 dark:border-zinc-800 rounded-xl p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 dark:focus:ring-indigo-500 bg-white dark:bg-zinc-900 text-gray-800 dark:text-gray-100"

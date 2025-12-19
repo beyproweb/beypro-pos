@@ -12,5 +12,6 @@ export const settingsTabs = [
   { key: "printers", label: "🖨️ Printers", permission: "settings-printers" },
   { key: "cameras", label: "📷 Live Cameras", permission: "settings-cameras" },
   { key: "tables", label: "🪑 Tables", permission: "settings-tables" },
+  { key: "transactions", label: "Transactions", emoji: "💳", permission: "settings-transactions" },
 
 ];

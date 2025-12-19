@@ -32,6 +32,8 @@ import {
 import { fetchOrderWithItems } from "../utils/orderPrinting";
 import TableActionButtons from "../components/TableActionButtons";
 import { useCurrency } from "../context/CurrencyContext";
+import { useSetting } from "../components/hooks/useSetting";
+import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
 const normalizeGroupKey = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim().toLowerCase().replace(/\s+/g, " ");
@@ -240,6 +242,9 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   }, [subOrders]);
   const [activeSplitMethod, setActiveSplitMethod] = useState(null);
   const [note, setNote] = useState("");
+  const [transactionSettings, setTransactionSettings] = useState(
+    DEFAULT_TRANSACTION_SETTINGS
+  );
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelLoading, setCancelLoading] = useState(false);
@@ -257,6 +262,15 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [reservationNotes, setReservationNotes] = useState("");
   const [existingReservation, setExistingReservation] = useState(null);
   const [reservationLoading, setReservationLoading] = useState(false);
+  useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
+  const presetNotes = useMemo(
+    () =>
+      Array.isArray(transactionSettings.presetNotes) &&
+      transactionSettings.presetNotes.length > 0
+        ? transactionSettings.presetNotes
+        : DEFAULT_TRANSACTION_SETTINGS.presetNotes,
+    [transactionSettings.presetNotes]
+  );
   const hasUnconfirmedCartItems = useMemo(
     () => cartItems.some((item) => !item.confirmed),
     [cartItems]
@@ -2253,6 +2267,7 @@ const confirmPayment = async (method, payIds = null) => {
       ? payIds
       : cartItems.filter((i) => !i.paid && i.confirmed).map((i) => i.unique_id);
   let paidTotal = 0;
+  let isFullyPaidAfter = false;
 
   if (order.status !== "paid") {
     let total = cartItems
@@ -2341,6 +2356,7 @@ const confirmPayment = async (method, payIds = null) => {
     }
 
     const isFullyPaid2 = allItems2.every((item) => item.paid_at);
+    isFullyPaidAfter = isFullyPaid2;
 
     if (isFullyPaid2) {
       await updateOrderStatus("paid", total, method);
@@ -2359,6 +2375,23 @@ const confirmPayment = async (method, payIds = null) => {
     const note = order?.id ? `Order #${order.id} (${methodLabel})` : `Sale (${methodLabel})`;
     await logCashRegisterEvent({ type: "sale", amount: paidTotal, note });
     await openCashDrawer();
+  }
+
+  if (isFullyPaidAfter && order?.id) {
+    const shouldAutoCloseTable =
+      orderType === "table" && transactionSettings.autoCloseTableAfterPay;
+    const isPacketType = ["packet", "phone", "online"].includes(orderType);
+    const shouldAutoClosePacket =
+      isPacketType && transactionSettings.autoClosePacketAfterPay;
+
+    if (shouldAutoCloseTable || shouldAutoClosePacket) {
+      try {
+        await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+      } catch (err) {
+        console.warn("⚠️ Auto-close failed:", err?.message || err);
+      }
+      navigate(shouldAutoCloseTable ? "/tableoverview" : "/orders");
+    }
   }
 };
 
@@ -3868,6 +3901,7 @@ const cardGradient = item.paid
   setSelectedExtras={setSelectedExtras}
   extrasGroups={extrasGroups}
   onConfirmAddToCart={handleExtrasModalConfirm}
+  presetNotes={presetNotes}
 
   note={note}
   setNote={setNote}
