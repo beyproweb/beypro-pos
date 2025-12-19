@@ -666,7 +666,10 @@ const nonDrinkItems = order.items.filter(item => {
 });
 
 const allNonDrinksDelivered = nonDrinkItems.every(
-  i => i.kitchen_status === "delivered"
+  (i) =>
+    i.kitchen_status === "delivered" ||
+    i.kitchen_status === "packet_delivered" ||
+    i.kitchen_status === "ready"
 );
 
 // ✅ Pick up: allow as soon as all non-drink items are delivered
@@ -767,7 +770,12 @@ function driverButtonDisabled(order) {
       !(excludedKitchenCategories.includes(normalizedCategory))
     );
   });
-  const allNonDrinksDelivered = nonDrinkNonExcludedItems.every(i => i.kitchen_status === "delivered");
+  const allNonDrinksDelivered = nonDrinkNonExcludedItems.every(
+    (i) =>
+      i.kitchen_status === "delivered" ||
+      i.kitchen_status === "packet_delivered" ||
+      i.kitchen_status === "ready" // treat ready as deliverable for excluded flows
+  );
   if (nonDrinkNonExcludedItems.length && !allNonDrinksDelivered) return true;
   return false;
 }

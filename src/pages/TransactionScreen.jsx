@@ -1549,6 +1549,7 @@ const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
     }),
   });
   setOrder((prev) => ({ ...prev, status: "paid" }));
+  await runAutoCloseIfConfigured(true);
 }
 
     if (cashPortion > 0) {
@@ -1562,6 +1563,36 @@ const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
     // optionally toast
   }
 };
+
+const runAutoCloseIfConfigured = useCallback(
+  async (shouldClose) => {
+    if (!shouldClose || !order?.id) return;
+
+    const shouldAutoCloseTable =
+      orderType === "table" && transactionSettings.autoCloseTableAfterPay;
+    const isPacketType = ["packet", "phone", "online"].includes(orderType);
+    const shouldAutoClosePacket =
+      isPacketType && transactionSettings.autoClosePacketAfterPay;
+
+    if (!shouldAutoCloseTable && !shouldAutoClosePacket) return;
+
+    try {
+      await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+    } catch (err) {
+      console.warn("⚠️ Auto-close failed:", err?.message || err);
+    }
+
+    navigate(shouldAutoCloseTable ? "/tableoverview" : "/orders");
+  },
+  [
+    identifier,
+    navigate,
+    order?.id,
+    orderType,
+    transactionSettings.autoClosePacketAfterPay,
+    transactionSettings.autoCloseTableAfterPay,
+  ]
+);
 
 // Increase quantity of a cart item by unique_id
 const incrementCartItem = (uniqueId) => {
@@ -2362,6 +2393,7 @@ const confirmPayment = async (method, payIds = null) => {
     if (isFullyPaid2) {
       await updateOrderStatus("paid", total, method);
       setOrder((prev) => ({ ...prev, status: "paid" }));
+      await runAutoCloseIfConfigured(true);
     }
   }
 
@@ -2377,22 +2409,8 @@ const confirmPayment = async (method, payIds = null) => {
     await logCashRegisterEvent({ type: "sale", amount: paidTotal, note });
     await openCashDrawer();
   }
-
-  if (isFullyPaidAfter && order?.id) {
-    const shouldAutoCloseTable =
-      orderType === "table" && transactionSettings.autoCloseTableAfterPay;
-    const isPacketType = ["packet", "phone", "online"].includes(orderType);
-    const shouldAutoClosePacket =
-      isPacketType && transactionSettings.autoClosePacketAfterPay;
-
-    if (shouldAutoCloseTable || shouldAutoClosePacket) {
-      try {
-        await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
-      } catch (err) {
-        console.warn("⚠️ Auto-close failed:", err?.message || err);
-      }
-      navigate(shouldAutoCloseTable ? "/tableoverview" : "/orders");
-    }
+  if (isFullyPaidAfter) {
+    await runAutoCloseIfConfigured(true);
   }
 };
 
