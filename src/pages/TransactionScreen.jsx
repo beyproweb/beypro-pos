@@ -3178,7 +3178,7 @@ const renderCartContent = (variant = "desktop") => {
             }, 0);
             const basePrice = parseFloat(item.price) || 0;
             const quantity = Number(item.quantity) || 1;
-            const lineTotal = (basePrice + perItemExtrasTotal) * quantity;
+            const lineTotal = basePrice * quantity + perItemExtrasTotal * quantity;
             const showNote =
               typeof item.note === "string" ? item.note.trim() !== "" : !!item.note;
             const isEditable = !item.confirmed && !item.paid;
