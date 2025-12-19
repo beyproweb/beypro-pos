@@ -320,6 +320,7 @@ const [driverReport, setDriverReport] = useState(null);
 const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0,10)); // YYYY-MM-DD today
 const [reportLoading, setReportLoading] = useState(false);
 const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
+const [excludedKitchenCategories, setExcludedKitchenCategories] = useState([]);
   const [autoConfirmOrders, setAutoConfirmOrders] = useState(false);
 
 const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -533,6 +534,7 @@ const normalizedItems = (items || []).map(i => {
   const isExcluded =
     drinksLower.includes(normalizedName) ||
     excludedKitchenIds.includes(i.product_id) ||
+    excludedKitchenCategories.includes(i.category) ||
     i.excluded === true ||
     i.kitchen_excluded === true;
 
@@ -629,8 +631,14 @@ setDrivers(Array.isArray(data) ? data : data?.drivers || []);
 useEffect(() => {
   secureFetch("/kitchen/compile-settings")
     .then(res => res.json())
-    .then(data => setExcludedKitchenIds(data.excludedItems || []))
-    .catch(() => setExcludedKitchenIds([]));
+    .then(data => {
+      setExcludedKitchenIds(data.excludedItems || []);
+      setExcludedKitchenCategories(data.excludedCategories || []);
+    })
+    .catch(() => {
+      setExcludedKitchenIds([]);
+      setExcludedKitchenCategories([]);
+    });
 }, []);
 
   // Driver Button Logic
@@ -648,7 +656,11 @@ const nonDrinkItems = order.items.filter(item => {
     .replace(/[\s\-]/g, "")
     .toLowerCase();
   // Exclude if it's a drink or if product_id is in excludedKitchenIds
-  return !drinksLower.includes(normalizedName) && !excludedKitchenIds.includes(item.product_id);
+  return (
+    !drinksLower.includes(normalizedName) &&
+    !excludedKitchenIds.includes(item.product_id) &&
+    !excludedKitchenCategories.includes(item.category)
+  );
 });
 
 const allNonDrinksDelivered = nonDrinkItems.every(
@@ -748,7 +760,8 @@ function driverButtonDisabled(order) {
     const normalizedName = (item.name || "").replace(/[\s\-]/g, "").toLowerCase();
     return (
       !drinksLower.includes(normalizedName) &&
-      !(excludedKitchenIds.includes(item.product_id))
+      !(excludedKitchenIds.includes(item.product_id)) &&
+      !(excludedKitchenCategories.includes(item.category))
     );
   });
   const allNonDrinksDelivered = nonDrinkNonExcludedItems.every(i => i.kitchen_status === "delivered");

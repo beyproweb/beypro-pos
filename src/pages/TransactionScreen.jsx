@@ -1599,7 +1599,8 @@ function allItemsDelivered(items) {
         excludedCategories.includes(item.category);
       return isExcluded ||
         !item.kitchen_status ||
-        item.kitchen_status === "delivered";
+        item.kitchen_status === "delivered" ||
+        item.kitchen_status === "packet_delivered";
     });
 }
 
