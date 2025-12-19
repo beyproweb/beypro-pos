@@ -3238,20 +3238,16 @@ const cardGradient = item.paid
   {isExpanded && (
     <div className="mt-1 rounded-lg bg-white/60 p-2 text-[12px] text-slate-600 space-y-2">
       {/* === Extras List === */}
-      {normalizedExtras.length > 0 && (
-        <div className="space-y-0.5">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
-            <span>{t("Extras")}</span>
-            <span className="text-slate-800">{formatCurrency(extrasTotal)}</span>
-          </div>
-          <ul className="space-y-0.5 text-xs text-slate-600">
-            {normalizedExtras.map((ex, i2) => {
-              const extraQtyPerItem = Number(ex.quantity) || 1;
-              const unit =
-                parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-              const totalQty = extraQtyPerItem * quantity;
-              const lineTotal = unit * totalQty;
-              return (
+          {normalizedExtras.length > 0 && (
+            <div className="space-y-0.5">
+              <ul className="space-y-0.5 text-xs text-slate-600">
+                {normalizedExtras.map((ex, i2) => {
+                  const extraQtyPerItem = Number(ex.quantity) || 1;
+                  const unit =
+                    parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                  const totalQty = extraQtyPerItem * quantity;
+                  const lineTotal = unit * totalQty;
+                  return (
                 <li key={`${item.unique_id}-extra-${i2}`} className="flex justify-between">
                   <span>
                     + {totalQty}x {formatCurrency(unit)} {ex.name}
@@ -3260,11 +3256,11 @@ const cardGradient = item.paid
                     {formatCurrency(lineTotal)}
                   </span>
                 </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
       {/* === Notes === */}
       {showNote && (

@@ -242,7 +242,7 @@ function sendRawToWindowsPrinter(printerName, dataBuffer) {
     }
 
     // Large jobs can blow up the PowerShell command line; spill to a temp file when big.
-    const MAX_INLINE_BYTES = 60000;
+    const MAX_INLINE_BYTES = 8000;
     let tempFile = null;
     if (dataBuffer.length > MAX_INLINE_BYTES) {
       try {
@@ -317,17 +317,19 @@ if ($ok) { Write-Output '{"ok":true}' } else { Write-Output '{"ok":false,"error"
       if (tempFile) {
         try { fs.unlinkSync(tempFile); } catch {}
       }
-      if (stderr && !stdout) {
-        return resolve({ ok: false, error: stderr.trim() });
+      const out = stdout.trim();
+      const errOut = stderr.trim();
+      if (errOut && !out) {
+        return resolve({ ok: false, error: errOut });
       }
-      if (!stdout) {
+      if (!out) {
         return resolve({ ok: false, error: "No spooler response" });
       }
       try {
-        const parsed = JSON.parse(stdout.trim());
+        const parsed = JSON.parse(out);
         resolve(parsed);
       } catch (err) {
-        resolve({ ok: false, error: "Unexpected spooler response", detail: stdout.trim() || stderr.trim(), detailError: err.message });
+        resolve({ ok: false, error: "Unexpected spooler response", detail: out || errOut, detailError: err.message });
       }
     });
   });
