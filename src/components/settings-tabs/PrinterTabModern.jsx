@@ -854,7 +854,7 @@ export default function PrinterTab() {
     const textBytes = buildEscposBytes(ticket, {
       alignment: layout.alignment || "left",
       fontSize: layout.fontSize,
-      lineSpacing: layout.spacing || layout.lineHeight,
+      lineSpacing: layout.spacing ?? layout.lineHeight,
     });
     const textBase64 =
       typeof Buffer !== "undefined"

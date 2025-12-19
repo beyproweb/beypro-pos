@@ -20,17 +20,32 @@ if (!fetch) {
 }
 
 async function imageUrlToEscposBytes(url, width = 384) {
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: {
+      // Some CDNs return different results without a UA; keep it explicit.
+      "User-Agent": "BeyproPOS/1.0",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Image download failed (${res.status}): ${url}`);
+  }
   const arrayBuffer = await res.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   const image = await Jimp.read(buffer);
   // Jimp 1.6 supports resize/greyscale/contrast; dither565 is not available in this build.
   image.resize({ w: width }); // maintain aspect ratio
   image.greyscale();
-  image.contrast(1);
+  image.contrast(0.8);
   const bytes = [];
   const { width: w, height: h, data } = image.bitmap;
   const widthBytes = Math.ceil(w / 8);
+  // 4x4 Bayer matrix for simple ordered dithering (helps light logos print).
+  const bayer4 = [
+    [0, 8, 2, 10],
+    [12, 4, 14, 6],
+    [3, 11, 1, 9],
+    [15, 7, 13, 5],
+  ];
   for (let y = 0; y < h; y++) {
     bytes.push(0x1d, 0x76, 0x30, 0x00, widthBytes & 0xff, (widthBytes >> 8) & 0xff, 0x01, 0x00);
     for (let xb = 0; xb < widthBytes; xb++) {
@@ -40,8 +55,12 @@ async function imageUrlToEscposBytes(url, width = 384) {
         const px = basePx + b;
         if (px >= w) continue;
         const idx = (y * w + px) * 4;
-        const r = data[idx]; // greyscale already applied
-        if (r < 128) byte |= (1 << (7 - b));
+        const lum = data[idx]; // greyscale already applied
+        const alpha = data[idx + 3];
+        const dither = (bayer4[y & 3][px & 3] - 7.5) * 8; // ~[-60, +60]
+        const threshold = 180 + dither;
+        const effectiveLum = alpha < 128 ? 255 : lum;
+        if (effectiveLum < threshold) byte |= (1 << (7 - b));
       }
       bytes.push(byte);
     }
@@ -509,7 +528,8 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
 // ------------------------
 ipcMain.handle("beypro:printWindows", async (_evt, args) => {
   try {
-    const { printerName, dataBase64, layout, jobKey, cashdraw } = args;
+    const { printerName, dataBase64, layout, jobKey, cashdraw, logoBase64 } = args;
+    const metrics = { logoBytes: 0, qrBytes: 0, textBytes: 0 };
 
     console.log("📥 printWindows invoked:", {
       printerName,
@@ -524,22 +544,35 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
     }
 
     let bytes = Buffer.from(dataBase64, "base64");
+    metrics.textBytes = bytes.length;
     if (layout && typeof layout === "object") {
       console.log("🖼️ printWindows received layout:", { showLogo: layout.showLogo, logoUrl: layout.logoUrl, showQr: layout.showQr, qrUrl: layout.qrUrl });
       const widthSetting = layout.receiptWidth || layout.paperWidth;
       const paperWidthPx = receiptWidthToPx(widthSetting);
       let logoBytes = null;
       let qrBytes = null;
-      if (layout.showLogo && layout.logoUrl) {
-        try {
-          logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
-        } catch (err) {
-          console.warn("Failed to process logo for Windows receipt:", err?.message || err);
+      if (layout.showLogo) {
+        if (logoBase64) {
+          logoBytes = Buffer.from(logoBase64, "base64");
+          metrics.logoBytes = logoBytes.length;
+          console.log("🖼️ Logo bytes supplied by renderer", { bytes: metrics.logoBytes });
+        } else if (layout.logoUrl) {
+          try {
+            logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+            metrics.logoBytes = logoBytes?.length || 0;
+            console.log("🖼️ Logo processed (windows driver)", {
+              url: layout.logoUrl,
+              bytes: logoBytes?.length || 0,
+            });
+          } catch (err) {
+            console.warn("Failed to process logo for Windows receipt:", err?.message || err);
+          }
         }
       }
       if (layout.showQr && layout.qrUrl) {
         try {
           qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
+          metrics.qrBytes = qrBytes?.length || 0;
         } catch (err) {
           console.warn("Failed to process QR for Windows receipt:", err?.message || err);
         }
@@ -547,7 +580,11 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       let merged = Buffer.alloc(0);
       const centerCmd = Buffer.from([0x1b, 0x61, 0x01]);
       const leftCmd = Buffer.from([0x1b, 0x61, 0x00]);
-      if (logoBytes) merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd]);
+      if (logoBytes) {
+        merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd, FEED_CMD]);
+      } else if (layout.showLogo) {
+        console.warn("⚠️ Logo bytes missing; skipping logo block for receipt");
+      }
       merged = Buffer.concat([merged, bytes]);
       if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd, FEED_CMD]);
       if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
@@ -561,9 +598,9 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
 
     const result = await sendRawToWindowsPrinter(printerName, bytes);
     if (result?.ok) {
-      return { ok: true };
+      return { ok: true, ...metrics };
     }
-    return { ok: false, error: result?.error || "Spooler error" };
+    return { ok: false, error: result?.error || "Spooler error", ...metrics };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -573,7 +610,8 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
 // DIRECT TCP RAW ESC/POS (9100)
 // ------------------------
 ipcMain.handle("beypro:printNet", async (_evt, args) => {
-  const { host, port = 9100, dataBase64, layout, jobKey, cashdraw } = args;
+  const { host, port = 9100, dataBase64, layout, jobKey, cashdraw, logoBase64 } = args;
+  const metrics = { logoBytes: 0, qrBytes: 0, textBytes: 0 };
 
   if (jobKey && isRecentJob(jobKey)) {
     console.log(`⚠️ Skipping duplicate printNet for jobKey=${jobKey}`);
@@ -582,24 +620,37 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
 
   // If layout is provided, build ESC/POS bytes with logo/QR
   let finalBytes = Buffer.from(dataBase64, "base64");
+  metrics.textBytes = finalBytes.length;
   if (layout && typeof layout === 'object') {
     console.log('🖼️ printNet received layout:', { showLogo: layout.showLogo, logoUrl: layout.logoUrl, showQr: layout.showQr, qrUrl: layout.qrUrl });
     const widthSetting = layout.receiptWidth || layout.paperWidth;
     const paperWidthPx = receiptWidthToPx(widthSetting);
     let logoBytes = null;
     let qrBytes = null;
-    if (layout.showLogo && layout.logoUrl) {
-      console.log('🖼️ Processing logo URL in main:', layout.logoUrl);
-      try {
-        logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
-      } catch (err) {
-        console.warn("Failed to process logo for receipt:", err?.message || err);
+    if (layout.showLogo) {
+      if (logoBase64) {
+        logoBytes = Buffer.from(logoBase64, "base64");
+        metrics.logoBytes = logoBytes.length;
+        console.log("🖼️ Logo bytes supplied by renderer (network)", { bytes: metrics.logoBytes });
+      } else if (layout.logoUrl) {
+        console.log('🖼️ Processing logo URL in main:', layout.logoUrl);
+        try {
+          logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+          metrics.logoBytes = logoBytes?.length || 0;
+          console.log("🖼️ Logo processed (network driver)", {
+            url: layout.logoUrl,
+            bytes: logoBytes?.length || 0,
+          });
+        } catch (err) {
+          console.warn("Failed to process logo for receipt:", err?.message || err);
+        }
       }
     }
     if (layout.showQr && layout.qrUrl) {
       console.log('🔳 Processing QR in main:', layout.qrUrl);
       try {
         qrBytes = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
+        metrics.qrBytes = qrBytes?.length || 0;
       } catch (err) {
         console.warn("Failed to process QR for receipt:", err?.message || err);
       }
@@ -608,7 +659,11 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     let merged = Buffer.alloc(0);
     const centerCmd = Buffer.from([0x1b, 0x61, 0x01]); // ESC a 1
     const leftCmd = Buffer.from([0x1b, 0x61, 0x00]); // ESC a 0
-    if (logoBytes) merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd]);
+    if (logoBytes) {
+      merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd, FEED_CMD]);
+    } else if (layout.showLogo) {
+      console.warn("⚠️ Logo bytes missing; skipping logo block for network receipt");
+    }
     merged = Buffer.concat([merged, finalBytes]);
     if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd, FEED_CMD]);
     if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);

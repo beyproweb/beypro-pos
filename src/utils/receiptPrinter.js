@@ -583,10 +583,10 @@ function buildEscposBytes(
       : []
   );
 
-  const spacingCmd =
-    typeof lineSpacing === "number" && Number.isFinite(lineSpacing)
-      ? [0x1b, 0x33, Math.max(0, Math.min(255, Math.round(30 * lineSpacing)))]
-      : null;
+  const lineSpacingNumber = Number(lineSpacing);
+  const spacingCmd = Number.isFinite(lineSpacingNumber)
+    ? [0x1b, 0x33, Math.max(0, Math.min(255, Math.round(30 * lineSpacingNumber)))]
+    : null;
 
   const bytes = [];
   bytes.push(...init, ...selectTurkish, ...alignCmd);
@@ -957,6 +957,20 @@ export async function printViaBridge(text, orderObj) {
   // Paper size (width in pixels)
   const widthSetting = layout?.receiptWidth || layout?.paperWidth;
   const paperWidthPx = receiptWidthToPx(widthSetting);
+  let logoBase64 = null;
+
+  // Try to pre-render logo in the renderer (avoids main-process download issues)
+  if (layout?.showLogo && layout?.logoUrl) {
+    try {
+      const logoBytesLocal = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+      if (logoBytesLocal?.length) {
+        logoBase64 = toBase64(logoBytesLocal);
+        console.log("🖼️ Renderer pre-rendered logo bytes:", logoBytesLocal.length);
+      }
+    } catch (err) {
+      console.warn("⚠️ Renderer failed to render logo; main will attempt download:", err?.message || err);
+    }
+  }
 
   // Build text bytes with font size, alignment, spacing
   const textBytes = buildEscposBytes(resolvedText, {
@@ -964,7 +978,7 @@ export async function printViaBridge(text, orderObj) {
     feedLines: 3,
     alignment: layout?.alignment || "left",
     fontSize: layout?.itemFontSize || layout?.fontSize,
-    lineSpacing: layout?.spacing || layout?.lineHeight,
+    lineSpacing: layout?.spacing ?? layout?.lineHeight,
     addressFontSize: layout?.shopAddressFontSize,
     addressLines: layout?.shopAddress
       ? String(layout.shopAddress)
@@ -1057,10 +1071,15 @@ export async function printViaBridge(text, orderObj) {
         printerName: target.name,
         dataBase64: textBase64,
         layout,
+        logoBase64,
         jobKey,
       });
       if (res?.ok) {
-        console.log("✅ Receipt print dispatched via Windows driver");
+        console.log("✅ Receipt print dispatched via Windows driver", {
+          logoBytes: res.logoBytes ?? "n/a",
+          qrBytes: res.qrBytes ?? "n/a",
+          textBytes: res.textBytes ?? textBytes.length,
+        });
         return true;
       }
       console.warn("⚠️ Windows driver print reported failure — will not fallback to backend:", res?.error);
@@ -1119,6 +1138,7 @@ export async function printViaBridge(text, orderObj) {
         port: payload.port || 9100,
         dataBase64: textBase64,
         layout,
+        logoBase64,
         cashdraw: shouldPulseDrawer,
         jobKey,
       });
@@ -1127,7 +1147,11 @@ export async function printViaBridge(text, orderObj) {
         console.warn("⚠️ Local LAN print bridge reported failure — will not fallback to backend:", result?.error);
         return false;
       } else {
-        console.log("✅ Receipt print dispatched via local bridge");
+        console.log("✅ Receipt print dispatched via local bridge", {
+          logoBytes: result?.logoBytes ?? "n/a",
+          qrBytes: result?.qrBytes ?? "n/a",
+          textBytes: result?.textBytes ?? textBytes.length,
+        });
         return true;
       }
     } catch (err) {

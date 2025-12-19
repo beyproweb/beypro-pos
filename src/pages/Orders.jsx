@@ -507,7 +507,14 @@ useEffect(() => {
   fetchOrders();
 
   socket.on("orders_updated", safeFetch);
-  socket.on("order_closed", safeFetch);
+  const handleOrderClosed = (payload = {}) => {
+    const closedId = Number(payload.orderId);
+    if (Number.isFinite(closedId)) {
+      setOrders((prev) => prev.filter((o) => Number(o.id) !== closedId));
+    }
+    safeFetch();
+  };
+  socket.on("order_closed", handleOrderClosed);
 // 👇 NEW — ensures late-fetch if the event came too early
 socket.on("connect", () => {
   setTimeout(fetchOrders, 800);
@@ -518,7 +525,7 @@ socket.on("connect", () => {
     mounted = false;
     clearInterval(interval);
     socket.off("orders_updated", safeFetch);
-    socket.off("order_closed", safeFetch);
+    socket.off("order_closed", handleOrderClosed);
     clearTimeout(debounceTimer);
   };
 }, []);
@@ -1302,10 +1309,13 @@ const renderPaymentModal = () => {
                 await secureFetch(`/orders/${editingPaymentOrder.id}/close`, {
                   method: "POST",
                 });
+                setOrders((prev) =>
+                  prev.filter((o) => Number(o.id) !== Number(editingPaymentOrder.id))
+                );
               }
 
               closePaymentModal();
-              await fetchOrders();
+              if (!shouldCloseAfterSave) await fetchOrders();
             }}
           >
             Save Payment
