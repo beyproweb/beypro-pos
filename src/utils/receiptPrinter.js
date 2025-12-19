@@ -688,12 +688,11 @@ export function computeReceiptSummary(order) {
     const extrasForQty = Number.isFinite(extrasPerUnit) ? extrasPerUnit * qty : 0;
     const lineTotal = baseComponent + extrasForQty;
 
+    // Show base unit price only (extras are already itemized below)
     const effectiveUnitPrice =
       Number.isFinite(unitPrice) && unitPrice !== null
         ? unitPrice
-        : qty > 0
-        ? lineTotal / qty
-        : lineTotal;
+        : 0;
 
     subtotal += lineTotal;
 
@@ -820,6 +819,7 @@ export function renderReceiptText(order, providedLayout) {
   add(divider);
 
   for (const item of summary.items) {
+    // Show base unit price only; extras are itemized separately.
     const left = `${formatQuantity(item.qty)} x ${item.name}`;
     const right = formatReceiptMoney(item.lineTotal);
     add(formatLine(left, right, lineWidth));
