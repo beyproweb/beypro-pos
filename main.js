@@ -577,7 +577,8 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
           console.warn("Failed to process QR for Windows receipt:", err?.message || err);
         }
       }
-      let merged = Buffer.alloc(0);
+      // Always start with init + Turkish code page to ensure image renders correctly
+      let merged = Buffer.from([0x1b, 0x40, 0x1b, 0x74, 19]);
       const centerCmd = Buffer.from([0x1b, 0x61, 0x01]);
       const leftCmd = Buffer.from([0x1b, 0x61, 0x00]);
       if (logoBytes) {
@@ -656,7 +657,8 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
       }
     }
     // Concatenate logo (centered), text, QR (centered)
-    let merged = Buffer.alloc(0);
+    // Always start with init + Turkish code page to ensure image renders correctly
+    let merged = Buffer.from([0x1b, 0x40, 0x1b, 0x74, 19]);
     const centerCmd = Buffer.from([0x1b, 0x61, 0x01]); // ESC a 1
     const leftCmd = Buffer.from([0x1b, 0x61, 0x00]); // ESC a 0
     if (logoBytes) {
