@@ -657,8 +657,10 @@ const nonDrinkItems = order.items.filter(item => {
     .replace(/[\s\-]/g, "")
     .toLowerCase();
   const normalizedCategory = (item.category || "").trim().toLowerCase();
+  const isManuallyExcluded = item?.kitchen_excluded === true || item?.excluded === true;
   // Exclude if it's a drink or if product_id is in excludedKitchenIds
   return (
+    !isManuallyExcluded &&
     !drinksLower.includes(normalizedName) &&
     !excludedKitchenIds.includes(item.product_id) &&
     !excludedKitchenCategories.includes(normalizedCategory)
@@ -764,7 +766,9 @@ function driverButtonDisabled(order) {
   const nonDrinkNonExcludedItems = (order.items || []).filter(item => {
     const normalizedName = (item.name || "").replace(/[\s\-]/g, "").toLowerCase();
     const normalizedCategory = (item.category || "").trim().toLowerCase();
+    const isManuallyExcluded = item?.kitchen_excluded === true || item?.excluded === true;
     return (
+      !isManuallyExcluded &&
       !drinksLower.includes(normalizedName) &&
       !(excludedKitchenIds.includes(item.product_id)) &&
       !(excludedKitchenCategories.includes(normalizedCategory))
