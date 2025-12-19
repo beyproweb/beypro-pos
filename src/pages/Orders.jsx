@@ -316,6 +316,13 @@ export default function Orders({ orders: propOrders, hideModal = false }) {
   const { formatCurrency, config } = useCurrency();
   const [showDrinkModal, setShowDrinkModal] = useState(false);
 const [drinksList, setDrinksList] = useState([]);
+const normalizedDrinkNames = useMemo(
+  () =>
+    drinksList.map((d) =>
+      (d || "").replace(/[\s\-]/g, "").toLowerCase()
+    ),
+  [drinksList]
+);
 const [driverReport, setDriverReport] = useState(null);
 const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0,10)); // YYYY-MM-DD today
 const [reportLoading, setReportLoading] = useState(false);
@@ -707,26 +714,40 @@ useEffect(() => {
   );
 
   // Build list of “non-drink” items (ignore any whose normalized name is in drinksLower)
-const nonDrinkItems = order.items.filter(item => {
-  const normalizedName = (item.name || "")
-    .replace(/[\s\-]/g, "")
-    .toLowerCase();
-  const isManuallyExcluded = isKitchenExcludedItem(item);
-  // Exclude if it's a drink or if product_id is in excludedKitchenIds
-  return (
-    !isManuallyExcluded &&
-    !drinksLower.includes(normalizedName)
-  );
-});
+const normalizeItemName = (value) =>
+  (value || "").replace(/[\s\-]/g, "").toLowerCase();
 
-const allNonDrinksDelivered = nonDrinkItems.every(
-  (i) =>
-    i.kitchen_status === "delivered" ||
-    i.kitchen_status === "packet_delivered" ||
-    i.kitchen_status === "ready"
+const getRelevantOrderItems = useCallback(
+  (order) => {
+    if (!order || !Array.isArray(order.items)) return [];
+    return order.items.filter((item) => {
+      const normalizedName = normalizeItemName(
+        item.name || item.order_item_name || item.product_name
+      );
+      return (
+        !isKitchenExcludedItem(item) &&
+        !normalizedDrinkNames.includes(normalizedName)
+      );
+    });
+  },
+  [isKitchenExcludedItem, normalizedDrinkNames]
+);
+
+const areDriverItemsDelivered = useCallback(
+  (order) => {
+    const relevant = getRelevantOrderItems(order);
+    if (relevant.length === 0) return true;
+    return relevant.every((item) => {
+      const status = (item.kitchen_status || "").toLowerCase();
+      return status === "delivered" || status === "packet_delivered" || status === "ready";
+    });
+  },
+  [getRelevantOrderItems]
 );
 
 // ✅ Pick up: allow as soon as all non-drink items are delivered
+const allNonDrinksDelivered = areDriverItemsDelivered(order);
+
 if (!order.driver_status && allNonDrinksDelivered) {
   await secureFetch(`/orders/${order.id}/driver-status`, {
     method: "PATCH",
@@ -811,25 +832,9 @@ function driverButtonDisabled(order) {
   if (order.driver_status === "delivered") return true;
   if (updating[order.id]) return true;
 
-  // 👇 NEW: Block if driver is not assigned
   if (!order.driver_id) return true;
 
-  const drinksLower = drinksList.map(d => d.replace(/[\s\-]/g, "").toLowerCase());
-  const nonDrinkNonExcludedItems = (order.items || []).filter(item => {
-    const normalizedName = (item.name || "").replace(/[\s\-]/g, "").toLowerCase();
-    const isManuallyExcluded = isKitchenExcludedItem(item);
-    return (
-      !isManuallyExcluded && !drinksLower.includes(normalizedName)
-    );
-  });
-  const allNonDrinksDelivered = nonDrinkNonExcludedItems.every(
-    (i) =>
-      i.kitchen_status === "delivered" ||
-      i.kitchen_status === "packet_delivered" ||
-      i.kitchen_status === "ready" // treat ready as deliverable for excluded flows
-  );
-  if (nonDrinkNonExcludedItems.length && !allNonDrinksDelivered) return true;
-  return false;
+  return !areDriverItemsDelivered(order);
 }
 
 
