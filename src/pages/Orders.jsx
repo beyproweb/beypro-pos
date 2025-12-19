@@ -733,17 +733,14 @@ const getRelevantOrderItems = useCallback(
   [isKitchenExcludedItem, normalizedDrinkNames]
 );
 
-const areDriverItemsDelivered = useCallback(
-  (order) => {
-    const relevant = getRelevantOrderItems(order);
-    if (relevant.length === 0) return true;
-    return relevant.every((item) => {
-      const status = (item.kitchen_status || "").toLowerCase();
-      return status === "delivered" || status === "packet_delivered" || status === "ready";
-    });
-  },
-  [getRelevantOrderItems]
-);
+const areDriverItemsDelivered = (order) => {
+  const relevant = getRelevantOrderItems(order);
+  if (relevant.length === 0) return true;
+  return relevant.every((item) => {
+    const status = (item.kitchen_status || "").toLowerCase();
+    return status === "delivered" || status === "packet_delivered" || status === "ready";
+  });
+};
 
 // ✅ Pick up: allow as soon as all non-drink items are delivered
 const allNonDrinksDelivered = areDriverItemsDelivered(order);
