@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo  } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback  } from "react";
 import { geocodeAddress } from '../utils/geocode';
 import LiveRouteMap from "../components/LiveRouteMap";
 import socket from "../utils/socket";
@@ -326,6 +326,7 @@ const [excludedKitchenCategories, setExcludedKitchenCategories] = useState([]);
 const [showPaymentModal, setShowPaymentModal] = useState(false);
 const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
 const [splitPayments, setSplitPayments] = useState([{ method: "", amount: "" }]);
+const [pendingCloseOrderId, setPendingCloseOrderId] = useState(null);
 
 const handlePacketPrint = async (orderId) => {
   if (!orderId) {
@@ -343,6 +344,30 @@ const handlePacketPrint = async (orderId) => {
     toast.error(t("Failed to print receipt"));
   }
 };
+
+const openPaymentModalForOrder = useCallback(
+  (order, { closeAfterSave = false } = {}) => {
+    if (!order) return;
+    const total =
+      calcOrderTotalWithExtras(order) - calcOrderDiscount(order);
+    setEditingPaymentOrder(order);
+    setPendingCloseOrderId(closeAfterSave ? order.id : null);
+    setSplitPayments([
+      {
+        method: fallbackMethodLabel,
+        amount: total > 0 && closeAfterSave ? total.toFixed(2) : "",
+      },
+    ]);
+    setShowPaymentModal(true);
+  },
+  [fallbackMethodLabel]
+);
+
+const closePaymentModal = useCallback(() => {
+  setShowPaymentModal(false);
+  setEditingPaymentOrder(null);
+  setPendingCloseOrderId(null);
+}, []);
 
 
 function calcOrderTotalWithExtras(order) {
@@ -531,13 +556,8 @@ const normalizedItems = (items || []).map(i => {
   const normalizedName = (i.name || i.product_name || "")
     .replace(/[\s\-]/g, "")
     .toLowerCase();
-  const normalizedCategory = (i.category || "").trim().toLowerCase();
   const isExcluded =
-    drinksLower.includes(normalizedName) ||
-    excludedKitchenIds.includes(i.product_id) ||
-    excludedKitchenCategories.includes(normalizedCategory) ||
-    i.excluded === true ||
-    i.kitchen_excluded === true;
+    drinksLower.includes(normalizedName) || isKitchenExcludedItem(i);
 
   // 🟢 Mark excluded items as delivered
   if (isExcluded && i.kitchen_status !== "delivered") {
@@ -629,12 +649,47 @@ setDrivers(Array.isArray(data) ? data : data?.drivers || []);
   }
 }
 
+const normalizeCategoryValue = (value) =>
+  value ? String(value).trim().toLowerCase() : "";
+
+const isKitchenExcludedItem = useCallback(
+  (item) => {
+    if (!item) return false;
+    if (item.kitchen_excluded === true || item.excluded === true) return true;
+    const normalizedCategory = normalizeCategoryValue(item.category);
+    const productRaw = item.product_id ?? item.id;
+    const idNumber = Number(productRaw);
+    const idString =
+      productRaw === null || productRaw === undefined
+        ? ""
+        : String(productRaw).trim();
+
+    const idMatches =
+      excludedKitchenIds.includes(idNumber) ||
+      excludedKitchenIds.includes(idString);
+    const categoryMatches = excludedKitchenCategories.includes(normalizedCategory);
+    return idMatches || categoryMatches;
+  },
+  [excludedKitchenCategories, excludedKitchenIds]
+);
+
 useEffect(() => {
   secureFetch("/kitchen/compile-settings")
-    .then(res => res.json())
-    .then(data => {
-      setExcludedKitchenIds(data.excludedItems || []);
-      setExcludedKitchenCategories(data.excludedCategories || []);
+    .then((res) => res.json())
+    .then((data) => {
+      const normalizedIds = (data.excludedItems || [])
+        .map((value) => {
+          if (value === null || value === undefined || value === "") return null;
+          const numeric = Number(value);
+          if (!Number.isNaN(numeric)) return numeric;
+          return String(value).trim();
+        })
+        .filter((val) => val !== null && val !== "");
+      const normalizedCategories = (data.excludedCategories || [])
+        .map((val) => normalizeCategoryValue(val))
+        .filter(Boolean);
+      setExcludedKitchenIds(normalizedIds);
+      setExcludedKitchenCategories(normalizedCategories);
     })
     .catch(() => {
       setExcludedKitchenIds([]);
@@ -656,14 +711,11 @@ const nonDrinkItems = order.items.filter(item => {
   const normalizedName = (item.name || "")
     .replace(/[\s\-]/g, "")
     .toLowerCase();
-  const normalizedCategory = (item.category || "").trim().toLowerCase();
-  const isManuallyExcluded = item?.kitchen_excluded === true || item?.excluded === true;
+  const isManuallyExcluded = isKitchenExcludedItem(item);
   // Exclude if it's a drink or if product_id is in excludedKitchenIds
   return (
     !isManuallyExcluded &&
-    !drinksLower.includes(normalizedName) &&
-    !excludedKitchenIds.includes(item.product_id) &&
-    !excludedKitchenCategories.includes(normalizedCategory)
+    !drinksLower.includes(normalizedName)
   );
 });
 
@@ -765,13 +817,9 @@ function driverButtonDisabled(order) {
   const drinksLower = drinksList.map(d => d.replace(/[\s\-]/g, "").toLowerCase());
   const nonDrinkNonExcludedItems = (order.items || []).filter(item => {
     const normalizedName = (item.name || "").replace(/[\s\-]/g, "").toLowerCase();
-    const normalizedCategory = (item.category || "").trim().toLowerCase();
-    const isManuallyExcluded = item?.kitchen_excluded === true || item?.excluded === true;
+    const isManuallyExcluded = isKitchenExcludedItem(item);
     return (
-      !isManuallyExcluded &&
-      !drinksLower.includes(normalizedName) &&
-      !(excludedKitchenIds.includes(item.product_id)) &&
-      !(excludedKitchenCategories.includes(normalizedCategory))
+      !isManuallyExcluded && !drinksLower.includes(normalizedName)
     );
   });
   const allNonDrinksDelivered = nonDrinkNonExcludedItems.every(
@@ -1076,7 +1124,7 @@ const renderPaymentModal = () => {
       <div className="relative bg-white rounded-3xl w-[94vw] max-w-md mx-auto p-7 shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 animate-fade-in">
         {/* Close */}
         <button
-          onClick={() => setShowPaymentModal(false)}
+          onClick={closePaymentModal}
           className="absolute top-3 right-4 text-2xl text-slate-400 hover:text-emerald-500 transition"
           title="Close"
         >
@@ -1211,7 +1259,7 @@ const renderPaymentModal = () => {
         <div className="flex gap-3 justify-end mt-5">
           <button
             className="px-5 py-2 rounded-xl bg-white text-slate-600 font-medium border border-slate-200 hover:bg-slate-100"
-            onClick={() => setShowPaymentModal(false)}
+            onClick={closePaymentModal}
           >
             Cancel
           </button>
@@ -1228,6 +1276,8 @@ const renderPaymentModal = () => {
               splitPayments.forEach((p) => {
                 if (p.method && p.amount > 0) cleanedSplits[p.method] = Number(p.amount);
               });
+              const shouldCloseAfterSave =
+                pendingCloseOrderId && pendingCloseOrderId === editingPaymentOrder.id;
 
               await secureFetch(`/orders/receipt-methods`, {
                 method: "POST",
@@ -1248,8 +1298,13 @@ const renderPaymentModal = () => {
   }),
 });
 
+              if (shouldCloseAfterSave) {
+                await secureFetch(`/orders/${editingPaymentOrder.id}/close`, {
+                  method: "POST",
+                });
+              }
 
-              setShowPaymentModal(false);
+              closePaymentModal();
               await fetchOrders();
             }}
           >
@@ -1942,10 +1997,7 @@ const totalDiscount = calcOrderDiscount(order);
       className="px-1.5 py-1.5 rounded-xl bg-white border border-slate-300 
                  text-slate-700 hover:text-emerald-700 hover:border-emerald-400 
                  font-semibold text-sm sm:text-base shadow-sm transition"
-      onClick={() => {
-        setEditingPaymentOrder(order);
-        setShowPaymentModal(true);
-      }}
+      onClick={() => openPaymentModalForOrder(order)}
     >
       ✏️ Edit
     </button>
@@ -2006,17 +2058,7 @@ const totalDiscount = calcOrderDiscount(order);
       <button
         className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
                    text-white shadow transition"
-        onClick={async () => {
-          setOrders((prev) =>
-            prev.map((o) =>
-              o.id === order.id ? { ...o, status: 'closed' } : o
-            )
-          );
-          await secureFetch(`/orders/${order.id}/close`, { method: 'POST' });
-          setOrders((prev) =>
-            prev.filter((o) => Number(o.id) !== Number(order.id))
-          );
-        }}
+        onClick={() => openPaymentModalForOrder(order, { closeAfterSave: true })}
       >
         Close Order
       </button>
