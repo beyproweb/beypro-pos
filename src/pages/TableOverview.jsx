@@ -464,13 +464,6 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   return true;
 });
 
-  useEffect(() => {
-    if (visibleTabs.length === 0) return;
-    if (!visibleTabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab(visibleTabs[0].id);
-    }
-  }, [visibleTabs, activeTab]);
-
   const handleTabSelect = useCallback(
     (tabId) => {
       if (!tabId) return;
@@ -482,6 +475,13 @@ const visibleTabs = TAB_LIST.filter((tab) => {
     },
     [location.pathname, location.search, navigate]
   );
+
+  useEffect(() => {
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.some((tab) => tab.id === activeTab)) {
+      handleTabSelect(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab, handleTabSelect]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1146,7 +1146,7 @@ const handleTableClick = async (table) => {
       position: "top-center",
       autoClose: 2500,
     });
-    setActiveTab("register");
+    handleTabSelect("register");
     setShowRegisterModal(true);
     return;
   }
@@ -1638,15 +1638,15 @@ const groupedTables = tables.reduce((acc, tbl) => {
         open={showPhoneOrderModal}
         onClose={() => {
           setShowPhoneOrderModal(false);
-          setActiveTab("tables");
+          handleTabSelect("tables");
         }}
-onCreateOrder={() => {
-  setShowPhoneOrderModal(false);
-  setActiveTab("takeaway");
-  setTimeout(() => {
-    fetchTakeawayOrders();
-  }, 300);
-}}
+	onCreateOrder={() => {
+	  setShowPhoneOrderModal(false);
+	  handleTabSelect("takeaway");
+	  setTimeout(() => {
+	    fetchTakeawayOrders();
+	  }, 300);
+	}}
 
 
 
@@ -1819,7 +1819,7 @@ onCreateOrder={() => {
       <button
         onClick={() => {
           setShowRegisterModal(false);
-          setActiveTab("tables");
+          handleTabSelect("tables");
         }}
         className="absolute top-5 right-5 text-2xl text-gray-400 hover:text-indigo-700 transition-all hover:-translate-y-1"
         title={t("Close")}
