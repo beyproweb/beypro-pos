@@ -455,23 +455,10 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   return true;
 });
 
-  const handleTabSelect = useCallback(
-    (tabId) => {
-      if (!tabId) return;
-      setActiveTab(tabId);
-
-      // Keep URL in sync so navigation stays predictable
-      const isTableOverview =
-        location.pathname.includes("tableoverview") || location.pathname.includes("/tables");
-      if (isTableOverview) {
-        const basePath = location.pathname.includes("tableoverview") ? "/tableoverview" : "/tables";
-        const params = new URLSearchParams(location.search);
-        params.set("tab", tabId);
-        navigate(`${basePath}?${params.toString()}`, { replace: true });
-      }
-    },
-    [location.pathname, location.search, navigate]
-  );
+  const handleTabSelect = useCallback((tabId) => {
+    if (!tabId) return;
+    setActiveTab(tabId);
+  }, []);
 
   useEffect(() => {
     if (
@@ -485,16 +472,16 @@ const visibleTabs = TAB_LIST.filter((tab) => {
     }
   }, [visibleTabs, activeTab, handleTabSelect, location.pathname]);
 
+  // If URL has a tab param on load, sync once
   useEffect(() => {
-    if (
-      !location.pathname.includes("tableoverview") &&
-      !location.pathname.includes("/tables")
-    )
-      return;
     const params = new URLSearchParams(location.search);
     const tab = params.get("tab");
-    if (tab && tab !== activeTab) setActiveTab(tab);
-  }, [location.pathname, location.search, activeTab]);
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab);
+    }
+    // run only on mount / location changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search]);
 
 
 
