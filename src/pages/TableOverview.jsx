@@ -513,6 +513,7 @@ useEffect(() => {
         activeTab={activeTab}
         onChangeTab={setActiveTab}
         onDragStart={handleTabDragStart}
+        tabToSidebar={TAB_TO_SIDEBAR}
       />
     );
     setHeader((prev) => ({
@@ -2235,7 +2236,7 @@ try {
 
 
 }
-function TableOverviewHeaderTabs({ t, tabs, activeTab, onChangeTab, onDragStart }) {
+function TableOverviewHeaderTabs({ t, tabs, activeTab, onChangeTab, onDragStart, tabToSidebar }) {
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       {tabs.map((tab) => (
@@ -2243,7 +2244,7 @@ function TableOverviewHeaderTabs({ t, tabs, activeTab, onChangeTab, onDragStart 
           key={tab.id}
           type="button"
           onClick={() => onChangeTab(tab.id)}
-          draggable={Boolean(TAB_TO_SIDEBAR[tab.id])}
+          draggable={Boolean(tabToSidebar?.[tab.id])}
           onDragStart={onDragStart(tab)}
           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
             activeTab === tab.id
