@@ -229,6 +229,11 @@ function receiptWidthToPx(widthSetting) {
   return 384;
 }
 
+function looksLikeGsV0Raster(buffer) {
+  if (!buffer || !Buffer.isBuffer(buffer) || buffer.length < 8) return false;
+  return buffer[0] === 0x1d && buffer[1] === 0x76 && buffer[2] === 0x30;
+}
+
 function sendRawToWindowsPrinter(printerName, dataBuffer) {
   return new Promise((resolve) => {
     if (process.platform !== "win32") {
@@ -578,9 +583,16 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       let qrBytes = null;
       if (layout.showLogo) {
         if (logoBase64) {
-          logoBytes = Buffer.from(logoBase64, "base64");
-          metrics.logoBytes = logoBytes.length;
-          console.log("🖼️ Logo bytes supplied by renderer", { bytes: metrics.logoBytes });
+          const candidate = Buffer.from(logoBase64, "base64");
+          if (looksLikeGsV0Raster(candidate)) {
+            logoBytes = candidate;
+            metrics.logoBytes = logoBytes.length;
+            console.log("🖼️ Logo bytes supplied by renderer (GS v 0)", { bytes: metrics.logoBytes });
+          } else {
+            console.warn(
+              "⚠️ Renderer logo bytes not GS v 0 raster; ignoring to prevent garbage print and falling back to logoUrl if available."
+            );
+          }
         } else if (layout.logoUrl) {
           try {
             logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
@@ -591,6 +603,18 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
             });
           } catch (err) {
             console.warn("Failed to process logo for Windows receipt:", err?.message || err);
+          }
+        }
+        if (!logoBytes && layout.logoUrl) {
+          try {
+            logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+            metrics.logoBytes = logoBytes?.length || 0;
+            console.log("🖼️ Logo processed via fallback (windows driver)", {
+              url: layout.logoUrl,
+              bytes: logoBytes?.length || 0,
+            });
+          } catch (err) {
+            console.warn("Failed to process logo fallback for Windows receipt:", err?.message || err);
           }
         }
       }
@@ -670,9 +694,16 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     let qrBytes = null;
     if (layout.showLogo) {
       if (logoBase64) {
-        logoBytes = Buffer.from(logoBase64, "base64");
-        metrics.logoBytes = logoBytes.length;
-        console.log("🖼️ Logo bytes supplied by renderer (network)", { bytes: metrics.logoBytes });
+        const candidate = Buffer.from(logoBase64, "base64");
+        if (looksLikeGsV0Raster(candidate)) {
+          logoBytes = candidate;
+          metrics.logoBytes = logoBytes.length;
+          console.log("🖼️ Logo bytes supplied by renderer (network, GS v 0)", { bytes: metrics.logoBytes });
+        } else {
+          console.warn(
+            "⚠️ Renderer logo bytes not GS v 0 raster; ignoring to prevent garbage print and falling back to logoUrl if available."
+          );
+        }
       } else if (layout.logoUrl) {
         console.log('🖼️ Processing logo URL in main:', layout.logoUrl);
         try {
@@ -684,6 +715,19 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
           });
         } catch (err) {
           console.warn("Failed to process logo for receipt:", err?.message || err);
+        }
+      }
+      if (!logoBytes && layout.logoUrl) {
+        console.log('🖼️ Processing logo URL fallback in main:', layout.logoUrl);
+        try {
+          logoBytes = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+          metrics.logoBytes = logoBytes?.length || 0;
+          console.log("🖼️ Logo processed via fallback (network driver)", {
+            url: layout.logoUrl,
+            bytes: logoBytes?.length || 0,
+          });
+        } catch (err) {
+          console.warn("Failed to process logo fallback for receipt:", err?.message || err);
         }
       }
     }
