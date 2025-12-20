@@ -455,10 +455,21 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   return true;
 });
 
-  const handleTabSelect = useCallback((tabId) => {
-    if (!tabId) return;
-    setActiveTab(tabId);
-  }, []);
+  const handleTabSelect = useCallback(
+    (tabId) => {
+      if (!tabId) return;
+      setActiveTab(tabId);
+
+      // Keep URL in sync so Router sees a navigation
+      const basePath = location.pathname.includes("tableoverview")
+        ? "/tableoverview"
+        : "/tables";
+      const params = new URLSearchParams(location.search);
+      params.set("tab", tabId);
+      navigate(`${basePath}?${params.toString()}`, { replace: true });
+    },
+    [location.pathname, location.search, navigate]
+  );
 
   useEffect(() => {
     if (
@@ -479,9 +490,7 @@ const visibleTabs = TAB_LIST.filter((tab) => {
     if (tab && tab !== activeTab) {
       setActiveTab(tab);
     }
-    // run only on mount / location changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, activeTab]);
 
 
 
