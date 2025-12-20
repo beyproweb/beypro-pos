@@ -505,19 +505,19 @@ useEffect(() => {
       phone: t("Phone"),
       register: t("Register"),
     };
-    const headerTitle = titlesByTab[activeTab] || t("Orders");
-    const tableNav = (
-      <HeaderTableNav position="center">
-        <TableOverviewHeaderTabs
-          t={t}
-          tabs={visibleTabs}
-          activeTab={activeTab}
-          onChangeTab={setActiveTab}
-          onDragStart={handleTabDragStart}
-          tabToSidebar={TAB_TO_SIDEBAR}
-        />
-      </HeaderTableNav>
-    );
+	    const headerTitle = titlesByTab[activeTab] || t("Orders");
+	    const tableNav = (
+	      <HeaderTableNav position="center">
+	        <TableOverviewHeaderTabs
+	          t={t}
+	          tabs={visibleTabs}
+	          activeTab={activeTab}
+	          onChangeTab={handleTabSelect}
+	          onDragStart={handleTabDragStart}
+	          tabToSidebar={TAB_TO_SIDEBAR}
+	        />
+	      </HeaderTableNav>
+	    );
     setHeader((prev) => ({
       ...prev,
       title: headerTitle,
@@ -526,11 +526,12 @@ useEffect(() => {
     }));
   }, [
     activeTab,
-    visibleTabs,
-    t,
-    setHeader,
-    handleTabDragStart,
-  ]);
+	    visibleTabs,
+	    t,
+	    setHeader,
+	    handleTabDragStart,
+	    handleTabSelect,
+	  ]);
 
 useEffect(() => () => setHeader({}), [setHeader]);
 
@@ -734,11 +735,23 @@ useEffect(() => {
 
 
 const location = useLocation();
+const handleTabSelect = useCallback(
+  (tabId) => {
+    if (!tabId) return;
+    setActiveTab(tabId);
+
+    const params = new URLSearchParams(location.search);
+    params.set("tab", tabId);
+    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+  },
+  [location.pathname, location.search, navigate]
+);
+
 useEffect(() => {
   const params = new URLSearchParams(location.search);
   const tab = params.get("tab");
-  if (tab) setActiveTab(tab);
-}, [location]);
+  if (tab && tab !== activeTab) setActiveTab(tab);
+}, [location.search, activeTab]);
 
 
 
