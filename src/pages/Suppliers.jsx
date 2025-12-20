@@ -1860,29 +1860,9 @@ id}`, {
                      </form>
 </div>
 
-{/* === SUPPLIER OVERVIEW SECTION === */}
-<section id="supplier-overview" className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-  <div className="space-y-6">
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h2 className="text-xl font-bold text-slate-800 dark:text-white">
-          {t("Supplier Overview")}
-        </h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          {t("Monitor supplier dues, payments, and spending at a glance.")}
-        </p>
-      </div>
-    </div>
-
-    {/* === Overview Box === */}
-    <div className="mt-6">
-      <SupplierOverview suppliers={suppliers} t={t} />
-    </div>
-  </div>
-</section>
-   <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="space-y-6">
-                <div className="space-y-4">
+	   <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+	              <div className="space-y-6">
+	                <div className="space-y-4">
                                   {/* === Latest Added Entry Preview === */}
 {latestTransaction && (
   <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
@@ -2247,12 +2227,32 @@ id}`, {
                     </div>
 
                  
-                  </div>
-                </section>
+	                  </div>
+	                </section>
+	{/* === SUPPLIER OVERVIEW SECTION === */}
+	<section id="supplier-overview" className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+	  <div className="space-y-6">
+	    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+	      <div>
+	        <h2 className="text-xl font-bold text-slate-800 dark:text-white">
+	          {t("Supplier Overview")}
+	        </h2>
+	        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+	          {t("Monitor supplier dues, payments, and spending at a glance.")}
+	        </p>
+	      </div>
+	    </div>
+
+	    {/* === Overview Box === */}
+	    <div className="mt-6">
+	      <SupplierOverview suppliers={suppliers} t={t} />
+	    </div>
+	  </div>
+	</section>
 <section id="price-tracking" className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
-                      <div>
+	                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+	                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
+	                      <div>
                         <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                           {t("Smart Price Tracking & Alerts")}
                         </h3>
