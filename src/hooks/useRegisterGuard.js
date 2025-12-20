@@ -16,7 +16,7 @@ export function useRegisterGuard() {
            location.pathname.startsWith("/transaction")) &&
           (data.status === "closed" || data.status === "unopened")
         ) {
-          navigate("/Dashboard");
+          navigate("/dashboard");
         }
       })
       .catch((err) => {

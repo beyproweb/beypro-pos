@@ -1207,7 +1207,7 @@ useEffect(() => {
           autoClose: 2500,
           hideProgressBar: false,
         });
-        navigate("/Dashboard"); // or any safe page
+        navigate("/dashboard"); // or any safe page
       }
     })
     .catch((err) => {
