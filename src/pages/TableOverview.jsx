@@ -157,10 +157,6 @@ const getDisplayTotal = (order) => {
 export default function TableOverview() {
   useRegisterGuard();
   const { formatCurrency, config } = useCurrency();
-  const [orders, setOrders] = useState([]);
-  const [tableConfigs, setTableConfigs] = useState([]);
-  const [closedOrders, setClosedOrders] = useState([]);
-  const [groupedClosedOrders, setGroupedClosedOrders] = useState({});
   const navigate = useNavigate();
   const location = useLocation();
   const tabFromUrl = React.useMemo(() => {
@@ -168,7 +164,11 @@ export default function TableOverview() {
     return params.get("tab") || "tables";
   }, [location.search]);
 
-  const [activeTab, setActiveTab] = useState(() => tabFromUrl);
+  const activeTab = tabFromUrl;
+  const [orders, setOrders] = useState([]);
+  const [tableConfigs, setTableConfigs] = useState([]);
+  const [closedOrders, setClosedOrders] = useState([]);
+  const [groupedClosedOrders, setGroupedClosedOrders] = useState({});
   const [paymentFilter, setPaymentFilter] = useState("All");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -463,9 +463,6 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   const handleTabSelect = useCallback(
     (tabId) => {
       if (!tabId) return;
-      setActiveTab(tabId);
-
-      // Keep URL in sync so Router sees a navigation
       const basePath = location.pathname.includes("tableoverview")
         ? "/tableoverview"
         : "/tables";
@@ -488,10 +485,6 @@ const visibleTabs = TAB_LIST.filter((tab) => {
     }
   }, [visibleTabs, activeTab, handleTabSelect, location.pathname]);
 
-  // Keep active tab in sync with the querystring (ModernHeader tabs update the URL)
-  useEffect(() => {
-    setActiveTab(tabFromUrl);
-  }, [tabFromUrl]);
 
 
 
