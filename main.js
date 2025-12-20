@@ -234,6 +234,71 @@ function looksLikeGsV0Raster(buffer) {
   return buffer[0] === 0x1d && buffer[1] === 0x76 && buffer[2] === 0x30;
 }
 
+const CP1254_MAP = {
+  "€": 0x80,
+  "‚": 0x82,
+  "ƒ": 0x83,
+  "„": 0x84,
+  "…": 0x85,
+  "†": 0x86,
+  "‡": 0x87,
+  "ˆ": 0x88,
+  "‰": 0x89,
+  "Š": 0x8a,
+  "‹": 0x8b,
+  "Œ": 0x8c,
+  "Ž": 0x8e,
+  "‘": 0x91,
+  "’": 0x92,
+  "“": 0x93,
+  "”": 0x94,
+  "•": 0x95,
+  "–": 0x96,
+  "—": 0x97,
+  "™": 0x99,
+  "š": 0x9a,
+  "›": 0x9b,
+  "œ": 0x9c,
+  "ž": 0x9e,
+  "Ÿ": 0x9f,
+  "Ş": 0xde,
+  "ş": 0xfe,
+  "Ğ": 0xd0,
+  "ğ": 0xf0,
+  "İ": 0xdd,
+  "ı": 0xfd,
+  "Ç": 0xc7,
+  "ç": 0xe7,
+  "Ö": 0xd6,
+  "ö": 0xf6,
+  "Ü": 0xdc,
+  "ü": 0xfc,
+  "Â": 0xc2,
+  "â": 0xe2,
+  "Ê": 0xca,
+  "ê": 0xea,
+  "Î": 0xce,
+  "î": 0xee,
+  "Û": 0xdb,
+  "û": 0xfb,
+};
+
+function encodeCp1254Buffer(text = "") {
+  const str = String(text ?? "");
+  const bytes = [];
+  for (let i = 0; i < str.length; i += 1) {
+    const ch = str[i];
+    const codePoint = ch.codePointAt(0);
+    if (codePoint < 0x80) {
+      bytes.push(codePoint);
+      continue;
+    }
+    const mapped = CP1254_MAP[ch];
+    bytes.push(mapped !== undefined ? mapped : 0x3f); // '?'
+  }
+  return Buffer.from(bytes);
+}
+
 function sendRawToWindowsPrinter(printerName, dataBuffer) {
   return new Promise((resolve) => {
     if (process.platform !== "win32") {
@@ -501,8 +566,11 @@ async function printNetDirect(host, port, bytes) {
   });
 }
 
-const FEED_AFTER_IMAGE_LINES = 5;
-const FEED_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_IMAGE_LINES]); // ESC d n
+// Spacing after images: keep logo tight to header, keep QR readable.
+const FEED_AFTER_LOGO_LINES = 1;
+const FEED_AFTER_QR_LINES = 5;
+const FEED_AFTER_LOGO_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_LOGO_LINES]); // ESC d n
+const FEED_AFTER_QR_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_QR_LINES]); // ESC d n
 
 // ------------------------
 // RAW PRINT with Network Printer Support
@@ -631,12 +699,18 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       const centerCmd = Buffer.from([0x1b, 0x61, 0x01]);
       const leftCmd = Buffer.from([0x1b, 0x61, 0x00]);
       if (logoBytes) {
-        merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd, FEED_CMD]);
+        merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd, FEED_AFTER_LOGO_CMD]);
       } else if (layout.showLogo) {
         console.warn("⚠️ Logo bytes missing; skipping logo block for receipt");
       }
       merged = Buffer.concat([merged, bytes]);
-      if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd, FEED_CMD]);
+      if (qrBytes) {
+        const qrLabel = layout?.qrText ? String(layout.qrText).trim() : "";
+        const parts = [merged, centerCmd];
+        if (qrLabel) parts.push(encodeCp1254Buffer(`${qrLabel}\n`));
+        parts.push(qrBytes, leftCmd, FEED_AFTER_QR_CMD);
+        merged = Buffer.concat(parts);
+      }
       if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
       merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
       bytes = merged;
@@ -746,12 +820,18 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     const centerCmd = Buffer.from([0x1b, 0x61, 0x01]); // ESC a 1
     const leftCmd = Buffer.from([0x1b, 0x61, 0x00]); // ESC a 0
     if (logoBytes) {
-      merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd, FEED_CMD]);
+      merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd, FEED_AFTER_LOGO_CMD]);
     } else if (layout.showLogo) {
       console.warn("⚠️ Logo bytes missing; skipping logo block for network receipt");
     }
     merged = Buffer.concat([merged, finalBytes]);
-    if (qrBytes) merged = Buffer.concat([merged, centerCmd, qrBytes, leftCmd, FEED_CMD]);
+    if (qrBytes) {
+      const qrLabel = layout?.qrText ? String(layout.qrText).trim() : "";
+      const parts = [merged, centerCmd];
+      if (qrLabel) parts.push(encodeCp1254Buffer(`${qrLabel}\n`));
+      parts.push(qrBytes, leftCmd, FEED_AFTER_QR_CMD);
+      merged = Buffer.concat(parts);
+    }
     if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
     merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
     finalBytes = merged;

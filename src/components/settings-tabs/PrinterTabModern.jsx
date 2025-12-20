@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import secureFetch from "../../utils/secureFetch";
 import { imageUrlToEscposBytes } from "../../utils/imageToEscpos";
 import { qrStringToEscposBytes } from "../../utils/qrToEscpos";
+import { printTestReceipt } from "../../utils/receiptPrinter";
 
 const DEFAULT_LAYOUT = {
   headerTitle: "Hurrybey Gıda",
@@ -290,9 +291,8 @@ function buildEscposBytes(
   bytes.set(selectTurkish, offset); offset += selectTurkish.length;
   bytes.set(alignCmd, offset); offset += alignCmd.length;
   bytes.set(sizeCmd, offset); offset += sizeCmd.length;
-  if (spacingCmd) {
-    bytes.set(spacingCmd, offset); offset += spacingCmd.length;
-  }
+  // Apply spacing after size for better printer compatibility.
+  if (spacingCmd) { bytes.set(spacingCmd, offset); offset += spacingCmd.length; }
   bytes.set(body, offset); offset += body.length;
   bytes.set(cutBytes, offset);
   return bytes;
@@ -842,82 +842,26 @@ export default function PrinterTab() {
 
   async function handleTestPrint() {
     // Only open the native print preview in web (no desktop bridge).
-    if (!hasBridge) openNativePrintPreview();
+    if (!hasBridge) {
+      openNativePrintPreview();
+      return;
+    }
     const targetId = printerConfig.receiptPrinter || printerConfig.kitchenPrinter;
     const target = allPrinters.find((printer) => printer.id === targetId);
     if (!target) {
       setTestStatus({ level: "error", message: "Select a default printer first." });
       return;
     }
-    const layout = printerConfig.layout;
-    const ticket = buildTestTicket(layout, SAMPLE_ORDER, printerConfig.customLines);
-    const textBytes = buildEscposBytes(ticket, {
-      alignment: layout.alignment || "left",
-      fontSize: layout.fontSize,
-      lineSpacing: layout.spacing ?? layout.lineHeight,
-    });
-    const textBase64 =
-      typeof Buffer !== "undefined"
-        ? Buffer.from(textBytes).toString("base64")
-        : btoa(String.fromCharCode(...textBytes));
-    let finalBase64 = textBase64;
-    let paperWidthPx = 384;
-    if (layout.paperWidth === "80mm") paperWidthPx = 576;
-    if (layout.paperWidth === "72mm") paperWidthPx = 512;
-    // Decide composition strategy: if using desktop bridge for printing (windows/lan),
-    // send text bytes + layout so Electron main composes logo/QR.
-    // If no bridge or printing via backend/USB/Serial, compose images here and send final raw bytes.
+
     setTestStatus({ level: "idle", message: "Sending test print…" });
 
     try {
-      if (target.type === "windows") {
-        if (!hasBridge) throw new Error("Windows printing requires the desktop bridge.");
-        const res = await window.beypro.printWindows({
-          printerName: target.meta.name,
-          dataBase64: textBase64,
-          layout: printerConfig.layout,
-        });
-        if (!res?.ok) {
-          throw new Error(res?.error || "Windows driver rejected the job.");
-        }
-      } else if (target.type === "lan") {
-        if (!hasBridge) throw new Error("LAN printing requires the desktop bridge.");
-        const { host, port = 9100 } = target.meta;
-        const res = await window.beypro.printNet({
-          host,
-          port,
-          dataBase64: textBase64,
-          layout: printerConfig.layout,
-        });
-        if (!res?.ok) {
-          throw new Error(res?.error || "LAN printer did not respond.");
-        }
-      } else {
-        const payload = {
-          interface: target.type === "usb" ? "usb" : "serial",
-          content: ticket,
-          encoding: "cp857",
-          align:
-            printerConfig.layout.alignment === "center"
-              ? "ct"
-              : printerConfig.layout.alignment === "right"
-              ? "rt"
-              : "lt",
-          cut: printerConfig.defaults.cut,
-          cashdraw: printerConfig.defaults.cashDrawer,
-          dataBase64: finalBase64,
-        };
-        if (target.type === "usb") {
-          payload.vendorId = target.meta.vendorId;
-          payload.productId = target.meta.productId;
-        } else if (target.type === "serial") {
-          payload.path = target.meta.path;
-        }
-        await secureFetch("/printer-settings/print", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      }
+      const ok = await printTestReceipt({
+        printer: target,
+        layout: printerConfig.layout,
+        customLines: printerConfig.customLines,
+      });
+      if (!ok) throw new Error("Test print failed.");
       setTestStatus({ level: "ok", message: `Test print uploaded to ${target.label}` });
     } catch (err) {
       console.error("Test print error:", err);

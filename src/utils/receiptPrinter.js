@@ -514,6 +514,7 @@ function isCashLike(value = "") {
 const CUT_CMD = [0x1d, 0x56, 0x00];
 const DRAWER_PULSE_CMD = [0x1b, 0x70, 0x00, 0x32, 0x32]; // pin 2, ~50ms
 const FEED_AFTER_IMAGE_CMD = [0x1b, 0x64, 0x05]; // ESC d 5
+const FEED_AFTER_LOGO_CMD = [0x1b, 0x64, 0x01]; // ESC d 1
 
 function receiptWidthToPx(widthSetting) {
   if (widthSetting === "80mm") return 576;
@@ -591,8 +592,10 @@ function buildEscposBytes(
 
   const bytes = [];
   bytes.push(...init, ...selectTurkish, ...alignCmd);
-  if (spacingCmd) bytes.push(...spacingCmd);
   bytes.push(...baseSize);
+  // Some ESC/POS implementations effectively reset line spacing when changing text size.
+  // Apply spacing after size (and re-apply after any later size changes) for reliability.
+  if (spacingCmd) bytes.push(...spacingCmd);
 
   let currentSize = baseSize[2];
   for (const line of lines) {
@@ -600,6 +603,7 @@ function buildEscposBytes(
     const desiredSize = addressLineSet.has(trimmed) ? addressSize : baseSize;
     if (desiredSize[2] !== currentSize) {
       bytes.push(...desiredSize);
+      if (spacingCmd) bytes.push(...spacingCmd);
       currentSize = desiredSize[2];
     }
     const body = encodeCP1254(`${line}\n`);
@@ -608,6 +612,198 @@ function buildEscposBytes(
 
   bytes.push(...cutBytes);
   return Uint8Array.from(bytes);
+}
+
+function buildAddressLines(layout) {
+  if (!layout?.shopAddress) return [];
+  return String(layout.shopAddress)
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+async function composeFinalReceiptBytes({
+  textBytes,
+  layout,
+  paperWidthPx,
+  shouldPulseDrawer,
+} = {}) {
+  const centerCmd = [0x1b, 0x61, 0x01];
+  const leftCmd = [0x1b, 0x61, 0x00];
+
+  let finalBytes = Array.from(textBytes || []);
+
+  if (layout?.showLogo && layout?.logoUrl) {
+    try {
+      const logoBytesLocal = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
+      if (logoBytesLocal?.length) {
+        finalBytes = Array.from(centerCmd)
+          .concat(Array.from(logoBytesLocal))
+          .concat(Array.from(leftCmd))
+          .concat(FEED_AFTER_LOGO_CMD)
+          .concat(finalBytes);
+      }
+    } catch (err) {
+      console.warn("⚠️ Failed to load/convert logo for composed print:", err?.message || err);
+    }
+  }
+
+  if (layout?.showQr && layout?.qrUrl) {
+    try {
+      const qrBytesLocal = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
+      const qrLabel = layout?.qrText ? String(layout.qrText).trim() : "";
+
+      finalBytes = finalBytes
+        .concat(Array.from(centerCmd))
+        .concat(qrLabel ? Array.from(encodeCP1254(`${qrLabel}\n`)) : [])
+        .concat(Array.from(qrBytesLocal))
+        .concat(Array.from(leftCmd))
+        .concat(FEED_AFTER_IMAGE_CMD);
+    } catch (err) {
+      console.warn("⚠️ Failed to generate/convert QR for composed print:", err?.message || err);
+    }
+  }
+
+  if (shouldPulseDrawer) {
+    finalBytes = finalBytes.concat(DRAWER_PULSE_CMD);
+  }
+
+  finalBytes = finalBytes.concat(CUT_CMD);
+  return Uint8Array.from(finalBytes);
+}
+
+function makeTestOrder() {
+  return {
+    id: `test-${Date.now()}`,
+    items: [
+      {
+        name: "Test Burger",
+        qty: 2,
+        price: 185,
+        extras: [{ name: "Cheddar", quantity: 1, price: 50 }],
+      },
+      { name: "Patates (Büyük)", qty: 1, price: 65 },
+      { name: "Kola", qty: 2, price: 45 },
+    ],
+  };
+}
+
+export async function printTestReceipt({ printer, layout, customLines = [] } = {}) {
+  const localBridge = typeof window !== "undefined" ? window.beypro : null;
+  if (!printer || !layout) {
+    console.warn("⚠️ printTestReceipt requires printer + layout");
+    return false;
+  }
+
+  const jobKey = `test:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+  const attemptId = uuidv4();
+  const composedLayout = {
+    ...(layout || {}),
+    customLines: Array.isArray(customLines) ? customLines : layout?.customLines,
+  };
+
+  const widthSetting = composedLayout?.receiptWidth || composedLayout?.paperWidth;
+  const paperWidthPx = receiptWidthToPx(widthSetting);
+
+  const testOrder = makeTestOrder();
+  const receiptText = sanitizeReceiptText(renderReceiptText(testOrder, composedLayout));
+
+  const textBytes = buildEscposBytes(receiptText, {
+    cut: false,
+    feedLines: 3,
+    alignment: composedLayout?.alignment || "left",
+    fontSize: composedLayout?.itemFontSize || composedLayout?.fontSize,
+    lineSpacing: composedLayout?.spacing ?? composedLayout?.lineHeight,
+    addressFontSize: composedLayout?.shopAddressFontSize,
+    addressLines: buildAddressLines(composedLayout),
+  });
+
+  const textBase64 = toBase64(textBytes);
+
+  let logoBase64 = null;
+  if (composedLayout?.showLogo && composedLayout?.logoUrl) {
+    try {
+      const logoBytesLocal = await imageUrlToEscposBytes(composedLayout.logoUrl, paperWidthPx);
+      if (logoBytesLocal?.length) {
+        logoBase64 = toBase64(logoBytesLocal);
+      }
+    } catch (err) {
+      console.warn("⚠️ Test print logo pre-render failed; main/backend may still attempt:", err?.message || err);
+    }
+  }
+
+  const printerType = String(printer?.type || "").toLowerCase();
+
+  if (printerType === "windows") {
+    if (!localBridge?.printWindows) {
+      console.warn("⚠️ Windows test print requires desktop bridge.");
+      return false;
+    }
+    const res = await localBridge.printWindows({
+      printerName: printer?.meta?.name,
+      dataBase64: textBase64,
+      layout: composedLayout,
+      logoBase64,
+      jobKey,
+      attemptId,
+    });
+    return !!res?.ok;
+  }
+
+  if (printerType === "lan") {
+    if (!localBridge?.printNet) {
+      console.warn("⚠️ LAN test print requires desktop bridge.");
+      return false;
+    }
+    const res = await localBridge.printNet({
+      host: printer?.meta?.host,
+      port: printer?.meta?.port || 9100,
+      dataBase64: textBase64,
+      layout: composedLayout,
+      logoBase64,
+      jobKey,
+      attemptId,
+    });
+    return !!res?.ok;
+  }
+
+  // USB/Serial: compose full bytes in renderer and send to backend print endpoint.
+  const shouldPulseDrawer = false;
+  const finalBytes = await composeFinalReceiptBytes({
+    textBytes,
+    layout: composedLayout,
+    paperWidthPx,
+    shouldPulseDrawer,
+  });
+
+  const payload = {
+    interface: printerType === "usb" ? "usb" : "serial",
+    content: receiptText,
+    encoding: "cp857",
+    align: toEscAlignment(composedLayout?.alignment),
+    cut: true,
+    cashdraw: shouldPulseDrawer,
+    dataBase64: toBase64(finalBytes),
+    jobKey,
+  };
+
+  if (printerType === "usb") {
+    payload.vendorId = printer?.meta?.vendorId;
+    payload.productId = printer?.meta?.productId;
+  } else if (printerType === "serial") {
+    payload.path = printer?.meta?.path;
+    if (printer?.meta?.baudRate) payload.baudRate = printer.meta.baudRate;
+  } else {
+    console.warn("⚠️ Unsupported printer type for test print:", printerType);
+    return false;
+  }
+
+  const response = await secureFetch("/printer-settings/print", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return response?.ok !== false;
 }
 
 // Shared receipt math so ESC/POS text and HTML previews use
@@ -857,12 +1053,8 @@ export function renderReceiptText(order, providedLayout) {
     customLines.forEach((line) => add(line));
   }
 
-  if (layout.showQr && layout.qrText) {
-    add(layout.qrText);
-  }
-  if (layout.showQr && layout.qrUrl && !/^https?:\/\/.*\.(png|jpg|jpeg)$/i.test(layout.qrUrl)) {
-    add(layout.qrUrl);
-  }
+  // QR label/content are rendered right before QR raster bytes in the
+  // bridge/backend composition paths to keep them next to the QR.
 
   if (layout.showFooter && layout.footerText) {
     add(layout.footerText);
@@ -1184,37 +1376,13 @@ export async function printViaBridge(text, orderObj) {
   // not perform layout composition when `dataBase64` is provided.
   try {
     // Compose logo/QR in renderer for backend submission
-    let finalBytes = Array.from(textBytes);
-    if (layout?.showLogo && layout?.logoUrl) {
-      try {
-        const logoBytesLocal = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
-        const centerCmd = [0x1b, 0x61, 0x01];
-        const leftCmd = [0x1b, 0x61, 0x00];
-        finalBytes = Array.from(centerCmd).concat(Array.from(logoBytesLocal)).concat(Array.from(leftCmd)).concat(finalBytes);
-      } catch (err) {
-        console.warn("⚠️ Failed to load/convert logo for backend print:", err?.message || err);
-      }
-    }
-    if (layout?.showQr && layout?.qrUrl) {
-      try {
-        const qrBytesLocal = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
-        const centerCmd = [0x1b, 0x61, 0x01];
-        const leftCmd = [0x1b, 0x61, 0x00];
-        finalBytes = finalBytes
-          .concat(Array.from(centerCmd))
-          .concat(Array.from(qrBytesLocal))
-          .concat(Array.from(leftCmd))
-          .concat(FEED_AFTER_IMAGE_CMD);
-      } catch (err) {
-        console.warn("⚠️ Failed to generate/convert QR for backend print:", err?.message || err);
-      }
-    }
-    if (shouldPulseDrawer) {
-      finalBytes = finalBytes.concat(DRAWER_PULSE_CMD);
-    }
-    finalBytes = finalBytes.concat(CUT_CMD);
-
-    const finalBase64 = toBase64(Uint8Array.from(finalBytes));
+    const finalBytes = await composeFinalReceiptBytes({
+      textBytes,
+      layout,
+      paperWidthPx,
+      shouldPulseDrawer,
+    });
+    const finalBase64 = toBase64(finalBytes);
 
     console.log("🖨️ Dispatching receipt print via backend (final raw bytes):", {
       interface: payload.interface,
