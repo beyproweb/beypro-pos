@@ -56,8 +56,6 @@ export default function ModernHeader({
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = `${location.pathname}${location.search}`;
-  const centerTableNav =
-    React.isValidElement(tableNav) && tableNav.props?.position === "center";
   const handleGoBack = React.useCallback(() => {
     if (previousRoute && previousRoute !== currentPath) {
       navigate(previousRoute);
@@ -109,18 +107,11 @@ export default function ModernHeader({
       {/* Center: sticky subtitle (no flicker) */}
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4 gap-1">
         <StickySubtitle text={subtitle} />
-        {centerTableNav && (
-          <div className="w-full flex items-center justify-center">
-            {tableNav}
-          </div>
-        )}
       </div>
 
       {/* Right: Title + bell + other right content */}
       <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
-        {tableNav && !centerTableNav && (
-          <div className="ml-2 hidden md:block">{tableNav}</div>
-        )}
+        {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
 
         {title && (
           <span className="text-xl md:text-2xl font-bold tracking-tight text-indigo-700 dark:text-violet-300 drop-shadow mr-1">
