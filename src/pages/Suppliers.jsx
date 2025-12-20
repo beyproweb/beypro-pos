@@ -25,9 +25,17 @@ export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [supplierIngredients, setSupplierIngredients] = useState([]);
 const [newTransaction, setNewTransaction] = useState({
   rows: [
-    { ingredient: "", quantity: "", unit: "kg", total_cost: "", expiry_date: "" }, // ✅ default one row
+    {
+      ingredient_select: "__add_new__",
+      ingredient: "",
+      quantity: "",
+      unit: "kg",
+      total_cost: "",
+      expiry_date: "",
+    }, // ✅ default one row
   ],
   paymentStatus: "Due",
   paymentMethod: "Due",
@@ -376,6 +384,26 @@ const fetchSuppliers = async () => {
     }
   };
 
+  useEffect(() => {
+    const supplierId = selectedSupplier?.id;
+    if (!supplierId) {
+      setSupplierIngredients([]);
+      return;
+    }
+
+    const loadSupplierIngredients = async () => {
+      try {
+        const data = await secureFetch(`/suppliers/${supplierId}/ingredients`);
+        setSupplierIngredients(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("❌ Error fetching supplier ingredients:", error);
+        setSupplierIngredients([]);
+      }
+    };
+
+    loadSupplierIngredients();
+  }, [selectedSupplier?.id]);
+
   const fetchSupplierDetails = async (supplierId) => {
     try {
       if (!supplierId) return;
@@ -476,6 +504,57 @@ feedback_history.map((entry) => ({
         Number(txn.price_per_unit) > 0
     );
   }, [transactions]);
+
+  const supplierIngredientOptions = useMemo(() => {
+    const normalize = (value) =>
+      typeof value === "string" ? value.trim() : "";
+    const keyFor = (name, unit) => `${name.toLowerCase()}|||${unit}`;
+    const seen = new Map();
+
+    if (Array.isArray(supplierIngredients) && supplierIngredients.length > 0) {
+      supplierIngredients.forEach((row) => {
+        const name = normalize(row?.name ?? row?.ingredient);
+        const unit = normalize(row?.unit);
+        if (!name || !unit) return;
+        const key = keyFor(name, unit);
+        if (!seen.has(key)) seen.set(key, { name, unit });
+      });
+    }
+
+    if (seen.size === 0) {
+      transactions.forEach((txn) => {
+        if (!txn) return;
+
+        if (Array.isArray(txn.items) && txn.items.length > 0) {
+          txn.items.forEach((item) => {
+            const name = normalize(item?.ingredient);
+            const unit = normalize(item?.unit);
+            if (!name || !unit) return;
+            const key = keyFor(name, unit);
+            if (!seen.has(key)) seen.set(key, { name, unit });
+          });
+        }
+
+        const directName = normalize(txn.ingredient);
+        const directUnit = normalize(txn.unit);
+        if (
+          directName &&
+          directUnit &&
+          directName !== "Payment" &&
+          directName !== "Compiled Receipt"
+        ) {
+          const key = keyFor(directName, directUnit);
+          if (!seen.has(key)) seen.set(key, { name: directName, unit: directUnit });
+        }
+      });
+    }
+
+    return Array.from(seen.values()).sort((a, b) => {
+      const byName = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      if (byName !== 0) return byName;
+      return a.unit.localeCompare(b.unit, undefined, { sensitivity: "base" });
+    });
+  }, [supplierIngredients, transactions]);
 
   const resolveTxnDate = (txn) =>
     txn?.delivery_date ||
@@ -600,12 +679,15 @@ const projectedBalance = useMemo(() => {
     return sortedTransactions.filter((txn) => txn?.receipt_url).slice(0, 3);
   }, [sortedTransactions]);
 
-  // Combined due = existing supplier due + current new order total
-const combinedDue = useMemo(() => {
-  const existingDue = Number(selectedSupplier?.total_due || 0);
-  const newOrderTotal = Number(newTransaction.total_cost || 0);
-  return existingDue + newOrderTotal;
-}, [selectedSupplier?.total_due, newTransaction.total_cost]);
+	// Combined due = existing supplier due + current new order total
+	const combinedDue = useMemo(() => {
+	  const existingDue = Number(selectedSupplier?.total_due || 0);
+	  const newOrderTotal = (newTransaction.rows || []).reduce(
+	    (sum, r) => sum + (parseFloat(r.total_cost) || 0),
+	    0
+	  );
+	  return existingDue + newOrderTotal;
+	}, [selectedSupplier?.total_due, newTransaction.rows]);
 
 
   const coveragePercent =
@@ -821,9 +903,15 @@ const handleAddTransaction = async (e) => {
     return;
   }
 
-  const validRows = (newTransaction.rows || []).filter(
-    (r) => r.ingredient && r.quantity && r.total_cost
-  );
+  const validRows = (newTransaction.rows || [])
+    .filter((r) => r.ingredient && r.quantity && r.total_cost)
+    .map((r) => ({
+      ingredient: String(r.ingredient || "").trim(),
+      quantity: r.quantity,
+      unit: r.unit,
+      total_cost: r.total_cost,
+      expiry_date: r.expiry_date || null,
+    }));
 
   if (validRows.length === 0) {
     toast.error(t("Please enter at least one valid ingredient row."));
@@ -870,7 +958,16 @@ const handleAddTransaction = async (e) => {
   }
 
   setNewTransaction({
-    rows: [{ ingredient: "", quantity: "", unit: "kg", total_cost: "", expiry_date: "" }],
+    rows: [
+      {
+        ingredient_select: "__add_new__",
+        ingredient: "",
+        quantity: "",
+        unit: "kg",
+        total_cost: "",
+        expiry_date: "",
+      },
+    ],
     paymentMethod: "Due",
   });
   setReceiptFile(null);
@@ -1484,6 +1581,7 @@ id}`, {
   const total = parseFloat(row.total_cost);
   const unitPrice =
     !isNaN(qty) && qty > 0 && !isNaN(total) ? (total / qty).toFixed(2) : "0.00";
+  const ingredientSelectValue = row.ingredient_select || "__add_new__";
 
   return (
     <div key={idx} className="relative mb-6">
@@ -1496,17 +1594,67 @@ id}`, {
         {/* Ingredient */}
         <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
           {t("Ingredient")}
-          <input
-            type="text"
-            value={row.ingredient}
+          <select
+            value={ingredientSelectValue}
             onChange={(e) => {
+              const value = e.target.value;
               const updated = [...newTransaction.rows];
-              updated[idx].ingredient = e.target.value;
+
+              if (value === "__add_new__") {
+                updated[idx] = {
+                  ...updated[idx],
+                  ingredient_select: "__add_new__",
+                  ingredient: "",
+                };
+              } else {
+                try {
+                  const parsed = JSON.parse(value);
+                  const name = String(parsed?.name || "").trim();
+                  const unit = String(parsed?.unit || "").trim();
+                  updated[idx] = {
+                    ...updated[idx],
+                    ingredient_select: value,
+                    ingredient: name,
+                    unit: unit || updated[idx].unit,
+                  };
+                } catch {
+                  updated[idx] = {
+                    ...updated[idx],
+                    ingredient_select: "__add_new__",
+                    ingredient: "",
+                  };
+                }
+              }
+
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
             className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-            required
-          />
+          >
+            <option value="__add_new__">{t("Add new")}</option>
+            {supplierIngredientOptions.map((opt) => (
+              <option
+                key={`${opt.name}|||${opt.unit}`}
+                value={JSON.stringify({ name: opt.name, unit: opt.unit })}
+              >
+                {opt.name} ({opt.unit})
+              </option>
+            ))}
+          </select>
+
+          {ingredientSelectValue === "__add_new__" && (
+            <input
+              type="text"
+              value={row.ingredient}
+              onChange={(e) => {
+                const updated = [...newTransaction.rows];
+                updated[idx].ingredient = e.target.value;
+                setNewTransaction({ ...newTransaction, rows: updated });
+              }}
+              placeholder={t("New ingredient")}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+              required
+            />
+          )}
         </label>
 
         {/* Quantity */}
@@ -1598,7 +1746,14 @@ id}`, {
               const updated = [...newTransaction.rows];
               updated.splice(idx, 1);
               if (updated.length === 0)
-                updated.push({ ingredient: "", quantity: "", unit: "kg", total_cost: "", expiry_date: "" });
+                updated.push({
+                  ingredient_select: "__add_new__",
+                  ingredient: "",
+                  quantity: "",
+                  unit: "kg",
+                  total_cost: "",
+                  expiry_date: "",
+                });
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
             className="inline-flex items-center gap-2 rounded-full border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-600/40 dark:text-rose-300 dark:hover:bg-rose-900/30 transition"
@@ -1621,7 +1776,14 @@ id}`, {
       ...newTransaction,
       rows: [
         ...(newTransaction.rows || []),
-        { ingredient: "", quantity: "", unit: "kg", total_cost: "", expiry_date: "" },
+        {
+          ingredient_select: "__add_new__",
+          ingredient: "",
+          quantity: "",
+          unit: "kg",
+          total_cost: "",
+          expiry_date: "",
+        },
       ],
     })
   }
