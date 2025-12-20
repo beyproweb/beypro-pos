@@ -507,14 +507,16 @@ useEffect(() => {
     };
     const headerTitle = titlesByTab[activeTab] || t("Orders");
     const tableNav = (
-      <TableOverviewHeaderTabs
-        t={t}
-        tabs={visibleTabs}
-        activeTab={activeTab}
-        onChangeTab={setActiveTab}
-        onDragStart={handleTabDragStart}
-        tabToSidebar={TAB_TO_SIDEBAR}
-      />
+      <HeaderTableNav position="center">
+        <TableOverviewHeaderTabs
+          t={t}
+          tabs={visibleTabs}
+          activeTab={activeTab}
+          onChangeTab={setActiveTab}
+          onDragStart={handleTabDragStart}
+          tabToSidebar={TAB_TO_SIDEBAR}
+        />
+      </HeaderTableNav>
     );
     setHeader((prev) => ({
       ...prev,
@@ -2236,26 +2238,35 @@ try {
 
 
 }
+function HeaderTableNav({ position, children }) {
+  return (
+    <div className="w-full flex items-center justify-center">
+      {children}
+    </div>
+  );
+}
 function TableOverviewHeaderTabs({ t, tabs, activeTab, onChangeTab, onDragStart, tabToSidebar }) {
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onChangeTab(tab.id)}
-          draggable={Boolean(tabToSidebar?.[tab.id])}
-          onDragStart={onDragStart(tab)}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-            activeTab === tab.id
-              ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
-              : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
-          }`}
-        >
-          <span className="text-sm leading-none">{tab.icon}</span>
-          <span className="leading-none">{t(tab.label)}</span>
-        </button>
-      ))}
+    <div className="w-full flex items-center justify-center">
+      <div className="flex items-center justify-center gap-2 flex-wrap">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChangeTab(tab.id)}
+            draggable={Boolean(tabToSidebar?.[tab.id])}
+            onDragStart={onDragStart(tab)}
+            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+              activeTab === tab.id
+                ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
+                : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800"
+            }`}
+          >
+            <span className="text-base leading-none">{tab.icon}</span>
+            <span className="leading-none">{t(tab.label)}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
