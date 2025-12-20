@@ -455,13 +455,30 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   return true;
 });
 
-  const handleTabSelect = useCallback((tabId) => {
-    if (!tabId) return;
-    setActiveTab(tabId);
-  }, []);
+  const handleTabSelect = useCallback(
+    (tabId) => {
+      if (!tabId) return;
+      setActiveTab(tabId);
+
+      // Keep URL in sync so navigation stays predictable
+      const isTableOverview =
+        location.pathname.includes("tableoverview") || location.pathname.includes("/tables");
+      if (isTableOverview) {
+        const basePath = location.pathname.includes("tableoverview") ? "/tableoverview" : "/tables";
+        const params = new URLSearchParams(location.search);
+        params.set("tab", tabId);
+        navigate(`${basePath}?${params.toString()}`, { replace: true });
+      }
+    },
+    [location.pathname, location.search, navigate]
+  );
 
   useEffect(() => {
-    if (!location.pathname.includes("tableoverview")) return;
+    if (
+      !location.pathname.includes("tableoverview") &&
+      !location.pathname.includes("/tables")
+    )
+      return;
     if (visibleTabs.length === 0) return;
     if (!visibleTabs.some((tab) => tab.id === activeTab)) {
       handleTabSelect(visibleTabs[0].id);
@@ -469,7 +486,11 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   }, [visibleTabs, activeTab, handleTabSelect, location.pathname]);
 
   useEffect(() => {
-    if (!location.pathname.includes("tableoverview")) return;
+    if (
+      !location.pathname.includes("tableoverview") &&
+      !location.pathname.includes("/tables")
+    )
+      return;
     const params = new URLSearchParams(location.search);
     const tab = params.get("tab");
     if (tab && tab !== activeTab) setActiveTab(tab);
