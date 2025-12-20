@@ -444,15 +444,6 @@ const TAB_LIST = [
   { id: "register", label: "Register", icon: "💵" },
 ];
 
-const SIDEBAR_DRAG_TYPE = "application/x-dashboard-shortcut";
-const TAB_TO_SIDEBAR = {
-  tables: { labelKey: "Tables", defaultLabel: "Tables", path: "/tables" },
-  kitchen: { labelKey: "Kitchen", defaultLabel: "Kitchen", path: "/kitchen" },
-  history: { labelKey: "History", defaultLabel: "History", path: "/tableoverview?tab=history" },
-  packet: { labelKey: "Packet", defaultLabel: "Packet", path: "/tableoverview?tab=packet" },
-  phone: { labelKey: "Phone", defaultLabel: "Phone", path: "/tableoverview?tab=phone" },
-  register: { labelKey: "Register", defaultLabel: "Register", path: "/tableoverview?tab=register" },
-};
 const visibleTabs = TAB_LIST.filter((tab) => {
   if (tab.id === "takeaway") return canSeeTakeawayTab;
   if (tab.id === "tables") return canSeeTablesTab;
@@ -486,24 +477,6 @@ const visibleTabs = TAB_LIST.filter((tab) => {
 
 
 
-  const handleTabDragStart = (tab) => (event) => {
-    const payload = TAB_TO_SIDEBAR[tab.id];
-    if (!payload) return;
-    event.dataTransfer.effectAllowed = "move";
-    try {
-      event.dataTransfer.setData(
-        SIDEBAR_DRAG_TYPE,
-        JSON.stringify({
-          labelKey: payload.labelKey,
-          defaultLabel: payload.defaultLabel,
-          path: payload.path,
-        })
-      );
-    } catch {
-      /* ignore serialization errors */
-    }
-  };
-
   useEffect(() => {
     setShowPhoneOrderModal(activeTab === "phone");
     setShowRegisterModal(activeTab === "register");
@@ -527,8 +500,6 @@ const visibleTabs = TAB_LIST.filter((tab) => {
 	          tabs={visibleTabs}
 	          activeTab={activeTab}
 	          onChangeTab={handleTabSelect}
-	          onDragStart={handleTabDragStart}
-	          tabToSidebar={TAB_TO_SIDEBAR}
 	        />
 	      </HeaderTableNav>
 	    );
@@ -543,7 +514,6 @@ const visibleTabs = TAB_LIST.filter((tab) => {
 	    visibleTabs,
 	    t,
 	    setHeader,
-	    handleTabDragStart,
 	    handleTabSelect,
 	  ]);
 
@@ -2255,7 +2225,7 @@ function HeaderTableNav({ position, children }) {
     </div>
   );
 }
-function TableOverviewHeaderTabs({ t, tabs, activeTab, onChangeTab, onDragStart, tabToSidebar }) {
+function TableOverviewHeaderTabs({ t, tabs, activeTab, onChangeTab }) {
   return (
     <div className="w-full flex items-center justify-center">
       <div className="flex items-center justify-center gap-2 flex-wrap">
@@ -2264,8 +2234,6 @@ function TableOverviewHeaderTabs({ t, tabs, activeTab, onChangeTab, onDragStart,
             key={tab.id}
             type="button"
             onClick={() => onChangeTab(tab.id)}
-            draggable={Boolean(tabToSidebar?.[tab.id])}
-            onDragStart={onDragStart(tab)}
             className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
               activeTab === tab.id
                 ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
