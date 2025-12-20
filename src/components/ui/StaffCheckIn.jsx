@@ -278,26 +278,8 @@ const StaffCheckIn = () => {
   return (
     <div className="p-0 w-full h-[calc(100vh-80px)] min-h-screen space-y-5 text-gray-800 dark:text-gray-100 transition-colors mt-12">
       <Toaster position="top-center" />
-      <div className="flex gap-2">
-        <button
-          onClick={() => startScanner("checkin")}
-          className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-lg shadow-lg hover:bg-green-600 transition-colors duration-300"
-        >
-          {t("Check In")}
-        </button>
-        <button
-          onClick={() => startScanner("checkout")}
-          className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-700 text-white rounded-lg shadow-lg hover:bg-red-600 transition-colors duration-300"
-        >
-          {t("Check Out")}
-        </button>
-      </div>
-
-      {isCameraActive && <div id="reader" style={{ width: "100%" }} ref={containerRef}></div>}
-
-      <p className="mt-4 text-lg font-semibold">
-        {t("Status")}: {status}
-      </p>
+     
+    
       <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">{message}</p>
 
       <div className="mt-6">

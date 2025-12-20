@@ -14,7 +14,6 @@ import OrderHistory from "../components/OrderHistory";
 import { useHeader } from "../context/HeaderContext";
 
 import secureFetch from "../utils/secureFetch";
-import TableActionButtons from "../components/TableActionButtons";
 import {
   renderReceiptText,
   printViaBridge,
@@ -205,12 +204,6 @@ const [registerEntries, setRegisterEntries] = useState(0);
   const [showRegisterLog, setShowRegisterLog] = useState(false);
   const [showChangeForm, setShowChangeForm] = useState(false);
   const [changeAmount, setChangeAmount] = useState("");
-  const handleOverviewMove = useCallback(() => {
-    toast.info(t("Open a specific table to use Move Table."), { autoClose: 2000 });
-  }, [t]);
-  const handleOverviewMerge = useCallback(() => {
-    toast.info(t("Open a specific table to use Merge Table."), { autoClose: 2000 });
-  }, [t]);
  
   const [todayRegisterEvents, setTodayRegisterEvents] = useState([]);
 const [todayExpenses, setTodayExpenses] = useState([]);
@@ -504,22 +497,24 @@ useEffect(() => {
 
   useEffect(() => {
     const titlesByTab = {
+      takeaway: t("Pre Order"),
       tables: t("Tables"),
-      kitchen: t("Kitchen"),
+      kitchen: t("All Orders"),
       history: t("History"),
       packet: t("Packet"),
       phone: t("Phone"),
       register: t("Register"),
     };
     const headerTitle = titlesByTab[activeTab] || t("Orders");
-    const tableNav =
-      activeTab === "tables" ? (
-        <TableOverviewHeaderActions
-          t={t}
-          onMove={handleOverviewMove}
-          onMerge={handleOverviewMerge}
-        />
-      ) : null;
+    const tableNav = (
+      <TableOverviewHeaderTabs
+        t={t}
+        tabs={visibleTabs}
+        activeTab={activeTab}
+        onChangeTab={setActiveTab}
+        onDragStart={handleTabDragStart}
+      />
+    );
     setHeader((prev) => ({
       ...prev,
       title: headerTitle,
@@ -528,10 +523,10 @@ useEffect(() => {
     }));
   }, [
     activeTab,
+    visibleTabs,
     t,
     setHeader,
-    handleOverviewMove,
-    handleOverviewMerge,
+    handleTabDragStart,
   ]);
 
 useEffect(() => () => setHeader({}), [setHeader]);
@@ -1258,36 +1253,6 @@ const groupedTables = tables.reduce((acc, tbl) => {
   // --- RETURN (NEW UI) ---
   return (
     <div className="min-h-screen bg-transparent px-0 pt-4 relative">
-
-
-      {/* MODERN NAV TABS */}
-      <div className="flex justify-center gap-3 flex-wrap mb-10">
-        {visibleTabs.map((tab) => (
-
-          <button
-            key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id);
-            }}
-            draggable={Boolean(TAB_TO_SIDEBAR[tab.id])}
-            onDragStart={handleTabDragStart(tab)}
-            className={`
-              flex items-center gap-2 px-6 py-3 rounded-full font-bold text-lg shadow-xl
-              transition-all duration-200 backdrop-blur
-              ${
-                activeTab === tab.id
-                  ? "bg-gradient-to-r from-blue-400 via-fuchsia-400 to-indigo-400 text-white scale-105 shadow-2xl"
-                  : "bg-white/80 dark:bg-gray-800/80 text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700"
-              }
-              ring-1 ring-inset ring-white/40 dark:ring-black/30 hover:scale-105
-            `}
-            style={{ minWidth: 130 }}
-          >
-            <span className="text-2xl">{tab.icon}</span>
-            <span className="">{t(tab.label)}</span>
-          </button>
-        ))}
-      </div>
 {activeTab === "tables" && (
   <div className="w-full flex flex-col items-center">
 
@@ -2270,16 +2235,26 @@ try {
 
 
 }
-function TableOverviewHeaderActions({ t, onMove, onMerge }) {
+function TableOverviewHeaderTabs({ t, tabs, activeTab, onChangeTab, onDragStart }) {
   return (
-    <div className="hidden md:block">
-      <TableActionButtons
-        onMove={onMove}
-        onMerge={onMerge}
-        showLabels={false}
-        moveLabel={t("Move Table")}
-        mergeLabel={t("Merge Table")}
-      />
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => onChangeTab(tab.id)}
+          draggable={Boolean(TAB_TO_SIDEBAR[tab.id])}
+          onDragStart={onDragStart(tab)}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+            activeTab === tab.id
+              ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
+              : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
+          }`}
+        >
+          <span className="text-sm leading-none">{tab.icon}</span>
+          <span className="leading-none">{t(tab.label)}</span>
+        </button>
+      ))}
     </div>
   );
 }
