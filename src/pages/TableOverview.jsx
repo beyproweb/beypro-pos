@@ -166,6 +166,7 @@ export default function TableOverview() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
   const alertIntervalRef = useRef(null);
   const isMountedRef = useRef(true);
   const [now, setNow] = useState(new Date());
@@ -463,12 +464,30 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   return true;
 });
 
-useEffect(() => {
-  if (visibleTabs.length === 0) return;
-  if (!visibleTabs.some((tab) => tab.id === activeTab)) {
-    setActiveTab(visibleTabs[0].id);
-  }
-}, [visibleTabs, activeTab]);
+  useEffect(() => {
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
+
+  const handleTabSelect = useCallback(
+    (tabId) => {
+      if (!tabId) return;
+      setActiveTab(tabId);
+
+      const params = new URLSearchParams(location.search);
+      params.set("tab", tabId);
+      navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+    },
+    [location.pathname, location.search, navigate]
+  );
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get("tab");
+    if (tab && tab !== activeTab) setActiveTab(tab);
+  }, [location.search, activeTab]);
 
 
 
@@ -734,24 +753,7 @@ useEffect(() => {
 
 
 
-const location = useLocation();
-const handleTabSelect = useCallback(
-  (tabId) => {
-    if (!tabId) return;
-    setActiveTab(tabId);
-
-    const params = new URLSearchParams(location.search);
-    params.set("tab", tabId);
-    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
-  },
-  [location.pathname, location.search, navigate]
-);
-
-useEffect(() => {
-  const params = new URLSearchParams(location.search);
-  const tab = params.get("tab");
-  if (tab && tab !== activeTab) setActiveTab(tab);
-}, [location.search, activeTab]);
+// (location + handleTabSelect declared above)
 
 
 
