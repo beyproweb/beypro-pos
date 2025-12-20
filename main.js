@@ -375,6 +375,8 @@ function getLocalPrinterConfig(tenantId = null) {
 // WINDOW BOOTSTRAP
 // ------------------------
 let win;
+const recentWindowsJobs = new Map(); // key => timestamp
+const WINDOWS_JOB_TTL = 10000;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -546,7 +548,7 @@ ipcMain.handle("beypro:printRaw", async (_evt, args) => {
 // ------------------------
 ipcMain.handle("beypro:printWindows", async (_evt, args) => {
   try {
-    const { printerName, dataBase64, layout, jobKey, cashdraw, logoBase64 } = args;
+    const { printerName, dataBase64, layout, jobKey, cashdraw, logoBase64, attemptId } = args;
     const metrics = { logoBytes: 0, qrBytes: 0, textBytes: 0 };
 
     console.log("📥 printWindows invoked:", {
@@ -554,12 +556,17 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       hasLayout: !!layout,
       hasData: !!dataBase64,
       jobKey,
+      attemptId,
     });
 
-    if (jobKey && isRecentJob(jobKey)) {
-      console.log(`⚠️ Skipping duplicate printWindows for jobKey=${jobKey}`);
+    const dedupeKey = `${printerName || "unknown"}::${jobKey || "none"}`;
+    const nowTs = Date.now();
+    const lastTs = recentWindowsJobs.get(dedupeKey) || 0;
+    if (nowTs - lastTs < WINDOWS_JOB_TTL) {
+      console.log(`⚠️ Skipping duplicate printWindows for jobKey=${jobKey} attemptId=${attemptId}`);
       return { ok: true, deduped: true };
     }
+    recentWindowsJobs.set(dedupeKey, nowTs);
 
     let bytes = Buffer.from(dataBase64, "base64");
     metrics.textBytes = bytes.length;
@@ -616,6 +623,17 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
     }
 
     const result = await sendRawToWindowsPrinter(printerName, bytes);
+    const first32 = bytes.slice(0, 32).toString("hex").match(/.{1,2}/g)?.join(" ") || "";
+    console.log("🧾 Windows RAW dispatch", {
+      jobKey,
+      attemptId,
+      printerName,
+      mergedLength: bytes.length,
+      logoBytes: metrics.logoBytes,
+      qrBytes: metrics.qrBytes,
+      textBytes: metrics.textBytes,
+      firstBytes: first32,
+    });
     if (result?.ok) {
       return { ok: true, ...metrics };
     }
@@ -629,13 +647,17 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
 // DIRECT TCP RAW ESC/POS (9100)
 // ------------------------
 ipcMain.handle("beypro:printNet", async (_evt, args) => {
-  const { host, port = 9100, dataBase64, layout, jobKey, cashdraw, logoBase64 } = args;
+  const { host, port = 9100, dataBase64, layout, jobKey, cashdraw, logoBase64, attemptId } = args;
   const metrics = { logoBytes: 0, qrBytes: 0, textBytes: 0 };
 
-  if (jobKey && isRecentJob(jobKey)) {
-    console.log(`⚠️ Skipping duplicate printNet for jobKey=${jobKey}`);
+  const dedupeKey = `${host || "unknown"}::${jobKey || "none"}`;
+  const nowTs = Date.now();
+  const lastTs = recentWindowsJobs.get(dedupeKey) || 0;
+  if (nowTs - lastTs < WINDOWS_JOB_TTL) {
+    console.log(`⚠️ Skipping duplicate printNet for jobKey=${jobKey} attemptId=${attemptId}`);
     return { ok: true, deduped: true };
   }
+  recentWindowsJobs.set(dedupeKey, nowTs);
 
   // If layout is provided, build ESC/POS bytes with logo/QR
   let finalBytes = Buffer.from(dataBase64, "base64");
@@ -700,14 +722,28 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     sock.connect(port, host, () => {
       sock.write(finalBytes, (err) => {
         if (err) {
-          resolve({ ok: false, error: err.message });
+          resolve({ ok: false, error: err.message, ...metrics });
         } else {
-          sock.end(() => resolve({ ok: true }));
+          sock.end(() => {
+            const first32 = finalBytes.slice(0, 32).toString("hex").match(/.{1,2}/g)?.join(" ") || "";
+            console.log("🧾 Network RAW dispatch", {
+              jobKey,
+              attemptId,
+              host,
+              port,
+              mergedLength: finalBytes.length,
+              logoBytes: metrics.logoBytes,
+              qrBytes: metrics.qrBytes,
+              textBytes: metrics.textBytes,
+              firstBytes: first32,
+            });
+            resolve({ ok: true, ...metrics });
+          });
         }
       });
     });
-    sock.on("error", (err) => resolve({ ok: false, error: err.message }));
-    sock.on("timeout", () => resolve({ ok: false, error: "timeout" }));
+    sock.on("error", (err) => resolve({ ok: false, error: err.message, ...metrics }));
+    sock.on("timeout", () => resolve({ ok: false, error: "timeout", ...metrics }));
   });
 });
 

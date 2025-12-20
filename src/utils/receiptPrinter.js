@@ -24,6 +24,7 @@ import secureFetch from "./secureFetch";
 import { imageUrlToEscposBytes } from "./imageToEscpos";
 import { qrStringToEscposBytes } from "./qrToEscpos";
 import { formatWithActiveCurrency } from "./currency";
+import { v4 as uuidv4 } from "uuid";
 
 const PRINTER_SETTINGS_TTL = 120000; // ms
 let printerSettingsCache = null;
@@ -885,6 +886,7 @@ export async function printViaBridge(text, orderObj) {
     orderObj && (orderObj.id || orderObj.order_id)
       ? `order:${orderObj.id || orderObj.order_id}`
       : null;
+  const attemptId = uuidv4();
 
   // Basic de-duplication: avoid printing the same order multiple times
   // within a very short window from this renderer (covers cases where
@@ -1073,12 +1075,15 @@ export async function printViaBridge(text, orderObj) {
         layout,
         logoBase64,
         jobKey,
+        attemptId,
       });
       if (res?.ok) {
         console.log("✅ Receipt print dispatched via Windows driver", {
           logoBytes: res.logoBytes ?? "n/a",
           qrBytes: res.qrBytes ?? "n/a",
           textBytes: res.textBytes ?? textBytes.length,
+          jobKey,
+          attemptId,
         });
         return true;
       }
@@ -1122,6 +1127,18 @@ export async function printViaBridge(text, orderObj) {
     printerSettings?.defaults?.cashDrawer === true && isCashLike(paymentLabel);
   payload.cashdraw = shouldPulseDrawer;
 
+  console.log("🧾 Print payload (renderer)", {
+    jobKey,
+    attemptId,
+    interface: target.interface,
+    printerName: target.name || target.host,
+    host: target.host,
+    textBytes: textBytes.length,
+    logoBytes: logoBase64 ? Buffer.from(logoBase64, "base64").length : 0,
+    qrEnabled: !!(layout?.showQr && layout?.qrUrl),
+    showLogo: !!layout?.showLogo,
+  });
+
   const localBridge = typeof window !== "undefined" ? window.beypro : null;
   if (
     target.interface === "network" &&
@@ -1132,6 +1149,8 @@ export async function printViaBridge(text, orderObj) {
       console.log("🖨️ Using local bridge for LAN printer — sending text bytes and layout to main for composition:", {
         host: target.host,
         port: payload.port || 9100,
+        jobKey,
+        attemptId,
       });
       const result = await localBridge.printNet({
         host: target.host,
@@ -1141,6 +1160,7 @@ export async function printViaBridge(text, orderObj) {
         logoBase64,
         cashdraw: shouldPulseDrawer,
         jobKey,
+        attemptId,
       });
 
       if (result?.ok === false) {
