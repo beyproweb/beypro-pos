@@ -161,12 +161,17 @@ export default function TableOverview() {
   const [tableConfigs, setTableConfigs] = useState([]);
   const [closedOrders, setClosedOrders] = useState([]);
   const [groupedClosedOrders, setGroupedClosedOrders] = useState({});
-  const [activeTab, setActiveTab] = useState("tables");
+  const navigate = useNavigate();
+  const location = useLocation();
+  const tabFromUrl = React.useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("tab") || "tables";
+  }, [location.search]);
+
+  const [activeTab, setActiveTab] = useState(() => tabFromUrl);
   const [paymentFilter, setPaymentFilter] = useState("All");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const navigate = useNavigate();
-  const location = useLocation();
   const alertIntervalRef = useRef(null);
   const isMountedRef = useRef(true);
   const [now, setNow] = useState(new Date());
@@ -483,14 +488,10 @@ const visibleTabs = TAB_LIST.filter((tab) => {
     }
   }, [visibleTabs, activeTab, handleTabSelect, location.pathname]);
 
-  // If URL has a tab param on load, sync once
+  // Keep active tab in sync with the querystring (ModernHeader tabs update the URL)
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const tab = params.get("tab");
-    if (tab && tab !== activeTab) {
-      setActiveTab(tab);
-    }
-  }, [location.pathname, location.search, activeTab]);
+    setActiveTab(tabFromUrl);
+  }, [tabFromUrl]);
 
 
 

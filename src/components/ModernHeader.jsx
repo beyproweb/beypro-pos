@@ -76,7 +76,7 @@ export default function ModernHeader({
   }, [navigate]);
 
   const isTableOverviewRoute =
-    location.pathname === "/tables" || location.pathname === "/tableoverview";
+    location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
 
   const canSeeTablesTab = useHasPermission("tables");
   const canSeeKitchenTab = useHasPermission("kitchen");
@@ -125,8 +125,9 @@ export default function ModernHeader({
 
   const handleHeaderTabClick = React.useCallback(
     (tabId) => {
-      const base =
-        location.pathname === "/tableoverview" ? "/tableoverview" : "/tables";
+      const base = location.pathname.includes("tableoverview")
+        ? "/tableoverview"
+        : "/tables";
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
       navigate(`${base}?${params.toString()}`);
