@@ -464,30 +464,25 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   return true;
 });
 
-  const handleTabSelect = useCallback(
-    (tabId) => {
-      if (!tabId) return;
-      setActiveTab(tabId);
-
-      const params = new URLSearchParams(location.search);
-      params.set("tab", tabId);
-      navigate(`${location.pathname}?${params.toString()}`, { replace: true });
-    },
-    [location.pathname, location.search, navigate]
-  );
+  const handleTabSelect = useCallback((tabId) => {
+    if (!tabId) return;
+    setActiveTab(tabId);
+  }, []);
 
   useEffect(() => {
+    if (!location.pathname.includes("tableoverview")) return;
     if (visibleTabs.length === 0) return;
     if (!visibleTabs.some((tab) => tab.id === activeTab)) {
       handleTabSelect(visibleTabs[0].id);
     }
-  }, [visibleTabs, activeTab, handleTabSelect]);
+  }, [visibleTabs, activeTab, handleTabSelect, location.pathname]);
 
   useEffect(() => {
+    if (!location.pathname.includes("tableoverview")) return;
     const params = new URLSearchParams(location.search);
     const tab = params.get("tab");
     if (tab && tab !== activeTab) setActiveTab(tab);
-  }, [location.search, activeTab]);
+  }, [location.pathname, location.search, activeTab]);
 
 
 
