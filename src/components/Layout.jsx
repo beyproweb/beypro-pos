@@ -269,8 +269,10 @@ export default function Layout({
           className="flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors overflow-y-auto"
         >
           <div className="max-w-full min-h-[calc(100vh-70px)]">
-           <Outlet context={{ isSidebarOpen }} />
-
+            <Outlet
+              key={`${location.pathname}${location.search}`}
+              context={{ isSidebarOpen }}
+            />
           </div>
         </main>
 
