@@ -219,36 +219,85 @@ async function saveAllCustomization() {
   };
 
   const downloadQR = () => {
-    const svg = qrRef.current.querySelector("svg");
-    if (!svg) return;
+    if (!qrUrl) return;
+    const container = qrRef.current;
+    if (!container) return;
+
+    const triggerDownload = (href, filename) => {
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    };
+
+    const exportFromCanvas = (sourceCanvas, filename) => {
+      const size = 320;
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = size;
+      exportCanvas.height = size;
+      const ctx = exportCanvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, size, size);
+      ctx.drawImage(sourceCanvas, 0, 0, size, size);
+      triggerDownload(exportCanvas.toDataURL("image/png"), filename);
+    };
+
+    const canvas = container.querySelector("canvas");
+    if (canvas) {
+      exportFromCanvas(canvas, "qr-menu.png");
+      return;
+    }
+
+    const svg = container.querySelector("svg");
+    if (!svg) {
+      toast.error(t("QR code not ready yet"));
+      return;
+    }
+
     const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
     const img = new window.Image();
-    const size = 320;
-    canvas.width = size;
-    canvas.height = size;
     img.onload = () => {
+      const size = 320;
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = size;
+      exportCanvas.height = size;
+      const ctx = exportCanvas.getContext("2d");
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, size, size);
       ctx.drawImage(img, 0, 0, size, size);
-      const png = canvas.toDataURL("image/png");
-      const a = document.createElement("a");
-      a.href = png;
-      a.download = "beypro-qr-menu.png";
-      a.click();
+      triggerDownload(exportCanvas.toDataURL("image/png"), "qr-menu.png");
     };
     img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
   };
 
   const printQR = () => {
     if (!qrUrl) return;
-    const svg = qrRef.current.innerHTML;
+    const container = qrRef.current;
+    if (!container) return;
+
+    const canvas = container.querySelector("canvas");
+    let imgSrc = "";
+    if (canvas) {
+      imgSrc = canvas.toDataURL("image/png");
+    } else {
+      const svg = container.querySelector("svg");
+      if (svg) {
+        const svgData = new XMLSerializer().serializeToString(svg);
+        imgSrc = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+      }
+    }
+    if (!imgSrc) {
+      toast.error(t("QR code not ready yet"));
+      return;
+    }
+
     const win = window.open("", "_blank");
     win.document.write(`
       <html><head><title>${t("Print QR Code")}</title></head>
       <body style="text-align:center;font-family:sans-serif">
-        <div style="margin-top:30px">${svg}</div>
+        <img src="${imgSrc}" style="margin-top:30px;width:260px;height:260px;" />
         <div style="margin-top:10px;font-size:16px">${qrUrl}</div>
         <script>window.onload=()=>window.print()</script>
       </body></html>
