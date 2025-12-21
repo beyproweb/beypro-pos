@@ -40,7 +40,7 @@ export const DASHBOARD_ITEM_DRAG_TYPE = "application/x-dashboard-shortcut";
 const MENU = [
   { labelKey: "Dashboard", defaultLabel: "Dashboard", path: "/dashboard", icon: Home, permission: "dashboard" },
   { labelKey: "Orders", defaultLabel: "Tables", path: "/tableoverview?tab=tables", icon: Grid2x2, permission: "tables" },
-  { labelKey: "Packet", defaultLabel: "Packet", path: "/tableoverview?tab=packet", icon: ShoppingBag, permission: "tables" },
+  { labelKey: "Packet", defaultLabel: "Packet", path: "/tableoverview?tab=packet", icon: ShoppingBag, permission: "packet-orders" },
   { labelKey: "History", defaultLabel: "History", path: "/tableoverview?tab=history", icon: BookOpen, permission: "history" },
   { labelKey: "Phone", defaultLabel: "Phone", path: "/tableoverview?tab=phone", icon: Phone, permission: "phone-orders" },
   { labelKey: "Register", defaultLabel: "Register", path: "/tableoverview?tab=register", icon: Wallet, permission: "register" },

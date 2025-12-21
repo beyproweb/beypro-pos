@@ -201,7 +201,7 @@ const [entryReason, setEntryReason] = useState("");
   const canSeeKitchenTab = useHasPermission("kitchen");
   const canSeeHistoryTab = useHasPermission("history");
   const canSeePacketTab = useHasPermission("packet-orders");
-  const canSeePhoneTab = useHasPermission("phone");
+  const canSeePhoneTab = useHasPermission("phone-orders");
   const canSeeRegisterTab = useHasPermission("register");
   const canSeeTakeawayTab = useHasPermission("takeaway");
 const [activeArea, setActiveArea] = useState("ALL");
@@ -461,21 +461,22 @@ const visibleTabs = TAB_LIST.filter((tab) => {
 });
 
   const handleTabSelect = useCallback(
-    (tabId) => {
+    (tabId, options = {}) => {
       if (!tabId) return;
       const basePath = "/tableoverview";
+      const replace = options?.replace === true;
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
-      navigate(`${basePath}?${params.toString()}`, { replace: true });
+      navigate(`${basePath}?${params.toString()}`, { replace });
     },
-    [location.pathname, location.search, navigate]
+    [location.search, navigate]
   );
 
   useEffect(() => {
     if (!location.pathname.includes("tableoverview")) return;
     if (visibleTabs.length === 0) return;
     if (!visibleTabs.some((tab) => tab.id === activeTab)) {
-      handleTabSelect(visibleTabs[0].id);
+      handleTabSelect(visibleTabs[0].id, { replace: true });
     }
   }, [visibleTabs, activeTab, handleTabSelect, location.pathname]);
 

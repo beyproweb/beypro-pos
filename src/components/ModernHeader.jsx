@@ -82,7 +82,7 @@ export default function ModernHeader({
   const canSeeKitchenTab = useHasPermission("kitchen");
   const canSeeHistoryTab = useHasPermission("history");
   const canSeePacketTab = useHasPermission("packet-orders");
-  const canSeePhoneTab = useHasPermission("phone");
+  const canSeePhoneTab = useHasPermission("phone-orders");
   const canSeeRegisterTab = useHasPermission("register");
   const canSeeTakeawayTab = useHasPermission("takeaway");
 

@@ -104,7 +104,7 @@ function TableOverviewRouteWrapper() {
     packet: "packet-orders",
     phone: "phone-orders",
     register: "register",
-    takeaway: "orders",
+    takeaway: "takeaway",
   };
 
   const permission = permissionByTab[tab] || "tables";
@@ -273,7 +273,7 @@ const loadSettings = async () => {
               <Route path="live-route" element={<ProtectedRoute permission="delivery"><LiveRouteMap /></ProtectedRoute>} />
               <Route
   path="takeaway"
-  element={<ProtectedRoute permission="orders"><TakeawayOverview /></ProtectedRoute>}
+  element={<ProtectedRoute permission="takeaway"><TakeawayOverview /></ProtectedRoute>}
 />
 
               <Route
