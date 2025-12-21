@@ -72,10 +72,8 @@ export default function ModernHeader({
   }, [navigate, previousRoute, currentPath]);
 
   const handleGoHome = React.useCallback(() => {
-    const isTableOverviewRoute =
-      location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
-    navigate("/dashboard", isTableOverviewRoute ? { flushSync: true } : undefined);
-  }, [location.pathname, navigate]);
+    navigate("/dashboard");
+  }, [navigate]);
 
   const isTableOverviewRoute =
     location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
@@ -130,9 +128,9 @@ export default function ModernHeader({
       const base = "/tableoverview";
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
-      navigate(`${base}?${params.toString()}`, { flushSync: true });
+      navigate(`${base}?${params.toString()}`);
     },
-    [location.pathname, location.search, navigate]
+    [location.search, navigate]
   );
 
   return (

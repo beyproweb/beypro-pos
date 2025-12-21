@@ -150,6 +150,16 @@ const getDisplayTotal = (order) => {
   return parseFloat(order.total || 0);
 };
 
+const TAB_LIST = [
+  { id: "takeaway", label: "Pre Order", icon: "⚡" },
+  { id: "tables", label: "Tables", icon: "🍽️" },
+  { id: "kitchen", label: "All Orders", icon: "👨‍🍳" },
+  { id: "history", label: "History", icon: "📘" },
+  { id: "packet", label: "Packet", icon: "🛵" },
+  { id: "phone", label: "Phone", icon: "📞" },
+  { id: "register", label: "Register", icon: "💵" },
+];
+
 
 
 
@@ -439,26 +449,26 @@ const groupByDate = (orders) => {
   }, {});
 };
 
-const TAB_LIST = [
-  { id: "takeaway", label: "Pre Order", icon: "⚡" }, 
-  { id: "tables", label: "Tables", icon: "🍽️" },
-  { id: "kitchen", label: "All Orders", icon: "👨‍🍳" },
-  { id: "history", label: "History", icon: "📘" },
-  { id: "packet", label: "Packet", icon: "🛵" },
-  { id: "phone", label: "Phone", icon: "📞" },
-  { id: "register", label: "Register", icon: "💵" },
-];
-
-const visibleTabs = TAB_LIST.filter((tab) => {
-  if (tab.id === "takeaway") return canSeeTakeawayTab;
-  if (tab.id === "tables") return canSeeTablesTab;
-  if (tab.id === "kitchen") return canSeeKitchenTab;
-  if (tab.id === "history") return canSeeHistoryTab;
-  if (tab.id === "packet") return canSeePacketTab; // special case kept
-  if (tab.id === "phone") return canSeePhoneTab;
-  if (tab.id === "register") return canSeeRegisterTab;
-  return true;
-});
+  const visibleTabs = React.useMemo(() => {
+    return TAB_LIST.filter((tab) => {
+      if (tab.id === "takeaway") return canSeeTakeawayTab;
+      if (tab.id === "tables") return canSeeTablesTab;
+      if (tab.id === "kitchen") return canSeeKitchenTab;
+      if (tab.id === "history") return canSeeHistoryTab;
+      if (tab.id === "packet") return canSeePacketTab;
+      if (tab.id === "phone") return canSeePhoneTab;
+      if (tab.id === "register") return canSeeRegisterTab;
+      return true;
+    });
+  }, [
+    canSeeTakeawayTab,
+    canSeeTablesTab,
+    canSeeKitchenTab,
+    canSeeHistoryTab,
+    canSeePacketTab,
+    canSeePhoneTab,
+    canSeeRegisterTab,
+  ]);
 
   const handleTabSelect = useCallback(
     (tabId, options = {}) => {
@@ -467,7 +477,7 @@ const visibleTabs = TAB_LIST.filter((tab) => {
       const replace = options?.replace === true;
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
-      navigate(`${basePath}?${params.toString()}`, { replace, flushSync: true });
+      navigate(`${basePath}?${params.toString()}`, { replace });
     },
     [location.search, navigate]
   );
@@ -498,21 +508,18 @@ const visibleTabs = TAB_LIST.filter((tab) => {
       phone: t("Phone"),
       register: t("Register"),
     };
-		    const headerTitle = titlesByTab[activeTab] || t("Orders");
-		    const tableNav = null;
-	    setHeader((prev) => ({
-	      ...prev,
-	      title: headerTitle,
-	      subtitle: undefined,
-	      tableNav,
-	    }));
+    const headerTitle = titlesByTab[activeTab] || t("Orders");
+    setHeader((prev) => ({
+      ...prev,
+      title: headerTitle,
+      subtitle: undefined,
+      tableNav: null,
+    }));
   }, [
     activeTab,
-	    visibleTabs,
-	    t,
-	    setHeader,
-	    handleTabSelect,
-	  ]);
+    t,
+    setHeader,
+  ]);
 
 useEffect(() => () => setHeader({}), [setHeader]);
 
@@ -974,7 +981,9 @@ const fetchKitchenOrders = useCallback(async () => {
 }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000);
+    const interval = setInterval(() => {
+      React.startTransition(() => setNow(new Date()));
+    }, 1000);
     return () => clearInterval(interval);
   }, []);
 
