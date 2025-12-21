@@ -14,6 +14,8 @@ const DEFAULT_LAYOUT = {
   spacing: 1.2,
   itemFontSize: 13,
   showHeader: true,
+  showInvoiceNumber: true,
+  showTableNumber: true,
   showFooter: true,
   showLogo: true,
   logoUrl: "",
@@ -42,6 +44,8 @@ const createDefaultPrinterConfig = () => ({
 const SAMPLE_ORDER = {
   store: "Hurrybey Gıda",
   date: new Date().toLocaleString(),
+  invoice_number: "1001",
+  table_number: "12",
   items: [
     { name: "Smash Burger", qty: 2, price: 185 },
     { name: "Patates (Büyük)", qty: 1, price: 65 },
@@ -305,6 +309,19 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
   const discountAmount = layout.showDiscounts ? (subTotal * (layout.discountRate || 0)) / 100 : 0;
   const total = subTotal + taxAmount - discountAmount;
 
+  const invoiceRaw =
+    order?.invoice_number ?? order?.invoiceNumber ?? order?.receipt_number ?? order?.order_number ?? order?.id;
+  const invoiceValue =
+    invoiceRaw === null || invoiceRaw === undefined ? "" : String(invoiceRaw).trim();
+  const invoiceDisplay = invoiceValue
+    ? invoiceValue.startsWith("#")
+      ? invoiceValue
+      : `#${invoiceValue}`
+    : "";
+
+  const tableRaw = order?.table_number ?? order?.tableNumber;
+  const tableValue = tableRaw === null || tableRaw === undefined ? "" : String(tableRaw).trim();
+
   return (
     <div
       className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-inner"
@@ -340,6 +357,22 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           style={{ fontSize: layout.shopAddressFontSize || 11 }}
         >
           {layout.shopAddress}
+        </div>
+      ) : null}
+      {(layout.showInvoiceNumber || layout.showTableNumber) && (invoiceDisplay || tableValue) ? (
+        <div className="mb-2 space-y-1 text-[12px] text-slate-700">
+          {layout.showInvoiceNumber && invoiceDisplay ? (
+            <div className="flex justify-between">
+              <span>Invoice</span>
+              <span className="font-semibold">{invoiceDisplay}</span>
+            </div>
+          ) : null}
+          {layout.showTableNumber && tableValue ? (
+            <div className="flex justify-between">
+              <span>Table</span>
+              <span className="font-semibold">{tableValue}</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <div className="border-y border-dashed border-slate-200 py-2 text-[12px]">
@@ -1198,6 +1231,8 @@ export default function PrinterTab() {
               <div className="grid gap-3 text-xs">
                 {[
                   { label: "Show header", key: "showHeader" },
+                  { label: "Show invoice #", key: "showInvoiceNumber" },
+                  { label: "Show table #", key: "showTableNumber" },
                   { label: "Show footer", key: "showFooter" },
                   { label: "Show logo", key: "showLogo" },
                   { label: "Show QR", key: "showQr" },

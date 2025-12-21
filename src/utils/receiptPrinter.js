@@ -4,6 +4,8 @@ const defaultReceiptLayout = {
   showLogo: true,
   showQr: true,
   showHeader: true,
+  showInvoiceNumber: true,
+  showTableNumber: true,
   showFooter: true,
   headerText: "Beypro POS - HurryBey",
   footerText: "Thank you for your order! / Teşekkürler!",
@@ -676,6 +678,8 @@ async function composeFinalReceiptBytes({
 function makeTestOrder() {
   return {
     id: `test-${Date.now()}`,
+    invoice_number: "1001",
+    table_number: "12",
     items: [
       {
         name: "Test Burger",
@@ -995,11 +999,44 @@ export function renderReceiptText(order, providedLayout) {
 
   const lines = [];
   const add = (l = "") => lines.push(String(l));
+  let wroteMeta = false;
+
+  const showInvoiceNumber = layout?.showInvoiceNumber !== false;
+  const showTableNumber = layout?.showTableNumber !== false;
+  const invoiceRaw =
+    order?.invoice_number ??
+    order?.invoiceNumber ??
+    order?.receipt_number ??
+    order?.receiptNumber ??
+    order?.order_number ??
+    order?.orderNumber ??
+    order?.invoice_no ??
+    order?.invoiceNo ??
+    order?.id ??
+    order?.order_id ??
+    order?.orderId;
+  const invoiceValue =
+    invoiceRaw === null || invoiceRaw === undefined ? "" : String(invoiceRaw).trim();
+  const invoiceDisplay = invoiceValue
+    ? invoiceValue.startsWith("#")
+      ? invoiceValue
+      : `#${invoiceValue}`
+    : "";
+
+  const tableRaw =
+    order?.table_number ??
+    order?.tableNumber ??
+    order?.table_no ??
+    order?.tableNo ??
+    order?.table_id ??
+    order?.tableId;
+  const tableValue = tableRaw === null || tableRaw === undefined ? "" : String(tableRaw).trim();
 
   if (layout.showHeader) {
     const headerLine = layout.headerTitle || layout.headerText || "Beypro POS";
     add(headerLine);
     if (layout.headerSubtitle) add(layout.headerSubtitle);
+    wroteMeta = true;
   }
   if (layout.shopAddress) {
     String(layout.shopAddress)
@@ -1008,8 +1045,17 @@ export function renderReceiptText(order, providedLayout) {
       .map((l) => l.trim())
       .filter(Boolean)
       .forEach((l) => add(l));
+    wroteMeta = true;
   }
-  if (layout.showHeader || layout.shopAddress) {
+  if (showInvoiceNumber && invoiceDisplay) {
+    add(formatLine("Invoice", invoiceDisplay, lineWidth));
+    wroteMeta = true;
+  }
+  if (showTableNumber && tableValue) {
+    add(formatLine("Table", tableValue, lineWidth));
+    wroteMeta = true;
+  }
+  if (wroteMeta) {
     add("");
   }
 
