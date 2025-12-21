@@ -72,35 +72,8 @@ export default function ModernHeader({
   }, [navigate, previousRoute, currentPath]);
 
   const handleGoHome = React.useCallback(() => {
-    const fromTableOverview =
-      location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
-
     navigate("/dashboard");
-
-    if (!fromTableOverview || typeof window === "undefined") return;
-
-    // If something mutated the URL without React Router updating (observed from TableOverview),
-    // nudge the router by emitting navigation events; as a last resort reload once.
-    window.setTimeout(() => {
-      try {
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      } catch {}
-      try {
-        window.dispatchEvent(new HashChangeEvent("hashchange"));
-      } catch {}
-    }, 0);
-
-    window.setTimeout(() => {
-      const routerPath = String(window.__beyproRouterPath || "");
-      const browserPath = window.location.hash.startsWith("#/")
-        ? window.location.hash.slice(1)
-        : `${window.location.pathname}${window.location.search}`;
-
-      if (browserPath.startsWith("/dashboard") && routerPath.startsWith("/tableoverview")) {
-        window.location.reload();
-      }
-    }, 200);
-  }, [location.pathname, navigate]);
+  }, [navigate]);
 
   const isTableOverviewRoute =
     location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");

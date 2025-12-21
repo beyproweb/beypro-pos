@@ -168,11 +168,6 @@ export default function Layout({
   }, [location.pathname, location.search]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.__beyproRouterPath = `${location.pathname}${location.search}`;
-  }, [location.pathname, location.search]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return undefined;
     let openTimeout = null;
 
