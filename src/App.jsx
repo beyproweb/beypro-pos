@@ -109,9 +109,12 @@ function TableOverviewRouteWrapper() {
 
   const permission = permissionByTab[tab] || "tables";
 
+  // Force a remount of TableOverview when the query string (tab) changes.
+  // This avoids stale internal state / memoized children when header tabs
+  // change location.search without unmounting TableOverview.
   return (
     <ProtectedRoute permission={permission}>
-      <TableOverview />
+      <TableOverview key={location.search || tab} />
     </ProtectedRoute>
   );
 }
