@@ -4,6 +4,7 @@ import { ArrowLeft, Home, Menu } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useHasPermission } from "./hooks/useHasPermission";
+import { safeNavigate } from "../utils/navigation";
 
 /**
  * Prevents flicker of customer name / address (subtitle)
@@ -72,8 +73,15 @@ export default function ModernHeader({
   }, [navigate, previousRoute, currentPath]);
 
   const handleGoHome = React.useCallback(() => {
+    const inTableOverview =
+      location.pathname.includes("/tables") ||
+      location.pathname.includes("/tableoverview");
+    if (inTableOverview) {
+      safeNavigate("/dashboard", { notify: true });
+      return;
+    }
     navigate("/dashboard");
-  }, [navigate]);
+  }, [location.pathname, navigate]);
 
   const isTableOverviewRoute =
     location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");

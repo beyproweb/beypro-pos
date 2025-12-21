@@ -5,9 +5,25 @@ export function setNavigator(fn) {
 }
 
 export function safeNavigate(path, options) {
+  const { notify, ...navOptions } = options || {};
+
   // Prefer the router navigate function when available
   if (nav) {
-    nav(path, options);
+    nav(path, navOptions);
+    if (notify && typeof window !== "undefined") {
+      try {
+        const isHashRouting =
+          window.location.protocol === "file:" ||
+          !!window.beypro ||
+          window.location.hash.startsWith("#/");
+        if (isHashRouting) {
+          window.dispatchEvent(new HashChangeEvent("hashchange"));
+        }
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      } catch {
+        // ignore notification failures
+      }
+    }
     return;
   }
 
@@ -38,6 +54,9 @@ export function safeNavigate(path, options) {
     }
 
     // Notify React Router that location changed (pushState/hash assignment doesn't emit popstate)
+    if (isHashRouting) {
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    }
     window.dispatchEvent(new PopStateEvent("popstate"));
   } catch (err) {
     // As a last resort, force a full navigation
