@@ -11,7 +11,7 @@ export function safeNavigate(path, options) {
     return;
   }
 
-  // Fallback: update the URL manually and fire a popstate event so React Router notices.
+  // Fallback: update the URL manually and fire events so React Router notices.
   try {
     const target =
       typeof path === "string"
@@ -30,15 +30,27 @@ export function safeNavigate(path, options) {
         ? target
         : `#${target.replace(/^#/, "")}`;
       window.location.hash = nextHash;
+      try {
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      } catch {
+        window.dispatchEvent(new Event("hashchange"));
+      }
     } else {
       const nextPath = target.startsWith("/")
         ? target
         : `/${target}`;
-      window.history.pushState({}, "", nextPath);
+      if (options?.replace) {
+        window.history.replaceState({}, "", nextPath);
+      } else {
+        window.history.pushState({}, "", nextPath);
+      }
     }
 
-    // Notify React Router that location changed (pushState/hash assignment doesn't emit popstate)
-    window.dispatchEvent(new PopStateEvent("popstate"));
+    try {
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    } catch {
+      window.dispatchEvent(new Event("popstate"));
+    }
   } catch (err) {
     // As a last resort, force a full navigation
     if (typeof window !== "undefined") {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
   Utensils,
@@ -135,6 +135,7 @@ function readOrder(storageKey) {
 
 export default function Sidebar({ isOpen, setIsOpen }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const isLoggedIn = !!localStorage.getItem("beyproUser");
   const { currentUser } = useAuth();
   const { t } = useTranslation();
@@ -339,12 +340,23 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     });
   };
 
-  const handleNavClick = (event) => {
+  const handleNavClick = (targetPath) => (event) => {
     if (dragKey) {
       event.preventDefault();
       event.stopPropagation();
       return;
     }
+
+    const isPrimaryClick = event.button === 0;
+    const hasModifierKey = event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
+    if (isPrimaryClick && !hasModifierKey && location.pathname.startsWith("/tableoverview")) {
+      // React Router v7 navigations are transitions by default.
+      // TableOverview does frequent state updates, which can starve transitions and leave UI stale.
+      // FlushSync this navigation so route content updates immediately.
+      event.preventDefault();
+      navigate(targetPath, { flushSync: true });
+    }
+
     setIsOpen?.(false);
   };
 
@@ -453,7 +465,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         onDragLeave={canDrag ? handleDragLeaveItem(item.labelKey) : undefined}
         onDrop={canDrag ? handleDropItem(item.labelKey) : undefined}
         onDragEnd={canDrag ? handleDragEndItem : undefined}
-        onClick={handleNavClick}
+        onClick={handleNavClick(item.path)}
       >
         <Icon size={24} />
         {isOpen && (

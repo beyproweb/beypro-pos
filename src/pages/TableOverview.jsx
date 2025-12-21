@@ -467,7 +467,7 @@ const visibleTabs = TAB_LIST.filter((tab) => {
       const replace = options?.replace === true;
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
-      navigate(`${basePath}?${params.toString()}`, { replace });
+      navigate(`${basePath}?${params.toString()}`, { replace, flushSync: true });
     },
     [location.search, navigate]
   );
