@@ -9,13 +9,16 @@ const DEFAULT_LAYOUT = {
   headerSubtitle: "POS Receipt",
   shopAddress: "",
   shopAddressFontSize: 11,
+  taxNumber: "",
   alignment: "left",
   paperWidth: "58mm",
   spacing: 1.2,
   itemFontSize: 13,
   showHeader: true,
+  showTaxNumber: true,
   showInvoiceNumber: true,
   showTableNumber: true,
+  showStaffName: true,
   showFooter: true,
   showLogo: true,
   logoUrl: "",
@@ -46,6 +49,7 @@ const SAMPLE_ORDER = {
   date: new Date().toLocaleString(),
   invoice_number: "1001",
   table_number: "12",
+  staff_name: "John Doe",
   items: [
     { name: "Smash Burger", qty: 2, price: 185 },
     { name: "Patates (Büyük)", qty: 1, price: 65 },
@@ -322,6 +326,43 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
   const tableRaw = order?.table_number ?? order?.tableNumber;
   const tableValue = tableRaw === null || tableRaw === undefined ? "" : String(tableRaw).trim();
 
+  const staffRaw =
+    order?.staff_name ??
+    order?.staffName ??
+    order?.cashier_name ??
+    order?.cashierName ??
+    order?.waiter_name ??
+    order?.waiterName ??
+    order?.employee_name ??
+    order?.employeeName ??
+    order?.staff?.name ??
+    order?.cashier?.name ??
+    order?.user?.name;
+  const staffValue = staffRaw === null || staffRaw === undefined ? "" : String(staffRaw).trim();
+
+  let taxNumberRaw = layout?.taxNumber ?? layout?.taxId;
+  if (
+    (taxNumberRaw === null || taxNumberRaw === undefined || String(taxNumberRaw).trim() === "") &&
+    typeof window !== "undefined"
+  ) {
+    try {
+      const cachedUser = JSON.parse(localStorage.getItem("beyproUser") || "null");
+      taxNumberRaw =
+        cachedUser?.tax_id ??
+        cachedUser?.taxId ??
+        cachedUser?.tax_number ??
+        cachedUser?.taxNumber ??
+        taxNumberRaw;
+    } catch {}
+  }
+  const taxNumberValue =
+    taxNumberRaw === null || taxNumberRaw === undefined ? "" : String(taxNumberRaw).trim();
+  const taxNumberDisplay = taxNumberValue
+    ? /tax/i.test(taxNumberValue)
+      ? taxNumberValue
+      : `Tax No: ${taxNumberValue}`
+    : "";
+
   return (
     <div
       className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-inner"
@@ -337,10 +378,10 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           <img
             src={layout.logoUrl}
             alt="Logo"
-            className="mx-auto mb-3 h-12 w-auto object-contain"
+            className="mx-auto mt-2 mb-1 h-12 w-auto object-contain"
           />
         ) : (
-          <div className="mb-3 text-center text-[10px] uppercase tracking-[0.2em] text-slate-500">
+          <div className="mt-2 mb-1 text-center text-[10px] uppercase tracking-[0.2em] text-slate-500">
             LOGO
           </div>
         )
@@ -359,7 +400,16 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           {layout.shopAddress}
         </div>
       ) : null}
-      {(layout.showInvoiceNumber || layout.showTableNumber) && (invoiceDisplay || tableValue) ? (
+      {layout.showTaxNumber && taxNumberDisplay ? (
+        <div
+          className="mb-2 text-center text-slate-500"
+          style={{ fontSize: layout.shopAddressFontSize || 11 }}
+        >
+          {taxNumberDisplay}
+        </div>
+      ) : null}
+      {(layout.showInvoiceNumber || layout.showTableNumber || layout.showStaffName) &&
+      (invoiceDisplay || tableValue || staffValue) ? (
         <div className="mb-2 space-y-1 text-[12px] text-slate-700">
           {layout.showInvoiceNumber && invoiceDisplay ? (
             <div className="flex justify-between">
@@ -371,6 +421,12 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
             <div className="flex justify-between">
               <span>Table</span>
               <span className="font-semibold">{tableValue}</span>
+            </div>
+          ) : null}
+          {layout.showStaffName && staffValue ? (
+            <div className="flex justify-between">
+              <span>Staff</span>
+              <span className="font-semibold">{staffValue}</span>
             </div>
           ) : null}
         </div>
@@ -569,8 +625,8 @@ export default function PrinterTab() {
         }
       }
       setPrinterConfig(config);
-      // Hydrate address from /me if missing
-      if (!config.layout.shopAddress) {
+      // Hydrate receipt defaults from /me (same endpoint used by Subscription & Billing)
+      if (!config.layout.shopAddress || !config.layout.taxNumber) {
         try {
           const me = await secureFetch("me");
           const userObj = me?.user || me;
@@ -579,13 +635,22 @@ export default function PrinterTab() {
             userObj?.posLocation ||
             userObj?.restaurant_pos_location ||
             userObj?.restaurant?.pos_location;
-          if (addr) {
-            setPrinterConfig((prev) =>
-              mergePrinterConfig(prev, { layout: { ...prev.layout, shopAddress: addr } })
-            );
-          }
+          const taxNumber =
+            userObj?.tax_id ||
+            userObj?.taxId ||
+            userObj?.tax_number ||
+            userObj?.taxNumber ||
+            "";
+
+          setPrinterConfig((prev) => {
+            const layoutPatch = {};
+            if (!prev.layout.shopAddress && addr) layoutPatch.shopAddress = addr;
+            if (!prev.layout.taxNumber && taxNumber) layoutPatch.taxNumber = taxNumber;
+            if (!Object.keys(layoutPatch).length) return prev;
+            return mergePrinterConfig(prev, { layout: layoutPatch });
+          });
         } catch (err) {
-          console.warn("⚠️ Could not hydrate address from /me:", err?.message || err);
+          console.warn("⚠️ Could not hydrate receipt info from /me:", err?.message || err);
         }
       }
       if (!operationStatus.message.includes("Offline")) {
@@ -1124,6 +1189,15 @@ export default function PrinterTab() {
                   onChange={(event) => handleLayoutUpdate("shopAddress", event.target.value)}
                   placeholder="123 Street, City"
                 />
+                <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
+                  Tax number
+                </label>
+                <input
+                  className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
+                  value={printerConfig.layout.taxNumber || ""}
+                  onChange={(event) => handleLayoutUpdate("taxNumber", event.target.value)}
+                  placeholder="1234567890"
+                />
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="text-xs uppercase tracking-wide text-slate-500">Alignment</label>
@@ -1231,8 +1305,10 @@ export default function PrinterTab() {
               <div className="grid gap-3 text-xs">
                 {[
                   { label: "Show header", key: "showHeader" },
+                  { label: "Show tax #", key: "showTaxNumber" },
                   { label: "Show invoice #", key: "showInvoiceNumber" },
                   { label: "Show table #", key: "showTableNumber" },
+                  { label: "Show staff", key: "showStaffName" },
                   { label: "Show footer", key: "showFooter" },
                   { label: "Show logo", key: "showLogo" },
                   { label: "Show QR", key: "showQr" },

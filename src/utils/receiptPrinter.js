@@ -4,14 +4,17 @@ const defaultReceiptLayout = {
   showLogo: true,
   showQr: true,
   showHeader: true,
+  showTaxNumber: true,
   showInvoiceNumber: true,
   showTableNumber: true,
+  showStaffName: true,
   showFooter: true,
   headerText: "Beypro POS - HurryBey",
   footerText: "Thank you for your order! / Teşekkürler!",
   alignment: "left",
   shopAddress: "",
   shopAddressFontSize: 11,
+  taxNumber: "",
   extras: [
     { label: "Instagram", value: "@yourshop" },
     { label: "Tax No", value: "1234567890" },
@@ -516,7 +519,8 @@ function isCashLike(value = "") {
 const CUT_CMD = [0x1d, 0x56, 0x00];
 const DRAWER_PULSE_CMD = [0x1b, 0x70, 0x00, 0x32, 0x32]; // pin 2, ~50ms
 const FEED_AFTER_IMAGE_CMD = [0x1b, 0x64, 0x05]; // ESC d 5
-const FEED_AFTER_LOGO_CMD = [0x1b, 0x64, 0x01]; // ESC d 1
+const FEED_BEFORE_LOGO_CMD = [0x1b, 0x64, 0x01]; // ESC d 1
+const FEED_AFTER_LOGO_CMD = [0x1b, 0x64, 0x00]; // ESC d 0
 
 function receiptWidthToPx(widthSetting) {
   if (widthSetting === "80mm") return 576;
@@ -616,13 +620,49 @@ function buildEscposBytes(
   return Uint8Array.from(bytes);
 }
 
+function resolveTaxNumberLine(layout) {
+  if (layout?.showTaxNumber === false) return "";
+
+  let raw =
+    layout?.taxNumber ??
+    layout?.tax_id ??
+    layout?.taxId ??
+    layout?.tax_number ??
+    layout?.taxNumber ??
+    null;
+
+  if ((raw === null || raw === undefined || String(raw).trim() === "") && typeof window !== "undefined") {
+    try {
+      const cachedUser = JSON.parse(localStorage.getItem("beyproUser") || "null");
+      raw =
+        cachedUser?.tax_id ??
+        cachedUser?.taxId ??
+        cachedUser?.tax_number ??
+        cachedUser?.taxNumber ??
+        raw;
+    } catch {}
+  }
+
+  const value = raw === null || raw === undefined ? "" : String(raw).trim();
+  if (!value) return "";
+  if (/(tax|vergi)/i.test(value)) return value;
+  return `Tax No: ${value}`;
+}
+
 function buildAddressLines(layout) {
-  if (!layout?.shopAddress) return [];
-  return String(layout.shopAddress)
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const lines = [];
+  if (layout?.shopAddress) {
+    lines.push(
+      ...String(layout.shopAddress)
+        .replace(/\r/g, "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+    );
+  }
+  const taxLine = resolveTaxNumberLine(layout);
+  if (taxLine) lines.push(taxLine);
+  return lines;
 }
 
 async function composeFinalReceiptBytes({
@@ -640,7 +680,8 @@ async function composeFinalReceiptBytes({
     try {
       const logoBytesLocal = await imageUrlToEscposBytes(layout.logoUrl, paperWidthPx);
       if (logoBytesLocal?.length) {
-        finalBytes = Array.from(centerCmd)
+        finalBytes = Array.from(FEED_BEFORE_LOGO_CMD)
+          .concat(Array.from(centerCmd))
           .concat(Array.from(logoBytesLocal))
           .concat(Array.from(leftCmd))
           .concat(FEED_AFTER_LOGO_CMD)
@@ -680,6 +721,7 @@ function makeTestOrder() {
     id: `test-${Date.now()}`,
     invoice_number: "1001",
     table_number: "12",
+    staff_name: "John Doe",
     items: [
       {
         name: "Test Burger",
@@ -1003,6 +1045,7 @@ export function renderReceiptText(order, providedLayout) {
 
   const showInvoiceNumber = layout?.showInvoiceNumber !== false;
   const showTableNumber = layout?.showTableNumber !== false;
+  const showStaffName = layout?.showStaffName !== false;
   const invoiceRaw =
     order?.invoice_number ??
     order?.invoiceNumber ??
@@ -1032,6 +1075,36 @@ export function renderReceiptText(order, providedLayout) {
     order?.tableId;
   const tableValue = tableRaw === null || tableRaw === undefined ? "" : String(tableRaw).trim();
 
+  let staffRaw =
+    order?.staff_name ??
+    order?.staffName ??
+    order?.cashier_name ??
+    order?.cashierName ??
+    order?.waiter_name ??
+    order?.waiterName ??
+    order?.employee_name ??
+    order?.employeeName ??
+    order?.created_by_name ??
+    order?.createdByName ??
+    order?.staff?.name ??
+    order?.cashier?.name ??
+    order?.user?.name;
+  if ((staffRaw === null || staffRaw === undefined || String(staffRaw).trim() === "") && typeof window !== "undefined") {
+    try {
+      const cachedUser = JSON.parse(localStorage.getItem("beyproUser") || "null");
+      staffRaw =
+        cachedUser?.name ??
+        cachedUser?.staff_name ??
+        cachedUser?.staffName ??
+        cachedUser?.username ??
+        cachedUser?.user_name ??
+        cachedUser?.userName ??
+        staffRaw;
+    } catch {}
+  }
+  const staffValue = staffRaw === null || staffRaw === undefined ? "" : String(staffRaw).trim();
+  const taxNumberLine = resolveTaxNumberLine(layout);
+
   if (layout.showHeader) {
     const headerLine = layout.headerTitle || layout.headerText || "Beypro POS";
     add(headerLine);
@@ -1047,12 +1120,20 @@ export function renderReceiptText(order, providedLayout) {
       .forEach((l) => add(l));
     wroteMeta = true;
   }
+  if (taxNumberLine) {
+    add(taxNumberLine);
+    wroteMeta = true;
+  }
   if (showInvoiceNumber && invoiceDisplay) {
     add(formatLine("Invoice", invoiceDisplay, lineWidth));
     wroteMeta = true;
   }
   if (showTableNumber && tableValue) {
     add(formatLine("Table", tableValue, lineWidth));
+    wroteMeta = true;
+  }
+  if (showStaffName && staffValue) {
+    add(formatLine("Staff", staffValue, lineWidth));
     wroteMeta = true;
   }
   if (wroteMeta) {

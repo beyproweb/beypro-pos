@@ -566,9 +566,11 @@ async function printNetDirect(host, port, bytes) {
   });
 }
 
-// Spacing after images: keep logo tight to header, keep QR readable.
-const FEED_AFTER_LOGO_LINES = 1;
+// Spacing around images: add a small top margin for the logo and keep it tight to the header.
+const FEED_BEFORE_LOGO_LINES = 1;
+const FEED_AFTER_LOGO_LINES = 0;
 const FEED_AFTER_QR_LINES = 5;
+const FEED_BEFORE_LOGO_CMD = Buffer.from([0x1b, 0x64, FEED_BEFORE_LOGO_LINES]); // ESC d n
 const FEED_AFTER_LOGO_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_LOGO_LINES]); // ESC d n
 const FEED_AFTER_QR_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_QR_LINES]); // ESC d n
 
@@ -699,7 +701,7 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       const centerCmd = Buffer.from([0x1b, 0x61, 0x01]);
       const leftCmd = Buffer.from([0x1b, 0x61, 0x00]);
       if (logoBytes) {
-        merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd, FEED_AFTER_LOGO_CMD]);
+        merged = Buffer.concat([merged, FEED_BEFORE_LOGO_CMD, centerCmd, logoBytes, leftCmd, FEED_AFTER_LOGO_CMD]);
       } else if (layout.showLogo) {
         console.warn("⚠️ Logo bytes missing; skipping logo block for receipt");
       }
@@ -820,7 +822,7 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     const centerCmd = Buffer.from([0x1b, 0x61, 0x01]); // ESC a 1
     const leftCmd = Buffer.from([0x1b, 0x61, 0x00]); // ESC a 0
     if (logoBytes) {
-      merged = Buffer.concat([merged, centerCmd, logoBytes, leftCmd, FEED_AFTER_LOGO_CMD]);
+      merged = Buffer.concat([merged, FEED_BEFORE_LOGO_CMD, centerCmd, logoBytes, leftCmd, FEED_AFTER_LOGO_CMD]);
     } else if (layout.showLogo) {
       console.warn("⚠️ Logo bytes missing; skipping logo block for network receipt");
     }
