@@ -85,6 +85,37 @@ const API_URL =
 
 const isAuthenticated = () => !!localStorage.getItem("beyproUser");
 
+function TablesRedirect() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  if (!params.get("tab")) params.set("tab", "tables");
+  return <Navigate to={`/tableoverview?${params.toString()}`} replace />;
+}
+
+function TableOverviewRouteWrapper() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const tab = (params.get("tab") || "tables").toLowerCase();
+
+  const permissionByTab = {
+    tables: "tables",
+    kitchen: "kitchen",
+    history: "history",
+    packet: "packet-orders",
+    phone: "phone-orders",
+    register: "register",
+    takeaway: "orders",
+  };
+
+  const permission = permissionByTab[tab] || "tables";
+
+  return (
+    <ProtectedRoute permission={permission}>
+      <TableOverview />
+    </ProtectedRoute>
+  );
+}
+
 export default function App() {
   const navigate = useNavigate();
   useEffect(() => {
@@ -188,7 +219,7 @@ const loadSettings = async () => {
                 )
               }
             >
-              <Route index element={<Navigate to="/tables" />} />
+              <Route index element={<Navigate to="/tableoverview?tab=tables" replace />} />
               <Route path="dashboard" element={<ProtectedRoute permission="dashboard"><Dashboard /></ProtectedRoute>} />
               <Route
                 path="customer-insights"
@@ -232,15 +263,8 @@ const loadSettings = async () => {
               <Route path="suppliers" element={<ProtectedRoute permission="suppliers"><Suppliers /></ProtectedRoute>} />
               <Route path="stock" element={<ProtectedRoute permission="stock"><Stock /></ProtectedRoute>} />
               <Route path="production" element={<ProtectedRoute permission="production"><Production /></ProtectedRoute>} />
-              <Route path="tables" element={<ProtectedRoute permission="tables"><TableOverview /></ProtectedRoute>} />
-<Route
-  path="tableoverview"
-  element={
-    <ProtectedRoute permission={window.location.search.includes("tab=packet") ? "packet-orders" : "tables"}>
-      <TableOverview />
-    </ProtectedRoute>
-  }
-/>
+              <Route path="tables" element={<TablesRedirect />} />
+              <Route path="tableoverview" element={<TableOverviewRouteWrapper />} />
               <Route path="transaction/:tableId" element={<TransactionScreen />} />
               <Route path="transaction/phone/:orderId" element={<TransactionScreen />} />
               <Route path="reports" element={<ProtectedRoute permission="reports"><Reports /></ProtectedRoute>} />

@@ -463,9 +463,7 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   const handleTabSelect = useCallback(
     (tabId) => {
       if (!tabId) return;
-      const basePath = location.pathname.includes("tableoverview")
-        ? "/tableoverview"
-        : "/tables";
+      const basePath = "/tableoverview";
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
       navigate(`${basePath}?${params.toString()}`, { replace: true });
@@ -474,11 +472,7 @@ const visibleTabs = TAB_LIST.filter((tab) => {
   );
 
   useEffect(() => {
-    if (
-      !location.pathname.includes("tableoverview") &&
-      !location.pathname.includes("/tables")
-    )
-      return;
+    if (!location.pathname.includes("tableoverview")) return;
     if (visibleTabs.length === 0) return;
     if (!visibleTabs.some((tab) => tab.id === activeTab)) {
       handleTabSelect(visibleTabs[0].id);

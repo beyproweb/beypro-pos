@@ -125,9 +125,7 @@ export default function ModernHeader({
 
   const handleHeaderTabClick = React.useCallback(
     (tabId) => {
-      const base = location.pathname.includes("tableoverview")
-        ? "/tableoverview"
-        : "/tables";
+      const base = "/tableoverview";
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
       navigate(`${base}?${params.toString()}`);
