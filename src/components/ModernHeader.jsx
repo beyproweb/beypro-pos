@@ -120,7 +120,7 @@ export default function ModernHeader({
 
   const activeHeaderTab = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
-    return params.get("tab") || "tables";
+    return String(params.get("tab") || "tables").toLowerCase();
   }, [location.search]);
 
   const handleHeaderTabClick = React.useCallback(

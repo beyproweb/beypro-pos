@@ -95,7 +95,7 @@ function TablesRedirect() {
 function TableOverviewRouteWrapper() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
-  const tab = (params.get("tab") || "tables").toLowerCase();
+  const tab = String(params.get("tab") || "tables").toLowerCase();
 
   const permissionByTab = {
     tables: "tables",
