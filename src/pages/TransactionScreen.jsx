@@ -513,7 +513,7 @@ const handleAddToDebt = async () => {
     setShowDebtModal(false);
 
     if (tableId) {
-      debugNavigate("/tableoverview");
+      debugNavigate("/tableoverview?tab=tables");
     } else if (orderId) {
       debugNavigate("/orders");
     }
@@ -1614,7 +1614,7 @@ const runAutoCloseIfConfigured = useCallback(
       console.warn("⚠️ Auto-close failed:", err?.message || err);
     }
 
-    navigate(shouldAutoCloseTable ? "/tableoverview" : "/orders");
+    navigate(shouldAutoCloseTable ? "/tableoverview?tab=tables" : "/orders");
   },
   [
     identifier,
@@ -2107,7 +2107,7 @@ const handleMultifunction = async () => {
     if (orderType === "phone") {
       try {
         await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
-        debugNavigate("/tableoverview");
+        debugNavigate("/orders");
         return;
       } catch (err) {
         console.error("❌ Failed to close empty phone order:", err);
@@ -2115,7 +2115,7 @@ const handleMultifunction = async () => {
         return;
       }
     } else {
-      navigate("/tables");
+      navigate("/tableoverview?tab=tables");
       return;
     }
   }
@@ -2236,7 +2236,7 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncluding
   // ❌ Not all delivered → don’t close; show message and bounce to TableOverview after 3s
   if (!allDelivered) {
     showToast(t("Not delivered yet"));
-    scheduleNavigate("/tableoverview", 2000);
+    scheduleNavigate("/tableoverview?tab=tables", 2000);
     return;
   }
 
@@ -2246,7 +2246,7 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncluding
     setDiscountValue(0);
     setDiscountType("percent");
     showToast(t("Table closed successfully"));
-    debugNavigate("/tableoverview"); // <— correct route
+    debugNavigate("/tableoverview?tab=tables"); // <— correct route
   } catch (err) {
     console.error("❌ Close failed:", err);
     showToast(t("Failed to close table"));
@@ -2488,7 +2488,7 @@ useEffect(() => {
 
   if (orderType === "table") {
     if (!tableId) {
-      debugNavigate("/tableoverview");
+      debugNavigate("/tableoverview?tab=tables");
       return;
     }
     clearCartState();
@@ -2497,7 +2497,7 @@ useEffect(() => {
     return;
   }
 
-  debugNavigate("/tableoverview");
+  debugNavigate("/tableoverview?tab=tables");
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [normalizedStatus, orderType, tableId, navigate, clearCartState]);
 

@@ -23,7 +23,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "orders",
     labelKey: "Orders",
     defaultLabel: "Orders",
-    path: "/tables",
+    path: "/tableoverview?tab=tables",
     color: "bg-gradient-to-r from-rose-400 to-pink-500",
     icon: "ClipboardList",
   },
