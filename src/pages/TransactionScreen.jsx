@@ -210,6 +210,38 @@ export default function TransactionScreen() {
   const { tableId, orderId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const navTimeoutsRef = useRef([]);
+  const debugNavigate = useCallback(
+    (to, options) => {
+      if (typeof to === "string" && (to.startsWith("/tableoverview") || to.startsWith("/orders"))) {
+        console.log("[TX_NAV]", {
+          from: `${location.pathname}${location.search}`,
+          to,
+          options: options || null,
+          mounted: true,
+          now: new Date().toISOString(),
+        });
+      }
+      navigate(to, options);
+    },
+    [navigate, location.pathname, location.search]
+  );
+
+  const scheduleNavigate = useCallback(
+    (to, delayMs, options) => {
+      const id = window.setTimeout(() => debugNavigate(to, options), delayMs);
+      navTimeoutsRef.current.push(id);
+      return id;
+    },
+    [debugNavigate]
+  );
+
+  useEffect(() => {
+    return () => {
+      navTimeoutsRef.current.forEach((id) => window.clearTimeout(id));
+      navTimeoutsRef.current = [];
+    };
+  }, []);
   const initialOrder = location.state?.order || null;
     const { t } = useTranslation(); // ✅ Enable translations
   const restaurantSlug = typeof window !== "undefined"
@@ -481,9 +513,9 @@ const handleAddToDebt = async () => {
     setShowDebtModal(false);
 
     if (tableId) {
-      navigate("/tableoverview");
+      debugNavigate("/tableoverview");
     } else if (orderId) {
-      navigate("/orders");
+      debugNavigate("/orders");
     }
   } catch (err) {
     console.error("❌ Failed to add debt:", err);
@@ -2075,7 +2107,7 @@ const handleMultifunction = async () => {
     if (orderType === "phone") {
       try {
         await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
-        navigate("/tableoverview");
+        debugNavigate("/tableoverview");
         return;
       } catch (err) {
         console.error("❌ Failed to close empty phone order:", err);
@@ -2142,7 +2174,7 @@ if ((orderId && orderType === "phone") && getButtonLabel() === "Confirm") {
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
   setHeader(prev => ({ ...prev, subtitle: "" }));
   showToast(t("Phone order confirmed and sent to kitchen"));
-  setTimeout(() => navigate("/orders"), 400);
+  scheduleNavigate("/orders", 400);
   return;
 }
 
@@ -2181,7 +2213,7 @@ if (orderType === "phone" && order.status !== "closed") {
   // ✅ Allow phone orders to close after payment
   try {
     await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
-    navigate("/orders");
+    debugNavigate("/orders");
     showToast(t("Phone order closed successfully"));
   } catch (err) {
     console.error("❌ Failed to close phone order:", err);
@@ -2204,7 +2236,7 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncluding
   // ❌ Not all delivered → don’t close; show message and bounce to TableOverview after 3s
   if (!allDelivered) {
     showToast(t("Not delivered yet"));
-    setTimeout(() => navigate("/tableoverview"), 2000);
+    scheduleNavigate("/tableoverview", 2000);
     return;
   }
 
@@ -2214,7 +2246,7 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncluding
     setDiscountValue(0);
     setDiscountType("percent");
     showToast(t("Table closed successfully"));
-    navigate("/tableoverview"); // <— correct route
+    debugNavigate("/tableoverview"); // <— correct route
   } catch (err) {
     console.error("❌ Close failed:", err);
     showToast(t("Failed to close table"));
@@ -2450,13 +2482,13 @@ useEffect(() => {
   if (!isCancelledStatus(normalizedStatus)) return;
 
   if (orderType === "phone") {
-    navigate("/orders");
+    debugNavigate("/orders");
     return;
   }
 
   if (orderType === "table") {
     if (!tableId) {
-      navigate("/tableoverview");
+      debugNavigate("/tableoverview");
       return;
     }
     clearCartState();
@@ -2465,7 +2497,7 @@ useEffect(() => {
     return;
   }
 
-  navigate("/tableoverview");
+  debugNavigate("/tableoverview");
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [normalizedStatus, orderType, tableId, navigate, clearCartState]);
 
