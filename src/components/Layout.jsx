@@ -9,7 +9,6 @@ import { ToastContainer } from "react-toastify";
 import { useHeader } from "../context/HeaderContext";
 import "react-toastify/dist/ReactToastify.css";
 import { X } from "lucide-react";
-import { getCurrentWindowRoute, safeNavigate } from "../utils/navigation";
 
 const EDGE_TRIGGER_THRESHOLD = 48;
 
@@ -168,28 +167,9 @@ export default function Layout({
     }
   }, [location.pathname, location.search]);
 
-  // If something updates the URL without notifying React Router (observed from TableOverview),
-  // sync only the "TableOverview → Dashboard" transition to avoid requiring a manual refresh.
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const syncIfNeeded = () => {
-      const routerPath = `${location.pathname}${location.search}`;
-      const windowRoute = getCurrentWindowRoute();
-      if (!windowRoute) return;
-      const target = String(windowRoute).startsWith("/") ? String(windowRoute) : `/${windowRoute}`;
-
-      if (
-        routerPath.startsWith("/tableoverview") &&
-        target.startsWith("/dashboard") &&
-        routerPath !== target
-      ) {
-        safeNavigate(target, { replace: true, notify: true });
-      }
-    };
-
-    window.addEventListener("beypro:navigation", syncIfNeeded);
-    return () => window.removeEventListener("beypro:navigation", syncIfNeeded);
+    if (typeof window === "undefined") return;
+    window.__beyproRouterPath = `${location.pathname}${location.search}`;
   }, [location.pathname, location.search]);
 
   useEffect(() => {
