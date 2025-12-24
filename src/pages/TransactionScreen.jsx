@@ -203,6 +203,96 @@ const isActiveTableStatus = (status) => {
 
 const isPaidItem = (item) => Boolean(item && (item.paid || item.paid_at));
 
+const getRestaurantScopedCacheKey = (suffix) => {
+  const restaurantId =
+    (typeof window !== "undefined" &&
+      window?.localStorage?.getItem("restaurant_id")) ||
+    (typeof window !== "undefined" &&
+      window?.localStorage?.getItem("restaurant_slug")) ||
+    "global";
+  return `hurrypos:${restaurantId}:${suffix}`;
+};
+
+const safeParseJson = (raw) => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+const readCachedProducts = () => {
+  const raw =
+    typeof window !== "undefined"
+      ? window?.localStorage?.getItem(getRestaurantScopedCacheKey("products.v1"))
+      : null;
+  const parsed = safeParseJson(raw);
+  return Array.isArray(parsed) ? parsed : [];
+};
+
+const writeCachedProducts = (products) => {
+  try {
+    localStorage.setItem(
+      getRestaurantScopedCacheKey("products.v1"),
+      JSON.stringify(Array.isArray(products) ? products : [])
+    );
+    localStorage.setItem(
+      getRestaurantScopedCacheKey("productsUpdatedAtMs.v1"),
+      String(Date.now())
+    );
+  } catch {}
+};
+
+const readCachedCategoryImages = () => {
+  const raw =
+    typeof window !== "undefined"
+      ? window?.localStorage?.getItem(getRestaurantScopedCacheKey("categoryImages.v1"))
+      : null;
+  const parsed = safeParseJson(raw);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+};
+
+const writeCachedCategoryImages = (imagesByCategory) => {
+  try {
+    localStorage.setItem(
+      getRestaurantScopedCacheKey("categoryImages.v1"),
+      JSON.stringify(
+        imagesByCategory && typeof imagesByCategory === "object" ? imagesByCategory : {}
+      )
+    );
+  } catch {}
+};
+
+const prefetchImageUrls = (urls, limit = 48) => {
+  if (typeof window === "undefined") return;
+  if (!Array.isArray(urls) || urls.length === 0) return;
+
+  const uniq = [];
+  const seen = new Set();
+  for (const url of urls) {
+    if (!url || typeof url !== "string") continue;
+    const trimmed = url.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    uniq.push(trimmed);
+    if (uniq.length >= limit) break;
+  }
+
+  const run = () => {
+    uniq.forEach((src) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = src;
+    });
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(run, { timeout: 1500 });
+  } else {
+    window.setTimeout(run, 0);
+  }
+};
+
 export default function TransactionScreen() {
   useRegisterGuard();
   const paymentMethods = usePaymentMethods();
@@ -248,7 +338,7 @@ export default function TransactionScreen() {
     ? localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id")
     : null;
   const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState(() => readCachedProducts());
  const [selectedForPayment, setSelectedForPayment] = useState([]);
 const [showDiscountModal, setShowDiscountModal] = useState(false);
 const [discountType, setDiscountType] = useState("percent"); // "percent" or "fixed"
@@ -257,7 +347,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [cartItems, setCartItems] = useState([]);
   const [receiptItems, setReceiptItems] = useState([]);
   const [order, setOrder] = useState(initialOrder);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialOrder);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [editingCartItemIndex, setEditingCartItemIndex] = useState(null);
   const [isSplitMode, setIsSplitMode] = useState(false);
@@ -708,7 +798,7 @@ const widthClass =
 
 
 const hasExtras = (item) => Array.isArray(item.extras) && item.extras.length > 0;
-const [categoryImages, setCategoryImages] = useState({});
+const [categoryImages, setCategoryImages] = useState(() => readCachedCategoryImages());
 // Calculate extras total and final price in the Add to Cart modal
 const validExtras = selectedExtras.filter(ex => ex.quantity > 0);
 const extrasPricePerProduct = validExtras.reduce(
@@ -1143,16 +1233,6 @@ useEffect(() => {
   setHeader({
     title: headerTitle,
     subtitle: subtitleText || undefined,
-    tableNav: !orderId ? (
-      <TableActionButtons
-        onMove={() => setShowMoveTableModal(true)}
-        onMerge={() => setShowMergeTableModal(true)}
-        cartMode={false}
-        showLabels={false}
-        moveLabel={t("Move Table")}
-        mergeLabel={t("Merge Table")}
-      />
-    ) : null,
   });
 
   return () => setHeader({});
@@ -1173,12 +1253,18 @@ useEffect(() => {
         dict[key] = image;
       });
       setCategoryImages(dict);
+      writeCachedCategoryImages(dict);
+      prefetchImageUrls(Object.values(dict).filter(Boolean), 16);
     })
     .catch((err) => {
       console.error("❌ Failed to load category images:", err);
-      setCategoryImages({});
+      // keep cached images if available
     });
 }, []);
+
+useEffect(() => {
+  prefetchImageUrls(Object.values(categoryImages || {}).filter(Boolean), 16);
+}, [Object.keys(categoryImages || {}).length]); // eslint-disable-line react-hooks/exhaustive-deps
 
 // At the top inside TransactionScreen()
 const handleQuickDiscount = () => {
@@ -1720,6 +1806,7 @@ useEffect(() => {
         : [];
 
       setProducts(normalized);
+      writeCachedProducts(normalized);
     } catch (err) {
       console.error("❌ Error fetching products:", err);
     }
@@ -1732,6 +1819,20 @@ useEffect(() => {
   currentUser?.restaurant_id,
   restaurantSlug,
 ]);
+
+useEffect(() => {
+  prefetchImageUrls(
+    (Array.isArray(products) ? products : [])
+      .filter(
+        (p) =>
+          (p?.category || "").trim().toLowerCase() ===
+          (activeCategory || "").trim().toLowerCase()
+      )
+      .map((p) => p?.image)
+      .filter(Boolean),
+    36
+  );
+}, [activeCategory, products.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
 useEffect(() => {
   if (!window.socket) return;
@@ -1946,10 +2047,41 @@ const createOrFetchTableOrder = async (tableNumber) => {
 };
 
 useEffect(() => {
-  setOrder(null);
-  setCartItems([]);
-  setReceiptItems([]);
-  setLoading(true);
+  const hasWarmOrder = Boolean(initialOrder && typeof initialOrder === "object");
+
+  if (hasWarmOrder) {
+    setOrder(initialOrder);
+
+    const warmItems = Array.isArray(initialOrder.items) ? initialOrder.items : [];
+    const formatted = warmItems.map((item) => {
+      const extras = safeParseExtras(item.extras);
+      const qty = parseInt(item.quantity, 10) || 1;
+      const paid = Boolean(item.paid || item.paid_at);
+      return {
+        id: item.product_id ?? item.id ?? item.productId,
+        name: item.name || item.order_item_name || item.product_name || item.productName || "Unnamed",
+        quantity: qty,
+        price: parseFloat(item.price) || 0,
+        ingredients: item.ingredients || [],
+        extras,
+        unique_id: item.unique_id || `${item.product_id}-${JSON.stringify(extras || [])}-${uuidv4()}`,
+        confirmed: item.confirmed ?? true,
+        paid,
+        payment_method: item.payment_method ?? "Unknown",
+        note: item.note || "",
+        kitchen_status: item.kitchen_status || "",
+      };
+    });
+
+    setCartItems(formatted);
+    setReceiptItems(formatted.filter((i) => i.paid));
+    setLoading(false);
+  } else {
+    setOrder(null);
+    setCartItems([]);
+    setReceiptItems([]);
+    setLoading(true);
+  }
 
   if (orderId) {
     fetchPhoneOrder(orderId);
@@ -2105,11 +2237,20 @@ const handleMultifunction = async () => {
   // ✅ Allow phone orders to close even if empty
   if (cartItems.length === 0) {
     if (orderType === "phone") {
+      if (String(order?.status || "").toLowerCase() === "closed") {
+        debugNavigate("/orders");
+        return;
+      }
       try {
         await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
         debugNavigate("/orders");
         return;
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.toLowerCase().includes("already closed")) {
+          debugNavigate("/orders");
+          return;
+        }
         console.error("❌ Failed to close empty phone order:", err);
         showToast("Failed to close phone order");
         return;
@@ -2976,33 +3117,42 @@ const renderCartContent = (variant = "desktop") => {
     "rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-center text-sm font-semibold text-rose-600 transition hover:bg-rose-100";
   const canShowCancelButton = ["confirmed", "paid", "unpaid"].includes(normalizedStatus);
 
-  const actionControls = isDesktop ? (
-    <div className="flex w-full flex-col gap-3">
-      <div className="flex gap-3">
-        <button
-          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
-          className={baseButtonClass}
-        >
-          {t("Clear")}
-        </button>
-        <button onClick={handleMultifunction} className={primaryButtonClass}>
-          {t(getButtonLabel())}
-        </button>
-        {isDebtEligible && (
-          <button
-            onClick={handleOpenDebtModal}
-            className={debtButtonClass}
-            disabled={isDebtSaving}
-          >
-            {isDebtSaving ? t("Saving...") : t("Add to Debt")}
-          </button>
-        )}
-      </div>
-      {canShowCancelButton && (
-        <>
-          <button
-            type="button"
-            onClick={() => {
+	  const actionControls = isDesktop ? (
+	    <div className="flex w-full flex-col gap-3">
+	      <div className="flex gap-3">
+	        <button
+	          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
+	          className={baseButtonClass}
+	        >
+	          {t("Clear")}
+	        </button>
+	        <button onClick={handleMultifunction} className={primaryButtonClass}>
+	          {t(getButtonLabel())}
+	        </button>
+	        {isDebtEligible && (
+	          <button
+	            onClick={handleOpenDebtModal}
+	            className={debtButtonClass}
+	            disabled={isDebtSaving}
+	          >
+	            {isDebtSaving ? t("Saving...") : t("Add to Debt")}
+	          </button>
+	        )}
+	      </div>
+	      {!orderId && (
+	        <TableActionButtons
+	          onMove={() => setShowMoveTableModal(true)}
+	          onMerge={() => setShowMergeTableModal(true)}
+	          cartMode
+	          moveLabel={t("Move Table")}
+	          mergeLabel={t("Merge Table")}
+	        />
+	      )}
+	      {canShowCancelButton && (
+	        <>
+	          <button
+	            type="button"
+	            onClick={() => {
               openReservationModal();
             }}
             disabled={hasConfirmedCartUnpaid || allCartItemsPaid}
@@ -3024,15 +3174,15 @@ const renderCartContent = (variant = "desktop") => {
         </>
       )}
     </div>
-  ) : (
-    <div className="flex w-full flex-col gap-2">
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
-          className={`${baseButtonClass} flex-1 min-w-[120px]`}
-        >
-          {t("Clear")}
-        </button>
+	  ) : (
+	    <div className="flex w-full flex-col gap-2">
+	      <div className="flex flex-wrap gap-2">
+	        <button
+	          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
+	          className={`${baseButtonClass} flex-1 min-w-[120px]`}
+	        >
+	          {t("Clear")}
+	        </button>
         <button
           onClick={handleCartPrint}
           className={`${baseButtonClass} flex-1 min-w-[120px]`}
@@ -3049,18 +3199,27 @@ const renderCartContent = (variant = "desktop") => {
             {isDebtSaving ? t("Saving...") : t("Add to Debt")}
           </button>
         )}
-        <button
-          onClick={handleMultifunction}
-          className={`${primaryButtonClass} flex-1 min-w-[120px]`}
-        >
-          {t(getButtonLabel())}
-        </button>
-      </div>
-      {canShowCancelButton && (
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => {
+	        <button
+	          onClick={handleMultifunction}
+	          className={`${primaryButtonClass} flex-1 min-w-[120px]`}
+	        >
+	          {t(getButtonLabel())}
+	        </button>
+	      </div>
+	      {!orderId && (
+	        <TableActionButtons
+	          onMove={() => setShowMoveTableModal(true)}
+	          onMerge={() => setShowMergeTableModal(true)}
+	          cartMode
+	          moveLabel={t("Move Table")}
+	          mergeLabel={t("Merge Table")}
+	        />
+	      )}
+	      {canShowCancelButton && (
+	        <div className="flex flex-col gap-2">
+	          <button
+	            type="button"
+	            onClick={() => {
               openReservationModal();
             }}
             disabled={hasConfirmedCartUnpaid || allCartItemsPaid}
@@ -3451,21 +3610,11 @@ const cardGradient = item.paid
 </div>
 
 
-    {actionControls}
+	    {actionControls}
 
-    {!isDesktop && !orderId && (
-      <TableActionButtons
-        onMove={() => setShowMoveTableModal(true)}
-        onMerge={() => setShowMergeTableModal(true)}
-        cartMode
-        moveLabel={t("Move Table")}
-        mergeLabel={t("Merge Table")}
-      />
-    )}
-
-    <div className={`flex ${isDesktop ? "gap-1.5" : "flex-col gap-1.5"}`}>
-      <button
-        onClick={() => setShowDiscountModal(true)}
+	    <div className={`flex ${isDesktop ? "gap-1.5" : "flex-col gap-1.5"}`}>
+	      <button
+	        onClick={() => setShowDiscountModal(true)}
         className={`${isDesktop ? "flex-1" : "w-full"} rounded-md bg-fuchsia-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-fuchsia-600`}
       >
         {t("Discount")}

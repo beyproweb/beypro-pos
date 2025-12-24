@@ -17,7 +17,7 @@ function toGsV0RasterRows(canvas) {
   const { width, height } = canvas;
   const data = ctx.getImageData(0, 0, width, height).data;
   const widthBytes = Math.ceil(width / 8);
-  const bytes = [];
+  const rows = [];
 
   // 4x4 Bayer matrix (ordered dithering helps light logos print more reliably).
   const bayer4 = [
@@ -28,9 +28,11 @@ function toGsV0RasterRows(canvas) {
   ];
 
   for (let y = 0; y < height; y += 1) {
+    const row = [];
+    let hasInk = false;
     // GS v 0 m xL xH yL yH [data]
     // Send 1 row at a time to reduce memory and avoid printer buffer issues.
-    bytes.push(0x1d, 0x76, 0x30, 0x00, widthBytes & 0xff, (widthBytes >> 8) & 0xff, 0x01, 0x00);
+    row.push(0x1d, 0x76, 0x30, 0x00, widthBytes & 0xff, (widthBytes >> 8) & 0xff, 0x01, 0x00);
 
     for (let xb = 0; xb < widthBytes; xb += 1) {
       let byte = 0;
@@ -51,10 +53,17 @@ function toGsV0RasterRows(canvas) {
 
         if (effectiveLum < threshold) byte |= 1 << (7 - bit);
       }
-      bytes.push(byte);
+      if (byte !== 0) hasInk = true;
+      row.push(byte);
     }
+    rows.push({ bytes: row, hasInk });
   }
 
+  let lastInkRow = rows.length - 1;
+  while (lastInkRow >= 0 && !rows[lastInkRow].hasInk) lastInkRow -= 1;
+  const trimmed = lastInkRow >= 0 ? rows.slice(0, lastInkRow + 1) : rows;
+  const bytes = [];
+  trimmed.forEach((r) => bytes.push(...r.bytes));
   return new Uint8Array(bytes);
 }
 

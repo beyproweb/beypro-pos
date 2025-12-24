@@ -1,6 +1,6 @@
 // src/components/Layout.jsx
 import React, { useState, useEffect, useRef } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Sidebar, { DASHBOARD_ITEM_DRAG_TYPE } from "./Sidebar";
 import GlobalOrderAlert from "./GlobalOrderAlert";
 import ModernHeader from "./ModernHeader";
@@ -20,11 +20,18 @@ export default function Layout({
   onCloseModal,
   hideBell = false,
   onClearNotifications,
+  onRefreshNotifications,
+  onMarkAllRead,
+  notificationSummaries = {},
+  notificationsLastSeenAtMs = 0,
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { title, subtitle, tableNav, actions } = useHeader();
   const [filter, setFilter] = useState("all");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [search, setSearch] = useState("");
   const contentRef = useRef(null);
 
   // Username from localStorage for welcome
@@ -304,9 +311,14 @@ export default function Layout({
   ">
     {/* Header */}
     <div className="flex items-center justify-between p-4 border-b border-blue-900/30 bg-blue-950/60">
-      <h2 className="text-xl font-extrabold text-blue-200 flex items-center gap-2">
-        <span role="img" aria-label="Bell">🔔</span> Notifications
-      </h2>
+      <div className="flex flex-col">
+        <h2 className="text-xl font-extrabold text-blue-200 flex items-center gap-2">
+          <span role="img" aria-label="Bell">🔔</span> Notifications
+        </h2>
+        <div className="text-xs text-blue-300/80 font-semibold">
+          {unread > 0 ? `${unread} unread` : "All caught up"}
+        </div>
+      </div>
    <button
   onClick={onCloseModal}
   className="p-2 rounded-full hover:bg-blue-900/30 focus:ring-2 focus:ring-blue-400 outline-none transition"
@@ -318,8 +330,9 @@ export default function Layout({
 
 
     </div>
-    {/* Filter and Clear */}
-    <div className="px-4 pt-3 flex gap-2 items-center">
+    {/* Filter, Search, Actions */}
+    <div className="px-4 pt-3 flex flex-col gap-2">
+      <div className="flex gap-2 items-center">
       <select
         value={filter}
         onChange={e => setFilter(e.target.value)}
@@ -329,35 +342,160 @@ export default function Layout({
         <option value="stock">Stock</option>
         <option value="ingredient">Ingredient</option>
         <option value="order">Order</option>
+        <option value="payment">Payment</option>
+        <option value="driver">Driver</option>
+        <option value="task">Task</option>
+        <option value="maintenance">Maintenance</option>
         <option value="other">Other</option>
       </select>
-      <button
-        className="ml-auto px-4 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold shadow transition-all"
-        onClick={onClearNotifications}
-      >
-        Clear
-      </button>
+
+      <label className="ml-auto flex items-center gap-2 text-xs text-blue-200 font-bold select-none">
+        <input
+          type="checkbox"
+          checked={unreadOnly}
+          onChange={(e) => setUnreadOnly(e.target.checked)}
+          className="accent-blue-500"
+        />
+        Unread
+      </label>
+      </div>
+
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search notifications..."
+        className="w-full rounded px-3 py-2 bg-blue-900/25 text-blue-100 border border-blue-800 focus:ring-2 focus:ring-blue-500 outline-none font-semibold shadow"
+      />
+
+      <div className="flex gap-2 items-center">
+        <button
+          className="px-3 py-1.5 rounded bg-blue-900/40 hover:bg-blue-800/50 text-blue-100 font-bold shadow transition-all border border-blue-800"
+          onClick={onRefreshNotifications}
+          type="button"
+        >
+          Refresh
+        </button>
+        <button
+          className="px-3 py-1.5 rounded bg-blue-900/40 hover:bg-blue-800/50 text-blue-100 font-bold shadow transition-all border border-blue-800"
+          onClick={onMarkAllRead}
+          type="button"
+        >
+          Mark read
+        </button>
+        <button
+          className="ml-auto px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold shadow transition-all"
+          onClick={onClearNotifications}
+          type="button"
+        >
+          Clear all
+        </button>
+      </div>
+    </div>
+
+    {/* Quick status */}
+    <div className="px-4 pt-2 flex flex-wrap gap-2 text-xs font-bold">
+      {Number.isFinite(notificationSummaries?.criticalStock) && notificationSummaries.criticalStock > 0 && (
+        <button
+          type="button"
+          onClick={() => { onCloseModal?.(); navigate("/stock"); }}
+          className="px-3 py-1.5 rounded-full bg-red-500/15 text-red-200 border border-red-400/30 hover:bg-red-500/25 transition"
+          title="Open Stock"
+        >
+          ⚠️ Critical stock: {notificationSummaries.criticalStock}
+        </button>
+      )}
+      {Number.isFinite(notificationSummaries?.openMaintenance) && notificationSummaries.openMaintenance > 0 && (
+        <button
+          type="button"
+          onClick={() => { onCloseModal?.(); navigate("/maintenance"); }}
+          className="px-3 py-1.5 rounded-full bg-amber-500/15 text-amber-200 border border-amber-400/30 hover:bg-amber-500/25 transition"
+          title="Open Maintenance"
+        >
+          🛠️ Open maintenance: {notificationSummaries.openMaintenance}
+        </button>
+      )}
+      {Number.isFinite(notificationSummaries?.inProgressTasks) && notificationSummaries.inProgressTasks > 0 && (
+        <button
+          type="button"
+          onClick={() => { onCloseModal?.(); navigate("/task"); }}
+          className="px-3 py-1.5 rounded-full bg-sky-500/15 text-sky-200 border border-sky-400/30 hover:bg-sky-500/25 transition"
+          title="Open Tasks"
+        >
+          📝 In-progress tasks: {notificationSummaries.inProgressTasks}
+        </button>
+      )}
     </div>
     {/* List */}
    {/* List */}
 <ul className="space-y-2 px-4 py-3 max-h-[90vh] overflow-y-auto">
   {lowStockAlerts
+    .filter((alert) => {
+      if (!unreadOnly) return true;
+      return (alert.timeMs || 0) > (notificationsLastSeenAtMs || 0);
+    })
     .filter(alert =>
       filter === "all" ? true :
       filter === "order" ? ["order", "order_delayed", "order_ready"].includes(alert.type) :
       alert.type === filter
     )
-    .map((alert, idx) => (
-      <li key={idx}
-        className="flex items-center gap-3 rounded-xl shadow px-4 py-3 text-base font-semibold bg-blue-900/50 border border-blue-800 text-blue-100"
-      >
-        <span className="text-2xl">
-          {alert.type === "ingredient" ? "💸" : alert.type === "stock" ? "🧂" : "🔔"}
-        </span>
-        <span className="flex-1">{alert.message}</span>
-        <span className="ml-auto text-xs text-blue-400 font-bold">{alert.time ? new Date(alert.time).toLocaleTimeString() : ""}</span>
-      </li>
-    ))
+    .filter((alert) => {
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        String(alert.message || "").toLowerCase().includes(q) ||
+        String(alert.type || "").toLowerCase().includes(q)
+      );
+    })
+    .map((alert) => {
+      const t = alert?.timeMs || (alert?.time ? new Date(alert.time).getTime() : 0);
+      const isUnread = t > (notificationsLastSeenAtMs || 0);
+      const type = String(alert.type || "other").toLowerCase();
+      const icon =
+        type === "ingredient" ? "💸" :
+        type === "stock" ? "🧂" :
+        type === "stock_expiry" ? "⏳" :
+        type === "payment" ? "💸" :
+        type === "driver" ? "🚗" :
+        type === "task" ? "📝" :
+        type === "maintenance" ? "🛠️" :
+        type === "order" ? "🧾" :
+        "🔔";
+
+      const timeLabel =
+        alert.time
+          ? new Date(alert.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "";
+
+      const clickable = !!alert.link;
+
+      return (
+        <li
+          key={String(alert.id)}
+          onClick={() => {
+            if (!clickable) return;
+            onCloseModal?.();
+            navigate(alert.link);
+          }}
+          className={[
+            "flex items-center gap-3 rounded-xl shadow px-4 py-3 text-base font-semibold",
+            "bg-blue-900/50 border text-blue-100",
+            isUnread ? "border-blue-300/60" : "border-blue-800",
+            clickable ? "cursor-pointer hover:bg-blue-900/65 transition" : "",
+          ].join(" ")}
+          title={clickable ? "Open related page" : undefined}
+        >
+          <span className="text-2xl">{icon}</span>
+          <span className="flex-1">
+            <span className="block leading-snug">{alert.message}</span>
+            <span className="block text-xs text-blue-300/80 font-bold mt-0.5">
+              {type.replace(/_/g, " ")}
+              {isUnread ? " • new" : ""}
+            </span>
+          </span>
+          <span className="ml-auto text-xs text-blue-300 font-bold">{timeLabel}</span>
+        </li>
+      );
+    })
   }
 </ul>
 

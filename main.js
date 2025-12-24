@@ -39,6 +39,7 @@ async function imageUrlToEscposBytes(url, width = 384) {
   const bytes = [];
   const { width: w, height: h, data } = image.bitmap;
   const widthBytes = Math.ceil(w / 8);
+  let lastNonBlankLen = 0;
   // 4x4 Bayer matrix for simple ordered dithering (helps light logos print).
   const bayer4 = [
     [0, 8, 2, 10],
@@ -47,6 +48,7 @@ async function imageUrlToEscposBytes(url, width = 384) {
     [15, 7, 13, 5],
   ];
   for (let y = 0; y < h; y++) {
+    let rowHasInk = false;
     bytes.push(0x1d, 0x76, 0x30, 0x00, widthBytes & 0xff, (widthBytes >> 8) & 0xff, 0x01, 0x00);
     for (let xb = 0; xb < widthBytes; xb++) {
       let byte = 0;
@@ -62,9 +64,12 @@ async function imageUrlToEscposBytes(url, width = 384) {
         const effectiveLum = alpha < 128 ? 255 : lum;
         if (effectiveLum < threshold) byte |= (1 << (7 - b));
       }
+      if (byte !== 0) rowHasInk = true;
       bytes.push(byte);
     }
+    if (rowHasInk) lastNonBlankLen = bytes.length;
   }
+  if (lastNonBlankLen > 0) bytes.length = lastNonBlankLen;
   return Buffer.from(bytes);
 }
 
@@ -459,6 +464,15 @@ function createWindow() {
     },
   });
 
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    console.error("❌ Electron failed to load URL:", {
+      errorCode,
+      errorDescription,
+      validatedURL,
+      VITE_DEV_SERVER_URL: process.env.VITE_DEV_SERVER_URL,
+    });
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
@@ -570,9 +584,25 @@ async function printNetDirect(host, port, bytes) {
 const FEED_BEFORE_LOGO_LINES = 1;
 const FEED_AFTER_LOGO_LINES = 0;
 const FEED_AFTER_QR_LINES = 5;
+const FEED_AFTER_QR_BEFORE_FOOTER_LINES = 1;
+const FEED_AFTER_FOOTER_LINES = 3;
 const FEED_BEFORE_LOGO_CMD = Buffer.from([0x1b, 0x64, FEED_BEFORE_LOGO_LINES]); // ESC d n
 const FEED_AFTER_LOGO_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_LOGO_LINES]); // ESC d n
 const FEED_AFTER_QR_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_QR_LINES]); // ESC d n
+const FEED_AFTER_QR_BEFORE_FOOTER_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_QR_BEFORE_FOOTER_LINES]); // ESC d n
+const FEED_AFTER_FOOTER_CMD = Buffer.from([0x1b, 0x64, FEED_AFTER_FOOTER_LINES]); // ESC d n
+
+function buildReceiptFooterSectionBuffer(layout) {
+  if (!layout || typeof layout !== "object") return null;
+  const lines = [];
+  const customLines = Array.isArray(layout.customLines)
+    ? layout.customLines.filter((line) => typeof line === "string" && line.trim().length > 0)
+    : [];
+  if (customLines.length) lines.push(...customLines);
+  if (layout.showFooter && layout.footerText) lines.push(String(layout.footerText));
+  if (!lines.length) return null;
+  return encodeCp1254Buffer(`${lines.join("\n")}\n`);
+}
 
 // ------------------------
 // RAW PRINT with Network Printer Support
@@ -705,18 +735,29 @@ ipcMain.handle("beypro:printWindows", async (_evt, args) => {
       } else if (layout.showLogo) {
         console.warn("⚠️ Logo bytes missing; skipping logo block for receipt");
       }
-      merged = Buffer.concat([merged, bytes]);
-      if (qrBytes) {
-        const qrLabel = layout?.qrText ? String(layout.qrText).trim() : "";
-        const parts = [merged, centerCmd];
-        if (qrLabel) parts.push(encodeCp1254Buffer(`${qrLabel}\n`));
-        parts.push(qrBytes, leftCmd, FEED_AFTER_QR_CMD);
-        merged = Buffer.concat(parts);
-      }
-      if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
-      merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
-      bytes = merged;
-    } else {
+	    merged = Buffer.concat([merged, bytes]);
+	    if (qrBytes) {
+	      const qrLabel = layout?.qrText ? String(layout.qrText).trim() : "";
+	      const footerBuf = buildReceiptFooterSectionBuffer(layout);
+	      const parts = [merged, centerCmd];
+	      if (qrLabel) parts.push(encodeCp1254Buffer(`${qrLabel}\n`));
+	      parts.push(qrBytes, leftCmd);
+	      if (footerBuf) {
+	        parts.push(FEED_AFTER_QR_BEFORE_FOOTER_CMD, footerBuf, FEED_AFTER_FOOTER_CMD);
+	      } else {
+	        parts.push(FEED_AFTER_QR_CMD);
+	      }
+	      merged = Buffer.concat(parts);
+	    } else if (layout.showQr && layout.qrUrl) {
+	      const footerBuf = buildReceiptFooterSectionBuffer(layout);
+	      if (footerBuf) {
+	        merged = Buffer.concat([merged, leftCmd, FEED_AFTER_QR_BEFORE_FOOTER_CMD, footerBuf, FEED_AFTER_FOOTER_CMD]);
+	      }
+	    }
+	    if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
+	    merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
+	    bytes = merged;
+	  } else {
       // no layout, still optionally pulse drawer and cut at end
       if (cashdraw) bytes = Buffer.concat([bytes, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
       bytes = Buffer.concat([bytes, Buffer.from([0x1d, 0x56, 0x00])]);
@@ -826,18 +867,29 @@ ipcMain.handle("beypro:printNet", async (_evt, args) => {
     } else if (layout.showLogo) {
       console.warn("⚠️ Logo bytes missing; skipping logo block for network receipt");
     }
-    merged = Buffer.concat([merged, finalBytes]);
-    if (qrBytes) {
-      const qrLabel = layout?.qrText ? String(layout.qrText).trim() : "";
-      const parts = [merged, centerCmd];
-      if (qrLabel) parts.push(encodeCp1254Buffer(`${qrLabel}\n`));
-      parts.push(qrBytes, leftCmd, FEED_AFTER_QR_CMD);
-      merged = Buffer.concat(parts);
-    }
-    if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
-    merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
-    finalBytes = merged;
-  } else {
+	    merged = Buffer.concat([merged, finalBytes]);
+	    if (qrBytes) {
+	      const qrLabel = layout?.qrText ? String(layout.qrText).trim() : "";
+	      const footerBuf = buildReceiptFooterSectionBuffer(layout);
+	      const parts = [merged, centerCmd];
+	      if (qrLabel) parts.push(encodeCp1254Buffer(`${qrLabel}\n`));
+	      parts.push(qrBytes, leftCmd);
+	      if (footerBuf) {
+	        parts.push(FEED_AFTER_QR_BEFORE_FOOTER_CMD, footerBuf, FEED_AFTER_FOOTER_CMD);
+	      } else {
+	        parts.push(FEED_AFTER_QR_CMD);
+	      }
+	      merged = Buffer.concat(parts);
+	    } else if (layout.showQr && layout.qrUrl) {
+	      const footerBuf = buildReceiptFooterSectionBuffer(layout);
+	      if (footerBuf) {
+	        merged = Buffer.concat([merged, leftCmd, FEED_AFTER_QR_BEFORE_FOOTER_CMD, footerBuf, FEED_AFTER_FOOTER_CMD]);
+	      }
+	    }
+	    if (cashdraw) merged = Buffer.concat([merged, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
+	    merged = Buffer.concat([merged, Buffer.from([0x1d, 0x56, 0x00])]); // cut at end
+	    finalBytes = merged;
+	  } else {
     if (cashdraw) finalBytes = Buffer.concat([finalBytes, Buffer.from([0x1b, 0x70, 0x00, 0x32, 0x32])]);
     finalBytes = Buffer.concat([finalBytes, Buffer.from([0x1d, 0x56, 0x00])]);
   }

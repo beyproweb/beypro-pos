@@ -16,6 +16,7 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   const [search, setSearch] = useState("");
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [startingOrder, setStartingOrder] = useState(false);
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", address: "", birthday: "", email: "" });
@@ -48,13 +49,20 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
 
 // ---- Address CRUD ----
 const fetchAddresses = async (customerId) => {
-  if (!customerId) return setAddresses([]);
+  if (!customerId) {
+    setAddresses([]);
+    setSelectedAddressId(null);
+    return { list: [], selectedId: null };
+  }
   const data = await secureFetch(`/customerAddresses/customers/${customerId}/addresses`);
-  setAddresses(data || []);
+  const list = data || [];
+  setAddresses(list);
 
   // Auto-select default if exists
-  const def = data.find((a) => a.is_default) || data[0];
-  setSelectedAddressId(def?.id || null);
+  const def = list.find((a) => a.is_default) || list[0];
+  const selectedId = def?.id || null;
+  setSelectedAddressId(selectedId);
+  return { list, selectedId };
 };
 
 const handleAddAddress = async () => {
@@ -184,6 +192,7 @@ const handleEditCustomer = async (id) => {
 
   // ---- Select Customer & Load Addresses ----
   const handleCustomerClick = async (c) => {
+    if (startingOrder) return;
     setSelected(c);
     setShowNew(false);
     setEditId(null);
@@ -191,12 +200,19 @@ const handleEditCustomer = async (id) => {
   };
 
   // ---- Start Order ----
-const handleStartOrder = async () => {
-  const customer = selected;
-  const addrObj = addresses.find(a => a.id === selectedAddressId);
+const handleStartOrder = async (options = {}) => {
+  if (startingOrder) return;
+  const normalizedOptions =
+    options && typeof options === "object" && "preventDefault" in options ? {} : options;
+
+  const customer = normalizedOptions.customer ?? selected;
+  const addressId = normalizedOptions.addressId ?? selectedAddressId;
+  const addressSource = normalizedOptions.addresses ?? addresses;
+  const addrObj = addressSource.find((a) => a.id === addressId);
   if (!customer || !addrObj) return alert("Select customer and address!");
 
   try {
+    setStartingOrder(true);
     const isOpen = await checkRegisterOpen();
     if (!isOpen) {
       alert("❌ Register is closed. Please open the register before placing a phone order.");
@@ -223,12 +239,12 @@ const handleStartOrder = async () => {
     }
 
     navigate(`/transaction/phone/${order.id}`, { state: { order } });
-    if (onCreateOrder) onCreateOrder(order);
-    if (onClose) onClose();
 
   } catch (err) {
     alert("❌ Failed to start order: " + (err.message || "Unknown error"));
     console.error("❌ handleStartOrder error:", err);
+  } finally {
+    setStartingOrder(false);
   }
 };
 
@@ -243,6 +259,7 @@ const handleStartOrder = async () => {
       setForm({ name: "", phone: "", address: "", birthday: "" });
       setAddresses([]);
       setSelectedAddressId(null);
+      setStartingOrder(false);
     }
   }, [open]);
 
@@ -523,10 +540,10 @@ const handleStartOrder = async () => {
           {/* 5. Start Order */}
           <button
             className="w-full mt-5 bg-blue-700 hover:bg-blue-900 text-white font-bold text-lg py-3 rounded-2xl shadow transition"
-            disabled={!selected || !selectedAddressId}
-            onClick={handleStartOrder}
+            disabled={!selected || !selectedAddressId || startingOrder}
+            onClick={() => handleStartOrder()}
           >
-            {t("Start Order")}
+            {startingOrder ? t("Loading...") : t("Start Order")}
           </button>
         </div>
       </div>

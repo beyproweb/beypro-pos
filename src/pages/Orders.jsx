@@ -412,6 +412,13 @@ function calcOrderBaseTotal(order) {
   }, 0);
 }
 
+function normalizeDriverStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  // Driver mobile API uses `picked_up`; dashboard uses `on_road`.
+  if (normalized === "picked_up") return "on_road";
+  return normalized;
+}
+
 useEffect(() => {
   if (showPaymentModal && editingPaymentOrder) {
     const fetchSplit = async () => {
@@ -802,10 +809,10 @@ useEffect(() => {
     return "Waiting..";
   }
   if (
-    order.driver_status === "on_road" &&
+    normalizeDriverStatus(order.driver_status) === "on_road" &&
     order.kitchen_status === "delivered"
   ) return "On Road";
-  if (order.driver_status === "delivered") return "Completed";
+  if (normalizeDriverStatus(order.driver_status) === "delivered") return "Completed";
   if (order.kitchen_status === "delivered") {
     const driver = drivers.find(d => d.id === Number(order.driver_id));
     return `Pick by ${driver ? driver.name : "Driver"} 🕒`;
@@ -831,7 +838,7 @@ useEffect(() => {
 }, []);
 
 function driverButtonDisabled(order) {
-  if (order.driver_status === "delivered") return true;
+  if (normalizeDriverStatus(order.driver_status) === "delivered") return true;
   if (updating[order.id]) return true;
 
   if (!order.driver_id) return true;
@@ -875,7 +882,7 @@ function driverButtonDisabled(order) {
       }
       return Number.isFinite(a) ? a : b;
     };
-    const startMs = toMs(order.on_road_at);
+    const startMs = toMs(order.on_road_at || order.picked_up_at);
     if (!Number.isFinite(startMs)) return "00:00";
     const endMs = order.delivered_at ? toMs(order.delivered_at) : Date.now();
     const elapsed = Math.max(0, Math.floor((endMs - startMs) / 1000));
@@ -1524,8 +1531,9 @@ const totalWithExtras = calcOrderTotalWithExtras(order);
 const totalDiscount = calcOrderDiscount(order);
   const discountedTotal = totalWithExtras - totalDiscount; // ✅ includes extras now
   // shown on the card
-      const isDelivered = order.driver_status === "delivered";
-      const isPicked = order.driver_status === "on_road";
+      const driverStatus = normalizeDriverStatus(order.driver_status);
+      const isDelivered = driverStatus === "delivered";
+      const isPicked = driverStatus === "on_road";
       const isReady = order.kitchen_status === "ready";
       const isPrep = order.kitchen_status === "preparing";
       const onlinePayments = [
@@ -1599,12 +1607,16 @@ const totalDiscount = calcOrderDiscount(order);
 
 
 
-      const driverStatusLabel =
-        order.driver_status === "on_road"
-          ? "Driver On Road"
-          : order.driver_status === "delivered"
-          ? "Delivered"
-          : "Awaiting Driver";
+      const assignedDriver = drivers.find((d) => Number(d.id) === Number(order.driver_id));
+      const assignedDriverName = assignedDriver?.name ? String(assignedDriver.name) : "";
+      const driverStatusBaseLabel = isDelivered
+        ? "Delivered"
+        : isPicked
+        ? "Driver On Road"
+        : "Awaiting Driver";
+      const driverStatusLabel = assignedDriverName
+        ? `${driverStatusBaseLabel}: ${assignedDriverName}`
+        : driverStatusBaseLabel;
 
       return (
         <div
@@ -2022,7 +2034,7 @@ const totalDiscount = calcOrderDiscount(order);
 
   {/* === ACTION BUTTON === */}
   <div className="flex flex-col sm:flex-row gap-2 mt-1 w-full">
-    {!order.driver_status && (
+    {!normalizeDriverStatus(order.driver_status) && (
       <button
         className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-slate-900 hover:bg-slate-800 
                    text-white shadow transition"
@@ -2043,28 +2055,38 @@ const totalDiscount = calcOrderDiscount(order);
       </button>
     )}
 
-    {order.driver_status === "on_road" && (
+    {normalizeDriverStatus(order.driver_status) === "on_road" && (
       <button
         className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-sky-500 hover:bg-sky-600 
                    text-white shadow transition"
+        disabled={driverButtonDisabled(order)}
         onClick={async () => {
+          if (driverButtonDisabled(order)) return;
+          setUpdating((prev) => ({ ...prev, [order.id]: true }));
           setOrders((prev) =>
             prev.map((o) =>
               o.id === order.id ? { ...o, driver_status: 'delivered' } : o
             )
           );
-          await secureFetch(`/orders/${order.id}/driver-status`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ driver_status: 'delivered' }),
-          });
+          try {
+            await secureFetch(`/orders/${order.id}/driver-status`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ driver_status: 'delivered' }),
+            });
+          } catch (err) {
+            console.error("❌ Failed to mark delivered:", err);
+            if (!propOrders) await fetchOrders();
+          } finally {
+            setUpdating((prev) => ({ ...prev, [order.id]: false }));
+          }
         }}
       >
         Delivered
       </button>
     )}
 
-    {order.driver_status === "delivered" && (
+    {normalizeDriverStatus(order.driver_status) === "delivered" && (
       <button
         className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
                    text-white shadow transition"

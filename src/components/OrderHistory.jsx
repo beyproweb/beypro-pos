@@ -46,14 +46,16 @@ export default function OrderHistory({
   return total;
 }
 
-  // Fetch closed orders
-const fetchClosedOrders = async () => {
-  const query = new URLSearchParams();
-  if (fromDate) query.append("from", fromDate);
-  if (toDate) query.append("to", toDate);
+	  // Fetch closed orders
+	const fetchClosedOrders = async () => {
+	  if (!fromDate || !toDate) {
+	    setClosedOrders([]);
+	    return;
+	  }
 
-  try {
-    const data = await secureFetch(`/reports/history?${query.toString()}`);
+	  try {
+	    const query = new URLSearchParams({ from: fromDate, to: toDate });
+	    const data = await secureFetch(`/reports/history?${query.toString()}`);
 
 
  const enriched = await Promise.all(

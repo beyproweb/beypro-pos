@@ -53,11 +53,28 @@ const getTableColor = (order) => {
     return "bg-orange-500 text-white";
   }
 
-  const suborders = Array.isArray(order.suborders) ? order.suborders : [];
-  const items = Array.isArray(order.items) ? order.items : [];
+  // Paid is always green, even if items haven't been hydrated yet.
+  if (
+    order.status === "paid" ||
+    order.payment_status === "paid" ||
+    order.is_paid === true
+  ) {
+    return "bg-green-500 text-white";
+  }
 
-  // 🧹 No items at all → treat as Free (neutral), not yellow
+  const suborders = Array.isArray(order.suborders) ? order.suborders : [];
+  const items = Array.isArray(order.items) ? order.items : null;
+
+  // If items aren't loaded yet, still show an "occupied" color based on status
+  // instead of waiting (avoids the 2-3s gray flash).
+  if (!items) {
+    if (order.status === "confirmed") return "bg-red-500 text-white";
+    return "bg-gray-300 text-black";
+  }
+
+  // 🧹 No items at all → treat as Free (neutral), not yellow (unless status says otherwise)
   if (items.length === 0) {
+    if (order.status === "confirmed") return "bg-red-500 text-white";
     return "bg-gray-300 text-black";
   }
 
@@ -74,15 +91,6 @@ const getTableColor = (order) => {
   // 🟥 if any unpaid anywhere (main or sub)
   if (hasUnpaidSubOrder || hasUnpaidMainItem) {
     return "bg-red-500 text-white";
-  }
-
-  // 🟢 if all paid
-  if (
-    order.status === "paid" ||
-    order.payment_status === "paid" ||
-    order.is_paid === true
-  ) {
-    return "bg-green-500 text-white";
   }
 
   // 🟡 confirmed but unpaid (fallback)
@@ -160,6 +168,65 @@ const TAB_LIST = [
   { id: "register", label: "Register", icon: "💵" },
 ];
 
+const getRestaurantScopedCacheKey = (suffix) => {
+  const restaurantId =
+    (typeof window !== "undefined" && window?.localStorage?.getItem("restaurant_id")) ||
+    "global";
+  return `hurrypos:${restaurantId}:${suffix}`;
+};
+
+const getTableConfigsCacheKey = () => getRestaurantScopedCacheKey("tableConfigs.v1");
+const getTableCountCacheKey = () => getRestaurantScopedCacheKey("tableCount.v1");
+
+const safeParseJson = (raw) => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+const readInitialTableConfigs = () => {
+  // Prefer last known full configs (fastest + keeps areas/seats stable).
+  const cachedConfigs = safeParseJson(
+    typeof window !== "undefined" ? window?.localStorage?.getItem(getTableConfigsCacheKey()) : null
+  );
+  if (Array.isArray(cachedConfigs) && cachedConfigs.length > 0) {
+    return cachedConfigs
+      .filter((t) => t && typeof t === "object" && t.number != null && t.active !== false)
+      .sort((a, b) => Number(a.number) - Number(b.number));
+  }
+
+  // Fallback to last known count → render placeholder cards immediately.
+  const cachedCountRaw =
+    typeof window !== "undefined" ? window?.localStorage?.getItem(getTableCountCacheKey()) : null;
+  const cachedCount = Number.parseInt(cachedCountRaw || "", 10);
+  if (Number.isFinite(cachedCount) && cachedCount > 0 && cachedCount <= 500) {
+    return Array.from({ length: cachedCount }, (_, idx) => ({
+      number: idx + 1,
+      active: true,
+    }));
+  }
+
+  return [];
+};
+
+const mergeTableConfigsByNumber = (prev, next) => {
+  const map = new Map();
+  (Array.isArray(prev) ? prev : []).forEach((t) => {
+    if (!t || typeof t !== "object") return;
+    if (t.number == null) return;
+    map.set(Number(t.number), t);
+  });
+  (Array.isArray(next) ? next : []).forEach((t) => {
+    if (!t || typeof t !== "object") return;
+    if (t.number == null) return;
+    const num = Number(t.number);
+    map.set(num, { ...(map.get(num) || {}), ...t });
+  });
+  return Array.from(map.values()).sort((a, b) => Number(a.number) - Number(b.number));
+};
+
 
 
 
@@ -176,13 +243,18 @@ export default function TableOverview() {
 
   const activeTab = tabFromUrl;
   const [orders, setOrders] = useState([]);
-  const [tableConfigs, setTableConfigs] = useState([]);
+  const [tableConfigs, setTableConfigs] = useState(() => readInitialTableConfigs());
   const [closedOrders, setClosedOrders] = useState([]);
   const [groupedClosedOrders, setGroupedClosedOrders] = useState({});
   const [paymentFilter, setPaymentFilter] = useState("All");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().slice(0, 10);
+  });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
   const alertIntervalRef = useRef(null);
+  const ordersFetchSeqRef = useRef(0);
   const isMountedRef = useRef(true);
   const [now, setNow] = useState(new Date());
   const [kitchenOrders, setKitchenOrders] = useState([]); // used for kitchen
@@ -735,9 +807,8 @@ useEffect(() => {
 }, []);
 
 const fetchOrders = useCallback(async () => {
-  console.log("🔍 Current user before fetch:", currentUser);
-  console.log("🔍 Token in localStorage:", localStorage.getItem("token"));
   try {
+    const seq = ++ordersFetchSeqRef.current;
     // Always use secureFetch → tenant_id + auth included
     const data = await secureFetch("/orders");
 
@@ -747,8 +818,13 @@ const fetchOrders = useCallback(async () => {
       return;
     }
 
-    const openOrders = data
-      .filter((o) => o.status !== "closed" && o.status !== "cancelled")
+    const openTableOrders = data
+      .filter((o) => {
+        const status = normalizeOrderStatus(o.status);
+        if (status === "closed") return false;
+        if (isOrderCancelledOrCanceled(status)) return false;
+        return o.table_number != null;
+      })
       .map((order) => {
         const status = normalizeOrderStatus(order.status);
         return {
@@ -758,49 +834,104 @@ const fetchOrders = useCallback(async () => {
         };
       });
 
-    const ordersWithItems = await Promise.all(
-      openOrders.map(async (order) => {
-        const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+    // Phase 1: render table statuses/colors immediately from order rows.
+    // Preserve any previously-hydrated items to avoid UI flicker while refreshing.
+    setOrders((prev) => {
+      const prevByTable = new Map();
+      (Array.isArray(prev) ? prev : []).forEach((o) => {
+        if (o?.table_number != null) prevByTable.set(Number(o.table_number), o);
+      });
 
-        let items = itemsRaw.map((item) => ({
-          ...item,
-          discount_type: item.discount_type || item.discountType || null,
-          discount_value:
-            item.discount_value != null
-              ? parseFloat(item.discount_value)
-              : item.discountValue != null
-              ? parseFloat(item.discountValue)
-              : 0,
-        }));
+      const merged = Object.values(
+        openTableOrders.reduce((acc, order) => {
+          const key = Number(order.table_number);
+          const prevMerged = prevByTable.get(key);
+          if (!acc[key]) {
+            acc[key] = {
+              ...order,
+              merged_ids: [order.id],
+              items: Array.isArray(prevMerged?.items) ? prevMerged.items : null,
+              suborders: Array.isArray(prevMerged?.suborders) ? prevMerged.suborders : order.suborders,
+              reservation: prevMerged?.reservation ?? null,
+            };
+          } else {
+            acc[key].merged_ids.push(order.id);
+            acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
+            acc[key].status =
+              acc[key].status === "paid" && order.status === "paid" ? "paid" : "confirmed";
+          }
+          return acc;
+        }, {})
+      );
 
-        // ✅ Fallback: if order is marked paid but items lack paid flags, coerce for UI consistency
-        const isOrderPaid =
-          order.status === "paid" || order.payment_status === "paid" || order.is_paid === true;
-        if (isOrderPaid) {
-          items = items.map((i) => ({ ...i, paid: i.paid || true }));
-        }
+      return merged.sort((a, b) => Number(a.table_number) - Number(b.table_number));
+    });
 
-        // 🎫 Fetch reservation data if it's a reserved order or has reservation fields
-        let reservation = null;
-        try {
-          if (order.status === "reserved" || order.reservation_date) {
-            const resData = await secureFetch(`/orders/reservations/${order.id}`);
-            if (resData?.success && resData?.reservation) {
-              reservation = resData.reservation;
+    const runWithConcurrency = async (arr, limit, task) => {
+      const list = Array.isArray(arr) ? arr : [];
+      const count = Math.max(1, Math.min(limit, list.length || 1));
+      const results = new Array(list.length);
+      let idx = 0;
+
+      await Promise.all(
+        Array.from({ length: count }, async () => {
+          while (idx < list.length) {
+            const current = idx++;
+            try {
+              results[current] = await task(list[current]);
+            } catch (err) {
+              console.warn("⚠️ Order hydrate failed:", err);
+              results[current] = null;
             }
           }
-        } catch (err) {
-          console.warn(`Failed to fetch reservation for order ${order.id}:`, err);
+        })
+      );
+
+      return results.filter(Boolean);
+    };
+
+    // Phase 2: hydrate items/reservations (slower) and update.
+    const hydrated = await runWithConcurrency(openTableOrders, 6, async (order) => {
+      const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+      const itemsArr = Array.isArray(itemsRaw) ? itemsRaw : [];
+
+      let items = itemsArr.map((item) => ({
+        ...item,
+        discount_type: item.discount_type || item.discountType || null,
+        discount_value:
+          item.discount_value != null
+            ? parseFloat(item.discount_value)
+            : item.discountValue != null
+            ? parseFloat(item.discountValue)
+            : 0,
+      }));
+
+      const isOrderPaid =
+        order.status === "paid" || order.payment_status === "paid" || order.is_paid === true;
+      if (isOrderPaid) {
+        items = items.map((i) => ({ ...i, paid: i.paid || true }));
+      }
+
+      let reservation = null;
+      try {
+        if (order.status === "reserved" || order.reservation_date) {
+          const resData = await secureFetch(`/orders/reservations/${order.id}`);
+          if (resData?.success && resData?.reservation) {
+            reservation = resData.reservation;
+          }
         }
+      } catch (err) {
+        console.warn(`Failed to fetch reservation for order ${order.id}:`, err);
+      }
 
-        return { ...order, items, reservation };
-      })
-    );
+      return { ...order, items, reservation };
+    });
 
-    // ✅ Merge by table_number (combine all open orders of same table)
+    if (ordersFetchSeqRef.current !== seq) return;
+
     const mergedByTable = Object.values(
-      ordersWithItems.reduce((acc, order) => {
-        const key = order.table_number || `no_table_${order.id}`;
+      hydrated.reduce((acc, order) => {
+        const key = Number(order.table_number);
         if (!acc[key]) {
           acc[key] = {
             ...order,
@@ -812,18 +943,14 @@ const fetchOrders = useCallback(async () => {
           acc[key].items = [...(acc[key].items || []), ...(order.items || [])];
           acc[key].merged_items = acc[key].items;
           acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
-          // if one is unpaid, mark merged as confirmed; if all paid, mark paid
           acc[key].status =
-            acc[key].status === "paid" && order.status === "paid"
-              ? "paid"
-              : "confirmed";
+            acc[key].status === "paid" && order.status === "paid" ? "paid" : "confirmed";
         }
-        // ✅ Derive merged paid flag from items (no unpaid items => paid)
         const anyUnpaid = (acc[key].items || []).some((i) => !i.paid_at && !i.paid);
         acc[key].is_paid = !anyUnpaid;
         return acc;
       }, {})
-    );
+    ).sort((a, b) => Number(a.table_number) - Number(b.table_number));
 
     setOrders(mergedByTable);
   } catch (err) {
@@ -847,11 +974,14 @@ function hasReadyOrder(order) {
 
 
 const fetchClosedOrders = useCallback(async () => {
-  const query = new URLSearchParams();
-  if (fromDate) query.append("from", fromDate);
-  if (toDate) query.append("to", toDate);
+  if (!fromDate || !toDate) {
+    setClosedOrders([]);
+    setGroupedClosedOrders({});
+    return;
+  }
 
   try {
+    const query = new URLSearchParams({ from: fromDate, to: toDate });
     const data = await secureFetch(`/reports/history?${query.toString()}`);
 
     const enriched = await Promise.all(
@@ -1003,9 +1133,17 @@ const fetchTableConfigs = useCallback(async () => {
   try {
     const rows = await secureFetch("/tables");
     const arr = Array.isArray(rows) ? rows : [];
-    setTableConfigs(arr.filter((t) => t.active !== false));
+    const active = arr.filter((t) => t.active !== false);
+    setTableConfigs((prev) => {
+      const merged = mergeTableConfigsByNumber(prev, active);
+      try {
+        localStorage.setItem(getTableConfigsCacheKey(), JSON.stringify(merged));
+        localStorage.setItem(getTableCountCacheKey(), String(merged.length));
+      } catch {}
+      return merged;
+    });
   } catch {
-    setTableConfigs([]);
+    // Keep any cached/previous configs so the grid doesn't blink on transient errors.
   }
 }, []);
 
@@ -1051,12 +1189,24 @@ const fetchTableConfigs = useCallback(async () => {
 // now safe to reference loadDataForTab
 useEffect(() => {
   if (!window.socket) return;
+  let rafId = null;
   const refetch = () => {
-    setTimeout(() => loadDataForTab(activeTab), 300);
+    if (rafId) window.cancelAnimationFrame(rafId);
+    rafId = window.requestAnimationFrame(() => {
+      // Order updates don't change seats/areas; avoid refetching /tables which can cause UI blinking.
+      if (activeTab === "tables") {
+        fetchOrders();
+        return;
+      }
+      loadDataForTab(activeTab);
+    });
   };
   window.socket.on("orders_updated", refetch);
-  return () => window.socket && window.socket.off("orders_updated", refetch);
-}, [activeTab, loadDataForTab]);
+  return () => {
+    if (rafId) window.cancelAnimationFrame(rafId);
+    window.socket && window.socket.off("orders_updated", refetch);
+  };
+}, [activeTab, loadDataForTab, fetchOrders]);
 
   useEffect(() => {
     loadDataForTab(activeTab);
@@ -1109,10 +1259,10 @@ const handlePrintOrder = async (orderId) => {
 };
 
 
-const handleTableClick = async (table) => {
-  const data = await fetchRegisterStatus();
-
-  if (data.status === "closed" || data.status === "unopened") {
+const handleTableClick = (table) => {
+  // Use the already-loaded register state to avoid a blocking network request on click.
+  // useRegisterGuard on TransactionScreen will still enforce access if the register is closed.
+  if (registerState === "closed" || registerState === "unopened") {
     toast.error("Register must be open to access tables!", {
       position: "top-center",
       autoClose: 2500,
@@ -1131,22 +1281,18 @@ const handleTableClick = async (table) => {
     !Array.isArray(table.order.items) ||
     table.order.items.length === 0
   ) {
-    try {
-      const newOrder = await secureFetch("/orders", {
-        method: "POST",
-        body: JSON.stringify({
+    // Navigate immediately with a stub order, then TransactionScreen will create/fetch in background.
+    navigate(`/transaction/${table.tableNumber}`, {
+      state: {
+        order: {
           table_number: table.tableNumber,
           order_type: "table",
+          status: "draft",
           total: 0,
           items: [],
-        }),
-      });
-
-      navigate(`/transaction/${table.tableNumber}`, { state: { order: newOrder } });
-    } catch (err) {
-      console.error("Create order failed:", err);
-      toast.error("Failed to create order");
-    }
+        },
+      },
+    });
   } else {
     navigate(`/transaction/${table.tableNumber}`, { state: { order: table.order } });
   }
@@ -1354,7 +1500,9 @@ const groupedTables = tables.reduce((acc, tbl) => {
 
             {/* STATUS */}
             <div className="flex flex-col gap-2 flex-grow">
-              {(!table.order || table.order.items?.length === 0) ? (
+              {(!table.order ||
+                (normalizeOrderStatus(table.order.status) === "draft" &&
+                  (!Array.isArray(table.order.items) || table.order.items.length === 0))) ? (
                 <span className="inline-block px-4 py-1 rounded-full bg-green-200 text-green-900 font-extrabold text-base shadow">
                   {t("Free")}
                 </span>
@@ -1608,7 +1756,7 @@ const groupedTables = tables.reduce((acc, tbl) => {
         open={showPhoneOrderModal}
         onClose={() => {
           setShowPhoneOrderModal(false);
-          handleTabSelect("tables");
+          handleTabSelect("packet");
         }}
 	onCreateOrder={() => {
 	  setShowPhoneOrderModal(false);

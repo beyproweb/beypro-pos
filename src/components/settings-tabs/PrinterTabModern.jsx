@@ -373,19 +373,19 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
         fontSize: layout.itemFontSize,
       }}
     >
-      {layout.showLogo ? (
-        layout.logoUrl ? (
-          <img
-            src={layout.logoUrl}
-            alt="Logo"
-            className="mx-auto mt-2 mb-1 h-12 w-auto object-contain"
-          />
-        ) : (
-          <div className="mt-2 mb-1 text-center text-[10px] uppercase tracking-[0.2em] text-slate-500">
-            LOGO
-          </div>
-        )
-      ) : null}
+	      {layout.showLogo ? (
+	        layout.logoUrl ? (
+	          <img
+	            src={layout.logoUrl}
+	            alt="Logo"
+	            className="mx-auto mt-2 mb-0 h-12 w-auto object-contain object-bottom"
+	          />
+	        ) : (
+	          <div className="mt-2 mb-0 text-center text-[10px] uppercase tracking-[0.2em] text-slate-500">
+	            LOGO
+	          </div>
+	        )
+	      ) : null}
       {layout.showHeader && (
         <div className="mb-2 text-center text-sm font-semibold uppercase tracking-wide text-slate-800">
           <div>{layout.headerTitle}</div>
@@ -467,13 +467,6 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           <span>{formatCurrency(total)}</span>
         </div>
       </div>
-      {customLines?.length > 0 && (
-        <div className="mt-3 text-[11px] text-slate-500">
-          {customLines.map((line, idx) => (
-            <div key={idx}>{line}</div>
-          ))}
-        </div>
-      )}
       {layout.showQr && (
         <div className="mt-4 flex flex-col items-center gap-1 rounded-2xl border border-dashed border-slate-300 p-3 text-[10px] uppercase text-slate-500">
           {layout.qrUrl ? (
@@ -493,6 +486,13 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           {layout.qrUrl && (
             <div className="text-[8px] text-slate-400 break-all">{layout.qrUrl}</div>
           )}
+        </div>
+      )}
+      {customLines?.length > 0 && (
+        <div className="mt-3 text-[11px] text-slate-500">
+          {customLines.map((line, idx) => (
+            <div key={idx}>{line}</div>
+          ))}
         </div>
       )}
       {layout.showFooter && (

@@ -521,6 +521,8 @@ const DRAWER_PULSE_CMD = [0x1b, 0x70, 0x00, 0x32, 0x32]; // pin 2, ~50ms
 const FEED_AFTER_IMAGE_CMD = [0x1b, 0x64, 0x05]; // ESC d 5
 const FEED_BEFORE_LOGO_CMD = [0x1b, 0x64, 0x01]; // ESC d 1
 const FEED_AFTER_LOGO_CMD = [0x1b, 0x64, 0x00]; // ESC d 0
+const FEED_AFTER_QR_BEFORE_FOOTER_CMD = [0x1b, 0x64, 0x01]; // ESC d 1
+const FEED_AFTER_FOOTER_CMD = [0x1b, 0x64, 0x03]; // ESC d 3
 
 function receiptWidthToPx(widthSetting) {
   if (widthSetting === "80mm") return 576;
@@ -649,6 +651,20 @@ function resolveTaxNumberLine(layout) {
   return `Tax No: ${value}`;
 }
 
+function buildReceiptFooterLines(layout) {
+  const lines = [];
+  const customLines = Array.isArray(layout?.customLines)
+    ? layout.customLines.filter((line) => typeof line === "string" && line.trim().length > 0)
+    : [];
+  if (customLines.length) {
+    lines.push(...customLines);
+  }
+  if (layout?.showFooter && layout?.footerText) {
+    lines.push(String(layout.footerText));
+  }
+  return lines;
+}
+
 function buildAddressLines(layout) {
   const lines = [];
   if (layout?.shopAddress) {
@@ -675,6 +691,7 @@ async function composeFinalReceiptBytes({
   const leftCmd = [0x1b, 0x61, 0x00];
 
   let finalBytes = Array.from(textBytes || []);
+  const footerLines = buildReceiptFooterLines(layout);
 
   if (layout?.showLogo && layout?.logoUrl) {
     try {
@@ -697,14 +714,28 @@ async function composeFinalReceiptBytes({
       const qrBytesLocal = await qrStringToEscposBytes(layout.qrUrl, Math.min(256, paperWidthPx));
       const qrLabel = layout?.qrText ? String(layout.qrText).trim() : "";
 
+      const hasFooter = footerLines.length > 0;
       finalBytes = finalBytes
         .concat(Array.from(centerCmd))
         .concat(qrLabel ? Array.from(encodeCP1254(`${qrLabel}\n`)) : [])
         .concat(Array.from(qrBytesLocal))
-        .concat(Array.from(leftCmd))
-        .concat(FEED_AFTER_IMAGE_CMD);
+        .concat(Array.from(leftCmd));
+      if (hasFooter) {
+        finalBytes = finalBytes
+          .concat(FEED_AFTER_QR_BEFORE_FOOTER_CMD)
+          .concat(Array.from(encodeCP1254(`${footerLines.join("\n")}\n`)))
+          .concat(FEED_AFTER_FOOTER_CMD);
+      } else {
+        finalBytes = finalBytes.concat(FEED_AFTER_IMAGE_CMD);
+      }
     } catch (err) {
       console.warn("⚠️ Failed to generate/convert QR for composed print:", err?.message || err);
+      if (footerLines.length > 0) {
+        finalBytes = finalBytes
+          .concat(FEED_AFTER_QR_BEFORE_FOOTER_CMD)
+          .concat(Array.from(encodeCP1254(`${footerLines.join("\n")}\n`)))
+          .concat(FEED_AFTER_FOOTER_CMD);
+      }
     }
   }
 
@@ -1175,22 +1206,22 @@ export function renderReceiptText(order, providedLayout) {
   }
   add(formatLine("Total", formatReceiptMoney(summary.total - discountAmount), lineWidth));
 
-  if (customLines.length) {
+  const hasPrintableQr = layout?.showQr === true && !!layout?.qrUrl;
+  if (!hasPrintableQr) {
+    if (customLines.length) {
+      add("");
+      customLines.forEach((line) => add(line));
+    }
+
+    if (layout.showFooter && layout.footerText) {
+      add(layout.footerText);
+    }
+
+    // Add spacing to prevent footer cropping
     add("");
-    customLines.forEach((line) => add(line));
+    add("");
+    add("");
   }
-
-  // QR label/content are rendered right before QR raster bytes in the
-  // bridge/backend composition paths to keep them next to the QR.
-
-  if (layout.showFooter && layout.footerText) {
-    add(layout.footerText);
-  }
-  
-  // Add spacing to prevent footer cropping
-  add("");
-  add("");
-  add("");
 
   return lines.join("\n");
 }

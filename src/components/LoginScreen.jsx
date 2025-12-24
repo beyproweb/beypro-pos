@@ -72,11 +72,6 @@ export default function LoginScreen() {
           <p className="text-lg font-light opacity-90">
             Level up your business — manage everything in one place.
           </p>
-          <img
-            src="https://res.cloudinary.com/ds8xkm0ue/image/upload/v1727714974/beypro-gradient-illustration.png"
-            alt="Beypro illustration"
-            className="w-80 mx-auto mt-10 opacity-95"
-          />
           <footer className="mt-16 text-sm opacity-80">
             © {new Date().getFullYear()} Beypro — Level Up
           </footer>

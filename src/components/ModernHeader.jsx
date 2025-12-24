@@ -77,6 +77,18 @@ export default function ModernHeader({
 
   const isTableOverviewRoute =
     location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
+  const isTransactionRoute = location.pathname.includes("/transaction");
+  const isDashboardRoute = location.pathname.includes("/dashboard");
+  const isOrdersRoute = location.pathname.includes("/orders");
+  const isKitchenRoute = location.pathname.includes("/kitchen");
+  const isStockRoute = location.pathname.includes("/stock");
+  const showHeaderTabs =
+    isTableOverviewRoute ||
+    isTransactionRoute ||
+    isDashboardRoute ||
+    isOrdersRoute ||
+    isKitchenRoute ||
+    isStockRoute;
 
   const canSeeTablesTab = useHasPermission("tables");
   const canSeeKitchenTab = useHasPermission("kitchen");
@@ -120,8 +132,16 @@ export default function ModernHeader({
 
   const activeHeaderTab = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
-    return String(params.get("tab") || "tables").toLowerCase();
-  }, [location.search]);
+    const tab = params.get("tab");
+    if (tab) return String(tab).toLowerCase();
+    return isOrdersRoute ? "phone" : "tables";
+  }, [location.search, isOrdersRoute]);
+
+  const resolvedActiveHeaderTab = React.useMemo(() => {
+    if (isKitchenRoute) return "kitchen";
+    if (isStockRoute) return null;
+    return activeHeaderTab;
+  }, [activeHeaderTab, isKitchenRoute, isStockRoute]);
 
   const handleHeaderTabClick = React.useCallback(
     (tabId) => {
@@ -149,14 +169,6 @@ export default function ModernHeader({
         )}
         <button
           type="button"
-          onClick={handleGoBack}
-          className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-indigo-400/50 bg-white/70 text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-white dark:bg-zinc-800/70 dark:text-indigo-200 dark:hover:bg-indigo-700/20 dark:focus:ring-offset-zinc-900 transition"
-          aria-label="Go to previous page"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <button
-          type="button"
           onClick={handleGoHome}
           className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:text-indigo-200 dark:hover:bg-indigo-500/20 transition"
           aria-label="Go to dashboard"
@@ -168,23 +180,23 @@ export default function ModernHeader({
       {/* Center: sticky subtitle (no flicker) */}
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4 gap-1">
         <StickySubtitle text={subtitle} />
-        {isTableOverviewRoute && headerTabs.length > 0 && (
+            {showHeaderTabs && headerTabs.length > 0 && (
           <div className="hidden md:flex items-center justify-center gap-2 flex-wrap">
             {headerTabs.map((tab) => {
-              const isActive = activeHeaderTab === tab.id;
+              const isActive = resolvedActiveHeaderTab === tab.id;
               return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => handleHeaderTabClick(tab.id)}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                    isActive
-                      ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
-                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  {tab.label}
-                </button>
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleHeaderTabClick(tab.id)}
+                    className={`rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
+                      isActive
+                        ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
               );
             })}
           </div>
@@ -194,6 +206,15 @@ export default function ModernHeader({
       {/* Right: Title + bell + other right content */}
       <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
         {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
+
+        <button
+          type="button"
+          onClick={handleGoBack}
+          className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-indigo-400/50 bg-white/70 text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-white dark:bg-zinc-800/70 dark:text-indigo-200 dark:hover:bg-indigo-700/20 dark:focus:ring-offset-zinc-900 transition"
+          aria-label="Go to previous page"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
 
         {title && (
           <span className="text-xl md:text-2xl font-bold tracking-tight text-indigo-700 dark:text-violet-300 drop-shadow mr-1">

@@ -65,6 +65,11 @@ export default function TablesSettingsTab() {
       setTables(arr);
       const activeCount = arr.filter((t) => t.active !== false).length;
       setDesiredTotal(activeCount || 20);
+      try {
+        const restaurantId = localStorage.getItem("restaurant_id") || "global";
+        localStorage.setItem(`hurrypos:${restaurantId}:tableCount.v1`, String(activeCount || 0));
+        localStorage.setItem(`hurrypos:${restaurantId}:tableConfigs.v1`, JSON.stringify(arr));
+      } catch {}
     } catch (err) {
       console.error("❌ Failed to fetch tables:", err);
       setError(t("Failed to load tables"));
@@ -88,6 +93,10 @@ export default function TablesSettingsTab() {
         body: JSON.stringify({ total: Number(desiredTotal) }),
       });
       setToast(t("Table count saved"));
+      try {
+        const restaurantId = localStorage.getItem("restaurant_id") || "global";
+        localStorage.setItem(`hurrypos:${restaurantId}:tableCount.v1`, String(Number(desiredTotal)));
+      } catch {}
       await fetchTables();
     } catch (err) {
       console.error("❌ Failed to save table count:", err);

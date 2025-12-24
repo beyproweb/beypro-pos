@@ -35,6 +35,7 @@ const DEFAULT_SOUNDS = {
   stock_restocked: "pop.mp3",
   driver_assigned: "horn.mp3",
   stock_expiry: "alarm.mp3",
+  other: "ding.mp3",
 };
 
 const DEFAULT_NOTIFICATIONS = {
@@ -134,6 +135,7 @@ export default function GlobalOrderAlert() {
       "stock_restocked",
       "driver_assigned",
       "stock_expiry",
+      "other",
     ],
     []
   );
@@ -406,8 +408,7 @@ export default function GlobalOrderAlert() {
   useEffect(() => {
     const handleAlertEvent = (payload) => {
       if (!payload?.message) return;
-      const key =
-        alertEventKeyMap[payload.type] || alertEventKeyMap.stock_low || "stock_expiry";
+      const key = alertEventKeyMap[payload.type] || "other";
       notify(key, payload.message);
     };
 

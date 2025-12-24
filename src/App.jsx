@@ -1,7 +1,7 @@
 // src/App.jsx
 
 import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "react-router-dom";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
 import Layout from "./components/Layout";
@@ -22,19 +22,14 @@ import Production from "./components/Production";
 import LoginScreenWrapper from "./components/LoginScreen";
 import SubscriptionTab from "./components/settings-tabs/SubscriptionTab";
 import AppearanceProvider from "./components/AppearanceProvider";
-import GlobalOrderAlert from "./components/GlobalOrderAlert";
 import Task from "./pages/Task";
-import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
 import ExpensesPage from "./components/ExpensesPage";
 import CashRegisterHistory from "./pages/CashRegisterHistory";
 import IntegrationsPage from "./pages/Integrations";
 import "./i18n";
 import { StockProvider } from "./context/StockContext";
 import ProtectedRoute from "./components/ProtectedRoute";
-import NotificationBell from "./components/NotificationBell";
 import { HeaderProvider } from "./context/HeaderContext";
-import socket from "./utils/socket";
 import { attachGlobalSoundHandlers } from "./utils/soundManager";
 import QrMenu from "./pages/QrMenu";
 import CustomerInsights from "./pages/CustomerInsights";
@@ -47,6 +42,7 @@ import PrintersPage from "./pages/PrintersPage";
 import CamerasPage from "./pages/CamerasPage";
 import TakeawayOverview from "./pages/TakeawayOverview";
 import { setNavigator } from "./utils/navigation";
+import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
 
 
 const SETTINGS_TAB_PERMISSIONS = {
@@ -120,57 +116,56 @@ function TableOverviewRouteWrapper() {
 }
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <CurrencyProvider>
+        <AppearanceProvider>
+          <NotificationsProvider>
+            <AppShell />
+          </NotificationsProvider>
+        </AppearanceProvider>
+      </CurrencyProvider>
+    </AuthProvider>
+  );
+}
+
+function AppShell() {
   const navigate = useNavigate();
   useEffect(() => {
     setNavigator(navigate);
   }, [navigate]);
-  const [lowStockAlerts, setLowStockAlerts] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("beyproBellNotifications") || "[]");
-    } catch {
-      return [];
-    }
-  });
-  const [unread, setUnread] = useState(0);
-  const [bellOpen, setBellOpen] = useState(false);
+  const {
+    notifications,
+    unread,
+    bellOpen,
+    setBellOpen,
+    clearAll,
+    refresh,
+    markAllRead,
+    summaries,
+    lastSeenAtMs,
+  } = useNotifications();
   const location = useLocation();
   const hideBell = ["/login"].includes(location.pathname);
 
   useEffect(() => {
-    localStorage.setItem("beyproBellNotifications", JSON.stringify(lowStockAlerts));
-    setUnread(lowStockAlerts.length);
-  }, [lowStockAlerts]);
-
-  useEffect(() => {
-const loadSettings = async () => {
-  try {
-    const data = await secureFetch("/settings/notifications");
-    window.notificationSettings = data;
-  } catch (err) {
-    console.warn("⚠️ Failed to load notification settings", err);
-  }
-};
+    const loadSettings = async () => {
+      try {
+        const data = await secureFetch("/settings/notifications");
+        window.notificationSettings = data;
+      } catch (err) {
+        console.warn("⚠️ Failed to load notification settings", err);
+      }
+    };
     loadSettings();
   }, []);
 
   useEffect(() => attachGlobalSoundHandlers(), []);
 
-
-  useEffect(() => {
-const loadSettings = async () => {
-  try {
-    const data = await secureFetch("/settings/notifications");
-    window.notificationSettings = data;
-  } catch (err) {
-    console.warn("⚠️ Failed to load notification settings", err);
-  }
-};
-    loadSettings();
-  }, []);
-
-  const handleBellClick = () => { setBellOpen(true); setUnread(0); };
+  const handleBellClick = () => setBellOpen(true);
   const handleCloseModal = () => setBellOpen(false);
-  const handleClearNotifications = () => { setLowStockAlerts([]); setUnread(0); };
+  const handleClearNotifications = () => clearAll();
+  const handleRefreshNotifications = () => refresh();
 
   useEffect(() => {
     const unlock = () => {
@@ -182,11 +177,8 @@ const loadSettings = async () => {
   }, []);
 
   return (
-    <AuthProvider>
-      <CurrencyProvider>
-      <AppearanceProvider>
-        <div className="flex h-screen">
-          <Routes>
+    <div className="flex h-screen">
+      <Routes>
             {/* PUBLIC: QR Menu (legacy slug-based link) */}
             <Route path="/qr-menu/:slug/:id" element={<QrMenu />} />
             {/* PUBLIC: Dual QR entry points */}
@@ -204,19 +196,23 @@ const loadSettings = async () => {
               path="/"
               element={
                 isAuthenticated() ? (
-                  <StockProvider>
-                    <HeaderProvider>
-                      <Layout
-                        unread={unread}
-                        bellOpen={bellOpen}
-                        lowStockAlerts={lowStockAlerts}
-                        onBellClick={handleBellClick}
-                        onCloseModal={handleCloseModal}
-                        hideBell={hideBell}
-                        onClearNotifications={handleClearNotifications}
-                      />
-                    </HeaderProvider>
-                  </StockProvider>
+	                  <StockProvider>
+	                    <HeaderProvider>
+	                      <Layout
+	                        unread={unread}
+	                        bellOpen={bellOpen}
+	                        lowStockAlerts={notifications}
+	                        onBellClick={handleBellClick}
+	                        onCloseModal={handleCloseModal}
+	                        hideBell={hideBell}
+	                        onClearNotifications={handleClearNotifications}
+                          onRefreshNotifications={handleRefreshNotifications}
+                          notificationSummaries={summaries}
+                          notificationsLastSeenAtMs={lastSeenAtMs}
+                          onMarkAllRead={markAllRead}
+	                      />
+	                    </HeaderProvider>
+	                  </StockProvider>
                 ) : (
                   <Navigate to="/login" />
                 )
@@ -323,12 +319,7 @@ const loadSettings = async () => {
               />
               <Route path="unauthorized" element={<div className="p-10 text-red-600 text-xl">❌ Access Denied</div>} />
             </Route>
-          </Routes>
-        </div>
-
-     
-      </AppearanceProvider>
-      </CurrencyProvider>
-    </AuthProvider>
+      </Routes>
+    </div>
   );
 }
