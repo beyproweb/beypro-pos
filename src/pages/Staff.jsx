@@ -17,7 +17,7 @@ Modal.setAppElement('#root');
 const Staff = () => {
   const { t } = useTranslation();
   const location = useLocation();
-  const { config } = useCurrency();
+  const { config, formatCurrency } = useCurrency();
   const [savedAutoPayment, setSavedAutoPayment] = useState(null);
 
   const [activeTabId, setActiveTabId] = useState("checkin");
@@ -459,11 +459,11 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
             return (
               <>
                 <div className="mb-4">
-                  <p className="text-lg font-semibold text-blue-900 dark:text-slate-100">
-                    {staffList.find(s => s.id === selectedStaffForPayment)?.name} – {staffList.find(s => s.id === selectedStaffForPayment)?.role}
-                  </p>
-                  <p className="text-base text-blue-600 dark:text-slate-300">{t('Salary Due')}: <span className="font-semibold text-red-600">{currency(staffHistory.salaryDue)}</span></p>
-                </div>
+	                  <p className="text-lg font-semibold text-blue-900 dark:text-slate-100">
+	                    {staffList.find(s => s.id === selectedStaffForPayment)?.name} – {staffList.find(s => s.id === selectedStaffForPayment)?.role}
+	                  </p>
+	                  <p className="text-base text-blue-600 dark:text-slate-300">{t('Salary Due')}: <span className="font-semibold text-red-600">{formatCurrency(staffHistory.salaryDue)}</span></p>
+	                </div>
 
                 {/* Auto Payroll Banner */}
                 {autoActive && (
@@ -552,12 +552,12 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
                   </label>
                 </div>
 
-                {autoPaymentEnabled && !autoActive && (
-                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-900 rounded-lg text-base text-yellow-800 dark:text-yellow-200 shadow">
-                    🔁 {t('Auto Payment Amount')}: <span className="font-semibold">{currency(staffHistory.salaryDue)}</span>
-                    <p className="text-xs mt-1 text-yellow-600 dark:text-yellow-200">{t('Will be paid on each schedule.')}</p>
-                  </div>
-                )}
+	                {autoPaymentEnabled && !autoActive && (
+	                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-900 rounded-lg text-base text-yellow-800 dark:text-yellow-200 shadow">
+	                    🔁 {t('Auto Payment Amount')}: <span className="font-semibold">{formatCurrency(staffHistory.salaryDue)}</span>
+	                    <p className="text-xs mt-1 text-yellow-600 dark:text-yellow-200">{t('Will be paid on each schedule.')}</p>
+	                  </div>
+	                )}
 
                 {autoPaymentEnabled && !autoActive && (
                   <div className="mb-4">

@@ -18,11 +18,12 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
+      const normalizedEmail = String(email || "").trim().toLowerCase();
       const response = await fetch(`${BASE_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: email.trim(),
+          email: normalizedEmail,
           password,
         }),
       });

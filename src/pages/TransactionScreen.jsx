@@ -3106,10 +3106,14 @@ const renderCartContent = (variant = "desktop") => {
     : "px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]";
 
   const hasSelection = selectedCartItemIds.size > 0;
+  const primaryActionLabel = getButtonLabel();
+  const showPayLater = !orderId && primaryActionLabel === "Pay";
   const baseButtonClass =
     "flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-100";
   const primaryButtonClass =
     "flex-1 min-w-0 rounded-lg bg-indigo-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-600";
+  const payLaterButtonClass =
+    "flex-1 min-w-0 rounded-lg bg-slate-900 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800";
   const debtButtonClass =
     "flex-1 min-w-0 rounded-lg bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed";
 
@@ -3119,21 +3123,33 @@ const renderCartContent = (variant = "desktop") => {
 
 	  const actionControls = isDesktop ? (
 	    <div className="flex w-full flex-col gap-3">
-	      <div className="flex gap-3">
-	        <button
-	          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
-	          className={baseButtonClass}
-	        >
-	          {t("Clear")}
-	        </button>
-	        <button onClick={handleMultifunction} className={primaryButtonClass}>
-	          {t(getButtonLabel())}
-	        </button>
-	        {isDebtEligible && (
-	          <button
-	            onClick={handleOpenDebtModal}
-	            className={debtButtonClass}
-	            disabled={isDebtSaving}
+		      <div className="flex flex-wrap gap-3">
+		        <button
+		          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
+		          className={baseButtonClass}
+		        >
+		          {t("Clear")}
+		        </button>
+		        <button onClick={handleMultifunction} className={primaryButtonClass}>
+		          {t(primaryActionLabel)}
+		        </button>
+            {showPayLater && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFloatingCartOpen(false);
+                  navigate("/tableoverview?tab=tables");
+                }}
+                className={payLaterButtonClass}
+              >
+                {t("Pay Later")}
+              </button>
+            )}
+		        {isDebtEligible && (
+		          <button
+		            onClick={handleOpenDebtModal}
+		            className={debtButtonClass}
+		            disabled={isDebtSaving}
 	          >
 	            {isDebtSaving ? t("Saving...") : t("Add to Debt")}
 	          </button>
@@ -3176,13 +3192,13 @@ const renderCartContent = (variant = "desktop") => {
     </div>
 	  ) : (
 	    <div className="flex w-full flex-col gap-2">
-	      <div className="flex flex-wrap gap-2">
-	        <button
-	          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
-	          className={`${baseButtonClass} flex-1 min-w-[120px]`}
-	        >
-	          {t("Clear")}
-	        </button>
+		      <div className="flex flex-wrap gap-2">
+		        <button
+		          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
+		          className={`${baseButtonClass} flex-1 min-w-[120px]`}
+		        >
+		          {t("Clear")}
+		        </button>
         <button
           onClick={handleCartPrint}
           className={`${baseButtonClass} flex-1 min-w-[120px]`}
@@ -3198,14 +3214,26 @@ const renderCartContent = (variant = "desktop") => {
           >
             {isDebtSaving ? t("Saving...") : t("Add to Debt")}
           </button>
-        )}
-	        <button
-	          onClick={handleMultifunction}
-	          className={`${primaryButtonClass} flex-1 min-w-[120px]`}
-	        >
-	          {t(getButtonLabel())}
-	        </button>
-	      </div>
+	        )}
+		        <button
+		          onClick={handleMultifunction}
+		          className={`${primaryButtonClass} flex-1 min-w-[120px]`}
+		        >
+		          {t(primaryActionLabel)}
+		        </button>
+            {showPayLater && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFloatingCartOpen(false);
+                  navigate("/tableoverview?tab=tables");
+                }}
+                className={`${payLaterButtonClass} flex-1 min-w-[120px]`}
+              >
+                {t("Pay Later")}
+              </button>
+            )}
+		      </div>
 	      {!orderId && (
 	        <TableActionButtons
 	          onMove={() => setShowMoveTableModal(true)}

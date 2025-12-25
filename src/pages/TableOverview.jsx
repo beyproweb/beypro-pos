@@ -37,6 +37,29 @@ const isDelayed = (order) => {
   return diffMins > 1;
 };
 
+const isEffectivelyFreeOrder = (order) => {
+  if (!order) return true;
+
+  const status = normalizeOrderStatus(order.status);
+  if (status === "closed") return true;
+  if (status === "draft") return true;
+
+  // Reservations should be visible even if they have no items yet.
+  if (status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
+    return false;
+  }
+
+  const total = Number(order.total || 0);
+  const items = Array.isArray(order.items) ? order.items : null;
+
+  // If items are hydrated, empty items + zero total should look like a free table.
+  if (items) return items.length === 0 && total <= 0;
+
+  // If items are not hydrated yet, use total as a fast proxy.
+  // This prevents a brief "confirmed/occupied" flash for empty orders.
+  return total <= 0;
+};
+
 // ✅ Improved color logic for moved/paid tables
 // ✅ FIXED: show red if any suborder has unpaid items
 // ✅ NEW: show orange if table is reserved
@@ -64,10 +87,13 @@ const getTableColor = (order) => {
 
   const suborders = Array.isArray(order.suborders) ? order.suborders : [];
   const items = Array.isArray(order.items) ? order.items : null;
+  const total = Number(order.total || 0);
 
   // If items aren't loaded yet, still show an "occupied" color based on status
   // instead of waiting (avoids the 2-3s gray flash).
   if (!items) {
+    // Empty orders (0 total) should look free immediately.
+    if (total <= 0) return "bg-gray-300 text-black";
     if (order.status === "confirmed") return "bg-red-500 text-white";
     return "bg-gray-300 text-black";
   }
@@ -1202,9 +1228,14 @@ useEffect(() => {
     });
   };
   window.socket.on("orders_updated", refetch);
+  // Some backend flows (e.g. closing empty orders) emit `order_closed` without `orders_updated`.
+  window.socket.on("order_closed", refetch);
   return () => {
     if (rafId) window.cancelAnimationFrame(rafId);
-    window.socket && window.socket.off("orders_updated", refetch);
+    if (window.socket) {
+      window.socket.off("orders_updated", refetch);
+      window.socket.off("order_closed", refetch);
+    }
   };
 }, [activeTab, loadDataForTab, fetchOrders]);
 
@@ -1222,11 +1253,12 @@ useEffect(() => {
 
 const tables = tableConfigs
   .map((cfg) => {
-    const order = orders.find(
+    const orderRaw = orders.find(
       (o) =>
         o.table_number === cfg.number &&
         !isOrderCancelledOrCanceled(o.status)
     );
+    const order = isEffectivelyFreeOrder(orderRaw) ? null : orderRaw;
 
     return {
       tableNumber: cfg.number,

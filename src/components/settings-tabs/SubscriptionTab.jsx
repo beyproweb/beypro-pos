@@ -220,10 +220,11 @@ useEffect(() => {
     try {
       setLoading(true);
       // Register
+      const normalizedEmail = String(form.email || "").trim().toLowerCase();
       const registerRes = await secureFetch("/register", {
         method: "POST",
         body: JSON.stringify({
-          email: form.email,
+          email: normalizedEmail,
           password: form.password,
           full_name: form.fullName,
           business_name: form.businessName,
