@@ -1379,32 +1379,6 @@ await secureFetch("/orders/order-items/kitchen-status", {
   }
 };
 
-useEffect(() => {
-  fetchRegisterStatus()
-    .then((data) => {
-      setRegisterState(data.status);
-      setOpeningCash("");
-      if (
-        (location.pathname.startsWith("/tableoverview") ||
-         location.pathname.startsWith("/transaction")) &&
-        (data.status === "closed" || data.status === "unopened")
-      ) {
-        toast.error("Register must be open to access this page!", {
-          position: "top-center",
-          autoClose: 2500,
-          hideProgressBar: false,
-        });
-        navigate("/dashboard"); // or any safe page
-      }
-    })
-    .catch((err) => {
-      console.error("❌ Failed to refresh register state:", err);
-    });
-}, [fetchRegisterStatus, location.pathname, navigate]);
-
-
-
-
   const groupedByTable = orders.reduce((acc, item) => {
   const table = item.table_number;
   if (!acc[table]) acc[table] = [];
