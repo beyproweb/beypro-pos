@@ -262,6 +262,7 @@ export default function TableOverview() {
   const { formatCurrency, config } = useCurrency();
   const navigate = useNavigate();
   const location = useLocation();
+  const didAutoOpenRegisterRef = useRef(false);
   const tabFromUrl = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
     return String(params.get("tab") || "tables").toLowerCase();
@@ -593,8 +594,20 @@ const groupByDate = (orders) => {
 
   useEffect(() => {
     setShowPhoneOrderModal(activeTab === "phone");
-    setShowRegisterModal(activeTab === "register");
+    if (activeTab === "register") setShowRegisterModal(true);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (didAutoOpenRegisterRef.current) return;
+    if (
+      location.state?.openRegisterModal === true ||
+      registerState === "closed" ||
+      registerState === "unopened"
+    ) {
+      didAutoOpenRegisterRef.current = true;
+      setShowRegisterModal(true);
+    }
+  }, [location.state, registerState]);
 
   useEffect(() => {
     const titlesByTab = {
@@ -1299,7 +1312,6 @@ const handleTableClick = (table) => {
       position: "top-center",
       autoClose: 2500,
     });
-    handleTabSelect("register");
     setShowRegisterModal(true);
     return;
   }

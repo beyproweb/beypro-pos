@@ -19,25 +19,18 @@ export function useRegisterGuard() {
         const status = data?.status;
         setRegisterState(status);
 
-        // If the cash register is closed/unopened, redirect users to the Register tab
-        // so the "Open Register" modal can be shown (especially for new accounts).
+        // If the register is closed/unopened, keep users out of Transaction and bring them back
+        // to TableOverview; the register modal is rendered there and can be opened even if the
+        // "register" tab isn't visible for their role (important for new accounts/roles).
         if (!needsRegisterAttention(status)) return;
 
-        const isTableOverview = location.pathname.startsWith("/tableoverview");
         const isTransaction = location.pathname.startsWith("/transaction");
-        if (!isTableOverview && !isTransaction) return;
+        if (!isTransaction) return;
 
-        const params = new URLSearchParams(location.search || "");
-        const currentTab = String(params.get("tab") || "").toLowerCase();
-        if (isTableOverview && currentTab === "register") return;
-
-        params.set("tab", "register");
-        const target = `/tableoverview?${params.toString()}`;
-
-        const currentUrl = `${location.pathname}${location.search || ""}`;
-        if (currentUrl === target) return;
-
-        navigate(target, { replace: true });
+        navigate("/tableoverview?tab=tables", {
+          replace: true,
+          state: { openRegisterModal: true },
+        });
       })
       .catch((err) => {
         console.error("❌ Register guard failed:", err);
@@ -48,7 +41,7 @@ export function useRegisterGuard() {
     return () => {
       isActive = false;
     };
-  }, [location.pathname, location.search, navigate]);
+  }, [location.pathname, navigate]);
 
   return registerState;
 }
