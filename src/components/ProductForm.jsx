@@ -827,16 +827,19 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
                       ing.ingredient.toLowerCase().trim()
                   );
                   if (match) {
-                    const basePrice = match.price_per_unit ?? 0;
-                    const converted = convertPrice(
-                      basePrice,
-                      normalizeUnit(match.unit),
-                      normalizeUnit(ing.unit)
-                    );
-                    if (converted !== null) {
+                    const basePrice = toNumber(match.price_per_unit ?? match.unit_price ?? match.price ?? 0);
+                    const fromUnit = normalizeUnit(match.unit);
+                    const toUnit = normalizeUnit(ing.unit);
+                    let converted = convertPrice(basePrice, fromUnit, toUnit);
+                    if (converted === null && basePrice > 0) {
+                      // if we can't convert (missing unit), at least show base price
+                      converted = fromUnit === toUnit || !fromUnit ? basePrice : null;
+                    }
+                    if (converted !== null && converted > 0) {
                       perUnit = converted;
-                      if (ing.quantity) {
-                        cost = parseFloat(ing.quantity) * converted;
+                      const qty = toNumber(ing.quantity);
+                      if (qty > 0) {
+                        cost = qty * converted;
                       }
                     }
                   }
