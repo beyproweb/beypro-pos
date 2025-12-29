@@ -39,6 +39,28 @@ const normalizeStockList = (payload) => {
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
 };
+
+const toSafeNumber = (value) => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const raw = String(value).trim();
+  if (!raw) return 0;
+  let cleaned = raw.replace(/[^\d,.\-]+/g, "").replace(/\s+/g, "");
+  if (!cleaned) return 0;
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+  if (hasComma && hasDot) {
+    if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
+      cleaned = cleaned.replace(/\./g, "").replace(/,/g, ".");
+    } else {
+      cleaned = cleaned.replace(/,/g, "");
+    }
+  } else if (hasComma && !hasDot) {
+    cleaned = cleaned.replace(/,/g, ".");
+  }
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : 0;
+};
 const normalizeUnit = (u) => {
   if (!u) return "";
   u = u.toLowerCase();
@@ -226,7 +248,23 @@ useEffect(() => {
           const nameKey = String(s?.name || "").trim().toLowerCase();
           const unitKey = normalizeUnit(s?.unit);
           const key = `${nameKey}|${unitKey}`;
-          const price = toNumber(s?.price_per_unit ?? s?.unit_price ?? s?.price ?? 0);
+
+          const rawPrice =
+            s?.price_per_unit ??
+            s?.unit_price ??
+            s?.cost_per_unit ??
+            s?.costPrice ??
+            s?.price ??
+            0;
+          let price = toSafeNumber(rawPrice);
+          if (!(price > 0)) {
+            const total = toSafeNumber(s?.total_value ?? s?.value ?? s?.amount);
+            const qty = toSafeNumber(s?.quantity);
+            if (qty > 0 && total > 0) {
+              price = total / qty;
+            }
+          }
+
           if (price > 0 && !stockPriceMap.has(key)) stockPriceMap.set(key, price);
         }
 
