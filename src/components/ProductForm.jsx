@@ -10,9 +10,17 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const normalizeUnit = (u) => {
   if (!u) return "";
   u = u.toLowerCase();
+  if (u === "lt") return "l";
   if (u === "pieces") return "piece";
   if (u === "portion" || u === "portions") return "portion";
   return u;
+};
+
+const normalizeUnitForApi = (u) => {
+  const normalized = normalizeUnit(u);
+  if (!normalized) return "";
+  if (normalized === "l") return "lt";
+  return normalized;
 };
 
 const convertPrice = (basePrice, supplierUnit, targetUnit) => {
@@ -321,6 +329,16 @@ const handleIngredientChange = (index, e) => {
   const list = [...product.ingredients];
   list[index][name] = value;
 
+  if (name === "ingredient") {
+    const picked = String(value || "").trim().toLowerCase();
+    const match = ingredientPrices.find(
+      (ai) => String(ai?.name || "").trim().toLowerCase() === picked
+    );
+    if (match?.unit && !list[index].unit) {
+      list[index].unit = normalizeUnitForApi(match.unit);
+    }
+  }
+
   setProduct(prev => ({ ...prev, ingredients: list }));
 
   // 🧮 trigger cost update right after ingredient/unit/qty change
@@ -334,7 +352,11 @@ const recalcEstimatedCost = (ingredients) => {
   let total = 0;
   (ingredients || []).forEach(ing => {
     if (!ing.ingredient || !ing.quantity || !ing.unit) return;
-    const match = availableIngredients.find(ai => ai.name === ing.ingredient);
+    const match = availableIngredients.find(
+      (ai) =>
+        String(ai?.name || "").trim().toLowerCase() ===
+        String(ing?.ingredient || "").trim().toLowerCase()
+    );
     if (!match) return;
     const converted = convertPrice(match.price, match.unit, ing.unit);
     if (converted !== null) {
@@ -388,6 +410,31 @@ const handleSubmit = async (e) => {
     return;
   }
 
+  const toNumber = (value) => {
+    if (value === null || value === undefined) return 0;
+    const v = Number(String(value).replace(",", "."));
+    return Number.isFinite(v) ? v : 0;
+  };
+
+  const normalizedIngredients = Array.isArray(product.ingredients)
+    ? product.ingredients
+        .map((ing) => {
+          const ingredient = String(ing?.ingredient || "").trim();
+          const quantity = toNumber(ing?.quantity);
+          const unit = normalizeUnitForApi(ing?.unit);
+          return { ingredient, quantity, unit };
+        })
+        .filter((ing) => ing.ingredient)
+    : [];
+
+  const invalidIngredient = normalizedIngredients.find(
+    (ing) => !ing.unit || !(ing.quantity > 0)
+  );
+  if (invalidIngredient) {
+    toast.error(t("Please enter quantity and unit for all ingredients."));
+    return;
+  }
+
   // upload if needed
   let uploadedImageUrl = imageUrl;
   if (imageFile) {
@@ -414,9 +461,7 @@ const handleSubmit = async (e) => {
       product.discount_value !== undefined && product.discount_value !== ""
         ? Number(product.discount_value)
         : 0,
-    ingredients: Array.isArray(product.ingredients)
-      ? product.ingredients
-      : [],
+    ingredients: normalizedIngredients,
     extras: (product.extras || [])
       .map((e) => {
         // normalize strings to objects
@@ -484,8 +529,13 @@ const handleSubmit = async (e) => {
 
     onSuccess && onSuccess();
   } catch (err) {
-    console.error("❌ Product save error:", err);
-    toast.error("Product save error");
+    console.error("❌ Product save error:", err?.details || err);
+    const msg =
+      err?.details?.body?.error ||
+      err?.details?.body?.message ||
+      err?.message ||
+      "Product save error";
+    toast.error(msg);
   }
 };
 
@@ -763,10 +813,10 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
   <option value="">{t("Select Unit")}</option>
   <option value="kg">kg</option>
   <option value="g">g</option>
-  <option value="pieces">pieces</option>
+  <option value="piece">piece</option>
   <option value="portion">portion</option>
   <option value="ml">ml</option>
-  <option value="l">l</option>
+  <option value="lt">lt</option>
 </select>
 
 
