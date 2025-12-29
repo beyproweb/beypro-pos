@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStock } from "../context/StockContext";
 import { toast } from "react-toastify";
 import socket from "../utils/socket";
@@ -10,10 +10,15 @@ import { useCurrency } from "../context/CurrencyContext";
 export default function Stock() {
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
+  const uiDebugLoggedRef = useRef(false);
+  const cardDebugLoggedRef = useRef(false);
   const [selectedSupplier, setSelectedSupplier] = useState("__all__");
   const [searchTerm, setSearchTerm] = useState("");
   const { groupedData, fetchStock, loading, handleAddToCart, setGroupedData } =
     useStock();
+  const [editValuesByStockId, setEditValuesByStockId] = useState({});
+  const editValuesRef = useRef({});
+  const patchTimersRef = useRef(new Map());
   
   // Only allow users with "settings" permission
   const hasStockAccess = useHasPermission("stock");
@@ -35,24 +40,32 @@ useEffect(() => {
   // Fetch stock on mount
   useEffect(() => {
     fetchStock();
-  }, []);
+  }, [fetchStock]);
 
-  // Realtime update on socket
   useEffect(() => {
-    const handleRealtimeStockUpdate = () => {
-      fetchStock();
-    };
-    socket.on("stock-updated", handleRealtimeStockUpdate);
     return () => {
-      socket.off("stock-updated", handleRealtimeStockUpdate);
+      patchTimersRef.current.forEach((timer) => clearTimeout(timer));
+      patchTimersRef.current.clear();
     };
   }, []);
 
-  // Debug on mount
   useEffect(() => {
-    console.log("🚀 Initial fetchStock() on page load");
-    fetchStock();
-  }, []);
+    if (!import.meta.env.DEV) return;
+    if (uiDebugLoggedRef.current) return;
+    if (!Array.isArray(groupedData) || groupedData.length === 0) return;
+    uiDebugLoggedRef.current = true;
+
+    console.log(
+      "🧾 Stock UI debug (groupedData)",
+      groupedData.slice(0, 5).map((it) => ({
+        name: it?.name,
+        unit: it?.unit,
+        quantity: it?.quantity,
+        price_per_unit: it?.price_per_unit,
+        number_price_per_unit: Number(it?.price_per_unit),
+      }))
+    );
+  }, [groupedData]);
 
   const totalStockValue = useMemo(() => {
     return groupedData.reduce(
@@ -138,29 +151,64 @@ useEffect(() => {
     };
   };
 
-  const handleCriticalChange = async (index, value) => {
-    console.log("🔥 handleCriticalChange called for index", index, "value", value);
+  const toNumInput = (raw) => {
+    if (raw === "" || raw === null || raw === undefined) return null;
+    const v = parseFloat(String(raw).replace(",", "."));
+    return Number.isFinite(v) ? v : null;
+  };
+
+  const scheduleStockPatch = useCallback(
+    (stockId, body) => {
+      if (!stockId) return;
+      const key = `${stockId}:${Object.keys(body).sort().join(",")}`;
+      const existing = patchTimersRef.current.get(key);
+      if (existing) clearTimeout(existing);
+
+      const timer = setTimeout(async () => {
+        try {
+          await secureFetch(`/stock/${stockId}`, {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          });
+        } catch (err) {
+          console.error("❌ Stock PATCH failed:", err);
+          toast.error(t("Failed to update stock"));
+        }
+      }, 450);
+
+      patchTimersRef.current.set(key, timer);
+    },
+    [t]
+  );
+
+  const handleCriticalChange = (index, rawValue) => {
+    const item = groupedData[index];
+    if (!item?.stock_id) return;
+
+    setEditValuesByStockId((prev) => {
+      const next = {
+        ...prev,
+        [item.stock_id]: {
+          ...(prev[item.stock_id] || {}),
+          critical_quantity: rawValue,
+        },
+      };
+      editValuesRef.current = next;
+      return next;
+    });
 
     const updated = [...groupedData];
-    const item = updated[index];
-    item.critical_quantity = value;
+    updated[index] = { ...item, critical_quantity: rawValue };
     setGroupedData(updated);
 
-    if (!item || !item.stock_id) return;
-
-    const json = await secureFetch(`/stock/${item.stock_id}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        quantity: item.quantity,
-        critical_quantity: value,
-        reorder_quantity: item.reorder_quantity,
-      }),
+    const critical = toNumInput(rawValue) ?? 0;
+    const reorder = toNumInput(
+      editValuesRef.current[item.stock_id]?.reorder_quantity ?? item.reorder_quantity
+    ) ?? 0;
+    scheduleStockPatch(item.stock_id, {
+      critical_quantity: critical,
+      reorder_quantity: reorder,
     });
-    console.log("PATCH RESPONSE:", json);
-
-    if (item.quantity <= value) {
-      await fetchStock();
-    }
   };
 
   const handleDeleteStock = async (item) => {
@@ -181,21 +229,33 @@ useEffect(() => {
     }
   };
 
-  const handleReorderChange = async (index, value) => {
-    const parsedValue = parseFloat(value);
+  const handleReorderChange = (index, rawValue) => {
+    const item = groupedData[index];
+    if (!item?.stock_id) return;
+
+    setEditValuesByStockId((prev) => {
+      const next = {
+        ...prev,
+        [item.stock_id]: {
+          ...(prev[item.stock_id] || {}),
+          reorder_quantity: rawValue,
+        },
+      };
+      editValuesRef.current = next;
+      return next;
+    });
+
     const updated = [...groupedData];
-    const item = updated[index];
-    item.reorder_quantity = parsedValue;
+    updated[index] = { ...item, reorder_quantity: rawValue };
     setGroupedData(updated);
 
-    if (!item || !item.stock_id) return;
-
-    await secureFetch(`/stock/${item.stock_id}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        critical_quantity: item.critical_quantity,
-        reorder_quantity: parsedValue,
-      }),
+    const reorder = toNumInput(rawValue) ?? 0;
+    const critical = toNumInput(
+      editValuesRef.current[item.stock_id]?.critical_quantity ?? item.critical_quantity
+    ) ?? 0;
+    scheduleStockPatch(item.stock_id, {
+      critical_quantity: critical,
+      reorder_quantity: reorder,
     });
   };
 useEffect(() => {
@@ -333,6 +393,8 @@ const suppliersList = Array.from(
         (item.supplier && item.supplier.toLowerCase().includes(term))
     );
   }
+
+  const showLoadingPlaceholder = loading && groupedData.length === 0;
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8 transition-colors duration-300 dark:bg-slate-950 sm:px-6 lg:px-10">
@@ -510,7 +572,7 @@ const suppliersList = Array.from(
           </div>
         </section>
 
-        {loading ? (
+        {showLoadingPlaceholder ? (
           <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/70 py-16 text-slate-500 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
             <svg
               className="mr-2 h-5 w-5 animate-spin"
@@ -549,6 +611,26 @@ const suppliersList = Array.from(
               const pricePerUnit = Number(item.price_per_unit) || 0;
               const itemValue =
                 (Number(item.quantity) || 0) * (Number(pricePerUnit) || 0);
+
+              if (
+                import.meta.env.DEV &&
+                !cardDebugLoggedRef.current &&
+                (pricePerUnit !== 0 || itemValue !== 0)
+              ) {
+                cardDebugLoggedRef.current = true;
+                console.log("🧾 Stock card debug (render)", {
+                  name: item?.name,
+                  unit: item?.unit,
+                  quantity: item?.quantity,
+                  raw_price_per_unit: item?.price_per_unit,
+                  pricePerUnit,
+                  itemValue,
+                  formatCurrencyType: typeof formatCurrency,
+                  formattedPricePerUnit: formatCurrency(pricePerUnit),
+                  formattedItemValue: formatCurrency(itemValue),
+                });
+              }
+
               const expiryMeta = getExpiryMeta(item.expiry_date);
               const expiryColor =
                 expiryColorMap[expiryMeta.severity] || expiryColorMap.info;
@@ -561,7 +643,7 @@ const suppliersList = Array.from(
 
               return (
                 <div
-                  key={index}
+                  key={key}
                   className={`flex h-full flex-col overflow-hidden rounded-2xl border p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${
                     isLowStock
                       ? "border-rose-200/70 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/40"
@@ -636,9 +718,13 @@ const suppliersList = Array.from(
                         </span>
                         <input
                           type="number"
-                          value={item.critical_quantity || ""}
+                          value={
+                            editValuesByStockId[item.stock_id]?.critical_quantity ??
+                            item.critical_quantity ??
+                            ""
+                          }
                           onChange={(e) =>
-                            handleCriticalChange(index, Number(e.target.value))
+                            handleCriticalChange(index, e.target.value)
                           }
                           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           placeholder="—"
@@ -650,7 +736,11 @@ const suppliersList = Array.from(
                         </span>
                         <input
                           type="number"
-                          value={item.reorder_quantity || ""}
+                          value={
+                            editValuesByStockId[item.stock_id]?.reorder_quantity ??
+                            item.reorder_quantity ??
+                            ""
+                          }
                           onChange={(e) =>
                             handleReorderChange(index, e.target.value)
                           }

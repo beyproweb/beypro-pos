@@ -903,15 +903,36 @@ const handleAddTransaction = async (e) => {
     return;
   }
 
+  const toNumber = (value) => {
+    if (value === null || value === undefined) return 0;
+    const raw = String(value).trim();
+    if (!raw) return 0;
+    const normalized = raw.replace(",", ".");
+    const num = Number(normalized);
+    return Number.isFinite(num) ? num : 0;
+  };
+
   const validRows = (newTransaction.rows || [])
-    .filter((r) => r.ingredient && r.quantity && r.total_cost)
-    .map((r) => ({
-      ingredient: String(r.ingredient || "").trim(),
-      quantity: r.quantity,
-      unit: r.unit,
-      total_cost: r.total_cost,
-      expiry_date: r.expiry_date || null,
-    }));
+    .map((r) => {
+      const ingredient = String(r.ingredient || "").trim();
+      const quantity = toNumber(r.quantity);
+      const totalCost = toNumber(r.total_cost);
+      const unit = r.unit;
+      const pricePerUnit =
+        quantity > 0 && totalCost > 0 ? totalCost / quantity : 0;
+
+      return {
+        ingredient,
+        quantity,
+        unit,
+        total_cost: totalCost,
+        // Backward/forward compatibility: some backends expect unit_price / price_per_unit explicitly.
+        price_per_unit: Number(pricePerUnit.toFixed(6)),
+        unit_price: Number(pricePerUnit.toFixed(6)),
+        expiry_date: r.expiry_date || null,
+      };
+    })
+    .filter((r) => r.ingredient && r.quantity > 0 && r.total_cost > 0);
 
   if (validRows.length === 0) {
     toast.error(t("Please enter at least one valid ingredient row."));
@@ -930,6 +951,9 @@ const handleAddTransaction = async (e) => {
   if (receiptFile) formData.append("receipt", receiptFile);
 
   try {
+    if (import.meta.env.DEV) {
+      console.log("📤 /suppliers/transactions rows payload:", validRows);
+    }
     const result = await secureFetch("/suppliers/transactions", {
       method: "POST",
       body: formData,
@@ -940,6 +964,7 @@ const handleAddTransaction = async (e) => {
       await fetchTransactions(selectedSupplier.id);
       await fetchSupplierDetails(selectedSupplier.id);
       await fetchSuppliers();
+      await fetchStock();
 
       if (isCashLabel(newTransaction.paymentMethod) && purchaseTotal > 0) {
         await logCashRegisterEvent({
