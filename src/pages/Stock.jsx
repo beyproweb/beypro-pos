@@ -601,9 +601,7 @@ const suppliersList = Array.from(
                           {t("Price / Unit")}
                         </p>
                         <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                          {pricePerUnit
-                            ? formatCurrency(pricePerUnit)
-                            : "—"}
+                          {formatCurrency(pricePerUnit)}
                         </p>
                       </div>
                       <div className="rounded-xl bg-white/70 px-4 py-3 text-slate-600 shadow-inner dark:bg-slate-800/80 dark:text-slate-300">
@@ -611,7 +609,7 @@ const suppliersList = Array.from(
                           {t("Total Value")}
                         </p>
                         <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                          {itemValue ? formatCurrency(itemValue) : "—"}
+                          {formatCurrency(itemValue)}
                         </p>
                       </div>
                     </div>
