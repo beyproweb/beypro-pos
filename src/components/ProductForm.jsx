@@ -7,6 +7,15 @@ import { toast } from "react-toastify";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const toNumber = (value) => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const raw = String(value).trim();
+  if (!raw) return 0;
+  const normalized = raw.replace(/\s+/g, "").replace(",", ".");
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : 0;
+};
 const normalizeUnit = (u) => {
   if (!u) return "";
   u = u.toLowerCase();
@@ -87,8 +96,9 @@ export default function ProductForm({ onSuccess, initialData = null, categories 
     );
   }, [categories, product.category]);
 useEffect(() => {
-  secureFetch("/suppliers/ingredients")
-    .then(data => setAvailableIngredients(Array.isArray(data) ? data : []))
+  // keep this in sync with the ingredient price source used below
+  secureFetch("/ingredient-prices")
+    .then((data) => setAvailableIngredients(Array.isArray(data) ? data : []))
     .catch(() => setAvailableIngredients([]));
 }, []);
 
@@ -126,17 +136,35 @@ const handleUpload = async () => {
   // ---------- effects ----------
 // ✅ Fetch tenant-safe ingredients, merge duplicates, and format names nicely
 useEffect(() => {
-  secureFetch("/suppliers/ingredients")
-    .then(data => {
-      if (!Array.isArray(data)) return setIngredientPrices([]);
+  // Prefer /ingredient-prices (it reflects latest supplier deliveries), fall back to /suppliers/ingredients.
+  const load = async () => {
+    let data = [];
+    try {
+      const primary = await secureFetch("/ingredient-prices");
+      if (Array.isArray(primary)) data = primary;
+    } catch {}
+    if (!Array.isArray(data) || data.length === 0) {
+      try {
+        const fallback = await secureFetch("/suppliers/ingredients");
+        if (Array.isArray(fallback)) data = fallback;
+      } catch {}
+    }
 
       // Step 1: normalize all
-      const normalized = data.map(item => ({
-        name: item.name?.trim(),
-        lower: item.name?.trim().toLowerCase(),
-        unit: item.unit?.trim(),
-        price_per_unit: item.price_per_unit ?? 0,
-      }));
+    const normalized = (Array.isArray(data) ? data : []).map((item) => ({
+      name: item.name?.trim(),
+      lower: item.name?.trim().toLowerCase(),
+      unit: item.unit?.trim(),
+      trend: item.trend,
+      price_per_unit: toNumber(
+        item.price_per_unit ??
+          item.unit_price ??
+          item.price ??
+          item.cost_per_unit ??
+          item.costPrice ??
+          0
+      ),
+    }));
 
       // Step 2: merge duplicates (case-insensitive)
       const mergedMap = new Map();
@@ -148,10 +176,14 @@ useEffect(() => {
               ing.name.charAt(0).toUpperCase() + ing.name.slice(1).toLowerCase(), // Title Case
             unit: ing.unit,
             price_per_unit: ing.price_per_unit,
+            trend: ing.trend,
           });
         } else {
           const existing = mergedMap.get(ing.lower);
           if (!existing.unit && ing.unit) existing.unit = ing.unit;
+          if (!(existing.price_per_unit > 0) && ing.price_per_unit > 0) {
+            existing.price_per_unit = ing.price_per_unit;
+          }
         }
       }
 
@@ -160,8 +192,8 @@ useEffect(() => {
       );
 
       setIngredientPrices(mergedList);
-    })
-    .catch(() => setIngredientPrices([]));
+  };
+  load().catch(() => setIngredientPrices([]));
 }, []);
 
 
@@ -358,7 +390,8 @@ const recalcEstimatedCost = (ingredients) => {
         String(ing?.ingredient || "").trim().toLowerCase()
     );
     if (!match) return;
-    const converted = convertPrice(match.price, match.unit, ing.unit);
+    const base = toNumber(match.price_per_unit ?? match.unit_price ?? match.price ?? 0);
+    const converted = convertPrice(base, match.unit, ing.unit);
     if (converted !== null) {
       total += parseFloat(ing.quantity) * converted;
     }
@@ -749,6 +782,7 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
             <div className="space-y-3">
               {product.ingredients.map((ing, i) => {
                 let cost = null;
+                let perUnit = null;
                 if (ing.ingredient && ing.quantity && ing.unit) {
                   const match = ingredientPrices.find(
                     (ai) =>
@@ -763,6 +797,7 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
                       normalizeUnit(ing.unit)
                     );
                     if (converted !== null) {
+                      perUnit = converted;
                       cost = parseFloat(ing.quantity) * converted;
                     }
                   }
@@ -823,6 +858,11 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
                     {cost !== null && (
                       <span className="ml-2 text-sm font-bold text-rose-600">
                         {formatCurrency(cost)}
+                      </span>
+                    )}
+                    {perUnit !== null && (
+                      <span className="text-xs font-semibold text-slate-500">
+                        {t("Unit price")}: {formatCurrency(perUnit)}
                       </span>
                     )}
 
