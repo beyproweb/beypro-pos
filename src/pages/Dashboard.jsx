@@ -384,29 +384,29 @@ const fetchSummaryStats = useCallback(async () => {
   // --- ICONS FOR QUICK ACCESS ---
   const getIcon = (iconName) => {
     switch (iconName) {
-      case 'Utensils': return <Utensils size={28} />;
-      case 'ChefHat': return <ChefHat size={28} />;
-      case 'Package': return <Package size={28} />;
-      case 'BarChart': return <BarChart size={28} />;
-      case 'Users': return <Users size={28} />;
-      case 'Settings': return <Settings size={28} />;
-      case 'PieChart': return <PieChart size={28} />;
-      case 'ClipboardList': return <ClipboardList size={28} />;
-      case 'TrendingUp': return <TrendingUp size={28} />;
-      case 'FileText': return <FileText size={28} />;
-      case 'Factory': return <Factory size={28} />;
-      case 'Bot': return <Bot size={28} />;
-      case 'QrCode': return <QrCode size={28} />;
-      case 'CreditCard': return <CreditCard size={28} />;
-      case 'UserCheck': return <UserCheck size={28} />;
-      case 'Megaphone': return <Megaphone size={28} />;
-      case 'Clock': return <Clock size={28} />;
-      case 'Wrench': return <Wrench size={28} />;
-      case 'UserCog': return <UserCog size={28} />;
-      case 'Bell': return <Bell size={28} />;
-      case 'Printer': return <Printer size={28} />;
-      case 'Plug': return <Plug size={28} />;
-      default: return <Home size={28} />;
+      case 'Utensils': return <Utensils size={24} />;
+      case 'ChefHat': return <ChefHat size={24} />;
+      case 'Package': return <Package size={24} />;
+      case 'BarChart': return <BarChart size={24} />;
+      case 'Users': return <Users size={24} />;
+      case 'Settings': return <Settings size={24} />;
+      case 'PieChart': return <PieChart size={24} />;
+      case 'ClipboardList': return <ClipboardList size={24} />;
+      case 'TrendingUp': return <TrendingUp size={24} />;
+      case 'FileText': return <FileText size={24} />;
+      case 'Factory': return <Factory size={24} />;
+      case 'Bot': return <Bot size={24} />;
+      case 'QrCode': return <QrCode size={24} />;
+      case 'CreditCard': return <CreditCard size={24} />;
+      case 'UserCheck': return <UserCheck size={24} />;
+      case 'Megaphone': return <Megaphone size={24} />;
+      case 'Clock': return <Clock size={24} />;
+      case 'Wrench': return <Wrench size={24} />;
+      case 'UserCog': return <UserCog size={24} />;
+      case 'Bell': return <Bell size={24} />;
+      case 'Printer': return <Printer size={24} />;
+      case 'Plug': return <Plug size={24} />;
+      default: return <Home size={24} />;
     }
   };
 
@@ -585,7 +585,7 @@ const fetchSummaryStats = useCallback(async () => {
                   if (draggedId) return;
                   navigate(item.path);
                 }}
-                className={`group rounded-2xl p-4 ${item.color} text-white shadow-lg hover:scale-[1.03] transform transition-all duration-300 cursor-grab active:cursor-grabbing ${
+                className={`group rounded-2xl p-4 min-h-[112px] ${item.color} text-white shadow-lg hover:scale-[1.03] transform transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center text-center ${
                   isDragOver ? "ring-2 ring-white/70" : ""
                 } ${isDragging ? "opacity-70" : ""}`}
                 draggable
@@ -596,10 +596,10 @@ const fetchSummaryStats = useCallback(async () => {
                 onDragEnd={handleDragEnd}
                 aria-grabbed={isDragging}
               >
-                <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-accent mb-2 shadow-inner group-hover:rotate-6 transition-all">
+                <div className="w-[2.55rem] h-[2.55rem] rounded-full bg-white flex items-center justify-center text-accent mb-2 shadow-inner group-hover:rotate-6 transition-all">
                   {getIcon(item.icon)}
                 </div>
-                <div className="text-sm font-semibold text-center tracking-tight">
+                <div className="text-[0.92rem] leading-tight font-semibold tracking-tight min-h-[2.25rem] flex items-center justify-center">
                   {label}
                 </div>
               </button>

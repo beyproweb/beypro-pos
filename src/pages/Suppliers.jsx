@@ -7,6 +7,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import io from "socket.io-client";
 import SupplierCartModal from "../modals/SupplierCartModal";
 import SupplierScheduledCart from "../components/SupplierScheduledCart";
+import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   SUPPLIERS_API,
@@ -91,6 +92,7 @@ const [newTransaction, setNewTransaction] = useState({
   const [latestTransaction, setLatestTransaction] = useState(null);
   const containerRef = useRef(null);
   const { formatCurrency, config } = useCurrency();
+  const location = useLocation();
 
   useEffect(() => {
     setHeader(prev => ({
@@ -109,33 +111,40 @@ useEffect(() => {
   fetchStock(); // ← actually call it here
 }, [fetchStock]); // ✅ include it in dependency array
 
-// --- Simple section nav + scroll-to-top ---
-const sectionTabs = [
-  { key: "supplier-overview", label: t("Overview") },
-  { key: "primary-supplier", label: t("Add Product") }, // ✅ NEW TAB
-  { key: "transaction-history", label: t("Transactions") },
-  { key: "price-tracking", label: t("Price") },
-  { key: "feedback-log", label: t("Feedback") },
-  { key: "profile-balance", label: t("Profile") },
-  { key: "supplier-carts", label: t("Carts") },
-];
-
-const scrollToId = (id) => {
-  const el = document.getElementById(id);
-  if (!el || !containerRef.current) return;
-  const y = el.offsetTop - 60; // adjust offset
-  containerRef.current.scrollTo({ top: y, behavior: "smooth" });
-};
-
-
 const [showUp, setShowUp] = useState(false);
-useEffect(() => {
-  const node = containerRef.current;
-  if (!node) return;
-  const onScroll = () => setShowUp(node.scrollTop > 400);
-  node.addEventListener("scroll", onScroll);
-  return () => node.removeEventListener("scroll", onScroll);
-}, []);
+	useEffect(() => {
+	  const node = containerRef.current;
+	  if (!node) return;
+	  const onScroll = () => setShowUp(node.scrollTop > 400);
+	  node.addEventListener("scroll", onScroll);
+	  return () => node.removeEventListener("scroll", onScroll);
+	}, []);
+
+	const scrollToId = (id) => {
+	  const el = document.getElementById(id);
+	  if (!el || !containerRef.current) return;
+	  const y = el.offsetTop - 60;
+	  containerRef.current.scrollTo({ top: y, behavior: "smooth" });
+	};
+
+	useEffect(() => {
+	  const params = new URLSearchParams(location.search);
+	  const view = params.get("view");
+	  const section = params.get("section");
+
+	  if (view === "cart") {
+	    setActiveTab("cart");
+	    return;
+	  }
+
+	  if (view === "suppliers" || section) {
+	    setActiveTab("suppliers");
+	  }
+
+	  if (section) {
+	    requestAnimationFrame(() => scrollToId(section));
+	  }
+	}, [location.search]);
 
 
   useEffect(() => {
@@ -487,13 +496,6 @@ feedback_history.map((entry) => ({
     setSelectedSupplier(supplier);
     fetchTransactions(supplier.id);
   };
-
-  const totalAllDues = useMemo(() => {
-    return suppliers.reduce(
-      (sum, supplier) => sum + (Number(supplier.total_due) || 0),
-      0
-    );
-  }, [suppliers]);
 
   const supplierTransactions = useMemo(() => {
     return transactions.filter(
@@ -1197,8 +1199,6 @@ id}`, {
     });
   };
 
-  const formattedTotalDues = formatCurrency(totalAllDues);
-
   const selectedSupplierDue = Number(selectedSupplier?.total_due ?? 0);
   const formattedSelectedSupplierDue = selectedSupplierDue.toLocaleString(
     undefined,
@@ -1336,93 +1336,10 @@ id}`, {
         </div>
       )}
 
-      <div className="mx-auto max-w-7xl space-y-10">
-        <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 text-white shadow-xl">
-          <div className="flex flex-col gap-8 p-6 sm:p-8 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/70">
-                {t("Supplier Operations")}
-              </p>
-              <div>
-                <h1 className="text-3xl font-bold sm:text-4xl">
-                  {t("Supplier Performance Hub")}
-                </h1>
-                <p className="mt-3 max-w-2xl text-base text-white/80 sm:text-lg">
-                  {t(
-                    "Monitor supplier reliability, track pricing trends, and manage purchasing decisions in one workspace."
-                  )}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-4 rounded-2xl bg-white/10 p-5 text-white shadow-lg backdrop-blur">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-white/70">
-                  {t("Total outstanding dues")}
-                </p>
-                <p className="mt-2 text-3xl font-semibold sm:text-4xl">
-                  {formattedTotalDues}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-white/80">
-                <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 font-semibold">
-                  <span className="h-2.5 w-2.5 rounded-full bg-lime-300" />
-                  {t("Active suppliers")}: {suppliers.length}
-                </span>
-                {selectedSupplier && (
-                  <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 font-semibold">
-                    <span className="h-2.5 w-2.5 rounded-full bg-white/60" />
-                    {selectedSupplier?.name}: {formattedSelectedSupplierDue}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <button
-              onClick={() => setActiveTab("suppliers")}
-              className={`px-4 py-2 rounded-full font-semibold transition ${
-                activeTab === "suppliers"
-                  ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-              }`}
-            >
-              📦 {t("Suppliers")}
-            </button>
-            <button
-              onClick={() => setActiveTab("cart")}
-              className={`px-4 py-2 rounded-full font-semibold transition ${
-                activeTab === "cart"
-                  ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-              }`}
-            >
-              🛒 {t("Supplier Cart")}
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
-             {/* ✅ NEW: section tabs next to the title */}
-      <div className="inline-flex max-w-full overflow-x-auto rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        {sectionTabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => scrollToId(tab.key)}
-            className="whitespace-nowrap rounded-full px-3 py-1.5 font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
-            title={tab.label}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-           
-          </div>
-        </div>
-        {/* --- SUPPLIERS TAB --- */}
-        {activeTab === "suppliers" && (
-          <div className="space-y-10">
+		      <div className="mx-auto max-w-7xl space-y-10">
+	        {/* --- SUPPLIERS TAB --- */}
+	        {activeTab === "suppliers" && (
+	          <div className="space-y-10">
          
 <section
   id="primary-supplier"  // ✅ ADD THIS

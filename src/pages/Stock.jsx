@@ -406,40 +406,9 @@ const suppliersList = Array.from(
 
   const showLoadingPlaceholder = loading && groupedData.length === 0;
 
-  return (
+      return (
     <div className="min-h-screen bg-slate-50 px-4 py-8 transition-colors duration-300 dark:bg-slate-950 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-7xl space-y-8">
-        <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-purple-600 to-sky-500 text-white shadow-xl">
-          <div className="flex flex-col gap-8 p-6 sm:p-8 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.45em] text-white/70">
-                {t("Inventory Overview")}
-              </p>
-              <div>
-                <h1 className="text-3xl font-bold sm:text-4xl">
-                  {t("Stock Management")}
-                </h1>
-                <p className="mt-3 max-w-2xl text-base text-white/80 sm:text-lg">
-                  {t(
-                    "Monitor stock levels, prioritize restocks, and collaborate with suppliers in real-time."
-                  )}
-                </p>
-              </div>
-            </div>
-            <div className="flex-shrink-0 rounded-2xl bg-white/10 px-5 py-4 text-white shadow-lg backdrop-blur">
-              <p className="text-xs font-semibold uppercase tracking-widest text-white/70">
-                {t("Total Stock Value")}
-              </p>
-              <p className="mt-2 text-3xl font-semibold sm:text-4xl">
-                {formattedStockValue}
-              </p>
-              <p className="mt-2 text-sm text-white/70">
-                {t("Live data synced with supplier inputs.")}
-              </p>
-            </div>
-          </div>
-        </section>
-
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {statCards.map((card, idx) => (
             <div

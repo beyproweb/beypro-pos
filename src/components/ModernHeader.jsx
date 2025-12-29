@@ -82,6 +82,7 @@ export default function ModernHeader({
   const isOrdersRoute = location.pathname.includes("/orders");
   const isKitchenRoute = location.pathname.includes("/kitchen");
   const isStockRoute = location.pathname.includes("/stock");
+  const isSuppliersRoute = location.pathname.startsWith("/suppliers");
   const showHeaderTabs =
     isTableOverviewRoute ||
     isTransactionRoute ||
@@ -89,6 +90,49 @@ export default function ModernHeader({
     isOrdersRoute ||
     isKitchenRoute ||
     isStockRoute;
+
+  const supplierTabs = React.useMemo(
+    () => [
+      { kind: "switch", key: "suppliers", label: t("Suppliers") },
+      { kind: "switch", key: "cart", label: t("Supplier Cart") },
+      { kind: "section", key: "supplier-overview", label: t("Overview") },
+      { kind: "section", key: "primary-supplier", label: t("Add Product") },
+      { kind: "section", key: "transaction-history", label: t("Transactions") },
+      { kind: "section", key: "price-tracking", label: t("Price") },
+      { kind: "section", key: "profile-balance", label: t("Profile") },
+    ],
+    [t]
+  );
+
+  const supplierView = React.useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const view = params.get("view");
+    return view === "cart" ? "cart" : "suppliers";
+  }, [location.search]);
+
+  const supplierSection = React.useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const section = params.get("section");
+    return section ? String(section) : null;
+  }, [location.search]);
+
+  const handleSupplierTabClick = React.useCallback(
+    (tab) => {
+      const params = new URLSearchParams(location.search);
+
+      if (tab.kind === "switch") {
+        params.set("view", tab.key);
+        params.delete("section");
+        navigate(`/suppliers?${params.toString()}`);
+        return;
+      }
+
+      params.set("view", "suppliers");
+      params.set("section", tab.key);
+      navigate(`/suppliers?${params.toString()}`);
+    },
+    [location.search, navigate]
+  );
 
   const canSeeTablesTab = useHasPermission("tables");
   const canSeeKitchenTab = useHasPermission("kitchen");
@@ -180,23 +224,49 @@ export default function ModernHeader({
       {/* Center: sticky subtitle (no flicker) */}
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4 gap-1">
         <StickySubtitle text={subtitle} />
-            {showHeaderTabs && headerTabs.length > 0 && (
+        {isSuppliersRoute && supplierTabs.length > 0 && (
+          <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto">
+            {supplierTabs.map((tab) => {
+              const isActive =
+                tab.kind === "switch"
+                  ? supplierView === tab.key
+                  : supplierView === "suppliers" && supplierSection === tab.key;
+
+              return (
+                <button
+                  key={`${tab.kind}:${tab.key}`}
+                  type="button"
+                  onClick={() => handleSupplierTabClick(tab)}
+                  className={`rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
+                    isActive
+                      ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {!isSuppliersRoute && showHeaderTabs && headerTabs.length > 0 && (
           <div className="hidden md:flex items-center justify-center gap-2 flex-wrap">
             {headerTabs.map((tab) => {
               const isActive = resolvedActiveHeaderTab === tab.id;
               return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => handleHeaderTabClick(tab.id)}
-                    className={`rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
-                      isActive
-                        ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
-                        : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => handleHeaderTabClick(tab.id)}
+                  className={`rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
+                    isActive
+                      ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {tab.label}
+                </button>
               );
             })}
           </div>
