@@ -12,8 +12,22 @@ const toNumber = (value) => {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   const raw = String(value).trim();
   if (!raw) return 0;
-  const normalized = raw.replace(/\s+/g, "").replace(",", ".");
-  const num = Number(normalized);
+  // drop currency/letters, keep digits, dots, commas, minus
+  let cleaned = raw.replace(/[^\d,.\-]+/g, "").replace(/\s+/g, "");
+  if (!cleaned) return 0;
+  // normalize comma decimal
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+  if (hasComma && hasDot) {
+    if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
+      cleaned = cleaned.replace(/\./g, "").replace(/,/g, ".");
+    } else {
+      cleaned = cleaned.replace(/,/g, "");
+    }
+  } else if (hasComma && !hasDot) {
+    cleaned = cleaned.replace(/,/g, ".");
+  }
+  const num = Number(cleaned);
   return Number.isFinite(num) ? num : 0;
 };
 
