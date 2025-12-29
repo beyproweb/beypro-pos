@@ -4,6 +4,50 @@ import socket from "../utils/socket";
 
 const StockContext = createContext();
 
+const toNumber = (value) => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const cleaned = String(value).replace(/[^0-9.-]+/g, "");
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const normalizeStockList = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.stock)) return payload.stock;
+  if (Array.isArray(payload?.stocks)) return payload.stocks;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
+
+const getPricePerUnit = (item) => {
+  const direct =
+    item?.price_per_unit ??
+    item?.pricePerUnit ??
+    item?.unit_price ??
+    item?.unitPrice ??
+    item?.purchase_price ??
+    item?.purchasePrice ??
+    item?.cost_per_unit ??
+    item?.costPerUnit ??
+    item?.cost_price ??
+    item?.costPrice ??
+    item?.price ??
+    item?.unit_cost ??
+    item?.unitCost;
+
+  const nested =
+    item?.product?.price_per_unit ??
+    item?.product?.pricePerUnit ??
+    item?.product?.unit_price ??
+    item?.product?.unitPrice ??
+    item?.ingredient?.price_per_unit ??
+    item?.ingredient?.pricePerUnit;
+
+  return toNumber(direct ?? nested);
+};
+
 
 export const useStock = () => useContext(StockContext);
 
@@ -22,8 +66,8 @@ export const StockProvider = ({ children }) => {
         const { stock } = await secureFetch(`/stock/${item.stock_id}`);
         if (!stock) return;
 
-        const quantity = parseFloat(stock.quantity);
-        const critical = parseFloat(stock.critical_quantity || 0);
+        const quantity = toNumber(stock.quantity);
+        const critical = toNumber(stock.critical_quantity);
         if (quantity > critical) {
           console.log(`🛑 ${item.name} not critical (${quantity} > ${critical}), skipping`);
           return;
@@ -86,7 +130,8 @@ export const StockProvider = ({ children }) => {
   const fetchStock = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await secureFetch("/stock");
+      const raw = await secureFetch("/stock");
+      const data = normalizeStockList(raw);
       setStock(data);
 
       // Load existing cart items per supplier
@@ -107,8 +152,8 @@ export const StockProvider = ({ children }) => {
 
           if (!stock) continue;
 
-          const quantity = parseFloat(stock.quantity);
-          const critical = parseFloat(stock.critical_quantity || 0);
+          const quantity = toNumber(stock.quantity);
+          const critical = toNumber(stock.critical_quantity);
 
           if (quantity > critical) {
             console.log(`🟢 ${item.name} above critical (${quantity} > ${critical}) — skip`);
@@ -164,12 +209,15 @@ export const StockProvider = ({ children }) => {
       }
 
       // Regroup for UI (include price_per_unit so Stock page can show value)
-      const refreshed = await secureFetch("/stock");
+      const refreshedRaw = await secureFetch("/stock");
+      const refreshed = normalizeStockList(refreshedRaw);
       const grouped = Object.values(
         refreshed.reduce((acc, item) => {
-          const key = `${item.name.toLowerCase()}_${item.unit}`;
-          const quantity = parseFloat(item.quantity) || 0;
-          const pricePerUnit = Number(item.price_per_unit) || 0;
+          const nameKey = String(item?.name || "").toLowerCase();
+          const unitKey = String(item?.unit || "");
+          const key = `${nameKey}_${unitKey}`;
+          const quantity = toNumber(item?.quantity);
+          const pricePerUnit = getPricePerUnit(item);
 
           if (!acc[key]) {
             acc[key] = {
