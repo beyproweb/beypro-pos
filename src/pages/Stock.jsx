@@ -75,6 +75,16 @@ useEffect(() => {
     );
   }, [groupedData]);
 
+  const toSafeNumber = (value) => {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const raw = String(value).trim();
+    if (!raw) return 0;
+    const normalized = raw.replace(/\s+/g, "").replace(",", ".");
+    const num = Number(normalized);
+    return Number.isFinite(num) ? num : 0;
+  };
+
   const totalItems = groupedData.length;
   const totalUnitsOnHand = groupedData.reduce(
     (acc, item) => acc + (Number(item.quantity) || 0),
@@ -608,9 +618,25 @@ const suppliersList = Array.from(
                 item.stock_id ||
                 item.id ||
                 `${item.name?.toLowerCase()}_${item.unit}`;
-              const pricePerUnit = Number(item.price_per_unit) || 0;
+              const rawPrice =
+                item.price_per_unit ??
+                item.unit_price ??
+                item.cost_per_unit ??
+                item.costPrice ??
+                item.price ??
+                0;
+              let pricePerUnit = toSafeNumber(rawPrice);
+              if (!(pricePerUnit > 0)) {
+                const derivedFromTotal =
+                  (toSafeNumber(item.total_value ?? item.value ?? item.amount) > 0 &&
+                    toSafeNumber(item.quantity)) > 0
+                    ? toSafeNumber(item.total_value ?? item.value ?? item.amount) /
+                      (toSafeNumber(item.quantity) || 1)
+                    : 0;
+                pricePerUnit = derivedFromTotal;
+              }
               const itemValue =
-                (Number(item.quantity) || 0) * (Number(pricePerUnit) || 0);
+                (toSafeNumber(item.quantity) || 0) * (toSafeNumber(pricePerUnit) || 0);
 
               if (
                 import.meta.env.DEV &&
