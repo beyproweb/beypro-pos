@@ -16,6 +16,15 @@ const toNumber = (value) => {
   const num = Number(normalized);
   return Number.isFinite(num) ? num : 0;
 };
+
+const normalizeStockList = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.stock)) return payload.stock;
+  if (Array.isArray(payload?.stocks)) return payload.stocks;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
 const normalizeUnit = (u) => {
   if (!u) return "";
   u = u.toLowerCase();
@@ -187,11 +196,39 @@ useEffect(() => {
         }
       }
 
-      const mergedList = Array.from(mergedMap.values()).sort((a, b) =>
-        a.name.localeCompare(b.name, "en", { sensitivity: "base" })
-      );
+    const mergedList = Array.from(mergedMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "en", { sensitivity: "base" })
+    );
 
-      setIngredientPrices(mergedList);
+    // If prices are missing/0, fall back to current stock prices (Stock page uses this).
+    const hasMissingPrices = mergedList.some((it) => !(toNumber(it.price_per_unit) > 0));
+    let finalList = mergedList;
+    if (hasMissingPrices) {
+      try {
+        const stockRaw = await secureFetch("/stock");
+        const stock = normalizeStockList(stockRaw);
+        const stockPriceMap = new Map(); // name|unit -> price_per_unit
+        for (const s of stock) {
+          const nameKey = String(s?.name || "").trim().toLowerCase();
+          const unitKey = normalizeUnit(s?.unit);
+          const key = `${nameKey}|${unitKey}`;
+          const price = toNumber(s?.price_per_unit ?? s?.unit_price ?? s?.price ?? 0);
+          if (price > 0 && !stockPriceMap.has(key)) stockPriceMap.set(key, price);
+        }
+
+        finalList = mergedList.map((it) => {
+          const nameKey = String(it?.name || "").trim().toLowerCase();
+          const unitKey = normalizeUnit(it?.unit);
+          const key = `${nameKey}|${unitKey}`;
+          const stockPrice = stockPriceMap.get(key) || 0;
+          if (toNumber(it.price_per_unit) > 0 || !(stockPrice > 0)) return it;
+          return { ...it, price_per_unit: stockPrice };
+        });
+      } catch {}
+    }
+
+    setIngredientPrices(finalList);
+    setAvailableIngredients(finalList);
   };
   load().catch(() => setIngredientPrices([]));
 }, []);
@@ -783,7 +820,7 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
               {product.ingredients.map((ing, i) => {
                 let cost = null;
                 let perUnit = null;
-                if (ing.ingredient && ing.quantity && ing.unit) {
+                if (ing.ingredient && ing.unit) {
                   const match = ingredientPrices.find(
                     (ai) =>
                       ai.name.toLowerCase().trim() ===
@@ -798,7 +835,9 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
                     );
                     if (converted !== null) {
                       perUnit = converted;
-                      cost = parseFloat(ing.quantity) * converted;
+                      if (ing.quantity) {
+                        cost = parseFloat(ing.quantity) * converted;
+                      }
                     }
                   }
                 }
