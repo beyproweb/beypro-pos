@@ -806,16 +806,11 @@ const handleRenameCategory = async (original, value) => {
 
               {/* Cost (backend or fallback) */}
 {(() => {
-  const backendCost =
-    productCostsById[product.id] !== undefined
-      ? Number(productCostsById[product.id]) || 0
-      : null;
-  const fallbackCost =
-    backendCost === null || backendCost === undefined ? computeFallbackCost(product) : 0;
-  const cost =
-    backendCost !== null && backendCost !== undefined && backendCost > 0
-      ? backendCost
-      : fallbackCost;
+  const backendCostRaw =
+    productCostsById[product.id] !== undefined ? productCostsById[product.id] : null;
+  const backendCost = toNumber(backendCostRaw);
+  const fallbackCost = !(backendCost > 0) ? computeFallbackCost(product) : 0;
+  const cost = backendCost > 0 ? backendCost : fallbackCost;
 
   if (!(cost > 0)) return null;
 
