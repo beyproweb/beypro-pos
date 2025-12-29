@@ -6,6 +6,68 @@ import { Plus, Trash2, Filter, Edit3, Layers } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 
+const toNumber = (value) => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const raw = String(value).trim();
+  if (!raw) return 0;
+  const cleaned = raw.replace(/[^\d,.\-]+/g, "").replace(/\s+/g, "");
+  if (!cleaned) return 0;
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+  let normalized = cleaned;
+  if (hasComma && hasDot) {
+    if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
+      normalized = cleaned.replace(/\./g, "").replace(/,/g, ".");
+    } else {
+      normalized = cleaned.replace(/,/g, "");
+    }
+  } else if (hasComma && !hasDot) {
+    normalized = cleaned.replace(/,/g, ".");
+  }
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const normalizeUnit = (u) => {
+  if (!u) return "";
+  const v = String(u).toLowerCase();
+  if (v === "lt") return "l";
+  if (v === "pieces") return "piece";
+  if (v === "portion" || v === "portions") return "portion";
+  return v;
+};
+
+const convertPrice = (basePrice, supplierUnit, targetUnit) => {
+  if (!basePrice || !supplierUnit || !targetUnit) return null;
+  const from = normalizeUnit(supplierUnit);
+  const to = normalizeUnit(targetUnit);
+  if (!from || !to) return null;
+  if (from === to) return basePrice;
+  if (from === "kg" && to === "g") return basePrice / 1000;
+  if (from === "g" && to === "kg") return basePrice * 1000;
+  if (from === "l" && to === "ml") return basePrice / 1000;
+  if (from === "ml" && to === "l") return basePrice * 1000;
+  return null;
+};
+
+const parseJsonDeep = (value, fallback) => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return fallback;
+  const raw = value.trim();
+  if (!raw) return fallback;
+  try {
+    let parsed = JSON.parse(raw);
+    for (let i = 0; i < 2 && typeof parsed === "string"; i++) {
+      parsed = JSON.parse(parsed);
+    }
+    return parsed;
+  } catch {
+    return fallback;
+  }
+};
+
 const API_URL =
   import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com";
 
@@ -76,12 +138,195 @@ useEffect(() => {
     return;
   }
 
-  secureFetch("/suppliers/ingredients")
-    .then((data) => {
-      console.log("🔎 Ingredients for tenant", tenantId, data);
-      setAvailableIngredients(Array.isArray(data) ? data : []);
-    })
-    .catch(() => setAvailableIngredients([]));
+  const normalizeStockList = (payload) => {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.stock)) return payload.stock;
+    if (Array.isArray(payload?.stocks)) return payload.stocks;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
+  };
+
+  const loadIngredients = async () => {
+    try {
+      let list = [];
+      try {
+        const prices = await secureFetch("/ingredient-prices");
+        if (Array.isArray(prices)) list = prices;
+      } catch {}
+
+      try {
+        const supplierIngs = await secureFetch("/suppliers/ingredients");
+        if (Array.isArray(supplierIngs)) list = [...list, ...supplierIngs];
+      } catch {}
+
+      const base = (Array.isArray(list) ? list : [])
+        .map((row) => ({
+          name: String(row?.name || row?.ingredient || "").trim(),
+          unit: String(row?.unit || "").trim(),
+          price_per_unit: toNumber(
+            row?.price_per_unit ??
+              row?.unit_price ??
+              row?.purchase_price ??
+              row?.cost_per_unit ??
+              row?.costPrice ??
+              row?.price ??
+              0
+          ),
+        }))
+        .filter((r) => r.name);
+
+      const mergedMap = new Map(); // lowerName -> row
+      for (const r of base) {
+        const lower = r.name.toLowerCase();
+        if (!mergedMap.has(lower)) {
+          mergedMap.set(lower, { ...r });
+        } else {
+          const existing = mergedMap.get(lower);
+          if (!existing.unit && r.unit) existing.unit = r.unit;
+          if (!(existing.price_per_unit > 0) && r.price_per_unit > 0) {
+            existing.price_per_unit = r.price_per_unit;
+          }
+        }
+      }
+      let merged = Array.from(mergedMap.values());
+
+      const missing = merged.some((r) => !(toNumber(r.price_per_unit) > 0));
+      const stockSupplierMap = new Map(); // name|unit or name| -> supplier_id
+      if (missing) {
+        try {
+          const stockRaw = await secureFetch("/stock");
+          const stock = normalizeStockList(stockRaw);
+          const stockPriceMap = new Map(); // name|unit -> price
+          const stockPriceMapNameOnly = new Map(); // name -> price
+
+          for (const s of stock) {
+            const nameKey = String(s?.name || "").trim().toLowerCase();
+            const unitKey = normalizeUnit(s?.unit);
+            const key = `${nameKey}|${unitKey}`;
+            const keyNoUnit = `${nameKey}|`;
+
+            const rawPrice =
+              s?.price_per_unit ??
+              s?.unit_price ??
+              s?.purchase_price ??
+              s?.cost_per_unit ??
+              s?.costPrice ??
+              s?.price ??
+              0;
+            let price = toNumber(rawPrice);
+            if (!(price > 0)) {
+              const total = toNumber(s?.total_value ?? s?.value ?? s?.amount);
+              const qty = toNumber(s?.quantity);
+              if (qty > 0 && total > 0) price = total / qty;
+            }
+
+            if (price > 0 && !stockPriceMap.has(key)) stockPriceMap.set(key, price);
+            if (price > 0 && !stockPriceMapNameOnly.has(nameKey)) {
+              stockPriceMapNameOnly.set(nameKey, price);
+            }
+
+            if (s?.supplier_id) {
+              stockSupplierMap.set(key, s.supplier_id);
+              stockSupplierMap.set(keyNoUnit, s.supplier_id);
+            }
+          }
+
+          merged = merged.map((r) => {
+            if (toNumber(r.price_per_unit) > 0) return r;
+            const nameKey = String(r.name || "").trim().toLowerCase();
+            const unitKey = normalizeUnit(r.unit);
+            const key = `${nameKey}|${unitKey}`;
+            const stockPrice = stockPriceMap.get(key) ?? stockPriceMapNameOnly.get(nameKey) ?? 0;
+            if (stockPrice > 0) return { ...r, price_per_unit: stockPrice };
+            return r;
+          });
+        } catch {}
+      }
+
+      const stillMissing = merged.filter((r) => !(toNumber(r.price_per_unit) > 0));
+      if (stillMissing.length > 0 && stockSupplierMap.size > 0) {
+        const supplierIds = Array.from(
+          new Set(
+            stillMissing
+              .map((r) => {
+                const nameKey = String(r.name || "").trim().toLowerCase();
+                const unitKey = normalizeUnit(r.unit);
+                return (
+                  stockSupplierMap.get(`${nameKey}|${unitKey}`) ||
+                  stockSupplierMap.get(`${nameKey}|`)
+                );
+              })
+              .filter(Boolean)
+          )
+        );
+
+        const txnPriceMap = new Map(); // name|unit -> {price,time}
+        for (const sid of supplierIds) {
+          try {
+            const txRaw = await secureFetch(`/suppliers/${sid}/transactions`);
+            const txns = Array.isArray(txRaw?.transactions)
+              ? txRaw.transactions
+              : Array.isArray(txRaw)
+                ? txRaw
+                : [];
+
+            txns.forEach((txn) => {
+              const time = new Date(
+                txn?.delivery_date ||
+                  txn?.created_at ||
+                  txn?.updated_at ||
+                  txn?.date ||
+                  txn?.timestamp ||
+                  0
+              ).getTime();
+
+              const rows = Array.isArray(txn.items) && txn.items.length > 0 ? txn.items : [txn];
+              rows.forEach((row) => {
+                const name = row?.ingredient || row?.name || row?.product_name;
+                const unit = normalizeUnit(row?.unit);
+                if (!name || !unit) return;
+                const nameKey = String(name).trim().toLowerCase();
+                const key = `${nameKey}|${unit}`;
+                if (nameKey === "payment" || nameKey === "compiled receipt") return;
+
+                const total = toNumber(row?.total_cost ?? row?.totalCost ?? row?.amount);
+                const qty = toNumber(row?.quantity);
+                let price = toNumber(row?.price_per_unit ?? row?.unit_price ?? row?.price ?? 0);
+                if (!(price > 0) && qty > 0 && total > 0) price = total / qty;
+                if (!(price > 0)) return;
+
+                const existing = txnPriceMap.get(key);
+                if (!existing || time > existing.time) {
+                  txnPriceMap.set(key, { price, time });
+                }
+              });
+            });
+          } catch {}
+        }
+
+        if (txnPriceMap.size > 0) {
+          merged = merged.map((r) => {
+            if (toNumber(r.price_per_unit) > 0) return r;
+            const nameKey = String(r.name || "").trim().toLowerCase();
+            const unitKey = normalizeUnit(r.unit);
+            const key = `${nameKey}|${unitKey}`;
+            const hit = txnPriceMap.get(key);
+            if (hit?.price > 0) return { ...r, price_per_unit: hit.price };
+            return r;
+          });
+        }
+      }
+
+      console.log("🔎 Ingredients for tenant", tenantId, merged);
+      setAvailableIngredients(merged);
+    } catch (err) {
+      console.error("❌ Failed to load ingredients:", err);
+      setAvailableIngredients([]);
+    }
+  };
+
+  loadIngredients();
 }, [tenantId]);
 
 
@@ -157,6 +402,40 @@ useEffect(() => {
     })
     .catch(() => setProductCostsById({}));
 }, [products]);
+
+  const computeFallbackCost = (product) => {
+    const rawIngredients = product?.ingredients;
+    const parsedIngredients = parseJsonDeep(rawIngredients, rawIngredients);
+    const ingredients = Array.isArray(parsedIngredients) ? parsedIngredients : [];
+    if (!Array.isArray(ingredients)) return 0;
+    let total = 0;
+    for (const ing of ingredients) {
+      const name = String(ing?.ingredient || ing?.name || "").trim().toLowerCase();
+      const qty = toNumber(ing?.quantity);
+      const unit = normalizeUnit(ing?.unit);
+      if (!name || !unit || !(qty > 0)) continue;
+      const match = availableIngredients.find(
+        (ai) => String(ai?.name || "").trim().toLowerCase() === name
+      );
+      if (!match) continue;
+      const basePrice = toNumber(
+        match.price_per_unit ??
+          match.unit_price ??
+          match.purchase_price ??
+          match.cost_per_unit ??
+          match.costPrice ??
+          match.price ??
+          0
+      );
+      if (!(basePrice > 0)) continue;
+      const converted = convertPrice(basePrice, match.unit, unit);
+      const perUnit = converted !== null ? converted : basePrice;
+      if (perUnit > 0) {
+        total += qty * perUnit;
+      }
+    }
+    return total;
+  };
 
 
   // Extras Groups (tenant-protected) under /api/products/extras-group
@@ -525,9 +804,21 @@ const handleRenameCategory = async (original, value) => {
                 </div>
               </div>
 
-              {/* Cost (if available) */}
-{productCostsById[product.id] !== undefined && (() => {
-  const cost = Number(productCostsById[product.id]) || 0;
+              {/* Cost (backend or fallback) */}
+{(() => {
+  const backendCost =
+    productCostsById[product.id] !== undefined
+      ? Number(productCostsById[product.id]) || 0
+      : null;
+  const fallbackCost =
+    backendCost === null || backendCost === undefined ? computeFallbackCost(product) : 0;
+  const cost =
+    backendCost !== null && backendCost !== undefined && backendCost > 0
+      ? backendCost
+      : fallbackCost;
+
+  if (!(cost > 0)) return null;
+
   const price = Number(product.price) || 0;
   const profit = price - cost;
   const margin = price > 0 ? (profit / price) * 100 : 0;

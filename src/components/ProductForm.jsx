@@ -183,20 +183,21 @@ const handleUpload = async () => {
 useEffect(() => {
   // Prefer /ingredient-prices (it reflects latest supplier deliveries), fall back to /suppliers/ingredients.
   const load = async () => {
-    let data = [];
+    let list = [];
     try {
       const primary = await secureFetch("/ingredient-prices");
-      if (Array.isArray(primary)) data = primary;
+      if (Array.isArray(primary)) list = primary;
     } catch {}
-    if (!Array.isArray(data) || data.length === 0) {
-      try {
-        const fallback = await secureFetch("/suppliers/ingredients");
-        if (Array.isArray(fallback)) data = fallback;
-      } catch {}
-    }
+    // Always also pull supplier ingredients and merge (new ingredients may not have a price yet)
+    try {
+      const secondary = await secureFetch("/suppliers/ingredients");
+      if (Array.isArray(secondary)) {
+        list = [...list, ...secondary];
+      }
+    } catch {}
 
-      // Step 1: normalize all
-    const normalized = (Array.isArray(data) ? data : []).map((item) => ({
+    // Step 1: normalize all
+    const normalized = (Array.isArray(list) ? list : []).map((item) => ({
       name: item.name?.trim(),
       lower: item.name?.trim().toLowerCase(),
       unit: item.unit?.trim(),
@@ -204,6 +205,7 @@ useEffect(() => {
       price_per_unit: toNumber(
         item.price_per_unit ??
           item.unit_price ??
+          item.purchase_price ??
           item.price ??
           item.cost_per_unit ??
           item.costPrice ??
@@ -211,11 +213,11 @@ useEffect(() => {
       ),
     }));
 
-      // Step 2: merge duplicates (case-insensitive)
-      const mergedMap = new Map();
-      for (const ing of normalized) {
-        if (!ing.lower) continue;
-        if (!mergedMap.has(ing.lower)) {
+    // Step 2: merge duplicates (case-insensitive)
+    const mergedMap = new Map();
+    for (const ing of normalized) {
+      if (!ing.lower) continue;
+      if (!mergedMap.has(ing.lower)) {
           mergedMap.set(ing.lower, {
             name:
               ing.name.charAt(0).toUpperCase() + ing.name.slice(1).toLowerCase(), // Title Case
@@ -239,19 +241,23 @@ useEffect(() => {
     // If prices are missing/0, fall back to current stock prices (Stock page uses this).
     const hasMissingPrices = mergedList.some((it) => !(toNumber(it.price_per_unit) > 0));
     let finalList = mergedList;
+    const stockPriceMap = new Map(); // name|unit -> price_per_unit
+    const stockPriceMapNameOnly = new Map(); // name -> price_per_unit
+    const stockSupplierMap = new Map(); // name|unit -> supplier_id
     if (hasMissingPrices) {
       try {
         const stockRaw = await secureFetch("/stock");
         const stock = normalizeStockList(stockRaw);
-        const stockPriceMap = new Map(); // name|unit -> price_per_unit
         for (const s of stock) {
           const nameKey = String(s?.name || "").trim().toLowerCase();
           const unitKey = normalizeUnit(s?.unit);
           const key = `${nameKey}|${unitKey}`;
+          const keyNoUnit = `${nameKey}|`;
 
           const rawPrice =
             s?.price_per_unit ??
             s?.unit_price ??
+            s?.purchase_price ??
             s?.cost_per_unit ??
             s?.costPrice ??
             s?.price ??
@@ -266,16 +272,93 @@ useEffect(() => {
           }
 
           if (price > 0 && !stockPriceMap.has(key)) stockPriceMap.set(key, price);
+          if (price > 0 && !stockPriceMapNameOnly.has(nameKey)) {
+            stockPriceMapNameOnly.set(nameKey, price);
+          }
+          if (s?.supplier_id) {
+            stockSupplierMap.set(key, s.supplier_id);
+            stockSupplierMap.set(keyNoUnit, s.supplier_id);
+          }
         }
 
         finalList = mergedList.map((it) => {
           const nameKey = String(it?.name || "").trim().toLowerCase();
           const unitKey = normalizeUnit(it?.unit);
           const key = `${nameKey}|${unitKey}`;
-          const stockPrice = stockPriceMap.get(key) || 0;
+          const stockPrice = stockPriceMap.get(key) ?? stockPriceMapNameOnly.get(nameKey) ?? 0;
           if (toNumber(it.price_per_unit) > 0 || !(stockPrice > 0)) return it;
           return { ...it, price_per_unit: stockPrice };
         });
+      } catch {}
+    }
+
+    // If still missing prices, fall back to latest supplier transactions per supplier_id from stock
+    const stillMissing = finalList.filter((it) => !(toNumber(it.price_per_unit) > 0));
+    if (stillMissing.length > 0 && stockSupplierMap.size > 0) {
+      try {
+        const supplierIds = Array.from(
+          new Set(
+            stillMissing
+              .map((it) => {
+                const nameKey = String(it?.name || "").trim().toLowerCase();
+                const unitKey = normalizeUnit(it?.unit);
+                const key = `${nameKey}|${unitKey}`;
+                return stockSupplierMap.get(key) || stockSupplierMap.get(`${nameKey}|`);
+              })
+              .filter(Boolean)
+          )
+        );
+
+        const txnPriceMap = new Map(); // name|unit -> price
+        for (const sid of supplierIds) {
+          try {
+            const txRaw = await secureFetch(`/suppliers/${sid}/transactions`);
+            const txns = Array.isArray(txRaw?.transactions) ? txRaw.transactions : Array.isArray(txRaw) ? txRaw : [];
+            txns.forEach((txn) => {
+              const time = new Date(
+                txn?.delivery_date ||
+                  txn?.created_at ||
+                  txn?.updated_at ||
+                  txn?.date ||
+                  txn?.timestamp ||
+                  0
+              ).getTime();
+              const rows = Array.isArray(txn.items) && txn.items.length > 0 ? txn.items : [txn];
+              rows.forEach((row) => {
+                const name = row?.ingredient || row?.name || row?.product_name;
+                const unit = normalizeUnit(row?.unit);
+                if (!name) return;
+                const nameKey = String(name).trim().toLowerCase();
+                const key = `${nameKey}|${unit}`;
+                const total = toSafeNumber(row?.total_cost ?? row?.totalCost ?? row?.amount);
+                const qty = toSafeNumber(row?.quantity);
+                let price = toSafeNumber(row?.price_per_unit ?? row?.unit_price ?? row?.price ?? 0);
+                if (!(price > 0) && qty > 0 && total > 0) {
+                  price = total / qty;
+                }
+                if (!(price > 0)) return;
+                const existing = txnPriceMap.get(key);
+                if (!existing || time > existing.time) {
+                  txnPriceMap.set(key, { price, time });
+                }
+              });
+            });
+          } catch {}
+        }
+
+        if (txnPriceMap.size > 0) {
+          finalList = finalList.map((it) => {
+            if (toNumber(it.price_per_unit) > 0) return it;
+            const nameKey = String(it?.name || "").trim().toLowerCase();
+            const unitKey = normalizeUnit(it?.unit);
+            const key = `${nameKey}|${unitKey}`;
+            const fallback = txnPriceMap.get(key);
+            if (fallback?.price > 0) {
+              return { ...it, price_per_unit: fallback.price };
+            }
+            return it;
+          });
+        }
       } catch {}
     }
 
@@ -455,7 +538,8 @@ const handleIngredientChange = (index, e) => {
     const match = ingredientPrices.find(
       (ai) => String(ai?.name || "").trim().toLowerCase() === picked
     );
-    if (match?.unit && !list[index].unit) {
+    if (match?.unit) {
+      // Always sync unit to the newly selected ingredient's unit
       list[index].unit = normalizeUnitForApi(match.unit);
     }
   }
