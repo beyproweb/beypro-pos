@@ -107,9 +107,26 @@ function shouldPrintNow(orderId, windowMs = 10000) {
 export default function GlobalOrderAlert() {
   const [notif, setNotif] = useState(DEFAULT_NOTIFICATIONS);
   const [layout, setLayout] = useState(defaultReceiptLayout);
-  const [transactionSettings, setTransactionSettings] = useState(
-    DEFAULT_TRANSACTION_SETTINGS
-  );
+  const [transactionSettings, setTransactionSettings] = useState(() => {
+    try {
+      const tenantKey =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("restaurant_id") ||
+            window.localStorage.getItem("restaurant_slug") ||
+            "default"
+          : "default";
+      const cachedRaw =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(`beypro:settings:${tenantKey}:transactions`)
+          : null;
+      const cached = cachedRaw ? JSON.parse(cachedRaw) : null;
+      return cached && typeof cached === "object"
+        ? { ...DEFAULT_TRANSACTION_SETTINGS, ...cached }
+        : DEFAULT_TRANSACTION_SETTINGS;
+    } catch {
+      return DEFAULT_TRANSACTION_SETTINGS;
+    }
+  });
   const hasBridge = typeof window !== "undefined" && !!window.beypro;
   const tenantId =
     typeof window !== "undefined" ? window.localStorage.getItem("restaurant_id") : null;
@@ -506,12 +523,13 @@ export default function GlobalOrderAlert() {
         const order = await fetchOrderWithItems(orderId);
         if (!order?.id) return false;
         console.log("🖨️ Auto-printing order with items:", order.items?.length || 0);
+        // De-dupe BEFORE opening any preview window.
+        if (!shouldPrintNow(order.id)) return false;
         // If running in desktop (Electron) with bridge available, skip preview and print directly.
         if (!hasBridge) {
           // web: open native preview before printing
           openNativePrintPreview(order);
         }
-        if (!shouldPrintNow(order.id)) return false;
         const ok = await printViaBridge("", order);
         if (!ok) toast.warn("🖨️ Printer job could not be queued");
         else toast.success(`🧾 Printed order #${order.id}`);

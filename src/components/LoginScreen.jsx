@@ -4,13 +4,27 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { normalizeUser } from "../utils/normalizeUser";
 import { BASE_URL } from "../utils/secureFetch";
+import { useTranslation } from "react-i18next";
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
+  const { t, i18n } = useTranslation();
+
+  const supportedLanguages = [
+    { label: "EN", code: "en" },
+    { label: "TR", code: "tr" },
+    { label: "DE", code: "de" },
+    { label: "FR", code: "fr" },
+  ];
+
+  const resolvedLanguage = supportedLanguages.some((l) => l.code === i18n.language)
+    ? i18n.language
+    : "en";
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -30,7 +44,7 @@ export default function LoginScreen() {
 
       const data = await response.json();
       if (!response.ok || !data?.token) {
-        throw new Error(data?.error || data?.message || "Invalid credentials");
+        throw new Error(data?.error || data?.message || t("Invalid credentials"));
       }
 
       const normalizedUser = normalizeUser({
@@ -39,22 +53,29 @@ export default function LoginScreen() {
       });
 
       if (!normalizedUser) {
-        throw new Error("Invalid user payload");
+        throw new Error(t("Invalid user payload"));
       }
 
-      localStorage.setItem("token", data.token);
+      const authStorage = rememberMe ? window.localStorage : window.sessionStorage;
+      const otherStorage = rememberMe ? window.sessionStorage : window.localStorage;
+      try {
+        otherStorage.removeItem("token");
+        otherStorage.removeItem("beyproUser");
+      } catch {}
+
+      authStorage.setItem("token", data.token);
       if (normalizedUser.restaurant_id) {
         localStorage.setItem("restaurant_id", normalizedUser.restaurant_id);
       } else {
         localStorage.removeItem("restaurant_id");
       }
 
-      localStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
+      authStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
       setCurrentUser(normalizedUser);
       navigate("/tables");
     } catch (err) {
       console.error("❌ Login failed:", err);
-      setError(err.message || "Login failed");
+      setError(err.message || t("Login failed"));
     } finally {
       setLoading(false);
     }
@@ -71,10 +92,10 @@ export default function LoginScreen() {
             Beypro
           </h1>
           <p className="text-lg font-light opacity-90">
-            Level up your business — manage everything in one place.
+            {t("Level up your business — manage everything in one place.")}
           </p>
           <footer className="mt-16 text-sm opacity-80">
-            © {new Date().getFullYear()} Beypro — Level Up
+            © {new Date().getFullYear()} Beypro
           </footer>
         </div>
       </div>
@@ -84,23 +105,23 @@ export default function LoginScreen() {
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">
             <h2 className="text-3xl font-extrabold text-gray-900">
-              Welcome Back 👋
+              {t("Welcome Back")}
             </h2>
             <p className="text-gray-500 mt-1">
-              Sign in to your Beypro account
+              {t("Sign in to your Beypro account")}
             </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Email
+                {t("Email")}
               </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder={t("you@example.com")}
                 className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
                 required
               />
@@ -108,7 +129,7 @@ export default function LoginScreen() {
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Password
+                {t("Password")}
               </label>
               <input
                 type="password"
@@ -118,6 +139,44 @@ export default function LoginScreen() {
                 className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
                 required
               />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <label className="flex items-center gap-2 text-sm text-gray-700 select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="font-semibold">{t("Keep me logged in")}</span>
+              </label>
+
+              <div className="flex items-center justify-end">
+                <label className="sr-only" htmlFor="login-language">
+                  {t("Language")}
+                </label>
+                <select
+                  id="login-language"
+                  value={resolvedLanguage}
+                  onChange={(e) => {
+                    const next = e.target.value || "en";
+                    i18n.changeLanguage(next);
+                    try {
+                      localStorage.setItem("beyproLanguage", next);
+                      localStorage.setItem("beyproGuestLanguage", next);
+                    } catch {}
+                  }}
+                  className="h-9 rounded-xl px-3 bg-gray-50 text-gray-800 text-sm font-semibold border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  title={t("Language")}
+                >
+                  {supportedLanguages.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {error && (
@@ -132,12 +191,12 @@ export default function LoginScreen() {
               className="w-full flex items-center justify-center gap-2 px-5 py-3 mt-2 bg-gradient-to-r from-indigo-500 to-blue-500 text-white font-semibold rounded-xl shadow hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-60"
             >
               <LogIn size={18} />
-              {loading ? "Logging in..." : "Login"}
+              {loading ? t("Logging in...") : t("Login")}
             </button>
           </form>
 
           <p className="text-center text-xs text-gray-400 mt-10">
-            Need help? contact@beypro.com
+            {t("Need help? contact@beypro.com")}
           </p>
         </div>
       </div>

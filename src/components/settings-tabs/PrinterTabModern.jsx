@@ -3,6 +3,7 @@ import secureFetch from "../../utils/secureFetch";
 import { imageUrlToEscposBytes } from "../../utils/imageToEscpos";
 import { qrStringToEscposBytes } from "../../utils/qrToEscpos";
 import { printTestReceipt } from "../../utils/receiptPrinter";
+import { useTranslation } from "react-i18next";
 
 const DEFAULT_LAYOUT = {
   headerTitle: "Hurrybey Gıda",
@@ -307,6 +308,7 @@ function buildEscposBytes(
 }
 
 function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
+  const { t } = useTranslation();
   const items = order.items || [];
   const subTotal = items.reduce((sum, item) => sum + item.qty * item.price, 0);
   const taxAmount = layout.showTaxes ? (subTotal * (layout.taxRate || 0)) / 100 : 0;
@@ -360,7 +362,7 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
   const taxNumberDisplay = taxNumberValue
     ? /tax/i.test(taxNumberValue)
       ? taxNumberValue
-      : `Tax No: ${taxNumberValue}`
+      : `${t("Tax No")}: ${taxNumberValue}`
     : "";
 
   return (
@@ -377,12 +379,12 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
 	        layout.logoUrl ? (
 	          <img
 	            src={layout.logoUrl}
-	            alt="Logo"
+	            alt={t("Logo")}
 	            className="mx-auto mt-2 mb-0 h-12 w-auto object-contain object-bottom"
 	          />
 	        ) : (
 	          <div className="mt-2 mb-0 text-center text-[10px] uppercase tracking-[0.2em] text-slate-500">
-	            LOGO
+	            {t("Logo")}
 	          </div>
 	        )
 	      ) : null}
@@ -413,19 +415,19 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
         <div className="mb-2 space-y-1 text-[12px] text-slate-700">
           {layout.showInvoiceNumber && invoiceDisplay ? (
             <div className="flex justify-between">
-              <span>Invoice</span>
+              <span>{t("Invoice")}</span>
               <span className="font-semibold">{invoiceDisplay}</span>
             </div>
           ) : null}
           {layout.showTableNumber && tableValue ? (
             <div className="flex justify-between">
-              <span>Table</span>
+              <span>{t("Table")}</span>
               <span className="font-semibold">{tableValue}</span>
             </div>
           ) : null}
           {layout.showStaffName && staffValue ? (
             <div className="flex justify-between">
-              <span>Staff</span>
+              <span>{t("Staff")}</span>
               <span className="font-semibold">{staffValue}</span>
             </div>
           ) : null}
@@ -443,7 +445,7 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
       </div>
       <div className="mt-3 space-y-1 text-[12px]">
         <div className="flex justify-between">
-          <span>Subtotal</span>
+          <span>{t("Subtotal")}</span>
           <span>{formatCurrency(subTotal)}</span>
         </div>
         {layout.showTaxes && (
@@ -463,7 +465,7 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           </div>
         )}
         <div className="flex justify-between text-sm font-semibold">
-          <span>Total</span>
+          <span>{t("Total")}</span>
           <span>{formatCurrency(total)}</span>
         </div>
       </div>
@@ -472,7 +474,7 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           {layout.qrUrl ? (
             <img
               src={layout.qrUrl}
-              alt="QR"
+              alt={t("QR")}
               className="h-16 w-16 rounded-xl object-contain bg-white border"
               style={{ background: "#fff" }}
               onError={(e) => {
@@ -505,6 +507,7 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
 }
 
 export default function PrinterTab() {
+  const { t } = useTranslation();
   const tenantId =
     typeof window !== "undefined" ? window.localStorage.getItem("restaurant_id") : null;
 
@@ -514,7 +517,7 @@ export default function PrinterTab() {
     if (!receiptHtml) return;
     const printWindow = window.open('', '_blank', 'width=400,height=600');
     if (!printWindow) return;
-    printWindow.document.write(`<!DOCTYPE html><html><head><title>Receipt Preview</title><style>body{background:#fff;margin:0;padding:20px;} .rounded-2xl{border-radius:1rem;} .border{border:1px solid #e2e8f0;} .shadow-inner{box-shadow:inset 0 1px 2px #0001;} .text-slate-900{color:#0f172a;} .p-4{padding:1rem;} .mx-auto{margin-left:auto;margin-right:auto;} .mb-3{margin-bottom:.75rem;} .h-12{height:3rem;} .w-auto{width:auto;} .object-contain{object-fit:contain;} .text-center{text-align:center;} .text-sm{font-size:.875rem;} .font-semibold{font-weight:600;} .uppercase{text-transform:uppercase;} .tracking-wide{letter-spacing:.05em;} .text-slate-800{color:#1e293b;} .text-xs{font-size:.75rem;} .font-normal{font-weight:400;} .text-slate-500{color:#64748b;} .border-y{border-top:1px dashed #e2e8f0;border-bottom:1px dashed #e2e8f0;} .py-2{padding-top:.5rem;padding-bottom:.5rem;} .text-[12px]{font-size:12px;} .flex{display:flex;} .justify-between{justify-content:space-between;} .py-1{padding-top:.25rem;padding-bottom:.25rem;} .mt-3{margin-top:.75rem;} .space-y-1 > :not([hidden]) ~ :not([hidden]){margin-top:.25rem;} .text-sm{font-size:.875rem;} .font-semibold{font-weight:600;} .rounded-2xl{border-radius:1rem;} .border-dashed{border-style:dashed;} .border-slate-300{border-color:#cbd5e1;} .p-3{padding:0.75rem;} .text-[10px]{font-size:10px;} .uppercase{text-transform:uppercase;} .tracking-[0.2em]{letter-spacing:0.2em;} .text-slate-500{color:#64748b;} .mt-4{margin-top:1rem;} .flex-col{flex-direction:column;} .items-center{align-items:center;} .gap-1{gap:0.25rem;} .rounded-xl{border-radius:0.75rem;} .bg-slate-900{background:#0f172a;} .text-[9px]{font-size:9px;} .text-[8px]{font-size:8px;} .text-slate-400{color:#94a3b8;} .mt-3{margin-top:.75rem;} .text-center{text-align:center;} .tracking-[0.2em]{letter-spacing:0.2em;} .text-slate-500{color:#64748b;}</style></head><body onload='window.print();'>${receiptHtml}</body></html>`);
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>${t("Receipt Preview")}</title><style>body{background:#fff;margin:0;padding:20px;} .rounded-2xl{border-radius:1rem;} .border{border:1px solid #e2e8f0;} .shadow-inner{box-shadow:inset 0 1px 2px #0001;} .text-slate-900{color:#0f172a;} .p-4{padding:1rem;} .mx-auto{margin-left:auto;margin-right:auto;} .mb-3{margin-bottom:.75rem;} .h-12{height:3rem;} .w-auto{width:auto;} .object-contain{object-fit:contain;} .text-center{text-align:center;} .text-sm{font-size:.875rem;} .font-semibold{font-weight:600;} .uppercase{text-transform:uppercase;} .tracking-wide{letter-spacing:.05em;} .text-slate-800{color:#1e293b;} .text-xs{font-size:.75rem;} .font-normal{font-weight:400;} .text-slate-500{color:#64748b;} .border-y{border-top:1px dashed #e2e8f0;border-bottom:1px dashed #e2e8f0;} .py-2{padding-top:.5rem;padding-bottom:.5rem;} .text-[12px]{font-size:12px;} .flex{display:flex;} .justify-between{justify-content:space-between;} .py-1{padding-top:.25rem;padding-bottom:.25rem;} .mt-3{margin-top:.75rem;} .space-y-1 > :not([hidden]) ~ :not([hidden]){margin-top:.25rem;} .text-sm{font-size:.875rem;} .font-semibold{font-weight:600;} .rounded-2xl{border-radius:1rem;} .border-dashed{border-style:dashed;} .border-slate-300{border-color:#cbd5e1;} .p-3{padding:0.75rem;} .text-[10px]{font-size:10px;} .uppercase{text-transform:uppercase;} .tracking-[0.2em]{letter-spacing:0.2em;} .text-slate-500{color:#64748b;} .mt-4{margin-top:1rem;} .flex-col{flex-direction:column;} .items-center{align-items:center;} .gap-1{gap:0.25rem;} .rounded-xl{border-radius:0.75rem;} .bg-slate-900{background:#0f172a;} .text-[9px]{font-size:9px;} .text-[8px]{font-size:8px;} .text-slate-400{color:#94a3b8;} .mt-3{margin-top:.75rem;} .text-center{text-align:center;} .tracking-[0.2em]{letter-spacing:0.2em;} .text-slate-500{color:#64748b;}</style></head><body onload='window.print();'>${receiptHtml}</body></html>`);
     printWindow.document.close();
   }
   const [usbPrinters, setUsbPrinters] = useState([]);
@@ -527,7 +530,7 @@ export default function PrinterTab() {
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [operationStatus, setOperationStatus] = useState({
     level: "idle",
-    message: "Preparing printer workspace…",
+    message: t("Preparing printer workspace…"),
   });
   const [testStatus, setTestStatus] = useState({ level: "idle", message: "" });
   const [lanConfig, setLanConfig] = useState({ ...DEFAULT_LAN_CONFIG });
@@ -654,11 +657,11 @@ export default function PrinterTab() {
         }
       }
       if (!operationStatus.message.includes("Offline")) {
-        setOperationStatus({ level: "ok", message: "Printer preferences ready" });
+        setOperationStatus({ level: "ok", message: t("Printer preferences ready") });
       }
     } catch (err) {
       console.error("Failed to load printer preferences:", err);
-      setOperationStatus({ level: "error", message: "Unable to read printer settings" });
+      setOperationStatus({ level: "error", message: t("Unable to read printer settings") });
     } finally {
       setLoadingConfig(false);
     }
@@ -673,10 +676,10 @@ export default function PrinterTab() {
       await refreshWindows();
       await runLanScan();
       setDetectedAt(new Date().toISOString());
-      setOperationStatus({ level: "ok", message: "Printers refreshed" });
+      setOperationStatus({ level: "ok", message: t("Printers refreshed") });
     } catch (err) {
       console.error("Printer detection failed:", err);
-      setOperationStatus({ level: "error", message: err?.message || "Detection failed" });
+      setOperationStatus({ level: "error", message: err?.message || t("Detection failed") });
     } finally {
       setDetecting(false);
     }
@@ -700,7 +703,7 @@ export default function PrinterTab() {
     if (!payload.base && !(payload.hosts && payload.hosts.length)) {
       setOperationStatus({
         level: "error",
-        message: "Provide a subnet base or explicit hosts to scan.",
+        message: t("Provide a subnet base or explicit hosts to scan."),
       });
       return;
     }
@@ -887,7 +890,7 @@ export default function PrinterTab() {
         layout: { ...prev.layout, logoUrl: url, showLogo: true },
       }));
       // Save to backend
-      setOperationStatus({ level: "idle", message: "Saving logo…" });
+      setOperationStatus({ level: "idle", message: t("Saving logo…") });
       try {
         const payload = { ...printerConfig, layout: { ...printerConfig.layout, logoUrl: url, showLogo: true } };
         const remote = await secureFetch("/printer-settings/sync", {
@@ -897,21 +900,21 @@ export default function PrinterTab() {
         if (remote?.settings) {
           setPrinterConfig((prev) => mergePrinterConfig(prev, remote.settings));
         }
-        setOperationStatus({ level: "ok", message: "Logo saved and synced." });
+        setOperationStatus({ level: "ok", message: t("Logo saved and synced.") });
       } catch (err) {
-        setOperationStatus({ level: "error", message: "Failed to save logo." });
+        setOperationStatus({ level: "error", message: t("Failed to save logo.") });
       }
     } else if (result.event === 'queues-end') {
       setLogoUploading(false);
     } else if (result.event === 'error') {
       setLogoUploading(false);
-      setLogoError('Upload failed. Please try again.');
+      setLogoError(t("Upload failed. Please try again."));
     }
   }
 
   async function handleSaveConfig() {
     setSaving(true);
-    setOperationStatus({ level: "idle", message: "Saving printer settings…" });
+    setOperationStatus({ level: "idle", message: t("Saving printer settings…") });
     const payload = { ...printerConfig };
     try {
       let updated = payload;
@@ -929,10 +932,10 @@ export default function PrinterTab() {
         updated = mergePrinterConfig(updated, remote.settings);
       }
       setPrinterConfig((prev) => mergePrinterConfig(prev, updated));
-      setOperationStatus({ level: "ok", message: "Settings saved locally and synced." });
+      setOperationStatus({ level: "ok", message: t("Settings saved locally and synced.") });
     } catch (err) {
       console.error("Save failed:", err);
-      setOperationStatus({ level: "error", message: err?.message || "Saving failed" });
+      setOperationStatus({ level: "error", message: err?.message || t("Saving failed") });
     } finally {
       setSaving(false);
     }
@@ -947,11 +950,11 @@ export default function PrinterTab() {
     const targetId = printerConfig.receiptPrinter || printerConfig.kitchenPrinter;
     const target = allPrinters.find((printer) => printer.id === targetId);
     if (!target) {
-      setTestStatus({ level: "error", message: "Select a default printer first." });
+      setTestStatus({ level: "error", message: t("Select a default printer first.") });
       return;
     }
 
-    setTestStatus({ level: "idle", message: "Sending test print…" });
+    setTestStatus({ level: "idle", message: t("Sending test print…") });
 
     try {
       const ok = await printTestReceipt({
@@ -959,11 +962,14 @@ export default function PrinterTab() {
         layout: printerConfig.layout,
         customLines: printerConfig.customLines,
       });
-      if (!ok) throw new Error("Test print failed.");
-      setTestStatus({ level: "ok", message: `Test print uploaded to ${target.label}` });
+      if (!ok) throw new Error(t("Test print failed"));
+      setTestStatus({
+        level: "ok",
+        message: t("Test print uploaded to {{printer}}", { printer: target.label }),
+      });
     } catch (err) {
       console.error("Test print error:", err);
-      setTestStatus({ level: "error", message: err?.message || "Test print failed" });
+      setTestStatus({ level: "error", message: err?.message || t("Test print failed") });
     }
   }
 
@@ -973,16 +979,16 @@ export default function PrinterTab() {
 
   const lastSyncedLabel = printerConfig.lastSynced
     ? new Date(printerConfig.lastSynced).toLocaleString()
-    : "Never";
+    : t("Never");
 
   return (
     <div className="flex flex-col gap-5 p-4 md:p-6 w-full max-w-6xl mx-auto">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Printers</h1>
+            <h1 className="text-2xl font-bold">{t("Printers")}</h1>
             <p className="text-sm text-slate-500">
-              Configure detection, defaults, and receipt templates with a single unified workflow.
+              {t("Configure detection, defaults, and receipt templates with a single unified workflow.")}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -991,7 +997,7 @@ export default function PrinterTab() {
               onClick={refreshDetections}
               disabled={detecting}
             >
-              {detecting ? "Detecting…" : "Refresh"}
+              {detecting ? t("Detecting…") : t("Refresh")}
             </button>
             <span
               className={classNames(
@@ -1005,7 +1011,7 @@ export default function PrinterTab() {
         </div>
         {!hasBridge && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Printer discovery and Windows/LAN printing are only available inside the desktop app.
+            {t("Printer discovery and Windows/LAN printing are only available inside the desktop app.")}
           </div>
         )}
       </div>
@@ -1014,24 +1020,26 @@ export default function PrinterTab() {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold">Default printers</h2>
+              <h2 className="text-lg font-semibold">{t("Default printers")}</h2>
               <p className="text-xs text-slate-500">
-                Choose where receipts and kitchen orders land. Saved locally and synced to the backend.
+                {t("Choose where receipts and kitchen orders land. Saved locally and synced to the backend.")}
               </p>
             </div>
-            <span className="text-xs text-slate-400">Ready slots: {readyCount}</span>
+            <span className="text-xs text-slate-400">
+              {t("Ready slots")}: {readyCount}
+            </span>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Receipt printer
+                {t("Receipt printer")}
               </label>
               <select
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
                 value={printerConfig.receiptPrinter}
                 onChange={(event) => handleDefaultChange("receiptPrinter", event.target.value)}
               >
-                <option value="">Manual / none</option>
+                <option value="">{t("Manual / none")}</option>
                 {allPrinters.map((printer) => (
                   <option key={printer.id} value={printer.id}>
                     {printer.label} [{printer.type.toUpperCase()}]
@@ -1041,14 +1049,14 @@ export default function PrinterTab() {
             </div>
             <div>
               <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Kitchen printer
+                {t("Kitchen printer")}
               </label>
               <select
                 className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
                 value={printerConfig.kitchenPrinter}
                 onChange={(event) => handleDefaultChange("kitchenPrinter", event.target.value)}
               >
-                <option value="">Manual / none</option>
+                <option value="">{t("Manual / none")}</option>
                 {allPrinters.map((printer) => (
                   <option key={`k-${printer.id}`} value={printer.id}>
                     {printer.label} [{printer.type.toUpperCase()}]
@@ -1063,13 +1071,13 @@ export default function PrinterTab() {
               onClick={handleSaveConfig}
               disabled={saving}
             >
-              {saving ? "Saving…" : "Save & sync settings"}
+              {saving ? t("Saving…") : t("Save & sync settings")}
             </button>
             <button
               className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm"
               onClick={handleTestPrint}
             >
-              🧾 Test print
+              🧾 {t("Test print")}
             </button>
           </div>
           {testStatus.message && (
@@ -1086,8 +1094,8 @@ export default function PrinterTab() {
 
         <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Receipt customization</h2>
-            <span className="text-xs text-slate-400">Preview live updates</span>
+            <h2 className="text-lg font-semibold">{t("Receipt customization")}</h2>
+            <span className="text-xs text-slate-400">{t("Preview live updates")}</span>
           </div>
           <div className="grid gap-4 lg:grid-cols-[1fr,1fr]">
             <div className="flex justify-center">
@@ -1101,7 +1109,7 @@ export default function PrinterTab() {
             </div>
             <div className="space-y-3 text-sm text-slate-600">
               <div>
-                <label className="text-xs uppercase tracking-wide text-slate-500">Shop Logo</label>
+                <label className="text-xs uppercase tracking-wide text-slate-500">{t("Shop Logo")}</label>
                 <input
                   type="file"
                   accept="image/png,image/jpeg"
@@ -1120,7 +1128,7 @@ export default function PrinterTab() {
                         body: formData,
                       });
                       if (!data || !data.url) {
-                        setLogoError("Image upload failed!");
+                        setLogoError(t("Image upload failed!"));
                         setLogoUploading(false);
                         return;
                       }
@@ -1129,7 +1137,7 @@ export default function PrinterTab() {
                         layout: { ...prev.layout, logoUrl: data.url, showLogo: true },
                       }));
                       // Save to backend
-                      setOperationStatus({ level: "idle", message: "Saving logo…" });
+                      setOperationStatus({ level: "idle", message: t("Saving logo…") });
                       try {
                         const payload = { ...printerConfig, layout: { ...printerConfig.layout, logoUrl: data.url, showLogo: true } };
                         const remote = await secureFetch("/printer-settings/sync", {
@@ -1139,32 +1147,32 @@ export default function PrinterTab() {
                         if (remote?.settings) {
                           setPrinterConfig((prev) => mergePrinterConfig(prev, remote.settings));
                         }
-                        setOperationStatus({ level: "ok", message: "Logo saved and synced." });
+                        setOperationStatus({ level: "ok", message: t("Logo saved and synced.") });
                       } catch (err) {
-                        setOperationStatus({ level: "error", message: "Failed to save logo." });
+                        setOperationStatus({ level: "error", message: t("Failed to save logo.") });
                       }
                       setLogoUploading(false);
                     } catch (err) {
-                      setLogoError("Image upload failed!");
+                      setLogoError(t("Image upload failed!"));
                       setLogoUploading(false);
                     }
                   }}
                 />
-                <div className="text-xs text-slate-400 mt-1">PNG/JPG, max 2MB, square preferred</div>
+                <div className="text-xs text-slate-400 mt-1">{t("PNG/JPG, max 2MB, square preferred")}</div>
                 {logoUploading && (
-                  <div className="mt-2 text-xs text-blue-600">Uploading…</div>
+                  <div className="mt-2 text-xs text-blue-600">{t("Uploading…")}</div>
                 )}
                 {printerConfig.layout.logoUrl && (
                   <div className="mt-2 flex items-center gap-2">
-                    <img src={printerConfig.layout.logoUrl} alt="Logo preview" className="h-10 w-auto rounded border" />
-                    <span className="text-xs text-slate-400">Preview</span>
+                    <img src={printerConfig.layout.logoUrl} alt={t("Logo preview")} className="h-10 w-auto rounded border" />
+                    <span className="text-xs text-slate-400">{t("Preview")}</span>
                   </div>
                 )}
                 {logoError && (
                   <div className="mt-2 text-xs text-red-600">{logoError}</div>
                 )}
                 <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
-                  Header title
+                  {t("Header title")}
                 </label>
                 <input
                   className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
@@ -1172,7 +1180,7 @@ export default function PrinterTab() {
                   onChange={(event) => handleLayoutUpdate("headerTitle", event.target.value)}
                 />
                 <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
-                  Header subtitle
+                  {t("Header subtitle")}
                 </label>
                 <input
                   className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
@@ -1180,27 +1188,27 @@ export default function PrinterTab() {
                   onChange={(event) => handleLayoutUpdate("headerSubtitle", event.target.value)}
                 />
                 <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
-                  Address
+                  {t("Address")}
                 </label>
                 <textarea
                   className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
                   rows={2}
                   value={printerConfig.layout.shopAddress}
                   onChange={(event) => handleLayoutUpdate("shopAddress", event.target.value)}
-                  placeholder="123 Street, City"
+                  placeholder={t("e.g. 123 Street, City")}
                 />
                 <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
-                  Tax number
+                  {t("Tax number")}
                 </label>
                 <input
                   className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
                   value={printerConfig.layout.taxNumber || ""}
                   onChange={(event) => handleLayoutUpdate("taxNumber", event.target.value)}
-                  placeholder="1234567890"
+                  placeholder={t("e.g. 1234567890")}
                 />
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <label className="text-xs uppercase tracking-wide text-slate-500">Alignment</label>
+                <label className="text-xs uppercase tracking-wide text-slate-500">{t("Alignment")}</label>
                 <select
                   className="rounded-2xl border px-3 py-2 text-sm"
                   value={printerConfig.layout.alignment}
@@ -1208,11 +1216,11 @@ export default function PrinterTab() {
                 >
                   {ALIGNMENT_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {t(option.label)}
                     </option>
                   ))}
                 </select>
-                <label className="text-xs uppercase tracking-wide text-slate-500">Paper</label>
+                <label className="text-xs uppercase tracking-wide text-slate-500">{t("Paper")}</label>
                 <select
                   className="rounded-2xl border px-3 py-2 text-sm"
                   value={printerConfig.layout.paperWidth}
@@ -1227,7 +1235,7 @@ export default function PrinterTab() {
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs uppercase tracking-wide text-slate-500">Spacing</label>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">{t("Spacing")}</label>
                   <input
                     type="range"
                     min={0.9}
@@ -1242,7 +1250,7 @@ export default function PrinterTab() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs uppercase tracking-wide text-slate-500">Font size</label>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">{t("Font size")}</label>
                   <input
                     type="range"
                     min={10}
@@ -1260,7 +1268,7 @@ export default function PrinterTab() {
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wide text-slate-500">
-                    Address font size
+                    {t("Address font size")}
                   </label>
                   <input
                     type="range"
@@ -1280,7 +1288,7 @@ export default function PrinterTab() {
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs uppercase tracking-wide text-slate-500">Tax rate %</label>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">{t("Tax rate %")}</label>
                   <input
                     type="number"
                     className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
@@ -1290,7 +1298,7 @@ export default function PrinterTab() {
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wide text-slate-500">
-                    Discount rate %
+                    {t("Discount rate %")}
                   </label>
                   <input
                     type="number"
@@ -1321,26 +1329,26 @@ export default function PrinterTab() {
                       checked={printerConfig.layout[toggle.key]}
                       onChange={() => handleToggle(toggle.key)}
                     />
-                    {toggle.label}
+                    {t(toggle.label)}
                   </label>
                 ))}
               </div>
               <div>
-                <label className="text-xs uppercase tracking-wide text-slate-500">QR label</label>
+                <label className="text-xs uppercase tracking-wide text-slate-500">{t("QR label")}</label>
                 <input
                   className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
                   value={printerConfig.layout.qrText}
                   onChange={(event) => handleLayoutUpdate("qrText", event.target.value)}
                 />
                 <label className="mt-2 block text-xs uppercase tracking-wide text-slate-500">
-                  QR url or image
+                  {t("QR url or image")}
                 </label>
                 <div className="flex gap-2 items-center">
                   <input
                     className="flex-1 rounded-2xl border px-3 py-2 text-sm"
                     value={printerConfig.layout.qrUrl}
                     onChange={(event) => handleLayoutUpdate("qrUrl", event.target.value)}
-                    placeholder="Paste QR URL or upload image"
+                    placeholder={t("Paste QR URL or upload image")}
                   />
                   <input
                     type="file"
@@ -1361,7 +1369,7 @@ export default function PrinterTab() {
                           body: formData,
                         });
                         if (!data || !data.url) {
-                          setLogoError("QR image upload failed!");
+                          setLogoError(t("QR image upload failed!"));
                           setLogoUploading(false);
                           return;
                         }
@@ -1370,7 +1378,7 @@ export default function PrinterTab() {
                           layout: { ...prev.layout, qrUrl: data.url, showQr: true },
                         }));
                         // Save to backend
-                        setOperationStatus({ level: "idle", message: "Saving QR image…" });
+                        setOperationStatus({ level: "idle", message: t("Saving QR image…") });
                         try {
                           const payload = { ...printerConfig, layout: { ...printerConfig.layout, qrUrl: data.url, showQr: true } };
                           const remote = await secureFetch("/printer-settings/sync", {
@@ -1380,23 +1388,25 @@ export default function PrinterTab() {
                           if (remote?.settings) {
                             setPrinterConfig((prev) => mergePrinterConfig(prev, remote.settings));
                           }
-                          setOperationStatus({ level: "ok", message: "QR image saved and synced." });
+                          setOperationStatus({ level: "ok", message: t("QR image saved and synced.") });
                         } catch (err) {
-                          setOperationStatus({ level: "error", message: "Failed to save QR image." });
+                          setOperationStatus({ level: "error", message: t("Failed to save QR image.") });
                         }
                         setLogoUploading(false);
                       } catch (err) {
-                        setLogoError("QR image upload failed!");
+                        setLogoError(t("QR image upload failed!"));
                         setLogoUploading(false);
                       }
                     }}
                   />
                 </div>
-                <div className="text-xs text-slate-400 mt-1">Paste a QR code URL or upload a QR image (PNG/JPG, max 2MB)</div>
+                <div className="text-xs text-slate-400 mt-1">
+                  {t("Paste a QR code URL or upload a QR image (PNG/JPG, max 2MB)")}
+                </div>
                 {printerConfig.layout.qrUrl && (
                   <div className="mt-2 flex items-center gap-2">
-                    <img src={printerConfig.layout.qrUrl} alt="QR preview" className="h-10 w-auto rounded border" />
-                    <span className="text-xs text-slate-400">QR Preview</span>
+                    <img src={printerConfig.layout.qrUrl} alt={t("QR Preview")} className="h-10 w-auto rounded border" />
+                    <span className="text-xs text-slate-400">{t("QR Preview")}</span>
                   </div>
                 )}
                 {logoError && (
@@ -1404,7 +1414,7 @@ export default function PrinterTab() {
                 )}
               </div>
               <div>
-                <label className="text-xs uppercase tracking-wide text-slate-500">Footer text</label>
+                <label className="text-xs uppercase tracking-wide text-slate-500">{t("Footer text")}</label>
                 <textarea
                   className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
                   rows={2}
@@ -1414,13 +1424,13 @@ export default function PrinterTab() {
               </div>
               <div className="grid gap-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Custom lines</span>
+                  <span className="text-xs uppercase tracking-wide text-slate-500">{t("Custom lines")}</span>
                   <button
                     className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 transition hover:text-slate-600"
                     type="button"
                     onClick={() => setPrinterConfig((prev) => ({ ...prev, customLines: [] }))}
                   >
-                    Clear
+                    {t("Clear")}
                   </button>
                 </div>
                 <div className="flex gap-2">
@@ -1428,14 +1438,14 @@ export default function PrinterTab() {
                     className="flex-1 rounded-2xl border px-3 py-2 text-sm"
                     value={customLineInput}
                     onChange={(event) => setCustomLineInput(event.target.value)}
-                    placeholder="Add footer reminder"
+                    placeholder={t("Add footer reminder")}
                   />
                   <button
                     className="rounded-2xl border px-3 py-2 text-xs font-semibold text-slate-600"
                     type="button"
                     onClick={addCustomLine}
                   >
-                    Add
+                    {t("Add")}
                   </button>
                 </div>
                 <ul className="max-h-32 space-y-1 overflow-auto text-[12px] text-slate-600">
@@ -1450,12 +1460,12 @@ export default function PrinterTab() {
                           className="text-[11px] font-semibold tracking-wide text-red-500"
                           onClick={() => removeCustomLine(idx)}
                         >
-                          Remove
+                          {t("Remove")}
                         </button>
                       </li>
                     ))
                   ) : (
-                    <li className="text-slate-400">No custom lines yet.</li>
+                    <li className="text-slate-400">{t("No custom lines yet.")}</li>
                   )}
                 </ul>
               </div>
@@ -1466,21 +1476,29 @@ export default function PrinterTab() {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold">Detection overview</h2>
+              <h2 className="text-lg font-semibold">{t("Detection overview")}</h2>
               <p className="text-sm text-slate-500">
-                {readyCount} ready out of {allPrinters.length} discovered printers.
-                {detectedAt && ` Last scan ${new Date(detectedAt).toLocaleTimeString()}.`}
+                {t("{{ready}} ready out of {{total}} discovered printers.", {
+                  ready: readyCount,
+                  total: allPrinters.length,
+                })}
+                {detectedAt &&
+                  ` ${t("Last scan {{time}}.", {
+                    time: new Date(detectedAt).toLocaleTimeString(),
+                  })}`}
               </p>
             </div>
             <span className="text-xs text-slate-400">
-              {loadingConfig ? "Loading prefs…" : `Synced: ${lastSyncedLabel}`}
+              {loadingConfig ? t("Loading prefs…") : t("Synced: {{value}}", { value: lastSyncedLabel })}
             </span>
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <div className="rounded-2xl border border-slate-100 p-3">
               <div className="flex items-center justify-between text-sm font-semibold">
-                <span>Windows and printers</span>
-                <span className="text-xs text-slate-500">{windowsPrinters.length} detected</span>
+                <span>{t("Windows and printers")}</span>
+                <span className="text-xs text-slate-500">
+                  {t("{{count}} detected", { count: windowsPrinters.length })}
+                </span>
               </div>
               <div className="mt-3 space-y-2 text-xs text-slate-600">
                 {windowsPrinters.length ? (
@@ -1491,18 +1509,18 @@ export default function PrinterTab() {
                     >
                       <div className="font-semibold">{printer.name}</div>
                       <div className="text-[10px] text-slate-500">
-                        Default: {printer.isDefault ? "Yes" : "No"}
+                        {t("Default")}: {printer.isDefault ? t("Yes") : t("No")}
                       </div>
                     </div>
                   ))
                 ) : (
-                  <p>No Windows printers found.</p>
+                  <p>{t("No Windows printers found.")}</p>
                 )}
               </div>
             </div>
             <div className="rounded-2xl border border-slate-100 p-3">
               <div className="flex items-center justify-between text-sm font-semibold">
-                <span>USB + Serial (ESC/POS)</span>
+                <span>{t("USB + Serial (ESC/POS)")}</span>
                 <span className="text-xs text-slate-500">
                   {usbPrinters.length + serialPrinters.length}
                 </span>
@@ -1514,7 +1532,7 @@ export default function PrinterTab() {
                       USB {printer.vendorId}/{printer.productId}
                     </div>
                     <div className="text-[10px] text-slate-500">
-                      Status: {printer.status || "ready"}
+                      {t("Status")}: {printer.status || t("ready")}
                     </div>
                   </div>
                 ))}
@@ -1522,19 +1540,21 @@ export default function PrinterTab() {
                   <div key={printer.id} className="rounded-xl border bg-slate-50 px-3 py-2">
                     <div className="font-semibold">{printer.path}</div>
                     <div className="text-[10px] text-slate-500">
-                      {printer.friendlyName || printer.manufacturer || "Serial device"}
+                      {printer.friendlyName || printer.manufacturer || t("Serial device")}
                     </div>
                   </div>
                 ))}
                 {!usbPrinters.length && !serialPrinters.length && (
-                  <p>No ESC/POS devices detected.</p>
+                  <p>{t("No ESC/POS devices detected.")}</p>
                 )}
               </div>
             </div>
             <div className="rounded-2xl border border-slate-100 p-3">
               <div className="flex items-center justify-between text-sm font-semibold">
-                <span>LAN Discovery</span>
-                <span className="text-xs text-slate-500">{lanScanResults.length || "No"}</span>
+                <span>{t("LAN Discovery")}</span>
+                <span className="text-xs text-slate-500">
+                  {lanScanResults.length ? String(lanScanResults.length) : t("No")}
+                </span>
               </div>
               <div className="mt-3 grid gap-2 text-xs">
                 <div className="flex items-center gap-2">
@@ -1544,7 +1564,7 @@ export default function PrinterTab() {
                     onChange={(event) =>
                       setLanConfig((prev) => ({ ...prev, base: event.target.value }))
                     }
-                    placeholder="Subnet base (e.g. 192.168.1)"
+                    placeholder={t("Subnet base (e.g. 192.168.1)")}
                   />
                 </div>
                 <div className="flex gap-2">
@@ -1557,7 +1577,7 @@ export default function PrinterTab() {
                     onChange={(event) =>
                       setLanConfig((prev) => ({ ...prev, from: event.target.value }))
                     }
-                    placeholder="From"
+                    placeholder={t("From")}
                   />
                   <input
                     className="w-1/2 rounded-xl border px-3 py-1 text-xs"
@@ -1568,7 +1588,7 @@ export default function PrinterTab() {
                     onChange={(event) =>
                       setLanConfig((prev) => ({ ...prev, to: event.target.value }))
                     }
-                    placeholder="To"
+                    placeholder={t("To")}
                   />
                 </div>
                 <input
@@ -1577,14 +1597,14 @@ export default function PrinterTab() {
                   onChange={(event) =>
                     setLanConfig((prev) => ({ ...prev, hosts: event.target.value }))
                   }
-                  placeholder="Explicit hosts (comma separated)"
+                  placeholder={t("Explicit hosts (comma separated)")}
                 />
                 <button
                   className="rounded-2xl border px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
                   onClick={() => runLanScan()}
                   disabled={lanScanning}
                 >
-                  {lanScanning ? "Scanning…" : "Scan LAN"}
+                  {lanScanning ? t("Scanning…") : t("Scan LAN")}
                 </button>
                 <div className="max-h-40 overflow-auto rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-2 text-[11px]">
                   {lanScanResults.length ? (
@@ -1599,8 +1619,8 @@ export default function PrinterTab() {
                           </div>
                           <div className="text-[10px] text-slate-500">
                             {printer.ok
-                              ? `Responded ${printer.latency}ms`
-                              : printer.error || "Offline"}
+                              ? t("Responded {{ms}}ms", { ms: printer.latency })
+                              : printer.error || t("Offline")}
                           </div>
                         </div>
                         <span
@@ -1611,12 +1631,12 @@ export default function PrinterTab() {
                               : "bg-slate-100 text-slate-500"
                           )}
                         >
-                          {printer.ok ? "Online" : "Offline"}
+                          {printer.ok ? t("Online") : t("Offline")}
                         </span>
                       </div>
                     ))
                   ) : (
-                    <p className="text-slate-400">LAN scan results appear here.</p>
+                    <p className="text-slate-400">{t("LAN scan results appear here.")}</p>
                   )}
                 </div>
               </div>

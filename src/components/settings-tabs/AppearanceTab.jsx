@@ -11,23 +11,25 @@ const themes = [
   { key: "system", label: "Auto", icon: "🌓" },
 ];
 
-// Accent color map (RGB hex for preview)
-const accentPreviewMap = {
-  default: "#4f46e5", // fallback (indigo-600)
-  "emerald-500": "#10b981",
-  "rose-500": "#f43f5e",
-  "amber-500": "#f59e0b",
-  "cyan-500": "#06b6d4",
-  "violet-500": "#8b5cf6",
-  "lime-500": "#84cc16",
-  "sky-500": "#0ea5e9",
-};
+// Accent previews (solid + gradients)
+const accentOptions = [
+  { label: "Default", value: "default", preview: "#4f46e5" }, // indigo-600
+  { label: "Emerald", value: "emerald-500", preview: "#10b981" },
+  { label: "Rose", value: "rose-500", preview: "#f43f5e" },
+  { label: "Amber", value: "amber-500", preview: "#f59e0b" },
+  { label: "Cyan", value: "cyan-500", preview: "#06b6d4" },
+  { label: "Violet", value: "violet-500", preview: "#8b5cf6" },
+  { label: "Lime", value: "lime-500", preview: "#84cc16" },
+  { label: "Sky", value: "sky-500", preview: "#0ea5e9" },
 
-// Build accent list
-const accentColors = Object.keys(accentPreviewMap).map((value) => ({
-  name: value.replace("-", " ").toUpperCase(),
-  value,
-}));
+  // Gradient accents (new)
+  { label: "Sunset", value: "sunset", preview: "linear-gradient(135deg, #f43f5e, #f59e0b)" },
+  { label: "Ocean", value: "ocean", preview: "linear-gradient(135deg, #06b6d4, #3b82f6)" },
+  { label: "Grape", value: "grape", preview: "linear-gradient(135deg, #8b5cf6, #ec4899)" },
+  { label: "Forest", value: "forest", preview: "linear-gradient(135deg, #10b981, #84cc16)" },
+  { label: "Midnight", value: "midnight", preview: "linear-gradient(135deg, #1e293b, #4f46e5)" },
+  { label: "Fire", value: "fire", preview: "linear-gradient(135deg, #ef4444, #f97316)" },
+];
 
 // ✅ Helpers
 async function fetchUserAppearance() {
@@ -80,7 +82,7 @@ const handleSave = async () => {
                 setAppearance((prev) => ({
                   ...prev,
                   theme: th.key,
-                  accent: th.key === "system" ? "indigo-600" : prev.accent ?? "indigo-600",
+                  accent: th.key === "system" ? "sky-500" : prev.accent ?? "sky-500",
                 }))
               }
               className={`flex flex-col items-center px-4 py-3 rounded-xl border transition-all duration-200 ${
@@ -129,7 +131,7 @@ const handleSave = async () => {
       <div className="mb-10">
         <label className="block text-lg font-semibold mb-3">{t("Accent Color")}</label>
         <div className="flex flex-wrap gap-4">
-          {accentColors.map((c) => {
+          {accentOptions.map((c) => {
             const isSelected =
               (c.value === "default" && appearance?.accent === "indigo-600") ||
               appearance?.accent === c.value;
@@ -146,8 +148,8 @@ const handleSave = async () => {
                   className={`h-10 w-10 rounded-full shadow-md transition-all duration-300 border-2 ${
                     isSelected ? "ring-2 ring-offset-2 ring-accent" : "border-white"
                   }`}
-                  style={{ backgroundColor: accentPreviewMap[c.value] }}
-                  title={c.name}
+                  style={{ background: c.preview }}
+                  title={c.label}
                 />
                 {c.value === "default" && (
                   <span className="text-[10px] text-gray-400 mt-1">Default</span>

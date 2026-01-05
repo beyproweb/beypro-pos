@@ -1,9 +1,10 @@
 // src/components/ModernHeader.jsx
 import React from "react";
-import { ArrowLeft, Home, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useHasPermission } from "./hooks/useHasPermission";
+import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 
 /**
  * Prevents flicker of customer name / address (subtitle)
@@ -48,6 +49,7 @@ export default function ModernHeader({
   onSidebarToggle,
   userName = "Manager",
   onThemeToggle,
+  centerNav,
   tableNav,
   theme = "light",
   hasNotification = false,
@@ -58,22 +60,6 @@ export default function ModernHeader({
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
-  const currentPath = `${location.pathname}${location.search}`;
-  const handleGoBack = React.useCallback(() => {
-    if (previousRoute && previousRoute !== currentPath) {
-      navigate(previousRoute);
-      return;
-    }
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    navigate("/");
-  }, [navigate, previousRoute, currentPath]);
-
-  const handleGoHome = React.useCallback(() => {
-    navigate("/dashboard");
-  }, [navigate]);
 
   const isTableOverviewRoute =
     location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
@@ -82,27 +68,46 @@ export default function ModernHeader({
   const isOrdersRoute = location.pathname.includes("/orders");
   const isKitchenRoute = location.pathname.includes("/kitchen");
   const isStockRoute = location.pathname.includes("/stock");
+  const isProductsRoute = location.pathname.includes("/products");
+  const isExpensesRoute = location.pathname.includes("/expenses");
+  const isIngredientPricesRoute = location.pathname.includes("/ingredient-prices");
+  const isCashRegisterRoute = location.pathname.includes("/cash-register");
+  const isCashRegisterHistoryRoute = location.pathname.includes("/cash-register-history");
+  const isPrintersRoute = location.pathname.includes("/printers");
+  const isProductionRoute = location.pathname.includes("/production");
+  const isSettingsRoute = location.pathname.startsWith("/settings");
+  const isQrMenuSettingsRoute = location.pathname.includes("/qr-menu-settings");
+  const isTaskRoute = location.pathname.includes("/task");
+  const isCustomerInsightsRoute = location.pathname.includes("/customer-insights");
+  const isMaintenanceRoute = location.pathname.includes("/maintenance");
+  const isUserManagementRoute = location.pathname.includes("/user-management");
+  const isIntegrationsRoute = location.pathname.includes("/integrations");
   const isSuppliersRoute = location.pathname.startsWith("/suppliers");
-  const showHeaderTabs =
-    isTableOverviewRoute ||
-    isTransactionRoute ||
-    isDashboardRoute ||
-    isOrdersRoute ||
-    isKitchenRoute ||
-    isStockRoute;
+  const showHeaderTabs = !isSuppliersRoute;
 
-  const supplierTabs = React.useMemo(
-    () => [
-      { kind: "switch", key: "suppliers", label: t("Suppliers") },
+  const canSeeTablesTab = useHasPermission("tables");
+  const canSeeKitchenTab = useHasPermission("kitchen");
+  const canSeeHistoryTab = useHasPermission("history");
+  const canSeePacketTab = useHasPermission("packet-orders");
+  const canSeePhoneTab = useHasPermission("phone-orders");
+  const canSeeRegisterTab = useHasPermission("register");
+  const canSeeTakeawayTab = useHasPermission("takeaway");
+  const canSeeExpensesTab = useHasPermission("expenses");
+
+  const supplierTabs = React.useMemo(() => {
+    const tabs = [
+      { kind: "nav", key: "dashboard", label: t("Dashboard") },
+      ...(canSeeTablesTab ? [{ kind: "nav", key: "tables", label: t("Tables") }] : []),
+      { kind: "switch", key: "suppliers", label: t("Add Product") },
       { kind: "switch", key: "cart", label: t("Supplier Cart") },
       { kind: "section", key: "supplier-overview", label: t("Overview") },
-      { kind: "section", key: "primary-supplier", label: t("Add Product") },
       { kind: "section", key: "transaction-history", label: t("Transactions") },
       { kind: "section", key: "price-tracking", label: t("Price") },
       { kind: "section", key: "profile-balance", label: t("Profile") },
-    ],
-    [t]
-  );
+    ];
+
+    return tabs;
+  }, [canSeeTablesTab, t]);
 
   const supplierView = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
@@ -120,9 +125,22 @@ export default function ModernHeader({
     (tab) => {
       const params = new URLSearchParams(location.search);
 
+      if (tab.kind === "nav") {
+        if (tab.key === "tables") {
+          navigate("/tableoverview?tab=tables");
+          return;
+        }
+        navigate("/dashboard");
+        return;
+      }
+
       if (tab.kind === "switch") {
         params.set("view", tab.key);
-        params.delete("section");
+        if (tab.key === "suppliers") {
+          params.set("section", "purchasing-receipts");
+        } else {
+          params.delete("section");
+        }
         navigate(`/suppliers?${params.toString()}`);
         return;
       }
@@ -134,32 +152,28 @@ export default function ModernHeader({
     [location.search, navigate]
   );
 
-  const canSeeTablesTab = useHasPermission("tables");
-  const canSeeKitchenTab = useHasPermission("kitchen");
-  const canSeeHistoryTab = useHasPermission("history");
-  const canSeePacketTab = useHasPermission("packet-orders");
-  const canSeePhoneTab = useHasPermission("phone-orders");
-  const canSeeRegisterTab = useHasPermission("register");
-  const canSeeTakeawayTab = useHasPermission("takeaway");
-
   const headerTabs = React.useMemo(() => {
     const all = [
+      { id: "dashboard", label: t("Dashboard") },
       { id: "takeaway", label: t("Pre Order") },
       { id: "tables", label: t("Tables") },
       { id: "kitchen", label: t("All Orders") },
       { id: "history", label: t("History") },
       { id: "packet", label: t("Packet") },
       { id: "phone", label: t("Phone") },
+      { id: "expenses", label: t("Expenses") },
       { id: "register", label: t("Register") },
     ];
 
     return all.filter((tab) => {
+      if (tab.id === "dashboard") return true;
       if (tab.id === "takeaway") return canSeeTakeawayTab;
       if (tab.id === "tables") return canSeeTablesTab;
       if (tab.id === "kitchen") return canSeeKitchenTab;
       if (tab.id === "history") return canSeeHistoryTab;
       if (tab.id === "packet") return canSeePacketTab;
       if (tab.id === "phone") return canSeePhoneTab;
+      if (tab.id === "expenses") return canSeeExpensesTab;
       if (tab.id === "register") return canSeeRegisterTab;
       return true;
     });
@@ -171,30 +185,61 @@ export default function ModernHeader({
     canSeeHistoryTab,
     canSeePacketTab,
     canSeePhoneTab,
+    canSeeExpensesTab,
     canSeeRegisterTab,
   ]);
 
   const activeHeaderTab = React.useMemo(() => {
+    if (isDashboardRoute) return "dashboard";
+    if (isExpensesRoute) return "expenses";
     const params = new URLSearchParams(location.search);
     const tab = params.get("tab");
     if (tab) return String(tab).toLowerCase();
     return isOrdersRoute ? "phone" : "tables";
-  }, [location.search, isOrdersRoute]);
+  }, [isDashboardRoute, isExpensesRoute, location.search, isOrdersRoute]);
 
   const resolvedActiveHeaderTab = React.useMemo(() => {
+    if (isDashboardRoute) return "dashboard";
+    if (isExpensesRoute) return "expenses";
     if (isKitchenRoute) return "kitchen";
+    if (isTableOverviewRoute) return activeHeaderTab;
+    if (isTransactionRoute) return activeHeaderTab;
     if (isStockRoute) return null;
-    return activeHeaderTab;
-  }, [activeHeaderTab, isKitchenRoute, isStockRoute]);
+    return null;
+  }, [
+    activeHeaderTab,
+    isDashboardRoute,
+    isExpensesRoute,
+    isKitchenRoute,
+    isStockRoute,
+    isTableOverviewRoute,
+    isTransactionRoute,
+  ]);
 
   const handleHeaderTabClick = React.useCallback(
-    (tabId) => {
+    async (tabId) => {
+      if (tabId === "dashboard") {
+        navigate("/dashboard");
+        return;
+      }
+      if (tabId === "expenses") {
+        const isOpen = await checkRegisterOpen();
+        if (!isOpen) {
+          navigate("/tableoverview?tab=tables", {
+            replace: true,
+            state: { openRegisterModal: true },
+          });
+          return;
+        }
+        navigate("/expenses", { replace: isExpensesRoute, state: { openExpenseModal: true } });
+        return;
+      }
       const base = "/tableoverview";
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
       navigate(`${base}?${params.toString()}`);
     },
-    [location.search, navigate]
+    [isExpensesRoute, location.search, navigate]
   );
 
   return (
@@ -211,14 +256,6 @@ export default function ModernHeader({
             <Menu className="w-5 h-5" />
           </button>
         )}
-        <button
-          type="button"
-          onClick={handleGoHome}
-          className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:text-indigo-200 dark:hover:bg-indigo-500/20 transition"
-          aria-label="Go to dashboard"
-        >
-          <Home className="w-5 h-5" />
-        </button>
       </div>
 
       {/* Center: sticky subtitle (no flicker) */}
@@ -250,17 +287,28 @@ export default function ModernHeader({
           </div>
         )}
 
-        {!isSuppliersRoute && showHeaderTabs && headerTabs.length > 0 && (
+        {!isSuppliersRoute && centerNav && (
+          <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto">
+            {centerNav}
+          </div>
+        )}
+
+        {!isSuppliersRoute && !centerNav && showHeaderTabs && headerTabs.length > 0 && (
           <div className="hidden md:flex items-center justify-center gap-2 flex-wrap">
             {headerTabs.map((tab) => {
               const isActive = resolvedActiveHeaderTab === tab.id;
+              const isDashboardTab = tab.id === "dashboard";
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => handleHeaderTabClick(tab.id)}
                   className={`rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
-                    isActive
+                    isDashboardTab
+                      ? isActive
+                        ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
+                        : "border-indigo-300 bg-indigo-500/15 text-indigo-700 shadow-sm hover:bg-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-200 dark:hover:bg-indigo-500/25"
+                      : isActive
                       ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
                       : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
                   }`}
@@ -276,15 +324,6 @@ export default function ModernHeader({
       {/* Right: Title + bell + other right content */}
       <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
         {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
-
-        <button
-          type="button"
-          onClick={handleGoBack}
-          className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-indigo-400/50 bg-white/70 text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 focus:ring-offset-white dark:bg-zinc-800/70 dark:text-indigo-200 dark:hover:bg-indigo-700/20 dark:focus:ring-offset-zinc-900 transition"
-          aria-label="Go to previous page"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
 
         {title && (
           <span className="text-xl md:text-2xl font-bold tracking-tight text-indigo-700 dark:text-violet-300 drop-shadow mr-1">

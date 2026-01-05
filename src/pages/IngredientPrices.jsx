@@ -14,6 +14,7 @@ import {
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
+import socket from "../utils/socket";
 
 // Small helpers
 const titleCase = (s = "") =>
@@ -39,7 +40,7 @@ const Spark = ({ points = [] }) => {
 };
 
 export default function Ingredient() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { formatCurrency } = useCurrency();
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
@@ -48,6 +49,13 @@ export default function Ingredient() {
   const [history, setHistory] = useState({}); // key -> history array
   const [historyLoading, setHistoryLoading] = useState({}); // key -> boolean
   const [sortBy, setSortBy] = useState("alpha"); // alpha | change | price
+  const locale = useMemo(() => {
+    const lang = (i18n.language || "en").split("-")[0];
+    if (lang === "tr") return "tr-TR";
+    if (lang === "de") return "de-DE";
+    if (lang === "fr") return "fr-FR";
+    return "en-US";
+  }, [i18n.language]);
 
   // Load latest snapshot
   const load = async () => {
@@ -67,7 +75,12 @@ export default function Ingredient() {
   useEffect(() => {
     load();
     const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
+    const onPricesUpdated = () => load();
+    socket.on("ingredient-prices-updated", onPricesUpdated);
+    return () => {
+      clearInterval(interval);
+      socket.off("ingredient-prices-updated", onPricesUpdated);
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -121,7 +134,7 @@ export default function Ingredient() {
           // fallback using the snapshot (current + previous)
           const nowPoint = {
             price: Number(item.price_per_unit) || 0,
-            reason: item.reason || "Current",
+            reason: item.reason || t("Current"),
             changed_at: item.changed_at || new Date().toISOString(),
           };
           const prevPoint =
@@ -129,7 +142,7 @@ export default function Ingredient() {
               ? [
                   {
                     price: Number(item.previous_price) || 0,
-                    reason: "Previous",
+                    reason: t("Previous"),
                     changed_at: item.changed_at || new Date().toISOString(),
                   },
                 ]
@@ -273,7 +286,7 @@ export default function Ingredient() {
                     <TrendingUp className="w-4 h-4 opacity-70" />
                     <span className="text-xs opacity-70">
                       {t("Trend")} {it.changed_at
-                        ? `• ${new Date(it.changed_at).toLocaleDateString("tr-TR")}`
+                        ? `• ${new Date(it.changed_at).toLocaleDateString(locale)}`
                         : ""}
                     </span>
                   </div>
@@ -331,7 +344,7 @@ export default function Ingredient() {
                             >
                               <td className="px-3 py-2">
                                 {h.changed_at
-                                  ? new Date(h.changed_at).toLocaleString("tr-TR", {
+                                  ? new Date(h.changed_at).toLocaleString(locale, {
                                       day: "2-digit",
                                       month: "2-digit",
                                       year: "numeric",

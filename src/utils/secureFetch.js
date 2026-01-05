@@ -29,6 +29,9 @@ export const BASE_URL =
 const hasLocalStorage = () =>
   typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
+const hasSessionStorage = () =>
+  typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+
 const cleanToken = (value) => {
   if (!value) return "";
   let normalized = String(value).trim();
@@ -44,7 +47,25 @@ const cleanToken = (value) => {
 
 // Read token properly
 export function getAuthToken() {
-  if (!hasLocalStorage()) return "";
+  if (!hasLocalStorage() && !hasSessionStorage()) return "";
+
+  if (hasSessionStorage()) {
+    const directSession = cleanToken(sessionStorage.getItem("token"));
+    if (directSession) return directSession;
+
+    try {
+      const storedSession = JSON.parse(sessionStorage.getItem("beyproUser") || "{}");
+      const sessionToken =
+        cleanToken(storedSession?.token) ||
+        cleanToken(storedSession?.accessToken) ||
+        cleanToken(storedSession?.user?.token) ||
+        cleanToken(storedSession?.user?.accessToken) ||
+        cleanToken(storedSession?.user?.user?.token);
+      if (sessionToken) return sessionToken;
+    } catch {
+      // ignore
+    }
+  }
 
   const direct = cleanToken(localStorage.getItem("token"));
   if (direct) return direct;

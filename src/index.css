@@ -4,12 +4,35 @@
 
 /* ✅ Default fallback values */
 :root {
-  --accent-color: 79 70 229; /* indigo-600 as RGB */
+  --accent-color: 14 165 233; /* sky-500 as RGB (default) */
+  --accent-from: 14 165 233;
+  --accent-to: 99 102 241; /* indigo-500 */
   --font-size: 16px;
 }
 
 html {
   overflow-y: scroll;
+}
+
+/* ✅ Accent gradient background helper
+   - Keeps `text-accent` / `border-accent` as solid accent color via Tailwind config.
+   - Makes `bg-accent` (and hover:bg-accent) use a gradient for richer UI. */
+.bg-accent {
+  background-image: linear-gradient(
+    135deg,
+    rgb(var(--accent-from) / 1),
+    rgb(var(--accent-to) / 1)
+  );
+  background-color: transparent;
+}
+
+.hover\\:bg-accent:hover {
+  background-image: linear-gradient(
+    135deg,
+    rgb(var(--accent-from) / 1),
+    rgb(var(--accent-to) / 1)
+  );
+  background-color: transparent;
 }
 
 

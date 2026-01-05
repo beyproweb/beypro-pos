@@ -32,6 +32,20 @@ export default function NotificationsTab() {
   const roles = ["kitchen", "cashier", "manager"];
   const options = ["app", "email", "whatsapp"];
 
+  const roleLabel = (role) => {
+    if (role === "kitchen") return t("Kitchen");
+    if (role === "cashier") return t("Cashier");
+    if (role === "manager") return t("Manager");
+    return String(role || "");
+  };
+
+  const channelLabel = (opt) => {
+    if (opt === "app") return t("App");
+    if (opt === "email") return t("Email");
+    if (opt === "whatsapp") return t("WhatsApp");
+    return String(opt || "");
+  };
+
   const defaultEventSounds = {
     new_order: "new_order.mp3",
     order_preparing: "pop.mp3",
@@ -112,7 +126,7 @@ useSetting("notifications", (incoming) => {
 
 
 
-if (!settingsLoaded || !notifications) return <p>Loading settings...</p>;
+if (!settingsLoaded || !notifications) return <p>{t("Loading settings...")}</p>;
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl shadow p-6 max-w-3xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
@@ -138,8 +152,8 @@ if (!settingsLoaded || !notifications) return <p>Loading settings...</p>;
           toast.dismiss();
           toast[newState ? "success" : "info"](
             newState
-              ? "🔔 Notifications enabled"
-              : "🔕 Notifications disabled"
+              ? `🔔 ${t("Notifications enabled")}`
+              : `🔕 ${t("Notifications disabled")}`
           );
 
           const updated = { ...prev, enabled: newState };
@@ -179,8 +193,8 @@ if (!settingsLoaded || !notifications) return <p>Loading settings...</p>;
           toast.dismiss();
           toast[newState ? "success" : "info"](
             newState
-              ? "✅ Toast popups enabled"
-              : "🚫 Toast popups disabled"
+              ? `✅ ${t("Toast popups enabled")}`
+              : `🚫 ${t("Toast popups disabled")}`
           );
           const updated = { ...prev, enableToasts: newState };
           saveSetting("notifications", updated)
@@ -219,8 +233,8 @@ if (!settingsLoaded || !notifications) return <p>Loading settings...</p>;
           toast.dismiss();
           toast[newState ? "success" : "info"](
             newState
-              ? "🔊 Sound alerts enabled"
-              : "🔇 Sound alerts disabled"
+              ? `🔊 ${t("Sound alerts enabled")}`
+              : `🔇 ${t("Sound alerts disabled")}`
           );
           const updated = { ...prev, enableSounds: newState };
          saveSetting("notifications", updated)
@@ -328,7 +342,7 @@ if (!settingsLoaded || !notifications) return <p>Loading settings...</p>;
           <div className="space-y-3">
             {roles.map((role) => (
               <div key={role} className="flex items-center justify-between">
-                <span className="capitalize font-medium">{t(role)}</span>
+                <span className="capitalize font-medium">{roleLabel(role)}</span>
                 <select
                   value={notifications.channels[role]}
                   onChange={(e) =>
@@ -341,7 +355,7 @@ if (!settingsLoaded || !notifications) return <p>Loading settings...</p>;
                 >
                   {options.map((opt) => (
                     <option key={opt} value={opt}>
-                      {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                      {channelLabel(opt)}
                     </option>
                   ))}
                 </select>

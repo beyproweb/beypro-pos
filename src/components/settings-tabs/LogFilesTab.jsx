@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
 
 export default function LogFilesTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [selectedLog, setSelectedLog] = useState("register");
 
   const [dateFilter, setDateFilter] = useState({
@@ -76,7 +76,7 @@ export default function LogFilesTab() {
       const dt = new Date(entry.created_at);
       return Number.isNaN(dt.getTime())
         ? entry.created_at
-        : dt.toLocaleString();
+        : dt.toLocaleString(i18n.language);
     }
     return entry[column.key] || "—";
   };
@@ -145,13 +145,13 @@ export default function LogFilesTab() {
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan="3" className="text-center py-6 text-gray-500 dark:text-gray-400">
+              <td colSpan={columns.length} className="text-center py-6 text-gray-500 dark:text-gray-400">
                 {t("Loading...")}
               </td>
             </tr>
           ) : logEntries.length === 0 ? (
             <tr>
-              <td colSpan="3" className="text-center py-6 text-gray-500 dark:text-gray-400">
+              <td colSpan={columns.length} className="text-center py-6 text-gray-500 dark:text-gray-400">
                 {t("No logs found for selected range.")}
               </td>
             </tr>

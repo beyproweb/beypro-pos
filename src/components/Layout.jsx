@@ -9,6 +9,7 @@ import { ToastContainer } from "react-toastify";
 import { useHeader } from "../context/HeaderContext";
 import "react-toastify/dist/ReactToastify.css";
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const EDGE_TRIGGER_THRESHOLD = 48;
 
@@ -25,10 +26,11 @@ export default function Layout({
   notificationSummaries = {},
   notificationsLastSeenAtMs = 0,
 }) {
+  const { t } = useTranslation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { title, subtitle, tableNav, actions } = useHeader();
+  const { title, subtitle, tableNav, centerNav, actions } = useHeader();
   const [filter, setFilter] = useState("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [search, setSearch] = useState("");
@@ -71,11 +73,15 @@ export default function Layout({
     "/user-management": "User Management",
     "/printers": "Printers",
     "/cameras": "Live Cameras",
-    "/Production":"Production",
+    "/production":"Productions",
     "/staff":"Staff Management",
     "/expenses":"Expenses",
+    "/maintenance": "Maintenance",
+    "/customer-insights": "Customer Insights",
     "/ingredient-prices":"Prices",
-    "/cash-register-history":"Cash Register",
+    "/marketing-campaigns":"Marketing Campaigns",
+    "/cash-register-history":"Cash History",
+    "/qr-menu-settings":"QR Menu Settings",
     "/integrations":"Integrations"
     // Add more as needed...
   };
@@ -121,6 +127,7 @@ export default function Layout({
       }
 
       for (const candidate of candidates) {
+        if (candidate === "/" && normalizedPath !== "/") continue;
         if (pageTitles[candidate]) {
           computedTitle = pageTitles[candidate];
           break;
@@ -141,7 +148,10 @@ export default function Layout({
     }
   }
 
-  const currentTitle = computedTitle || "Beypro";
+  const translatedTitle =
+    typeof computedTitle === "string" ? t(computedTitle, { defaultValue: computedTitle }) : computedTitle;
+
+  const currentTitle = translatedTitle || "Beypro";
 
 
   // Right content for ModernHeader (kitchen actions, notifications, etc.)
@@ -262,6 +272,7 @@ export default function Layout({
         <ModernHeader
           title={currentTitle}
           subtitle={subtitle}
+          centerNav={centerNav}
           tableNav={tableNav}
           onSidebarToggle={() => setIsSidebarOpen((v) => !v)}
           rightContent={rightContent}
@@ -346,6 +357,7 @@ export default function Layout({
         <option value="driver">Driver</option>
         <option value="task">Task</option>
         <option value="maintenance">Maintenance</option>
+        <option value="register">Register</option>
         <option value="other">Other</option>
       </select>
 
@@ -458,6 +470,7 @@ export default function Layout({
         type === "driver" ? "🚗" :
         type === "task" ? "📝" :
         type === "maintenance" ? "🛠️" :
+        type === "register" ? "🏧" :
         type === "order" ? "🧾" :
         "🔔";
 

@@ -9,6 +9,19 @@ import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../../utils/c
 import { useCurrency } from "../../context/CurrencyContext";
 const dateStr = (d) => new Date(d).toLocaleDateString("tr-TR");
 
+const formatMoney = (formatCurrencyFn, value) => {
+  if (typeof formatCurrencyFn !== "function") return String(value ?? "");
+  if (value === null || value === undefined) return formatCurrencyFn(0);
+  if (typeof value === "number") return formatCurrencyFn(Number.isFinite(value) ? value : 0);
+  if (typeof value === "string") {
+    const normalized = value.trim().replace(",", ".");
+    const parsed = Number(normalized);
+    return formatCurrencyFn(Number.isFinite(parsed) ? parsed : 0);
+  }
+  const parsed = Number(value);
+  return formatCurrencyFn(Number.isFinite(parsed) ? parsed : 0);
+};
+
 function calcDueHistory(totalSalaryDue, payments = []) {
   const seed =
     Number.isFinite(Number(totalSalaryDue))
@@ -297,6 +310,14 @@ const StaffCard = ({
 }) => {
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
+  const currency = (value) => formatMoney(formatCurrency, value);
+  if (!staff) {
+    return (
+      <div className="w-full rounded-2xl border border-blue-100 bg-white/80 p-6 text-center text-blue-700 shadow dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+        {t("Select Staff")}
+      </div>
+    );
+  }
   const history = staffHistory || {};
   const breakdown = Array.isArray(history.weeklyCheck)
     ? history.weeklyCheck
@@ -469,10 +490,12 @@ const StaffCard = ({
           </div>
           <div className="mt-1 text-right text-base text-blue-600 font-semibold">
             {history.totalSalaryDue > 0
-              ? `${Math.min(
-                  (history.salaryPaid / history.totalSalaryDue) * 100,
-                  100
-                ).toFixed(0)}% paid`
+              ? t("{{value}}% paid", {
+                  value: Math.min(
+                    (history.salaryPaid / history.totalSalaryDue) * 100,
+                    100
+                  ).toFixed(0),
+                })
               : t("No payment data")}
           </div>
         </div>
@@ -616,6 +639,8 @@ const StaffCard = ({
 
 const Payroll = () => {
   const { t } = useTranslation();
+  const { formatCurrency } = useCurrency();
+  const currency = (value) => formatMoney(formatCurrency, value);
   const [staffList, setStaffList] = useState([]);
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [staffHistory, setStaffHistory] = useState({});
@@ -719,14 +744,14 @@ const Payroll = () => {
   const exportPayroll = () => {
     const staff = staffList.find((s) => s.id === selectedStaff);
     if (!staff || !staffHistory.weeklyCheck)
-      return toast.error("No data to export");
+      return toast.error(t("No data to export"));
     const rows = [
-      ["Day", "Date", "Scheduled", "Attended", "Late", "Early Out", "Total"],
+      [t("Day"), t("Date"), t("Scheduled"), t("Attended"), t("Late"), t("Early Out"), t("Total")],
       ...staffHistory.weeklyCheck.map((row) => [
         row.day,
         row.date,
         row.schedule,
-        row.sessions.length > 0 ? "✔" : "Absent",
+        row.sessions.length > 0 ? "✔" : t("Absent"),
         (row.latency || []).join(";"),
         (row.earlyCheckout || []).filter(Boolean).join(";"),
         row.totalTime,
@@ -746,10 +771,10 @@ const Payroll = () => {
 
   // ✅ Save payment securely
   const handlePayment = async () => {
-    if (!selectedStaff) return toast.error("Select staff first");
+    if (!selectedStaff) return toast.error(t("Select staff first"));
     const amt = parseFloat(paymentAmount);
     if (!amt && !autoPaymentEnabled)
-      return toast.error("Enter amount or enable auto");
+      return toast.error(t("Enter amount or enable auto"));
     try {
       await secureFetch(`/staff/${selectedStaff}/payments`, {
         method: "POST",
@@ -764,7 +789,7 @@ const Payroll = () => {
           repeat_time: repeatTime,
         }),
       });
-      toast.success("Payment saved!");
+      toast.success(t("Payment saved!"));
       setIsModalOpen(false);
       setPaymentAmount("");
       setNote("");
@@ -774,7 +799,7 @@ const Payroll = () => {
         const staffEntry = staffList.find(
           (person) => String(person.id) === String(selectedStaff)
         );
-        const staffLabel = staffEntry?.name || "Staff";
+        const staffLabel = staffEntry?.name || t("Staff");
         await logCashRegisterEvent({
           type: "payroll",
           amount: amt,
@@ -784,7 +809,7 @@ const Payroll = () => {
       }
     } catch (err) {
       console.error("❌ Payment error:", err);
-      toast.error("Failed to save payment");
+      toast.error(t("Failed to save payment"));
     }
   };
 
@@ -985,7 +1010,7 @@ const Payroll = () => {
       <div className="flex flex-col px-2 py-8">
         {selectedStaff && staffList.length > 0 && (
           <StaffCard
-            staff={staffList.find((s) => s.id === selectedStaff)}
+            staff={staffList.find((s) => String(s.id) === String(selectedStaff))}
             staffHistory={staffHistory}
             paymentHistory={paymentHistory}
             onExport={exportPayroll}

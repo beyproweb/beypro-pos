@@ -92,7 +92,7 @@ export default function OrderHistory({
     setClosedOrders(nonEmptyOrders);
   } catch (err) {
     console.error("❌ Fetch closed orders failed:", err);
-    toast.error("Failed to load order history");
+    toast.error(t("Failed to load order history"));
   }
 };
 

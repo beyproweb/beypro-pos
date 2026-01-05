@@ -79,7 +79,13 @@ const API_URL =
     ? "http://localhost:5000/api"
     : "https://api.beypro.com/api");
 
-const isAuthenticated = () => !!localStorage.getItem("beyproUser");
+const isAuthenticated = () => {
+  try {
+    return !!(localStorage.getItem("beyproUser") || sessionStorage.getItem("beyproUser"));
+  } catch {
+    return !!localStorage.getItem("beyproUser");
+  }
+};
 
 function TablesRedirect() {
   const location = useLocation();

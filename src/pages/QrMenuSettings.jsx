@@ -114,9 +114,9 @@ async function saveAllCustomization() {
       method: "POST",
       body: JSON.stringify(settings),
     });
-    toast.success("Saved!");
+    toast.success(t("Saved!"));
   } catch {
-    toast.error("Save failed");
+    toast.error(t("Save failed"));
   }
 }
 
@@ -145,10 +145,7 @@ async function saveAllCustomization() {
 
       // 4) Load short QR link
       setLoadingLink(true);
-      const token = localStorage.getItem("token");
-      const linkRes = await secureFetch("/settings/qr-link", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const linkRes = await secureFetch("/settings/qr-link");
       if (linkRes?.success && linkRes.link) setQrUrl(linkRes.link);
 
     } catch (err) {
@@ -493,7 +490,7 @@ async function saveAllCustomization() {
       -------------------------------------------------------------------------------- */}
       <div className="mt-12 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
         <h2 className="text-3xl font-extrabold mb-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-transparent bg-clip-text">
-          🛠️ QR Menu Website Builder
+          🛠️ {t("QR Menu Website Builder")}
         </h2>
 
         {/* Main Info */}
@@ -619,27 +616,29 @@ async function saveAllCustomization() {
         {/* POPULAR + THEME */}
         <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-2xl border">
-            <label className="font-semibold block mb-2">Popular This Week</label>
+            <label className="font-semibold block mb-2">{t("Popular This Week")}</label>
             <div className="flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={!!settings.enable_popular}
                 onChange={(e) => updateField("enable_popular", e.target.checked)}
               />
-              <span className="text-sm text-gray-600 dark:text-gray-300">Automatically shows trending products based on orders.</span>
+              <span className="text-sm text-gray-600 dark:text-gray-300">
+                {t("Automatically shows trending products based on orders.")}
+              </span>
             </div>
           </div>
 
           <div className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-2xl border">
-            <label className="font-semibold block mb-2">Theme</label>
+            <label className="font-semibold block mb-2">{t("Theme")}</label>
             <select
               value={settings.qr_theme || "auto"}
               onChange={(e) => updateField("qr_theme", e.target.value)}
               className="w-full p-3 rounded-xl border bg-white dark:bg-zinc-900"
             >
-              <option value="auto">Auto</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
+              <option value="auto">{t("Auto")}</option>
+              <option value="light">{t("Light")}</option>
+              <option value="dark">{t("Dark")}</option>
             </select>
           </div>
         </div>
@@ -720,7 +719,7 @@ async function saveAllCustomization() {
 
         {/* LOYALTY PROGRAM */}
         <div className="mt-10 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
-          <h3 className="text-xl font-bold mb-3 text-indigo-600">Loyalty Program</h3>
+          <h3 className="text-xl font-bold mb-3 text-indigo-600">{t("Loyalty Program")}</h3>
           <div className="flex items-center gap-3 mb-4">
             <input
               id="loyalty_enabled"
@@ -728,11 +727,13 @@ async function saveAllCustomization() {
               checked={!!settings.loyalty_enabled}
               onChange={(e) => updateField("loyalty_enabled", e.target.checked)}
             />
-            <label htmlFor="loyalty_enabled" className="font-medium">Enable Loyalty</label>
+            <label htmlFor="loyalty_enabled" className="font-medium">
+              {t("Enable Loyalty")}
+            </label>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="font-semibold">Stamps needed</label>
+              <label className="font-semibold">{t("Stamps needed")}</label>
               <input
                 type="number"
                 min="1"
@@ -742,7 +743,7 @@ async function saveAllCustomization() {
               />
             </div>
             <div className="md:col-span-2">
-              <label className="font-semibold">Reward Description</label>
+              <label className="font-semibold">{t("Reward Description")}</label>
               <input
                 type="text"
                 value={settings.loyalty_reward_text || ""}
@@ -751,7 +752,7 @@ async function saveAllCustomization() {
               />
             </div>
             <div>
-              <label className="font-semibold">Loyalty Card Color</label>
+              <label className="font-semibold">{t("Loyalty Card Color")}</label>
               <input
                 type="color"
                 value={settings.loyalty_color || "#F59E0B"}
@@ -835,7 +836,7 @@ async function saveAllCustomization() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <input
               type="text"
-              placeholder="Instagram URL"
+              placeholder={t("Instagram URL")}
               value={settings.social_instagram}
               onChange={(e) => updateField("social_instagram", e.target.value)}
               className="p-3 rounded-xl border"
@@ -843,7 +844,7 @@ async function saveAllCustomization() {
 
             <input
               type="text"
-              placeholder="TikTok URL"
+              placeholder={t("TikTok URL")}
               value={settings.social_tiktok}
               onChange={(e) => updateField("social_tiktok", e.target.value)}
               className="p-3 rounded-xl border"
@@ -851,7 +852,7 @@ async function saveAllCustomization() {
 
             <input
               type="text"
-              placeholder="Website URL"
+              placeholder={t("Website URL")}
               value={settings.social_website}
               onChange={(e) => updateField("social_website", e.target.value)}
               className="p-3 rounded-xl border"

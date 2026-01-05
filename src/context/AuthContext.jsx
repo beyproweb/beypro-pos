@@ -17,14 +17,30 @@ export const AuthProvider = ({ children }) => {
 
   useSetting("users", setUserSettings, { roles: {} });
 
+  const getAuthStorage = () => {
+    if (typeof window === "undefined") return null;
+    try {
+      if (window.sessionStorage?.getItem("token") || window.sessionStorage?.getItem("beyproUser")) {
+        return window.sessionStorage;
+      }
+    } catch {}
+    try {
+      if (window.localStorage) return window.localStorage;
+    } catch {}
+    return null;
+  };
+
   // ✅ Load cached user instantly on mount and normalize it
   useEffect(() => {
     try {
-      const cachedUser = JSON.parse(localStorage.getItem("beyproUser"));
+      const storage = getAuthStorage();
+      const cachedUser = storage ? JSON.parse(storage.getItem("beyproUser")) : null;
       if (cachedUser) {
         const normalized = normalizeUser(cachedUser, userSettings);
         setCurrentUser(normalized);
-        localStorage.setItem("beyproUser", JSON.stringify(normalized));
+        try {
+          storage?.setItem("beyproUser", JSON.stringify(normalized));
+        } catch {}
 
         // ✅ Ensure restaurant_id is always in localStorage
         if (normalized.restaurant_id) {
@@ -62,8 +78,14 @@ useEffect(() => {
       .then((res) => {
         if (res.status === 401) {
           console.warn("🔒 Token expired or invalid — logging out");
-          localStorage.removeItem("token");
-          localStorage.removeItem("beyproUser");
+          try {
+            localStorage.removeItem("token");
+            localStorage.removeItem("beyproUser");
+          } catch {}
+          try {
+            sessionStorage.removeItem("token");
+            sessionStorage.removeItem("beyproUser");
+          } catch {}
           setCurrentUser(null);
           if (!window.location.pathname.includes("/login")) {
            safeNavigate("/login");
@@ -124,7 +146,8 @@ useEffect(() => {
             }
 
             try {
-              localStorage.setItem("beyproUser", JSON.stringify(nextUser));
+              const storage = getAuthStorage() || localStorage;
+              storage.setItem("beyproUser", JSON.stringify(nextUser));
               if (nextUser.restaurant_id) {
                 localStorage.setItem("restaurant_id", nextUser.restaurant_id);
               }

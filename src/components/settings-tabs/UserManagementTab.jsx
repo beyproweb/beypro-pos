@@ -94,6 +94,8 @@ export default function UserManagementTab() {
     allowedWifiIps: [],
   });
   const [allowedIpInput, setAllowedIpInput] = useState("");
+  const [newAvatarFileName, setNewAvatarFileName] = useState("");
+  const [editedAvatarFileName, setEditedAvatarFileName] = useState("");
 
   const [newUser, setNewUser] = useState({
     id: "",
@@ -141,7 +143,7 @@ export default function UserManagementTab() {
       setStaffList(data);
     } catch (err) {
       console.error("Error fetching staff:", err);
-      toast.error("Error fetching staff list.");
+      toast.error(t("Error fetching staff list."));
     }
   };
 
@@ -159,14 +161,14 @@ export default function UserManagementTab() {
       return true;
     } catch (err) {
       console.error("❌ Failed to save roles:", err);
-      toast.error("Failed to save roles to settings.");
+      toast.error(t("Failed to save roles to settings."));
       return false;
     }
   };
 
   const handleCreateRole = async () => {
     const role = newRoleName.trim().toLowerCase();
-    if (usersConfig.roles[role]) return toast.error("Role already exists");
+    if (usersConfig.roles[role]) return toast.error(t("Role already exists"));
 
     const newPermissions = copyFromRole
       ? usersConfig.roles[copyFromRole]
@@ -182,14 +184,14 @@ export default function UserManagementTab() {
 
     setUsersConfig(updated);
     await saveRolesToSettings(updated);
-    toast.success(`✅ Role '${role}' created`);
+    toast.success(`✅ ${t("Role created: {{role}}", { role })}`);
 
     if (selectedStaffId) {
       await secureFetch(`/staff/${selectedStaffId}/role`, {
         method: "PUT",
         body: JSON.stringify({ role }),
       });
-      toast.success(`👤 Assigned ${role} to staff ID ${selectedStaffId}`);
+      toast.success(`👤 ${t("Assigned {{role}} to staff ID {{id}}", { role, id: selectedStaffId })}`);
       fetchStaff();
     }
 
@@ -231,7 +233,7 @@ export default function UserManagementTab() {
 
   const handleSaveSettings = async () => {
     await saveRolesToSettings(usersConfig);
-    toast.success("✅ Role settings saved!");
+    toast.success(`✅ ${t("Role settings saved!")}`);
   };
 
   const handleAddAllowedIp = async () => {
@@ -280,7 +282,7 @@ export default function UserManagementTab() {
       newUser;
 
     if (!id || !name || !email || !phone || !address || !role || !pin || !salary) {
-      toast.error("❌ All fields are required");
+      toast.error(`❌ ${t("All fields are required")}`);
       return;
     }
 
@@ -303,7 +305,7 @@ export default function UserManagementTab() {
         }),
       });
 
-      toast.success("✅ Staff member added!");
+      toast.success(`✅ ${t("Staff member added!")}`);
       fetchStaff();
 
       setNewUser({
@@ -319,7 +321,7 @@ export default function UserManagementTab() {
       });
     } catch (err) {
       console.error("❌ Error adding user:", err);
-      toast.error("Error adding user. Check inputs.");
+      toast.error(t("Error adding user. Check inputs."));
     }
   };
 
@@ -334,7 +336,7 @@ export default function UserManagementTab() {
 
     try {
       await secureFetch(`/staff/${targetId}`, { method: "DELETE" });
-      toast.success("🗑️ Staff deleted");
+      toast.success(`🗑️ ${t("Staff deleted")}`);
       fetchStaff();
       if (targetId === selectedStaffId) {
         setSelectedStaffId("");
@@ -344,7 +346,7 @@ export default function UserManagementTab() {
       }
     } catch (err) {
       console.error("❌ Error deleting staff:", err);
-      toast.error("Failed to delete staff");
+      toast.error(t("Failed to delete staff"));
     }
   };
 
@@ -535,27 +537,36 @@ export default function UserManagementTab() {
           <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
             {t("Upload Avatar")}
           </label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={async (e) => {
-              const file = e.target.files[0];
-              if (!file) return;
-              const formData = new FormData();
-              formData.append("file", file);
-              try {
-                const res = await secureFetch("/upload", {
-                  method: "POST",
-                  body: formData,
-                });
-                setNewUser((prev) => ({ ...prev, avatar: res.url }));
-                toast.success(t("Avatar uploaded successfully"));
-              } catch (err) {
-                toast.error("❌ Image upload failed");
-              }
-            }}
-            className="w-full p-3 border rounded-xl dark:border-gray-600 dark:bg-gray-800 dark:text-white cursor-pointer"
-          />
+          <div className="flex items-center gap-3">
+            <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  setNewAvatarFileName(file?.name || "");
+                  if (!file) return;
+                  const formData = new FormData();
+                  formData.append("file", file);
+                  try {
+                    const res = await secureFetch("/upload", {
+                      method: "POST",
+                      body: formData,
+                    });
+                    setNewUser((prev) => ({ ...prev, avatar: res.url }));
+                    toast.success(t("Avatar uploaded successfully"));
+                  } catch (err) {
+                    toast.error(`❌ ${t("Image upload failed!")}`);
+                  }
+                }}
+              />
+              {t("Choose file")}
+            </label>
+            <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
+              {newAvatarFileName || t("No file chosen")}
+            </span>
+          </div>
         </div>
 
         <button
@@ -657,7 +668,7 @@ export default function UserManagementTab() {
     method: "PUT",
     body: JSON.stringify({ role: copyFromRole }),
   });
-  toast.success(`✅ Assigned ${copyFromRole} to staff ID ${selectedStaffId}`);
+  toast.success(`✅ ${t("Assigned {{role}} to staff ID {{id}}", { role: copyFromRole, id: selectedStaffId })}`);
   fetchStaff();
   setSelectedStaffId("");
   setCopyFromRole("");
@@ -697,42 +708,45 @@ export default function UserManagementTab() {
               <span className="text-sm bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-200 px-3 py-1 rounded-full">
                 {staff.role}
               </span>
-              <button
-                onClick={() => setEditingStaffId(staff.id)}
-                className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
-              >
-            <input
-  type="file"
-  accept="image/*"
-  onChange={async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-  const res = await secureFetch("/upload", {
-    method: "POST",
-    body: formData, // secureFetch auto-handles FormData with token
-  });
-  // Update both form and UI with uploaded image URL
-  setEditedStaff((prev) => ({ ...prev, avatar: res.url }));
-  setStaffList((list) =>
-    list.map((s) =>
-      s.id === editingStaffId ? { ...s, avatar: res.url } : s
-    )
-  );
-}  catch (err) {
-      toast.error("❌ Image upload failed");
-    }
-  }}
-  className="p-2 border dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
-/>
-
-
-
-
-                ✏️ {t("Edit")}
-              </button>
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-700 dark:text-gray-200 cursor-pointer inline-flex items-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      setEditedAvatarFileName(file?.name || "");
+                      if (!file) return;
+                      const formData = new FormData();
+                      formData.append("file", file);
+                      try {
+                        const res = await secureFetch("/upload", {
+                          method: "POST",
+                          body: formData,
+                        });
+                        setEditedStaff((prev) => ({ ...prev, avatar: res.url }));
+                        setStaffList((list) =>
+                          list.map((s) => (s.id === editingStaffId ? { ...s, avatar: res.url } : s))
+                        );
+                        toast.success(t("Avatar uploaded successfully"));
+                      } catch (err) {
+                        toast.error(`❌ ${t("Image upload failed!")}`);
+                      }
+                    }}
+                  />
+                  📎 {t("Choose file")}
+                </label>
+                <span className="text-xs text-gray-500 dark:text-gray-400 max-w-[180px] truncate">
+                  {editedAvatarFileName || t("No file chosen")}
+                </span>
+                <button
+                  onClick={() => setEditingStaffId(staff.id)}
+                  className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
+                >
+                  ✏️ {t("Edit")}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -792,12 +806,12 @@ export default function UserManagementTab() {
   }),
 });
 
-      toast.success("✅ Staff updated");
+      toast.success(`✅ ${t("Staff updated")}`);
       fetchStaff();
       setEditingStaffId(null);
     } catch (err) {
       console.error("❌ Update failed:", err);
-      toast.error("❌ Failed to update staff");
+      toast.error(`❌ ${t("Failed to update staff")}`);
     }
   }}
   className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold"
@@ -857,7 +871,7 @@ export default function UserManagementTab() {
       </button>
       <button
         onClick={async () => {
-          if (!window.confirm(`Are you sure you want to delete role '${role}'?`)) return;
+          if (!window.confirm(t("Are you sure you want to delete role '{{role}}'?", { role }))) return;
 try {
   await secureFetch(`/settings/roles/${role.toLowerCase()}`, {
     method: "DELETE",
@@ -865,10 +879,10 @@ try {
   const updated = { ...usersConfig };
   delete updated.roles[role.toLowerCase()];
   setUsersConfig(updated);
-  toast.success(`🗑️ Role '${role}' deleted`);
+  toast.success(`🗑️ ${t("Role deleted: {{role}}", { role })}`);
 }
  catch (err) {
-            toast.error("❌ Failed to delete role");
+            toast.error(`❌ ${t("Failed to delete role")}`);
             console.error(err);
           }
         }}
@@ -897,7 +911,7 @@ try {
    };
    setUsersConfig(updated);
    await saveSetting("users", updated);
-   toast.success(`✅ Permissions updated for ${roleKey}`);
+	   toast.success(`✅ ${t("Permissions updated for {{role}}", { role: roleKey })}`);
 }}
 
       />
@@ -922,8 +936,8 @@ try {
           };
           setUsersConfig(updated);
           await saveRolesToSettings(updated);
-          toast.success(`✅ Permissions updated for ${roleKey}`);
-        }}
+	          toast.success(`✅ ${t("Permissions updated for {{role}}", { role: roleKey })}`);
+	        }}
       />
 
       {/* Save button */}
@@ -938,18 +952,18 @@ try {
 
       <ConfirmModal
         isOpen={showConfirm}
-        title="Delete Staff Member"
-        message="Are you sure you want to delete this staff member? This cannot be undone."
+        title={t("Delete Staff Member")}
+        message={t("Are you sure you want to delete this staff member? This cannot be undone.")}
         onCancel={() => setShowConfirm(false)}
         onConfirm={async () => {
           try {
             await secureFetch(`/staff/${selectedStaffId}`, { method: "DELETE" });
-            toast.success("🗑️ Staff deleted");
+            toast.success(`🗑️ ${t("Staff deleted")}`);
             fetchStaff();
             setSelectedStaffId("");
           } catch (err) {
             console.error("❌ Delete failed:", err);
-            toast.error("Failed to delete staff");
+            toast.error(t("Failed to delete staff"));
           } finally {
             setShowConfirm(false);
           }

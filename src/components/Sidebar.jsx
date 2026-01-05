@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Home,
@@ -26,12 +26,17 @@ import {
   UserCheck,
   Megaphone,
   CreditCard,
+  Globe,
   X,
 } from "lucide-react";
+import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext";
 import { hasPermission } from "../utils/permissions";
 import { useTranslation } from "react-i18next";
 import { safeNavigate } from "../utils/navigation";
+import secureFetch from "../utils/secureFetch";
+import { CURRENCY_KEYS } from "../utils/currency";
+import { useCurrency } from "../context/CurrencyContext";
 
 export const SIDEBAR_WIDTH_OPEN = 224;
 export const SIDEBAR_WIDTH_COLLAPSED = 72;
@@ -84,6 +89,72 @@ const DEFAULT_HIDDEN_KEYS = [
   "Production",
 ];
 
+const languageOptions = [
+  { label: "EN", name: "English", code: "en" },
+  { label: "TR", name: "Turkish", code: "tr" },
+  { label: "DE", name: "German", code: "de" },
+  { label: "FR", name: "French", code: "fr" },
+];
+
+function readStoredUser() {
+  if (typeof window === "undefined") return null;
+  const tryParse = (storage) => {
+    if (!storage) return null;
+    try {
+      const raw = storage.getItem("beyproUser");
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  return tryParse(window.sessionStorage) || tryParse(window.localStorage);
+}
+
+function getDisplayName(user) {
+  if (!user || typeof user !== "object") return null;
+  return (
+    user?.name ||
+    user?.full_name ||
+    user?.fullName ||
+    user?.username ||
+    user?.email ||
+    null
+  );
+}
+
+function normalizeLanguageCode(raw) {
+  if (!raw) return null;
+  const normalized = String(raw).trim();
+  if (!normalized) return null;
+  const lower = normalized.toLowerCase();
+  const mapped =
+    lower === "english"
+      ? "en"
+      : lower === "turkish"
+        ? "tr"
+        : lower === "german"
+          ? "de"
+          : lower === "french"
+            ? "fr"
+            : lower.split("-")[0];
+
+  return languageOptions.some((opt) => opt.code === mapped) ? mapped : null;
+}
+
+function readStoredLanguage() {
+  if (typeof window === "undefined") return null;
+  try {
+    return (
+      normalizeLanguageCode(window.localStorage.getItem("beyproLanguage")) ||
+      normalizeLanguageCode(window.localStorage.getItem("beyproGuestLanguage"))
+    );
+  } catch {
+    return null;
+  }
+}
+
 function readHiddenKeys(storageKey) {
   if (typeof window === "undefined") return [];
   try {
@@ -135,9 +206,12 @@ function readOrder(storageKey) {
 
 export default function Sidebar({ isOpen, setIsOpen }) {
   const location = useLocation();
-  const isLoggedIn = !!localStorage.getItem("beyproUser");
   const { currentUser } = useAuth();
-  const { t } = useTranslation();
+  const storedUser = readStoredUser();
+  const displayName = getDisplayName(currentUser) || getDisplayName(storedUser);
+  const isLoggedIn = !!(currentUser || storedUser);
+  const { t, i18n } = useTranslation();
+  const { currencyKey, setCurrencyKey } = useCurrency();
   const tenantId =
     currentUser?.tenant_id ||
     currentUser?.restaurant_id ||
@@ -195,9 +269,112 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     return [...filteredMenu, dynamicItem];
   }, [currentUser, hiddenKeys, isLoggedIn, orderedMenu]);
 
+  const canSeeLocalization = useMemo(() => {
+    if (!currentUser) return false;
+    return (
+      hasPermission("settings-localization", currentUser) ||
+      hasPermission("settings", currentUser)
+    );
+  }, [currentUser]);
+
+  const [sidebarLanguage, setSidebarLanguage] = useState("en");
+  const [sidebarCurrency, setSidebarCurrency] = useState(currencyKey || "₺ TRY");
+  const lastSavedLocalization = useRef({ language: null, currency: null });
+  const autoSaveTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (!canSeeLocalization) return undefined;
+
+    let active = true;
+    secureFetch("/settings/localization")
+      .then((data) => {
+        if (!active) return;
+
+        const storedLanguage = readStoredLanguage();
+        const serverLanguage = normalizeLanguageCode(data?.language);
+        const currentLanguage = normalizeLanguageCode(i18n.language);
+        const nextLanguage = storedLanguage || serverLanguage || currentLanguage || "en";
+        const nextCurrency = data?.currency || currencyKey || "₺ TRY";
+
+        setSidebarLanguage(nextLanguage);
+        if (normalizeLanguageCode(i18n.language) !== nextLanguage) {
+          i18n.changeLanguage(nextLanguage);
+        }
+
+        setSidebarCurrency(nextCurrency);
+        setCurrencyKey?.(nextCurrency);
+
+        lastSavedLocalization.current = {
+          language: nextLanguage,
+          currency: nextCurrency,
+        };
+      })
+      .catch((err) => {
+        console.warn("⚠️ Failed to load localization:", err);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canSeeLocalization, i18n, setCurrencyKey]);
+
+  useEffect(() => {
+    if (!currencyKey) return;
+    setSidebarCurrency(currencyKey);
+  }, [currencyKey]);
+
+  const saveLocalization = useCallback(
+    async ({ language, currency }) => {
+      try {
+        await secureFetch("/settings/localization", {
+          method: "POST",
+          body: JSON.stringify({ language, currency }),
+        });
+        lastSavedLocalization.current = { language, currency };
+      } catch (err) {
+        console.error("❌ Failed to save localization:", err);
+        toast.error(
+          t("Failed to save localization", {
+            defaultValue: "Failed to save localization",
+          })
+        );
+      }
+    },
+    [t]
+  );
+
+  useEffect(() => {
+    if (!canSeeLocalization) return undefined;
+
+    const last = lastSavedLocalization.current;
+    if (sidebarLanguage === last.language && sidebarCurrency === last.currency) return undefined;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(() => {
+      saveLocalization({ language: sidebarLanguage, currency: sidebarCurrency });
+    }, 450);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [canSeeLocalization, saveLocalization, sidebarCurrency, sidebarLanguage]);
+
   function handleLogout() {
     setIsOpen?.(false);
-    localStorage.removeItem("beyproUser");
+    try {
+      localStorage.removeItem("token");
+      localStorage.removeItem("beyproUser");
+    } catch {}
+    try {
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("beyproUser");
+    } catch {}
     safeNavigate("/login");
   }
 
@@ -483,15 +660,83 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
       </nav>
 
+      {canSeeLocalization && (
+        <div className="w-full px-2 mt-2">
+          <div className="mx-2 my-2 h-px bg-white/15" />
+          {isOpen ? (
+            <div className="mx-2 my-2 rounded-xl border border-white/15 bg-white/5 px-2 py-2 shadow-lg">
+              <div className="flex items-center gap-2 min-w-0">
+                <Globe size={16} className="text-white/70 flex-shrink-0" />
+                <label className="sr-only" htmlFor="sidebar-language">
+                  {t("Language", { defaultValue: "Language" })}
+                </label>
+                <select
+                  id="sidebar-language"
+                  value={sidebarLanguage || "en"}
+                  onChange={(e) => {
+                    const selectedLang = e.target.value || "en";
+                    setSidebarLanguage(selectedLang);
+                    i18n.changeLanguage(selectedLang);
+                    try {
+                      localStorage.setItem("beyproLanguage", selectedLang);
+                      localStorage.setItem("beyproGuestLanguage", selectedLang);
+                    } catch {}
+                  }}
+                  title={t("Language", { defaultValue: "Language" })}
+                  className="h-8 w-[68px] rounded-lg px-2 bg-white/10 text-white text-xs font-bold border border-white/15 focus:ring-2 focus:ring-fuchsia-300/60 outline-none"
+                >
+                  {languageOptions.map((opt) => (
+                    <option key={opt.code} value={opt.code} className="text-slate-900">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  id="sidebar-currency"
+                  value={sidebarCurrency}
+                  onChange={(e) => {
+                    setSidebarCurrency(e.target.value);
+                    setCurrencyKey?.(e.target.value);
+                  }}
+                  title={t("Currency", { defaultValue: "Currency" })}
+                  className="ml-auto h-8 w-[118px] rounded-lg px-2 bg-white/10 text-white text-[11px] font-bold border border-white/15 focus:ring-2 focus:ring-fuchsia-300/60 outline-none"
+                >
+                  {CURRENCY_KEYS.map((cur) => (
+                    <option key={cur} value={cur} className="text-slate-900">
+                      {cur}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsOpen?.(true)}
+              className="group flex items-center justify-center w-full px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-white/10 hover:text-fuchsia-300 transition shadow-lg relative"
+              title={t("Language & Localization", {
+                defaultValue: "Language & Localization",
+              })}
+            >
+              <Globe size={24} />
+              <span className="absolute left-[110%] bg-black/70 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition">
+                {t("Language & Localization", {
+                  defaultValue: "Language & Localization",
+                })}
+              </span>
+            </button>
+          )}
+        </div>
+      )}
       <div className="mb-6 flex flex-col items-center gap-2 px-4 text-center">
         <span
           className="text-2xl font-extrabold tracking-wide select-none bg-gradient-to-r from-blue-200 via-fuchsia-200 to-indigo-200 bg-clip-text text-transparent drop-shadow-lg"
         >
           Beypro
         </span>
-        {currentUser?.name && (
+        {displayName && (
           <span className="text-xs uppercase tracking-[0.3em] text-white/60 truncate max-w-[180px]">
-            {currentUser.name}
+            {displayName}
           </span>
         )}
       </div>

@@ -3,6 +3,7 @@ import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
 import { useTranslation } from "react-i18next";
 import { useCurrency } from "../context/CurrencyContext";
+import socket from "../utils/socket";
 
 export default function LiveIngredientPricesWidget({ maxItems = 4 }) {
   const { t } = useTranslation();
@@ -33,7 +34,12 @@ export default function LiveIngredientPricesWidget({ maxItems = 4 }) {
   useEffect(() => {
     load();
     const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
+    const onPricesUpdated = () => load();
+    socket.on("ingredient-prices-updated", onPricesUpdated);
+    return () => {
+      clearInterval(interval);
+      socket.off("ingredient-prices-updated", onPricesUpdated);
+    };
   }, []);
 
   const limited = useMemo(() => rows.slice(0, maxItems), [rows, maxItems]);

@@ -481,7 +481,7 @@ return (
             disabled={loading}
             className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-lg font-bold rounded-2xl shadow-xl hover:scale-[1.03] transition-transform duration-200 disabled:opacity-60"
           >
-            {loading ? "💾 Updating..." : "💾 Update Account"}
+            {loading ? `💾 ${t("Updating...")}` : `💾 ${t("Update Account")}`}
           </button>
         </div>
 
@@ -543,7 +543,7 @@ return (
                   <div>
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="text-xl font-bold text-indigo-700">
-                        {plan.name}
+                        {t(plan.name)}
                       </h3>
                       {form.activePlan === plan.key && (
                         <span className="text-xs bg-indigo-600 text-white px-2 py-1 rounded-full">
@@ -575,7 +575,7 @@ return (
                       }}
                       className="mt-auto w-full py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition"
                     >
-                      {t("Choose")} {plan.name}
+                      {t("Choose")} {t(plan.name)}
                     </button>
                   )}
                 </div>
@@ -594,7 +594,7 @@ return (
           disabled={loading}
           className="w-full max-w-md py-6 md:py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-lg font-bold rounded-2xl shadow-xl hover:scale-[1.03] transition-transform duration-200 disabled:opacity-60"
         >
-          {loading ? "💾 Saving..." : "💾 Save Changes"}
+          {loading ? `💾 ${t("Saving...")}` : `💾 ${t("Save Changes")}`}
         </button>
       ) : (
         <button

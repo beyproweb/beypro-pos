@@ -12,7 +12,7 @@ export default function CustomerInsights() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [birthdayCustomers, setBirthdayCustomers] = useState([]);
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const canAccess = useHasPermission("customer");
   const [editModal, setEditModal] = useState({ open: false, data: null });
   const paymentMethods = usePaymentMethods();
@@ -31,7 +31,7 @@ export default function CustomerInsights() {
   const paymentOptions = paymentMethods.length
     ? paymentMethods.map((pm) => ({
         value: pm.id || pm.label,
-        label: pm.label || pm.id || "Method",
+        label: pm.label || pm.id || t("Method"),
       }))
     : ["Cash", "Credit Card", "Sodexo", "Multinet"].map((label) => ({
         value: label,
@@ -62,22 +62,22 @@ async function handleSaveCustomer(updated) {
     });
     setCustomers(cs => cs.map(c => c.id === updated.id ? { ...res } : c));
     setEditModal({ open: false, data: null });
-    alert("✅ Customer updated successfully!");
+    alert(`✅ ${t("Customer updated successfully!")}`);
   } catch (err) {
-    alert("❌ Failed to update: " + err.message);
+    alert(`❌ ${t("Failed to update: {{error}}", { error: err?.message || "" })}`);
   }
 }
 
 
 async function handleDeleteCustomer(id) {
-  if (!window.confirm("Are you sure you want to delete this customer?")) return;
+  if (!window.confirm(t("Are you sure you want to delete this customer?"))) return;
   try {
     await secureFetch(`/customers/${id}`, { method: "DELETE" });
     setCustomers(cs => cs.filter(c => c.id !== id));
     setEditModal({ open: false, data: null });
-    alert("🗑️ Customer deleted successfully!");
+    alert(`🗑️ ${t("Customer deleted successfully!")}`);
   } catch (err) {
-    alert("❌ Failed to delete customer: " + err.message);
+    alert(`❌ ${t("Failed to delete customer: {{error}}", { error: err?.message || "" })}`);
   }
 }
 
@@ -120,7 +120,7 @@ async function handleDeleteCustomer(id) {
 
   const handleOpenDebtPayment = async (customer) => {
     if (!customer?.phone) {
-      alert("❌ Customer phone is required to pay debt");
+      alert(`❌ ${t("Customer phone is required to pay debt")}`);
       return;
     }
     setIsDebtPaying(false);
@@ -339,15 +339,17 @@ async function handleDeleteCustomer(id) {
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight mb-1 flex items-center gap-2">
-            <User className="inline w-7 h-7 text-blue-500" /> Customer Insights
+            <User className="inline w-7 h-7 text-blue-500" /> {t("Customer Insights")}
           </h1>
-          <span className="text-gray-500 dark:text-gray-400 text-base">Know your guests, boost retention and sales 🚀</span>
+          <span className="text-gray-500 dark:text-gray-400 text-base">
+            {t("Know your guests, boost retention and sales 🚀")}
+          </span>
         </div>
         {/* Stats Cards */}
         <div className="flex gap-3 flex-wrap">
-          <StatCard icon={<User />} label="Total" value={stats.total} color="from-blue-400 to-blue-700" />
-          <StatCard icon={<Repeat />} label="Repeat" value={stats.repeat} color="from-green-400 to-green-600" />
-          <StatCard icon={<Gift />} label="Birthdays" value={stats.birthdays} color="from-pink-400 to-pink-600" />
+          <StatCard icon={<User />} label={t("Total")} value={stats.total} color="from-blue-400 to-blue-700" />
+          <StatCard icon={<Repeat />} label={t("Repeat")} value={stats.repeat} color="from-green-400 to-green-600" />
+          <StatCard icon={<Gift />} label={t("Birthdays")} value={stats.birthdays} color="from-pink-400 to-pink-600" />
         </div>
       </div>
       {/* Search */}
@@ -356,7 +358,7 @@ async function handleDeleteCustomer(id) {
           <input
             type="text"
             className="w-full rounded-xl border border-blue-200 dark:border-zinc-800 px-4 py-2 pl-10 text-base bg-white dark:bg-zinc-900 shadow focus:ring-2 focus:ring-blue-400 focus:outline-none transition"
-            placeholder="Search by name or phone…"
+            placeholder={t("Search by name or phone…")}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -366,14 +368,14 @@ async function handleDeleteCustomer(id) {
           className="ml-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 shadow transition"
           onClick={() => setSearch("")}
         >
-          Clear
+          {t("Clear")}
         </button>
       </div>
       {/* Top Customers */}
       {stats.top.length > 0 && (
         <div className="mb-7">
           <h2 className="text-lg font-bold mb-2 flex items-center gap-1 text-yellow-600 dark:text-yellow-300">
-            <Star className="w-5 h-5 text-yellow-400" /> Top Customers
+            <Star className="w-5 h-5 text-yellow-400" /> {t("Top Customers")}
           </h2>
           <div className="flex flex-wrap gap-4">
             {stats.top.map(c => (
@@ -381,25 +383,27 @@ async function handleDeleteCustomer(id) {
                 <span className="font-bold text-lg text-yellow-800 dark:text-yellow-100">{c.name}</span>
                 <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1"><Phone className="w-4 h-4" /> {c.phone}</span>
                 <span className="text-sm text-gray-700 dark:text-gray-200">₺{c.lifetime_value?.toLocaleString?.() ?? "0"}</span>
-                <span className="text-xs text-yellow-700 dark:text-yellow-200">Visits: {c.visit_count || 1}</span>
+                <span className="text-xs text-yellow-700 dark:text-yellow-200">
+                  {t("Visits")}: {c.visit_count || 1}
+                </span>
               </div>
             ))}
           </div>
           <section className="mt-10">
-  <h2 className="text-xl font-bold mb-3">🎂 Birthday Customers This Month</h2>
+  <h2 className="text-xl font-bold mb-3">🎂 {t("Birthday Customers This Month")}</h2>
   {birthdayCustomers.length === 0 ? (
-    <p className="text-gray-500">No birthdays this month.</p>
+    <p className="text-gray-500">{t("No birthdays this month.")}</p>
   ) : (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse border text-sm">
         <thead>
           <tr className="bg-gray-100">
-            <th className="p-2 border">Name</th>
-            <th className="p-2 border">Phone</th>
-            <th className="p-2 border">Birthday</th>
-            <th className="p-2 border">Visits</th>
-            <th className="p-2 border">Total Spent</th>
-            <th className="p-2 border">Last Visit</th>
+            <th className="p-2 border">{t("Name")}</th>
+            <th className="p-2 border">{t("Phone")}</th>
+            <th className="p-2 border">{t("Birthday")}</th>
+            <th className="p-2 border">{t("Visits")}</th>
+            <th className="p-2 border">{t("Total Spent")}</th>
+            <th className="p-2 border">{t("Last Visit")}</th>
           </tr>
         </thead>
         <tbody>
@@ -407,7 +411,7 @@ async function handleDeleteCustomer(id) {
             <tr key={c.id}>
               <td className="p-2 border">{c.name}</td>
               <td className="p-2 border">{c.phone}</td>
-              <td className="p-2 border">{new Date(c.birthday).toLocaleDateString()}</td>
+              <td className="p-2 border">{new Date(c.birthday).toLocaleDateString(i18n.language || "en")}</td>
               <td className="p-2 border text-center">{c.visit_count}</td>
               <td className="p-2 border">₺{parseFloat(c.lifetime_value).toFixed(2)}</td>
               <td className="p-2 border">{c.last_visit ? new Date(c.last_visit).toLocaleString() : "-"}</td>
@@ -434,7 +438,7 @@ async function handleDeleteCustomer(id) {
               const debtValue = Number.isFinite(Number(c.debt)) ? Number(c.debt) : 0;
               const debtPositive = debtValue > 0;
               const lastVisitText = c.last_visit ? new Date(c.last_visit).toLocaleDateString() : t("Not yet");
-              const birthdayText = c.birthday ? new Date(c.birthday).toLocaleDateString("en-GB") : t("Unknown");
+              const birthdayText = c.birthday ? new Date(c.birthday).toLocaleDateString(i18n.language || "en") : t("Unknown");
 
               return (
                 <article
@@ -518,7 +522,7 @@ async function handleDeleteCustomer(id) {
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
     <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-lg p-6 relative">
       <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent">
-        Edit Customer
+        {t("Edit Customer")}
       </h2>
 
       <div className="space-y-3">
@@ -526,26 +530,26 @@ async function handleDeleteCustomer(id) {
           className="border-2 border-blue-100 rounded-xl px-3 py-2 w-full"
           value={editModal.data.name || ""}
           onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, name: e.target.value } }))}
-          placeholder="Name"
+          placeholder={t("Name")}
         />
         <input
           className="border-2 border-blue-100 rounded-xl px-3 py-2 w-full"
           value={editModal.data.phone || ""}
           onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, phone: e.target.value } }))}
-          placeholder="Phone"
+          placeholder={t("Phone")}
         />
         <input
           className="border-2 border-blue-100 rounded-xl px-3 py-2 w-full"
           value={editModal.data.address || ""}
           onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, address: e.target.value } }))}
-          placeholder="Address"
+          placeholder={t("Address")}
         />
         <input
           type="email"
           className="border-2 border-blue-100 rounded-xl px-3 py-2 w-full"
           value={editModal.data.email || ""}
           onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, email: e.target.value } }))}
-          placeholder="Email"
+          placeholder={t("Email")}
         />
         <input
           type="date"
@@ -560,19 +564,19 @@ async function handleDeleteCustomer(id) {
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
           onClick={() => handleSaveCustomer(editModal.data)}
         >
-          💾 Save Changes
+          💾 {t("Save Changes")}
         </button>
         <button
           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-semibold"
           onClick={() => handleDeleteCustomer(editModal.data.id)}
         >
-          🗑 Delete
+          🗑 {t("Delete")}
         </button>
         <button
           className="text-gray-700 dark:text-gray-200 hover:underline px-4 py-2"
           onClick={() => setEditModal({ open: false, data: null })}
         >
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </div>

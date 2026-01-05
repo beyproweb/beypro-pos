@@ -58,6 +58,7 @@ function inferLink(type, extra) {
   if (normalizedType === "ingredient") return "/ingredient-prices";
   if (normalizedType === "task") return "/task";
   if (normalizedType === "maintenance") return "/maintenance";
+  if (normalizedType === "register") return "/tableoverview?tab=register";
   if (["order", "payment", "driver"].includes(normalizedType)) return "/orders";
   if (extra?.route) return extra.route;
   return null;
@@ -135,6 +136,7 @@ export function NotificationsProvider({ children }) {
   });
 
   const restaurantIdRef = useRef(getRestaurantId());
+  const registerStatusRef = useRef(null);
   const lastSeenKeyRef = useRef(null);
 
   const resolveStorageKey = useCallback(() => {
@@ -186,6 +188,83 @@ export function NotificationsProvider({ children }) {
     },
     [bellOpen, persistLastSeen]
   );
+
+  // Register open/close notifications
+  useEffect(() => {
+    let isActive = true;
+    let timeoutId = null;
+    let pollMs = 20000;
+
+    const schedule = (nextMs) => {
+      if (!isActive) return;
+      timeoutId = window.setTimeout(tick, nextMs);
+    };
+
+    const normalizeRegisterStatus = (value) => {
+      const raw = String(value || "").toLowerCase().trim();
+      if (raw === "open") return "open";
+      if (raw === "closed") return "closed";
+      if (raw === "unopened") return "unopened";
+      return raw || "unknown";
+    };
+
+    const tick = async () => {
+      try {
+        const rid = getRestaurantId();
+        if (!rid) {
+          schedule(pollMs);
+          return;
+        }
+
+        const data = await secureFetch("/reports/cash-register-status");
+        if (!isActive) return;
+        const nextStatus = normalizeRegisterStatus(data?.status);
+
+        if (registerStatusRef.current === null) {
+          registerStatusRef.current = nextStatus;
+          schedule(pollMs);
+          return;
+        }
+
+        const prevStatus = registerStatusRef.current;
+        if (nextStatus !== prevStatus) {
+          registerStatusRef.current = nextStatus;
+          pollMs = 20000;
+
+          if (nextStatus === "open") {
+            pushNotification({
+              message: "🔓 Register opened",
+              type: "register",
+              time: Date.now(),
+              extra: { status: nextStatus },
+              source: "poll",
+            });
+          } else if (nextStatus === "closed" || nextStatus === "unopened") {
+            pushNotification({
+              message: "🔐 Register closed",
+              type: "register",
+              time: Date.now(),
+              extra: { status: nextStatus },
+              source: "poll",
+            });
+          }
+        }
+
+        schedule(pollMs);
+      } catch (err) {
+        console.warn("⚠️ Failed to poll register status", err?.message || err);
+        pollMs = Math.min(Math.max(pollMs, 20000) * 2, 2 * 60 * 1000);
+        schedule(pollMs);
+      }
+    };
+
+    tick();
+
+    return () => {
+      isActive = false;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [pushNotification]);
 
   const refresh = useCallback(async () => {
     const rid = getRestaurantId();

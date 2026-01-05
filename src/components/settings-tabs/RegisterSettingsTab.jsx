@@ -46,7 +46,7 @@ export default function RegisterSettingsTab() {
 
   const handleSave = async () => {
     await saveSetting("register", register);
-    alert("✅ Register settings saved!");
+    alert(`✅ ${t("Register settings saved!")}`);
   };
 
   const handleTestDrawer = async () => {
@@ -58,7 +58,7 @@ export default function RegisterSettingsTab() {
 
       // Validate required fields
       if (!printer.host || !printer.port) {
-        alert("❌ Printer IP and Port are required. Please configure them first.");
+        alert(`❌ ${t("Printer IP and Port are required. Please configure them first.")}`);
         setTestingDrawer(false);
         return;
       }
@@ -72,9 +72,9 @@ export default function RegisterSettingsTab() {
       });
 
       if (success) {
-        alert("✅ Cash drawer opened successfully!\n\nCommand delivered via backend printer service.");
+        alert(`✅ ${t("Cash drawer opened successfully!")}\\n\\n${t("Command delivered via backend printer service.")}`);
       } else {
-        alert("❌ Drawer did not open. Check console for detailed diagnostics.");
+        alert(`❌ ${t("Drawer did not open. Check console for detailed diagnostics.")}`);
       }
     } catch (err) {
       const statusCode = err?.status || err?.statusCode || "";
@@ -87,11 +87,25 @@ export default function RegisterSettingsTab() {
       });
 
       if (statusCode === 500 || errMsg.includes("500")) {
-        alert(`❌ Device Connection Error (500):\n\n${errMsg}\n\nChecklist:\n✓ Printer IP: ${register.cashDrawerPrinter?.host}\n✓ Port: ${register.cashDrawerPrinter?.port}\n✓ Can you ping the printer IP?\n✓ Is the printer powered on?`);
+        alert(
+          `❌ ${t(
+            "Device Connection Error (500):\n\n{{message}}\n\nChecklist:\n✓ Printer IP: {{host}}\n✓ Port: {{port}}\n✓ Can you ping the printer IP?\n✓ Is the printer powered on?",
+            {
+              message: errMsg,
+              host: register.cashDrawerPrinter?.host,
+              port: register.cashDrawerPrinter?.port,
+            }
+          )}`
+        );
       } else if (statusCode === 400 || errMsg.includes("400")) {
-        alert(`❌ Configuration Error (400):\n\n${errMsg}\n\nThe printer settings may be invalid.`);
+        alert(
+          `❌ ${t(
+            "Configuration Error (400):\n\n{{message}}\n\nThe printer settings may be invalid.",
+            { message: errMsg }
+          )}`
+        );
       } else {
-        alert(`❌ Error: ${errMsg}`);
+        alert(`❌ ${t("Error: {{message}}", { message: errMsg })}`);
       }
     } finally {
       setTestingDrawer(false);
@@ -276,7 +290,7 @@ export default function RegisterSettingsTab() {
             disabled={testingDrawer}
             className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-lg font-medium transition-all"
           >
-            {testingDrawer ? "⏳ Testing..." : "🧾 Test Drawer Open"}
+            {testingDrawer ? `⏳ ${t("Testing...")}` : `🧾 ${t("Test Drawer Open")}`}
           </button>
           <p className="text-xs text-gray-500 mt-1">
             {t("Click to verify cash drawer opens correctly with current settings. Will show detailed debug info on error.")}

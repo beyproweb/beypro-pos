@@ -108,9 +108,9 @@ export default function PaymentMethodsTab() {
     try {
       const payload = serializePaymentSettings(payments);
       await saveSetting("payments", payload);
-      alert("💳 Payment methods saved!");
+      alert(t("Payment methods saved!"));
     } catch (err) {
-      alert("❌ Failed to save settings");
+      alert(t("Failed to save settings"));
       console.error(err);
     } finally {
       setSaving(false);

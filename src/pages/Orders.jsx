@@ -20,6 +20,7 @@ import { fetchOrderWithItems } from "../utils/orderPrinting";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 function DrinkSettingsModal({ open, onClose, fetchDrinks, summaryByDriver = [] }) {
+  const { t } = useTranslation();
   const [input, setInput] = useState("");
   const [drinks, setDrinks] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -58,7 +59,7 @@ useEffect(() => {
       setError("");
     } catch (err) {
       console.error("❌ Failed to fetch drinks in modal:", err);
-      setError("Failed to load drinks");
+      setError(t("Failed to load drinks"));
       setDrinks([]);
     } finally {
       setLoading(false);
@@ -89,7 +90,7 @@ const addDrink = async () => {
     setDrinks(updated);
     if (fetchDrinks) fetchDrinks();
   } catch {
-    setError("Failed to add drink.");
+    setError(t("Failed to add drink."));
   } finally {
     setSaving(false);
   }
@@ -105,7 +106,7 @@ const removeDrink = async (id) => {
     setDrinks(updated);
     if (fetchDrinks) fetchDrinks();
   } catch {
-    setError("Failed to delete drink.");
+    setError(t("Failed to delete drink."));
   } finally {
     setSaving(false);
   }
@@ -113,15 +114,15 @@ const removeDrink = async (id) => {
 
   if (!open) return null;
   const tabs = [
-    { key: "summary", label: "Drinks" },
-    { key: "manage", label: "Manage Drinks" },
+    { key: "summary", label: t("Drinks") },
+    { key: "manage", label: t("Manage Drinks") },
   ];
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/30 backdrop-blur-sm">
       <div className="bg-white rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 p-7 max-w-4xl w-full text-slate-900">
         <h2 className="font-semibold text-xl sm:text-2xl mb-4 tracking-tight text-slate-900">
-          ⚙️ Settings
+          ⚙️ {t("Settings")}
         </h2>
 
         <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-2xl p-1 mb-4">
@@ -150,7 +151,7 @@ const removeDrink = async (id) => {
               <input
                 className="flex-1 border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-300"
                 value={input}
-                placeholder="Drink name (e.g. Cola)"
+                placeholder={t("Drink name (e.g. Cola)")}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addDrink()}
                 disabled={saving}
@@ -160,12 +161,12 @@ const removeDrink = async (id) => {
                 onClick={addDrink}
                 disabled={saving || !input.trim()}
               >
-                Add
+                {t("Add")}
               </button>
             </div>
 
             {loading ? (
-              <div className="text-slate-500 mb-2">Loading drinks...</div>
+              <div className="text-slate-500 mb-2">{t("Loading drinks...")}</div>
             ) : (
               <div className="mb-4 flex flex-wrap gap-2 max-h-[38vh] overflow-y-auto pr-1">
                 {drinks.map((d) => (
@@ -178,7 +179,7 @@ const removeDrink = async (id) => {
                       className="text-rose-500 ml-1 hover:text-rose-600 transition"
                       onClick={() => removeDrink(d.id)}
                       disabled={saving}
-                      title="Delete"
+                      title={t("Delete")}
                     >
                       ✕
                     </button>
@@ -186,7 +187,7 @@ const removeDrink = async (id) => {
                 ))}
                 {drinks.length === 0 && !loading && (
                   <span className="text-slate-400 italic">
-                    No drinks defined yet.
+                    {t("No drinks defined yet.")}
                   </span>
                 )}
               </div>
@@ -197,8 +198,7 @@ const removeDrink = async (id) => {
           <div className="flex flex-col gap-4 max-h-[48vh] overflow-y-auto pr-1">
             {summaryByDriver.length === 0 ? (
               <div className="text-slate-500 text-sm">
-                No drink activity yet. Drinks linked to orders will appear here
-                grouped by driver.
+                {t("No drink activity yet. Drinks linked to orders will appear here grouped by driver.")}
               </div>
             ) : (
               summaryByDriver.map((driver) => (
@@ -260,7 +260,7 @@ const removeDrink = async (id) => {
             onClick={onClose}
             disabled={saving}
           >
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
@@ -270,7 +270,7 @@ const removeDrink = async (id) => {
             }}
             disabled={saving}
           >
-            Done
+            {t("Done")}
           </button>
         </div>
       </div>
@@ -629,7 +629,7 @@ else if (normalizedItems.some(i => i.kitchen_status === "ready"))
       const coords = await geocodeAddress(order.customer_address);
 
       if (coords && typeof coords.lat === "number" && typeof coords.lng === "number") {
-        return { lat: coords.lat, lng: coords.lng, label: order.customer_name || "Customer" };
+        return { lat: coords.lat, lng: coords.lng, label: order.customer_name || t("Customer") };
       }
       return null;
     })
@@ -728,7 +728,6 @@ const areDriverItemsDelivered = (order) => {
 
 useEffect(() => {
   secureFetch("/kitchen/compile-settings")
-    .then((res) => res.json())
     .then((data) => {
       const normalizedIds = (data.excludedItems || [])
         .map((value) => {
@@ -805,21 +804,21 @@ useEffect(() => {
   // UI Helpers
   function getDriverButtonLabel(order, drivers = []) {
   if (!order.driver_id) {
-    if (order.kitchen_status === "preparing") return "Preparing";
-    return "Waiting..";
+    if (order.kitchen_status === "preparing") return t("preparing");
+    return t("Waiting...");
   }
   if (
     normalizeDriverStatus(order.driver_status) === "on_road" &&
     order.kitchen_status === "delivered"
-  ) return "On Road";
-  if (normalizeDriverStatus(order.driver_status) === "delivered") return "Completed";
+  ) return t("On Road");
+  if (normalizeDriverStatus(order.driver_status) === "delivered") return t("Completed");
   if (order.kitchen_status === "delivered") {
     const driver = drivers.find(d => d.id === Number(order.driver_id));
-    return `Pick by ${driver ? driver.name : "Driver"} 🕒`;
+    return `${t("Pick by {{name}}", { name: driver ? driver.name : t("Driver") })} 🕒`;
   }
   // If assigned but not ready/picked up
   const driver = drivers.find(d => d.id === Number(order.driver_id));
-  return `Pick by ${driver ? driver.name : "Driver"} 🕒`;
+  return `${t("Pick by {{name}}", { name: driver ? driver.name : t("Driver") })} 🕒`;
 }
 
 const fetchDrinks = async () => {
@@ -1026,7 +1025,7 @@ const drinkSummaryByDriver = useMemo(() => {
         if (!customerGroups.has(key)) {
           customerGroups.set(key, {
             key,
-            name: customerRaw || order.customer_name || "Customer",
+            name: customerRaw || order.customer_name || t("Customer"),
             address: order.customer_address || "",
             drinks: new Map(),
           });
@@ -1077,7 +1076,7 @@ const drinkSummaryByDriver = useMemo(() => {
         if (!group.address && order.customer_address) {
           group.address = order.customer_address;
         }
-        if ((!group.name || group.name === "Customer") && order.customer_name) {
+        if ((!group.name || group.name === t("Customer")) && order.customer_name) {
           group.name = order.customer_name;
         }
 
@@ -1105,7 +1104,7 @@ const drinkSummaryByDriver = useMemo(() => {
           );
           return {
             key: group.key,
-            name: group.name || "Customer",
+            name: group.name || t("Customer"),
             address: group.address,
             drinks,
           };
@@ -1140,18 +1139,18 @@ const renderPaymentModal = () => {
         <button
           onClick={closePaymentModal}
           className="absolute top-3 right-4 text-2xl text-slate-400 hover:text-emerald-500 transition"
-          title="Close"
+          title={t("Close")}
         >
           ✕
         </button>
         {/* Title */}
         <div className="flex flex-col items-center mb-5">
-          <div className="text-3xl font-semibold text-slate-900 mb-1">💸 Payment</div>
+          <div className="text-3xl font-semibold text-slate-900 mb-1">💸 {t("Payment")}</div>
           <div className="text-sm font-medium text-slate-500 mb-2">
-            Order #{editingPaymentOrder.id}
+            {t("Order")} #{editingPaymentOrder.id}
           </div>
           <div className="text-xs bg-slate-100 text-slate-500 rounded-xl px-4 py-1 font-medium tracking-[0.35em] uppercase border border-slate-200">
-            Split between multiple payment methods if needed.
+            {t("Split between multiple payment methods if needed.")}
           </div>
         </div>
         {/* Split Payment Rows */}
@@ -1207,7 +1206,7 @@ const renderPaymentModal = () => {
                 <button
                   className="ml-2 p-2 bg-slate-100 text-rose-500 rounded-full hover:bg-rose-100 border border-slate-200 transition"
                   onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))}
-                  title="Remove"
+                  title={t("Remove")}
                 >
                   –
                 </button>
@@ -1220,7 +1219,7 @@ const renderPaymentModal = () => {
               setSplitPayments([...splitPayments, { method: fallbackMethodLabel, amount: "" }])
             }
           >
-            <span className="text-lg sm:text-xl">+</span> Add Payment Method
+            <span className="text-lg sm:text-xl">+</span> {t("Add Payment Method")}
           </button>
         </div>
         {/* Total Summary */}
@@ -1231,7 +1230,7 @@ const renderPaymentModal = () => {
 
           </span>
           <span className="text-sm sm:text-base text-slate-600 flex gap-2 items-center">
-            Split Amount Paid:&nbsp;
+            {t("Split Amount Paid")}:&nbsp;
             <span className="text-lg sm:text-xl font-semibold text-slate-900 font-mono">
               {formatCurrency(
                 splitPayments.reduce(
@@ -1256,16 +1255,16 @@ const renderPaymentModal = () => {
                 }`}
               >
                 {remaining > 0
-                  ? `Remaining: ${formatCurrency(remaining)}`
+                  ? t("Remaining: {{amount}}", { amount: formatCurrency(remaining) })
                   : remaining < 0
-                  ? `Overpaid: ${formatCurrency(Math.abs(remaining))}`
+                  ? t("Overpaid: {{amount}}", { amount: formatCurrency(Math.abs(remaining)) })
                   : ``}
               </div>
             );
           })()}
           {splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) !== grandTotal && (
             <span className="text-rose-500 text-sm mt-1 animate-pulse">
-              Amounts must sum to order total.
+              {t("Amounts must sum to order total.")}
             </span>
           )}
         </div>
@@ -1275,7 +1274,7 @@ const renderPaymentModal = () => {
             className="px-5 py-2 rounded-xl bg-white text-slate-600 font-medium border border-slate-200 hover:bg-slate-100"
             onClick={closePaymentModal}
           >
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             className={`px-6 py-2 rounded-xl font-semibold shadow text-white transition-all duration-150 ${
@@ -1325,7 +1324,7 @@ const renderPaymentModal = () => {
               if (!shouldCloseAfterSave) await fetchOrders();
             }}
           >
-            Save Payment
+            {t("Save Payment")}
           </button>
         </div>
         <style>{`
@@ -1400,18 +1399,18 @@ return (
     {selectedDriverId && (
       <div className="mt-2">
         {reportLoading ? (
-          <div className="animate-pulse text-lg sm:text-xl">Loading driver report...</div>
+          <div className="animate-pulse text-lg sm:text-xl">{t("Loading driver report...")}</div>
         ) : driverReport?.error ? (
           <div className="text-red-600 font-bold">{driverReport.error}</div>
         ) : driverReport ? (
           <div className="rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] p-8 bg-white border border-slate-200 space-y-5">
             <div className="flex flex-wrap gap-10 items-center mb-3">
               <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">Packets Delivered</div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">{t("Packets Delivered")}</div>
                 <div className="text-xl sm:text-4xl font-extrabold text-slate-900">{driverReport.packets_delivered}</div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">Total Sales</div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">{t("Total Sales")}</div>
                 <div className="text-xl sm:text-4xl font-extrabold text-slate-900">
                   {driverReport.total_sales != null
                     ? formatCurrency(driverReport.total_sales)
@@ -1419,7 +1418,7 @@ return (
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">By Payment Method</div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">{t("By Payment Method")}</div>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(driverReport.sales_by_method).map(
                     ([method, amt]) => (
@@ -1437,15 +1436,15 @@ return (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <thead>
-  <tr>
-    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">Customer</th>
-    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">Address</th>
-    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">Total</th>
-    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">Payment</th>
-    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">Delivered At</th>
-    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">Pickup→Delivery</th>
-    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">Kitchen→Delivery</th>
-  </tr>
+	  <tr>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Customer")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Address")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Total")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Payment")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Delivered At")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Pickup→Delivery")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Kitchen→Delivery")}</th>
+	  </tr>
 </thead>
 <tbody>
   {driverReport.orders.map(ord => (
@@ -1459,12 +1458,12 @@ return (
       <td className="p-3 text-slate-500">{ord.delivered_at ? new Date(ord.delivered_at).toLocaleTimeString() : "-"}</td>
       <td className="p-3 text-slate-500">
         {ord.delivery_time_seconds
-          ? (ord.delivery_time_seconds / 60).toFixed(1) + " min"
+          ? (ord.delivery_time_seconds / 60).toFixed(1) + ` ${t("min")}`
           : "-"}
       </td>
       <td className="p-3 text-slate-500">
         {ord.kitchen_to_delivery_seconds
-          ? (ord.kitchen_to_delivery_seconds / 60).toFixed(1) + " min"
+          ? (ord.kitchen_to_delivery_seconds / 60).toFixed(1) + ` ${t("min")}`
           : "-"}
       </td>
     </tr>
@@ -1609,14 +1608,32 @@ const totalDiscount = calcOrderDiscount(order);
 
       const assignedDriver = drivers.find((d) => Number(d.id) === Number(order.driver_id));
       const assignedDriverName = assignedDriver?.name ? String(assignedDriver.name) : "";
+      const rawDriverStatus = String(order.driver_status || "").trim().toLowerCase();
+      const isPickedUp = rawDriverStatus === "picked_up";
       const driverStatusBaseLabel = isDelivered
-        ? "Delivered"
+        ? t("Delivered")
+        : isPickedUp
+        ? t("Picked up by")
         : isPicked
-        ? "Driver On Road"
-        : "Awaiting Driver";
-      const driverStatusLabel = assignedDriverName
-        ? `${driverStatusBaseLabel}: ${assignedDriverName}`
-        : driverStatusBaseLabel;
+        ? t("Driver On Road")
+        : t("Awaiting Driver");
+      const driverStatusLabel = (() => {
+        // No driver assigned yet
+        if (!assignedDriverName) return t("Awaiting Driver");
+
+        // Driver assigned but not yet picked up / on road
+        if (!isPickedUp && !isPicked && !isDelivered) {
+          return `${t("Picked up by")}: ${assignedDriverName}`;
+        }
+
+        // Picked up status (mobile) OR on-road status (dashboard)
+        if (isPickedUp || isPicked) {
+          return `${driverStatusBaseLabel}: ${assignedDriverName}`;
+        }
+
+        // Delivered
+        return `${driverStatusBaseLabel}: ${assignedDriverName}`;
+      })();
 
       return (
         <div
@@ -1737,7 +1754,7 @@ const totalDiscount = calcOrderDiscount(order);
         <a
           href={`tel:${order.customer_phone}`}
           className={`inline-flex items-center justify-center sm:justify-start px-3 py-2 rounded-xl font-semibold text-base sm:text-lg transition-transform duration-200 hover:-translate-y-0.5 ${statusVisual.phoneBtn}`}
-          title="Click to call"
+          title={t("Click to call")}
           style={{ textDecoration: "none" }}
         >
           <svg className="mr-2" width="22" height="22" fill="none" viewBox="0 0 24 24">
@@ -1758,17 +1775,17 @@ const totalDiscount = calcOrderDiscount(order);
 {/* Kitchen Status */}
 {order.kitchen_status === "preparing" && (
   <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-amber-100 text-amber-700 border border-amber-200 shadow-sm flex items-center gap-1">
-    🍳 Preparing
+    🍳 {t("preparing")}
   </span>
 )}
 {order.kitchen_status === "ready" && (
   <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-orange-100 text-orange-700 border border-orange-200 shadow-sm flex items-center gap-1">
-    🟠 Ready
+    🟠 {t("ready")}
   </span>
 )}
 {order.kitchen_status === "delivered" && (
   <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm flex items-center gap-1">
-    ✅ Delivered
+    ✅ {t("delivered")}
   </span>
 )}
 
@@ -1795,7 +1812,7 @@ const totalDiscount = calcOrderDiscount(order);
 >
   <summary className="cursor-pointer flex items-center gap-2 text-base font-semibold select-none hover:underline">
     <span className="text-lg sm:text-xl">🛒</span>
-    Order Items <span className="text-sm opacity-60">({order.items?.length ?? 0})</span>
+    {t("Order Items")} <span className="text-sm opacity-60">({order.items?.length ?? 0})</span>
   </summary>
 
   <ul className="pl-0 mt-2 flex flex-col gap-2">
@@ -1816,7 +1833,7 @@ const totalDiscount = calcOrderDiscount(order);
                 {item.product_name ||
                   item.external_product_name ||
                   item.order_item_name ||
-                  "Unnamed"}
+                  t("Unnamed")}
               </span>
 
               <span
@@ -1827,9 +1844,9 @@ const totalDiscount = calcOrderDiscount(order);
                   ${item.kitchen_status === "delivered" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}
                 `}
               >
-                {item.kitchen_status === "preparing" && "PREP"}
-                {item.kitchen_status === "ready" && "READY"}
-                {item.kitchen_status === "delivered" && "DONE"}
+                {item.kitchen_status === "preparing" && t("preparing")}
+                {item.kitchen_status === "ready" && t("ready")}
+                {item.kitchen_status === "delivered" && t("delivered")}
               </span>
             </div>
           </div>
@@ -1889,7 +1906,7 @@ const totalDiscount = calcOrderDiscount(order);
 <div className="flex items-center justify-between w-full gap-2 mt-2 flex-nowrap overflow-x-auto">
   <div className="flex items-center gap-2 flex-1 min-w-0">
     <span className="font-semibold font-mono text-slate-500 text-sm tracking-wide uppercase flex-shrink-0">
-      Driver:
+      {t("Driver")}:
     </span>
   <div className="relative flex-1 min-w-[140px] max-w-full sm:w-[160px]">
       <select
@@ -1914,7 +1931,7 @@ const totalDiscount = calcOrderDiscount(order);
                text-slate-800 text-sm font-mono shadow-sm 
                focus:ring-2 focus:ring-emerald-300/70 focus:border-emerald-300 transition-all"
   >
-        <option value="">Unassigned</option>
+        <option value="">{t("Unassigned")}</option>
         {drivers.map((d) => (
           <option key={d.id} value={d.id}>
             {d.name}
@@ -1960,7 +1977,7 @@ const totalDiscount = calcOrderDiscount(order);
                      bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs sm:text-sm 
                      shadow transition-all"
         >
-          ⚡ Confirm
+          ⚡ {t("Confirm")}
         </button>
       )}
 
@@ -1970,7 +1987,7 @@ const totalDiscount = calcOrderDiscount(order);
                    bg-emerald-100 text-emerald-700 font-semibold text-xs sm:text-sm 
                    border border-emerald-300 shadow-sm"
       >
-        ✅ Confirmed
+        ✅ {t("confirmed")}
       </span>
     )}
 
@@ -1980,23 +1997,23 @@ const totalDiscount = calcOrderDiscount(order);
                    bg-emerald-100 text-emerald-700 font-semibold text-xs sm:text-sm 
                    border border-emerald-300 shadow-sm"
       >
-        ⚙️ Auto Confirmed
+        ⚙️ {t("Auto Confirmed")}
       </span>
     )}
 
     {order.status === "draft" && (
       <span className="px-3 py-1.5 rounded-xl font-semibold text-xs sm:text-sm bg-slate-100 text-slate-500 border border-slate-200 shadow-sm">
-        Draft
+        {t("draft")}
       </span>
     )}
     {order.status === "cancelled" && (
       <span className="px-3 py-1.5 rounded-xl font-semibold text-xs sm:text-sm bg-rose-100 text-rose-700 border border-rose-200 shadow-sm">
-        Cancelled
+        {t("cancelled")}
       </span>
     )}
     {order.status === "closed" && (
       <span className="px-3 py-1.5 rounded-xl font-semibold text-xs sm:text-sm bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
-        Closed
+        {t("closed")}
       </span>
     )}
   </div>
@@ -2005,7 +2022,7 @@ const totalDiscount = calcOrderDiscount(order);
   <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 pl-1">
     <div className="flex items-center gap-2">
       <span className="font-semibold text-slate-700 text-s sm:text-base">
-        Paid:
+        {t("Paid")}:
       </span>
       <span
         className="px-1.5 py-1 rounded-xl bg-emerald-100 border border-emerald-300 
@@ -2021,7 +2038,7 @@ const totalDiscount = calcOrderDiscount(order);
                  font-semibold text-sm sm:text-base shadow-sm transition"
       onClick={() => openPaymentModalForOrder(order)}
     >
-      ✏️ Edit
+      ✏️ {t("Edit")}
     </button>
   </div>
 </div>
@@ -2051,7 +2068,7 @@ const totalDiscount = calcOrderDiscount(order);
           });
         }}
       >
-        On Road
+        {t("On Road")}
       </button>
     )}
 
@@ -2082,7 +2099,7 @@ const totalDiscount = calcOrderDiscount(order);
           }
         }}
       >
-        Delivered
+        {t("Delivered")}
       </button>
     )}
 
@@ -2092,7 +2109,7 @@ const totalDiscount = calcOrderDiscount(order);
                    text-white shadow transition"
         onClick={() => openPaymentModalForOrder(order, { closeAfterSave: true })}
       >
-        Close Order
+        {t("Close Order")}
       </button>
     )}
     

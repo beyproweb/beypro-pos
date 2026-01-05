@@ -5,6 +5,7 @@ import secureFetch from "../utils/secureFetch";
 import { useHeader } from "../context/HeaderContext";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
+const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v1";
 export default function Kitchen() {
   const [orders, setOrders] = useState([]);
   const [selectedIds, setSelectedIds] = useState(() => {
@@ -30,7 +31,18 @@ const [excludedCategories, setExcludedCategories] = useState([]);
 const [excludedItems, setExcludedItems] = useState([]);
 const [prepStart, setPrepStart] = useState(null);
 // 🕒 Track when each order first arrived in the kitchen (to start timer immediately)
-const [orderTimers, setOrderTimers] = useState({});
+const [orderTimers, setOrderTimers] = useState(() => {
+  try {
+    const raw =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(KITCHEN_ORDER_TIMERS_KEY)
+        : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+});
 const [drivers, setDrivers] = useState([]);
 const [recentlyAssigned, setRecentlyAssigned] = useState({});
 const audioCtxRef = useRef(null);
@@ -102,18 +114,8 @@ useEffect(() => {
 
     orders.forEach(o => {
       if (!updated[o.order_id]) {
-        // Convert backend UTC -> local timestamp safely
-        let createdAt = now;
-        try {
-          if (o.created_at) {
-            // ❌ remove timezone math — Date() already converts correctly to local time
-            createdAt = new Date(o.created_at).getTime();
-          }
-        } catch {
-          createdAt = now;
-        }
-
-        updated[o.order_id] = createdAt;
+        // Start from 00:00 when the order first appears in the kitchen view.
+        updated[o.order_id] = now;
       }
     });
 
@@ -122,7 +124,11 @@ useEffect(() => {
       if (!orders.some(o => o.order_id == id)) delete updated[id];
     }
 
-    console.log("⏱ Final fixed orderTimers:", updated);
+    try {
+      localStorage.setItem(KITCHEN_ORDER_TIMERS_KEY, JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
     return updated;
   });
 }, [orders]);
@@ -844,12 +850,12 @@ return (
         );
 
         return (
-          <div
-            key={groupKey}
-            className={`p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 
-            bg-white dark:bg-zinc-900/50 shadow-md hover:shadow-lg 
-            transition hover:scale-[1.01] flex flex-col gap-3 border-l-[6px] ${groupTheme.container}`}
-          >
+	          <div
+	            key={groupKey}
+	            className={`p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 
+	            bg-slate-200 dark:bg-zinc-900/50 shadow-md hover:shadow-lg 
+	            transition hover:scale-[1.01] flex flex-col gap-3 border-l-[6px] ${groupTheme.container}`}
+	          >
             {/* === Card Header === */}
             <div
               onClick={() => toggleSelectGroup(items)}

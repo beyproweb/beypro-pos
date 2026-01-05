@@ -9,7 +9,7 @@ import { useHasPermission } from "../components/hooks/useHasPermission";
 const ORIGIN = String(BASE_URL).replace(/\/api\/?$/, "");
 
 export default function MaintenanceTracker() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const canAccess = useHasPermission("maintenance");
   const [staff, setStaff] = useState([]);
   const [issues, setIssues] = useState([]);
@@ -147,14 +147,27 @@ export default function MaintenanceTracker() {
     resolved: "bg-emerald-100 text-emerald-700",
   };
 
+  const statusLabel = (status) => {
+    if (status === "open") return t("Open");
+    if (status === "in_progress") return t("In Progress");
+    if (status === "resolved") return t("Resolved");
+    return String(status || "");
+  };
+
+  const priorityLabel = (priority) => {
+    const normalized = String(priority || "medium").toLowerCase();
+    const title = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    return t(title);
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-3 py-8">
       <div className="flex items-center gap-2 mb-3">
         <Wrench className="w-8 h-8 text-gray-700" />
-        <h1 className="text-2xl font-extrabold">Maintenance Tracker</h1>
+        <h1 className="text-2xl font-extrabold">{t("Maintenance Tracker")}</h1>
       </div>
       <p className="mb-5 text-gray-500">
-        Log, assign, and resolve issues fast — minimize downtime, maximize uptime.
+        {t("Log, assign, and resolve issues fast — minimize downtime, maximize uptime.")}
       </p>
 
       <div className="flex flex-wrap gap-2 mb-4">
@@ -162,7 +175,7 @@ export default function MaintenanceTracker() {
           onClick={() => setShowForm((v) => !v)}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-800 text-white font-semibold shadow hover:bg-gray-900"
         >
-          <Plus className="w-5 h-5" /> {showForm ? "Cancel" : "Add New Issue"}
+          <Plus className="w-5 h-5" /> {showForm ? t("Cancel") : t("Add New Issue")}
         </button>
 
         <select
@@ -170,10 +183,10 @@ export default function MaintenanceTracker() {
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
-          <option value="all">All statuses</option>
-          <option value="open">Open</option>
-          <option value="in_progress">In Progress</option>
-          <option value="resolved">Resolved</option>
+          <option value="all">{t("All statuses")}</option>
+          <option value="open">{t("Open")}</option>
+          <option value="in_progress">{t("In Progress")}</option>
+          <option value="resolved">{t("Resolved")}</option>
         </select>
 
         <select
@@ -181,16 +194,16 @@ export default function MaintenanceTracker() {
           value={assignedFilter}
           onChange={(e) => setAssignedFilter(e.target.value)}
         >
-          <option value="">All assignees</option>
+          <option value="">{t("All assignees")}</option>
           {staff.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
-          <option value="null">Unassigned</option>
+          <option value="null">{t("Unassigned")}</option>
         </select>
 
         <input
           className="px-3 py-2 rounded-xl border flex-1 min-w-[200px]"
-          placeholder="Search title/description…"
+          placeholder={t("Search title/description…")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -207,7 +220,7 @@ export default function MaintenanceTracker() {
             onChange={handleInput}
             required
             className="w-full rounded-xl border px-3 py-2"
-            placeholder="Issue title (e.g., Dishwasher leak)"
+            placeholder={t("Issue title (e.g., Dishwasher leak)")}
           />
           <textarea
             name="description"
@@ -215,7 +228,7 @@ export default function MaintenanceTracker() {
             onChange={handleInput}
             rows={3}
             className="w-full rounded-xl border px-3 py-2"
-            placeholder="Short description"
+            placeholder={t("Short description")}
           />
           <div className="flex flex-col sm:flex-row gap-3">
             <select
@@ -224,7 +237,7 @@ export default function MaintenanceTracker() {
               onChange={handleInput}
               className="flex-1 rounded-xl border px-3 py-2"
             >
-              <option value="">Assign to…</option>
+              <option value="">{t("Assign to...")}</option>
               {staff.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
@@ -235,9 +248,9 @@ export default function MaintenanceTracker() {
               onChange={handleInput}
               className="flex-1 rounded-xl border px-3 py-2"
             >
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
+              <option value="high">{t("High")}</option>
+              <option value="medium">{t("Medium")}</option>
+              <option value="low">{t("Low")}</option>
             </select>
             <input type="file" accept="image/*" onChange={handlePhoto} className="flex-1" />
           </div>
@@ -245,7 +258,7 @@ export default function MaintenanceTracker() {
             className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700"
             disabled={loading}
           >
-            {loading ? <Loader className="w-5 h-5 animate-spin inline" /> : "Submit Issue"}
+            {loading ? <Loader className="w-5 h-5 animate-spin inline" /> : t("Submit Issue")}
           </button>
         </form>
       )}
@@ -254,21 +267,21 @@ export default function MaintenanceTracker() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left border-b">
-              <th className="py-2 px-3 font-bold">Status</th>
-              <th className="py-2 px-3 font-bold">Issue</th>
-              <th className="py-2 px-3 font-bold">Assigned</th>
-              <th className="py-2 px-3 font-bold">Priority</th>
-              <th className="py-2 px-3 font-bold">Created</th>
-              <th className="py-2 px-3 font-bold">Resolved</th>
-              <th className="py-2 px-3 font-bold">Photo</th>
-              <th className="py-2 px-3 font-bold">Actions</th>
+              <th className="py-2 px-3 font-bold">{t("Status")}</th>
+              <th className="py-2 px-3 font-bold">{t("Issue")}</th>
+              <th className="py-2 px-3 font-bold">{t("Assigned")}</th>
+              <th className="py-2 px-3 font-bold">{t("Priority")}</th>
+              <th className="py-2 px-3 font-bold">{t("Created")}</th>
+              <th className="py-2 px-3 font-bold">{t("Resolved")}</th>
+              <th className="py-2 px-3 font-bold">{t("Photo")}</th>
+              <th className="py-2 px-3 font-bold">{t("Actions")}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="py-8 text-center text-gray-500">Loading…</td></tr>
+              <tr><td colSpan={8} className="py-8 text-center text-gray-500">{t("Loading…")}</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="py-8 text-center text-gray-400">No issues found</td></tr>
+              <tr><td colSpan={8} className="py-8 text-center text-gray-400">{t("No issues found")}</td></tr>
             ) : (
               filtered.map((it) => {
                 const assignee = staff.find((s) => s.id === it.assigned_to);
@@ -279,7 +292,7 @@ export default function MaintenanceTracker() {
                         {it.status === "open" && <Clock className="w-4 h-4" />}
                         {it.status === "in_progress" && <Loader className="w-4 h-4 animate-spin" />}
                         {it.status === "resolved" && <CheckCircle className="w-4 h-4" />}
-                        {it.status.replace("_", " ")}
+                        {statusLabel(it.status)}
                       </span>
                     </td>
                     <td className="py-2 px-3">
@@ -294,21 +307,21 @@ export default function MaintenanceTracker() {
                           value={it.assigned_to || ""}
                           onChange={(e) => quickAssign(it.id, e.target.value || null)}
                         >
-                          <option value="">Unassigned</option>
+                          <option value="">{t("Unassigned")}</option>
                           {staff.map((s) => (
                             <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
                         </select>
                       </div>
                     </td>
-                    <td className="py-2 px-3 capitalize">{it.priority || "medium"}</td>
-                    <td className="py-2 px-3">{new Date(it.created_at).toLocaleString()}</td>
-                    <td className="py-2 px-3">{it.resolved_at ? new Date(it.resolved_at).toLocaleString() : "-"}</td>
+                    <td className="py-2 px-3 capitalize">{priorityLabel(it.priority)}</td>
+                    <td className="py-2 px-3">{new Date(it.created_at).toLocaleString(i18n.language)}</td>
+                    <td className="py-2 px-3">{it.resolved_at ? new Date(it.resolved_at).toLocaleString(i18n.language) : "-"}</td>
                     <td className="py-2 px-3">
                       {it.photo_url ? (
                         <img
                           src={`${ORIGIN}${it.photo_url}`}
-                          alt="Photo"
+                          alt={t("Photo")}
                           className="w-12 h-12 rounded object-cover"
                         />
                       ) : "-"}
@@ -318,22 +331,22 @@ export default function MaintenanceTracker() {
                         {it.status === "open" && (
                           <button className="px-2 py-1 rounded-md bg-amber-100 text-amber-700 flex items-center gap-1"
                                   onClick={() => startIssue(it.id)}>
-                            <Play className="w-4 h-4" /> Start
+                            <Play className="w-4 h-4" /> {t("Start")}
                           </button>
                         )}
                         {it.status !== "resolved" && (
                           <button className="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 flex items-center gap-1"
                                   onClick={() => resolveIssue(it.id)}>
-                            <Check className="w-4 h-4" /> Resolve
+                            <Check className="w-4 h-4" /> {t("Resolve")}
                           </button>
                         )}
                         <button className="px-2 py-1 rounded-md bg-slate-100 text-slate-700 flex items-center gap-1"
                                 onClick={() => {/* open edit modal if needed */}}>
-                          <Edit3 className="w-4 h-4" /> Edit
+                          <Edit3 className="w-4 h-4" /> {t("Edit")}
                         </button>
                         <button className="px-2 py-1 rounded-md bg-rose-100 text-rose-700 flex items-center gap-1"
                                 onClick={() => deleteIssue(it.id)}>
-                          <Trash2 className="w-4 h-4" /> Delete
+                          <Trash2 className="w-4 h-4" /> {t("Delete")}
                         </button>
                       </div>
                     </td>
@@ -346,7 +359,7 @@ export default function MaintenanceTracker() {
       </div>
 
       <div className="mt-7 text-sm text-gray-400 text-center">
-        Beypro Maintenance — <span className="font-semibold">Track problems, never drop the ball.</span>
+        {t("Beypro Maintenance")} — <span className="font-semibold">{t("Track problems, never drop the ball.")}</span>
       </div>
     </div>
   );

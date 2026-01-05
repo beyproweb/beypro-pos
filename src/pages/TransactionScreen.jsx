@@ -203,6 +203,75 @@ const isActiveTableStatus = (status) => {
 
 const isPaidItem = (item) => Boolean(item && (item.paid || item.paid_at));
 
+const toLocalYmd = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const normalizeYmd = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const datePart = raw.split("T")[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? "" : toLocalYmd(parsed);
+};
+
+const isPromoActiveToday = (promoStartYmd, promoEndYmd) => {
+  const start = normalizeYmd(promoStartYmd);
+  const end = normalizeYmd(promoEndYmd);
+  if (!start && !end) return true;
+
+  const today = toLocalYmd(new Date());
+  if (start && today < start) return false;
+  if (end && today > end) return false;
+  return true;
+};
+
+const computeDiscountedUnitPrice = (product) => {
+  const originalPrice = Number(
+    product?.original_price ?? product?.originalPrice ?? product?.price ?? 0
+  );
+  const discountType = String(product?.discount_type ?? product?.discountType ?? "none");
+  const discountValue = Number(product?.discount_value ?? product?.discountValue ?? 0);
+  const promoStart = normalizeYmd(product?.promo_start ?? product?.promoStart);
+  const promoEnd = normalizeYmd(product?.promo_end ?? product?.promoEnd);
+
+  const isActiveWindow = isPromoActiveToday(promoStart, promoEnd);
+  const shouldApply =
+    discountType !== "none" && discountValue > 0 && (!promoStart && !promoEnd ? true : isActiveWindow);
+
+  let finalPrice = originalPrice;
+  let applied = false;
+
+  if (shouldApply && originalPrice > 0) {
+    if (discountType === "percentage") {
+      finalPrice = Math.max(0, originalPrice * (1 - discountValue / 100));
+      applied = finalPrice < originalPrice;
+    } else if (discountType === "fixed") {
+      // "fixed" in ProductForm means a fixed amount off (not a fixed final price)
+      finalPrice = Math.max(0, originalPrice - discountValue);
+      applied = finalPrice < originalPrice;
+    }
+  }
+
+  return {
+    unitPrice: Number.isFinite(finalPrice) ? finalPrice : originalPrice,
+    originalPrice,
+    discountType,
+    discountValue,
+    promoStart,
+    promoEnd,
+    discountApplied: applied,
+  };
+};
+
 const getRestaurantScopedCacheKey = (suffix) => {
   const restaurantId =
     (typeof window !== "undefined" &&
@@ -430,6 +499,19 @@ const isDebtEligible = canShowDebtButton && !hasUnconfirmedItems && hasConfirmed
   const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
 const [excludedItems, setExcludedItems] = useState([]);
 const [excludedCategories, setExcludedCategories] = useState([]);
+const excludedItemsSet = useMemo(
+  () => new Set((excludedItems || []).map((v) => String(v))),
+  [excludedItems]
+);
+const excludedCategoriesSet = useMemo(
+  () =>
+    new Set(
+      (excludedCategories || [])
+        .map((v) => String(v ?? "").trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  [excludedCategories]
+);
 const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
 const activeCategory = categories[currentCategoryIndex] || "";
 const productsInActiveCategory = safeProducts.filter(
@@ -805,7 +887,7 @@ const extrasPricePerProduct = validExtras.reduce(
   (sum, ex) => sum + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
   0
 );
-const basePrice = selectedProduct ? parseFloat(selectedProduct.price) || 0 : 0;
+const basePrice = selectedProduct ? computeDiscountedUnitPrice(selectedProduct).unitPrice : 0;
 const quantity = selectedProduct ? selectedProduct.quantity || 1 : 1;
 const perItemTotal = basePrice + extrasPricePerProduct;
 const fullTotal = perItemTotal * quantity;
@@ -1740,16 +1822,21 @@ const decrementCartItem = (uniqueId) => {
 
 
 function allItemsDelivered(items) {
-  return Array.isArray(items) && items.length > 0 &&
-    items.every(item => {
+  return Array.isArray(items) && items.every((item) => {
       // If the product is excluded from kitchen, skip from delivery check
+      const itemId = String(item?.id ?? item?.product_id ?? "");
+      const category = String(item?.category ?? "").trim().toLowerCase();
       const isExcluded =
-        excludedItems.includes(item.id) ||
-        excludedCategories.includes(item.category);
-      return isExcluded ||
-        !item.kitchen_status ||
-        item.kitchen_status === "delivered" ||
-        item.kitchen_status === "packet_delivered";
+        (itemId && excludedItemsSet.has(itemId)) ||
+        (category && excludedCategoriesSet.has(category));
+
+      const status = String(item?.kitchen_status ?? "").toLowerCase();
+      return (
+        isExcluded ||
+        !status ||
+        status === "delivered" ||
+        status === "packet_delivered"
+      );
     });
 }
 
@@ -1914,6 +2001,10 @@ const fetchOrderItems = async (orderId, options = {}) => {
       return [];
     }
 
+    const productsById = new Map(
+      (Array.isArray(products) ? products : []).map((p) => [String(p?.id), p])
+    );
+
     const formatted = items.map((item) => {
       let extras = safeParseExtras(item.extras);
       const qty = parseInt(item.quantity, 10) || 1;
@@ -1932,11 +2023,34 @@ const fetchOrderItems = async (orderId, options = {}) => {
         }));
       }
 
+      const productId = item.product_id ?? item.id;
+      const matchedProduct = productsById.get(String(productId));
+      const promoStart = normalizeYmd(matchedProduct?.promo_start ?? matchedProduct?.promoStart);
+      const promoEnd = normalizeYmd(matchedProduct?.promo_end ?? matchedProduct?.promoEnd);
+      const discountType = String(
+        matchedProduct?.discount_type ?? matchedProduct?.discountType ?? "none"
+      );
+      const discountValue = Number(
+        matchedProduct?.discount_value ?? matchedProduct?.discountValue ?? 0
+      );
+      const originalPrice = Number(matchedProduct?.price ?? item.price ?? 0) || 0;
+      const unitPrice = parseFloat(item.price) || 0;
+
       return {
         id: item.product_id,
         name: item.name || item.order_item_name || item.product_name || "Unnamed",
+        category: item.category || null,
         quantity: qty,
-        price: parseFloat(item.price) || 0,
+        price: unitPrice,
+        original_price: originalPrice,
+        discount_type: discountType,
+        discount_value: discountValue,
+        promo_start: promoStart,
+        promo_end: promoEnd,
+        discount_applied:
+          discountType !== "none" &&
+          Number.isFinite(originalPrice) &&
+          Math.abs(originalPrice - unitPrice) > 0.0001,
         ingredients: Array.isArray(item.ingredients)
           ? item.ingredients
           : typeof item.ingredients === "string"
@@ -2060,6 +2174,7 @@ useEffect(() => {
       return {
         id: item.product_id ?? item.id ?? item.productId,
         name: item.name || item.order_item_name || item.product_name || item.productName || "Unnamed",
+        category: item.category || null,
         quantity: qty,
         price: parseFloat(item.price) || 0,
         ingredients: item.ingredients || [],
@@ -2107,6 +2222,8 @@ const updateOrderStatus = async (newStatus = null, total = null, method = null) 
     return null;
   }
 
+  const prevOrderTotal = Number(order?.total || 0);
+
   try {
     const body = {
       status: newStatus || undefined,
@@ -2126,6 +2243,34 @@ const updateOrderStatus = async (newStatus = null, total = null, method = null) 
     });
 
     if (!updated || updated.error) throw new Error(updated?.error || "Failed to update order status");
+
+    // ✅ TableOverview timer start: when a table order transitions from "effectively free" (0 total)
+    // to having a real total, start the timer at 00:00 even if TableOverview isn't mounted.
+    try {
+      const nextStatus = String(newStatus || updated.status || "").toLowerCase();
+      const nextTotal = Number(total ?? updated.total ?? 0);
+      const tableNumber = updated?.table_number;
+
+      if (
+        nextStatus === "confirmed" &&
+        tableNumber != null &&
+        Number.isFinite(nextTotal) &&
+        nextTotal > 0 &&
+        (!Number.isFinite(prevOrderTotal) || prevOrderTotal <= 0)
+      ) {
+        const restaurantId =
+          (typeof window !== "undefined" && window?.localStorage?.getItem("restaurant_id")) ||
+          "global";
+        const key = `hurrypos:${restaurantId}:tableOverview.confirmedTimers.v1`;
+        const raw = window?.localStorage?.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const timers = parsed && typeof parsed === "object" ? parsed : {};
+        timers[String(Number(tableNumber))] = Date.now();
+        window?.localStorage?.setItem(key, JSON.stringify(timers));
+      }
+    } catch {
+      // ignore localStorage errors
+    }
 
     setOrder(updated);
     console.log("Order status updated:", updated.status, updated.payment_status);
@@ -2366,13 +2511,23 @@ if (orderType === "phone" && order.status !== "closed") {
 // 🧠 For table orders → close ONLY when user manually presses “Close”
 // 🧠 For table orders → close ONLY when all items are delivered
 if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncludingSuborders)) {
-  const allDelivered = cartItems.every(
-    (i) =>
-      i.kitchen_status === "delivered" ||
-      !i.kitchen_status ||
-      excludedItems.includes(i.id) ||
-      excludedCategories.includes(i.category)
-  );
+  // Re-check against the latest backend state so we don't block close due to stale kitchen_status/category
+  // (and so excluded-from-kitchen items don't show a brief "Not delivered yet" toast).
+  let itemsToCheck = cartItems;
+  try {
+    const latest = await secureFetch(`/orders/${order.id}/items${identifier}`);
+    if (Array.isArray(latest)) {
+      itemsToCheck = latest.map((row) => ({
+        id: row.product_id,
+        category: row.category || null,
+        kitchen_status: row.kitchen_status || "",
+      }));
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to refresh order items before close:", err);
+  }
+
+  const allDelivered = allItemsDelivered(itemsToCheck);
 
   // ❌ Not all delivered → don’t close; show message and bounce to TableOverview after 3s
   if (!allDelivered) {
@@ -2386,7 +2541,6 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncluding
     await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
     setDiscountValue(0);
     setDiscountType("percent");
-    showToast(t("Table closed successfully"));
     debugNavigate("/tableoverview?tab=tables"); // <— correct route
   } catch (err) {
     console.error("❌ Close failed:", err);
@@ -2421,6 +2575,7 @@ if (order?.order_type === "table" && order?.source === "qr") {
       return {
         id:          item.product_id,
         name: item.name || item.order_item_name || item.product_name,
+        category: item.category || null,
         quantity:    parseInt(item.quantity, 10),
         price:       parseFloat(item.price),
         ingredients: Array.isArray(item.ingredients)
@@ -2670,10 +2825,11 @@ const finalizeCartItem = useCallback(
             : "",
       }));
 
-    const itemPrice = Number(product.price) || 0;
+    const pricing = computeDiscountedUnitPrice(product);
+    const itemPrice = pricing.unitPrice;
     const extrasGroupRefs = deriveExtrasGroupRefs(product);
     const extrasKey = JSON.stringify(validExtras);
-    const baseUniqueId = `${product.id}-NO_EXTRAS`;
+    const baseUniqueId = `${product.id}-NO_EXTRAS-${pricing.discountType}-${pricing.discountValue}-${pricing.promoStart || "_"}-${pricing.promoEnd || "_"}-${Math.round(pricing.unitPrice * 100)}-${Math.round(pricing.originalPrice * 100)}`;
     const isPlain = validExtras.length === 0 && trimmedNote.length === 0;
     const uniqueId = isPlain
       ? baseUniqueId
@@ -2691,6 +2847,12 @@ const finalizeCartItem = useCallback(
           ...existing,
           quantity: productQty,
           price: itemPrice,
+          original_price: pricing.originalPrice,
+          discount_type: pricing.discountType,
+          discount_value: pricing.discountValue,
+          promo_start: pricing.promoStart,
+          promo_end: pricing.promoEnd,
+          discount_applied: pricing.discountApplied,
           extras: validExtras,
           unique_id: uniqueId,
           note: trimmedNote || null,
@@ -2715,7 +2877,10 @@ const finalizeCartItem = useCallback(
           (item) =>
             item.unique_id === baseUniqueId &&
             !item.confirmed &&
-            !item.paid
+            !item.paid &&
+            Number(item.price) === Number(itemPrice) &&
+            Number(item.original_price ?? item.originalPrice ?? item.price) ===
+              Number(pricing.originalPrice)
         );
 
         if (existingIndex !== -1) {
@@ -2753,6 +2918,12 @@ const finalizeCartItem = useCallback(
             id: product.id,
             name: product.name,
             price: itemPrice,
+            original_price: pricing.originalPrice,
+            discount_type: pricing.discountType,
+            discount_value: pricing.discountValue,
+            promo_start: pricing.promoStart,
+            promo_end: pricing.promoEnd,
+            discount_applied: pricing.discountApplied,
             quantity: productQty,
             ingredients: product.ingredients || [],
             extras: [],
@@ -2778,6 +2949,12 @@ const finalizeCartItem = useCallback(
         id: product.id,
         name: product.name,
         price: itemPrice,
+        original_price: pricing.originalPrice,
+        discount_type: pricing.discountType,
+        discount_value: pricing.discountValue,
+        promo_start: pricing.promoStart,
+        promo_end: pricing.promoEnd,
+        discount_applied: pricing.discountApplied,
         quantity: productQty,
         ingredients: product.ingredients || [],
         extras: validExtras,
@@ -3372,6 +3549,14 @@ const renderCartContent = (variant = "desktop") => {
     const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
     const noteKey =
       typeof item.note === "string" ? item.note.trim() : JSON.stringify(item.note || "");
+    const pricingKey = [
+      Number(item.price) || 0,
+      Number(item.original_price ?? item.originalPrice ?? 0) || 0,
+      String(item.discount_type ?? item.discountType ?? ""),
+      Number(item.discount_value ?? item.discountValue ?? 0) || 0,
+      normalizeYmd(item.promo_start ?? item.promoStart ?? ""),
+      normalizeYmd(item.promo_end ?? item.promoEnd ?? ""),
+    ].join("|");
 
     // ➕ Add a status slice to the key so paid/confirmed/unconfirmed never merge together
     const statusSlice = item.paid
@@ -3379,7 +3564,7 @@ const renderCartContent = (variant = "desktop") => {
       : (item.confirmed ? "confirmed" : "unconfirmed");
 
     // 🔑 New grouping key (prevents merging with paid items)
-    const key = `${item.name}__${extrasKey}__${noteKey}__${statusSlice}`;
+    const key = `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
 
     if (!acc[key]) acc[key] = { ...item, quantity: 0, items: [] };
 
@@ -3396,6 +3581,19 @@ const renderCartContent = (variant = "desktop") => {
               return sum + price * qty;
             }, 0);
             const basePrice = parseFloat(item.price) || 0;
+            const originalUnitPrice = Number(
+              item.original_price ?? item.originalPrice ?? 0
+            );
+            const discountType = String(item.discount_type ?? item.discountType ?? "none");
+            const discountValue = Number(item.discount_value ?? item.discountValue ?? 0);
+            const promoStart = normalizeYmd(item.promo_start ?? item.promoStart);
+            const promoEnd = normalizeYmd(item.promo_end ?? item.promoEnd);
+            const hasProductDiscountMeta =
+              discountType !== "none" && Number.isFinite(discountValue) && discountValue > 0;
+            const isDiscountApplied =
+              Boolean(item.discount_applied) ||
+              (Number.isFinite(originalUnitPrice) &&
+                Math.abs(originalUnitPrice - basePrice) > 0.0001);
             const quantity = Number(item.quantity) || 1;
             const baseTotal = basePrice * quantity;
             const extrasTotal = perItemExtrasTotal * quantity;
@@ -3415,12 +3613,73 @@ const cardGradient = item.paid
             const isExpanded = expandedCartItems.has(itemKey);
             const selectionKey = String(item.unique_id || item.id);
             const isSelected = selectedCartItemIds.has(selectionKey);
+            const openEditExtrasModal = async () => {
+              if (!isEditable) return;
+              const parsedExtras = safeParseExtras(item.extras);
+              const selection = normalizeExtrasGroupSelection([
+                item.extrasGroupRefs,
+                item.selectedExtrasGroup,
+                item.selected_extras_group,
+                item.selectedExtrasGroupNames,
+              ]);
+              if (selection.ids.length === 0 && selection.names.length === 0) {
+                setSelectedProduct({
+                  ...item,
+                  modalExtrasGroups: [],
+                  extrasGroupRefs: { ids: [], names: [] },
+                  selectedExtrasGroup: [],
+                  selected_extras_group: [],
+                  selectedExtrasGroupNames: [],
+                });
+                setSelectedExtras(parsedExtras || []);
+                setEditingCartItemIndex(idx);
+                setShowExtrasModal(true);
+                return;
+              }
+              let modalGroups = [];
+              let selectionForModal = selection;
+              try {
+                const match = await getMatchedExtrasGroups(selection);
+                if (match) {
+                  modalGroups = match.matchedGroups || [];
+                  const ids = match.matchedIds?.length
+                    ? match.matchedIds
+                    : selection.ids;
+                  const names = match.matchedNames?.length
+                    ? match.matchedNames
+                    : selection.names;
+                  selectionForModal = {
+                    ids,
+                    names,
+                  };
+                } else {
+                  const groupsData = await ensureExtrasGroups();
+                  modalGroups = Array.isArray(groupsData) ? groupsData : [];
+                }
+              } catch (err) {
+                console.error("❌ Failed to resolve extras groups for edit:", err);
+                const fallbackGroups = await ensureExtrasGroups();
+                modalGroups = Array.isArray(fallbackGroups) ? fallbackGroups : [];
+              }
+              setSelectedProduct({
+                ...item,
+                modalExtrasGroups: modalGroups,
+                extrasGroupRefs: selectionForModal,
+                selectedExtrasGroup: selectionForModal.ids,
+                selected_extras_group: selectionForModal.ids,
+                selectedExtrasGroupNames: selectionForModal.names,
+              });
+              setSelectedExtras(parsedExtras || []);
+              setEditingCartItemIndex(idx);
+              setShowExtrasModal(true);
+            };
 
             return (
             <li
   data-cart-item="true"
   key={itemKey}
   className={`relative flex flex-col gap-1 overflow-hidden rounded-lg border border-slate-200 p-2 text-[13px] shadow-sm transition ${cardGradient}`}
+  onClick={() => openEditExtrasModal()}
 >
   <div className="flex items-center justify-between gap-1">
     <div className="flex items-center gap-1 flex-1">
@@ -3431,17 +3690,56 @@ const cardGradient = item.paid
               onChange={() => toggleCartItemSelection(selectionKey)}
               onClick={(e) => e.stopPropagation()}
             />
-      <span
-        className="truncate font-semibold text-slate-800 flex-1"
-        onClick={() => toggleCartItemExpansion(itemKey)}
-      >
-        {item.name} ×{quantity}
-      </span>
+      <div className="min-w-0 flex-1">
+        <span
+          className="truncate font-semibold text-slate-800 block"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isEditable) {
+              openEditExtrasModal();
+              return;
+            }
+            toggleCartItemExpansion(itemKey);
+          }}
+        >
+          {item.name} ×{quantity}
+        </span>
+        {hasProductDiscountMeta && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
+            <span
+              className={`rounded-full border px-2 py-0.5 font-semibold ${
+                isDiscountApplied
+                  ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700"
+                  : "border-slate-200 bg-slate-50 text-slate-500"
+              }`}
+            >
+              {discountType === "percentage"
+                ? `-${discountValue}%`
+                : `-${formatCurrency(discountValue)}`}
+            </span>
+            {isDiscountApplied &&
+              Number.isFinite(originalUnitPrice) &&
+              Math.abs(originalUnitPrice - basePrice) > 0.0001 && (
+                <span className="whitespace-nowrap">
+                  <span className="line-through text-slate-400">
+                    {formatCurrency(originalUnitPrice)}
+                  </span>{" "}
+                  <span className="font-semibold text-fuchsia-700">
+                    {formatCurrency(basePrice)}
+                  </span>
+                </span>
+              )}
+          </div>
+        )}
+      </div>
     </div>
     <div className="flex items-center gap-1">
       <button
         type="button"
-        onClick={() => toggleCartItemExpansion(itemKey)}
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleCartItemExpansion(itemKey);
+        }}
         className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-xs text-slate-500 hover:border-slate-300"
         title={isExpanded ? t("Hide details") : t("Show details")}
       >
@@ -3494,7 +3792,10 @@ const cardGradient = item.paid
         <div className="flex items-center gap-1">
           <span>{t("Qty")}:</span>
           <button
-            onClick={() => decrementCartItem(item.unique_id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              decrementCartItem(item.unique_id);
+            }}
             className="h-5 w-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={!isEditable}
           >
@@ -3502,7 +3803,10 @@ const cardGradient = item.paid
           </button>
           <span className="min-w-[18px] text-center">{quantity}</span>
           <button
-            onClick={() => incrementCartItem(item.unique_id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              incrementCartItem(item.unique_id);
+            }}
             className="h-5 w-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={!isEditable}
           >
@@ -3514,64 +3818,9 @@ const cardGradient = item.paid
         {isEditable && (
           <div className="flex items-center gap-1">
             <button
-              onClick={async () => {
-                const parsedExtras = safeParseExtras(item.extras);
-                const selection = normalizeExtrasGroupSelection([
-                  item.extrasGroupRefs,
-                  item.selectedExtrasGroup,
-                  item.selected_extras_group,
-                  item.selectedExtrasGroupNames,
-                ]);
-                if (selection.ids.length === 0 && selection.names.length === 0) {
-                  setSelectedProduct({
-                    ...item,
-                    modalExtrasGroups: [],
-                    extrasGroupRefs: { ids: [], names: [] },
-                    selectedExtrasGroup: [],
-                    selected_extras_group: [],
-                    selectedExtrasGroupNames: [],
-                  });
-                  setSelectedExtras(parsedExtras || []);
-                  setEditingCartItemIndex(idx);
-                  setShowExtrasModal(true);
-                  return;
-                }
-                let modalGroups = [];
-                let selectionForModal = selection;
-                try {
-                  const match = await getMatchedExtrasGroups(selection);
-                  if (match) {
-                    modalGroups = match.matchedGroups || [];
-                    const ids = match.matchedIds?.length
-                      ? match.matchedIds
-                      : selection.ids;
-                    const names = match.matchedNames?.length
-                      ? match.matchedNames
-                      : selection.names;
-                    selectionForModal = {
-                      ids,
-                      names,
-                    };
-                  } else {
-                    const groupsData = await ensureExtrasGroups();
-                    modalGroups = Array.isArray(groupsData) ? groupsData : [];
-                  }
-                } catch (err) {
-                  console.error("❌ Failed to resolve extras groups for edit:", err);
-                  const fallbackGroups = await ensureExtrasGroups();
-                  modalGroups = Array.isArray(fallbackGroups) ? fallbackGroups : [];
-                }
-                setSelectedProduct({
-                  ...item,
-                  modalExtrasGroups: modalGroups,
-                  extrasGroupRefs: selectionForModal,
-                  selectedExtrasGroup: selectionForModal.ids,
-                  selected_extras_group: selectionForModal.ids,
-                  selectedExtrasGroupNames: selectionForModal.names,
-                });
-                setSelectedExtras(parsedExtras || []);
-                setEditingCartItemIndex(idx);
-                setShowExtrasModal(true);
+              onClick={(e) => {
+                e.stopPropagation();
+                openEditExtrasModal();
               }}
               className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-100"
               title={t("Edit item")}
@@ -3579,7 +3828,10 @@ const cardGradient = item.paid
               {t("Edit")}
             </button>
             <button
-              onClick={() => removeItem(item.unique_id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeItem(item.unique_id);
+              }}
               className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100"
               title={t("Remove item")}
             >

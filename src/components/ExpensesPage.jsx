@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { PlusCircle, X } from "lucide-react";
 import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate } from "react-router-dom";
 import secureFetch from "../utils/secureFetch";
 import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../utils/cashDrawer";
 import { useCurrency } from "../context/CurrencyContext";
@@ -24,8 +25,53 @@ export default function ExpensesPage() {
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
   const { currentUser } = useAuth();
   const [visibleDetails, setVisibleDetails] = useState(null);
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { formatCurrency, config } = useCurrency();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const didAutoOpenModalRef = useRef(false);
+
+  const paymentMethodLabel = (method) => {
+    if (method === "Cash") return t("Cash");
+    if (method === "Credit Card") return t("Credit Card");
+    if (method === "Bank Transfer") return t("Bank Transfer");
+    if (method === "Not Paid") return t("Not Paid");
+    return String(method || "");
+  };
+
+  useEffect(() => {
+    let isActive = true;
+
+    const run = async () => {
+      const status = await secureFetch("/reports/cash-register-status");
+      if (!isActive) return;
+
+      const registerStatus = status?.status;
+      const needsAttention = registerStatus === "closed" || registerStatus === "unopened";
+
+      if (needsAttention) {
+        navigate("/tableoverview?tab=tables", {
+          replace: true,
+          state: { openRegisterModal: true },
+        });
+        return;
+      }
+
+      if (didAutoOpenModalRef.current) return;
+      if (location.state?.openExpenseModal !== true) return;
+      didAutoOpenModalRef.current = true;
+      setShowModal(true);
+      navigate(location.pathname + location.search, { replace: true, state: {} });
+    };
+
+    run().catch((err) => {
+      console.error("❌ Failed to check register status for expenses page:", err);
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [location.pathname, location.search, location.state, navigate]);
 
   // ✅ Fetch expense types
   const fetchExpenseTypes = async () => {
@@ -219,7 +265,7 @@ export default function ExpensesPage() {
                               {formatCurrency(Number(e.amount || 0))}
                             </span>
                             <span className="text-xs text-gray-500">
-                              {e.payment_method}
+                              {paymentMethodLabel(e.payment_method)}
                             </span>
                           </div>
                           {e.note && (
@@ -228,7 +274,7 @@ export default function ExpensesPage() {
                             </div>
                           )}
                           <div className="text-xs text-gray-400">
-                            {new Date(e.created_at).toLocaleString()}
+                            {new Date(e.created_at).toLocaleString(i18n.language)}
                           </div>
                         </div>
                       ))}
@@ -301,7 +347,9 @@ export default function ExpensesPage() {
             >
               <option value="">-- {t("Payment Method")} --</option>
               {allowedMethods.map((opt) => (
-                <option key={opt}>{opt}</option>
+                <option key={opt} value={opt}>
+                  {paymentMethodLabel(opt)}
+                </option>
               ))}
             </select>
 

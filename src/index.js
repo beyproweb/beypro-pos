@@ -11,11 +11,39 @@ import secureFetch from "./utils/secureFetch";
 
 secureFetch('/settings/localization')
   .then(data => {
-    const lang = data.language || "English";
+    const raw = data?.language || null;
+    const fromStorage = (() => {
+      try {
+        return localStorage.getItem("beyproGuestLanguage");
+      } catch {
+        return null;
+      }
+    })();
+
+    const mapped =
+      raw === "English"
+        ? "en"
+        : raw === "Turkish"
+        ? "tr"
+        : raw === "German"
+        ? "de"
+        : raw === "French"
+        ? "fr"
+        : raw;
+
+    const lang = mapped || fromStorage || "en";
     return i18n.changeLanguage(lang);
   })
   .catch(err => {
-    console.warn("⚠️ Could not load language, defaulting to English:", err);
+    const fallback = (() => {
+      try {
+        return localStorage.getItem("beyproGuestLanguage") || "en";
+      } catch {
+        return "en";
+      }
+    })();
+    i18n.changeLanguage(fallback);
+    console.warn("⚠️ Could not load language, defaulting:", err);
   })
   .finally(() => {
     const root = ReactDOM.createRoot(document.getElementById('root'));

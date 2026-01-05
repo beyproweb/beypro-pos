@@ -46,27 +46,32 @@ const getSpeechText = (key, lang = "en") => {
     start: {
       en: "Hello, please assign a task.",
       tr: "Merhaba, lütfen bir görev verin.",
-      de: "Hallo, bitte eine Aufgabe zuweisen."
+      de: "Hallo, bitte eine Aufgabe zuweisen.",
+      fr: "Bonjour, veuillez attribuer une tâche."
     },
     missing_fields: {
       en: "Time and staff name are required to save the task",
       tr: "Görevi kaydetmek için zaman ve personel adı gerekli",
-      de: "Zeit und Mitarbeitername sind erforderlich, um die Aufgabe zu speichern"
+      de: "Zeit und Mitarbeitername sind erforderlich, um die Aufgabe zu speichern",
+      fr: "L’heure et le nom du personnel sont requis pour enregistrer la tâche"
     },
     missing_fields_example: {
       en: "Example: 'Assign cleaning to Yusuf at 4 PM'",
       tr: "Örnek: 'Yusuf mutfağı saat dörtte temizlesin'",
-      de: "Beispiel: 'Yusuf soll die Küche um 16 Uhr putzen'"
+      de: "Beispiel: 'Yusuf soll die Küche um 16 Uhr putzen'",
+      fr: "Exemple : « Assigner le nettoyage à Yusuf à 16h »"
     },
     saved: {
       en: "✅ Task saved.",
       tr: "✅ Görev kaydedildi.",
-      de: "✅ Aufgabe gespeichert."
+      de: "✅ Aufgabe gespeichert.",
+      fr: "✅ Tâche enregistrée."
     },
     error: {
       en: "Something went wrong.",
       tr: "Bir şeyler ters gitti.",
-      de: "Etwas ist schiefgelaufen."
+      de: "Etwas ist schiefgelaufen.",
+      fr: "Une erreur s’est produite."
     }
   };
 
@@ -467,7 +472,7 @@ const extractTimeFromText = (text, lang = "en") => {
               lastTranscriptRef.current = "";
             } catch (manualErr) {
               console.error("❌ Failed to save manually completed task", manualErr);
-              toast.error("Failed to save manually completed task.");
+              toast.error(t("Failed to save manually completed task."));
               handedOff = true;
               promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
             }
@@ -489,7 +494,7 @@ const extractTimeFromText = (text, lang = "en") => {
         promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
       } catch (err) {
         console.error("❌ Voice-task error:", err);
-        toast.error("Failed to process speech.");
+        toast.error(t("Failed to process speech."));
         handedOff = true;
         promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
       } finally {
@@ -565,7 +570,7 @@ const extractTimeFromText = (text, lang = "en") => {
   // Manual submit
   const handleManualSubmit = async () => {
     if (!manualTitle || !manualAssignedTo || !manualDueAt) {
-      return toast.warn("Please fill title, assignee, and due date");
+      return toast.warn(t("Please fill title, assignee, and due date"));
     }
 
     try {
@@ -583,14 +588,14 @@ const extractTimeFromText = (text, lang = "en") => {
       });
 
       // ✅ Let socket handle adding the task — no duplication
-      toast.success("Task added");
+      toast.success(t("Task added"));
       setManualTitle("");
       setManualDescription("");
       setManualAssignedTo("");
       setManualDueAt("");
     } catch (e) {
       console.error("❌ Could not add task", e);
-      toast.error("Could not add task");
+      toast.error(t("Could not add task"));
     }
   };
 
@@ -598,21 +603,21 @@ const extractTimeFromText = (text, lang = "en") => {
   const handleStartTask = async (id) => {
     try {
       const updated = await secureFetch(`/tasks/${id}/start`, { method: "PATCH" });
-      toast.success("Task started!");
+      toast.success(t("Task started!"));
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
     } catch (err) {
       console.error("❌ Failed to start task", err);
-      toast.error("Failed to start task");
+      toast.error(t("Failed to start task"));
     }
   };
   const handleCompleteTask = async (id) => {
     try {
       const updated = await secureFetch(`/tasks/${id}/complete`, { method: "PATCH" });
-      toast.success("Task completed!");
+      toast.success(t("Task completed!"));
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
     } catch (err) {
       console.error("❌ Failed to complete task", err);
-      toast.error("Failed to complete task");
+      toast.error(t("Failed to complete task"));
     }
   };
   const formatDuration = (s, e = new Date()) => {
@@ -629,10 +634,14 @@ const extractTimeFromText = (text, lang = "en") => {
         Array.isArray(prev) ? prev.filter((task) => task && task.status !== "completed") : []
       );
 
-      toast.success(`✅ Cleared ${count} completed task${count === 1 ? "" : "s"}.`);
+      toast.success(
+        count === 1
+          ? `✅ ${t("Cleared 1 completed task")}`
+          : `✅ ${t("Cleared {{count}} completed tasks", { count })}`
+      );
     } catch (err) {
       console.error("❌ Failed to clear completed tasks", err);
-      toast.error("Failed to clear completed tasks");
+      toast.error(t("Failed to clear completed tasks"));
     }
   };
 
@@ -1426,7 +1435,11 @@ const extractTimeFromText = (text, lang = "en") => {
                           <div className="flex items-center justify-between">
                             <span className="opacity-70">{t("Status")}</span>
                             <span className="font-semibold uppercase">
-                              {t(selectedTask.status || "Planned")}
+                              {selectedTask.status === "in_progress"
+                                ? t("In Progress")
+                                : selectedTask.status === "completed"
+                                  ? t("Completed")
+                                  : t("Planned")}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">

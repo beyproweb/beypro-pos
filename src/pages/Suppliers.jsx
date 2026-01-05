@@ -34,6 +34,7 @@ const [newTransaction, setNewTransaction] = useState({
       ingredient: "",
       quantity: "",
       unit: "kg",
+      tax: "",
       total_cost: "",
       expiry_date: "",
     }, // ✅ default one row
@@ -70,6 +71,20 @@ const [newTransaction, setNewTransaction] = useState({
   const [repeatDays, setRepeatDays] = useState([]);
   const [repeatType, setRepeatType] = useState("none");
   const [transactionView, setTransactionView] = useState("all");
+  const [transactionDateFrom, setTransactionDateFrom] = useState(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  });
+  const [transactionDateTo, setTransactionDateTo] = useState(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  });
   const [showUploadOptions, setShowUploadOptions] = useState(false);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -85,7 +100,6 @@ const [newTransaction, setNewTransaction] = useState({
     complaint: false,
     notes: "",
   });
-  const [openDays, setOpenDays] = useState({});
   const socketRef = useRef();
   const { fetchStock } = useStock();
   const [receiptFile, setReceiptFile] = useState(null);
@@ -93,6 +107,7 @@ const [newTransaction, setNewTransaction] = useState({
   const containerRef = useRef(null);
   const { formatCurrency, config } = useCurrency();
   const location = useLocation();
+  const openedCartSupplierRef = useRef(null);
 
   useEffect(() => {
     setHeader(prev => ({
@@ -131,10 +146,10 @@ const [showUp, setShowUp] = useState(false);
 	  const params = new URLSearchParams(location.search);
 	  const view = params.get("view");
 	  const section = params.get("section");
+	  const openCartSupplierId = params.get("openCartSupplierId");
 
 	  if (view === "cart") {
 	    setActiveTab("cart");
-	    return;
 	  }
 
 	  if (view === "suppliers" || section) {
@@ -144,7 +159,18 @@ const [showUp, setShowUp] = useState(false);
 	  if (section) {
 	    requestAnimationFrame(() => scrollToId(section));
 	  }
-	}, [location.search]);
+
+	  if (openCartSupplierId && suppliers.length > 0) {
+	    const raw = String(openCartSupplierId).trim();
+	    if (openedCartSupplierRef.current !== raw) {
+	      openedCartSupplierRef.current = raw;
+	      const supplierIdNum = Number(raw);
+	      const supplierId = Number.isFinite(supplierIdNum) ? supplierIdNum : raw;
+	      openSupplierCart(null, supplierId);
+	    }
+	  }
+	// Intentionally depends on suppliers so the deep-link can open after suppliers load.
+	}, [location.search, suppliers]);
 
 
   useEffect(() => {
@@ -497,16 +523,6 @@ feedback_history.map((entry) => ({
     fetchTransactions(supplier.id);
   };
 
-  const supplierTransactions = useMemo(() => {
-    return transactions.filter(
-      (txn) =>
-        txn &&
-        txn.ingredient &&
-        txn.ingredient !== "Payment" &&
-        Number(txn.price_per_unit) > 0
-    );
-  }, [transactions]);
-
   const supplierIngredientOptions = useMemo(() => {
     const normalize = (value) =>
       typeof value === "string" ? value.trim() : "";
@@ -577,8 +593,28 @@ feedback_history.map((entry) => ({
     return [...transactions].sort((a, b) => toTime(b) - toTime(a));
   }, [transactions]);
 
-  const filteredTransactions = useMemo(() => {
+  const dateFilteredTransactions = useMemo(() => {
+    const hasFrom = !!transactionDateFrom;
+    const hasTo = !!transactionDateTo;
+    if (!hasFrom && !hasTo) return sortedTransactions;
+
+    const fromMs = hasFrom ? new Date(`${transactionDateFrom}T00:00:00`).getTime() : null;
+    const toMs = hasTo ? new Date(`${transactionDateTo}T23:59:59.999`).getTime() : null;
+
     return sortedTransactions.filter((txn) => {
+      const raw = resolveTxnDate(txn);
+      if (!raw) return false;
+      const parsed = new Date(raw);
+      const time = parsed.getTime();
+      if (Number.isNaN(time)) return false;
+      if (fromMs !== null && time < fromMs) return false;
+      if (toMs !== null && time > toMs) return false;
+      return true;
+    });
+  }, [sortedTransactions, transactionDateFrom, transactionDateTo]);
+
+  const filteredTransactions = useMemo(() => {
+    return dateFilteredTransactions.filter((txn) => {
       if (transactionView === "purchases") {
         return txn?.ingredient !== "Payment";
       }
@@ -587,7 +623,28 @@ feedback_history.map((entry) => ({
       }
       return true;
     });
-  }, [sortedTransactions, transactionView]);
+  }, [dateFilteredTransactions, transactionView]);
+
+  const transactionHistoryTotals = useMemo(() => {
+    let totalPurchases = 0;
+    let totalPaid = 0;
+
+    dateFilteredTransactions.forEach((txn) => {
+      if (!txn) return;
+      const totalCost = Number(txn.total_cost) || 0;
+      const amountPaid = Number(txn.amount_paid) || 0;
+
+      if (txn.ingredient === "Payment") {
+        totalPaid += amountPaid || totalCost;
+        return;
+      }
+
+      totalPurchases += totalCost;
+      totalPaid += amountPaid;
+    });
+
+    return { totalPurchases, totalPaid };
+  }, [dateFilteredTransactions]);
 
   const supplierFinancials = useMemo(() => {
     let totalPurchases = 0;
@@ -758,33 +815,77 @@ const projectedBalance = useMemo(() => {
   };
 
   const priceAlerts = useMemo(() => {
-    if (!supplierTransactions.length) return [];
+    const toNumber = (value) => {
+      if (value === null || value === undefined) return 0;
+      const raw = String(value).trim();
+      if (!raw) return 0;
+      const normalized = raw.replace(",", ".");
+      const num = Number(normalized);
+      return Number.isFinite(num) ? num : 0;
+    };
 
-    const grouped = new Map();
+    const normalize = (value) => (typeof value === "string" ? value.trim() : "");
 
-    supplierTransactions.forEach((txn) => {
-      const ingredient = txn.ingredient || t("Unknown");
-      const unit = txn.unit || "";
-      const key = `${ingredient}_${unit}`.toLowerCase();
-      const price = Number(txn.price_per_unit);
-      const dateString =
-        txn.delivery_date || txn.created_at || txn.updated_at || txn.date;
-      const date = dateString ? new Date(dateString) : null;
+    const points = [];
 
-      if (!price || !date || Number.isNaN(date.getTime())) {
+    (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
+      if (!txn) return;
+      if (txn.ingredient === "Payment") return;
+
+      const rawDate = resolveTxnDate(txn);
+      const date = rawDate ? new Date(rawDate) : null;
+      if (!date || Number.isNaN(date.getTime())) return;
+
+      const pushPoint = (nameRaw, unitRaw, priceRaw, fallbackQuantity, fallbackTotal) => {
+        const ingredient = normalize(nameRaw) || t("Unknown");
+        const unit = normalize(unitRaw);
+        if (!unit) return;
+
+        let price = toNumber(priceRaw);
+        if (!(price > 0)) {
+          const qty = toNumber(fallbackQuantity);
+          const total = toNumber(fallbackTotal);
+          if (qty > 0 && total > 0) {
+            price = total / qty;
+          }
+        }
+
+        if (!(price > 0)) return;
+
+        points.push({ ingredient, unit, price, date });
+      };
+
+      if (Array.isArray(txn.items) && txn.items.length > 0) {
+        txn.items.forEach((item) => {
+          if (!item) return;
+          pushPoint(
+            item.ingredient ?? item.name,
+            item.unit,
+            item.price_per_unit ?? item.unit_price ?? item.purchase_price ?? item.price,
+            item.quantity,
+            item.total_cost
+          );
+        });
         return;
       }
 
-      if (!grouped.has(key)) {
-        grouped.set(key, []);
-      }
+      pushPoint(
+        txn.ingredient,
+        txn.unit,
+        txn.price_per_unit ?? txn.unit_price ?? txn.purchase_price ?? txn.price,
+        txn.quantity,
+        txn.total_cost
+      );
+    });
 
-      grouped.get(key).push({
-        ingredient,
-        unit,
-        price,
-        date,
-      });
+    if (!points.length) return [];
+
+    const grouped = new Map();
+
+    points.forEach((entry) => {
+      const key = `${entry.ingredient}_${entry.unit}`.toLowerCase();
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(entry);
     });
 
     const alerts = [];
@@ -793,13 +894,15 @@ const projectedBalance = useMemo(() => {
       if (!entries.length) return;
       entries.sort((a, b) => b.date - a.date);
       const [latest, ...rest] = entries;
-      if (!latest) return;
+      if (!latest || rest.length === 0) return;
+
       const baselineCandidate =
         rest.find((entry) => {
           const diffDays = (latest.date - entry.date) / (1000 * 60 * 60 * 24);
           return diffDays >= 30;
         }) || rest[0];
-      if (!baselineCandidate || !baselineCandidate.price) return;
+
+      if (!baselineCandidate || !(baselineCandidate.price > 0)) return;
 
       const changePercent =
         ((latest.price - baselineCandidate.price) / baselineCandidate.price) *
@@ -815,12 +918,10 @@ const projectedBalance = useMemo(() => {
       });
     });
 
-    alerts.sort(
-      (a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent)
-    );
+    alerts.sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent));
 
     return alerts.slice(0, 4);
-  }, [supplierTransactions, t]);
+  }, [resolveTxnDate, t, transactions]);
 
   const performanceMetrics = useMemo(() => {
     const deliveryTimes = feedbackEntries
@@ -918,6 +1019,7 @@ const handleAddTransaction = async (e) => {
     .map((r) => {
       const ingredient = String(r.ingredient || "").trim();
       const quantity = toNumber(r.quantity);
+      const tax = toNumber(r.tax);
       const totalCost = toNumber(r.total_cost);
       const unit = r.unit;
       const pricePerUnit =
@@ -927,6 +1029,7 @@ const handleAddTransaction = async (e) => {
         ingredient,
         quantity,
         unit,
+        tax,
         total_cost: totalCost,
         // Backward/forward compatibility: some backends expect unit_price / price_per_unit explicitly.
         price_per_unit: Number(pricePerUnit.toFixed(6)),
@@ -991,6 +1094,7 @@ const handleAddTransaction = async (e) => {
         ingredient: "",
         quantity: "",
         unit: "kg",
+        tax: "",
         total_cost: "",
         expiry_date: "",
       },
@@ -1346,148 +1450,391 @@ id}`, {
   className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
 >
                   <div className="space-y-6">
-                     <div className="space-y-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                      {t("Primary supplier")}
-                    </p>
+                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                        {t("Primary supplier")}
+                      </p>
  
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      {t("Choose which supplier you want to review or update.")}
-                    </p>
-              
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {t("Choose which supplier you want to review or update.")}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
+                        onClick={() => setSupplierModalOpen(true)}
+                      >
+                        ➕ {t("Add Supplier")}
+                      </button>
+
+                      {selectedSupplier && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
+                          onClick={() => handleEditSupplier(selectedSupplier)}
+                        >
+                          ✏️ {t("Edit Supplier")}
+                        </button>
+                      )}
+
+                      {selectedSupplier && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
+                          onClick={() => {
+                            if (window.confirm(t("Are you sure you want to delete this supplier?"))) {
+                              handleDeleteSupplier();
+                            }
+                          }}
+                        >
+                          🗑️ {t("Delete Supplier")}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   
                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 w-full">
   {/* === Supplier Select (Left on desktop) === */}
   <div className="relative w-full sm:w-72 order-1 sm:order-none">
-    <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
-      <svg
-        className="h-4 w-4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M3 4h18M3 10h18M3 16h18"
-        />
-      </svg>
-    </div>
-    <select
-      className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-      value={selectedSupplier?.id || ""}
-      onChange={(e) => handleSelectSupplier(e.target.value)}
-    >
-      <option value="">{t("Select Supplier")}</option>
-      {suppliers.map((supplier) => (
-        <option key={supplier.id} value={supplier.id}>
-          {supplier.name}
-        </option>
-      ))}
-    </select>
-    <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
-      <svg
-        className="h-4 w-4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        viewBox="0 0 24 24"
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-      </svg>
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+      <div className="relative flex-1">
+        <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 4h18M3 10h18M3 16h18"
+            />
+          </svg>
+        </div>
+        <select
+          className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          value={selectedSupplier?.id || ""}
+          onChange={(e) => handleSelectSupplier(e.target.value)}
+        >
+          <option value="">{t("Select Supplier")}</option>
+          {suppliers.map((supplier) => (
+            <option key={supplier.id} value={supplier.id}>
+              {supplier.name}
+            </option>
+          ))}
+        </select>
+        <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+
+      {selectedSupplier?.phone && (
+        <a href={`tel:${selectedSupplier.phone}`} className="sm:flex-none">
+          <button
+            type="button"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow transition hover:shadow-md"
+          >
+            📞 {t("Call Supplier")}
+          </button>
+        </a>
+      )}
     </div>
   </div>
 
-  {/* === Due Card (Right on desktop) === */}
-  {selectedSupplier ? (
-    <div className="w-full sm:w-72 rounded-xl border border-slate-200 bg-slate-100/70 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-200 order-2 sm:order-none">
-      <div className="flex items-center justify-between">
-        <p>{t("Due")}</p>
-        <p className="text-lg font-bold text-rose-500 dark:text-rose-300">
-          {formattedSelectedSupplierDue}
-        </p>
-      </div>
-    </div>
-  ) : (
-    <div className="hidden w-full sm:block sm:w-72" />
-  )}
-
-
-                   
                   </div>
-       <div className="flex flex-wrap justify-start sm:justify-start items-center gap-2 w-full">
-  {/* Add Supplier */}
-  <button
-    type="button"
-    className="flex-1 sm:flex-none min-w-[130px] inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-    onClick={() => setSupplierModalOpen(true)}
-  >
-    ➕ {t("Add Supplier")}
-  </button>
 
-  {/* Call Supplier */}
-  {selectedSupplier?.phone && (
-    <a href={`tel:${selectedSupplier.phone}`} className="flex-1 sm:flex-none min-w-[130px]">
-      <button
-        type="button"
-        className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-      >
-        📞 {t("Call Supplier")}
-      </button>
-    </a>
-  )}
+                  <div className="flex flex-col gap-6">
+                  {selectedSupplier && (
+                    <section
+                      id="profile-balance"
+                      className="order-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+                        <div className="space-y-6">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                                {t("Supplier Profile & Balance")}
+                              </h2>
+                              <p className="text-sm text-slate-500 dark:text-slate-400">
+                                {t(
+                                  "Keep contacts, debt exposure, and account history aligned for your team."
+                                )}
+                              </p>
+                            </div>
+                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700/70 dark:text-slate-300">
+                              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                              {t("Open invoices")}: {supplierFinancials.openInvoices}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                                {t("Outstanding")}
+                              </p>
+                              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                                {formatCurrency(supplierFinancials.outstanding)}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                                {t("Total purchases")}
+                              </p>
+                              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                                {formatCurrency(supplierFinancials.totalPurchases)}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                                {t("Payments made")}
+                              </p>
+                              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                                {formatCurrency(supplierFinancials.totalPaid)}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                                {t("Month spend")}
+                              </p>
+                              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                                {formatCurrency(supplierFinancials.monthPurchases)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                                {t("Primary contact")}
+                              </p>
+                              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                                <p>
+                                  <strong className="font-semibold text-slate-700 dark:text-white">
+                                    {t("Name")}:
+                                  </strong>{" "}
+                                  {selectedSupplier?.name}
+                                </p>
+                                <p>
+                                  <strong className="font-semibold text-slate-700 dark:text-white">
+                                    {t("Phone")}:
+                                  </strong>{" "}
+                                  {selectedSupplier?.phone || t("Not available")}
+                                </p>
+                                <p>
+                                  <strong className="font-semibold text-slate-700 dark:text-white">
+                                    {t("Email")}:
+                                  </strong>{" "}
+                                  {selectedSupplier?.email || t("Not available")}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                                {t("Business details")}
+                              </p>
+                              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                                <p>
+                                  <strong className="font-semibold text-slate-700 dark:text-white">
+                                    {t("Tax number")}:
+                                  </strong>{" "}
+                                  {selectedSupplier?.tax_number || t("Not available")}
+                                </p>
+                                <p>
+                                  <strong className="font-semibold text-slate-700 dark:text-white">
+                                    {t("ID number")}:
+                                  </strong>{" "}
+                                  {selectedSupplier?.id_number || t("Not available")}
+                                </p>
+                                <p>
+                                  <strong className="font-semibold text-slate-700 dark:text-white">
+                                    {t("Address")}:
+                                  </strong>{" "}
+                                  {selectedSupplier?.address || t("Not available")}
+                                </p>
+                                <p>
+                                  <strong className="font-semibold text-slate-700 dark:text-white">
+                                    {t("Notes")}:
+                                  </strong>{" "}
+                                  {selectedSupplier?.notes || "—"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <div className="relative overflow-hidden rounded-3xl bg-slate-900 p-6 text-white shadow-lg">
+                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 via-slate-900 to-emerald-500/20" />
+                            <div className="relative z-10 space-y-5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                                    {t("Outstanding balance")}
+                                  </p>
+                                  <p className="mt-2 text-3xl font-semibold">
+                                    {formatCurrency(supplierFinancials.outstanding)}
+                                  </p>
+                                </div>
+                                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+                                  {t("Coverage")}:{" "}
+                                  {coveragePercent !== null
+                                    ? `${coveragePercent.toFixed(0)}%`
+                                    : "—"}
+                                </span>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-white/60">
+                                  <span>{t("Paid coverage")}</span>
+                                  <span>
+                                    {coveragePercent !== null
+                                      ? `${coveragePercent.toFixed(0)}%`
+                                      : "—"}
+                                  </span>
+                                </div>
+                                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                                  <div
+                                    className="h-full rounded-full bg-emerald-300"
+                                    style={{
+                                      width: `${
+                                        coveragePercent !== null ? coveragePercent : 0
+                                      }%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <ul className="space-y-1 text-sm text-white/70">
+                                <li>
+                                  <span className="font-semibold text-white">
+                                    {t("Last invoice")}:
+                                  </span>{" "}
+                                  {supplierFinancials.lastInvoiceDate
+                                    ? supplierFinancials.lastInvoiceDate.toLocaleDateString()
+                                    : t("Not available")}
+                                </li>
+                                <li>
+                                  <span className="font-semibold text-white">
+                                    {t("Last payment")}:
+                                  </span>{" "}
+                                  {supplierFinancials.lastPaymentDate
+                                    ? supplierFinancials.lastPaymentDate.toLocaleDateString()
+                                    : t("Not available")}
+                                </li>
+                              </ul>
+                              <div className="flex flex-wrap gap-3">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-lg"
+                                  onClick={() => setPaymentModalOpen(true)}
+                                >
+                                  ✅ {t("Settle now")}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                                  onClick={handleDownloadHistory}
+                                >
+                                  📥 {t("Export statement")}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
+                            <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                              {t("Month to date overview")}
+                            </p>
+                            <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                              <div className="flex items-center justify-between">
+                                <span>{t("Spend this month")}</span>
+                                <strong className="text-slate-900 dark:text-white">
+                                  {formatCurrency(supplierFinancials.monthPurchases)}
+                                </strong>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span>{t("Payments received")}</span>
+                                <strong className="text-slate-900 dark:text-white">
+                                  {formatCurrency(supplierFinancials.monthPayments)}
+                                </strong>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span>{t("Projected balance after order")}</span>
+                                <strong
+                                  className={`${
+                                    projectedBalance > supplierFinancials.outstanding
+                                      ? "text-rose-600 dark:text-rose-400"
+                                      : "text-emerald-600 dark:text-emerald-400"
+                                  }`}
+                                >
+                                  {formatCurrency(projectedBalance)}
+                                </strong>
+                              </div>
+                            </div>
+                            <div className="mt-4 space-y-3">
+                              <p className="text-xs uppercase text-slate-400 dark:text-slate-500">
+                                {t("Recent receipts")}
+                              </p>
+                              {recentReceipts.length > 0 ? (
+                                recentReceipts.map((receiptTxn) => (
+                                  <div
+                                    key={receiptTxn.id || receiptTxn.receipt_url}
+                                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300"
+                                  >
+                                    <div className="flex flex-col">
+                                      <span>{receiptTxn.ingredient || t("Purchase")}</span>
+                                      <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500">
+                                        {getLocalizedDate(resolveTxnDate(receiptTxn))}
+                                      </span>
+                                      {(() => {
+                                        const expiryLabel =
+                                          getReceiptExpirySummary(receiptTxn);
+                                        return (
+                                          expiryLabel && (
+                                            <span className="text-[11px] font-normal text-amber-600 dark:text-amber-300">
+                                              {expiryLabel}
+                                            </span>
+                                          )
+                                        );
+                                      })()}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="text-indigo-600 underline hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-200"
+                                      onClick={() =>
+                                        setPreviewImage(receiptTxn.receipt_url)
+                                      }
+                                    >
+                                      {t("View")}
+                                    </button>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-xs text-slate-400 dark:text-slate-500">
+                                  {t(
+                                    "No receipts uploaded yet. Attach one with your next delivery."
+                                  )}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  )}
 
-  {/* Record Payment */}
-  {selectedSupplier && (
-    <button
-      type="button"
-      className={`flex-1 sm:flex-none min-w-[130px] inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow transition ${
-        selectedSupplierDue > 0
-          ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg"
-          : "cursor-not-allowed bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600"
-      }`}
-      onClick={() => {
-        if (selectedSupplierDue <= 0) {
-          toast.info(t("No payment due for this supplier."));
-          return;
-        }
-        setPaymentModalOpen(true);
-      }}
-    >
-      💳 {t("Record payment")}
-    </button>
-  )}
-
-  {/* Edit Supplier */}
-  {selectedSupplier && (
-    <button
-      type="button"
-      className="flex-1 sm:flex-none min-w-[130px] inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-      onClick={() => handleEditSupplier(selectedSupplier)}
-    >
-      ✏️ {t("Edit Supplier")}
-    </button>
-  )}
-
-  {/* Delete Supplier */}
-  {selectedSupplier && (
-    <button
-      type="button"
-      className="flex-1 sm:flex-none min-w-[130px] inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-      onClick={() => {
-        if (window.confirm(t("Are you sure you want to delete this supplier?"))) {
-          handleDeleteSupplier();
-        }
-      }}
-    >
-      🗑️ {t("Delete Supplier")}
-    </button>
-  )}
-</div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
+                    <div
+                      id="purchasing-receipts"
+                      className="order-1 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/60"
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <h2 className="text-lg	font-semibold text-slate-900 dark:text-white">
@@ -1499,14 +1846,14 @@ id}`, {
                             )}
                           </p>
                         </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-2 text-right shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
-                          <p className="text-xs font-semibold uppercase text-slate-400 dark:text-slate-500">
-                            {t("Projected balance")}
-                          </p>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(projectedBalance)}
-                          </p>
-                        </div>
+                        {selectedSupplier?.name && (
+                          <div
+                            className="min-w-0 rounded-2xl border border-slate-200 bg-white/90 px-4 py-2 text-lg font-extrabold text-slate-900 shadow-sm truncate dark:border-slate-700 dark:bg-slate-900/60 dark:text-white"
+                            title={selectedSupplier.name}
+                          >
+                            {selectedSupplier.name}
+                          </div>
+                        )}
                       </div>
                       <form
                         onSubmit={handleAddTransaction}
@@ -1532,71 +1879,75 @@ id}`, {
         <div className="my-4 border-t border-dashed border-slate-300 dark:border-slate-700"></div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7 items-end">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-8 items-end pl-6">
         {/* Ingredient */}
-        <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+        <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300 xl:col-span-2">
           {t("Ingredient")}
-          <select
-            value={ingredientSelectValue}
-            onChange={(e) => {
-              const value = e.target.value;
-              const updated = [...newTransaction.rows];
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={ingredientSelectValue}
+              onChange={(e) => {
+                const value = e.target.value;
+                const updated = [...newTransaction.rows];
 
-              if (value === "__add_new__") {
-                updated[idx] = {
-                  ...updated[idx],
-                  ingredient_select: "__add_new__",
-                  ingredient: "",
-                };
-              } else {
-                try {
-                  const parsed = JSON.parse(value);
-                  const name = String(parsed?.name || "").trim();
-                  const unit = String(parsed?.unit || "").trim();
-                  updated[idx] = {
-                    ...updated[idx],
-                    ingredient_select: value,
-                    ingredient: name,
-                    unit: unit || updated[idx].unit,
-                  };
-                } catch {
+                if (value === "__add_new__") {
                   updated[idx] = {
                     ...updated[idx],
                     ingredient_select: "__add_new__",
                     ingredient: "",
                   };
+                } else {
+                  try {
+                    const parsed = JSON.parse(value);
+                    const name = String(parsed?.name || "").trim();
+                    const unit = String(parsed?.unit || "").trim();
+                    updated[idx] = {
+                      ...updated[idx],
+                      ingredient_select: value,
+                      ingredient: name,
+                      unit: unit || updated[idx].unit,
+                    };
+                  } catch {
+                    updated[idx] = {
+                      ...updated[idx],
+                      ingredient_select: "__add_new__",
+                      ingredient: "",
+                    };
+                  }
                 }
-              }
 
-              setNewTransaction({ ...newTransaction, rows: updated });
-            }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-          >
-            <option value="__add_new__">{t("Add new")}</option>
-            {supplierIngredientOptions.map((opt) => (
-              <option
-                key={`${opt.name}|||${opt.unit}`}
-                value={JSON.stringify({ name: opt.name, unit: opt.unit })}
-              >
-                {opt.name} ({opt.unit})
-              </option>
-            ))}
-          </select>
-
-          {ingredientSelectValue === "__add_new__" && (
-            <input
-              type="text"
-              value={row.ingredient}
-              onChange={(e) => {
-                const updated = [...newTransaction.rows];
-                updated[idx].ingredient = e.target.value;
                 setNewTransaction({ ...newTransaction, rows: updated });
               }}
-              placeholder={t("New ingredient")}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-              required
-            />
-          )}
+              className={`min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 ${
+                ingredientSelectValue === "__add_new__" ? "col-span-1" : "col-span-2"
+              }`}
+            >
+              <option value="__add_new__">{t("Select item")}</option>
+              {supplierIngredientOptions.map((opt) => (
+                <option
+                  key={`${opt.name}|||${opt.unit}`}
+                  value={JSON.stringify({ name: opt.name, unit: opt.unit })}
+                >
+                  {opt.name} ({opt.unit})
+                </option>
+              ))}
+            </select>
+
+            {ingredientSelectValue === "__add_new__" && (
+              <input
+                type="text"
+                value={row.ingredient}
+                onChange={(e) => {
+                  const updated = [...newTransaction.rows];
+                  updated[idx].ingredient = e.target.value;
+                  setNewTransaction({ ...newTransaction, rows: updated });
+                }}
+                placeholder={t("New ingredient")}
+                className="min-w-0 col-span-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                required
+              />
+            )}
+          </div>
         </label>
 
         {/* Quantity */}
@@ -1621,7 +1972,7 @@ id}`, {
         <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
           {t("Unit")}
           <select
-            value={row.unit}
+            value={row.unit === "piece" ? "pcs" : row.unit}
             onChange={(e) => {
               const updated = [...newTransaction.rows];
               updated[idx].unit = e.target.value;
@@ -1633,7 +1984,7 @@ id}`, {
             <option value="g">{t("g")}</option>
             <option value="lt">{t("lt")}</option>
             <option value="ml">{t("ml")}</option>
-            <option value="piece">{t("piece")}</option>
+            <option value="pcs">{t("pcs")}</option>
           </select>
         </label>
 
@@ -1652,9 +2003,26 @@ id}`, {
           />
         </label>
 
+        {/* Tax */}
+        <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+          {t("Tax")}
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={row.tax ?? ""}
+            onChange={(e) => {
+              const updated = [...newTransaction.rows];
+              updated[idx].tax = e.target.value;
+              setNewTransaction({ ...newTransaction, rows: updated });
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          />
+        </label>
+
         {/* Total cost */}
         <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-          {t("Total cost (₺)")}
+          {t("Total cost")} {config?.symbol ? `(${config.symbol})` : ""}
           <input
             type="number"
             min="0"
@@ -1670,18 +2038,16 @@ id}`, {
           />
         </label>
 
-        {/* Computed Unit Price */}
-        <div className="flex flex-col justify-end h-full text-sm font-semibold text-indigo-600 dark:text-indigo-300">
-          <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            {t("Unit price")}
-          </p>
-          <p className="text-lg mt-1">
-            {formatCurrency(parseFloat(unitPrice || 0))}
-          </p>
-        </div>
-
-        {/* 🗑️ Remove Row Button */}
-        <div className="flex justify-center items-end">
+        {/* Computed Unit Price + Remove */}
+        <div className="flex items-end justify-between gap-3 h-full text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+          <div className="flex flex-col justify-end min-w-0">
+            <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+              {t("Unit price")}
+            </p>
+            <p className="text-lg mt-1 truncate">
+              {formatCurrency(parseFloat(unitPrice || 0))}
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -1693,14 +2059,17 @@ id}`, {
                   ingredient: "",
                   quantity: "",
                   unit: "kg",
+                  tax: "",
                   total_cost: "",
                   expiry_date: "",
                 });
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
-            className="inline-flex items-center gap-2 rounded-full border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-600/40 dark:text-rose-300 dark:hover:bg-rose-900/30 transition"
+            className="inline-flex items-center justify-center rounded-full border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-600/40 dark:text-rose-300 dark:hover:bg-rose-900/30 transition"
+            aria-label={t("Remove")}
+            title={t("Remove")}
           >
-            🗑️ {t("Remove")}
+            🗑️
           </button>
         </div>
       </div>
@@ -1723,6 +2092,7 @@ id}`, {
           ingredient: "",
           quantity: "",
           unit: "kg",
+          tax: "",
           total_cost: "",
           expiry_date: "",
         },
@@ -1733,44 +2103,8 @@ id}`, {
 >
   ➕ {t("Add Row")}
 </button>
-
-
-
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                              {t(" Total price")}
-                            </span>
-                         {(() => {
-  const totalOrder = newTransaction.rows?.reduce(
-    (sum, r) => sum + (parseFloat(r.total_cost) || 0),
-    0
-  );
-  const totalEffect =
-    (selectedSupplier?.total_due || 0) + totalOrder - (selectedSupplier?.total_due || 0);
-
-  return (
-    <>
-      <p
-        className={`mt-2 text-lg font-semibold ${
-          totalOrder >= 0
-            ? "text-rose-600 dark:text-rose-400"
-            : "text-emerald-600 dark:text-emerald-400"
-        }`}
-      >
-        +{formatCurrency(totalOrder)}
-      </p>
-      <p className="text-xs text-slate-400 dark:text-slate-500">
-        {t("Total added to outstanding balance (all items)")}
-      </p>
-    </>
-  );
-})()}
-
-                   
-                          </div>
-                        </div>
-                       <div className="flex flex-wrap items-center gap-3">
+	                       <div className="flex flex-wrap items-center gap-3">
+  <div className="flex flex-wrap items-center gap-3">
   {/* ✅ Confirm Order (adds ingredients before payment) */}
   <button
     type="button"
@@ -1797,12 +2131,40 @@ id}`, {
   >
     📸 {t("Upload Receipt")}
   </button>
+  </div>
+
+	  <div className="ml-auto w-full sm:w-auto rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-2.5 text-right text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+	    {(() => {
+	      const totalOrder = newTransaction.rows?.reduce(
+	        (sum, r) => sum + (parseFloat(r.total_cost) || 0),
+	        0
+	      );
+
+	      return (
+	        <div className="flex items-baseline justify-end gap-2">
+	          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+	            {t("Total price")}
+	          </span>
+	          <span
+	            className={`text-lg font-semibold ${
+	              totalOrder >= 0
+	                ? "text-rose-600 dark:text-rose-400"
+	                : "text-emerald-600 dark:text-emerald-400"
+	            }`}
+	          >
+	            +{formatCurrency(totalOrder)}
+	          </span>
+	        </div>
+	      );
+	    })()}
+	  </div>
 </div>
 
                      </form>
 </div>
+                  </div>
 
-	   <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+		   <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
 	              <div className="space-y-6">
 	                <div className="space-y-4">
                                   {/* === Latest Added Entry Preview === */}
@@ -1836,7 +2198,7 @@ id}`, {
 )}
 <section id="transaction-history" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
   <div className="space-y-6">
-    <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
           {t("Transaction History")}
@@ -1845,25 +2207,62 @@ id}`, {
           {t("Review every purchase and payment with clear statuses.")}
         </p>
       </div>
-      <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        {[
-          { value: "all", label: t("All") },
-          { value: "purchases", label: t("Purchases") },
-          { value: "payments", label: t("Payments") },
-        ].map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => setTransactionView(option.value)}
-            className={`rounded-full px-4 py-1.5 font-semibold transition ${
-              transactionView === option.value
-                ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow"
-                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
+      <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-end sm:justify-end">
+        <div className="inline-flex w-full overflow-x-auto rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:w-auto">
+          {[
+            { value: "all", label: t("All") },
+            { value: "purchases", label: t("Purchases") },
+            { value: "payments", label: t("Payments") },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setTransactionView(option.value)}
+              className={`inline-flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-semibold transition sm:flex-none sm:min-w-[110px] ${
+                transactionView === option.value
+                  ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow"
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {t("From")}
+            <input
+              type="date"
+              value={transactionDateFrom}
+              max={transactionDateTo || undefined}
+              onChange={(e) => setTransactionDateFrom(e.target.value)}
+              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {t("To")}
+            <input
+              type="date"
+              value={transactionDateTo}
+              min={transactionDateFrom || undefined}
+              onChange={(e) => setTransactionDateTo(e.target.value)}
+              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </label>
+          {(transactionDateFrom || transactionDateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setTransactionDateFrom("");
+                setTransactionDateTo("");
+              }}
+              className="h-9 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+            >
+              {t("Clear")}
+            </button>
+          )}
+        </div>
       </div>
     </div>
 
@@ -1881,7 +2280,7 @@ id}`, {
           {t("Total purchases")}
         </p>
         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-          {formatCurrency(supplierFinancials.totalPurchases)}
+          {formatCurrency(transactionHistoryTotals.totalPurchases)}
         </p>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
@@ -1889,163 +2288,157 @@ id}`, {
           {t("Payments made")}
         </p>
         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-          {formatCurrency(supplierFinancials.totalPaid)}
+          {formatCurrency(transactionHistoryTotals.totalPaid)}
         </p>
       </div>
     </div>
 {filteredTransactions.length > 0 ? (
-  <div className="space-y-4">
-    {(() => {
-      // ✅ Group transactions by date
-      const grouped = filteredTransactions.reduce((acc, txn) => {
-        const dateKey = txn.delivery_date
-          ? new Date(txn.delivery_date).toISOString().split("T")[0]
-          : "Unknown";
-        if (!acc[dateKey]) acc[dateKey] = [];
-        acc[dateKey].push(txn);
-        return acc;
-      }, {});
+  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 shadow-sm dark:border-slate-800 dark:bg-slate-900/40">
+    <div className="hidden sm:grid grid-cols-12 gap-3 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <div className="col-span-3">{t("Date")}</div>
+      <div className="col-span-2">{t("Type")}</div>
+      <div className="col-span-4">{t("Description")}</div>
+      <div className="col-span-2">{t("Payment Method")}</div>
+      <div className="col-span-1 text-right">{t("Amount")}</div>
+    </div>
+    <div className="divide-y divide-slate-200 dark:divide-slate-800">
+      {filteredTransactions.map((txn, idx) => {
+        const isPayment = txn?.ingredient === "Payment";
+        const totalCost = Number(txn?.total_cost) || 0;
+        const amountPaid = Number(txn?.amount_paid) || 0;
+        const effectivePayment = amountPaid || totalCost;
+        const delta = isPayment ? -effectivePayment : totalCost;
 
-      // ✅ Sort dates (newest → oldest)
-      const sortedDates = Object.keys(grouped).sort(
-        (a, b) => new Date(b) - new Date(a)
-      );
+        const dateLabel = getLocalizedDate(resolveTxnDate(txn));
+        const paymentLabel =
+          txn?.payment_method && paymentChipLabel(txn.payment_method);
+        const hasItems = Array.isArray(txn?.items) && txn.items.length > 0;
+        const hasReceipt = !!txn?.receipt_url;
+        const hasDetails = hasItems || hasReceipt;
 
-      let runningBalance = 0;
+        const typeLabel = isPayment ? t("Payments") : t("Purchases");
+        const description = isPayment
+          ? t("Payment recorded")
+          : txn?.ingredient || t("Compiled Receipt");
 
-      return sortedDates.map((day) => {
-        const txns = grouped[day].sort(
-          (a, b) => new Date(b.delivery_date) - new Date(a.delivery_date)
-        );
+        const rowKey =
+          txn?.id ||
+          `${resolveTxnDate(txn) || "txn"}:${txn?.ingredient || "item"}:${idx}`;
 
-        return (
-          <div
-            key={day}
-            className="border border-slate-200 rounded-2xl shadow-sm dark:border-slate-800"
-          >
-            {/* === Day header === */}
-            <button
-              onClick={() =>
-                setOpenDays((prev) => ({ ...prev, [day]: !prev[day] }))
-              }
-              className="w-full flex justify-between items-center px-5 py-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-t-2xl transition"
-            >
-              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                📅 {getLocalizedDate(day)}
+        const row = (
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3 px-4 py-3">
+            <div className="sm:col-span-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+              {dateLabel}
+            </div>
+            <div className="sm:col-span-2">
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  isPayment
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                }`}
+              >
+                {typeLabel}
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                {openDays[day] ? "▲ " + t("Hide") : "▼ " + t("Show")}
-              </span>
-            </button>
-
-            {/* === Transactions under that day === */}
-            {openDays[day] && (
-              <div className="p-5 space-y-4 bg-white dark:bg-slate-900 rounded-b-2xl">
-                {txns.map((txn, idx) => {
-                  const isPayment = txn.ingredient === "Payment";
-                  const totalCost = Number(txn.total_cost) || 0;
-                  const amountPaid = Number(txn.amount_paid) || 0;
-                  const change = isPayment ? -amountPaid : totalCost;
-                  runningBalance += change;
-
-                  const paymentLabel =
-                    txn.payment_method && paymentChipLabel(txn.payment_method);
-
-                  return (
-                    <div
-                      key={txn.id || `txn-${day}-${idx}`}
-                      className="rounded-xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900"
-                    >
-                      {/* === Header === */}
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                          <p
-                            className={`font-semibold ${
-                              isPayment
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-slate-900 dark:text-white"
-                            }`}
-                          >
-                            {isPayment
-                              ? `${t("Payment recorded")} – ${formatCurrency(
-                                  amountPaid
-                                )}`
-                              : `${
-                                  txn.ingredient || t("Compiled Receipt")
-                                } – ${formatCurrency(totalCost)}`}
-                          </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {txn.payment_method ? txn.payment_method : ""}
-                          </p>
-                        </div>
-                        {paymentLabel && (
-                          <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                            {paymentLabel}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* === Ingredient list (for compiled receipts) === */}
-                      {!isPayment &&
-                        Array.isArray(txn.items) &&
-                        txn.items.length > 0 && (
-                          <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/40">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
-                              {t("Included ingredients")}
-                            </p>
-                            <ul className="divide-y divide-slate-200 dark:divide-slate-700">
-                              {txn.items.map((item, i) => (
-                                <li
-                                  key={i}
-                                  className="py-1.5 flex justify-between text-xs sm:text-sm"
-                                >
-                                  <span className="font-medium text-slate-700 dark:text-slate-200">
-                                    {item.ingredient}
-                                  </span>
-                                  <span className="text-slate-500 dark:text-slate-400">
-                                    {item.quantity} {item.unit} ×{" "}
-                                    {formatCurrency(
-                                      Number(item.price_per_unit || 0)
-                                    )}{" "}
-                                    ={" "}
-                                    <strong className="text-slate-900 dark:text-white">
-                                      {formatCurrency(
-                                        Number(item.total_cost || 0)
-                                      )}
-                                    </strong>
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                      {/* === Running balance === */}
-                      <div className="mt-4 flex justify-between text-sm font-semibold">
-                        <span
-                          className={
-                            change < 0
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-rose-600 dark:text-rose-400"
-                          }
-                        >
-                          {change < 0 ? "−" : "+"}
-                          {formatCurrency(Math.abs(change))}
-                        </span>
-                        <span className="text-slate-700 dark:text-slate-200">
-                          {t("Balance after this")}:{" "}
-                          {formatCurrency(runningBalance)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+            </div>
+            <div className="sm:col-span-4 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                  {description}
+                </span>
+                {hasItems && (
+                  <span className="flex-shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    {txn.items.length} {t("Items")}
+                  </span>
+                )}
+                {hasReceipt && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setPreviewImage(txn.receipt_url);
+                    }}
+                    className="flex-shrink-0 text-xs font-semibold text-indigo-700 underline underline-offset-2 hover:text-indigo-900 dark:text-indigo-300 dark:hover:text-indigo-200"
+                  >
+                    {t("View receipt")}
+                  </button>
+                )}
               </div>
-            )}
+            </div>
+            <div className="sm:col-span-2">
+              {paymentLabel ? (
+                <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {paymentLabel}
+                </span>
+              ) : (
+                <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
+              )}
+            </div>
+            <div className="sm:col-span-1 text-right text-sm font-semibold">
+              <span
+                className={
+                  delta < 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400"
+                }
+              >
+                {delta < 0 ? "−" : "+"}
+                {formatCurrency(Math.abs(delta))}
+              </span>
+            </div>
           </div>
         );
-      });
-    })()}
+
+        if (!hasDetails) {
+          return <div key={rowKey}>{row}</div>;
+        }
+
+        return (
+          <details key={rowKey} className="group">
+            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">{row}</div>
+                <div className="hidden sm:flex items-center px-2 text-slate-400 dark:text-slate-500">
+                  <span className="group-open:hidden">▾</span>
+                  <span className="hidden group-open:inline">▴</span>
+                </div>
+              </div>
+            </summary>
+            {hasItems && (
+              <div className="px-4 pb-4">
+                <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                  <div className="grid grid-cols-12 gap-2 border-b border-slate-200 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    <div className="col-span-6">{t("Ingredient")}</div>
+                    <div className="col-span-2 text-right">{t("Quantity")}</div>
+                    <div className="col-span-2 text-right">{t("Tax")}</div>
+                    <div className="col-span-2 text-right">{t("Total cost")}</div>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {txn.items.map((item, i) => (
+                      <div key={i} className="grid grid-cols-12 gap-2 text-sm">
+                        <div className="col-span-6 font-semibold text-slate-800 dark:text-slate-100">
+                          {item?.ingredient || t("Unnamed item")}
+                        </div>
+                        <div className="col-span-2 text-right text-slate-600 dark:text-slate-300">
+                          {item?.quantity ?? "—"} {item?.unit || ""}
+                        </div>
+                        <div className="col-span-2 text-right text-slate-600 dark:text-slate-300">
+                          {item?.tax ? formatCurrency(Number(item.tax || 0)) : "—"}
+                        </div>
+                        <div className="col-span-2 text-right font-semibold text-slate-900 dark:text-white">
+                          {formatCurrency(Number(item?.total_cost || 0))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </details>
+        );
+      })}
+    </div>
   </div>
 ) : (
   <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
@@ -2095,44 +2488,15 @@ id}`, {
              
               </div>
             </section>
-                    <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
-                      <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                        {t("Month to date overview")}
-                      </p>
-                      <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                        <div className="flex items-center justify-between">
-                          <span>{t("Spend this month")}</span>
-                          <strong className="text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.monthPurchases)}
-                          </strong>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>{t("Payments made")}</span>
-                          <strong className="text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.monthPayments)}
-                          </strong>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>{t("Projected balance after order")}</span>
-                          <strong
-                            className={`${
-                              projectedBalance > supplierFinancials.outstanding
-                                ? "text-rose-600 dark:text-rose-400"
-                                : "text-emerald-600 dark:text-emerald-400"
-                            }`}
-                          >
-                            {formatCurrency(projectedBalance)}
-                          </strong>
-                        </div>
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        <p className="text-xs uppercase text-slate-400 dark:text-slate-500">
-                          {t("Recent receipts")}
-                        </p>
-                        {recentReceipts.length > 0 ? (
-                          recentReceipts.map((receiptTxn) => (
-                            <div
-                              key={receiptTxn.id || receiptTxn.receipt_url}
+	                    <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
+	                      <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+	                        {t("Recent receipts")}
+	                      </p>
+	                      <div className="mt-4 space-y-3">
+	                        {recentReceipts.length > 0 ? (
+	                          recentReceipts.map((receiptTxn) => (
+	                            <div
+	                              key={receiptTxn.id || receiptTxn.receipt_url}
                               className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300"
                             >
                               <div className="flex flex-col">
@@ -2428,262 +2792,6 @@ id}`, {
                           )}
                         </div>
                       )}
-                    </div>
-                  </div>
-                </section><section id="profile-balance" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-                    <div className="space-y-6">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                            {t("Supplier Profile & Balance")}
-                          </h2>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {t("Keep contacts, debt exposure, and account history aligned for your team.")}
-                          </p>
-                        </div>
-                        <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700/70 dark:text-slate-300">
-                          <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                          {t("Open invoices")}: {supplierFinancials.openInvoices}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                           {t("Outstanding")}
-                         </p>
-                         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.outstanding)}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                           {t("Total purchases")}
-                         </p>
-                         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.totalPurchases)}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                           {t("Payments made")}
-                         </p>
-                         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.totalPaid)}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                         <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                           {t("Month spend")}
-                         </p>
-                         <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                            {formatCurrency(supplierFinancials.monthPurchases)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                            {t("Primary contact")}
-                          </p>
-                          <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                            <p>
-                              <strong className="font-semibold text-slate-700 dark:text-white">
-                                {t("Name")}:
-                              </strong>{" "}
-                              {selectedSupplier?.
-name}
-                            </p>
-                            <p>
-                              <strong className="font-semibold text-slate-700 dark:text-white">
-                                {t("Phone")}:
-                              </strong>{" "}
-                              {selectedSupplier?.
-phone || t("Not available")}
-                            </p>
-                            <p>
-                              <strong className="font-semibold text-slate-700 dark:text-white">
-                                {t("Email")}:
-                              </strong>{" "}
-                              {selectedSupplier?.
-email || t("Not available")}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                            {t("Business details")}
-                          </p>
-                          <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                            <p>
-                              <strong className="font-semibold text-slate-700 dark:text-white">
-                                {t("Tax number")}:
-                              </strong>{" "}
-                              {selectedSupplier?.
-tax_number || t("Not available")}
-                            </p>
-                            <p>
-                              <strong className="font-semibold text-slate-700 dark:text-white">
-                                {t("ID number")}:
-                              </strong>{" "}
-                              {selectedSupplier?.
-id_number || t("Not available")}
-                            </p>
-                            <p>
-                              <strong className="font-semibold text-slate-700 dark:text-white">
-                                {t("Address")}:
-                              </strong>{" "}
-                              {selectedSupplier?.
-address || t("Not available")}
-                            </p>
-                            <p>
-                              <strong className="font-semibold text-slate-700 dark:text-white">
-                                {t("Notes")}:
-                              </strong>{" "}
-                              {selectedSupplier?.
-notes || "—"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                
-                    </div>
-                    <div className="space-y-4">
-                      <div className="relative overflow-hidden rounded-3xl bg-slate-900 p-6 text-white shadow-lg">
-                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 via-slate-900 to-emerald-500/20" />
-                        <div className="relative z-10 space-y-5">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-wide text-white/60">
-                                {t("Outstanding balance")}
-                              </p>
-                              <p className="mt-2 text-3xl font-semibold">
-                                {formatCurrency(supplierFinancials.outstanding)}
-                              </p>
-                            </div>
-                            <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-                              {t("Coverage")}:{" "}
-                              {coveragePercent !== null ? `${coveragePercent.toFixed(0)}%` : "—"}
-                            </span>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-white/60">
-                              <span>{t("Paid coverage")}</span>
-                              <span>
-                                {coveragePercent !== null ? `${coveragePercent.toFixed(0)}%` : "—"}
-                              </span>
-                            </div>
-                            <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                              <div
-                                className="h-full rounded-full bg-emerald-300"
-                                style={{ width: `${coveragePercent !== null ? coveragePercent : 0}%` }}
-                              />
-                            </div>
-                          </div>
-                          <ul className="space-y-1 text-sm text-white/70">
-                            <li>
-                              <span className="font-semibold text-white">{t("Last invoice")}:</span>{" "}
-                              {supplierFinancials.lastInvoiceDate
-                                ? supplierFinancials.lastInvoiceDate.toLocaleDateString()
-                                : t("Not available")}
-                            </li>
-                            <li>
-                              <span className="font-semibold text-white">{t("Last payment")}:</span>{" "}
-                              {supplierFinancials.lastPaymentDate
-                                ? supplierFinancials.lastPaymentDate.toLocaleDateString()
-                                : t("Not available")}
-                            </li>
-                          </ul>
-                          <div className="flex flex-wrap gap-3">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-lg"
-                              onClick={() => setPaymentModalOpen(true)}
-                            >
-                              ✅ {t("Settle now")}
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-                              onClick={handleDownloadHistory}
-                            >
-                              📥 {t("Export statement")}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
-                        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                          {t("Month to date overview")}
-                        </p>
-                        <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                          <div className="flex items-center justify-between">
-                            <span>{t("Spend this month")}</span>
-                            <strong className="text-slate-900 dark:text-white">
-                              {formatCurrency(supplierFinancials.monthPurchases)}
-                            </strong>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span>{t("Payments received")}</span>
-                            <strong className="text-slate-900 dark:text-white">
-                              {formatCurrency(supplierFinancials.monthPayments)}
-                            </strong>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span>{t("Projected balance after order")}</span>
-                            <strong
-                              className={`${
-                                projectedBalance > supplierFinancials.outstanding
-                                  ? "text-rose-600 dark:text-rose-400"
-                                  : "text-emerald-600 dark:text-emerald-400"
-                              }`}
-                            >
-                              {formatCurrency(projectedBalance)}
-                            </strong>
-                          </div>
-                        </div>
-                        <div className="mt-4 space-y-3">
-                          <p className="text-xs uppercase text-slate-400 dark:text-slate-500">
-                            {t("Recent receipts")}
-                          </p>
-                          {recentReceipts.length > 0 ? (
-                            recentReceipts.map((receiptTxn) => (
-                              <div
-                                key={receiptTxn.id || receiptTxn.receipt_url}
-                                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300"
-                              >
-                                <div className="flex flex-col">
-                                  <span>{receiptTxn.ingredient || t("Purchase")}</span>
-                                  <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500">
-                                    {getLocalizedDate(resolveTxnDate(receiptTxn))}
-                                  </span>
-                                  {(() => {
-                                    const expiryLabel = getReceiptExpirySummary(receiptTxn);
-                                    return (
-                                      expiryLabel && (
-                                        <span className="text-[11px] font-normal text-amber-600 dark:text-amber-300">
-                                          {expiryLabel}
-                                        </span>
-                                      )
-                                    );
-                                  })()}
-                                </div>
-                                <button
-                                  type="button"
-                                  className="text-indigo-600 underline hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-200"
-                                  onClick={() => setPreviewImage(receiptTxn.receipt_url)}
-                                >
-                                  {t("View")}
-                                </button>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-xs text-slate-400 dark:text-slate-500">
-                              {t("No receipts uploaded yet. Attach one with your next delivery.")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </section>

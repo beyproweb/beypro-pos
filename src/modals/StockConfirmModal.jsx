@@ -12,10 +12,12 @@ export default function StockConfirmModal({
   onConfirm,
   productObj,
   batchCount,
+  expiryDate: defaultExpiryDate,
 }) {
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [actualQuantity, setActualQuantity] = useState(expectedQuantity);
+  const [expiryDate, setExpiryDate] = useState(defaultExpiryDate || "");
      const { t, i18n } = useTranslation();
   useEffect(() => {
     if (!isOpen) return;
@@ -39,6 +41,9 @@ export default function StockConfirmModal({
   useEffect(() => {
     setActualQuantity(expectedQuantity);
   }, [expectedQuantity]);
+  useEffect(() => {
+    setExpiryDate(defaultExpiryDate || "");
+  }, [defaultExpiryDate, isOpen]);
 
   const handleConfirm = () => {
   if (!selectedSupplier || !actualQuantity || parseFloat(actualQuantity) <= 0) {
@@ -53,6 +58,7 @@ export default function StockConfirmModal({
     unit,
     productObj,
     batchCount,
+    expiry_date: expiryDate || null,
   };
 
   console.log("📤 Confirming stock with payload:", payload); // ✅ Add this line
@@ -99,6 +105,16 @@ export default function StockConfirmModal({
         {parseFloat(actualQuantity) < expectedQuantity && (
           <p className="text-sm text-orange-500 mt-1">⚠️ {t("Less than batch output.")}</p>
         )}
+      </div>
+
+      <div className="mb-4">
+        <label className="block font-medium">{t("Expiry date")}:</label>
+        <input
+          type="date"
+          value={expiryDate || ""}
+          onChange={(e) => setExpiryDate(e.target.value)}
+          className="border p-2 rounded w-full"
+        />
       </div>
 
       <div className="flex justify-end gap-2">

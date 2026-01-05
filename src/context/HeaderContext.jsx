@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState } from "react";
 const HeaderContext = createContext({
   title: "",
   subtitle: "",
+  centerNav: null,
   tableNav: null,
   actions: null,
   setHeader: () => {},

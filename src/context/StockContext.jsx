@@ -182,6 +182,41 @@ export const StockProvider = ({ children }) => {
   const debugGroupedLoggedRef = useRef(false);
   const ingredientPriceCacheRef = useRef({ map: null, fetchedAt: 0 });
   const supplierTxnPriceCacheRef = useRef({ bySupplierId: new Map() });
+  const recipeCostCacheRef = useRef({ byNameUnit: null, byName: null, fetchedAt: 0 });
+
+  const normalizeUnitLoose = (unit) => {
+    const u = String(unit || "").trim().toLowerCase();
+    if (u === "pieces") return "piece";
+    return u;
+  };
+
+  const UNIT_CONVERSIONS = {
+    g: { g: 1, kg: 1 / 1000, mg: 1000 },
+    kg: { kg: 1, g: 1000 },
+    mg: { mg: 1, g: 1 / 1000 },
+    ml: { ml: 1, l: 1 / 1000, lt: 1 / 1000 },
+    l: { l: 1, ml: 1000, lt: 1 },
+    lt: { lt: 1, l: 1, ml: 1000 },
+    pcs: { pcs: 1, piece: 1, unit: 1 },
+    piece: { piece: 1, pcs: 1, unit: 1 },
+    unit: { unit: 1, pcs: 1, piece: 1 },
+    portion: { portion: 1 },
+  };
+
+  const convertQuantity = (value, fromUnit, toUnit) => {
+    const from = normalizeUnitLoose(fromUnit);
+    const to = normalizeUnitLoose(toUnit);
+    if (!UNIT_CONVERSIONS[from]) return null;
+    const factor = UNIT_CONVERSIONS[from][to];
+    if (typeof factor !== "number") return null;
+    return value * factor;
+  };
+
+  const convertPricePerUnit = (pricePerFromUnit, fromUnit, toUnit) => {
+    const factor = convertQuantity(1, toUnit, fromUnit);
+    if (factor === null) return null;
+    return toNumber(pricePerFromUnit) * factor;
+  };
 
   // ✅ Add to cart helper
   const handleAddToCart = useCallback(
@@ -312,7 +347,11 @@ export const StockProvider = ({ children }) => {
           const critical = toNumber(stock.critical_quantity);
 
           if (quantity > critical) {
-            console.log(`🟢 ${item.name} above critical (${quantity} > ${critical}) — skip`);
+            if (import.meta.env.DEV) {
+              console.log(
+                `🟢 ${item.name} above critical (${quantity} > ${critical}) — skip`
+              );
+            }
             continue;
           }
 
@@ -323,7 +362,9 @@ export const StockProvider = ({ children }) => {
               ci.unit.toLowerCase() === item.unit.toLowerCase()
           );
           if (alreadyInCart) {
-            console.log("🛑 Already in cart, skipping add:", item.name);
+            if (import.meta.env.DEV) {
+              console.log("🛑 Already in cart, skipping add:", item.name);
+            }
             continue;
           }
 
@@ -333,12 +374,16 @@ export const StockProvider = ({ children }) => {
 
           if (!lastAuto || timeSinceLast > 60000) {
             if (autoAddLocks.current.has(item.id)) {
-              console.log("🚫 Duplicate add blocked for:", item.name);
+              if (import.meta.env.DEV) {
+                console.log("🚫 Duplicate add blocked for:", item.name);
+              }
               continue;
             }
 
             autoAddLocks.current.add(item.id);
-            console.log("🧪 Critical hit for:", item.name);
+            if (import.meta.env.DEV) {
+              console.log("🧪 Critical hit for:", item.name);
+            }
 
             // ✅ Always use item.id as stock_id
             await handleAddToCart({
@@ -357,7 +402,9 @@ export const StockProvider = ({ children }) => {
 
             autoAddLocks.current.delete(item.id);
           } else {
-            console.log("🔒 Already auto-added recently:", item.name);
+            if (import.meta.env.DEV) {
+              console.log("🔒 Already auto-added recently:", item.name);
+            }
           }
         } catch (err) {
           console.error(`❌ Auto-add failed for ${item.name}:`, err.message);
@@ -519,6 +566,156 @@ export const StockProvider = ({ children }) => {
         }
       }
 
+      // --- Production recipe fallback (finished product cost/unit) ---
+      // If a stock item has no direct/ingredient/supplier txn price, try computing from recipe ingredients.
+      let recipeCostByNameUnit = null; // `${name}|${unit}` -> costPerUnit
+      let recipeCostByName = null; // name -> [{ unit, cost }]
+      const needsRecipeFallback = refreshed.some((it) => getPricePerUnit(it) <= 0);
+
+      if (needsRecipeFallback) {
+        const nowMs = Date.now();
+        const cached = recipeCostCacheRef.current;
+        const cacheFresh =
+          cached?.byNameUnit &&
+          cached?.byName &&
+          nowMs - (cached.fetchedAt || 0) < 5 * 60 * 1000;
+
+        if (cacheFresh) {
+          recipeCostByNameUnit = cached.byNameUnit;
+          recipeCostByName = cached.byName;
+        } else {
+          try {
+            const tenantId =
+              typeof window !== "undefined"
+                ? window.localStorage.getItem("restaurant_id")
+                : null;
+            const recipeEndpoint = tenantId
+              ? `/production/recipes?restaurant_id=${tenantId}`
+              : "/production/recipes";
+
+            const recipesRaw = await secureFetch(recipeEndpoint);
+            const recipes = Array.isArray(recipesRaw)
+              ? recipesRaw
+              : Array.isArray(recipesRaw?.data)
+                ? recipesRaw.data
+                : Array.isArray(recipesRaw?.items)
+                  ? recipesRaw.items
+                  : [];
+
+            // Build a "best known" ingredient price index from current stock + ingredient prices + supplier txn fallback.
+            const bestPriceByName = new Map(); // name -> [{ unit, price }]
+            const bestPriceByNameUnit = new Map(); // `${name}|${unit}` -> price
+
+            const getBestPriceForItem = (it) => {
+              const direct = getPricePerUnit(it);
+              if (direct > 0) return direct;
+
+              const supplier = it?.supplier_name ?? "";
+              const fromIngredientMap = ingredientPriceMap
+                ? ingredientPriceMap.get(makePriceKey(it?.name, it?.unit, supplier)) ??
+                  ingredientPriceMap.get(makePriceKey(it?.name, it?.unit, ""))
+                : 0;
+              if (toNumber(fromIngredientMap) > 0) return toNumber(fromIngredientMap);
+
+              const fromSupplierTxn =
+                supplierTxnPriceMapsBySupplierId && it?.supplier_id
+                  ? supplierTxnPriceMapsBySupplierId
+                      .get(it.supplier_id)
+                      ?.get(makeNameUnitKey(it?.name, it?.unit)) || 0
+                  : 0;
+
+              return toNumber(fromSupplierTxn);
+            };
+
+            (Array.isArray(refreshed) ? refreshed : []).forEach((it) => {
+              const name = String(it?.name || "").trim();
+              const unit = String(it?.unit || "").trim();
+              if (!name || !unit) return;
+              const price = getBestPriceForItem(it);
+              if (!(price > 0)) return;
+
+              const k = makeNameUnitKey(name, unit);
+              bestPriceByNameUnit.set(k, price);
+              const nameKey = String(name).trim().toLowerCase();
+              const list = bestPriceByName.get(nameKey) || [];
+              list.push({ unit, price });
+              bestPriceByName.set(nameKey, list);
+            });
+
+            const resolveIngredientPrice = (ingredientName, desiredUnit) => {
+              const nameKey = String(ingredientName || "").trim().toLowerCase();
+              const desired = String(desiredUnit || "").trim().toLowerCase();
+              if (!nameKey || !desired) return 0;
+
+              const exact =
+                bestPriceByNameUnit.get(makeNameUnitKey(ingredientName, desiredUnit)) || 0;
+              if (exact > 0) return exact;
+
+              const candidates = bestPriceByName.get(nameKey) || [];
+              for (const cand of candidates) {
+                const converted = convertPricePerUnit(cand.price, cand.unit, desired);
+                if (converted !== null && converted > 0) return converted;
+              }
+              return 0;
+            };
+
+            recipeCostByNameUnit = new Map();
+            recipeCostByName = new Map();
+
+            recipes.forEach((recipe) => {
+              const name = String(recipe?.name || "").trim();
+              if (!name) return;
+              const nameKey = name.toLowerCase();
+              const baseQty = toNumber(recipe?.base_quantity ?? recipe?.baseQuantity ?? 0);
+              if (!(baseQty > 0)) return;
+
+              const outputUnit = String(recipe?.output_unit ?? recipe?.outputUnit ?? "").trim();
+              const outputUnitKey = String(outputUnit || "").trim().toLowerCase();
+              if (!outputUnitKey) return;
+
+              const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients : [];
+              const totalCost = ingredients.reduce((sum, ing) => {
+                const ingName = ing?.name ?? ing?.ingredient_name ?? ing?.ingredientName;
+                const ingUnit = ing?.unit;
+                const amount = toNumber(
+                  ing?.amountPerBatch ??
+                    ing?.amount_per_batch ??
+                    ing?.amount ??
+                    ing?.qty ??
+                    ing?.quantity ??
+                    0
+                );
+                if (!ingName || !(amount > 0) || !ingUnit) return sum;
+                const ppu = resolveIngredientPrice(ingName, ingUnit);
+                return sum + amount * toNumber(ppu);
+              }, 0);
+
+              const costPerUnit = totalCost / baseQty;
+              if (!(costPerUnit > 0)) return;
+
+              const key = `${nameKey}|${outputUnitKey}`;
+              recipeCostByNameUnit.set(key, costPerUnit);
+
+              const existing = recipeCostByName.get(nameKey) || [];
+              existing.push({ unit: outputUnitKey, cost: costPerUnit });
+              recipeCostByName.set(nameKey, existing);
+            });
+
+            recipeCostCacheRef.current = {
+              byNameUnit: recipeCostByNameUnit,
+              byName: recipeCostByName,
+              fetchedAt: nowMs,
+            };
+          } catch (e) {
+            if (import.meta.env.DEV) {
+              console.warn("⚠️ Stock recipe cost fallback failed (/production/recipes).", e);
+            }
+            recipeCostByNameUnit = null;
+            recipeCostByName = null;
+          }
+        }
+      }
+
       const grouped = Object.values(
         refreshed.reduce((acc, item) => {
           const nameKey = String(item?.name || "").toLowerCase();
@@ -546,6 +743,24 @@ export const StockProvider = ({ children }) => {
                 ? toNumber(fallbackPricePerUnit)
                 : supplierTxnFallbackPricePerUnit;
 
+          let resolvedPricePerUnit = pricePerUnit;
+          if (!(resolvedPricePerUnit > 0) && recipeCostByNameUnit && recipeCostByName) {
+            const stockUnitKey = String(item?.unit || "").trim().toLowerCase();
+            const directRecipe = recipeCostByNameUnit.get(`${nameKey}|${stockUnitKey}`) || 0;
+            if (directRecipe > 0) {
+              resolvedPricePerUnit = directRecipe;
+            } else {
+              const candidates = recipeCostByName.get(nameKey) || [];
+              for (const cand of candidates) {
+                const converted = convertPricePerUnit(cand.cost, cand.unit, stockUnitKey);
+                if (converted !== null && converted > 0) {
+                  resolvedPricePerUnit = converted;
+                  break;
+                }
+              }
+            }
+          }
+
           if (!acc[key]) {
             acc[key] = {
               name: item.name,
@@ -565,7 +780,7 @@ export const StockProvider = ({ children }) => {
 
           acc[key].quantity += quantity;
           acc[key].suppliers.add(item.supplier_name);
-          acc[key]._total_value += quantity * pricePerUnit;
+          acc[key]._total_value += quantity * resolvedPricePerUnit;
 
           if (item.expiry_date) {
             const candidate = new Date(item.expiry_date);

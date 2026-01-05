@@ -12,6 +12,7 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
   const [emoji, setEmoji] = useState('');
   const [baseQuantity, setBaseQuantity] = useState('');
   const [outputUnit, setOutputUnit] = useState('pcs');
+  const [expiryDate, setExpiryDate] = useState('');
   const [ingredients, setIngredients] = useState([{ name: '', amount: '', unit: '' }]);
 
   const [ingredientPrices, setIngredientPrices] = useState([]);
@@ -19,6 +20,29 @@ export default function RecipeModal({ isOpen, onClose, onSave, existingRecipe = 
   const [availableIngredients, setAvailableIngredients] = useState([]); // ✅ from suppliers
 
   const { t } = useTranslation();
+
+  const normalizeOutputUnit = (value) => {
+    if (!value) return "pcs";
+    const v = String(value).trim().toLowerCase();
+    if (v === "piece" || v === "pieces") return "pcs";
+    if (v === "lt") return "lt";
+    if (v === "l") return "lt";
+    return v;
+  };
+
+  const outputUnitOptions = [
+    "pcs",
+    "kg",
+    "g",
+    "lt",
+    "ml",
+    "portion",
+  ];
+  const normalizedOutputUnit = normalizeOutputUnit(outputUnit);
+  const outputUnitDropdownOptions =
+    normalizedOutputUnit && !outputUnitOptions.includes(normalizedOutputUnit)
+      ? [normalizedOutputUnit, ...outputUnitOptions]
+      : outputUnitOptions;
 
   // Fetch latest ingredient prices
   useEffect(() => {
@@ -84,7 +108,8 @@ useEffect(() => {
       setProductName(existingRecipe.name || '');
       setEmoji(existingRecipe.emoji || '');
       setBaseQuantity(existingRecipe.base_quantity || '');
-      setOutputUnit(existingRecipe.output_unit || 'pcs');
+      setOutputUnit(normalizeOutputUnit(existingRecipe.output_unit || 'pcs'));
+      setExpiryDate(existingRecipe.expiry_date || "");
       setIngredients(
         existingRecipe.ingredients?.length
           ? existingRecipe.ingredients.map((i) => ({
@@ -99,6 +124,7 @@ useEffect(() => {
       setEmoji('');
       setBaseQuantity('');
       setOutputUnit('pcs');
+      setExpiryDate("");
       setIngredients([{ name: '', amount: '', unit: '' }]);
     }
   }, [existingRecipe]);
@@ -138,11 +164,26 @@ useEffect(() => {
       return;
     }
 
+    const totalCostLocal = ingredients.reduce((sum, ing) => {
+      const match = ingredientPrices.find(
+        (ip) =>
+          ip.name?.toLowerCase() === ing.name?.toLowerCase() &&
+          ip.unit?.toLowerCase() === ing.unit?.toLowerCase()
+      );
+      const pricePer = match?.current_price || match?.price_per_unit || 0;
+      const amt = parseFloat(ing.amount) || 0;
+      return sum + amt * (parseFloat(pricePer) || 0);
+    }, 0);
+    const perUnitLocal = totalCostLocal / parsedQuantity;
+
     const newRecipe = {
       name: productName.trim(),
       emoji: emoji.trim(),
       base_quantity: parsedQuantity,
-      output_unit: outputUnit.trim(),
+      output_unit: normalizeOutputUnit(outputUnit),
+      expiry_date: expiryDate || null,
+      total_cost: totalCostLocal,
+      cost_per_unit: perUnitLocal,
       ingredients: ingredients.map(ing => ({
         name: ing.name.trim(),
         amountPerBatch: parseFloat(ing.amount),
@@ -210,13 +251,28 @@ useEffect(() => {
           </div>
           <div className="flex-1">
             <label className="block font-medium">{t("Output Unit (e.g. pcs, kg, L)")}:</label>
-            <input
-              type="text"
-              value={outputUnit}
+            <select
+              value={normalizedOutputUnit}
               onChange={(e) => setOutputUnit(e.target.value)}
               className="border p-2 rounded w-full"
-            />
+            >
+              {outputUnitDropdownOptions.map((unit) => (
+                <option key={unit} value={unit}>
+                  {unit}
+                </option>
+              ))}
+            </select>
           </div>
+        </div>
+
+        <div className="mb-3">
+          <label className="block font-medium">{t("Expiry date")}:</label>
+          <input
+            type="date"
+            value={expiryDate || ""}
+            onChange={(e) => setExpiryDate(e.target.value)}
+            className="border p-2 rounded w-full"
+          />
         </div>
 
         <div className="mb-3">

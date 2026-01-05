@@ -37,19 +37,19 @@ export default function CameraTab() {
       setCameras([
         {
           id: "1",
-          name: "Kitchen Camera",
+          name: t("Kitchen Camera"),
           hlsUrl: "https://test-streams.mux.dev/x36xhzz/x3izzzyzzde85dt8.m3u8",
           enabled: true,
-          location: "Kitchen",
+          location: t("Kitchen"),
           bitrate: "2500k",
           resolution: "1920x1080",
         },
         {
           id: "2",
-          name: "Entrance Camera",
+          name: t("Entrance Camera"),
           hlsUrl: "https://test-streams.mux.dev/x36xhzz/x3izzzyzzde85dt8.m3u8",
           enabled: false,
-          location: "Entrance",
+          location: t("Entrance"),
           bitrate: "1500k",
           resolution: "1280x720",
         },

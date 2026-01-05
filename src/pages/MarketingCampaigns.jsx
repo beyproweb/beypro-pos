@@ -3,6 +3,7 @@ import { Megaphone, Send, Users, Percent, BarChart, Mail } from "lucide-react";
 
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
+import { useHeader } from "../context/HeaderContext";
 
 const STATS_POLL_MS = 5000;   // poll every 5s
 const STATS_POLL_MAX = 12;    // for up to 60s
@@ -94,8 +95,14 @@ export default function EmailCampaignLanding() {
   const [customers, setCustomers] = useState([]);
   const [selectedPhones, setSelectedPhones] = useState([]);
   const { t } = useTranslation();
+  const { setHeader } = useHeader();
   const [whatsAppQR, setWhatsAppQR] = useState(null);
 const [qrStatus, setQrStatus] = useState("idle");
+
+  useEffect(() => {
+    setHeader({ title: "Marketing Campaigns" });
+    return () => setHeader({});
+  }, [setHeader]);
 
 async function fetchWhatsAppQR() {
   setQrStatus("loading");
@@ -365,7 +372,7 @@ async function sendCampaign() {
 
   try {
     if (primaryUrl && !/^https?:\/\//i.test(primaryUrl)) {
-      alert("Tracked link must start with http:// or https://");
+      alert(t("Tracked link must start with http:// or https://"));
       setSending(false);
       return;
     }
@@ -443,7 +450,7 @@ async function sendCampaign() {
     setPrimaryUrl("");
   } catch (e) {
     console.error("❌ Campaign send failed:", e);
-    alert("Failed to send campaign!");
+    alert(t("Failed to send campaign!"));
   }
 
   setSending(false);
@@ -466,16 +473,20 @@ async function sendWhatsAppCampaign() {
     });
 
     if (result.failed > 0) {
-      alert(`WhatsApp campaign sent with ${result.failed} failures. Check console for details.`);
+      alert(
+        t("WhatsApp campaign sent with {{count}} failures. Check console for details.", {
+          count: result.failed,
+        })
+      );
     } else {
-      alert("✅ WhatsApp campaign sent!");
+      alert(`✅ ${t("WhatsApp campaign sent!")}`);
     }
 
     setHistory((prev) => [
       {
         date: new Date().toISOString().slice(0, 10),
         type: "WhatsApp",
-        subject: subject || "WhatsApp Campaign",
+        subject: subject || t("WhatsApp Campaign"),
         message,
         openRate: 0,
         clickRate: 0,
@@ -486,7 +497,7 @@ async function sendWhatsAppCampaign() {
     setMessage("");
   } catch (e) {
     console.error("❌ WhatsApp campaign send failed:", e);
-    alert("Failed to send WhatsApp campaign!");
+    alert(t("Failed to send WhatsApp campaign!"));
   }
 
   setSending(false);
@@ -517,24 +528,36 @@ async function sendWhatsAppCampaign() {
           <div className="bg-orange-500/90 p-3 rounded-full shadow-xl mb-2">
             <Megaphone className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-4xl font-black text-zinc-900 dark:text-white mb-1 text-center">Boost Sales with Email & WhatsApp Campaigns</h1>
+          <h1 className="text-4xl font-black text-zinc-900 dark:text-white mb-1 text-center">
+            {t("Boost Sales with Email & WhatsApp Campaigns")}
+          </h1>
           <p className="text-lg text-gray-600 dark:text-gray-300 text-center mb-2">
-            Instantly reach your customers with stunning email and WhatsApp promotions. <br />
-            <span className="font-semibold text-orange-600">Send, track, and grow your restaurant loyalty.</span>
+            {t(
+              "Instantly reach your customers with stunning email and WhatsApp promotions."
+            )}{" "}
+            <br />
+            <span className="font-semibold text-orange-600">
+              {t("Send, track, and grow your restaurant loyalty.")}
+            </span>
           </p>
         </div>
         {/* Stats */}
         <div className="flex gap-4 mb-10 justify-center">
-          <StatCard icon={<Users />} label="Total Customers" value={stats.totalCustomers} color="from-blue-500 to-blue-700" />
+          <StatCard
+            icon={<Users />}
+            label={t("Total Customers")}
+            value={stats.totalCustomers}
+            color="from-blue-500 to-blue-700"
+          />
           <StatCard
             icon={<Percent />}
-            label="Last Open Rate"
+            label={t("Last Open Rate")}
             value={Number.isFinite(stats.lastOpen) ? `${stats.lastOpen}%` : "—"}
             color="from-green-400 to-green-600"
           />
           <StatCard
             icon={<BarChart />}
-            label="Last Click Rate"
+            label={t("Last Click Rate")}
             value={Number.isFinite(stats.lastClick) ? `${stats.lastClick}%` : "—"}
             color="from-yellow-400 to-yellow-600"
           />
@@ -542,13 +565,13 @@ async function sendWhatsAppCampaign() {
         {/* Email/WhatsApp Campaign Form */}
         <div className="bg-white/90 dark:bg-zinc-900/80 rounded-2xl shadow-xl border border-orange-200 dark:border-zinc-800 p-8 mb-8 flex flex-col gap-3">
           <h2 className="text-xl font-extrabold mb-2 flex items-center gap-2">
-            <Mail className="w-6 h-6 text-blue-600" /> New Campaign
+            <Mail className="w-6 h-6 text-blue-600" /> {t("New Campaign")}
           </h2>
           <input
             className="w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 mb-1 shadow focus:ring-2 focus:ring-blue-400 font-semibold transition"
             type="text"
             value={subject}
-            placeholder="Email Subject"
+            placeholder={t("Email Subject")}
             onChange={e => setSubject(e.target.value)}
             disabled={sending}
             maxLength={80}
@@ -559,7 +582,7 @@ async function sendWhatsAppCampaign() {
             className="w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 mb-1 shadow focus:ring-2 focus:ring-blue-400 font-semibold transition"
             type="url"
             value={primaryUrl}
-            placeholder="Tracked link (e.g. https://www.beypro.com/)"
+            placeholder={t("Tracked link (e.g. https://www.beypro.com/)")}
             onChange={e => setPrimaryUrl(e.target.value)}
             disabled={sending}
           />
@@ -568,7 +591,9 @@ async function sendWhatsAppCampaign() {
             className="w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 mb-3 shadow focus:ring-2 focus:ring-orange-400 font-semibold transition resize-none"
             rows={3}
             value={message}
-            placeholder="Type your campaign message… (links inside your message are also tracked)"
+            placeholder={t(
+              "Type your campaign message… (links inside your message are also tracked)"
+            )}
             onChange={e => setMessage(e.target.value)}
             disabled={sending}
             maxLength={400}
@@ -582,10 +607,15 @@ async function sendWhatsAppCampaign() {
                 onClick={handleSelectAll}
                 type="button"
               >
-                {selectedPhones.length === customers.length ? "Unselect All" : "Select All"}
+                {selectedPhones.length === customers.length
+                  ? t("Unselect All")
+                  : t("Select All")}
               </button>
               <span className="text-xs text-gray-600 dark:text-gray-400">
-                {selectedPhones.length} / {customers.length} selected for WhatsApp
+                {t("{{selected}} / {{total}} selected for WhatsApp", {
+                  selected: selectedPhones.length,
+                  total: customers.length,
+                })}
               </span>
             </div>
             <div className="max-h-40 overflow-y-auto border rounded bg-orange-50 dark:bg-zinc-900 p-2">
@@ -609,46 +639,48 @@ async function sendWhatsAppCampaign() {
               disabled={sending || !message || !subject}
               onClick={sendCampaign}
             >
-              <Send className="inline w-5 h-5 mr-1 -mt-1" /> {sending ? "Sending…" : "Send Email"}
+              <Send className="inline w-5 h-5 mr-1 -mt-1" />{" "}
+              {sending ? t("Sending…") : t("Send Email")}
             </button>
             <button
               className="px-6 py-2.5 rounded-xl bg-green-600 text-white font-bold shadow hover:bg-green-700 transition disabled:opacity-70"
               disabled={sending || !message || selectedPhones.length === 0}
               onClick={sendWhatsAppCampaign}
             >
-              <Send className="inline w-5 h-5 mr-1 -mt-1" /> {sending ? "Sending…" : "Send WhatsApp"}
+              <Send className="inline w-5 h-5 mr-1 -mt-1" />{" "}
+              {sending ? t("Sending…") : t("Send WhatsApp")}
             </button>
             <span className="text-xs text-gray-500 dark:text-gray-400">
-              Will send to all checked customers with WhatsApp.
+              {t("Will send to all checked customers with WhatsApp.")}
             </span>
           </div>
         </div>
     <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-lg p-6 mb-8 text-center">
       <h2 className="text-xl font-bold mb-3 flex items-center justify-center gap-2">
-        <span>📱 WhatsApp Connection</span>
+        <span>📱 {t("WhatsApp Connection")}</span>
         <button
           onClick={fetchWhatsAppQR}
           className="text-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
         >
-          Refresh
+          {t("Refresh")}
         </button>
       </h2>
 
       {qrStatus === "connected" && (
-        <p className="text-green-600 font-semibold">✅ WhatsApp Connected!</p>
+        <p className="text-green-600 font-semibold">✅ {t("WhatsApp Connected!")}</p>
       )}
       {qrStatus === "waiting" && (
-        <p className="text-yellow-500 font-semibold">⏳ Waiting for QR code...</p>
+        <p className="text-yellow-500 font-semibold">⏳ {t("Waiting for QR code...")}</p>
       )}
       {qrStatus === "error" && (
-        <p className="text-red-500 font-semibold">❌ Failed to fetch QR.</p>
+        <p className="text-red-500 font-semibold">❌ {t("Failed to fetch QR.")}</p>
       )}
       {whatsAppQR && (
         <img
           src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
             whatsAppQR
           )}&size=200x200`}
-          alt="WhatsApp QR"
+          alt={t("WhatsApp QR")}
           className="mx-auto my-3 border rounded-xl shadow-md"
         />
       )}
@@ -657,46 +689,60 @@ async function sendWhatsAppCampaign() {
 
         {/* Recent Campaigns */}
         <div className="flex items-center justify-between mb-2">
-          <h2 className="font-bold text-lg">Recent Campaigns</h2>
+          <h2 className="font-bold text-lg">{t("Recent Campaigns")}</h2>
           <button
             onClick={async () => {
-              if (window.confirm("Are you sure you want to delete all campaigns from database? This cannot be undone.")) {
+              if (
+                window.confirm(
+                  t(
+                    "Are you sure you want to delete all campaigns from database? This cannot be undone."
+                  )
+                )
+              ) {
                 try {
                   const res = await secureFetch("/campaigns/clear-all", {
                     method: "DELETE",
                   });
                   if (res.ok) {
-                    alert(`✅ ${res.deleted} campaigns cleared successfully.`);
+                    alert(
+                      `✅ ${t("{{count}} campaigns cleared successfully.", {
+                        count: res.deleted,
+                      })}`
+                    );
                     setHistory([]);
                   } else {
-                    alert("❌ Failed to clear campaigns: " + (res.error || ""));
+                    alert(
+                      `❌ ${t("Failed to clear campaigns: {{error}}", {
+                        error: res.error || "",
+                      })}`
+                    );
                   }
                 } catch (err) {
                   console.error("❌ Clear campaigns failed:", err);
-                  alert("Error clearing campaigns.");
+                  alert(t("Error clearing campaigns."));
                 }
               }
             }}
             className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg shadow transition"
           >
-            Clear Campaigns
+            {t("Clear Campaigns")}
           </button>
         </div>
 
         <div className="bg-white/85 dark:bg-zinc-900/80 border border-orange-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden mb-8">
           {history.length === 0 ? (
             <p className="text-sm text-center text-gray-500 dark:text-gray-400 py-6">
-              Send your first email or WhatsApp blast to see it appear here.
+              {t("Send your first email or WhatsApp blast to see it appear here.")}
             </p>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-orange-50/80 dark:bg-zinc-800/70 text-left text-gray-600 dark:text-gray-300 uppercase text-xs tracking-wide">
                 <tr>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Subject / Message</th>
-                  <th className="px-4 py-3 text-center">Open %</th>
-                  <th className="px-4 py-3 text-center">Click %</th>
+                  <th className="px-4 py-3">{t("Date")}</th>
+                  <th className="px-4 py-3">{t("Type")}</th>
+                  <th className="px-4 py-3">{t("Subject / Message")}</th>
+                  <th className="px-4 py-3 text-center">{t("Open %")}</th>
+                  <th className="px-4 py-3 text-center">{t("Click %")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -705,7 +751,13 @@ async function sendWhatsAppCampaign() {
                   const summary =
                     row.subject?.trim() ||
                     row.message?.trim() ||
-                    (row.type === "Email" ? "Email campaign" : "WhatsApp blast");
+                    (row.type === "Email" ? t("Email campaign") : t("WhatsApp blast"));
+                  const displayType =
+                    row.type === "Email"
+                      ? t("Email")
+                      : row.type === "WhatsApp"
+                        ? t("WhatsApp")
+                        : row.type || "—";
                   return (
                     <tr
                       key={key}
@@ -722,7 +774,7 @@ async function sendWhatsAppCampaign() {
                               : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200"
                           }`}
                         >
-                          {row.type || "—"}
+                          {displayType}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-800 dark:text-gray-200 max-w-[220px] truncate">
@@ -745,7 +797,8 @@ async function sendWhatsAppCampaign() {
 
         {/* Footer */}
         <div className="mt-7 text-sm text-gray-400 text-center">
-          <span className="font-semibold">Beypro Marketing</span> — Reach every customer, fill every table.
+          <span className="font-semibold">{t("Beypro Marketing")}</span> —{" "}
+          {t("Reach every customer, fill every table.")}
         </div>
       </div>
     </div>

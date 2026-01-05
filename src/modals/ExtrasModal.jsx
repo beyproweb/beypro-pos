@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
 
+const normalizeYmd = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const datePart = raw.split("T")[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const ymdToSlashes = (ymd) => (ymd ? String(ymd).replace(/-/g, "/") : "");
+
 export default function ExtrasModal({
   showExtrasModal,
   setShowExtrasModal,
@@ -141,6 +158,10 @@ export default function ExtrasModal({
 
   const groupTabs = allowedGroups.map(g => g.groupName || String(g.id));
   const safeNote = typeof note === "string" ? note : "";
+  const promoStart = normalizeYmd(selectedProduct?.promo_start ?? selectedProduct?.promoStart);
+  const promoEnd = normalizeYmd(selectedProduct?.promo_end ?? selectedProduct?.promoEnd);
+  const description = (selectedProduct?.description || "").trim();
+  const allergens = (selectedProduct?.allergens || "").trim();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -153,6 +174,14 @@ export default function ExtrasModal({
           <p className="text-gray-600 dark:text-gray-300 text-center text-base mb-4">
             {t("Add-ons for")} <span className="font-bold text-blue-600">{selectedProduct.name}</span>
           </p>
+          {(promoStart || promoEnd) && (
+            <div className="mb-3 flex flex-wrap items-center justify-center gap-2 text-[12px]">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 font-semibold text-amber-800">
+                {promoStart ? `Promotion From-${ymdToSlashes(promoStart)}` : "Promotion"}
+                {promoEnd ? ` Till-${ymdToSlashes(promoEnd)}` : ""}
+              </span>
+            </div>
+          )}
 
           {/* Tabs (only allowed groups) */}
           <div className="w-full overflow-x-auto flex gap-3 mb-4">
@@ -269,6 +298,28 @@ export default function ExtrasModal({
               <span className="ml-2">₺{fullTotal.toFixed(2)}</span>
             </div>
           </div>
+
+          {/* Product info (from ProductForm) */}
+          {(description || allergens) && (
+            <div className="rounded-xl border border-blue-100 bg-white/70 px-3 py-2 text-xs text-slate-700 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-slate-200">
+              {description && (
+                <div className="whitespace-pre-wrap leading-snug">
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">
+                    {t("Descriptions")}:
+                  </span>{" "}
+                  {description}
+                </div>
+              )}
+              {allergens && (
+                <div className="mt-1 whitespace-pre-wrap leading-snug">
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">
+                    {t("Allergens")}:
+                  </span>{" "}
+                  {allergens}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Notes */}
           <div>

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { QRCode } from "react-qrcode-logo";
 import { Copy, Download } from "lucide-react";
+import secureFetch from "../utils/secureFetch";
 
 export default function QrLinkGenerator() {
   const [link, setLink] = useState("");
@@ -9,16 +10,11 @@ export default function QrLinkGenerator() {
   const fetchQrLink = async () => {
   try {
     setLoading(true);
-    const token = localStorage.getItem("token");
     const restaurantSlug =
       localStorage.getItem("restaurant_slug") ||
       localStorage.getItem("restaurant_id");
 
-    const res = await fetch(`/api/settings/qr-link`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await res.json();
+    const data = await secureFetch("/settings/qr-link");
     if (data.success && data.link) {
       // ✅ Sanitize to ensure slug isn't "null"
 const fixedLink = data.link

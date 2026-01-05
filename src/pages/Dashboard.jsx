@@ -25,6 +25,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Orders",
     path: "/tableoverview?tab=tables",
     color: "bg-gradient-to-r from-rose-400 to-pink-500",
+    iconColor: "text-rose-600",
+    iconRing: "ring-rose-400/40",
     icon: "ClipboardList",
   },
   {
@@ -33,6 +35,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Packet",
     path: "/tableoverview?tab=packet",
     color: "bg-gradient-to-r from-sky-500 to-cyan-500",
+    iconColor: "text-sky-600",
+    iconRing: "ring-sky-400/40",
     icon: "Package",
     permission: "packet-orders",
   },
@@ -42,6 +46,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "History",
     path: "/tableoverview?tab=history",
     color: "bg-gradient-to-r from-indigo-500 to-purple-600",
+    iconColor: "text-indigo-600",
+    iconRing: "ring-indigo-400/40",
     icon: "Clock",
     permission: "history",
   },
@@ -51,6 +57,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Kitchen",
     path: "/kitchen",
     color: "bg-gradient-to-r from-purple-500 to-violet-600",
+    iconColor: "text-violet-600",
+    iconRing: "ring-violet-400/40",
     icon: "ChefHat",
   },
   {
@@ -59,6 +67,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Products",
     path: "/products",
     color: "bg-gradient-to-r from-blue-500 to-indigo-500",
+    iconColor: "text-indigo-600",
+    iconRing: "ring-indigo-400/40",
     icon: "Utensils",
   },
   {
@@ -67,6 +77,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Suppliers",
     path: "/suppliers",
     color: "bg-gradient-to-r from-green-500 to-teal-500",
+    iconColor: "text-emerald-600",
+    iconRing: "ring-emerald-400/40",
     icon: "Package",
   },
   {
@@ -75,6 +87,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Stock",
     path: "/stock",
     color: "bg-gradient-to-r from-yellow-500 to-amber-500",
+    iconColor: "text-amber-600",
+    iconRing: "ring-amber-400/40",
     icon: "BarChart",
   },
   {
@@ -83,6 +97,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Production",
     path: "/production",
     color: "bg-gradient-to-r from-purple-500 to-violet-500",
+    iconColor: "text-purple-600",
+    iconRing: "ring-purple-400/40",
     icon: "Factory",
   },
   {
@@ -91,6 +107,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Staff",
     path: "/staff",
     color: "bg-gradient-to-r from-sky-500 to-cyan-500",
+    iconColor: "text-cyan-600",
+    iconRing: "ring-cyan-400/40",
     icon: "Users",
   },
   {
@@ -99,6 +117,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Payroll",
     path: "/staff?tab=payroll",
     color: "bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500",
+    iconColor: "text-emerald-600",
+    iconRing: "ring-emerald-400/40",
     icon: "CreditCard",
     permission: "staff-payroll",
   },
@@ -108,6 +128,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Task",
     path: "/task",
     color: "bg-gradient-to-r from-indigo-500 to-blue-700",
+    iconColor: "text-blue-700",
+    iconRing: "ring-blue-400/40",
     icon: "Bot",
   },
   {
@@ -116,6 +138,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Reports",
     path: "/reports",
     color: "bg-gradient-to-r from-orange-500 to-yellow-600",
+    iconColor: "text-orange-600",
+    iconRing: "ring-orange-400/40",
     icon: "FileText",
   },
   {
@@ -124,6 +148,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Expenses",
     path: "/expenses",
     color: "bg-gradient-to-r from-red-500 to-rose-500",
+    iconColor: "text-rose-600",
+    iconRing: "ring-rose-400/40",
     icon: "FileText",
   },
   {
@@ -132,6 +158,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Ingredient Prices",
     path: "/ingredient-prices",
     color: "bg-gradient-to-r from-lime-500 to-green-600",
+    iconColor: "text-lime-600",
+    iconRing: "ring-lime-400/40",
     icon: "BarChart",
   },
   {
@@ -140,6 +168,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Cash History",
     path: "/cash-register-history",
     color: "bg-accent",
+    iconColor: "text-indigo-600",
+    iconRing: "ring-indigo-400/40",
     icon: "PieChart",
   },
   {
@@ -148,6 +178,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Integrations",
     path: "/integrations",
     color: "bg-accent",
+    iconColor: "text-sky-600",
+    iconRing: "ring-sky-400/40",
     icon: "Plug",
   },
   {
@@ -156,6 +188,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Settings",
     path: "/settings",
     color: "bg-gradient-to-r from-gray-700 to-gray-900",
+    iconColor: "text-slate-700 dark:text-slate-200",
+    iconRing: "ring-slate-400/40",
     icon: "Settings",
   },
   {
@@ -164,6 +198,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "QR Menu",
     path: "/qr-menu-settings",
     color: "bg-gradient-to-r from-indigo-500 to-blue-700",
+    iconColor: "text-indigo-600",
+    iconRing: "ring-indigo-400/40",
     icon: "QrCode",
   },
   {
@@ -172,6 +208,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Customer Insights",
     path: "/customer-insights",
     color: "bg-gradient-to-r from-pink-400 to-purple-500",
+    iconColor: "text-fuchsia-600",
+    iconRing: "ring-fuchsia-400/40",
     icon: "UserCheck",
   },
   {
@@ -180,6 +218,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Marketing Campaigns",
     path: "/marketing-campaigns",
     color: "bg-gradient-to-r from-amber-400 to-orange-600",
+    iconColor: "text-orange-600",
+    iconRing: "ring-orange-400/40",
     icon: "Megaphone",
   },
   {
@@ -188,6 +228,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Maintenance",
     path: "/maintenance",
     color: "bg-gradient-to-r from-gray-400 to-gray-700",
+    iconColor: "text-slate-600 dark:text-slate-200",
+    iconRing: "ring-slate-400/40",
     icon: "Wrench",
   },
   {
@@ -196,6 +238,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "User Management",
     path: "/user-management",
     color: "bg-gradient-to-r from-blue-500 to-indigo-500",
+    iconColor: "text-blue-600",
+    iconRing: "ring-blue-400/40",
     icon: "UserCog",
     permission: "settings-users",
   },
@@ -205,6 +249,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Notifications",
     path: "/settings/notifications",
     color: "bg-gradient-to-r from-amber-500 to-orange-500",
+    iconColor: "text-amber-600",
+    iconRing: "ring-amber-400/40",
     icon: "Bell",
     permission: "settings-notifications",
   },
@@ -214,6 +260,8 @@ const QUICK_ACCESS_CONFIG = [
     defaultLabel: "Printers",
     path: "/printers",
     color: "bg-gradient-to-r from-slate-600 to-slate-800",
+    iconColor: "text-slate-700 dark:text-slate-200",
+    iconRing: "ring-slate-400/40",
     icon: "Printer",
     permission: "settings-printers",
   },
@@ -384,37 +432,67 @@ const fetchSummaryStats = useCallback(async () => {
   // --- ICONS FOR QUICK ACCESS ---
   const getIcon = (iconName) => {
     switch (iconName) {
-      case 'Utensils': return <Utensils size={24} />;
-      case 'ChefHat': return <ChefHat size={24} />;
-      case 'Package': return <Package size={24} />;
-      case 'BarChart': return <BarChart size={24} />;
-      case 'Users': return <Users size={24} />;
-      case 'Settings': return <Settings size={24} />;
-      case 'PieChart': return <PieChart size={24} />;
-      case 'ClipboardList': return <ClipboardList size={24} />;
-      case 'TrendingUp': return <TrendingUp size={24} />;
-      case 'FileText': return <FileText size={24} />;
-      case 'Factory': return <Factory size={24} />;
-      case 'Bot': return <Bot size={24} />;
-      case 'QrCode': return <QrCode size={24} />;
-      case 'CreditCard': return <CreditCard size={24} />;
-      case 'UserCheck': return <UserCheck size={24} />;
-      case 'Megaphone': return <Megaphone size={24} />;
-      case 'Clock': return <Clock size={24} />;
-      case 'Wrench': return <Wrench size={24} />;
-      case 'UserCog': return <UserCog size={24} />;
-      case 'Bell': return <Bell size={24} />;
-      case 'Printer': return <Printer size={24} />;
-      case 'Plug': return <Plug size={24} />;
-      default: return <Home size={24} />;
+      case 'Utensils': return <Utensils size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'ChefHat': return <ChefHat size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Package': return <Package size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'BarChart': return <BarChart size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Users': return <Users size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Settings': return <Settings size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'PieChart': return <PieChart size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'ClipboardList': return <ClipboardList size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'TrendingUp': return <TrendingUp size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'FileText': return <FileText size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Factory': return <Factory size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Bot': return <Bot size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'QrCode': return <QrCode size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'CreditCard': return <CreditCard size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'UserCheck': return <UserCheck size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Megaphone': return <Megaphone size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Clock': return <Clock size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Wrench': return <Wrench size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'UserCog': return <UserCog size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Bell': return <Bell size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Printer': return <Printer size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Plug': return <Plug size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      default: return <Home size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
     }
   };
 
   const storageKey = "dashboardQuickAccessOrder";
-  const defaultOrder = useMemo(
-    () => QUICK_ACCESS_CONFIG.map((item) => item.id),
-    []
-  );
+  const defaultOrder = useMemo(() => {
+    // Default dashboard order for first login / fresh browser (matches design screenshot)
+    const preferred = [
+      "suppliers",
+      "stock",
+      "products",
+      "production",
+      "task",
+      "user-management",
+      "reports",
+      "cash-history",
+      "ingredient-prices",
+      "history",
+      "expenses",
+      "integrations",
+      "qr-menu",
+      "staff",
+      "payroll",
+      "orders",
+      "packet",
+      "kitchen",
+      "maintenance",
+      "customer-insights",
+      "marketing-campaigns",
+      "printers",
+      "notifications",
+      "settings",
+    ];
+
+    const allIds = QUICK_ACCESS_CONFIG.map((item) => item.id);
+    const base = preferred.filter((id) => allIds.includes(id));
+    const remainder = allIds.filter((id) => !base.includes(id));
+    return [...base, ...remainder];
+  }, []);
 
   const [quickAccessOrder, setQuickAccessOrder] = useState(() => {
     if (typeof window === "undefined") return [...defaultOrder];
@@ -559,7 +637,7 @@ const fetchSummaryStats = useCallback(async () => {
   };
 
   return (
-    <div className="min-h-screen px-6 py-8 bg-gradient-to-br from-white-50 to-gray-100 dark:from-black dark:to-gray-900 space-y-8">
+    <div className="min-h-screen px-6 py-8 space-y-8">
       {/* Quick Access Grid (Filtered by permissions) */}
       {allowedAccess.length > 0 ? (
         <div
@@ -585,7 +663,7 @@ const fetchSummaryStats = useCallback(async () => {
                   if (draggedId) return;
                   navigate(item.path);
                 }}
-                className={`group rounded-2xl p-4 min-h-[112px] ${item.color} text-white shadow-lg hover:scale-[1.03] transform transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center text-center ${
+                className={`group rounded-2xl p-4 min-h-[112px] bg-accent text-white shadow-lg hover:shadow-xl hover:brightness-110 hover:scale-[1.03] transform transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center text-center border border-white/10 ${
                   isDragOver ? "ring-2 ring-white/70" : ""
                 } ${isDragging ? "opacity-70" : ""}`}
                 draggable
@@ -596,7 +674,13 @@ const fetchSummaryStats = useCallback(async () => {
                 onDragEnd={handleDragEnd}
                 aria-grabbed={isDragging}
               >
-                <div className="w-[2.55rem] h-[2.55rem] rounded-full bg-white flex items-center justify-center text-accent mb-2 shadow-inner group-hover:rotate-6 transition-all">
+                <div
+                  className={`w-12 h-12 rounded-2xl bg-white/95 flex items-center justify-center mb-2 shadow-lg shadow-black/10 ring-2 ${
+                    item.iconRing || "ring-white/40"
+                  } group-hover:rotate-6 group-hover:scale-105 transition-all ${
+                    item.iconColor || "text-indigo-600"
+                  }`}
+                >
                   {getIcon(item.icon)}
                 </div>
                 <div className="text-[0.92rem] leading-tight font-semibold tracking-tight min-h-[2.25rem] flex items-center justify-center">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import StaffCheckIn from '../components/ui/StaffCheckIn';
 import StaffSchedule from '../components/ui/StaffSchedule';
 import Payroll from '../components/ui/Payroll';
@@ -9,14 +9,17 @@ import { Toaster, toast } from 'react-hot-toast';
 import { Plus, Save } from 'lucide-react';
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useCurrency } from "../context/CurrencyContext";
+import { useHeader } from "../context/HeaderContext";
 const API_URL = import.meta.env.VITE_API_URL || "";
 Modal.setAppElement('#root');
 
 const Staff = () => {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { setHeader } = useHeader();
   const { config, formatCurrency } = useCurrency();
   const [savedAutoPayment, setSavedAutoPayment] = useState(null);
 
@@ -64,6 +67,16 @@ const Staff = () => {
   const canAddStaff = useHasPermission("staff-add");
   const canPayment = useHasPermission("staff-payment");
 
+  const handleSelectTab = useCallback(
+    (tabId) => {
+      setActiveTabId(tabId);
+      const params = new URLSearchParams(location.search);
+      params.set("tab", tabId);
+      navigate(`/staff?${params.toString()}`);
+    },
+    [location.search, navigate]
+  );
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const requestedTab = params.get("tab");
@@ -83,6 +96,110 @@ const Staff = () => {
       setActiveTabId(match);
     }
   }, [location.search, canCheckIn, canSchedule, canPayroll]);
+
+  const tabDefinitions = useMemo(
+    () => [
+      { id: "checkin", title: t("Check-In/Check-Out"), component: <StaffCheckIn /> },
+      { id: "schedule", title: t("Staff Schedule"), component: <StaffSchedule /> },
+      { id: "payroll", title: t("Payroll"), component: <Payroll /> },
+    ],
+    [t]
+  );
+
+  const accessibleTabs = useMemo(
+    () =>
+      [
+        canCheckIn ? tabDefinitions[0] : null,
+        canSchedule ? tabDefinitions[1] : null,
+        canPayroll ? tabDefinitions[2] : null,
+      ].filter(Boolean),
+    [canCheckIn, canSchedule, canPayroll, tabDefinitions]
+  );
+
+  const staffHeaderNav = useMemo(() => {
+    const pillClass = (isActive) =>
+      `rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
+        isActive
+          ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
+          : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
+      }`;
+
+    return (
+      <div className="flex items-center justify-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={() => navigate("/dashboard")}
+          className={pillClass(false)}
+        >
+          {t("Dashboard")}
+        </button>
+
+        {accessibleTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => handleSelectTab(tab.id)}
+            className={pillClass(activeTabId === tab.id)}
+          >
+            {t(tab.title)}
+          </button>
+        ))}
+
+        {canSendShift && (
+          <button
+            type="button"
+            onClick={() => setIsSendShiftModalOpen(true)}
+            className={pillClass(isSendShiftModalOpen)}
+          >
+            {t("Send Shift")}
+          </button>
+        )}
+
+        {canAddStaff && (
+          <button
+            type="button"
+            onClick={() => setShowAddStaff((v) => !v)}
+            className={pillClass(showAddStaff)}
+          >
+            {showAddStaff ? t("Close Add Staff") : t("Add Staff")}
+          </button>
+        )}
+
+        {canPayment && (
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className={pillClass(isModalOpen)}
+          >
+            {t("Payment")}
+          </button>
+        )}
+      </div>
+    );
+  }, [
+    accessibleTabs,
+    activeTabId,
+    canAddStaff,
+    canPayment,
+    canSendShift,
+    handleSelectTab,
+    isModalOpen,
+    isSendShiftModalOpen,
+    showAddStaff,
+    t,
+  ]);
+
+  useEffect(() => {
+    setHeader((prev) => ({
+      ...prev,
+      title: t("Staff Management"),
+      subtitle: undefined,
+      tableNav: null,
+      centerNav: staffHeaderNav,
+    }));
+  }, [setHeader, staffHeaderNav, t]);
+
+  useEffect(() => () => setHeader({}), [setHeader]);
 
   // ✅ Load staff
   useEffect(() => {
@@ -209,18 +326,6 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
     }
   };
 
-  const tabDefinitions = [
-    { id: "checkin", title: t("Check-In/Check-Out"), component: <StaffCheckIn /> },
-    { id: "schedule", title: t("Staff Schedule"), component: <StaffSchedule /> },
-    { id: "payroll", title: t("Payroll"), component: <Payroll /> },
-  ];
-
-  const accessibleTabs = [
-    canCheckIn ? tabDefinitions[0] : null,
-    canSchedule ? tabDefinitions[1] : null,
-    canPayroll ? tabDefinitions[2] : null,
-  ].filter(Boolean);
-
   const activeTabContent =
     accessibleTabs.find((tab) => tab.id === activeTabId)?.component ||
     accessibleTabs[0]?.component;
@@ -235,51 +340,6 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
   return (
     <div className="p-6 space-y-1 relative dark:bg-900 text-gray-800 dark:text-white text-base transition-colors">
       <Toaster position="top-center" reverseOrder={false} />
-
-<div className="flex justify-center mb-4 w-full">
-  <div className="flex flex-wrap items-center justify-center gap-4 w-full max-w-7xl">
-    {/* Tabs */}
-    {accessibleTabs.map((tab) => (
-      <button
-        key={tab.id}
-        onClick={() => setActiveTabId(tab.id)}
-        className={`px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold shadow transition-all duration-300
-          ${activeTabId === tab.id
-            ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white'
-            : 'bg-gray-300 text-gray-800 hover:bg-blue-400 hover:text-white'}
-        `}
-      >
-        {t(tab.title)}
-      </button>
-    ))}
-
-    {canSendShift && (
-      <button
-        onClick={() => setIsSendShiftModalOpen(true)}
-        className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow hover:brightness-110 transition-all"
-      >
-        {t("Send Shift")}
-      </button>
-    )}
-
-    {canAddStaff && (
-      <button
-        onClick={() => setShowAddStaff(!showAddStaff)}
-        className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow hover:brightness-110 transition-all"
-      >
-        {showAddStaff ? t("Close Add Staff") : t("Add Staff")}
-      </button>
-    )}
-    {canPayment && (
-      <button
-        onClick={() => setIsModalOpen(true)}
-        className="px-6 py-3 min-w-[180px] text-lg rounded-2xl font-semibold bg-gradient-to-r from-green-400 to-blue-500 text-white shadow hover:brightness-110 transition-all"
-      >
-        {t("Payment")}
-      </button>
-    )}
-  </div>
-</div>
 
 
       {/* Main Content */}

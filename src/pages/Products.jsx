@@ -5,6 +5,9 @@ import { useTranslation } from "react-i18next";
 import { Plus, Trash2, Filter, Edit3, Layers } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
+import ModernHeader from "../components/ModernHeader";
+import { useOutletContext } from "react-router-dom";
+import socket from "../utils/socket";
 
 const toNumber = (value) => {
   if (value === null || value === undefined) return 0;
@@ -33,7 +36,7 @@ const normalizeUnit = (u) => {
   if (!u) return "";
   const v = String(u).toLowerCase();
   if (v === "lt") return "l";
-  if (v === "pieces") return "piece";
+  if (v === "piece" || v === "pieces" || v === "pcs") return "pcs";
   if (v === "portion" || v === "portions") return "portion";
   return v;
 };
@@ -86,12 +89,18 @@ const cardGradients = [
 export default function Products() {
   const { t } = useTranslation();
   const { formatCurrency, config } = useCurrency();
+  const outletContext = useOutletContext();
+  const shouldRenderStandaloneHeader =
+    !outletContext ||
+    typeof outletContext !== "object" ||
+    !("isSidebarOpen" in outletContext);
 
   // ---------- State ----------
   const [products, setProducts] = useState([]);
   const [availableIngredients, setAvailableIngredients] = useState([]);
   const [productCostsById, setProductCostsById] = useState({}); // { [id]: costNumber }
   const [extrasGroups, setExtrasGroups] = useState([]);
+  const [stockByName, setStockByName] = useState({}); // { [lowerName]: { [unit]: { quantity, unit, critical_quantity, price_per_unit } } }
 
   const [showModal, setShowModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -318,7 +327,85 @@ useEffect(() => {
         }
       }
 
-      console.log("🔎 Ingredients for tenant", tenantId, merged);
+      // Include production recipes as "ingredients" so products can use produced items.
+      try {
+        const recipeEndpoint = tenantId
+          ? `/production/recipes?restaurant_id=${tenantId}`
+          : "/production/recipes";
+        const recipesRaw = await secureFetch(recipeEndpoint);
+        const recipes = Array.isArray(recipesRaw)
+          ? recipesRaw
+          : Array.isArray(recipesRaw?.data)
+            ? recipesRaw.data
+            : Array.isArray(recipesRaw?.items)
+              ? recipesRaw.items
+              : [];
+
+        if (recipes.length > 0) {
+          const ingredientByName = new Map(
+            merged.map((r) => [String(r?.name || "").trim().toLowerCase(), r])
+          );
+
+          const resolveUnitPrice = (ingredientName, targetUnitRaw) => {
+            const nameKey = String(ingredientName || "").trim().toLowerCase();
+            if (!nameKey) return 0;
+            const targetUnit = normalizeUnit(targetUnitRaw);
+            const row = ingredientByName.get(nameKey);
+            if (!row) return 0;
+            const basePrice = toNumber(row?.price_per_unit ?? 0);
+            if (!(basePrice > 0)) return 0;
+            const fromUnit = normalizeUnit(row?.unit);
+            const converted = convertPrice(basePrice, fromUnit, targetUnit);
+            if (converted !== null && converted > 0) return converted;
+            if (!fromUnit || fromUnit === targetUnit) return basePrice;
+            return 0;
+          };
+
+          for (const recipe of recipes) {
+            const recipeName = String(recipe?.name || "").trim();
+            const recipeKey = recipeName.toLowerCase();
+            if (!recipeName) continue;
+            const outputUnit = normalizeUnit(recipe?.output_unit ?? recipe?.outputUnit);
+            const baseQty = toNumber(recipe?.base_quantity ?? recipe?.baseQuantity ?? 0);
+            if (!outputUnit || !(baseQty > 0)) continue;
+
+            const ings = Array.isArray(recipe?.ingredients) ? recipe.ingredients : [];
+            const totalCost = ings.reduce((sum, ing) => {
+              const ingName = ing?.name ?? ing?.ingredient_name ?? ing?.ingredientName;
+              const ingUnit = ing?.unit;
+              const amt = toNumber(
+                ing?.amountPerBatch ??
+                  ing?.amount_per_batch ??
+                  ing?.amount ??
+                  ing?.qty ??
+                  ing?.quantity ??
+                  0
+              );
+              if (!ingName || !ingUnit || !(amt > 0)) return sum;
+              const ppu = resolveUnitPrice(ingName, ingUnit);
+              if (!(ppu > 0)) return sum;
+              return sum + amt * ppu;
+            }, 0);
+
+            const perUnit = totalCost / baseQty;
+            if (!(perUnit > 0)) continue;
+
+            const existing = ingredientByName.get(recipeKey);
+            if (!existing) {
+              const row = { name: recipeName, unit: outputUnit, price_per_unit: perUnit };
+              merged.push(row);
+              ingredientByName.set(recipeKey, row);
+            } else {
+              if (!existing.unit && outputUnit) existing.unit = outputUnit;
+              if (!(toNumber(existing.price_per_unit) > 0)) existing.price_per_unit = perUnit;
+            }
+          }
+        }
+      } catch {}
+
+      if (import.meta.env.DEV) {
+        console.log("🔎 Ingredients for tenant", tenantId, merged);
+      }
       setAvailableIngredients(merged);
     } catch (err) {
       console.error("❌ Failed to load ingredients:", err);
@@ -327,6 +414,9 @@ useEffect(() => {
   };
 
   loadIngredients();
+  const onIngredientPricesUpdated = () => loadIngredients();
+  socket.on("ingredient-prices-updated", onIngredientPricesUpdated);
+  return () => socket.off("ingredient-prices-updated", onIngredientPricesUpdated);
 }, [tenantId]);
 
 
@@ -366,6 +456,107 @@ const fetchProducts = async () => {
 useEffect(() => {
   fetchProducts();
 }, []);
+
+const fetchStock = async () => {
+  const normalizeStockList = (payload) => {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.stock)) return payload.stock;
+    if (Array.isArray(payload?.stocks)) return payload.stocks;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
+  };
+
+  try {
+    const raw = await secureFetch("/stock");
+    const list = normalizeStockList(raw);
+    const next = {};
+
+    for (const row of Array.isArray(list) ? list : []) {
+      const nameKey = String(row?.name || "").trim().toLowerCase();
+      if (!nameKey) continue;
+      const unitKey = normalizeUnit(row?.unit);
+      if (!unitKey) continue;
+
+      if (!next[nameKey]) next[nameKey] = {};
+      const existing = next[nameKey][unitKey] || {
+        unit: unitKey,
+        quantity: 0,
+        critical_quantity: 0,
+        price_per_unit: 0,
+      };
+
+      existing.quantity += toNumber(row?.quantity);
+      existing.critical_quantity = Math.max(
+        toNumber(existing.critical_quantity),
+        toNumber(row?.critical_quantity)
+      );
+      // keep the latest non-zero price_per_unit we see
+      const rawPrice =
+        row?.price_per_unit ??
+        row?.unit_price ??
+        row?.purchase_price ??
+        row?.cost_per_unit ??
+        row?.costPrice ??
+        row?.price ??
+        0;
+      let ppu = toNumber(rawPrice);
+      if (!(ppu > 0)) {
+        const total = toNumber(row?.total_value ?? row?.value ?? row?.amount);
+        const qty = toNumber(row?.quantity);
+        if (qty > 0 && total > 0) ppu = total / qty;
+      }
+      if (ppu > 0) existing.price_per_unit = ppu;
+      next[nameKey][unitKey] = existing;
+    }
+
+    setStockByName(next);
+  } catch (err) {
+    console.error("❌ Failed to fetch stock:", err);
+    setStockByName({});
+  }
+};
+
+useEffect(() => {
+  fetchStock();
+  const onStockUpdated = () => fetchStock();
+  socket.on("stock-updated", onStockUpdated);
+  return () => socket.off("stock-updated", onStockUpdated);
+}, []);
+
+const getStockMetaForProduct = (product) => {
+  const nameKey = String(product?.name || "").trim().toLowerCase();
+  if (!nameKey) return null;
+  const byUnit = stockByName?.[nameKey];
+  if (!byUnit || typeof byUnit !== "object") return null;
+  const candidates = Object.values(byUnit).filter(Boolean);
+  if (candidates.length === 0) return null;
+
+  const preferred =
+    candidates.find((c) => normalizeUnit(c?.unit) === "pcs") || candidates[0];
+  const qty = toNumber(preferred?.quantity);
+  const critical = toNumber(preferred?.critical_quantity);
+  const isLow = critical > 0 && qty <= critical;
+
+  return {
+    quantity: qty,
+    unit: preferred?.unit || "",
+    critical_quantity: critical,
+    isLow,
+  };
+};
+
+const getStockUnitPrice = (name, unit) => {
+  const nameKey = String(name || "").trim().toLowerCase();
+  if (!nameKey) return 0;
+  const unitKey = normalizeUnit(unit);
+  const byUnit = stockByName?.[nameKey];
+  if (!byUnit) return 0;
+  const exact = byUnit?.[unitKey]?.price_per_unit;
+  if (toNumber(exact) > 0) return toNumber(exact);
+  const any = Object.values(byUnit).find((v) => toNumber(v?.price_per_unit) > 0);
+  return toNumber(any?.price_per_unit);
+};
 
 const fetchCategories = async () => {
   try {
@@ -417,18 +608,30 @@ useEffect(() => {
       const match = availableIngredients.find(
         (ai) => String(ai?.name || "").trim().toLowerCase() === name
       );
-      if (!match) continue;
-      const basePrice = toNumber(
-        match.price_per_unit ??
-          match.unit_price ??
-          match.purchase_price ??
-          match.cost_per_unit ??
-          match.costPrice ??
-          match.price ??
-          0
-      );
+      let basePrice = 0;
+      let fromUnit = unit;
+      if (match) {
+        basePrice = toNumber(
+          match.price_per_unit ??
+            match.unit_price ??
+            match.purchase_price ??
+            match.cost_per_unit ??
+            match.costPrice ??
+            match.price ??
+            0
+        );
+        fromUnit = match.unit || unit;
+      }
+
+      // extra fallback: use price_per_unit directly from stock (useful for items selected "from stock")
+      if (!(basePrice > 0)) {
+        basePrice = getStockUnitPrice(name, unit);
+        fromUnit = unit;
+      }
+
       if (!(basePrice > 0)) continue;
-      const converted = convertPrice(basePrice, match.unit, unit);
+
+      const converted = convertPrice(basePrice, fromUnit, unit);
       const perUnit = converted !== null ? converted : basePrice;
       if (perUnit > 0) {
         total += qty * perUnit;
@@ -629,7 +832,9 @@ const handleRenameCategory = async (original, value) => {
 
   // ---------- Render ----------
   return (
-    <div className="min-h-screen px-6 py-8 space-y-8">
+    <>
+      {shouldRenderStandaloneHeader && <ModernHeader title={t("Products")} />}
+      <div className="min-h-screen px-6 py-8 space-y-8">
       {/* PAGE HEADER */}
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
         {/* All-in-1 action row */}
@@ -674,6 +879,13 @@ const handleRenameCategory = async (original, value) => {
             <Trash2 size={18} /> {t("Delete")}
           </button>
 
+        <button
+          onClick={() => setShowCategoryModal(true)}
+          className="flex items-center gap-1 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold shadow hover:scale-[1.05] transition-all"
+        >
+          <Plus size={18} /> {t("Add Category")}
+        </button>
+
         {/* Add Product */}
         <button
           onClick={() => {
@@ -683,13 +895,6 @@ const handleRenameCategory = async (original, value) => {
           className="flex items-center gap-1 px-5 py-2 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold shadow hover:scale-[1.05] transition-all"
         >
           <Plus size={20} /> {t("Add Product")}
-        </button>
-
-        <button
-          onClick={() => setShowCategoryModal(true)}
-          className="flex items-center gap-1 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold shadow hover:scale-[1.05] transition-all"
-        >
-          <Plus size={18} /> {t("Add Category")}
         </button>
 
           {/* Manage Extras Group button */}
@@ -723,40 +928,67 @@ const handleRenameCategory = async (original, value) => {
       {/* PRODUCT CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-7">
         {filteredProducts.length > 0 ? (
-          filteredProducts.map((product, i) => (
-            <div
-              key={product.id}
-              className={`group p-5 rounded-2xl shadow-xl bg-gradient-to-br ${
-                cardGradients[i % cardGradients.length]
-              } border border-white/30 dark:border-white/5 hover:shadow-2xl hover:border-accent hover:scale-[1.03] transition-all duration-300 flex flex-col justify-between min-h-[180px] relative`}
-              style={{
-                boxShadow:
-                  "0 6px 24px -2px rgba(30,34,90,0.16), 0 1.5px 8px -0.5px rgba(88,99,255,0.04)",
-              }}
-            >
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  {product.image && (
-                    <img
-                      src={
-                        product.image?.startsWith("http")
-                          ? product.image
-                          : `${API_URL}/uploads/${product.image}`
+          filteredProducts.map((product, i) => {
+            const stockMeta = getStockMetaForProduct(product);
+            return (
+              <div
+                key={product.id}
+                className={`group p-5 rounded-2xl shadow-xl bg-gradient-to-br ${
+                  cardGradients[i % cardGradients.length]
+                } border border-white/30 dark:border-white/5 hover:shadow-2xl hover:border-accent hover:scale-[1.03] transition-all duration-300 flex flex-col justify-between min-h-[180px] relative`}
+                style={{
+                  boxShadow:
+                    "0 6px 24px -2px rgba(30,34,90,0.16), 0 1.5px 8px -0.5px rgba(88,99,255,0.04)",
+                }}
+              >
+                {stockMeta && (
+                  <div className="absolute top-4 right-4 flex flex-col items-end gap-1 z-10">
+                    <div
+                      className={`px-3 py-1 rounded-full text-sm font-extrabold shadow-md border backdrop-blur ${
+                        stockMeta.isLow
+                          ? "bg-rose-600 text-white border-rose-200/60"
+                          : "bg-white/80 text-slate-900 border-white/70"
+                      }`}
+                      title={
+                        stockMeta.critical_quantity > 0
+                          ? `${t("Critical threshold")}: ${stockMeta.critical_quantity}`
+                          : undefined
                       }
-                      alt=""
-                      className="w-12 h-12 rounded-xl object-cover border shadow"
-                    />
-                  )}
-
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                      {product.name}
-                    </h3>
-                    <span className="block text-xs text-gray-500">
-                      {product.category}
-                    </span>
+                    >
+                      {t("Stock")}: {stockMeta.quantity.toLocaleString()}{" "}
+                      {stockMeta.unit}
+                    </div>
+                    {stockMeta.isLow && (
+                      <div className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800 border border-rose-200 shadow-sm">
+                        {t("Low stock")}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
+
+                <div>
+                  <div className="flex items-center gap-3 mb-1 pr-20">
+                    {product.image && (
+                      <img
+                        src={
+                          product.image?.startsWith("http")
+                            ? product.image
+                            : `${API_URL}/uploads/${product.image}`
+                        }
+                        alt=""
+                        className="w-12 h-12 rounded-xl object-cover border shadow"
+                      />
+                    )}
+
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                        {product.name}
+                      </h3>
+                      <span className="block text-xs text-gray-500">
+                        {product.category}
+                      </span>
+                    </div>
+                  </div>
 
                 <div className="text-2xl font-extrabold mt-2 text-indigo-600 dark:text-indigo-400 tracking-tight">
                   {formatCurrency(Number(product.price || 0))}
@@ -881,7 +1113,8 @@ const handleRenameCategory = async (original, value) => {
 
 
             </div>
-          ))
+          );
+          })
         ) : (
           <div className="col-span-full text-center text-gray-500 py-16 text-lg">
             {t("No products found.")}
@@ -892,7 +1125,7 @@ const handleRenameCategory = async (original, value) => {
       {/* PRODUCT MODAL */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl relative">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[55.2rem] relative">
             <div className="flex justify-between items-center px-8 pt-8 pb-2">
               <h2 className="text-2xl font-bold">
                 {selectedProduct ? t("Edit Product") : t("Add Product")}
@@ -1115,7 +1348,7 @@ const handleRenameCategory = async (original, value) => {
 
                   {/* Unit */}
                   <select
-                    value={item.unit || ""}
+                    value={(item.unit === "piece" ? "pcs" : item.unit) || ""}
                     onChange={(e) => {
                       const updated = [...extrasGroups];
                       updated[groupIdx].items[itemIdx].unit = e.target.value;
@@ -1126,7 +1359,7 @@ const handleRenameCategory = async (original, value) => {
                     <option value="">{t("Select Unit")}</option>
                     <option value="kg">kg</option>
                     <option value="g">g</option>
-                    <option value="piece">piece</option>
+                    <option value="pcs">pcs</option>
                     <option value="portion">portion</option>
                     <option value="ml">ml</option>
                     <option value="l">l</option>
@@ -1282,6 +1515,7 @@ const handleRenameCategory = async (original, value) => {
           </button>
         </div>
       </Modal>
-    </div>
+      </div>
+    </>
   );
 }

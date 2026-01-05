@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { INGREDIENT_PRICES_API } from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -65,7 +65,7 @@ const normalizeUnit = (u) => {
   if (!u) return "";
   u = u.toLowerCase();
   if (u === "lt") return "l";
-  if (u === "pieces") return "piece";
+  if (u === "piece" || u === "pieces" || u === "pcs") return "pcs";
   if (u === "portion" || u === "portions") return "portion";
   return u;
 };
@@ -75,6 +75,24 @@ const normalizeUnitForApi = (u) => {
   if (!normalized) return "";
   if (normalized === "l") return "lt";
   return normalized;
+};
+
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  // Prefer using the explicit date portion when present (avoids timezone shifts).
+  const datePart = raw.split("T")[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 };
 
 const convertPrice = (basePrice, supplierUnit, targetUnit) => {
@@ -122,12 +140,18 @@ export default function ProductForm({ onSuccess, initialData = null, categories 
 
   const [ingredientPrices, setIngredientPrices] = useState([]);
   const [calculatedCost, setCalculatedCost] = useState(0);
+  const [stockItemOptions, setStockItemOptions] = useState([]); // [{ key, name, unit, quantity }]
+  const [selectedStockItemKey, setSelectedStockItemKey] = useState("");
   const [extrasGroups, setExtrasGroups] = useState([]); // [{id, group_name, items:[{id,name,extraPrice}]}]
   const [imagePreview, setImagePreview] = useState(null);
   const [categoryImagePreview, setCategoryImagePreview] = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState("");
   const [availableIngredients, setAvailableIngredients] = useState([]);
+  const [categoryImageFileName, setCategoryImageFileName] = useState("");
+
+  const productImageInputRef = useRef(null);
+  const categoryImageInputRef = useRef(null);
 
   const categoryOptions = useMemo(() => {
     const unique = new Set(
@@ -140,11 +164,80 @@ export default function ProductForm({ onSuccess, initialData = null, categories 
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
   }, [categories, product.category]);
+
+  useEffect(() => {
+    setSelectedStockItemKey("");
+  }, [initialData?.id]);
+
+  useEffect(() => {
+    if (!initialData?.id) return;
+    if (!Array.isArray(stockItemOptions) || stockItemOptions.length === 0) return;
+    if (selectedStockItemKey) return;
+
+    const lower = (value) => String(value || "").trim().toLowerCase();
+    const firstIng = Array.isArray(initialData.ingredients)
+      ? initialData.ingredients[0]
+      : null;
+
+    const candidateName = lower(firstIng?.ingredient || initialData.name);
+    if (!candidateName) return;
+    const candidateUnit = normalizeUnit(firstIng?.unit);
+
+    let match = null;
+    if (candidateUnit) {
+      match = stockItemOptions.find(
+        (opt) => lower(opt?.name) === candidateName && normalizeUnit(opt?.unit) === candidateUnit
+      );
+    }
+    if (!match) {
+      match = stockItemOptions.find((opt) => lower(opt?.name) === candidateName);
+    }
+
+    if (match?.key) setSelectedStockItemKey(match.key);
+  }, [initialData, selectedStockItemKey, stockItemOptions]);
 useEffect(() => {
   // keep this in sync with the ingredient price source used below
   secureFetch("/ingredient-prices")
     .then((data) => setAvailableIngredients(Array.isArray(data) ? data : []))
     .catch(() => setAvailableIngredients([]));
+}, []);
+
+useEffect(() => {
+  const normalizeStockList = (payload) => {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.stock)) return payload.stock;
+    if (Array.isArray(payload?.stocks)) return payload.stocks;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
+  };
+
+  const loadStockItems = async () => {
+    try {
+      const raw = await secureFetch("/stock");
+      const list = normalizeStockList(raw);
+      const map = new Map(); // name|unit -> { name, unit, quantity }
+
+      for (const row of Array.isArray(list) ? list : []) {
+        const name = String(row?.name || "").trim();
+        const unit = normalizeUnit(row?.unit);
+        if (!name || !unit) continue;
+        const key = `${name.toLowerCase()}|${unit}`;
+        const existing = map.get(key) || { key, name, unit, quantity: 0 };
+        existing.quantity += toNumber(row?.quantity);
+        map.set(key, existing);
+      }
+
+      const options = Array.from(map.values()).sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      );
+      setStockItemOptions(options);
+    } catch {
+      setStockItemOptions([]);
+    }
+  };
+
+  loadStockItems();
 }, []);
 
   // ---------- helpers ----------
@@ -161,7 +254,7 @@ const handleUpload = async () => {
     });
 
     if (!data || !data.url) {
-      toast.error("Image upload failed!");
+      toast.error(t("Image upload failed!"));
       return "";
     }
 
@@ -170,10 +263,17 @@ const handleUpload = async () => {
     return data.url;
   } catch (err) {
     console.error("❌ Upload error:", err);
-    toast.error("Image upload failed!");
+    toast.error(t("Image upload failed!"));
     return "";
   }
 };
+
+  useEffect(() => {
+    if (!imageFile) return undefined;
+    const url = URL.createObjectURL(imageFile);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
 
 
   const getImageSource = () => imageUrl || imagePreview || null;
@@ -362,6 +462,114 @@ useEffect(() => {
       } catch {}
     }
 
+    // If still missing OR to support using produced items as ingredients,
+    // pull production recipes and compute cost/unit from the recipe ingredients.
+    try {
+      const tenantId =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("restaurant_id")
+          : null;
+      const recipeEndpoint = tenantId
+        ? `/production/recipes?restaurant_id=${tenantId}`
+        : "/production/recipes";
+      const recipesRaw = await secureFetch(recipeEndpoint);
+      const recipes = Array.isArray(recipesRaw)
+        ? recipesRaw
+        : Array.isArray(recipesRaw?.data)
+          ? recipesRaw.data
+          : Array.isArray(recipesRaw?.items)
+            ? recipesRaw.items
+            : [];
+
+      if (recipes.length > 0) {
+        const priceByNameUnit = new Map(); // name|unit -> price_per_unit
+        const priceByName = new Map(); // name -> [{ unit, price }]
+
+        finalList.forEach((it) => {
+          const name = String(it?.name || "").trim();
+          const unit = normalizeUnit(it?.unit);
+          const price = toNumber(it?.price_per_unit ?? it?.price ?? 0);
+          if (!name || !unit || !(price > 0)) return;
+          const key = `${name.toLowerCase()}|${unit}`;
+          if (!priceByNameUnit.has(key)) priceByNameUnit.set(key, price);
+          const list = priceByName.get(name.toLowerCase()) || [];
+          list.push({ unit, price });
+          priceByName.set(name.toLowerCase(), list);
+        });
+
+        const resolveIngredientUnitPrice = (ingredientName, desiredUnit) => {
+          const n = String(ingredientName || "").trim().toLowerCase();
+          const u = normalizeUnit(desiredUnit);
+          if (!n || !u) return 0;
+          const exact = priceByNameUnit.get(`${n}|${u}`) || 0;
+          if (exact > 0) return exact;
+
+          const candidates = priceByName.get(n) || [];
+          for (const cand of candidates) {
+            const converted = convertPrice(cand.price, cand.unit, u);
+            if (converted !== null && converted > 0) return converted;
+          }
+          return 0;
+        };
+
+        const recipeItems = recipes
+          .map((r) => {
+            const name = String(r?.name || "").trim();
+            if (!name) return null;
+            const outputUnit = normalizeUnit(r?.output_unit ?? r?.outputUnit);
+            const baseQty = toNumber(r?.base_quantity ?? r?.baseQuantity ?? 0);
+            if (!outputUnit || !(baseQty > 0)) return null;
+
+            const ings = Array.isArray(r?.ingredients) ? r.ingredients : [];
+            const totalCost = ings.reduce((sum, ing) => {
+              const ingName = ing?.name ?? ing?.ingredient_name ?? ing?.ingredientName;
+              const ingUnit = ing?.unit;
+              const amt = toNumber(
+                ing?.amountPerBatch ??
+                  ing?.amount_per_batch ??
+                  ing?.amount ??
+                  ing?.qty ??
+                  ing?.quantity ??
+                  0
+              );
+              if (!ingName || !ingUnit || !(amt > 0)) return sum;
+              const unitPrice = resolveIngredientUnitPrice(ingName, ingUnit);
+              if (!(unitPrice > 0)) return sum;
+              return sum + amt * unitPrice;
+            }, 0);
+
+            const costPerUnit = totalCost / baseQty;
+            return {
+              name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
+              unit: outputUnit,
+              price_per_unit: costPerUnit > 0 ? costPerUnit : 0,
+              trend: null,
+            };
+          })
+          .filter(Boolean);
+
+        if (recipeItems.length > 0) {
+          const existingByLower = new Map(
+            finalList.map((it) => [String(it?.name || "").trim().toLowerCase(), it])
+          );
+
+          // Add recipes as selectable "ingredients"
+          recipeItems.forEach((ri) => {
+            const k = String(ri.name || "").trim().toLowerCase();
+            const existing = existingByLower.get(k);
+            if (!existing) {
+              finalList.push(ri);
+              return;
+            }
+            if (!(toNumber(existing.price_per_unit) > 0) && toNumber(ri.price_per_unit) > 0) {
+              existing.price_per_unit = ri.price_per_unit;
+            }
+            if (!existing.unit && ri.unit) existing.unit = ri.unit;
+          });
+        }
+      }
+    } catch {}
+
     setIngredientPrices(finalList);
     setAvailableIngredients(finalList);
   };
@@ -487,6 +695,8 @@ useEffect(() => {
     image: initialData.image || initialData.image_url || null,
     ingredients: Array.isArray(initialData.ingredients) ? initialData.ingredients : [],
     extras: normalizedExtras,
+    promo_start: toDateInputValue(initialData.promo_start ?? initialData.promoStart),
+    promo_end: toDateInputValue(initialData.promo_end ?? initialData.promoEnd),
   };
 
   const currentGroups = Array.isArray(normalized.selected_extras_group)
@@ -519,7 +729,10 @@ useEffect(() => {
     setProduct(prev => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   };
 
-  const handleImageChange = (e) => setImageFile(e.target.files[0]);
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0] || null;
+    setImageFile(file);
+  };
 
   // ingredients
   const addIngredient = () =>
@@ -732,6 +945,7 @@ const handleSubmit = async (e) => {
     setImageFile(null);
     setImageUrl("");
     setImagePreview(null);
+    setSelectedStockItemKey("");
 
     onSuccess && onSuccess();
   } catch (err) {
@@ -772,6 +986,77 @@ return (
                 className="w-full p-3 mt-1 rounded-xl border"
                 required
               />
+              <div className="mt-3">
+                <span className="font-medium">
+                  {t("From Stock")} ({t("optional")})
+                </span>
+                <select
+                  value={selectedStockItemKey}
+                  onChange={(e) => {
+                    const key = e.target.value;
+                    setSelectedStockItemKey(key);
+                    if (!key) return;
+                    const selected = stockItemOptions.find((o) => o.key === key);
+                    if (!selected) return;
+
+                    setProduct((prev) => {
+                      const nextIngredients = Array.isArray(prev.ingredients)
+                        ? [...prev.ingredients]
+                        : [];
+                      const ingredientName = selected.name;
+                      const ingredientUnit = selected.unit;
+
+                      const alreadyHas = nextIngredients.some(
+                        (ing) =>
+                          String(ing?.ingredient || "")
+                            .trim()
+                            .toLowerCase() === ingredientName.toLowerCase()
+                      );
+
+                      if (nextIngredients.length === 0) {
+                        nextIngredients.push({
+                          ingredient: ingredientName,
+                          quantity: "1",
+                          unit: ingredientUnit,
+                        });
+                      } else if (!alreadyHas) {
+                        const first = nextIngredients[0];
+                        const firstEmpty =
+                          !String(first?.ingredient || "").trim() &&
+                          !String(first?.quantity || "").trim();
+                        if (firstEmpty) {
+                          nextIngredients[0] = {
+                            ...first,
+                            ingredient: ingredientName,
+                            quantity: first?.quantity || "1",
+                            unit: ingredientUnit,
+                          };
+                        } else {
+                          nextIngredients.push({
+                            ingredient: ingredientName,
+                            quantity: "1",
+                            unit: ingredientUnit,
+                          });
+                        }
+                      }
+
+                      return {
+                        ...prev,
+                        name: ingredientName,
+                        ingredients: nextIngredients,
+                      };
+                    });
+                  }}
+                  className="w-full p-3 mt-1 rounded-xl border bg-white dark:bg-gray-900"
+                >
+                  <option value="">{t("Select")}</option>
+                  {stockItemOptions.map((opt) => (
+                    <option key={opt.key} value={opt.key}>
+                      {opt.name} ({opt.unit}) — {opt.quantity.toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </label>
 
             {/* LEFT COLUMN: Category + Category Image */}
@@ -800,54 +1085,73 @@ return (
 
               <label className="block mt-3">
                 <span className="font-medium">{t("Category Image")}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={async (e) => {
-                    const file = e.target.files[0];
-                    if (!file || !product.category) {
-                      toast.error(t("Category required first!"));
-                      return;
-                    }
-                    const fd = new FormData();
-                    fd.append("image", file);
-                    fd.append("category", product.category.trim().toLowerCase());
-                    try {
-               const res = await secureFetch("/category-images", {
-  method: "POST",
-  body: fd, // ✅ FormData: secureFetch handles this automatically
-});
+                <div className="mt-1 flex items-center gap-3">
+                  <input
+                    ref={categoryImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0] || null;
+                      setCategoryImageFileName(file?.name || "");
+                      if (!file || !product.category) {
+                        toast.error(t("Category required first!"));
+                        return;
+                      }
+                      const fd = new FormData();
+                      fd.append("image", file);
+                      fd.append("category", product.category.trim().toLowerCase());
+                      try {
+                        const res = await secureFetch("/category-images", {
+                          method: "POST",
+                          body: fd, // ✅ FormData: secureFetch handles this automatically
+                        });
 
-if (!res || res.error) {
-  toast.error("Upload failed");
-  return;
-}
+                        if (!res || res.error) {
+                          toast.error(t("Upload failed"));
+                          return;
+                        }
 
-                      toast.success("Category image uploaded!");
-                      const cat = product.category.trim().toLowerCase();
-const data = await secureFetch(`/category-images?category=${encodeURIComponent(cat)}`);
-if (Array.isArray(data) && data.length > 0 && data[0].image) {
-  const img = data[0].image;
-  setCategoryImagePreview(
-    img.startsWith("http")
-      ? img
-      : `${import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000"}/uploads/${img}`
-  );
-}
+                        toast.success(t("Category image uploaded!"));
+                        const cat = product.category.trim().toLowerCase();
+                        const data = await secureFetch(
+                          `/category-images?category=${encodeURIComponent(cat)}`
+                        );
+                        if (Array.isArray(data) && data.length > 0 && data[0].image) {
+                          const img = data[0].image;
+                          setCategoryImagePreview(
+                            img.startsWith("http")
+                              ? img
+                              : `${
+                                  import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") ||
+                                  "http://localhost:5000"
+                                }/uploads/${img}`
+                          );
+                        }
+                      } catch (err) {
+                        toast.error(t("Category upload failed!"));
+                      }
+                    }}
+                  />
 
-                    } catch (err) {
-                      toast.error("Category upload failed!");
-                    }
-                  }}
-                  className="w-full mt-1"
-                />
+                  <button
+                    type="button"
+                    onClick={() => categoryImageInputRef.current?.click()}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    {t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500">
+                    {categoryImageFileName ? categoryImageFileName : t("No file chosen")}
+                  </span>
+                </div>
               </label>
 
               {categoryImagePreview && (
                 <div className="mt-2 flex items-center gap-3">
                   <img
                     src={categoryImagePreview}
-                    alt="Category"
+                    alt={t("Category")}
                     className="w-16 h-16 rounded-lg object-cover border shadow"
                   />
                   <span className="text-sm text-gray-500">{t("Category Preview")}</span>
@@ -885,7 +1189,25 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
           {/* Product Image Upload */}
           <label className="block mt-3">
             <span className="font-medium">{t("Product Image")}</span>
-            <input type="file" accept="image/*" onChange={handleImageChange} />
+            <div className="mt-1 flex items-center gap-3">
+              <input
+                ref={productImageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageChange}
+              />
+              <button
+                type="button"
+                onClick={() => productImageInputRef.current?.click()}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                {t("Choose file")}
+              </button>
+              <span className="min-w-0 flex-1 truncate text-sm text-gray-500">
+                {imageFile?.name ? imageFile.name : t("No file chosen")}
+              </span>
+            </div>
           </label>
           {getImageSource() && (
             <img
@@ -1000,7 +1322,7 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
 
   return (
     <option key={idx} value={item.name}>
-      {icon} {item.name.charAt(0).toUpperCase() + item.name.slice(1).toLowerCase()} ({item.unit})
+      {icon} {item.name.charAt(0).toUpperCase() + item.name.slice(1).toLowerCase()} ({normalizeUnit(item.unit)})
     </option>
   );
 })}
@@ -1019,14 +1341,14 @@ if (Array.isArray(data) && data.length > 0 && data[0].image) {
 
 <select
   name="unit"
-  value={ing.unit ?? ""}  // ✅ default to empty string
+  value={ing.unit === "piece" ? "pcs" : (ing.unit ?? "")}  // ✅ default to empty string
   onChange={(e) => handleIngredientChange(i, e)}
   className="p-2 rounded-xl border w-24"
 >
   <option value="">{t("Select Unit")}</option>
   <option value="kg">kg</option>
   <option value="g">g</option>
-  <option value="piece">piece</option>
+  <option value="pcs">pcs</option>
   <option value="portion">portion</option>
   <option value="ml">ml</option>
   <option value="lt">lt</option>

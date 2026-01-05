@@ -9,7 +9,7 @@ const API_URL = import.meta.env.VITE_API_URL || "";
 const DEFAULT_APPEARANCE = {
   theme: "light",
   fontSize: "medium",
-  accent: "default",
+  accent: "sky-500",
   highContrast: false,
 };
 
@@ -58,18 +58,31 @@ useEffect(() => {
       }[appearance.fontSize]
     );
 
-    const tailwindColorMap = {
-      default: "79 70 229",
-      "emerald-500": "16 185 129",
-      "rose-500": "244 63 94",
-      "amber-500": "245 158 11",
-      "cyan-500": "6 182 212",
-      "violet-500": "139 92 246",
-      "lime-500": "132 204 22",
-      "sky-500": "14 165 233",
+    const accentMap = {
+      default: { solid: "79 70 229", from: "79 70 229", to: "99 102 241" }, // indigo-600 -> indigo-500
+      "emerald-500": { solid: "16 185 129", from: "16 185 129", to: "20 184 166" }, // emerald -> teal
+      "rose-500": { solid: "244 63 94", from: "244 63 94", to: "236 72 153" }, // rose -> pink
+      "amber-500": { solid: "245 158 11", from: "245 158 11", to: "249 115 22" }, // amber -> orange
+      "cyan-500": { solid: "6 182 212", from: "6 182 212", to: "14 165 233" }, // cyan -> sky
+      "violet-500": { solid: "139 92 246", from: "139 92 246", to: "236 72 153" }, // violet -> pink
+      "lime-500": { solid: "132 204 22", from: "132 204 22", to: "34 197 94" }, // lime -> green
+      "sky-500": { solid: "14 165 233", from: "14 165 233", to: "99 102 241" }, // sky -> indigo
+
+      // Gradient accents (new)
+      sunset: { solid: "249 115 22", from: "244 63 94", to: "245 158 11" }, // rose -> amber
+      ocean: { solid: "14 165 233", from: "6 182 212", to: "59 130 246" }, // cyan -> blue
+      grape: { solid: "139 92 246", from: "139 92 246", to: "236 72 153" }, // violet -> pink
+      forest: { solid: "34 197 94", from: "16 185 129", to: "132 204 22" }, // emerald -> lime
+      midnight: { solid: "79 70 229", from: "30 41 59", to: "79 70 229" }, // slate-800 -> indigo-600
+      fire: { solid: "239 68 68", from: "239 68 68", to: "249 115 22" }, // red -> orange
     };
-    const rgb = tailwindColorMap[appearance.accent] || tailwindColorMap["default"];
-    root.style.setProperty("--accent-color", rgb);
+
+    const key = appearance.accent;
+    const selected = accentMap[key] || accentMap.default;
+
+    root.style.setProperty("--accent-color", selected.solid);
+    root.style.setProperty("--accent-from", selected.from);
+    root.style.setProperty("--accent-to", selected.to);
     document.body.classList.toggle("contrast-more", appearance.highContrast);
   }, [loaded, appearance]);
 

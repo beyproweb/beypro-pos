@@ -129,7 +129,7 @@ export default function TablesSettingsTab() {
   };
 
   // --- UI helpers ---
-  const getAreaLabel = (tbl) => tbl.area || "Main Hall";
+  const getAreaValue = (tbl) => tbl.area || "Main Hall";
 
   const handleQuickSeats = (tbl, seats) => {
     updateOne(tbl.number, { seats });
@@ -260,7 +260,7 @@ export default function TablesSettingsTab() {
               }`}
             >
               {area === "Main Hall" ? "🏠" : area === "Terrace" ? "🌤️" : area === "Garden" ? "🌿" : area === "Bar" ? "🍸" : area === "VIP" ? "⭐" : "📍"}{" "}
-              {area}
+              {t(area)}
             </button>
           ))}
         </div>
@@ -294,7 +294,7 @@ export default function TablesSettingsTab() {
           {filteredTables.map((tbl) => {
             const isActive = tbl.active !== false;
             const seats = Number(tbl.seats || tbl.chairs || 0) || "";
-            const area = getAreaLabel(tbl);
+            const area = getAreaValue(tbl);
             const color = tbl.color || "#4f46e5";
 
             return (
@@ -322,7 +322,7 @@ export default function TablesSettingsTab() {
                         className="inline-block h-2 w-2 rounded-full"
                         style={{ backgroundColor: color }}
                       />
-                      {area}
+                      {t(area)}
                     </span>
                   </div>
 
@@ -405,7 +405,7 @@ export default function TablesSettingsTab() {
                     >
                       {allAreas.map((a) => (
                         <option key={a} value={a}>
-                          {a}
+                          {t(a)}
                         </option>
                       ))}
                     </select>

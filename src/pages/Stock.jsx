@@ -6,13 +6,36 @@ import { useTranslation } from "react-i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
+import { useNavigate } from "react-router-dom";
 
 export default function Stock() {
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
+  const navigate = useNavigate();
   const uiDebugLoggedRef = useRef(false);
   const cardDebugLoggedRef = useRef(false);
+  const [tenantId] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const direct = window.localStorage.getItem("restaurant_id");
+    if (direct) return String(direct);
+    try {
+      const user = JSON.parse(window.localStorage.getItem("beyproUser") || "{}");
+      const rid =
+        user?.restaurant_id ??
+        user?.user?.restaurant_id ??
+        user?.user?.restaurantId ??
+        null;
+      return rid ? String(rid) : null;
+    } catch {
+      return null;
+    }
+  });
   const [selectedSupplier, setSelectedSupplier] = useState("__all__");
+  const [stockTypeFilter, setStockTypeFilter] = useState("all"); // all | production
+  const [productionProductNames, setProductionProductNames] = useState([]);
+  const [productionLoading, setProductionLoading] = useState(false);
+  const [productionRecipes, setProductionRecipes] = useState([]);
+  const [ingredientPrices, setIngredientPrices] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const { groupedData, fetchStock, loading, handleAddToCart, setGroupedData } =
     useStock();
@@ -34,6 +57,76 @@ export default function Stock() {
 useEffect(() => {
   secureFetch("/suppliers").then(setAllSuppliers).catch(() => setAllSuppliers([]));
 }, []);
+
+  useEffect(() => {
+    if (productionLoading) return;
+    if (productionRecipes.length > 0 && ingredientPrices.length > 0) return;
+
+    let cancelled = false;
+    const loadProductionData = async () => {
+      setProductionLoading(true);
+      try {
+        const recipeEndpoint = tenantId
+          ? `/production/recipes?restaurant_id=${tenantId}`
+          : "/production/recipes";
+
+        const [recipesData, pricesData] = await Promise.all([
+          secureFetch(recipeEndpoint),
+          secureFetch("/ingredient-prices"),
+        ]);
+
+        const recipesList = Array.isArray(recipesData)
+          ? recipesData
+          : Array.isArray(recipesData?.data)
+          ? recipesData.data
+          : Array.isArray(recipesData?.items)
+          ? recipesData.items
+          : [];
+
+        const pricesList = Array.isArray(pricesData)
+          ? pricesData
+          : Array.isArray(pricesData?.data)
+          ? pricesData.data
+          : Array.isArray(pricesData?.items)
+          ? pricesData.items
+          : [];
+
+        const names = Array.from(
+          new Set(
+            recipesList
+              .map((r) => String(r?.name || "").trim())
+              .filter(Boolean)
+              .map((n) => n.toLowerCase())
+          )
+        );
+        if (!cancelled) {
+          setProductionRecipes(recipesList);
+          setIngredientPrices(pricesList);
+          setProductionProductNames(names);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setProductionRecipes([]);
+          setIngredientPrices([]);
+          setProductionProductNames([]);
+          console.warn("Failed to load production cost inputs for stock", e);
+        }
+      } finally {
+        if (!cancelled) setProductionLoading(false);
+      }
+    };
+
+    loadProductionData();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    productionLoading,
+    productionProductNames.length,
+    productionRecipes.length,
+    ingredientPrices.length,
+    tenantId,
+  ]);
 
 
 
@@ -67,14 +160,6 @@ useEffect(() => {
     );
   }, [groupedData]);
 
-  const totalStockValue = useMemo(() => {
-    return groupedData.reduce(
-      (acc, item) =>
-        acc + (Number(item.quantity) || 0) * (Number(item.price_per_unit) || 0),
-      0
-    );
-  }, [groupedData]);
-
   const toSafeNumber = (value) => {
     if (value === null || value === undefined) return 0;
     if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -84,6 +169,122 @@ useEffect(() => {
     const num = Number(normalized);
     return Number.isFinite(num) ? num : 0;
   };
+
+  const normalizeUnit = (value) => {
+    if (!value) return "";
+    const v = String(value).trim().toLowerCase();
+    if (v === "l") return "lt";
+    if (v === "lt") return "lt";
+    if (v === "piece" || v === "pieces") return "pcs";
+    return v;
+  };
+
+  const productionCostPerUnitByName = useMemo(() => {
+    const priceByNameUnit = new Map(); // name|unit -> price/unit
+    const priceByName = new Map(); // name -> price/unit (first seen)
+
+    for (const row of Array.isArray(ingredientPrices) ? ingredientPrices : []) {
+      const name = String(row?.name || row?.ingredient || "").trim().toLowerCase();
+      if (!name) continue;
+      const unit = normalizeUnit(row?.unit);
+      const price = toSafeNumber(
+        row?.current_price ??
+          row?.price_per_unit ??
+          row?.unit_price ??
+          row?.cost_per_unit ??
+          row?.costPrice ??
+          row?.price ??
+          0
+      );
+      if (!(price > 0)) continue;
+
+      if (unit) priceByNameUnit.set(`${name}|${unit}`, price);
+      if (!priceByName.has(name)) priceByName.set(name, price);
+    }
+
+    const costByRecipe = new Map(); // recipeNameLower -> cost/unit
+    for (const recipe of Array.isArray(productionRecipes) ? productionRecipes : []) {
+      const recipeName = String(recipe?.name || "").trim().toLowerCase();
+      if (!recipeName) continue;
+
+      const precomputed =
+        toSafeNumber(
+          recipe?.cost_per_unit ?? recipe?.costPerUnit ?? recipe?.unit_cost ?? 0
+        ) || 0;
+      if (precomputed > 0) {
+        costByRecipe.set(recipeName, precomputed);
+        continue;
+      }
+
+      const baseQty = toSafeNumber(recipe?.base_quantity ?? recipe?.baseQuantity ?? 0);
+      if (!(baseQty > 0)) continue;
+
+      const ingredientsList = Array.isArray(recipe?.ingredients) ? recipe.ingredients : [];
+      const totalCost = ingredientsList.reduce((sum, ing) => {
+        const ingName = String(ing?.name || "").trim().toLowerCase();
+        if (!ingName) return sum;
+        const ingUnit = normalizeUnit(ing?.unit);
+        const amount = toSafeNumber(
+          ing?.amountPerBatch ??
+            ing?.amount_per_batch ??
+            ing?.amount ??
+            ing?.qty ??
+            ing?.quantity ??
+            0
+        );
+        if (!(amount > 0)) return sum;
+
+        const price =
+          (ingUnit ? priceByNameUnit.get(`${ingName}|${ingUnit}`) : null) ??
+          priceByName.get(ingName) ??
+          0;
+
+        return sum + amount * toSafeNumber(price);
+      }, 0);
+
+      const perUnit = totalCost / baseQty;
+      if (perUnit > 0) costByRecipe.set(recipeName, perUnit);
+    }
+
+    return costByRecipe;
+  }, [ingredientPrices, productionRecipes]);
+
+  const getPricePerUnit = (item) => {
+    const rawPrice =
+      item?.price_per_unit ??
+      item?.unit_price ??
+      item?.cost_per_unit ??
+      item?.costPrice ??
+      item?.price ??
+      0;
+
+    let pricePerUnit = toSafeNumber(rawPrice);
+    if (!(pricePerUnit > 0)) {
+      const derivedFromTotal =
+        (toSafeNumber(item?.total_value ?? item?.value ?? item?.amount) > 0 &&
+          toSafeNumber(item?.quantity)) > 0
+          ? toSafeNumber(item?.total_value ?? item?.value ?? item?.amount) /
+            (toSafeNumber(item?.quantity) || 1)
+          : 0;
+      pricePerUnit = derivedFromTotal;
+    }
+
+    if (!(pricePerUnit > 0)) {
+      const nameKey = String(item?.name || "").trim().toLowerCase();
+      const productionCost = productionCostPerUnitByName.get(nameKey);
+      if (productionCost > 0) pricePerUnit = productionCost;
+    }
+
+    return pricePerUnit;
+  };
+
+  const totalStockValue = useMemo(() => {
+    return (Array.isArray(groupedData) ? groupedData : []).reduce((acc, item) => {
+      const qty = toSafeNumber(item?.quantity);
+      const ppu = getPricePerUnit(item);
+      return acc + qty * (toSafeNumber(ppu) || 0);
+    }, 0);
+  }, [groupedData, productionCostPerUnitByName]);
 
   const totalItems = groupedData.length;
   const totalUnitsOnHand = groupedData.reduce(
@@ -224,7 +425,10 @@ useEffect(() => {
   const handleDeleteStock = async (item) => {
     if (
       !window.confirm(
-        `🗑 Are you sure you want to delete "${item.name}" (${item.unit}) from stock?`
+        t('🗑 Are you sure you want to delete "{{name}}" ({{unit}}) from stock?', {
+          name: item?.name || "",
+          unit: item?.unit || "",
+        })
       )
     )
       return;
@@ -232,10 +436,19 @@ useEffect(() => {
       await secureFetch(`/stock/${item.stock_id || item.id}`, {
         method: "DELETE",
       });
-      toast.success(`Deleted "${item.name}" (${item.unit}) from stock.`);
+      toast.success(
+        t('Deleted "{{name}}" ({{unit}}) from stock.', {
+          name: item?.name || "",
+          unit: item?.unit || "",
+        })
+      );
       fetchStock(); // Refresh list
     } catch (err) {
-      toast.error(`❌ Failed to delete "${item.name}".`);
+      toast.error(
+        t('Failed to delete "{{name}}".', {
+          name: item?.name || "",
+        })
+      );
     }
   };
 
@@ -390,17 +603,71 @@ const suppliersList = Array.from(
   ];
 
   let filtered = groupedData;
-  if (selectedSupplier !== "__all__") {
-    filtered = filtered.filter(
-      (item) => item.supplier_name === selectedSupplier
+
+  if (stockTypeFilter === "production") {
+    const byName = new Map(); // lowerName -> item[]
+    (Array.isArray(groupedData) ? groupedData : []).forEach((it) => {
+      const key = String(it?.name || "").trim().toLowerCase();
+      if (!key) return;
+      const arr = byName.get(key) || [];
+      arr.push(it);
+      byName.set(key, arr);
+    });
+
+    const productionRows = (Array.isArray(productionRecipes) ? productionRecipes : []).map(
+      (recipe) => {
+        const recipeName = String(recipe?.name || "").trim();
+        const recipeKey = recipeName.toLowerCase();
+        const outputUnit = normalizeUnit(recipe?.output_unit ?? recipe?.outputUnit);
+        const recipeExpiry = recipe?.expiry_date || recipe?.expiryDate || null;
+
+        const candidates = byName.get(recipeKey) || [];
+        const match =
+          (outputUnit
+            ? candidates.find(
+                (c) => normalizeUnit(c?.unit) === normalizeUnit(outputUnit)
+              )
+            : null) || candidates[0] || null;
+
+        if (match) {
+          return {
+            ...match,
+            expiry_date: match?.expiry_date || recipeExpiry || null,
+          };
+        }
+
+        const pricePerUnit = productionCostPerUnitByName.get(recipeKey) || 0;
+        return {
+          name: recipeName,
+          unit: outputUnit || "pcs",
+          quantity: 0,
+          price_per_unit: pricePerUnit,
+          supplier_id: null,
+          supplier_name: "",
+          supplier: "",
+          critical_quantity: 0,
+          reorder_quantity: 0,
+          expiry_date: recipeExpiry,
+          stock_id: null,
+          from_production: true,
+        };
+      }
     );
+
+    filtered = productionRows;
   }
+
+  // Supplier filter: only meaningful for normal stock list
+  if (selectedSupplier !== "__all__" && stockTypeFilter !== "production") {
+    filtered = filtered.filter((item) => item.supplier_name === selectedSupplier);
+  }
+
   if (searchTerm.trim()) {
     const term = searchTerm.toLowerCase();
     filtered = filtered.filter(
       (item) =>
-        item.name.toLowerCase().includes(term) ||
-        (item.supplier && item.supplier.toLowerCase().includes(term))
+        String(item?.name || "").toLowerCase().includes(term) ||
+        String(item?.supplier || "").toLowerCase().includes(term)
     );
   }
 
@@ -449,7 +716,7 @@ const suppliersList = Array.from(
                 )}
               </p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
                   {t("Filter by Supplier")}
@@ -528,6 +795,44 @@ const suppliersList = Array.from(
                   />
                 </div>
               </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  {t("Stock Type")}
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStockTypeFilter("all")}
+                    className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                      stockTypeFilter === "all"
+                        ? "border-indigo-600 bg-indigo-600 text-white"
+                        : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    {t("All")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStockTypeFilter("production")}
+                    className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                      stockTypeFilter === "production"
+                        ? "border-emerald-600 bg-emerald-600 text-white"
+                        : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    {t("Production")} {t("Stock")}
+                  </button>
+                </div>
+                {stockTypeFilter === "production" && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {productionLoading
+                      ? t("Loading...")
+                      : `${productionProductNames.length.toLocaleString()} ${t(
+                          "products"
+                        )}`}
+                  </div>
+                )}
+              </div>
               <div className="flex flex-col justify-center gap-3 rounded-xl border border-dashed border-slate-300/70 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   {t("Quick facts")}
@@ -594,16 +899,7 @@ const suppliersList = Array.from(
                 item.costPrice ??
                 item.price ??
                 0;
-              let pricePerUnit = toSafeNumber(rawPrice);
-              if (!(pricePerUnit > 0)) {
-                const derivedFromTotal =
-                  (toSafeNumber(item.total_value ?? item.value ?? item.amount) > 0 &&
-                    toSafeNumber(item.quantity)) > 0
-                    ? toSafeNumber(item.total_value ?? item.value ?? item.amount) /
-                      (toSafeNumber(item.quantity) || 1)
-                    : 0;
-                pricePerUnit = derivedFromTotal;
-              }
+              let pricePerUnit = getPricePerUnit(item);
               const itemValue =
                 (toSafeNumber(item.quantity) || 0) * (toSafeNumber(pricePerUnit) || 0);
 
@@ -721,6 +1017,7 @@ const suppliersList = Array.from(
                           onChange={(e) =>
                             handleCriticalChange(index, e.target.value)
                           }
+                          disabled={!item?.stock_id}
                           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           placeholder="—"
                         />
@@ -739,6 +1036,7 @@ const suppliersList = Array.from(
                           onChange={(e) =>
                             handleReorderChange(index, e.target.value)
                           }
+                          disabled={!item?.stock_id}
                           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                           placeholder="1"
                         />
@@ -747,28 +1045,67 @@ const suppliersList = Array.from(
                   </div>
 
                   <div className="mt-auto flex flex-col gap-2 pt-2">
-                    <button
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                      onClick={() => handleAddToCart(item)}
-                    >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
+                    <div className="flex items-stretch gap-2">
+                      <button
+                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        onClick={() => handleAddToCart(item)}
+                        disabled={
+                          !item?.stock_id ||
+                          !item?.supplier_id ||
+                          !(Number(item?.reorder_quantity) > 0)
+                        }
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M12 5v14m7-7H5"
-                        />
-                      </svg>
-                      {t("Add to Supplier Cart")}
-                    </button>
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 5v14m7-7H5"
+                          />
+                        </svg>
+                        {t("Add to Supplier Cart")}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="inline-flex w-12 items-center justify-center rounded-xl border border-slate-200 bg-white/90 text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/60"
+                        title={t("Open Supplier Cart")}
+                        aria-label={t("Open Supplier Cart")}
+                        onClick={() => {
+                          const supplierId = item?.supplier_id;
+                          const target = supplierId
+                            ? `/suppliers?view=cart&openCartSupplierId=${encodeURIComponent(
+                                supplierId
+                              )}`
+                            : "/suppliers?view=cart";
+                          navigate(target);
+                        }}
+                        disabled={!item?.supplier_id}
+                      >
+                        <svg
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M3 3h2l.4 2M7 13h10l4-8H6.4M7 13l-1.3 2.6A1 1 0 006.6 17H19M7 13l.4-8m3 16a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z"
+                          />
+                        </svg>
+                      </button>
+                    </div>
                     <button
                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200/80 bg-white/90 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-900/40"
                       onClick={() => handleDeleteStock(item)}
+                      disabled={!item?.stock_id}
                     >
                       <svg
                         className="h-4 w-4"

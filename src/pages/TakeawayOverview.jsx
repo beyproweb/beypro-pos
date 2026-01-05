@@ -2,9 +2,11 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import secureFetch from "../utils/secureFetch";
 import { PlusCircle, ShoppingBag } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export default function TakeawayOverview() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -46,14 +48,14 @@ export default function TakeawayOverview() {
       navigate(`/transaction/phone/${newOrder.id}`, { state: { order: newOrder } });
     } catch (err) {
       console.error("❌ Failed to create new takeaway order:", err);
-      alert("Could not create new takeaway order");
+      alert(t("Could not create new takeaway order"));
     }
   };
 
   if (loading)
     return (
       <div className="flex items-center justify-center h-full text-gray-500">
-        Loading takeaway orders...
+        {t("Loading takeaway orders...")}
       </div>
     );
 
@@ -65,7 +67,7 @@ export default function TakeawayOverview() {
         className="border-2 border-dashed border-indigo-400 rounded-2xl p-6 flex flex-col items-center justify-center text-indigo-500 hover:bg-indigo-50 transition"
       >
         <PlusCircle className="w-10 h-10 mb-2" />
-        <span className="font-semibold text-lg">New Takeaway</span>
+        <span className="font-semibold text-lg">{t("New Takeaway")}</span>
       </button>
 
       {/* 🛍️ Existing takeaway orders */}
@@ -80,7 +82,7 @@ export default function TakeawayOverview() {
           <div className="flex flex-col items-center justify-center text-center">
             <ShoppingBag className="w-8 h-8 text-indigo-500 mb-2" />
             <p className="font-bold text-lg text-slate-700">
-              Takeaway #{order.id}
+              {t("Takeaway #{{id}}", { id: order.id })}
             </p>
             <p className="text-sm text-gray-500 capitalize">{order.status}</p>
           </div>

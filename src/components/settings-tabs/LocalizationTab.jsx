@@ -11,6 +11,24 @@ const languageOptions = [
   { label: "French", code: "fr" },
 ];
 
+function normalizeLanguageCode(raw) {
+  if (!raw) return null;
+  const normalized = String(raw).trim();
+  if (!normalized) return null;
+  const lower = normalized.toLowerCase();
+  const mapped =
+    lower === "english"
+      ? "en"
+      : lower === "turkish"
+        ? "tr"
+        : lower === "german"
+          ? "de"
+          : lower === "french"
+            ? "fr"
+            : lower.split("-")[0];
+  return languageOptions.some((opt) => opt.code === mapped) ? mapped : null;
+}
+
 export default function LocalizationTab() {
   const { t, i18n } = useTranslation();
   const { currencyKey, setCurrencyKey, config } = useCurrency();
@@ -21,12 +39,17 @@ export default function LocalizationTab() {
   useEffect(() => {
     secureFetch("/settings/localization")
       .then((data) => {
-        if (data.language) {
+        const nextLangCode = normalizeLanguageCode(data?.language);
+        if (nextLangCode) {
           const langLabel =
-            languageOptions.find((opt) => opt.code === data.language)?.label ||
+            languageOptions.find((opt) => opt.code === nextLangCode)?.label ||
             "English";
           setLanguage(langLabel);
-          i18n.changeLanguage(data.language);
+          i18n.changeLanguage(nextLangCode);
+          try {
+            localStorage.setItem("beyproLanguage", nextLangCode);
+            localStorage.setItem("beyproGuestLanguage", nextLangCode);
+          } catch {}
         }
         if (data.currency) {
           setCurrency(data.currency);
@@ -51,6 +74,10 @@ export default function LocalizationTab() {
 
       i18n.changeLanguage(selectedLang); // apply immediately
       setCurrencyKey(currency); // apply currency immediately
+      try {
+        localStorage.setItem("beyproLanguage", selectedLang);
+        localStorage.setItem("beyproGuestLanguage", selectedLang);
+      } catch {}
       toast.success("✅ Localization saved successfully!");
     } catch (err) {
       console.error("❌ Failed to save localization:", err);
@@ -80,6 +107,10 @@ export default function LocalizationTab() {
                 "en";
               setLanguage(selectedLabel);
               i18n.changeLanguage(selectedLang);
+              try {
+                localStorage.setItem("beyproLanguage", selectedLang);
+                localStorage.setItem("beyproGuestLanguage", selectedLang);
+              } catch {}
             }}
             className="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
           >

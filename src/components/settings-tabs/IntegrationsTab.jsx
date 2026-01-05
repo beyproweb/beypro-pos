@@ -167,7 +167,7 @@ export default function IntegrationsTab() {
         body: JSON.stringify(payload),
       });
 
-      toast.success("Yemeksepeti integration saved successfully");
+      toast.success(t("Integrations saved successfully"));
     } catch (err) {
       console.error("❌ Failed to save integrations:", err);
       toast.error(err?.message || t("Failed to save"));
