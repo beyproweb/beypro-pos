@@ -430,31 +430,31 @@ const fetchSummaryStats = useCallback(async () => {
   }, [fetchSummaryStats, loadCameras]);
 
   // --- ICONS FOR QUICK ACCESS ---
-  const getIcon = (iconName) => {
+  const getIcon = (iconName, size = 34) => {
     switch (iconName) {
-      case 'Utensils': return <Utensils size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'ChefHat': return <ChefHat size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Package': return <Package size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'BarChart': return <BarChart size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Users': return <Users size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Settings': return <Settings size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'PieChart': return <PieChart size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'ClipboardList': return <ClipboardList size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'TrendingUp': return <TrendingUp size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'FileText': return <FileText size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Factory': return <Factory size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Bot': return <Bot size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'QrCode': return <QrCode size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'CreditCard': return <CreditCard size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'UserCheck': return <UserCheck size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Megaphone': return <Megaphone size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Clock': return <Clock size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Wrench': return <Wrench size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'UserCog': return <UserCog size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Bell': return <Bell size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Printer': return <Printer size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      case 'Plug': return <Plug size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
-      default: return <Home size={28} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Utensils': return <Utensils size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'ChefHat': return <ChefHat size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Package': return <Package size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'BarChart': return <BarChart size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Users': return <Users size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Settings': return <Settings size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'PieChart': return <PieChart size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'ClipboardList': return <ClipboardList size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'TrendingUp': return <TrendingUp size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'FileText': return <FileText size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Factory': return <Factory size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Bot': return <Bot size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'QrCode': return <QrCode size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'CreditCard': return <CreditCard size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'UserCheck': return <UserCheck size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Megaphone': return <Megaphone size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Clock': return <Clock size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Wrench': return <Wrench size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'UserCog': return <UserCog size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Bell': return <Bell size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Printer': return <Printer size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'Plug': return <Plug size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      default: return <Home size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
     }
   };
 
@@ -641,54 +641,60 @@ const fetchSummaryStats = useCallback(async () => {
       {/* Quick Access Grid (Filtered by permissions) */}
       {allowedAccess.length > 0 ? (
         <div
-          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-5"
+          className="w-full flex justify-center"
           onDragOver={(event) => {
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
           }}
           onDrop={handleNavDrop}
         >
-          {allowedAccess.map((item) => {
-            const label = t(item.labelKey, {
-              defaultValue: item.defaultLabel ?? item.labelKey,
-            });
-            const isDragging = draggedId === item.id;
-            const isDragOver = dragOverId === item.id && draggedId !== item.id;
+          <div className="w-full max-w-7xl px-4 sm:px-6 py-5 rounded-[2rem] bg-transparent border border-transparent">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-x-6 sm:gap-x-8 gap-y-6 place-items-center">
+              {allowedAccess.map((item) => {
+                const label = t(item.labelKey, {
+                  defaultValue: item.defaultLabel ?? item.labelKey,
+                });
+                const isDragging = draggedId === item.id;
+                const isDragOver = dragOverId === item.id && draggedId !== item.id;
 
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  if (draggedId) return;
-                  navigate(item.path);
-                }}
-                className={`group rounded-2xl p-4 min-h-[112px] bg-accent text-white shadow-lg hover:shadow-xl hover:brightness-110 hover:scale-[1.03] transform transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center text-center border border-white/10 ${
-                  isDragOver ? "ring-2 ring-white/70" : ""
-                } ${isDragging ? "opacity-70" : ""}`}
-                draggable
-                onDragStart={handleDragStart(item, label)}
-                onDragOver={handleDragOverItem(item.id)}
-                onDragLeave={handleDragLeave(item.id)}
-                onDrop={handleDrop(item.id)}
-                onDragEnd={handleDragEnd}
-                aria-grabbed={isDragging}
-              >
-                <div
-                  className={`w-12 h-12 rounded-2xl bg-white/95 flex items-center justify-center mb-2 shadow-lg shadow-black/10 ring-2 ${
-                    item.iconRing || "ring-white/40"
-                  } group-hover:rotate-6 group-hover:scale-105 transition-all ${
-                    item.iconColor || "text-indigo-600"
-                  }`}
-                >
-                  {getIcon(item.icon)}
-                </div>
-                <div className="text-[0.92rem] leading-tight font-semibold tracking-tight min-h-[2.25rem] flex items-center justify-center">
-                  {label}
-                </div>
-              </button>
-            );
-          })}
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      if (draggedId) return;
+                      navigate(item.path);
+                    }}
+                    className={`group w-24 sm:w-28 lg:w-32 select-none outline-none cursor-grab active:cursor-grabbing transition-transform duration-200 ${
+                      isDragOver ? "scale-[1.03]" : ""
+                    } ${isDragging ? "opacity-60" : ""}`}
+                    draggable
+                    onDragStart={handleDragStart(item, label)}
+                    onDragOver={handleDragOverItem(item.id)}
+                    onDragLeave={handleDragLeave(item.id)}
+                    onDrop={handleDrop(item.id)}
+                    onDragEnd={handleDragEnd}
+                    aria-grabbed={isDragging}
+                  >
+                    <div className="flex flex-col items-center justify-end gap-2">
+                      <div
+                        className={`w-[4.25rem] h-[4.25rem] sm:w-[4.75rem] sm:h-[4.75rem] rounded-2xl shadow-lg ring-1 ring-black/10 dark:ring-white/10 flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${
+                          item.color || "bg-gradient-to-br from-indigo-400 to-indigo-600"
+                        }`}
+                      >
+                        <div className="text-white drop-shadow-sm">
+                          {getIcon(item.icon, 38)}
+                        </div>
+                      </div>
+                      <div className="h-9 flex items-center justify-center text-[0.86rem] font-medium tracking-tight text-black/90 dark:text-white/90 text-center leading-tight">
+                        {label}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       ) : (
         <div className="text-center text-gray-500 py-8 text-lg">
