@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext";
+import { usePlanModules } from "../context/PlanModulesContext";
 import { hasPermission } from "../utils/permissions";
 import { useTranslation } from "react-i18next";
 import { safeNavigate } from "../utils/navigation";
@@ -43,29 +44,29 @@ export const SIDEBAR_WIDTH_COLLAPSED = 72;
 export const DASHBOARD_ITEM_DRAG_TYPE = "application/x-dashboard-shortcut";
 
 const MENU = [
-  { labelKey: "Dashboard", defaultLabel: "Dashboard", path: "/dashboard", icon: Home, permission: "dashboard" },
-  { labelKey: "Orders", defaultLabel: "Tables", path: "/tableoverview?tab=tables", icon: Grid2x2, permission: "tables" },
-  { labelKey: "Packet", defaultLabel: "Packet", path: "/tableoverview?tab=packet", icon: ShoppingBag, permission: "packet-orders" },
-  { labelKey: "History", defaultLabel: "History", path: "/tableoverview?tab=history", icon: BookOpen, permission: "history" },
-  { labelKey: "Phone", defaultLabel: "Phone", path: "/tableoverview?tab=phone", icon: Phone, permission: "phone-orders" },
-  { labelKey: "Register", defaultLabel: "Register", path: "/tableoverview?tab=register", icon: Wallet, permission: "register" },
-  { labelKey: "Production", defaultLabel: "Production", path: "/production", icon: Factory, permission: "production" },
-  { labelKey: "Task", defaultLabel: "Task", path: "/task", icon: ClipboardList, permission: "task" },
-  { labelKey: "Ingredient Prices", defaultLabel: "Ingredient Prices", path: "/ingredient-prices", icon: FlaskConical, permission: "ingredient-prices" },
-  { labelKey: "Expenses", defaultLabel: "Expenses", path: "/expenses", icon: Receipt, permission: "expenses" },
-  { labelKey: "Integrations", defaultLabel: "Integrations", path: "/integrations", icon: Puzzle, permission: "integrations" },
-  { labelKey: "Maintenance", defaultLabel: "Maintenance", path: "/maintenance", icon: Wrench, permission: "dashboard" },
-  { labelKey: "QR Menu", defaultLabel: "QR Menu", path: "/qr-menu-settings", icon: QrCode, permission: "settings" },
-  { labelKey: "Customer Insights", defaultLabel: "Customer Insights", path: "/customer-insights", icon: UserCheck, permission: "dashboard" },
-  { labelKey: "Marketing Campaigns", defaultLabel: "Marketing Campaigns", path: "/marketing-campaigns", icon: Megaphone, permission: "dashboard" },
-  { labelKey: "Cash History", defaultLabel: "Cash History", path: "/cash-register-history", icon: CreditCard, permission: "cash-register-history" },
-  { labelKey: "Products", defaultLabel: "Products", path: "/products", icon: Utensils, permission: "products" },
-  { labelKey: "Suppliers", defaultLabel: "Suppliers", path: "/suppliers", icon: Package, permission: "suppliers" },
-  { labelKey: "Stock", defaultLabel: "Stock", path: "/stock", icon: BarChart, permission: "stock" },
-  { labelKey: "Kitchen", defaultLabel: "Kitchen", path: "/kitchen", icon: ChefHat, permission: "kitchen" },
-  { labelKey: "Reports", defaultLabel: "Reports", path: "/reports", icon: FileText, permission: "reports" },
-  { labelKey: "Staff", defaultLabel: "Staff", path: "/staff", icon: Users, permission: "staff" },
-  { labelKey: "Settings", defaultLabel: "Settings", path: "/settings", icon: Settings, permission: "settings" },
+  { labelKey: "Dashboard", defaultLabel: "Dashboard", path: "/dashboard", icon: Home, permission: "dashboard", moduleKey: "page.dashboard" },
+  { labelKey: "Orders", defaultLabel: "Tables", path: "/tableoverview?tab=tables", icon: Grid2x2, permission: "tables", moduleKey: "page.tables" },
+  { labelKey: "Packet", defaultLabel: "Packet", path: "/tableoverview?tab=packet", icon: ShoppingBag, permission: "packet-orders", moduleKey: "page.packet_orders" },
+  { labelKey: "History", defaultLabel: "History", path: "/tableoverview?tab=history", icon: BookOpen, permission: "history", moduleKey: "page.history" },
+  { labelKey: "Phone", defaultLabel: "Phone", path: "/tableoverview?tab=phone", icon: Phone, permission: "phone-orders", moduleKey: "page.phone_orders" },
+  { labelKey: "Register", defaultLabel: "Register", path: "/tableoverview?tab=register", icon: Wallet, permission: "register", moduleKey: "page.register" },
+  { labelKey: "Production", defaultLabel: "Production", path: "/production", icon: Factory, permission: "production", moduleKey: "page.production" },
+  { labelKey: "Task", defaultLabel: "Task", path: "/task", icon: ClipboardList, permission: "task", moduleKey: "page.task" },
+  { labelKey: "Ingredient Prices", defaultLabel: "Ingredient Prices", path: "/ingredient-prices", icon: FlaskConical, permission: "ingredient-prices", moduleKey: "page.ingredient_prices" },
+  { labelKey: "Expenses", defaultLabel: "Expenses", path: "/expenses", icon: Receipt, permission: "expenses", moduleKey: "page.expenses" },
+  { labelKey: "Integrations", defaultLabel: "Integrations", path: "/integrations", icon: Puzzle, permission: "integrations", moduleKey: "page.integrations" },
+  { labelKey: "Maintenance", defaultLabel: "Maintenance", path: "/maintenance", icon: Wrench, permission: "dashboard", moduleKey: "page.maintenance" },
+  { labelKey: "QR Menu", defaultLabel: "QR Menu", path: "/qr-menu-settings", icon: QrCode, permission: "settings", moduleKey: "page.qr_menu_settings" },
+  { labelKey: "Customer Insights", defaultLabel: "Customer Insights", path: "/customer-insights", icon: UserCheck, permission: "dashboard", moduleKey: "page.customer_insights" },
+  { labelKey: "Marketing Campaigns", defaultLabel: "Marketing Campaigns", path: "/marketing-campaigns", icon: Megaphone, permission: "dashboard", moduleKey: "page.marketing_campaigns" },
+  { labelKey: "Cash History", defaultLabel: "Cash History", path: "/cash-register-history", icon: CreditCard, permission: "cash-register-history", moduleKey: "page.cash_register_history" },
+  { labelKey: "Products", defaultLabel: "Products", path: "/products", icon: Utensils, permission: "products", moduleKey: "page.products" },
+  { labelKey: "Suppliers", defaultLabel: "Suppliers", path: "/suppliers", icon: Package, permission: "suppliers", moduleKey: "page.suppliers" },
+  { labelKey: "Stock", defaultLabel: "Stock", path: "/stock", icon: BarChart, permission: "stock", moduleKey: "page.stock" },
+  { labelKey: "Kitchen", defaultLabel: "Kitchen", path: "/kitchen", icon: ChefHat, permission: "kitchen", moduleKey: "page.kitchen" },
+  { labelKey: "Reports", defaultLabel: "Reports", path: "/reports", icon: FileText, permission: "reports", moduleKey: "page.reports" },
+  { labelKey: "Staff", defaultLabel: "Staff", path: "/staff", icon: Users, permission: "staff", moduleKey: "page.staff" },
+  { labelKey: "Settings", defaultLabel: "Settings", path: "/settings", icon: Settings, permission: "settings", moduleKey: "page.settings" },
 ];
 
 const HIDDEN_STORAGE_KEY = "beyproHiddenSidebarItems";
@@ -207,6 +208,7 @@ function readOrder(storageKey) {
 export default function Sidebar({ isOpen, setIsOpen }) {
   const location = useLocation();
   const { currentUser } = useAuth();
+  const { isModuleAllowed } = usePlanModules();
   const storedUser = readStoredUser();
   const displayName = getDisplayName(currentUser) || getDisplayName(storedUser);
   const isLoggedIn = !!(currentUser || storedUser);
@@ -261,6 +263,8 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
     const filteredMenu = orderedMenu.filter((item) => {
       if (item.labelKey !== "Dashboard" && hiddenKeys.includes(item.labelKey)) return false;
+
+      if (item.moduleKey && !isModuleAllowed(item.moduleKey)) return false;
 
       const permKey = item.permission || item.labelKey?.toLowerCase();
       return hasPermission(permKey, currentUser);

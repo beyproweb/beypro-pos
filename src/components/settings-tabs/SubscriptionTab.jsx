@@ -3,9 +3,11 @@ import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import secureFetch, { getAuthToken } from "../../utils/secureFetch";
 import { safeNavigate } from "../../utils/navigation";
+import { usePlanModules } from "../../context/PlanModulesContext";
 
 export default function SubscriptionTab() {
   const { t } = useTranslation();
+  const { refresh: refreshPlanModules } = usePlanModules();
 
   // Form state — we fetch actual tenant/user data and populate this.
   const [form, setForm] = useState({
@@ -199,6 +201,9 @@ useEffect(() => {
           businessName: form.businessName,
         };
         localStorage.setItem("beyproUser", JSON.stringify(updated));
+        try {
+          await refreshPlanModules();
+        } catch {}
       } else {
         toast.error(res?.error || t("Failed to update profile"));
       }

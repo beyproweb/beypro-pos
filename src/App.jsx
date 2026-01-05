@@ -43,6 +43,7 @@ import CamerasPage from "./pages/CamerasPage";
 import TakeawayOverview from "./pages/TakeawayOverview";
 import { setNavigator } from "./utils/navigation";
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
+import { PlanModulesProvider } from "./context/PlanModulesContext";
 
 
 const SETTINGS_TAB_PERMISSIONS = {
@@ -64,9 +65,21 @@ function SettingsRouteWrapper() {
   const { tabKey } = useParams();
   const normalized = tabKey ? tabKey.toLowerCase() : undefined;
   const permission = normalized ? SETTINGS_TAB_PERMISSIONS[normalized] || "settings" : "settings";
+  const moduleKey =
+    normalized === "users"
+      ? "page.settings.users"
+      : normalized === "printers"
+        ? "page.settings.printers"
+        : normalized === "cameras"
+          ? "page.settings.cameras"
+          : normalized === "integrations"
+            ? "page.settings.integrations"
+            : normalized === "subscription"
+              ? "page.settings.subscription"
+              : "page.settings";
 
   return (
-    <ProtectedRoute permission={permission}>
+    <ProtectedRoute permission={permission} moduleKey={moduleKey}>
       <SettingsPage />
     </ProtectedRoute>
   );
@@ -110,12 +123,22 @@ function TableOverviewRouteWrapper() {
   };
 
   const permission = permissionByTab[tab] || "tables";
+  const moduleKeyByTab = {
+    tables: "page.tables",
+    kitchen: "page.kitchen",
+    history: "page.history",
+    packet: "page.packet_orders",
+    phone: "page.phone_orders",
+    register: "page.register",
+    takeaway: "page.takeaway_overview",
+  };
+  const moduleKey = moduleKeyByTab[tab] || "page.tables";
 
   // Force a remount of TableOverview when the query string (tab) changes.
   // This avoids stale internal state / memoized children when header tabs
   // change location.search without unmounting TableOverview.
   return (
-    <ProtectedRoute permission={permission}>
+    <ProtectedRoute permission={permission} moduleKey={moduleKey}>
       <TableOverview key={location.search || tab} />
     </ProtectedRoute>
   );
@@ -127,7 +150,9 @@ export default function App() {
       <CurrencyProvider>
         <AppearanceProvider>
           <NotificationsProvider>
-            <AppShell />
+            <PlanModulesProvider>
+              <AppShell />
+            </PlanModulesProvider>
           </NotificationsProvider>
         </AppearanceProvider>
       </CurrencyProvider>
@@ -225,20 +250,20 @@ function AppShell() {
               }
             >
               <Route index element={<Navigate to="/tableoverview?tab=tables" replace />} />
-              <Route path="dashboard" element={<ProtectedRoute permission="dashboard"><Dashboard /></ProtectedRoute>} />
+              <Route path="dashboard" element={<ProtectedRoute permission="dashboard" moduleKey="page.dashboard"><Dashboard /></ProtectedRoute>} />
               <Route
                 path="customer-insights"
-                element={<ProtectedRoute permission="dashboard"><CustomerInsights /></ProtectedRoute>}
+                element={<ProtectedRoute permission="dashboard" moduleKey="page.customer_insights"><CustomerInsights /></ProtectedRoute>}
               />
               <Route
                 path="marketing-campaigns"
-                element={<ProtectedRoute permission="dashboard"><MarketingCampaigns /></ProtectedRoute>}
+                element={<ProtectedRoute permission="dashboard" moduleKey="page.marketing_campaigns"><MarketingCampaigns /></ProtectedRoute>}
               />
               {/* ORDERS (packet/phone) */}
 <Route
   path="orders"
   element={
-    <ProtectedRoute permission="orders">
+    <ProtectedRoute permission="orders" moduleKey="page.orders">
       <Orders />
     </ProtectedRoute>
   }
@@ -248,7 +273,7 @@ function AppShell() {
 <Route
   path="payments"
   element={
-    <ProtectedRoute permission="payments">
+    <ProtectedRoute permission="payments" moduleKey="page.payments">
       <TransactionScreen />
     </ProtectedRoute>
   }
@@ -258,33 +283,33 @@ function AppShell() {
 <Route
   path="cash-register"
   element={
-    <ProtectedRoute permission="register">
+    <ProtectedRoute permission="register" moduleKey="page.cash_register_history">
       <CashRegisterHistory />
     </ProtectedRoute>
   }
 />
-              <Route path="products" element={<ProtectedRoute permission="products"><Products /></ProtectedRoute>} />
-              <Route path="kitchen" element={<ProtectedRoute permission="kitchen"><Kitchen /></ProtectedRoute>} />
-              <Route path="suppliers" element={<ProtectedRoute permission="suppliers"><Suppliers /></ProtectedRoute>} />
-              <Route path="stock" element={<ProtectedRoute permission="stock"><Stock /></ProtectedRoute>} />
-              <Route path="production" element={<ProtectedRoute permission="production"><Production /></ProtectedRoute>} />
+              <Route path="products" element={<ProtectedRoute permission="products" moduleKey="page.products"><Products /></ProtectedRoute>} />
+              <Route path="kitchen" element={<ProtectedRoute permission="kitchen" moduleKey="page.kitchen"><Kitchen /></ProtectedRoute>} />
+              <Route path="suppliers" element={<ProtectedRoute permission="suppliers" moduleKey="page.suppliers"><Suppliers /></ProtectedRoute>} />
+              <Route path="stock" element={<ProtectedRoute permission="stock" moduleKey="page.stock"><Stock /></ProtectedRoute>} />
+              <Route path="production" element={<ProtectedRoute permission="production" moduleKey="page.production"><Production /></ProtectedRoute>} />
               <Route path="tables" element={<TablesRedirect />} />
               <Route path="tableoverview" element={<TableOverviewRouteWrapper />} />
               <Route path="transaction/:tableId" element={<TransactionScreen />} />
               <Route path="transaction/phone/:orderId" element={<TransactionScreen />} />
-              <Route path="reports" element={<ProtectedRoute permission="reports"><Reports /></ProtectedRoute>} />
-              <Route path="staff" element={<ProtectedRoute permission="staff"><Staff /></ProtectedRoute>} />
-              <Route path="task" element={<ProtectedRoute permission="task"><Task /></ProtectedRoute>} />
-              <Route path="live-route" element={<ProtectedRoute permission="delivery"><LiveRouteMap /></ProtectedRoute>} />
+              <Route path="reports" element={<ProtectedRoute permission="reports" moduleKey="page.reports"><Reports /></ProtectedRoute>} />
+              <Route path="staff" element={<ProtectedRoute permission="staff" moduleKey="page.staff"><Staff /></ProtectedRoute>} />
+              <Route path="task" element={<ProtectedRoute permission="task" moduleKey="page.task"><Task /></ProtectedRoute>} />
+              <Route path="live-route" element={<ProtectedRoute permission="delivery" moduleKey="page.delivery"><LiveRouteMap /></ProtectedRoute>} />
               <Route
   path="takeaway"
-  element={<ProtectedRoute permission="takeaway"><TakeawayOverview /></ProtectedRoute>}
+  element={<ProtectedRoute permission="takeaway" moduleKey="page.takeaway_overview"><TakeawayOverview /></ProtectedRoute>}
 />
 
               <Route
                 path="user-management"
                 element={
-                  <ProtectedRoute permission="settings-users">
+                  <ProtectedRoute permission="settings-users" moduleKey="page.settings.users">
                     <UserManagementPage />
                   </ProtectedRoute>
                 }
@@ -292,7 +317,7 @@ function AppShell() {
               <Route
                 path="printers"
                 element={
-                  <ProtectedRoute permission="settings-printers">
+                  <ProtectedRoute permission="settings-printers" moduleKey="page.settings.printers">
                     <PrintersPage />
                   </ProtectedRoute>
                 }
@@ -300,7 +325,7 @@ function AppShell() {
               <Route
                 path="cameras"
                 element={
-                  <ProtectedRoute permission="settings-cameras">
+                  <ProtectedRoute permission="settings-cameras" moduleKey="page.settings.cameras">
                     <CamerasPage />
                   </ProtectedRoute>
                 }
@@ -308,20 +333,20 @@ function AppShell() {
               <Route path="settings" element={<SettingsRouteWrapper />} />
               <Route path="settings/:tabKey" element={<SettingsRouteWrapper />} />
               <Route path="subscription" element={<SubscriptionTab />} />
-              <Route path="/expenses" element={<ProtectedRoute permission="expenses"><ExpensesPage /></ProtectedRoute>} />
-              <Route path="ingredient-prices" element={<ProtectedRoute permission="ingredient-prices"><IngredientPrices /></ProtectedRoute>} />
-              <Route path="cash-register-history" element={<ProtectedRoute permission="cash-register-history"><CashRegisterHistory /></ProtectedRoute>} />
-              <Route path="integrations" element={<ProtectedRoute permission="integrations"><IntegrationsPage /></ProtectedRoute>} />
+              <Route path="/expenses" element={<ProtectedRoute permission="expenses" moduleKey="page.expenses"><ExpensesPage /></ProtectedRoute>} />
+              <Route path="ingredient-prices" element={<ProtectedRoute permission="ingredient-prices" moduleKey="page.ingredient_prices"><IngredientPrices /></ProtectedRoute>} />
+              <Route path="cash-register-history" element={<ProtectedRoute permission="cash-register-history" moduleKey="page.cash_register_history"><CashRegisterHistory /></ProtectedRoute>} />
+              <Route path="integrations" element={<ProtectedRoute permission="integrations" moduleKey="page.integrations"><IntegrationsPage /></ProtectedRoute>} />
               <Route path="*" element={<Navigate to="/" replace />} />
 
               {/* QR menu settings (still protected) */}
               <Route
                 path="qr-menu-settings"
-                element={<ProtectedRoute permission="settings"><QrMenuSettings /></ProtectedRoute>}
+                element={<ProtectedRoute permission="settings" moduleKey="page.qr_menu_settings"><QrMenuSettings /></ProtectedRoute>}
               />
               <Route
                 path="maintenance"
-                element={<ProtectedRoute permission="dashboard"><MaintenanceTracker /></ProtectedRoute>}
+                element={<ProtectedRoute permission="dashboard" moduleKey="page.maintenance"><MaintenanceTracker /></ProtectedRoute>}
               />
               <Route path="unauthorized" element={<div className="p-10 text-red-600 text-xl">❌ Access Denied</div>} />
             </Route>
