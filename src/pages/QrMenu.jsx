@@ -2890,8 +2890,10 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
   }
 }
 
+  const tokenResolveIdentifier = id || restaurantIdentifier;
+
   // Ensure we have a valid JWT for protected endpoints (e.g., POST /orders)
-  // Priority: ?token=... in URL, else resolve via /api/public/qr-resolve/:code using the route param :id
+  // Priority: ?token=... in URL, else resolve via /api/public/qr-resolve/:code using route id or identifier
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -2902,14 +2904,14 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
       }
     } catch {}
 
-    // If no token present but we have a QR code identifier in the route, resolve it once
+    // If no token present but we have an identifier, resolve it once
     (async () => {
       try {
         const existing = getStoredToken();
         if (existing) return; // already have a token in storage
-        if (!id) return;
+        if (!tokenResolveIdentifier) return;
         const res = await fetch(
-          `${API_URL}/public/qr-resolve/${encodeURIComponent(id)}`
+          `${API_URL}/public/qr-resolve/${encodeURIComponent(tokenResolveIdentifier)}`
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -2918,7 +2920,7 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
         }
       } catch {}
     })();
-  }, [id]);
+  }, [tokenResolveIdentifier]);
 
   // QR entry mode: "table" (scanned at a table) or "delivery" (generic menu link)
   const [qrMode] = useState(() => getQrModeFromLocation());

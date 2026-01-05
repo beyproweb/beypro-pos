@@ -215,6 +215,8 @@ function AppShell() {
             {/* PUBLIC: Dual QR entry points */}
             <Route path="/qr" element={<QrMenu />} />
             <Route path="/menu" element={<QrMenu />} />
+            {/* PUBLIC: Short restaurant link (e.g. /my-restaurant) */}
+            <Route path="/:slug" element={<QrMenu />} />
 
             {/* PUBLIC: Login */}
             <Route

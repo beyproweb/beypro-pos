@@ -10,18 +10,9 @@ export default function QrLinkGenerator() {
   const fetchQrLink = async () => {
   try {
     setLoading(true);
-    const restaurantSlug =
-      localStorage.getItem("restaurant_slug") ||
-      localStorage.getItem("restaurant_id");
-
     const data = await secureFetch("/settings/qr-link");
     if (data.success && data.link) {
-      // ✅ Sanitize to ensure slug isn't "null"
-const fixedLink = data.link
-  .replace("/null/", `/${restaurantSlug || "id"}`)
-  .replace("/qr-menu/", "/qr-menu/view/")  // new prefix
-.replace(/\/([A-Za-z0-9]+)$/, `?token=$1`);
-      setLink(fixedLink);
+      setLink(data.link);
     } else {
       alert(data.error || "Failed to generate QR link");
     }
