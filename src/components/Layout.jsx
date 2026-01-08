@@ -13,6 +13,49 @@ import { useTranslation } from "react-i18next";
 
 const EDGE_TRIGGER_THRESHOLD = 48;
 
+function stripEmojis(text) {
+  return String(text || "")
+    .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function formatNotificationMessage(alert, t) {
+  const type = String(alert?.type || "other").toLowerCase();
+  const extra = alert?.extra && typeof alert.extra === "object" ? alert.extra : {};
+  const event = String(extra?.event || "").toLowerCase();
+
+  const orderId = extra.orderId ?? extra.order_id ?? null;
+  const orderNumber = extra.order_number ?? extra.orderNumber ?? null;
+  const orderSuffix = orderNumber ? `#${orderNumber}` : orderId ? `#${orderId}` : "";
+
+  if (event === "order_confirmed") return t("New order {{order}}", { order: orderSuffix }).trim();
+  if (event === "order_preparing") return t("Kitchen preparing order {{order}}", { order: orderSuffix }).trim();
+  if (event === "order_delivered") return t("Kitchen delivered order {{order}}", { order: orderSuffix }).trim();
+  if (event === "payment_made") return t("Payment made {{order}}", { order: orderSuffix }).trim();
+
+  if (event === "driver_assigned" || type === "driver") {
+    const driverName = String(extra.driverName || extra.driver_name || "").trim() || t("Driver");
+    if (event === "driver_delivered") {
+      const customerName = String(extra.customerName || extra.customer_name || "").trim();
+      if (customerName) return t("Order ({{customer}}) delivered", { customer: customerName });
+      if (orderSuffix) return t("Order {{order}} delivered", { order: orderSuffix });
+      return t("Order delivered");
+    }
+    if (event === "driver_assigned") {
+      return t("Driver {{driver}} assigned to order {{order}}", { driver: driverName, order: orderSuffix });
+    }
+  }
+
+  if (event === "task_created") return t("New task: {{title}}", { title: extra.title || "" }).trim();
+  if (event === "task_completed") return t("Task completed: {{title}}", { title: extra.title || "" }).trim();
+  if (event === "maintenance_created") return t("Maintenance created: {{title}}", { title: extra.title || "" }).trim();
+  if (event === "maintenance_resolved") return t("Maintenance resolved: {{title}}", { title: extra.title || "" }).trim();
+
+  // Backend saved notifications may contain emojis; strip for bell.
+  return stripEmojis(alert?.message || "");
+}
+
 export default function Layout({
   unread = 0,
   bellOpen = false,
@@ -324,7 +367,7 @@ export default function Layout({
     <div className="flex items-center justify-between p-4 border-b border-blue-900/30 bg-blue-950/60">
       <div className="flex flex-col">
         <h2 className="text-xl font-extrabold text-blue-200 flex items-center gap-2">
-          <span role="img" aria-label="Bell">🔔</span> Notifications
+          Notifications
         </h2>
         <div className="text-xs text-blue-300/80 font-semibold">
           {unread > 0 ? `${unread} unread` : "All caught up"}
@@ -413,7 +456,7 @@ export default function Layout({
           className="px-3 py-1.5 rounded-full bg-red-500/15 text-red-200 border border-red-400/30 hover:bg-red-500/25 transition"
           title="Open Stock"
         >
-          ⚠️ Critical stock: {notificationSummaries.criticalStock}
+          Critical stock: {notificationSummaries.criticalStock}
         </button>
       )}
       {Number.isFinite(notificationSummaries?.openMaintenance) && notificationSummaries.openMaintenance > 0 && (
@@ -423,7 +466,7 @@ export default function Layout({
           className="px-3 py-1.5 rounded-full bg-amber-500/15 text-amber-200 border border-amber-400/30 hover:bg-amber-500/25 transition"
           title="Open Maintenance"
         >
-          🛠️ Open maintenance: {notificationSummaries.openMaintenance}
+          Open maintenance: {notificationSummaries.openMaintenance}
         </button>
       )}
       {Number.isFinite(notificationSummaries?.inProgressTasks) && notificationSummaries.inProgressTasks > 0 && (
@@ -433,7 +476,7 @@ export default function Layout({
           className="px-3 py-1.5 rounded-full bg-sky-500/15 text-sky-200 border border-sky-400/30 hover:bg-sky-500/25 transition"
           title="Open Tasks"
         >
-          📝 In-progress tasks: {notificationSummaries.inProgressTasks}
+          In-progress tasks: {notificationSummaries.inProgressTasks}
         </button>
       )}
     </div>
@@ -459,20 +502,10 @@ export default function Layout({
       );
     })
     .map((alert) => {
-      const t = alert?.timeMs || (alert?.time ? new Date(alert.time).getTime() : 0);
-      const isUnread = t > (notificationsLastSeenAtMs || 0);
+      const timeMs = alert?.timeMs || (alert?.time ? new Date(alert.time).getTime() : 0);
+      const isUnread = timeMs > (notificationsLastSeenAtMs || 0);
       const type = String(alert.type || "other").toLowerCase();
-      const icon =
-        type === "ingredient" ? "💸" :
-        type === "stock" ? "🧂" :
-        type === "stock_expiry" ? "⏳" :
-        type === "payment" ? "💸" :
-        type === "driver" ? "🚗" :
-        type === "task" ? "📝" :
-        type === "maintenance" ? "🛠️" :
-        type === "register" ? "🏧" :
-        type === "order" ? "🧾" :
-        "🔔";
+      const message = formatNotificationMessage(alert, t);
 
       const timeLabel =
         alert.time
@@ -497,9 +530,8 @@ export default function Layout({
           ].join(" ")}
           title={clickable ? "Open related page" : undefined}
         >
-          <span className="text-2xl">{icon}</span>
           <span className="flex-1">
-            <span className="block leading-snug">{alert.message}</span>
+            <span className="block leading-snug">{message}</span>
             <span className="block text-xs text-blue-300/80 font-bold mt-0.5">
               {type.replace(/_/g, " ")}
               {isUnread ? " • new" : ""}

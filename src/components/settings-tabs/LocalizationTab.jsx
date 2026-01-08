@@ -78,10 +78,10 @@ export default function LocalizationTab() {
         localStorage.setItem("beyproLanguage", selectedLang);
         localStorage.setItem("beyproGuestLanguage", selectedLang);
       } catch {}
-      toast.success("✅ Localization saved successfully!");
+      toast.success(`✅ ${t("Localization saved successfully!")}`);
     } catch (err) {
       console.error("❌ Failed to save localization:", err);
-      toast.error("Failed to save localization");
+      toast.error(t("Failed to save localization"));
     }
   };
 

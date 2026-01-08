@@ -118,14 +118,19 @@ const Staff = () => {
 
   const staffHeaderNav = useMemo(() => {
     const pillClass = (isActive) =>
-      `rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
+      [
+        "shrink-0 w-28 sm:w-32 truncate",
+        "inline-flex items-center justify-center gap-2",
+        "rounded-xl border border-slate-200/80 dark:border-slate-700/80 px-3 py-1.5 text-sm font-semibold",
+        "transition-all duration-150",
+        "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
         isActive
-          ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
-          : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
-      }`;
+          ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
+          : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+      ].join(" ");
 
     return (
-      <div className="flex items-center justify-center gap-2 flex-wrap">
+      <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap">
         <button
           type="button"
           onClick={() => navigate("/dashboard")}

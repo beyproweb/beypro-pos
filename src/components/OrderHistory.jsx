@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -15,7 +15,9 @@ const FALLBACK_PAYMENT_OPTIONS = [
 
 export default function OrderHistory({
   fromDate, toDate, paymentFilter,
+  orderTypeFilter,
   setFromDate, setToDate, setPaymentFilter,
+  setOrderTypeFilter,
 }) {
   const paymentMethods = usePaymentMethods();
   const paymentFilterOptions = useMemo(
@@ -32,16 +34,49 @@ export default function OrderHistory({
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
 
+  const toMoneyNumber = useCallback((value) => {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const raw = String(value).trim();
+    if (!raw) return 0;
+    const cleaned = raw.replace(/[^\d,.\-]+/g, "").replace(/\s+/g, "");
+    if (!cleaned) return 0;
+    const hasComma = cleaned.includes(",");
+    const hasDot = cleaned.includes(".");
+    let normalized = cleaned;
+    if (hasComma && hasDot) {
+      if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
+        normalized = cleaned.replace(/\./g, "").replace(/,/g, ".");
+      } else {
+        normalized = cleaned.replace(/,/g, "");
+      }
+    } else if (hasComma && !hasDot) {
+      normalized = cleaned.replace(/,/g, ".");
+    }
+    const num = Number(normalized);
+    return Number.isFinite(num) ? num : 0;
+  }, []);
+
+  const isCancelledItem = useCallback((item) => {
+    const status = String(item?.kitchen_status || "").toLowerCase();
+    return status === "cancelled" || status === "canceled";
+  }, []);
+
+  const calculateItemTotal = useCallback((item) => {
+    const qty = parseInt(item?.quantity || item?.qty || 1);
+    const base = (parseFloat(item?.price) || 0) * qty;
+    const extrasTotal = (item?.extras || []).reduce((sum, ex) => {
+      const extraQty = parseInt(ex.quantity || ex.qty || 1);
+      return sum + qty * extraQty * (parseFloat(ex.price || 0) || 0);
+    }, 0);
+    return base + extrasTotal;
+  }, []);
+
   function calculateGrandTotal(items = []) {
   let total = 0;
   for (const item of items) {
-    const qty = parseInt(item.quantity || item.qty || 1);
-    const itemTotal = parseFloat(item.price) * qty;
-    const extrasTotal = (item.extras || []).reduce((sum, ex) => {
-      const extraQty = parseInt(ex.quantity || ex.qty || 1);
-      return sum + (qty * extraQty * parseFloat(ex.price || 0));
-    }, 0);
-    total += itemTotal + extrasTotal;
+    if (isCancelledItem(item)) continue;
+    total += calculateItemTotal(item);
   }
   return total;
 }
@@ -60,7 +95,7 @@ export default function OrderHistory({
 
  const enriched = await Promise.all(
   data.map(async (order) => {
-    const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+    const itemsRaw = await secureFetch(`/orders/${order.id}/items?include_cancelled=1`);
     const items = itemsRaw.map(item => ({
       ...item,
       discount_type: item.discount_type || null,
@@ -72,7 +107,7 @@ export default function OrderHistory({
     const payments = Array.isArray(paymentsRaw)
       ? paymentsRaw.map((p) => ({
           ...p,
-          amount: Number(p.amount || 0),
+          amount: toMoneyNumber(p.amount),
         }))
       : [];
 
@@ -86,8 +121,13 @@ export default function OrderHistory({
   })
 );
 
-
-    const nonEmptyOrders = enriched.filter(order => Array.isArray(order.items) && order.items.length > 0);
+    // Keep cancelled orders even if items are filtered out server-side (cancelled items are omitted from /orders/:id/items).
+    const nonEmptyOrders = enriched.filter((order) => {
+      const normalized = String(order?.status || "").toLowerCase();
+      const isCancelled = normalized === "cancelled" || normalized === "canceled";
+      const hasItems = Array.isArray(order.items) && order.items.length > 0;
+      return hasItems || isCancelled;
+    });
 
     setClosedOrders(nonEmptyOrders);
   } catch (err) {
@@ -98,13 +138,56 @@ export default function OrderHistory({
 
 const filteredOrders = useMemo(() => {
   if (showCancellationsOnly) {
-    return closedOrders.filter((order) => order.status === "cancelled");
+    return closedOrders.filter((order) => {
+      const normalized = String(order?.status || "").toLowerCase();
+      if (normalized === "cancelled" || normalized === "canceled") return true;
+      return Array.isArray(order?.items) && order.items.some(isCancelledItem);
+    });
   }
   return closedOrders;
-}, [closedOrders, showCancellationsOnly]);
+}, [closedOrders, isCancelledItem, showCancellationsOnly]);
+
+const filteredOrdersByTypeAndPayment = useMemo(() => {
+  const filterValue = String(orderTypeFilter || "All").toLowerCase();
+  const paymentValue = String(paymentFilter || "All").toLowerCase();
+
+  const matchesOrderType = (order) => {
+    if (filterValue === "all") return true;
+    const orderType = String(order?.order_type || "").trim().toLowerCase();
+    if (filterValue === "table") return orderType === "table";
+    if (filterValue === "phone") return orderType === "phone";
+    if (filterValue === "online") return orderType === "online" || orderType === "packet";
+    return true;
+  };
+
+  const matchesPayment = (order) => {
+    if (paymentValue === "all") return true;
+    const normalize = (val) => String(val || "").toLowerCase();
+
+    if (Array.isArray(order?.receiptMethods) && order.receiptMethods.length > 0) {
+      return order.receiptMethods.some((rm) => normalize(rm.payment_method) === paymentValue);
+    }
+    if (Array.isArray(order?.payments) && order.payments.length > 0) {
+      return order.payments.some((pm) => normalize(pm.payment_method) === paymentValue);
+    }
+    return normalize(order?.payment_method) === paymentValue;
+  };
+
+  return filteredOrders.filter(matchesOrderType).filter(matchesPayment);
+}, [filteredOrders, orderTypeFilter, paymentFilter]);
+
+const totals = useMemo(() => {
+  const totalOrders = filteredOrdersByTypeAndPayment.length;
+  const totalAmount = filteredOrdersByTypeAndPayment.reduce((sum, order) => {
+    const byField = Number(order?.total);
+    if (Number.isFinite(byField)) return sum + byField;
+    return sum + Number(calculateGrandTotal(order?.items || []));
+  }, 0);
+  return { totalOrders, totalAmount };
+}, [filteredOrdersByTypeAndPayment]);
 
 const groupedClosedOrders = useMemo(() => {
-  return filteredOrders.reduce((acc, order) => {
+  return filteredOrdersByTypeAndPayment.reduce((acc, order) => {
     const dateKey = order.created_at
       ? new Date(order.created_at).toLocaleDateString()
       : "Unknown";
@@ -112,7 +195,7 @@ const groupedClosedOrders = useMemo(() => {
     acc[dateKey].push(order);
     return acc;
   }, {});
-}, [filteredOrders]);
+}, [filteredOrdersByTypeAndPayment]);
 
 function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
   let arr = draft || [];
@@ -146,9 +229,6 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
     <div className="px-3 md:px-8 py-6">
       {/* Header and filters */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-7">
-        <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-500 via-blue-500 to-indigo-600 text-transparent bg-clip-text mb-0 tracking-tight drop-shadow">
-          📘 {t('Order History')}
-        </h2>
         <div className="flex gap-2 flex-wrap">
           <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
             className="border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition" />
@@ -166,6 +246,21 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
               </option>
             ))}
           </select>
+          <select
+            onChange={(e) => setOrderTypeFilter(e.target.value)}
+            className="border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            value={orderTypeFilter || "All"}
+          >
+            <option value="All">{t("All Orders")}</option>
+            <option value="table">{t("Table Orders")}</option>
+            <option value="online">{t("Online Orders")}</option>
+            <option value="phone">{t("Phone Orders")}</option>
+          </select>
+          <div className="flex items-center gap-2 rounded-xl border-2 border-blue-100 bg-white px-3 py-1 shadow-sm text-sm font-semibold text-slate-700">
+            <span>{t("Total Orders")}: {totals.totalOrders}</span>
+            <span className="text-slate-300">|</span>
+            <span>{t("Total Amount")}: {formatCurrency(totals.totalAmount)}</span>
+          </div>
           <button
             type="button"
             onClick={() => setShowCancellationsOnly((prev) => !prev)}
@@ -206,28 +301,21 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             {/* Order Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
               {orders
-.filter((order) => {
-    if (paymentFilter === "All") return true;
-    const target = (paymentFilter || "").toLowerCase();
-    const normalize = (val) => (val || "").toLowerCase();
-
-    if (Array.isArray(order.receiptMethods) && order.receiptMethods.length > 0) {
-      return order.receiptMethods.some(
-        (rm) => normalize(rm.payment_method) === target
-      );
-    }
-    if (Array.isArray(order.payments) && order.payments.length > 0) {
-      return order.payments.some(
-        (pm) => normalize(pm.payment_method) === target
-      );
-    }
-
-    return normalize(order.payment_method) === target;
-  })
   .map((order) => {
     const normalizedStatus = (order.status || "").toLowerCase();
     const isOrderCancelled = ["cancelled", "canceled"].includes(normalizedStatus);
-    const paymentEditingAllowed = !isOrderCancelled;
+    const onlinePayments = ["online", "online payment", "online card", "yemeksepeti online"];
+    const isOnlineMethod = (method) =>
+      typeof method === "string" &&
+      onlinePayments.some((type) => method.toLowerCase().includes(type));
+    const isOnlinePayment =
+      isOnlineMethod(order.payment_method) ||
+      (Array.isArray(order.receiptMethods) &&
+        order.receiptMethods.some((rm) => isOnlineMethod(rm.payment_method))) ||
+      (Array.isArray(order.payments) &&
+        order.payments.some((pm) => isOnlineMethod(pm.payment_method)));
+
+    const paymentEditingAllowed = !isOrderCancelled && !isOnlinePayment;
     const showPaymentEditor = paymentEditingAllowed && editingPaymentOrderId === order.id;
     return (
     <div
@@ -310,7 +398,19 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 <div className="flex flex-row items-end justify-between w-full">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-blue-900">{item.name}</span>
+                      <span
+                        className={[
+                          "font-semibold",
+                          isCancelledItem(item) ? "text-rose-700 line-through" : "text-blue-900",
+                        ].join(" ")}
+                      >
+                        {item.name}
+                      </span>
+                      {isCancelledItem(item) && (
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                          {t("cancelled")}
+                        </span>
+                      )}
                       {item.note && (
                         <span className="ml-1 text-yellow-700 text-xs font-normal">📝 {item.note}</span>
                       )}
@@ -370,7 +470,38 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             {t("Payments")}
           </p>
           <div className="space-y-1">
-            {order.payments.map((payment) => (
+            {(() => {
+              const cancelledItemsTotal = Array.isArray(order.items)
+                ? order.items.reduce((sum, item) => {
+                    if (!isCancelledItem(item)) return sum;
+                    return sum + calculateItemTotal(item);
+                  }, 0)
+                : 0;
+              const paidTotalFromPayments = Array.isArray(order.payments)
+                ? order.payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
+                : 0;
+              const paidTotalFromReceiptMethods = Array.isArray(order.receiptMethods)
+                ? order.receiptMethods.reduce(
+                    (sum, row) => sum + toMoneyNumber(row?.amount ?? 0),
+                    0
+                  )
+                : 0;
+              const paidTotalFallbackFromOrder =
+                Number.isFinite(Number(order?.total)) ? Number(order.total) : calculateGrandTotal(order.items || []);
+              const paidTotal =
+                paidTotalFromPayments > 0.0001
+                  ? paidTotalFromPayments
+                  : paidTotalFromReceiptMethods > 0.0001
+                    ? paidTotalFromReceiptMethods
+                    : paidTotalFallbackFromOrder;
+
+              const visiblePayments = order.payments.filter(
+                (payment) => Math.abs(Number(payment.amount) || 0) > 0.0001
+              );
+
+              return (
+                <>
+                  {visiblePayments.map((payment) => (
               <div key={payment.id} className="flex items-center justify-between">
                 <span>
                   {new Date(payment.created_at).toLocaleString([], {
@@ -383,10 +514,30 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                   · {payment.payment_method || t("Payment")}
                 </span>
                 <span className="font-semibold text-slate-900 dark:text-white">
-                  {formatCurrency(Number(payment.amount || 0))}
+                  {formatCurrency(Number(payment.amount) || 0)}
                 </span>
               </div>
-            ))}
+                  ))}
+
+                  <div className="mt-2 border-t border-slate-200/60 pt-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-500">{t("Paid")}</span>
+                      <span className="font-extrabold text-slate-900 dark:text-white">
+                        {formatCurrency(paidTotal)}
+                      </span>
+                    </div>
+                    {cancelledItemsTotal > 0.0001 && (
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-rose-600">{t("cancelled")}</span>
+                        <span className="font-extrabold text-rose-700">
+                          -{formatCurrency(cancelledItemsTotal)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -576,24 +727,20 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
               </span>
             ))}
         </span>
-        <button
-          className={`ml-2 px-2 py-1 rounded text-base font-bold ${
-            paymentEditingAllowed
-              ? "bg-fuchsia-500 text-white"
-              : "bg-slate-200 text-slate-500 cursor-not-allowed"
-          }`}
-          onClick={() => {
-            if (!paymentEditingAllowed) return;
-            setEditingPaymentOrderId(order.id);
-            setPaymentMethodDraft((pm) => ({
-              ...pm,
-              [order.id]: order.receiptMethods.map((obj) => ({ ...obj })),
-            }));
-          }}
-          disabled={!paymentEditingAllowed}
-        >
-          {t("Edit Splits")} ✏️
-        </button>
+        {paymentEditingAllowed && (
+          <button
+            className="ml-2 px-2 py-1 rounded text-base font-bold bg-fuchsia-500 text-white"
+            onClick={() => {
+              setEditingPaymentOrderId(order.id);
+              setPaymentMethodDraft((pm) => ({
+                ...pm,
+                [order.id]: order.receiptMethods.map((obj) => ({ ...obj })),
+              }));
+            }}
+          >
+            {t("Edit Splits")} ✏️
+          </button>
+        )}
       </>
     )
   ) : (
@@ -823,13 +970,10 @@ await secureFetch(`/orders/${order.id}`, {
           >✖️</button>
         </>
       )
-    ) : (
+    ) : paymentEditingAllowed ? (
       <span
-        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-blue-300 bg-white/80 shadow text-lg font-extrabold text-blue-700 ${
-          paymentEditingAllowed ? "cursor-pointer" : "cursor-not-allowed opacity-60"
-        }`}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-blue-300 bg-white/80 shadow text-lg font-extrabold text-blue-700 cursor-pointer"
         onClick={() => {
-          if (!paymentEditingAllowed) return;
           setEditingPaymentOrderId(order.id);
           setPaymentMethodDraft((pm) => ({
             ...pm,
@@ -840,6 +984,13 @@ await secureFetch(`/orders/${order.id}`, {
       >
         {order.payment_method || "UNKNOWN"}
         <span className="ml-2 text-gray-400">✏️</span>
+      </span>
+    ) : (
+      <span
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-blue-300 bg-white/80 shadow text-lg font-extrabold text-blue-700 cursor-not-allowed opacity-60"
+        title={t("Edit payment method")}
+      >
+        {order.payment_method || "UNKNOWN"}
       </span>
     )
   )}

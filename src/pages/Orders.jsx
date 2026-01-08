@@ -328,6 +328,7 @@ const [reportDate, setReportDate] = useState(() => new Date().toISOString().slic
 const [reportLoading, setReportLoading] = useState(false);
 const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
 const [excludedKitchenCategories, setExcludedKitchenCategories] = useState([]);
+const [productPrepById, setProductPrepById] = useState({});
   const [autoConfirmOrders, setAutoConfirmOrders] = useState(false);
 
 const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -582,16 +583,22 @@ const normalizedItems = (items || []).map(i => {
 
   // 🟢 Mark excluded items as delivered
   if (isExcluded && i.kitchen_status !== "delivered") {
-    return { ...i, kitchen_status: "delivered" };
+    return { ...i, kitchen_status: "delivered", kitchen_excluded: true };
   }
-  return i;
+  return { ...i, kitchen_excluded: isExcluded || i.kitchen_excluded === true };
 });
 
-let overallKitchenStatus = "preparing";
-if (normalizedItems.every(i => i.kitchen_status === "delivered"))
+const relevantItems = normalizedItems.filter(
+  (i) => !i.kitchen_excluded
+);
+
+let overallKitchenStatus = "new";
+if (relevantItems.length > 0 && relevantItems.every(i => i.kitchen_status === "delivered"))
   overallKitchenStatus = "delivered";
-else if (normalizedItems.some(i => i.kitchen_status === "ready"))
+else if (relevantItems.some(i => i.kitchen_status === "ready"))
   overallKitchenStatus = "ready";
+else if (relevantItems.some(i => i.kitchen_status === "preparing"))
+  overallKitchenStatus = "preparing";
 
    withKitchenStatus.push({ ...order, items: normalizedItems, overallKitchenStatus });
 
@@ -836,17 +843,158 @@ useEffect(() => {
   fetchDrinks();
 }, []);
 
+useEffect(() => {
+  let mounted = true;
+  (async () => {
+    try {
+      const data = await secureFetch("/products");
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.products)
+        ? data.products
+        : data?.product
+        ? [data.product]
+        : [];
+      const next = {};
+      for (const p of list) {
+        const id = Number(p?.id);
+        const prep = parseFloat(p?.preparation_time ?? p?.prep_time ?? p?.prepTime);
+        if (!Number.isFinite(id) || !Number.isFinite(prep) || prep <= 0) continue;
+        next[id] = prep;
+      }
+      if (mounted) setProductPrepById(next);
+    } catch {
+      if (mounted) setProductPrepById({});
+    }
+  })();
+  return () => {
+    mounted = false;
+  };
+}, []);
+
 function driverButtonDisabled(order) {
   if (normalizeDriverStatus(order.driver_status) === "delivered") return true;
   if (updating[order.id]) return true;
 
   if (!order.driver_id) return true;
 
+  const kitchenStatus = String(
+    order.kitchen_status || order.overallKitchenStatus || ""
+  )
+    .trim()
+    .toLowerCase();
+  const relevantItemsCount = getRelevantOrderItems(order).length;
+  if (relevantItemsCount > 0 && !["ready", "delivered"].includes(kitchenStatus)) {
+    return true;
+  }
+
   return !areDriverItemsDelivered(order);
 }
 
 
 
+
+  function getOrderPrepMinutes(order) {
+    const direct = parseFloat(
+      order?.preparation_time ??
+        order?.prep_time ??
+        order?.prepTime ??
+        order?.prep_minutes ??
+        order?.preparation_minutes ??
+        order?.preparationTime
+    );
+    if (Number.isFinite(direct) && direct > 0) return direct;
+
+    const items = Array.isArray(order?.items) ? order.items : [];
+    let maxMinutes = 0;
+    items.forEach((item) => {
+      const raw =
+        item?.preparation_time ??
+        item?.prep_time ??
+        item?.prepTime ??
+        item?.prep_minutes ??
+        item?.preparation_minutes ??
+        item?.preparationTime ??
+        item?.prep_time_minutes ??
+        item?.prepMinutes ??
+        item?.product_preparation_time ??
+        item?.product?.preparation_time ??
+        productPrepById?.[Number(item?.product_id ?? item?.productId)];
+      const minutes = parseFloat(raw ?? 0);
+      if (!Number.isFinite(minutes) || minutes <= 0) return;
+      const qty = Number(item?.quantity ?? item?.qty ?? 1);
+      const total = minutes * Math.max(1, qty);
+      if (total > maxMinutes) maxMinutes = total;
+    });
+    return maxMinutes;
+  }
+
+  function getPrepStartMs(order) {
+    const toMs = (val) => {
+      if (!val) return NaN;
+      const a = new Date(val).getTime();
+      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+      const b = new Date(bStr).getTime();
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+      }
+      return Number.isFinite(a) ? a : b;
+    };
+
+    const direct = toMs(order?.prep_started_at ?? order?.prepStartedAt);
+    if (Number.isFinite(direct)) return direct;
+
+    const updated = toMs(order?.kitchen_status_updated_at);
+    if (Number.isFinite(updated)) return updated;
+
+    const items = Array.isArray(order?.items) ? order.items : [];
+    for (const item of items) {
+      const ms = toMs(item?.prep_started_at ?? item?.prepStartedAt);
+      if (Number.isFinite(ms)) return ms;
+    }
+    for (const item of items) {
+      const itemUpdated = toMs(item?.kitchen_status_updated_at);
+      if (Number.isFinite(itemUpdated)) return itemUpdated;
+    }
+    return NaN;
+  }
+
+  function getReadyAtLabel(order) {
+    const toMs = (val) => {
+      if (!val) return NaN;
+      const a = new Date(val).getTime();
+      const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+      const b = new Date(bStr).getTime();
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+      }
+      return Number.isFinite(a) ? a : b;
+    };
+
+    const directReadyMs = toMs(
+      order?.estimated_ready_at ??
+        order?.ready_at ??
+        order?.readyAt ??
+        order?.estimatedReadyAt
+    );
+    if (Number.isFinite(directReadyMs)) {
+      return new Date(directReadyMs).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    }
+
+    const startMs = getPrepStartMs(order);
+    const prepMinutes = getOrderPrepMinutes(order);
+    if (!Number.isFinite(startMs) || !prepMinutes) return "";
+    const readyMs = startMs + prepMinutes * 60 * 1000;
+    return new Date(readyMs).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
 
   function getPrepTimer(order) {
     // Robust elapsed calculation tolerant to timezone format issues
@@ -1533,8 +1681,9 @@ const totalDiscount = calcOrderDiscount(order);
       const driverStatus = normalizeDriverStatus(order.driver_status);
       const isDelivered = driverStatus === "delivered";
       const isPicked = driverStatus === "on_road";
-      const isReady = order.kitchen_status === "ready";
-      const isPrep = order.kitchen_status === "preparing";
+      const kitchenStatus = order.kitchen_status || order.overallKitchenStatus;
+      const isReady = kitchenStatus === "ready";
+      const isPrep = kitchenStatus === "preparing";
       const onlinePayments = [
         "online", "online payment", "online card", "yemeksepeti online"
       ];
@@ -1603,6 +1752,37 @@ const totalDiscount = calcOrderDiscount(order);
     noteBox: "bg-slate-50 text-slate-900 border border-slate-300 shadow-sm",
   };
 })();
+
+      const isKitchenDelivered =
+        kitchenStatus === "delivered" || Boolean(order?.kitchen_delivered_at);
+      const readyAtLabel =
+        isPrep && !isKitchenDelivered ? getReadyAtLabel(order) : "";
+      const kitchenBadgeLabel =
+        isDelivered
+          ? t("Order Delivered!")
+          : kitchenStatus === "new"
+          ? t("New Order")
+          : kitchenStatus === "preparing"
+          ? t("Preparing")
+          : kitchenStatus === "ready" || kitchenStatus === "delivered"
+          ? t("Order ready!")
+          : "";
+      const kitchenBadgeIcon =
+        isDelivered
+          ? "✅"
+          : kitchenStatus === "new"
+          ? ""
+          : kitchenStatus === "preparing"
+          ? "🍳"
+          : kitchenStatus === "ready" || kitchenStatus === "delivered"
+          ? "✅"
+          : "";
+      const kitchenBadgeClass =
+        isDelivered
+          ? "bg-teal-600 text-white hover:bg-teal-700 shadow-sm"
+          : kitchenStatus === "new"
+          ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+          : statusVisual.phoneBtn;
 
 
 
@@ -1766,28 +1946,25 @@ const totalDiscount = calcOrderDiscount(order);
           {order.customer_phone}
         </a>
       )}
+      {kitchenBadgeLabel &&
+        !(kitchenBadgeLabel === t("Order ready!") && (isPicked || isPickedUp)) && (
+        <span
+          className={`inline-flex items-center justify-center sm:justify-start px-3 py-2 rounded-xl font-semibold text-base sm:text-lg transition ${kitchenBadgeClass}`}
+        >
+          {kitchenBadgeIcon ? <span className="mr-2">{kitchenBadgeIcon}</span> : null}
+          {kitchenBadgeLabel}
+        </span>
+      )}
+      {readyAtLabel && (
+        <span className="px-3 py-2 rounded-xl font-semibold text-base sm:text-lg bg-slate-100 text-slate-700 border border-slate-200 shadow-sm flex items-center gap-1">
+          ⏳ {t("Ready at")} {readyAtLabel}
+        </span>
+      )}
     </div>
 
  
   </div>
 
-
-{/* Kitchen Status */}
-{order.kitchen_status === "preparing" && (
-  <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-amber-100 text-amber-700 border border-amber-200 shadow-sm flex items-center gap-1">
-    🍳 {t("preparing")}
-  </span>
-)}
-{order.kitchen_status === "ready" && (
-  <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-orange-100 text-orange-700 border border-orange-200 shadow-sm flex items-center gap-1">
-    🟠 {t("ready")}
-  </span>
-)}
-{order.kitchen_status === "delivered" && (
-  <span className="px-3 py-1 rounded-xl font-semibold text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm flex items-center gap-1">
-    ✅ {t("delivered")}
-  </span>
-)}
 
   </div>
 
@@ -1836,17 +2013,8 @@ const totalDiscount = calcOrderDiscount(order);
                   t("Unnamed")}
               </span>
 
-              <span
-                className={`
-                  flex items-center px-2 py-0.5 rounded-lg font-semibold text-xs tracking-wide border flex-shrink-0
-                  ${item.kitchen_status === "preparing" ? "bg-amber-100 text-amber-700 border-amber-200 animate-pulse" : ""}
-                  ${item.kitchen_status === "ready" ? "bg-orange-100 text-orange-700 border-orange-200 animate-pulse" : ""}
-                  ${item.kitchen_status === "delivered" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}
-                `}
-              >
-                {item.kitchen_status === "preparing" && t("preparing")}
-                {item.kitchen_status === "ready" && t("ready")}
-                {item.kitchen_status === "delivered" && t("delivered")}
+              <span className="inline-flex items-center px-2 py-0.5 rounded-lg font-semibold text-xs tracking-wide border flex-shrink-0 bg-slate-100 text-slate-500 border-slate-200">
+                {t("Item")}
               </span>
             </div>
           </div>
@@ -2032,14 +2200,16 @@ const totalDiscount = calcOrderDiscount(order);
       </span>
     </div>
 
-    <button
-      className="px-1.5 py-1.5 rounded-xl bg-white border border-slate-300 
-                 text-slate-700 hover:text-emerald-700 hover:border-emerald-400 
-                 font-semibold text-sm sm:text-base shadow-sm transition"
-      onClick={() => openPaymentModalForOrder(order)}
-    >
-      ✏️ {t("Edit")}
-    </button>
+    {!isOnlinePayment && (
+      <button
+        className="px-1.5 py-1.5 rounded-xl bg-white border border-slate-300 
+                   text-slate-700 hover:text-emerald-700 hover:border-emerald-400 
+                   font-semibold text-sm sm:text-base shadow-sm transition"
+        onClick={() => openPaymentModalForOrder(order)}
+      >
+        ✏️ {t("Edit")}
+      </button>
+    )}
   </div>
 </div>
 
@@ -2057,6 +2227,7 @@ const totalDiscount = calcOrderDiscount(order);
                    text-white shadow transition"
         disabled={driverButtonDisabled(order)}
         onClick={async () => {
+          if (driverButtonDisabled(order)) return;
           setOrders((prev) =>
             prev.map((o) =>
               o.id === order.id ? { ...o, driver_status: 'on_road' } : o
@@ -2107,7 +2278,21 @@ const totalDiscount = calcOrderDiscount(order);
       <button
         className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
                    text-white shadow transition"
-        onClick={() => openPaymentModalForOrder(order, { closeAfterSave: true })}
+        onClick={async () => {
+          if (isOnlinePayment) {
+            try {
+              await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
+              setOrders((prev) => prev.filter((o) => Number(o.id) !== Number(order.id)));
+            } catch (err) {
+              console.error("❌ Failed to close online-paid order:", err);
+              toast.error(t("Failed to close order"));
+              if (!propOrders) await fetchOrders();
+            }
+            return;
+          }
+
+          openPaymentModalForOrder(order, { closeAfterSave: true });
+        }}
       >
         {t("Close Order")}
       </button>

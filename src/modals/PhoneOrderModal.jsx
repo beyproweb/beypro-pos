@@ -1,13 +1,22 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { MapPin, User, Plus, Pencil, Trash2, Gift } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
 import { toast } from "react-hot-toast";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
+
+const getRestaurantScopedCacheKey = (suffix) => {
+  const restaurantId =
+    (typeof window !== "undefined" &&
+      window?.localStorage?.getItem("restaurant_id")) ||
+    (typeof window !== "undefined" &&
+      window?.localStorage?.getItem("restaurant_slug")) ||
+    "global";
+  return `hurrypos:${restaurantId}:${suffix}`;
+};
 
 function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   const { t } = useTranslation();
@@ -35,6 +44,55 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
       setPaymentMethod(paymentMethods[0].label);
     }
   }, [paymentMethods, paymentMethod]);
+
+  const normalizePrefixSource = (value) =>
+    String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "");
+
+  const getCustomerPrefix2 = (customer) => {
+    const source = normalizePrefixSource(customer?.name || customer?.phone || "");
+    return source.slice(0, 2);
+  };
+
+  const filteredMatches = React.useMemo(() => {
+    if (!selected) return matches;
+    return [selected];
+  }, [matches, selected]);
+
+  // Warm up product cache so TransactionScreen opens instantly.
+  useEffect(() => {
+    if (!open) return;
+    const updatedAt = Number(
+      window?.localStorage?.getItem(getRestaurantScopedCacheKey("productsUpdatedAtMs.v1")) || 0
+    );
+    const isFresh = updatedAt && Date.now() - updatedAt < 5 * 60 * 1000;
+    if (isFresh) return;
+
+    (async () => {
+      try {
+        const data = await secureFetch("/products");
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.products)
+          ? data.products
+          : data?.product
+          ? [data.product]
+          : [];
+        window?.localStorage?.setItem(
+          getRestaurantScopedCacheKey("products.v1"),
+          JSON.stringify(list)
+        );
+        window?.localStorage?.setItem(
+          getRestaurantScopedCacheKey("productsUpdatedAtMs.v1"),
+          String(Date.now())
+        );
+      } catch {
+        // ignore
+      }
+    })();
+  }, [open]);
 
   // ---- Customer search ----
   const searchCustomers = async (val) => {
@@ -213,12 +271,6 @@ const handleStartOrder = async (options = {}) => {
 
   try {
     setStartingOrder(true);
-    const isOpen = await checkRegisterOpen();
-    if (!isOpen) {
-      alert("❌ Register is closed. Please open the register before placing a phone order.");
-      return;
-    }
-
     const body = {
       order_type: "phone",
       customer_name: customer.name,
@@ -227,18 +279,8 @@ const handleStartOrder = async (options = {}) => {
       payment_method: paymentMethod,
       total: 0,
     };
-
-    const order = await secureFetch(`/orders`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-
-    if (!order || !order.id) {
-      alert("❌ Failed to create order");
-      return;
-    }
-
-    navigate(`/transaction/phone/${order.id}`, { state: { order } });
+    // Navigate immediately for a snappy UI; TransactionScreen will create the order.
+    navigate(`/transaction/phone/new`, { state: { phoneOrderDraft: body } });
 
   } catch (err) {
     alert("❌ Failed to start order: " + (err.message || "Unknown error"));
@@ -286,7 +328,7 @@ const handleStartOrder = async (options = {}) => {
               />
               {loading && <div>{t("Loading...")}</div>}
               <div className="space-y-2 max-h-52 overflow-y-auto">
-                {matches.map(c =>
+                {filteredMatches.map(c =>
                   editId === c.id ? (
                     <div key={c.id} className="p-3 rounded-2xl border-2 bg-blue-50 dark:bg-zinc-800 flex flex-col gap-2">
                       <div className="flex gap-2">
@@ -341,22 +383,49 @@ const handleStartOrder = async (options = {}) => {
                       } hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:border-blue-200`}
                       onClick={() => handleCustomerClick(c)}
                     >
-                      <b>{c.name}</b>{" "}
-                      <span className="text-xs text-gray-600 dark:text-gray-300">{c.phone}</span>
-                      {c.birthday && (
-                        <span className="ml-2 text-xs text-pink-500 flex items-center gap-1">
-                          <Gift size={14} className="inline" />
-                          {new Date(c.birthday).toLocaleDateString()}
-                        </span>
-                      )}
-                      <button
-                        className="ml-3 text-blue-500 hover:underline text-xs"
-                        onClick={e => {
-                          e.stopPropagation();
-                          setEditId(c.id);
-                          setEditForm({ name: c.name, phone: c.phone, birthday: c.birthday || "", email: c.email || "" });
-                        }}
-                      >✏️ Edit</button>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <b className="truncate">{c.name}</b>
+                            <span className="text-xs text-gray-600 dark:text-gray-300 truncate">
+                              {c.phone}
+                            </span>
+                          </div>
+                          {c.birthday && (
+                            <div className="mt-1 text-xs text-pink-500 flex items-center gap-1">
+                              <Gift size={14} className="inline" />
+                              {new Date(c.birthday).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            className="text-blue-500 hover:underline text-xs"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setEditId(c.id);
+                              setEditForm({ name: c.name, phone: c.phone, birthday: c.birthday || "", email: c.email || "" });
+                            }}
+                          >
+                            ✏️ Edit
+                          </button>
+
+                          <button
+                            type="button"
+                            className="text-slate-500 hover:text-rose-600 text-sm font-bold leading-none"
+                            title={t("Clear selected customer")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelected(null);
+                              setSelectedAddressId(null);
+                              setAddresses([]);
+                            }}
+                          >
+                            ✖
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )
                 )}

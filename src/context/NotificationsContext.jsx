@@ -68,10 +68,20 @@ function normalizeNotification(raw) {
   const extra = normalizeExtra(raw?.extra);
   const type = String(raw?.type || "other").toLowerCase();
   const timeMs = toTimeMs(raw?.time ?? raw?.timestamp ?? raw?.created_at);
+  let message = String(raw?.message || "").trim() || "Notification";
+
+  if (type === "driver") {
+    const driverName = String(extra?.driverName || extra?.driver_name || "").trim();
+    const orderId = extra?.orderId ?? extra?.order_id ?? extra?.id ?? null;
+    if (driverName && !message.toLowerCase().includes(driverName.toLowerCase())) {
+      const suffix = orderId ? `order #${orderId}` : "order";
+      message = `${driverName} assigned to ${suffix}`;
+    }
+  }
 
   return {
     id: raw?.id ?? `${type}_${timeMs}_${Math.random().toString(16).slice(2)}`,
-    message: String(raw?.message || "").trim() || "Notification",
+    message,
     type,
     time: raw?.time ?? raw?.timestamp ?? raw?.created_at ?? timeMs,
     timeMs,
@@ -134,6 +144,7 @@ export function NotificationsProvider({ children }) {
     openMaintenance: null,
     inProgressTasks: null,
   });
+  const driversCacheRef = useRef({ fetchedAtMs: 0, byId: new Map() });
 
   const restaurantIdRef = useRef(getRestaurantId());
   const registerStatusRef = useRef(null);
@@ -363,10 +374,15 @@ export function NotificationsProvider({ children }) {
       const orderNumber = order?.order_number || payload?.order_number || payload?.number;
       const suffix = orderNumber ? `#${orderNumber}` : id ? `#${id}` : "";
       pushNotification({
-        message: `🔔 New order ${suffix}`.trim(),
+        message: `New order ${suffix}`.trim(),
         type: "order",
         time: Date.now(),
-        extra: { orderId: id, order_number: orderNumber, order_type: order?.order_type },
+        extra: {
+          event: "order_confirmed",
+          orderId: id,
+          order_number: orderNumber,
+          order_type: order?.order_type,
+        },
         source: "socket",
       });
     };
@@ -375,10 +391,10 @@ export function NotificationsProvider({ children }) {
       const orderId = payload?.orderId || payload?.id;
       const suffix = orderId ? `#${orderId}` : "";
       pushNotification({
-        message: `🍳 Kitchen preparing order ${suffix}`.trim(),
+        message: `Kitchen preparing order ${suffix}`.trim(),
         type: "order",
         time: Date.now(),
-        extra: { orderId, ...payload },
+        extra: { event: "order_preparing", orderId, ...payload },
         source: "socket",
       });
     };
@@ -387,10 +403,10 @@ export function NotificationsProvider({ children }) {
       const orderId = payload?.orderId || payload?.id;
       const suffix = orderId ? `#${orderId}` : "";
       pushNotification({
-        message: `✅ Kitchen delivered order ${suffix}`.trim(),
+        message: `Kitchen delivered order ${suffix}`.trim(),
         type: "order",
         time: Date.now(),
-        extra: { orderId, ...payload },
+        extra: { event: "order_delivered", orderId, ...payload },
         source: "socket",
       });
     };
@@ -399,22 +415,74 @@ export function NotificationsProvider({ children }) {
       const orderId = payload?.orderId || payload?.id;
       const suffix = orderId ? `#${orderId}` : "";
       pushNotification({
-        message: `💸 Payment made ${suffix}`.trim(),
+        message: `Payment made ${suffix}`.trim(),
         type: "payment",
         time: payload?.timestamp || Date.now(),
-        extra: payload,
+        extra: { event: "payment_made", ...payload, orderId },
         source: "socket",
       });
     };
 
-    const onDriverAssigned = (payload = {}) => {
-      const driverName = payload?.driverName || payload?.driver_name || "Driver";
-      const suffix = payload?.orderId ? `#${payload.orderId}` : "";
+    const fetchDriverName = async (driverId) => {
+      const now = Date.now();
+      const cached = driversCacheRef.current || { fetchedAtMs: 0, byId: new Map() };
+      const byId = cached.byId || new Map();
+
+      if (byId.has(driverId)) return byId.get(driverId) || null;
+      if (now - (cached.fetchedAtMs || 0) < 60_000) return null;
+
+      try {
+        const list = await secureFetch("/staff/drivers");
+        const rows = Array.isArray(list) ? list : list?.drivers || [];
+        const nextMap = new Map();
+        for (const row of rows) {
+          const id = row?.id;
+          if (id === null || id === undefined || id === "") continue;
+          nextMap.set(Number(id), row?.name ? String(row.name).trim() : null);
+        }
+        driversCacheRef.current = { fetchedAtMs: now, byId: nextMap };
+        return nextMap.get(Number(driverId)) || null;
+      } catch {
+        driversCacheRef.current = { fetchedAtMs: now, byId };
+        return null;
+      }
+    };
+
+    const onDriverAssigned = async (payload = {}) => {
+      const driverId = payload?.driverId ?? payload?.driver_id ?? null;
+      let driverName = payload?.driverName || payload?.driver_name || null;
+      if (!driverName && driverId) {
+        driverName = await fetchDriverName(Number(driverId));
+      }
+
+      const orderId = payload?.orderId ?? payload?.order_id ?? payload?.id ?? null;
+      const suffix = orderId ? `order #${orderId}` : "order";
       pushNotification({
-        message: `🚗 ${driverName} assigned ${suffix}`.trim(),
+        message: `${driverName || "Driver"} assigned to ${suffix}`.trim(),
         type: "driver",
         time: Date.now(),
-        extra: payload,
+        extra: { event: "driver_assigned", ...payload, driverId, driverName, orderId },
+        source: "socket",
+      });
+    };
+
+    const onDriverDelivered = (payload = {}) => {
+      const orderId = payload?.orderId || payload?.id || payload?.order_id;
+      const customerName = String(
+        payload?.customer_name || payload?.customerName || payload?.customer || ""
+      ).trim();
+
+      const message = customerName
+        ? `Order (${customerName}) delivered`
+        : orderId
+          ? `Order #${orderId} delivered`
+          : "Order delivered";
+
+      pushNotification({
+        message,
+        type: "driver",
+        time: Date.now(),
+        extra: { event: "driver_delivered", orderId, customerName, ...payload },
         source: "socket",
       });
     };
@@ -422,10 +490,10 @@ export function NotificationsProvider({ children }) {
     const onTaskCreated = (task = {}) => {
       if (!task?.title) return;
       pushNotification({
-        message: `📝 New task: ${task.title}`,
+        message: `New task: ${task.title}`,
         type: "task",
         time: task?.created_at || Date.now(),
-        extra: { taskId: task?.id, status: task?.status },
+        extra: { event: "task_created", taskId: task?.id, status: task?.status, title: task?.title },
         source: "socket",
       });
     };
@@ -434,10 +502,10 @@ export function NotificationsProvider({ children }) {
       if (!task?.title) return;
       if (String(task.status).toLowerCase() === "completed") {
         pushNotification({
-          message: `✅ Task completed: ${task.title}`,
+          message: `Task completed: ${task.title}`,
           type: "task",
           time: task?.completed_at || Date.now(),
-          extra: { taskId: task?.id, status: task?.status },
+          extra: { event: "task_completed", taskId: task?.id, status: task?.status, title: task?.title },
           source: "socket",
         });
       }
@@ -446,10 +514,16 @@ export function NotificationsProvider({ children }) {
     const onMaintenanceCreated = (row = {}) => {
       if (!row?.title) return;
       pushNotification({
-        message: `🛠️ Maintenance created: ${row.title}`,
+        message: `Maintenance created: ${row.title}`,
         type: "maintenance",
         time: row?.created_at || Date.now(),
-        extra: { issueId: row?.id, status: row?.status, priority: row?.priority },
+        extra: {
+          event: "maintenance_created",
+          issueId: row?.id,
+          status: row?.status,
+          priority: row?.priority,
+          title: row?.title,
+        },
         source: "socket",
       });
     };
@@ -459,10 +533,16 @@ export function NotificationsProvider({ children }) {
       const status = String(row?.status || "").toLowerCase();
       if (status === "resolved") {
         pushNotification({
-          message: `✅ Maintenance resolved: ${row.title}`,
+          message: `Maintenance resolved: ${row.title}`,
           type: "maintenance",
           time: row?.resolved_at || row?.updated_at || Date.now(),
-          extra: { issueId: row?.id, status: row?.status, priority: row?.priority },
+          extra: {
+            event: "maintenance_resolved",
+            issueId: row?.id,
+            status: row?.status,
+            priority: row?.priority,
+            title: row?.title,
+          },
           source: "socket",
         });
       }
@@ -474,6 +554,7 @@ export function NotificationsProvider({ children }) {
     socket.on("order_delivered", onOrderDelivered);
     socket.on("payment_made", onPayment);
     socket.on("driver_assigned", onDriverAssigned);
+    socket.on("driver_delivered", onDriverDelivered);
     socket.on("task_created", onTaskCreated);
     socket.on("task_updated", onTaskUpdated);
     socket.on("maintenance_created", onMaintenanceCreated);
@@ -486,6 +567,7 @@ export function NotificationsProvider({ children }) {
       socket.off("order_delivered", onOrderDelivered);
       socket.off("payment_made", onPayment);
       socket.off("driver_assigned", onDriverAssigned);
+      socket.off("driver_delivered", onDriverDelivered);
       socket.off("task_created", onTaskCreated);
       socket.off("task_updated", onTaskUpdated);
       socket.off("maintenance_created", onMaintenanceCreated);

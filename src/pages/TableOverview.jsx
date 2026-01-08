@@ -12,6 +12,9 @@ import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import OrderHistory from "../components/OrderHistory";
 import { useHeader } from "../context/HeaderContext";
+import { useSetting } from "../components/hooks/useSetting";
+import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
+import { getReservationSchedule, isEarlyReservationClose } from "../utils/reservationSchedule";
 
 import secureFetch from "../utils/secureFetch";
 import {
@@ -169,6 +172,74 @@ const parseLooseDateToMs = (val) => {
     return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
   }
   return Number.isFinite(a) ? a : b;
+};
+
+const getOrderPrepMinutes = (order, productPrepById = {}) => {
+  const direct = Number(order?.preparation_time ?? order?.prep_time ?? order?.prepTime);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+  let maxMinutes = 0;
+  items.forEach((item) => {
+    const raw =
+      item?.preparation_time ??
+      item?.prep_time ??
+      item?.prepTime ??
+      item?.product_preparation_time ??
+      item?.product?.preparation_time ??
+      productPrepById?.[Number(item?.product_id ?? item?.productId)];
+    const minutes = Number(raw);
+    if (!Number.isFinite(minutes) || minutes <= 0) return;
+    const qty = Number(item?.quantity ?? item?.qty ?? 1);
+    const total = minutes * Math.max(1, qty);
+    if (total > maxMinutes) maxMinutes = total;
+  });
+  return maxMinutes;
+};
+
+const getPrepStartMs = (order) => {
+  const direct = parseLooseDateToMs(order?.prep_started_at ?? order?.prepStartedAt);
+  if (Number.isFinite(direct)) return direct;
+
+  const updated = parseLooseDateToMs(order?.kitchen_status_updated_at);
+  if (Number.isFinite(updated)) return updated;
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+  for (const item of items) {
+    const ms = parseLooseDateToMs(item?.prep_started_at ?? item?.prepStartedAt);
+    if (Number.isFinite(ms)) return ms;
+  }
+  for (const item of items) {
+    const itemUpdated = parseLooseDateToMs(item?.kitchen_status_updated_at);
+    if (Number.isFinite(itemUpdated)) return itemUpdated;
+  }
+  return NaN;
+};
+
+const getReadyAtLabel = (order, productPrepById = {}) => {
+  const directReadyMs = parseLooseDateToMs(
+    order?.estimated_ready_at ??
+      order?.ready_at ??
+      order?.readyAt ??
+      order?.estimatedReadyAt
+  );
+  if (Number.isFinite(directReadyMs)) {
+    return new Date(directReadyMs).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
+  const startMs = getPrepStartMs(order);
+  const prepMinutes = getOrderPrepMinutes(order, productPrepById);
+  if (!Number.isFinite(startMs) || !prepMinutes) return "";
+  const readyMs = startMs + prepMinutes * 60 * 1000;
+  return new Date(readyMs).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 };
 
 const pickLatestTimestampValue = (existingValue, nextValue) => {
@@ -400,21 +471,23 @@ export default function TableOverview() {
   const activeTab = tabFromUrl;
   const [orders, setOrders] = useState([]);
   const [tableConfigs, setTableConfigs] = useState(() => readInitialTableConfigs());
-  const [closedOrders, setClosedOrders] = useState([]);
-  const [groupedClosedOrders, setGroupedClosedOrders] = useState({});
   const [paymentFilter, setPaymentFilter] = useState("All");
+  const [orderTypeFilter, setOrderTypeFilter] = useState("All");
   const [fromDate, setFromDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().slice(0, 10);
+    return new Date().toISOString().slice(0, 10);
   });
   const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [transactionSettings, setTransactionSettings] = useState(
+    DEFAULT_TRANSACTION_SETTINGS
+  );
+  useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
   const alertIntervalRef = useRef(null);
   const ordersFetchSeqRef = useRef(0);
   const didInitialOrdersLoadRef = useRef(false);
   const isMountedRef = useRef(true);
   const [now, setNow] = useState(new Date());
   const [kitchenOrders, setKitchenOrders] = useState([]); // used for kitchen
+  const [productPrepById, setProductPrepById] = useState({});
   const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
   const [phoneOrders, setPhoneOrders] = useState([]); // For active phone orders if you want to display/manage them
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -452,8 +525,104 @@ const [registerEntries, setRegisterEntries] = useState(0);
  
   const [todayRegisterEvents, setTodayRegisterEvents] = useState([]);
 const [todayExpenses, setTodayExpenses] = useState([]);
+  const [packetOrdersCount, setPacketOrdersCount] = useState(0);
 
-const handleCloseTable = async (orderId) => {
+useEffect(() => {
+  let mounted = true;
+  (async () => {
+    try {
+      const data = await secureFetch("/products");
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.products)
+        ? data.products
+        : data?.product
+        ? [data.product]
+        : [];
+      const next = {};
+      for (const p of list) {
+        const id = Number(p?.id);
+        const prep = parseFloat(p?.preparation_time ?? p?.prep_time ?? p?.prepTime);
+        if (!Number.isFinite(id) || !Number.isFinite(prep) || prep <= 0) continue;
+        next[id] = prep;
+      }
+      if (mounted) setProductPrepById(next);
+    } catch {
+      if (mounted) setProductPrepById({});
+    }
+  })();
+  return () => {
+    mounted = false;
+  };
+}, []);
+
+const confirmEarlyReservationClose = (schedule, t) =>
+  new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const dateLabel = schedule?.date || "—";
+    const timeLabel = schedule?.time || "—";
+
+    let toastId = null;
+    toastId = toast(
+      () => (
+        <div className="flex flex-col gap-3">
+          <div className="font-extrabold text-red-700">
+            {t("Reservation time has not yet arrived.")}
+          </div>
+          <div className="text-sm text-slate-800">
+            {t(
+              "This table is reserved for {{date}} {{time}}. The reservation time has not yet arrived. Close the table anyway?",
+              { date: dateLabel, time: timeLabel }
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-200"
+              onClick={() => {
+                finish(false);
+                if (toastId) toast.dismiss(toastId);
+              }}
+            >
+              {t("Cancel")}
+            </button>
+            <button
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-700"
+              onClick={() => {
+                finish(true);
+                if (toastId) toast.dismiss(toastId);
+              }}
+            >
+              {t("Close anyway")}
+            </button>
+          </div>
+        </div>
+      ),
+      {
+        autoClose: false,
+        closeOnClick: false,
+        closeButton: false,
+        draggable: false,
+        onClose: () => finish(false),
+      }
+    );
+  });
+
+const handleCloseTable = async (orderOrId) => {
+  const order = orderOrId && typeof orderOrId === "object" ? orderOrId : null;
+  const orderId = order?.id ?? orderOrId;
+  const schedule = getReservationSchedule(order);
+
+  if (order && isEarlyReservationClose(order) && schedule) {
+    const confirmed = await confirmEarlyReservationClose(schedule, t);
+    if (!confirmed) return;
+  }
+
   try {
     const items = await secureFetch(`/orders/${orderId}/items`);
     if (!Array.isArray(items)) {
@@ -475,7 +644,7 @@ const handleCloseTable = async (orderId) => {
     );
 
     if (!allDeliveredOrExcluded) {
-      toast.warning("⚠️ Cannot close: some kitchen items not yet delivered!", {
+      toast.warning(`⚠️ ${t("Cannot close: some kitchen items not yet delivered!")}`, {
         style: { background: "#dc2626", color: "#fff" }, // red-600
       });
       return;
@@ -892,6 +1061,34 @@ const fetchPacketOrders = useCallback(async () => {
   }
 }, [t]);
 
+const fetchPacketOrdersCount = useCallback(async () => {
+  if (!canSeePacketTab) return;
+  try {
+    const [packet, phone] = await Promise.all([
+      secureFetch(`/orders?type=packet`),
+      secureFetch(`/orders?type=phone`),
+    ]);
+
+    const packetArray = Array.isArray(packet) ? packet : [];
+    const phoneArray = Array.isArray(phone) ? phone : [];
+    const filtered = [...packetArray, ...phoneArray].filter(
+      (o) => o && o.status !== "closed"
+    );
+    setPacketOrdersCount(filtered.length);
+  } catch (err) {
+    console.warn("⚠️ Failed to fetch packet orders count:", err);
+    setPacketOrdersCount(0);
+  }
+}, [canSeePacketTab]);
+
+useEffect(() => {
+  fetchPacketOrdersCount();
+}, [fetchPacketOrdersCount]);
+
+useEffect(() => {
+  setPacketOrdersCount(Array.isArray(packetOrders) ? packetOrders.length : 0);
+}, [packetOrders]);
+
 const [takeawayOrders, setTakeawayOrders] = useState([]);
 
 const fetchTakeawayOrders = useCallback(async () => {
@@ -1047,6 +1244,18 @@ const fetchOrders = useCallback(async () => {
 		            acc[key].merged_ids.push(order.id);
 		            acc[key].created_at = pickLatestTimestampValue(acc[key].created_at, order.created_at);
 		            acc[key].updated_at = pickLatestTimestampValue(acc[key].updated_at, order.updated_at);
+		            acc[key].prep_started_at = pickLatestTimestampValue(
+		              acc[key].prep_started_at,
+		              order.prep_started_at
+		            );
+		            acc[key].estimated_ready_at = pickLatestTimestampValue(
+		              acc[key].estimated_ready_at,
+		              order.estimated_ready_at
+		            );
+		            acc[key].kitchen_delivered_at = pickLatestTimestampValue(
+		              acc[key].kitchen_delivered_at,
+		              order.kitchen_delivered_at
+		            );
 		            acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
 		            const nextStatus =
 		              acc[key].status === "paid" && order.status === "paid" ? "paid" : "confirmed";
@@ -1148,6 +1357,18 @@ const fetchOrders = useCallback(async () => {
 	          acc[key].merged_ids.push(order.id);
 	          acc[key].created_at = pickLatestTimestampValue(acc[key].created_at, order.created_at);
 	          acc[key].updated_at = pickLatestTimestampValue(acc[key].updated_at, order.updated_at);
+	          acc[key].prep_started_at = pickLatestTimestampValue(
+	            acc[key].prep_started_at,
+	            order.prep_started_at
+	          );
+	          acc[key].estimated_ready_at = pickLatestTimestampValue(
+	            acc[key].estimated_ready_at,
+	            order.estimated_ready_at
+	          );
+	          acc[key].kitchen_delivered_at = pickLatestTimestampValue(
+	            acc[key].kitchen_delivered_at,
+	            order.kitchen_delivered_at
+	          );
 	          acc[key].items = [...(acc[key].items || []), ...(order.items || [])];
 	          acc[key].merged_items = acc[key].items;
 	          acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
@@ -1212,68 +1433,7 @@ function hasReadyOrder(order) {
 }
 
 
-const fetchClosedOrders = useCallback(async () => {
-  if (!fromDate || !toDate) {
-    setClosedOrders([]);
-    setGroupedClosedOrders({});
-    return;
-  }
-
-  try {
-    const query = new URLSearchParams({ from: fromDate, to: toDate });
-    const data = await secureFetch(`/reports/history?${query.toString()}`);
-
-    const enriched = await Promise.all(
-      data.map(async (order) => {
-        const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
-
-     const items = itemsRaw.map(item => ({
-  ...item,
-  discount_type: item.discount_type || null,
-  discount_value: item.discount_value ? parseFloat(item.discount_value) : 0,
-  name: item.product_name || item.order_item_name || item.external_product_name || "Unnamed"
-}));
-
-        const suborders = await secureFetch(`/orders/${order.id}/suborders`);
-
-        const receiptIds = [
-          ...new Set([
-            order.receipt_id,
-            ...items.map(i => i.receipt_id).filter(Boolean),
-            ...suborders.map(s => s.receipt_id).filter(Boolean)
-          ].filter(Boolean))
-        ];
-
-        let receiptMethods = [];
-        for (const receiptId of receiptIds) {
-          const methods = await secureFetch(`/reports/receipt-methods/${receiptId}`);
-          receiptMethods.push(...methods);
-        }
-
-        return { ...order, items, suborders, receiptMethods };
-      })
-    );
-
-    const nonEmptyOrders = enriched.filter(order => Array.isArray(order.items));
-
-    const grouped = nonEmptyOrders.reduce((acc, order) => {
-      const date = new Date(order.created_at).toLocaleDateString();
-      if (!acc[date]) acc[date] = [];
-      acc[date].push(order);
-      return acc;
-    }, {});
-
-    setClosedOrders(nonEmptyOrders);
-    setGroupedClosedOrders(grouped);
-    console.log("✅ Closed orders loaded:", nonEmptyOrders);
-  } catch (err) {
-    console.error("❌ Fetch closed orders failed:", err);
-    toast.error("Failed to load order history");
-  }
-}, [fromDate, toDate]);
-
-
-// === FIXED fetchKitchenOrders (merges same-customer orders) ===
+  // === FIXED fetchKitchenOrders (merges same-customer orders) ===
 const fetchKitchenOrders = useCallback(async () => {
   try {
     const data = await secureFetch("/kitchen-orders");
@@ -1399,7 +1559,6 @@ const fetchTableConfigs = useCallback(async () => {
         return;
       }
       if (tab === "history") {
-        fetchClosedOrders();
         return;
       }
       if (tab === "packet") {
@@ -1415,7 +1574,6 @@ const fetchTableConfigs = useCallback(async () => {
       }
     },
     [
-      fetchClosedOrders,
       fetchKitchenOrders,
       fetchOrders,
       fetchPacketOrders,
@@ -1432,6 +1590,7 @@ useEffect(() => {
   const refetch = () => {
     if (rafId) window.cancelAnimationFrame(rafId);
     rafId = window.requestAnimationFrame(() => {
+      if (activeTab !== "packet") fetchPacketOrdersCount();
       // Order updates don't change seats/areas; avoid refetching /tables which can cause UI blinking.
       if (activeTab === "tables") {
         fetchOrders();
@@ -1450,11 +1609,11 @@ useEffect(() => {
       window.socket.off("order_closed", refetch);
     }
   };
-}, [activeTab, loadDataForTab, fetchOrders]);
+}, [activeTab, loadDataForTab, fetchOrders, fetchPacketOrdersCount]);
 
   useEffect(() => {
     loadDataForTab(activeTab);
-  }, [activeTab, fromDate, toDate, loadDataForTab]);
+  }, [activeTab, loadDataForTab]);
 
   // Ensure table configs load when Tables tab is active
   useEffect(() => {
@@ -1603,6 +1762,23 @@ const formatAreaLabel = (area) => {
 
   return (
     <div className="min-h-screen bg-transparent px-0 pt-4 relative">
+      {canSeePacketTab &&
+        activeTab !== "packet" &&
+        packetOrdersCount > 0 &&
+        !transactionSettings.disableTableOverviewOrdersFloatingButton && (
+        <button
+          type="button"
+          onClick={() => handleTabSelect("packet")}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20 hover:brightness-110 active:scale-[0.98] transition"
+          aria-label={t("Packet")}
+        >
+          <span className="text-lg leading-none">🛵</span>
+          <span className="font-semibold">{t("Packet")}</span>
+          <span className="min-w-7 px-2 py-0.5 rounded-full bg-white/20 font-extrabold text-sm text-white text-center">
+            {packetOrdersCount}
+          </span>
+        </button>
+      )}
 {activeTab === "tables" && (
   <div className="w-full flex flex-col items-center">
 
@@ -1660,8 +1836,24 @@ const formatAreaLabel = (area) => {
         max-w-[1600px]
       ">
 
-        {(activeArea === "ALL" ? tables : groupedTables[activeArea]).map((table) => (
-          
+        {(activeArea === "ALL" ? tables : groupedTables[activeArea]).map((table) => {
+          const hasPreparingItems = Array.isArray(table.order?.items)
+            ? table.order.items.some((i) => i.kitchen_status === "preparing")
+            : false;
+          const isKitchenDelivered =
+            Boolean(table.order?.kitchen_delivered_at) ||
+            (Array.isArray(table.order?.items) &&
+              table.order.items.length > 0 &&
+              table.order.items.every((i) => i.kitchen_status === "delivered"));
+          const readyAtLabel = getReadyAtLabel(table.order, productPrepById);
+          const showReadyAt =
+            !!readyAtLabel &&
+            !isKitchenDelivered &&
+            (hasPreparingItems ||
+              !!table.order?.estimated_ready_at ||
+              !!table.order?.prep_started_at);
+
+          return (
           <div
             key={table.tableNumber}
             onClick={() => handleTableClick(table)}
@@ -1742,13 +1934,20 @@ const formatAreaLabel = (area) => {
 	                </div>
 	              ) : (
 	                <>
-	                  <div className="flex items-center justify-between gap-3">
+	                  <div className="flex items-start justify-between gap-3">
 	                    <span className="uppercase font-extrabold text-white tracking-wide">
 	                      {t(table.order.status === "draft" ? "Free" : table.order.status)}
 	                    </span>
-	                    <span className="text-lg font-bold text-indigo-700">
-	                      {formatCurrency(getDisplayTotal(table.order))}
-	                    </span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-lg font-bold text-indigo-700">
+                          {formatCurrency(getDisplayTotal(table.order))}
+                        </span>
+                        {showReadyAt && (
+                          <span className="mt-1 text-xs font-extrabold bg-yellow-400 text-slate-900 px-2 py-0.5 rounded-full shadow">
+                            {t("Ready at")} {readyAtLabel}
+                          </span>
+                        )}
+                      </div>
 	                  </div>
 
 	                  {/* RESERVATION BADGE */}
@@ -1770,34 +1969,34 @@ const formatAreaLabel = (area) => {
                     </div>
                   )}
 
-                  {/* KITCHEN BADGES */}
-                  {table.order.items && (
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {["new", "preparing", "ready", "delivered"].map((status) => {
-                        const count = table.order.items.filter(
-                          (i) => i.kitchen_status === status
-                        ).length;
-                        if (!count) return null;
+	                  {/* KITCHEN BADGES */}
+	                  {table.order.items && (
+	                    <div className="flex flex-wrap gap-2 mt-1">
+	                      {["new", "preparing", "ready", "delivered"].map((status) => {
+	                        const count = table.order.items.filter(
+	                          (i) => i.kitchen_status === status
+	                        ).length;
+	                        if (!count) return null;
 
-                        return (
-                          <span
-                            key={status}
-                            className={`px-2 py-0.5 rounded-full text-xs font-semibold
+	                        return (
+	                          <span
+	                            key={status}
+	                            className={`px-2 py-0.5 rounded-full text-xs font-semibold
 	                              ${status === "preparing"
 	                                ? "bg-yellow-400 text-indigo-700"
 	                                : status === "ready"
 	                                ? "bg-blue-500 text-white"
 	                                : status === "delivered"
 	                                ? "bg-green-500 text-white"
-                                : "bg-gray-400 text-white"}
-                            `}
-                          >
-                            {count} {t(status)}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
+	                                : "bg-gray-400 text-white"}
+	                            `}
+	                          >
+	                            {count} {t(status)}
+	                          </span>
+	                        );
+	                      })}
+	                    </div>
+	                  )}
                 </>
               )}
             </div>
@@ -1826,7 +2025,7 @@ const formatAreaLabel = (area) => {
 	                        <button
 	                          onClick={(e) => {
 	                            e.stopPropagation();
-	                            handleCloseTable(table.order.id);
+	                            handleCloseTable(table.order);
 	                          }}
 	                          className="px-3 py-1.5 bg-gradient-to-r from-green-400 to-indigo-400 text-white font-bold rounded-full shadow"
 	                        >
@@ -1840,7 +2039,8 @@ const formatAreaLabel = (area) => {
 	            </div>
 
           </div>
-        ))}
+        );
+        })}
 
       </div>
     </div>
@@ -2013,9 +2213,11 @@ const formatAreaLabel = (area) => {
         fromDate={fromDate}
         toDate={toDate}
         paymentFilter={paymentFilter}
+        orderTypeFilter={orderTypeFilter}
         setFromDate={setFromDate}
         setToDate={setToDate}
         setPaymentFilter={setPaymentFilter}
+        setOrderTypeFilter={setOrderTypeFilter}
       />
     )}
 

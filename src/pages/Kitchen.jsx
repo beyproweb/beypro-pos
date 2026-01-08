@@ -859,19 +859,18 @@ return (
             {/* === Card Header === */}
             <div
               onClick={() => toggleSelectGroup(items)}
-              className={`cursor-pointer flex items-center gap-3 font-semibold 
+              className={`cursor-pointer flex items-start gap-3 font-semibold 
               text-base sm:text-lg mb-1 rounded-xl px-4 py-2 border border-slate-200 
               ${groupTheme.header} dark:bg-zinc-800 dark:text-slate-200 
               transition select-none ${allSelected ? "ring-2 ring-[#14B8A6]" : ""}`}
             >
               <span className="text-2xl">
                 {group.type === "table" && "🍽"}
-                {group.type === "phone" && "📞"}
                 {group.type === "packet" && "🛵"}
                 {group.type === "takeaway" && "🥡"}
               </span>
 
-              <span className="flex items-center justify-between flex-1 min-w-0">
+              <div className="flex items-start justify-between flex-1 min-w-0 gap-3">
                 <div className="flex flex-col min-w-0">
                   {group.type === "table" && (
                     <span className="font-black text-lg truncate">
@@ -881,21 +880,47 @@ return (
 
                   {(group.type === "phone" || group.type === "packet") && (
                     <>
-                      <span className="truncate max-w-[160px] font-medium">
-                        {first.customer_name || first.customer_phone || t("No Name")}
-                      </span>
-                      {first.customer_phone && (
-                        <span className="text-xs text-slate-500">{first.customer_phone}</span>
-                      )}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          {first.customer_name && (
+                            <span className="block truncate max-w-[160px] font-medium leading-tight">
+                              {first.customer_name}
+                            </span>
+                          )}
+                          {first.customer_phone && (
+                            <a
+                              href={`tel:${first.customer_phone}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-slate-600 hover:text-slate-900 underline decoration-slate-300 hover:decoration-slate-500 leading-tight"
+                              style={{ textDecorationThickness: "1px" }}
+                            >
+                              {first.customer_phone}
+                            </a>
+                          )}
+                          {first.driver_name && (
+                            <div className="text-xs sm:text-sm font-extrabold text-[#1E3A8A] dark:text-indigo-200">
+                              {t("Pick up by")}: {first.driver_name}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       {first.customer_address && (
-                        <span className="text-xs text-slate-400 truncate max-w-[180px]">
-                          📍 {first.customer_address}
-                        </span>
-                      )}
-                      {first.driver_name && (
-                        <span className="text-xs font-semibold text-[#1E3A8A] dark:text-indigo-200">
-                          🚗 {first.driver_name}
-                        </span>
+                        <a
+                          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(first.customer_address)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-1 text-sm text-slate-700 dark:text-slate-200 font-semibold leading-snug break-words whitespace-normal underline decoration-emerald-300 decoration-2 underline-offset-2 hover:decoration-emerald-500 transition-colors"
+                          style={{
+                            wordBreak: "break-word",
+                            overflowWrap: "break-word",
+                            whiteSpace: "pre-line",
+                            display: "block",
+                          }}
+                        >
+                          <span className="mr-1">📍</span>
+                          {first.customer_address}
+                        </a>
                       )}
                     </>
                   )}
@@ -911,9 +936,14 @@ return (
                         </span>
                       )}
                       {first.customer_phone && (
-                        <span className="text-xs text-slate-500">
-                          📞 {first.customer_phone}
-                        </span>
+                        <a
+                          href={`tel:${first.customer_phone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-slate-600 hover:text-slate-900 underline decoration-slate-300 hover:decoration-slate-500"
+                          style={{ textDecorationThickness: "1px" }}
+                        >
+                          {first.customer_phone}
+                        </a>
                       )}
                       {first.pickup_time && (
                         (() => {
@@ -936,50 +966,46 @@ return (
                   )}
                 </div>
 
-                {/* 🕒 Live elapsed timer (counts up from 00:00) */}
-                {(() => {
-                  const arrival = orderTimers[first.order_id] || Date.now();
-                  const elapsed = Math.floor((Date.now() - arrival) / 1000);
-                  let text = "";
-                  let colorClass = "";
-                  const toneCritical = "bg-rose-600";
-                  const toneWarning = "bg-amber-500";
-                  const toneNormal = "bg-[#14B8A6]";
-
-                  // Always show count-up from 0; color by age thresholds
-                  const mins = Math.floor(elapsed / 60);
-                  const secs = elapsed % 60;
-                  text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-                  colorClass =
-                    elapsed >= 1200
-                      ? `${toneCritical} animate-pulse`
-                      : elapsed >= 600
-                      ? toneWarning
-                      : toneNormal;
-
-                  return (
-                    <span
-                      className={`ml-2 shrink-0 text-xs font-mono px-2 py-0.5 rounded-lg shadow 
-                      text-white border border-white/10 ${colorClass}`}
-                    >
-                      {text}
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Badge (hide for takeaway to avoid duplicate label) */}
+                  {(ordersArePacket || ordersArePhone) && (
+                    <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${groupTheme.badge}`}>
+                      {ordersArePacket
+                        ? `Packet${first.external_id ? " · Online" : ""}`
+                        : ordersArePhone
+                        ? "Phone"
+                        : null}
                     </span>
-                  );
-                })()}
-              </span>
+                  )}
 
-              {/* Badge (hide for takeaway to avoid duplicate label) */}
-              {(ordersArePacket || ordersArePhone) && (
-                <span
-                  className={`ml-2 px-2 py-1 rounded-lg text-xs font-semibold ${groupTheme.badge}`}
-                >
-                  {ordersArePacket
-                    ? `Packet${first.external_id ? " · Online" : ""}`
-                    : ordersArePhone
-                    ? "Phone"
-                    : null}
-                </span>
-              )}
+                  {/* 🕒 Live elapsed timer (counts up from 00:00) */}
+                  {(() => {
+                    const arrival = orderTimers[first.order_id] || Date.now();
+                    const elapsed = Math.floor((Date.now() - arrival) / 1000);
+                    const toneCritical = "bg-rose-600";
+                    const toneWarning = "bg-amber-500";
+                    const toneNormal = "bg-[#14B8A6]";
+
+                    const mins = Math.floor(elapsed / 60);
+                    const secs = elapsed % 60;
+                    const text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+                    const colorClass =
+                      elapsed >= 1200
+                        ? `${toneCritical} animate-pulse`
+                        : elapsed >= 600
+                        ? toneWarning
+                        : toneNormal;
+
+                    return (
+                      <span
+                        className={`shrink-0 text-xs font-mono px-2 py-0.5 rounded-lg shadow text-white border border-white/10 ${colorClass}`}
+                      >
+                        {text}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
             </div>
 
             {/* 🎫 === Reservation Badge === */}

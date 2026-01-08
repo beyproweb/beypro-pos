@@ -231,7 +231,7 @@ export default function ModernHeader({
           });
           return;
         }
-        navigate("/expenses", { replace: isExpensesRoute, state: { openExpenseModal: true } });
+        navigate("/expenses", { replace: isExpensesRoute });
         return;
       }
       const base = "/tableoverview";
@@ -262,7 +262,7 @@ export default function ModernHeader({
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4 gap-1">
         <StickySubtitle text={subtitle} />
         {isSuppliersRoute && supplierTabs.length > 0 && (
-          <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto">
+          <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap">
             {supplierTabs.map((tab) => {
               const isActive =
                 tab.kind === "switch"
@@ -274,11 +274,16 @@ export default function ModernHeader({
                   key={`${tab.kind}:${tab.key}`}
                   type="button"
                   onClick={() => handleSupplierTabClick(tab)}
-                  className={`rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
+                  className={[
+                    "shrink-0 w-28 sm:w-32 truncate",
+                    "inline-flex items-center justify-center gap-2",
+                    "rounded-xl border border-slate-200/80 dark:border-slate-700/80 px-3 py-1.5 text-sm font-semibold",
+                    "transition-all duration-150",
+                    "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
                     isActive
-                      ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
-                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
-                  }`}
+                      ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
+                      : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+                  ].join(" ")}
                 >
                   {tab.label}
                 </button>
@@ -294,7 +299,7 @@ export default function ModernHeader({
         )}
 
         {!isSuppliersRoute && !centerNav && showHeaderTabs && headerTabs.length > 0 && (
-          <div className="hidden md:flex items-center justify-center gap-2 flex-wrap">
+          <div className="hidden md:flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap">
             {headerTabs.map((tab) => {
               const isActive = resolvedActiveHeaderTab === tab.id;
               const isDashboardTab = tab.id === "dashboard";
@@ -303,15 +308,18 @@ export default function ModernHeader({
                   key={tab.id}
                   type="button"
                   onClick={() => handleHeaderTabClick(tab.id)}
-                  className={`rounded-full border px-[0.9375rem] py-[0.3125rem] text-[0.9375rem] font-semibold transition ${
-                    isDashboardTab
-                      ? isActive
-                        ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
-                        : "border-indigo-300 bg-indigo-500/15 text-indigo-700 shadow-sm hover:bg-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-200 dark:hover:bg-indigo-500/25"
-                      : isActive
-                      ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
-                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800"
-                  }`}
+                  className={[
+                    "w-28 sm:w-32 truncate",
+                    "inline-flex items-center justify-center gap-2",
+                    "rounded-xl border border-slate-200/80 dark:border-slate-700/80 px-3 py-1.5 text-sm font-semibold",
+                    "transition-all duration-150",
+                    "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
+                    isActive
+                      ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
+                      : isDashboardTab
+                        ? "bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-200 dark:hover:bg-indigo-500/25"
+                        : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+                  ].join(" ")}
                 >
                   {tab.label}
                 </button>

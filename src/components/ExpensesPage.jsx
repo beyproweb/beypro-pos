@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import secureFetch from "../utils/secureFetch";
+import secureFetch, { BASE_URL } from "../utils/secureFetch";
 import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../utils/cashDrawer";
 import { useCurrency } from "../context/CurrencyContext";
 
@@ -14,6 +14,8 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [expenseTypes, setExpenseTypes] = useState([]);
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [receiptPreview, setReceiptPreview] = useState(null);
   const [form, setForm] = useState({
     type: "",
     amount: "",
@@ -30,6 +32,16 @@ export default function ExpensesPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const didAutoOpenModalRef = useRef(false);
+  const backendUrlRaw = BASE_URL.replace(/\/api\/?$/, "");
+  const backendUrl =
+    backendUrlRaw ||
+    (import.meta.env.MODE === "development" ? "http://localhost:5000" : "");
+
+  useEffect(() => {
+    if (!showModal) {
+      setReceiptFile(null);
+    }
+  }, [showModal]);
 
   const paymentMethodLabel = (method) => {
     if (method === "Cash") return t("Cash");
@@ -143,15 +155,31 @@ export default function ExpensesPage() {
     };
 
     try {
-      await secureFetch("/expenses", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      if (receiptFile) {
+        const formData = new FormData();
+        formData.append("type", payload.type);
+        formData.append("amount", String(payload.amount));
+        if (payload.note) formData.append("note", payload.note);
+        if (payload.payment_method) formData.append("payment_method", payload.payment_method);
+        if (payload.created_by) formData.append("created_by", String(payload.created_by));
+        formData.append("receipt", receiptFile);
+
+        await secureFetch("/expenses", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        await secureFetch("/expenses", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
 
       toast.success(t("✅ Expense saved"));
       setForm({ type: "", amount: "", note: "", payment_method: "" });
       setNewType("");
       setShowModal(false);
+      setReceiptFile(null);
       fetchExpenses();
 
       if (isCashLabel(payload.payment_method)) {
@@ -170,6 +198,20 @@ export default function ExpensesPage() {
 
   return (
     <div className="min-h-screen p-6 bg-gradient-to-br from-white-50 to-gray-100 dark:from-gray-900 dark:to-gray-950 text-gray-900 dark:text-white transition-colors">
+      {receiptPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur"
+          onClick={() => setReceiptPreview(null)}
+          style={{ cursor: "zoom-out" }}
+        >
+          <img
+            src={receiptPreview.startsWith("http") ? receiptPreview : backendUrl + receiptPreview}
+            alt={t("Receipt preview")}
+            className="max-h-[90vh] max-w-[95vw] rounded-3xl border-8 border-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between mb-6 gap-3">
         <div className="flex gap-2 flex-wrap">
@@ -273,6 +315,15 @@ export default function ExpensesPage() {
                               📝 {e.note}
                             </div>
                           )}
+                          {e.receipt_url && (
+                            <button
+                              type="button"
+                              onClick={() => setReceiptPreview(e.receipt_url)}
+                              className="text-xs font-semibold text-indigo-700 underline underline-offset-2 hover:text-indigo-900 dark:text-indigo-300 dark:hover:text-indigo-200"
+                            >
+                              {t("View receipt")}
+                            </button>
+                          )}
                           <div className="text-xs text-gray-400">
                             {new Date(e.created_at).toLocaleString(i18n.language)}
                           </div>
@@ -352,6 +403,30 @@ export default function ExpensesPage() {
                 </option>
               ))}
             </select>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {t("Upload Receipt")}
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full text-sm"
+                onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+              />
+              {receiptFile && (
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs text-gray-600 dark:text-gray-300">
+                  <span className="truncate">{receiptFile.name}</span>
+                  <button
+                    type="button"
+                    className="text-red-600 hover:text-red-700"
+                    onClick={() => setReceiptFile(null)}
+                  >
+                    {t("Remove")}
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               onClick={handleSave}

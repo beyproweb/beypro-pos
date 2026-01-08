@@ -34,6 +34,7 @@ import TableActionButtons from "../components/TableActionButtons";
 import { useCurrency } from "../context/CurrencyContext";
 import { useSetting } from "../components/hooks/useSetting";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
+import { getReservationSchedule, isEarlyReservationClose } from "../utils/reservationSchedule";
 const normalizeGroupKey = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim().toLowerCase().replace(/\s+/g, " ");
@@ -401,7 +402,24 @@ export default function TransactionScreen() {
       navTimeoutsRef.current = [];
     };
   }, []);
-  const initialOrder = location.state?.order || null;
+  const initialOrderFromState = location.state?.order || null;
+  const phoneOrderDraft = location.state?.phoneOrderDraft || null;
+  const isNewPhoneOrderDraft =
+    String(orderId) === "new" &&
+    phoneOrderDraft &&
+    typeof phoneOrderDraft === "object";
+  const initialOrder =
+    initialOrderFromState ||
+    (isNewPhoneOrderDraft
+      ? {
+          ...phoneOrderDraft,
+          id: null,
+          status: "draft",
+          items: [],
+          order_type: "phone",
+        }
+      : null);
+  const creatingPhoneOrderRef = useRef(false);
     const { t } = useTranslation(); // ✅ Enable translations
   const restaurantSlug = typeof window !== "undefined"
     ? localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id")
@@ -417,6 +435,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [receiptItems, setReceiptItems] = useState([]);
   const [order, setOrder] = useState(initialOrder);
   const [loading, setLoading] = useState(() => !initialOrder);
+  const [deferHeavyUi, setDeferHeavyUi] = useState(() => String(orderId) === "new");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [editingCartItemIndex, setEditingCartItemIndex] = useState(null);
   const [isSplitMode, setIsSplitMode] = useState(false);
@@ -439,8 +458,28 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelQuantities, setCancelQuantities] = useState({});
   const [refundMethodId, setRefundMethodId] = useState("");
   const [toast, setToast] = useState({ show: false, message: "" });
+  const confirmReservationCloseResolverRef = useRef(null);
+  const [confirmReservationCloseToast, setConfirmReservationCloseToast] = useState({
+    show: false,
+    schedule: null,
+  });
+  const requestReservationCloseConfirmation = useCallback((schedule) => {
+    const normalizedSchedule = schedule && typeof schedule === "object" ? schedule : null;
+    return new Promise((resolve) => {
+      confirmReservationCloseResolverRef.current = resolve;
+      setConfirmReservationCloseToast({ show: true, schedule: normalizedSchedule });
+    });
+  }, []);
+
+  const resolveReservationCloseConfirmation = useCallback((value) => {
+    const resolver = confirmReservationCloseResolverRef.current;
+    confirmReservationCloseResolverRef.current = null;
+    setConfirmReservationCloseToast({ show: false, schedule: null });
+    if (typeof resolver === "function") resolver(!!value);
+  }, []);
   const [isDebtSaving, setIsDebtSaving] = useState(false);
   const [showDebtModal, setShowDebtModal] = useState(false);
   const [debtForm, setDebtForm] = useState({ name: "", phone: "" });
@@ -519,6 +558,12 @@ const productsInActiveCategory = safeProducts.filter(
     (p.category || "").trim().toLowerCase() ===
     (activeCategory || "").trim().toLowerCase()
 );
+
+useEffect(() => {
+  if (!deferHeavyUi) return;
+  const id = window.requestAnimationFrame(() => setDeferHeavyUi(false));
+  return () => window.cancelAnimationFrame(id);
+}, [deferHeavyUi]);
 
 const isCashMethod = useCallback(
   (methodId) => {
@@ -1158,27 +1203,28 @@ const toggleCartItemSelection = useCallback((itemId) => {
 const clearSelectedCartItems = useCallback(() => {
   if (selectedCartItemIds.size === 0) return;
 
-  let removedAny = false;
   const selectedKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
+  const hasUnconfirmedSelected = cartItems.some((item) => {
+    const key = String(item.unique_id || item.id);
+    return selectedKeys.has(key) && !item.confirmed;
+  });
+
+  if (!hasUnconfirmedSelected) {
+    showToast(t("Select item to cancel"));
+    return;
+  }
 
   setCartItems((prev) =>
     prev.filter((item) => {
       const key = String(item.unique_id || item.id);
       const shouldRemove = selectedKeys.has(key) && !item.confirmed;
-
-      if (shouldRemove) removedAny = true;
       return !shouldRemove;
     })
   );
 
-  if (!removedAny) {
-    showToast(t("Selected items cleared"));
-    return;
-  }
-
   setSelectedCartItemIds(new Set());
   setSelectedForPayment((prev) => prev.filter((id) => !selectedKeys.has(id)));
-}, [selectedCartItemIds, t]);
+}, [cartItems, selectedCartItemIds, t]);
 
 useEffect(() => {
   ensureExtrasGroups().catch((err) => {
@@ -1297,7 +1343,9 @@ useEffect(() => {
 
   const status = (order.status || "").toLowerCase();
   const showCustomerInfo =
-    !!orderId && ["confirmed", "paid", "closed"].includes(status);
+    !!orderId &&
+    ["confirmed", "paid", "closed"].includes(status) &&
+    String(order.order_type || "").toLowerCase() !== "phone";
 
   // ✅ Combine cleanly and safely
   const subtitleText = showCustomerInfo
@@ -1309,6 +1357,8 @@ useEffect(() => {
   const headerTitle = orderId
     ? order.order_type === "packet"
       ? t("Packet")
+      : String(order.order_type || "").toLowerCase() === "phone"
+      ? order.customer_name?.trim() || t("Phone Order")
       : order.customer_name || order.customer_phone || t("Phone Order")
     : `${t("Table")} ${tableId}`;
 
@@ -1469,9 +1519,13 @@ useEffect(() => {
     return cartItems.reduce((sum, item) => {
       const key = String(item.unique_id || item.id);
       if (!keys.has(key) || !item.paid) return sum;
-      return sum + computeItemLineTotal(item);
+      const maxQty = Math.max(1, Number(item.quantity) || 1);
+      const requested = Number(cancelQuantities[key]) || 1;
+      const cancelQty = Math.min(Math.max(1, requested), maxQty);
+      const perUnit = computeItemLineTotal(item) / maxQty;
+      return sum + perUnit * cancelQty;
     }, 0);
-  }, [cartItems, selectedCartItemIds, computeItemLineTotal]);
+  }, [cancelQuantities, cartItems, selectedCartItemIds, computeItemLineTotal]);
 
   const refundAmount = selectedPaidRefundAmount > 0 ? selectedPaidRefundAmount : totalPaidAmount;
   const hasPaidItems = refundAmount > 0;
@@ -1548,6 +1602,7 @@ const [splits, setSplits] = useState({});
   const openCancelModal = useCallback(() => {
     if (!order?.id) return;
     setCancelReason("");
+    setCancelQuantities({});
     setRefundMethodId(getDefaultRefundMethod());
     setShowCancelModal(true);
   }, [getDefaultRefundMethod, order?.id]);
@@ -1555,6 +1610,7 @@ const [splits, setSplits] = useState({});
   const closeCancelModal = useCallback(() => {
     setShowCancelModal(false);
     setCancelReason("");
+    setCancelQuantities({});
   }, []);
 
   const handleCancelConfirm = async () => {
@@ -1568,10 +1624,20 @@ const [splits, setSplits] = useState({});
       return;
     }
     const selectedItemsForCancel = selectedCartItems
-      .map((item) => item.unique_id || item.id)
-      .filter(Boolean)
-      .map(String);
+      .map((item) => {
+        const uniqueId = item.unique_id || item.id;
+        if (!uniqueId) return null;
+        const maxQty = Math.max(1, Number(item.quantity) || 1);
+        const requested = Number(cancelQuantities[String(uniqueId)]) || 1;
+        const qty = Math.min(Math.max(1, requested), maxQty);
+        return { unique_id: String(uniqueId), quantity: qty };
+      })
+      .filter(Boolean);
     const isPartialCancel = selectedItemsForCancel.length > 0;
+    if (!isPartialCancel) {
+      showToast(t("Select item to cancel"));
+      return;
+    }
 
     setCancelLoading(true);
     try {
@@ -1776,6 +1842,15 @@ const runAutoCloseIfConfigured = useCallback(
 
     if (!shouldAutoCloseTable && !shouldAutoClosePacket) return;
 
+    if (shouldAutoCloseTable) {
+      const reservationSource = existingReservation ?? order;
+      const schedule = getReservationSchedule(reservationSource);
+      if (schedule && isEarlyReservationClose(reservationSource)) {
+        const ok = await requestReservationCloseConfirmation(schedule);
+        if (!ok) return;
+      }
+    }
+
     try {
       await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
     } catch (err) {
@@ -1787,8 +1862,10 @@ const runAutoCloseIfConfigured = useCallback(
   [
     identifier,
     navigate,
-    order?.id,
+    existingReservation,
+    order,
     orderType,
+    requestReservationCloseConfirmation,
     transactionSettings.autoClosePacketAfterPay,
     transactionSettings.autoCloseTableAfterPay,
   ]
@@ -2166,30 +2243,38 @@ useEffect(() => {
   if (hasWarmOrder) {
     setOrder(initialOrder);
 
-    const warmItems = Array.isArray(initialOrder.items) ? initialOrder.items : [];
-    const formatted = warmItems.map((item) => {
-      const extras = safeParseExtras(item.extras);
-      const qty = parseInt(item.quantity, 10) || 1;
-      const paid = Boolean(item.paid || item.paid_at);
-      return {
-        id: item.product_id ?? item.id ?? item.productId,
-        name: item.name || item.order_item_name || item.product_name || item.productName || "Unnamed",
-        category: item.category || null,
-        quantity: qty,
-        price: parseFloat(item.price) || 0,
-        ingredients: item.ingredients || [],
-        extras,
-        unique_id: item.unique_id || `${item.product_id}-${JSON.stringify(extras || [])}-${uuidv4()}`,
-        confirmed: item.confirmed ?? true,
-        paid,
-        payment_method: item.payment_method ?? "Unknown",
-        note: item.note || "",
-        kitchen_status: item.kitchen_status || "",
-      };
-    });
+    if (!location.state?.preserveCart) {
+      const warmItems = Array.isArray(initialOrder.items) ? initialOrder.items : [];
+      const formatted = warmItems.map((item) => {
+        const extras = safeParseExtras(item.extras);
+        const qty = parseInt(item.quantity, 10) || 1;
+        const paid = Boolean(item.paid || item.paid_at);
+        return {
+          id: item.product_id ?? item.id ?? item.productId,
+          name:
+            item.name ||
+            item.order_item_name ||
+            item.product_name ||
+            item.productName ||
+            "Unnamed",
+          category: item.category || null,
+          quantity: qty,
+          price: parseFloat(item.price) || 0,
+          ingredients: item.ingredients || [],
+          extras,
+          unique_id:
+            item.unique_id || `${item.product_id}-${JSON.stringify(extras || [])}-${uuidv4()}`,
+          confirmed: item.confirmed ?? true,
+          paid,
+          payment_method: item.payment_method ?? "Unknown",
+          note: item.note || "",
+          kitchen_status: item.kitchen_status || "",
+        };
+      });
 
-    setCartItems(formatted);
-    setReceiptItems(formatted.filter((i) => i.paid));
+      setCartItems(formatted);
+      setReceiptItems(formatted.filter((i) => i.paid));
+    }
     setLoading(false);
   } else {
     setOrder(null);
@@ -2198,8 +2283,35 @@ useEffect(() => {
     setLoading(true);
   }
 
-  if (orderId) {
-    fetchPhoneOrder(orderId);
+  if (orderId && String(orderId) !== "new") {
+    // Avoid a pointless refetch if we already navigated here with the same order in state.
+    if (!hasWarmOrder || String(initialOrder?.id) !== String(orderId)) {
+      fetchPhoneOrder(orderId);
+    }
+  } else if (String(orderId) === "new") {
+    if (!phoneOrderDraft || creatingPhoneOrderRef.current) return;
+    creatingPhoneOrderRef.current = true;
+    (async () => {
+      try {
+        const created = await secureFetch(`/orders${identifier}`, {
+          method: "POST",
+          body: JSON.stringify(phoneOrderDraft),
+        });
+
+        if (!created?.id) throw new Error(created?.error || "Failed to create order");
+
+        setOrder((prev) => (prev ? { ...prev, ...created } : created));
+        debugNavigate(`/transaction/phone/${created.id}`, {
+          replace: true,
+          state: { order: created, preserveCart: true },
+        });
+      } catch (err) {
+        console.error("❌ Failed to create phone order:", err);
+        showToast(err?.message || t("Failed to create phone order"));
+      } finally {
+        creatingPhoneOrderRef.current = false;
+      }
+    })();
   } else if (tableId) {
     createOrFetchTableOrder(tableId);
   } else if (
@@ -2511,6 +2623,13 @@ if (orderType === "phone" && order.status !== "closed") {
 // 🧠 For table orders → close ONLY when user manually presses “Close”
 // 🧠 For table orders → close ONLY when all items are delivered
 if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncludingSuborders)) {
+  const reservationSource = existingReservation ?? order;
+  const schedule = getReservationSchedule(reservationSource);
+  if (schedule && isEarlyReservationClose(reservationSource)) {
+    const ok = await requestReservationCloseConfirmation(schedule);
+    if (!ok) return;
+  }
+
   // Re-check against the latest backend state so we don't block close due to stale kitchen_status/category
   // (and so excluded-from-kitchen items don't show a brief "Not delivered yet" toast).
   let itemsToCheck = cartItems;
@@ -3081,14 +3200,15 @@ const removeItem = (uniqueId) => {
 
 // Clears only UNCONFIRMED items from the cart
 const clearUnconfirmedCartItems = () => {
-  let removedAny = false;
+  const hasUnconfirmed = cartItems.some((item) => !item.confirmed);
+  if (!hasUnconfirmed) {
+    showToast(t("Select item to cancel"));
+    return;
+  }
+
   setCartItems((prev) =>
     prev.filter((item) => {
-      if (!item.confirmed) {
-        removedAny = true;
-        return false;
-      }
-      return true;
+      return item.confirmed;
     })
   );
 
@@ -3563,8 +3683,11 @@ const renderCartContent = (variant = "desktop") => {
       ? `paid:${item.receipt_id || "yes"}`
       : (item.confirmed ? "confirmed" : "unconfirmed");
 
-    // 🔑 New grouping key (prevents merging with paid items)
-    const key = `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
+    // 🔑 Grouping key.
+    // NOTE: confirmed items must not merge, otherwise you can't select/cancel just one of two identical items.
+    const key = item.confirmed
+      ? `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}__uid:${item.unique_id}`
+      : `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
 
     if (!acc[key]) acc[key] = { ...item, quantity: 0, items: [] };
 
@@ -3911,7 +4034,17 @@ const cardGradient = item.paid
 
   );
 };
-  if (loading) return <p className="p-4 text-center">{t("Loading...")}</p>;
+  if (loading || deferHeavyUi) {
+    return (
+      <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
+        <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-x-hidden">
+          <div className="mt-6 rounded-2xl bg-white shadow-lg ring-1 ring-slate-200 p-6 text-center text-slate-700 font-semibold">
+            {t("Loading...")}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
@@ -4033,6 +4166,44 @@ const cardGradient = item.paid
       </div>
     )}
 
+    {confirmReservationCloseToast.show && (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">
+            {t("Close")}
+          </p>
+          <p className="text-lg font-extrabold text-rose-600">
+            {t("Reservation time has not yet arrived.")}
+          </p>
+          <p className="text-sm text-slate-700 mt-2">
+            {t(
+              "This table is reserved for {{date}} {{time}}. The reservation time has not yet arrived. Close the table anyway?",
+              {
+                date: confirmReservationCloseToast.schedule?.date || "—",
+                time: confirmReservationCloseToast.schedule?.time || "—",
+              }
+            )}
+          </p>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => resolveReservationCloseConfirmation(false)}
+              className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200"
+            >
+              {t("Cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => resolveReservationCloseConfirmation(true)}
+              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700"
+            >
+              {t("Close anyway")}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
 <PaymentModal
   show={showPaymentModal}
   onClose={() => setShowPaymentModal(false)}
@@ -4098,22 +4269,47 @@ const cardGradient = item.paid
           </p>
           <ul className="space-y-1 text-[12px]">
             {selectedCartItems.map((item) => {
-              const totalPrice = (Number(item.price) || 0) * (Number(item.quantity) || 1);
+              const itemQty = Math.max(1, Number(item.quantity) || 1);
+              const key = String(item.unique_id || item.id);
+              const requested = Number(cancelQuantities[key]) || 1;
+              const cancelQty = Math.min(Math.max(1, requested), itemQty);
+              const perUnit = computeItemLineTotal(item) / itemQty;
+              const totalPrice = perUnit * cancelQty;
               return (
                 <li
                   key={item.unique_id || `${item.id}-${item.name}`}
                   className="flex items-center justify-between font-semibold text-amber-700"
                 >
-                  <span className="truncate">{item.name}</span>
+                  <span className="truncate flex-1">{item.name}</span>
+                  {itemQty > 1 && (
+                    <select
+                      className="ml-2 rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-bold text-amber-700"
+                      value={cancelQuantities[key] || 1}
+                      onChange={(e) => {
+                        const next = Number(e.target.value) || 1;
+                        setCancelQuantities((prev) => ({ ...prev, [key]: next }));
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={t("Qty")}
+                    >
+                      {Array.from({ length: itemQty }, (_, idx) => idx + 1).map(
+                        (qty) => (
+                          <option key={qty} value={qty}>
+                            {t("Qty")} {qty}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  )}
                   <span className="text-amber-600">
-                    ×{item.quantity || 1} — {formatCurrency(totalPrice)}
+                    ×{cancelQty} — {formatCurrency(totalPrice)}
                   </span>
                 </li>
               );
             })}
           </ul>
           <p className="text-xs text-amber-500">
-            {t("Only the highlighted items will be removed from the order. Leave everything unchecked to cancel the full order.")}
+            {t("Only the highlighted items will be removed from the order.")}
           </p>
         </div>
       )}

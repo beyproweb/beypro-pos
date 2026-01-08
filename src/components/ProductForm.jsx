@@ -919,7 +919,7 @@ const handleSubmit = async (e) => {
       return;
     }
 
-    toast.success(isEdit ? "✅ Product updated!" : "✅ Product saved!");
+    toast.success(`✅ ${isEdit ? t("Product updated!") : t("Product saved!")}`);
 
     // reset form
     setProduct({

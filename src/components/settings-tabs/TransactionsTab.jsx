@@ -136,6 +136,23 @@ export default function TransactionsTab() {
             </div>
           </div>
         </label>
+
+        <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+          <input
+            type="checkbox"
+            checked={!!settings.disableTableOverviewOrdersFloatingButton}
+            onChange={() => toggle("disableTableOverviewOrdersFloatingButton")}
+            className="mt-1 h-5 w-5 accent-indigo-500"
+          />
+          <div>
+            <div className="font-semibold text-sm">
+              {t("Disable floating Orders button in Table Overview")}
+            </div>
+            <div className="text-xs text-slate-500">
+              {t("Hides the floating shortcut button for Orders in the Table Overview screen.")}
+            </div>
+          </div>
+        </label>
       </div>
 
       <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 space-y-4">

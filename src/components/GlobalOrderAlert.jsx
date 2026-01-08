@@ -581,13 +581,25 @@ export default function GlobalOrderAlert() {
   useEffect(() => {
     const onNewOrder = async (p) => {
       const id = p?.order?.id || p?.orderId || p?.id;
-      const type = String(p?.order?.order_type || p?.order_type || "")
+      let type = String(p?.order?.order_type || p?.order_type || "")
         .trim()
         .toLowerCase();
-      const isPacketType = ["packet", "phone", "online"].includes(type);
+      if (!type && id) {
+        try {
+          const order = await secureFetch(`/orders/${id}`);
+          type = String(order?.order_type || order?.type || "").trim().toLowerCase();
+        } catch {
+          // If we cannot resolve the order type, fall back to existing behavior.
+        }
+      }
+
+      const packetPhoneTypes = ["packet", "phone", "online"];
+      const preOrderTypes = ["takeaway"];
+      const isPacketPhoneType = packetPhoneTypes.includes(type);
+      const isPreOrderType = preOrderTypes.includes(type);
       const skipPrint =
         (type === "table" && transactionSettings.disableAutoPrintTable) ||
-        (isPacketType && transactionSettings.disableAutoPrintPacket);
+        ((isPacketPhoneType || isPreOrderType) && transactionSettings.disableAutoPrintPacket);
 
       notify("new_order", "🔔 New order received");
       if (skipPrint) return;
@@ -603,11 +615,11 @@ const onPaid = (p) => {
     const onStockLow = () => notify("stock_low", "⚠️ Stock critical");
     const onRestocked = () => notify("stock_restocked", "📦 Stock replenished");
     const onDriverAssigned = (payload = {}) => {
-      const driverName = payload.driverName || "Driver";
+      const driverName = payload.driverName || payload.driver_name || "Driver";
       const orderSuffix = payload.orderId ? ` #${payload.orderId}` : "";
       notify(
         "driver_assigned",
-        `🚗 ${driverName} assigned to order${orderSuffix}`
+        `${driverName} assigned to order${orderSuffix}`
       );
     };
 
