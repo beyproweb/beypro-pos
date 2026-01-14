@@ -72,7 +72,7 @@ export default function OrderHistory({
     return base + extrasTotal;
   }, []);
 
-  function calculateGrandTotal(items = []) {
+function calculateGrandTotal(items = []) {
   let total = 0;
   for (const item of items) {
     if (isCancelledItem(item)) continue;
@@ -80,6 +80,45 @@ export default function OrderHistory({
   }
   return total;
 }
+
+const getOrderEventDate = (order) => {
+  const timestamp = order?.kitchen_delivered_at || order?.created_at;
+  if (!timestamp) return null;
+  const parsed = new Date(timestamp);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+};
+
+const getPaymentChangeTimestampMs = (value) => {
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+const formatPaymentChangeTimestamp = (value) => {
+  const ms = getPaymentChangeTimestampMs(value);
+  if (!ms) return "";
+  return new Date(ms).toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+const fetchPaymentChangesForOrder = async (orderId) => {
+  if (!orderId) return [];
+  try {
+    const resp = await secureFetch(`/orders/${orderId}/payment-changes`);
+    return Array.isArray(resp) ? resp : [];
+  } catch (err) {
+    console.warn(
+      `⚠️ Failed to fetch payment changes for order ${orderId}:`,
+      err
+    );
+    return [];
+  }
+};
 
 	  // Fetch closed orders
 	const fetchClosedOrders = async () => {
@@ -117,7 +156,19 @@ export default function OrderHistory({
       receiptMethods = Array.isArray(methodsRes) ? methodsRes : [];
     }
 
-    return { ...order, items, payments, receiptMethods };
+    const paymentChangesRaw = await fetchPaymentChangesForOrder(order.id);
+    const paymentChanges =
+      Array.isArray(paymentChangesRaw) && paymentChangesRaw.length > 0
+        ? paymentChangesRaw
+            .slice()
+            .sort(
+              (a, b) =>
+                getPaymentChangeTimestampMs(b.changed_at) -
+                getPaymentChangeTimestampMs(a.changed_at)
+            )
+        : [];
+
+    return { ...order, items, payments, receiptMethods, paymentChanges };
   })
 );
 
@@ -157,6 +208,7 @@ const filteredOrdersByTypeAndPayment = useMemo(() => {
     if (filterValue === "table") return orderType === "table";
     if (filterValue === "phone") return orderType === "phone";
     if (filterValue === "online") return orderType === "online" || orderType === "packet";
+    if (filterValue === "preorder") return orderType === "takeaway";
     return true;
   };
 
@@ -188,9 +240,8 @@ const totals = useMemo(() => {
 
 const groupedClosedOrders = useMemo(() => {
   return filteredOrdersByTypeAndPayment.reduce((acc, order) => {
-    const dateKey = order.created_at
-      ? new Date(order.created_at).toLocaleDateString()
-      : "Unknown";
+    const eventDate = getOrderEventDate(order);
+    const dateKey = eventDate ? eventDate.toLocaleDateString() : "Unknown";
     if (!acc[dateKey]) acc[dateKey] = [];
     acc[dateKey].push(order);
     return acc;
@@ -255,6 +306,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             <option value="table">{t("Table Orders")}</option>
             <option value="online">{t("Online Orders")}</option>
             <option value="phone">{t("Phone Orders")}</option>
+            <option value="preorder">{t("Pre Orders")}</option>
           </select>
           <div className="flex items-center gap-2 rounded-xl border-2 border-blue-100 bg-white px-3 py-1 shadow-sm text-sm font-semibold text-slate-700">
             <span>{t("Total Orders")}: {totals.totalOrders}</span>
@@ -300,25 +352,32 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             </div>
             {/* Order Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
-              {orders
-  .map((order) => {
-    const normalizedStatus = (order.status || "").toLowerCase();
-    const isOrderCancelled = ["cancelled", "canceled"].includes(normalizedStatus);
-    const onlinePayments = ["online", "online payment", "online card", "yemeksepeti online"];
-    const isOnlineMethod = (method) =>
-      typeof method === "string" &&
-      onlinePayments.some((type) => method.toLowerCase().includes(type));
-    const isOnlinePayment =
-      isOnlineMethod(order.payment_method) ||
-      (Array.isArray(order.receiptMethods) &&
-        order.receiptMethods.some((rm) => isOnlineMethod(rm.payment_method))) ||
-      (Array.isArray(order.payments) &&
-        order.payments.some((pm) => isOnlineMethod(pm.payment_method)));
+            {orders
+              .map((order) => {
+                const normalizedStatus = (order.status || "").toLowerCase();
+                const eventDate = getOrderEventDate(order);
+                const eventTimestampLabel = eventDate
+                  ? `${eventDate.toLocaleDateString()} • ${eventDate.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`
+                  : "";
+                const isOrderCancelled = ["cancelled", "canceled"].includes(normalizedStatus);
+                const onlinePayments = ["online", "online payment", "online card", "yemeksepeti online"];
+                const isOnlineMethod = (method) =>
+                  typeof method === "string" &&
+                  onlinePayments.some((type) => method.toLowerCase().includes(type));
+                const isOnlinePayment =
+                  isOnlineMethod(order.payment_method) ||
+                  (Array.isArray(order.receiptMethods) &&
+                    order.receiptMethods.some((rm) => isOnlineMethod(rm.payment_method))) ||
+                  (Array.isArray(order.payments) &&
+                    order.payments.some((pm) => isOnlineMethod(pm.payment_method)));
 
-    const paymentEditingAllowed = !isOrderCancelled && !isOnlinePayment;
-    const showPaymentEditor = paymentEditingAllowed && editingPaymentOrderId === order.id;
-    return (
-    <div
+                const paymentEditingAllowed = !isOrderCancelled && !isOnlinePayment;
+                const showPaymentEditor = paymentEditingAllowed && editingPaymentOrderId === order.id;
+                const paymentHistory = Array.isArray(order.paymentChanges)
+                  ? order.paymentChanges
+                  : [];
+                return (
+                  <div
       key={order.id}
       className="rounded-3xl bg-gradient-to-br from-white/90 via-blue-50 to-indigo-50 border border-white/60 shadow-xl p-6 flex flex-col gap-4 transition hover:scale-[1.02] hover:shadow-2xl"
     >
@@ -332,14 +391,14 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
               <>🛵 {t("Packet Order")}</>
             ) : order.order_type === "phone" ? (
               <>📞 {t("Phone Order")}</>
+            ) : order.order_type === "takeaway" ? (
+              <>🥡 {t("Pre Order")} #{order.id}</>
             ) : (
               <># {order.id}</>
             )}
           </span>
           <span className="text-xs text-gray-500 mt-0.5">
-            {order.created_at
-              ? `${new Date(order.created_at).toLocaleDateString()} • ${new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`
-              : ""}
+            {eventTimestampLabel}
           </span>
           {["phone", "packet"].includes(order.order_type) && (
             <>
@@ -995,6 +1054,37 @@ await secureFetch(`/orders/${order.id}`, {
     )
   )}
 </div>
+      {paymentHistory.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <div className="text-xs uppercase tracking-wide text-slate-400 font-semibold mb-2">
+            {t("Payment history")}
+          </div>
+          <div className="space-y-2">
+            {paymentHistory.map((change, idx) => {
+              const timestamp = formatPaymentChangeTimestamp(change.changed_at);
+              return (
+                <div
+                  key={`payment-change-${order.id}-${idx}`}
+                  className="flex flex-col gap-0.5"
+                >
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
+                    <span className="truncate">
+                      {change.old_method || t("Unknown")} →{" "}
+                      {change.new_method || t("Unknown")}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {change.changed_by || t("System")}
+                    </span>
+                  </div>
+                  {timestamp && (
+                    <span className="text-xs text-slate-500">{timestamp}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
 
     </div>

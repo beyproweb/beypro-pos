@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { Toaster, toast } from 'react-hot-toast';
 import Modal from 'react-modal';
@@ -25,7 +25,7 @@ const StaffSchedule = () => {
   const [view, setView] = useState('week');
   const [filter, setFilter] = useState('All');
   const [copiedShift, setCopiedShift] = useState(null);
- const { t } = useTranslation();
+  const { t } = useTranslation();
 
   // --- SHIFT MODAL STATES ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,7 +37,8 @@ const StaffSchedule = () => {
   const [copiedWeekShifts, setCopiedWeekShifts] = useState([]);
   const [isWeekCopied, setIsWeekCopied] = useState(false);
   const [allSchedules, setAllSchedules] = useState([]);
-const [isAllSchedulesOpen, setIsAllSchedulesOpen] = useState(false);
+  const [isAllSchedulesOpen, setIsAllSchedulesOpen] = useState(false);
+  const [isScheduledStaffModalOpen, setIsScheduledStaffModalOpen] = useState(false);
 
 const fetchAllSchedules = async (staffId) => {
   try {
@@ -122,6 +123,33 @@ const formatDays = (days) => {
   if (typeof days === 'string') return days.split(',').map((d) => d.trim());
   return [];
 };
+
+const scheduledStaffOverview = useMemo(() => {
+  const staffMap = new Map();
+
+  staffSchedules.forEach((schedule) => {
+    const staffId = schedule.staff_id || schedule.staff?.id;
+    if (!staffId) return;
+
+    const existing = staffMap.get(staffId);
+    if (!existing) {
+      const staff = staffList.find((item) => item.id === staffId);
+      staffMap.set(staffId, {
+        staffId,
+        staffName: staff?.name || schedule.staff?.name || `Staff #${staffId}`,
+        role: staff?.role || schedule.role || '',
+        shifts: [schedule],
+      });
+    } else {
+      if (!existing.role && schedule.role) existing.role = schedule.role;
+      existing.shifts.push(schedule);
+    }
+  });
+
+  return Array.from(staffMap.values()).sort((a, b) =>
+    (a.staffName || '').localeCompare(b.staffName || '')
+  );
+}, [staffSchedules, staffList]);
 
 const handleClearWeek = async () => {
   const confirmClear = window.confirm("Are you sure you want to clear this week's schedule?");
@@ -1006,18 +1034,27 @@ const handleDateChange = (direction) => {
 </div>
 
 
-        <select
-  value={filter}
-  onChange={(e) => setFilter(e.target.value)}
-  className="px-3 py-1 rounded-full bg-white shadow border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
->
-  <option value="All">{t('All Roles')}</option> {/* Translated text */}
-  {roles.map((role) => (
-    <option key={role} value={role}>
-      {role}
-    </option>
-  ))}
-</select>
+        <div className="flex items-center gap-3">
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="px-3 py-1 rounded-full bg-white shadow border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="All">{t('All Roles')}</option>
+            {roles.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setIsScheduledStaffModalOpen(true)}
+            className="px-4 py-1 rounded-full transition-all duration-300 bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg hover:shadow-xl whitespace-nowrap"
+          >
+            {t('Show Scheduled Staff')}
+            {scheduledStaffOverview.length ? ` (${scheduledStaffOverview.length})` : ''}
+          </button>
+        </div>
 
       </div>
 
@@ -1527,6 +1564,69 @@ const handleDateChange = (direction) => {
         className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm"
       >
         {t('Save')}
+      </button>
+    </div>
+  </div>
+</Modal>
+
+<Modal
+  isOpen={isScheduledStaffModalOpen}
+  onRequestClose={() => setIsScheduledStaffModalOpen(false)}
+  className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-50"
+>
+  <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-3xl max-h-[80vh] overflow-y-auto">
+    <div className="flex justify-between items-center mb-4">
+      <h2 className="text-xl font-bold text-gray-800">
+        {t('Scheduled Staff')}
+      </h2>
+      <button
+        onClick={() => setIsScheduledStaffModalOpen(false)}
+        className="p-2 rounded-full bg-gray-200 hover:bg-gray-300 transition"
+      >
+        <X size={20} className="text-gray-600" />
+      </button>
+    </div>
+    {scheduledStaffOverview.length ? (
+      <div className="space-y-4">
+        {scheduledStaffOverview.map((entry) => (
+          <div key={entry.staffId} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-lg font-semibold text-gray-800">{entry.staffName}</div>
+                {entry.role && <div className="text-sm text-gray-500">{entry.role}</div>}
+              </div>
+              <span className="text-sm text-gray-500">{entry.shifts.length} shift{entry.shifts.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="mt-3 space-y-3 text-sm text-gray-700">
+              {entry.shifts.map((shift) => {
+                const daysLabel = shift.shift_date
+                  ? shift.shift_date
+                  : formatDays(shift.days).join(', ') || t('No schedule');
+                const timeLabel =
+                  shift.shift_start && shift.shift_end
+                    ? `${shift.shift_start} - ${shift.shift_end}`
+                    : t('Not scheduled');
+                const key = shift.id || `${entry.staffId}-${daysLabel}-${shift.shift_start}-${shift.shift_end}`;
+                return (
+                  <div key={key} className="p-2 rounded border border-dashed border-gray-200">
+                    <div className="text-sm font-semibold text-gray-800">{daysLabel}</div>
+                    <div className="text-sm text-gray-600">{timeLabel}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <p className="text-sm text-gray-500">No scheduled staff found.</p>
+    )}
+    <div className="flex justify-end mt-4">
+      <button
+        onClick={() => setIsScheduledStaffModalOpen(false)}
+        className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition text-sm"
+      >
+        {t('Close')}
       </button>
     </div>
   </div>

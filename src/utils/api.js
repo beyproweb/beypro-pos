@@ -1,7 +1,12 @@
 // api.js
+const normalizeApiBase = (raw) =>
+  String(raw || "")
+    .replace(/\/api\/?$/, "")
+    .replace(/\/+$/, "") + "/api";
+
 export const API_BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : "/api"; // fallback for dev
+  ? normalizeApiBase(import.meta.env.VITE_API_URL)
+  : "/api"; // fallback for dev (Vite proxy)
 
 export const SUPPLIERS_API = `${API_BASE}/suppliers`;
 export const SUPPLIER_CARTS_API = `${API_BASE}/supplier-carts`;

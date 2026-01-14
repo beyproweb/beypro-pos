@@ -29,7 +29,7 @@ export default function CameraTab() {
   const loadCameras = async () => {
     setLoading(true);
     try {
-      const data = await secureFetch("/api/camera/list");
+      const data = await secureFetch("/camera/list");
       setCameras(Array.isArray(data) ? data : []);
     } catch (err) {
       console.log("📷 Loading demo cameras...");
@@ -69,8 +69,8 @@ export default function CameraTab() {
     try {
       const method = editingCameraId ? "PUT" : "POST";
       const endpoint = editingCameraId
-        ? `/api/camera/${editingCameraId}`
-        : "/api/camera";
+        ? `/camera/${editingCameraId}`
+        : "/camera";
 
       await secureFetch(endpoint, {
         method,
@@ -98,7 +98,7 @@ export default function CameraTab() {
   const handleDeleteCamera = (cameraId) => {
     if (confirm(t("Are you sure you want to delete this camera?"))) {
       setLoading(true);
-      secureFetch(`/api/camera/${cameraId}`, { method: "DELETE" })
+      secureFetch(`/camera/${cameraId}`, { method: "DELETE" })
         .then(() => {
           toast.success(t("Camera deleted successfully"));
           loadCameras();

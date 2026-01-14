@@ -308,7 +308,7 @@ export default function Orders({ orders: propOrders, hideModal = false }) {
   const [showRoute, setShowRoute] = useState(false);
   const [drivers, setDrivers] = useState([]);
   const [editingDriver, setEditingDriver] = useState({});
-  const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [selectedDriverId, setSelectedDriverId] = useState("all");
   const socketRef = useRef();
   const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
   const [activeTab, setActiveTab] = useState("phone");
@@ -324,12 +324,19 @@ const normalizedDrinkNames = useMemo(
   [drinksList]
 );
 const [driverReport, setDriverReport] = useState(null);
-const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0,10)); // YYYY-MM-DD today
+const [reportFromDate, setReportFromDate] = useState(
+  () => new Date().toISOString().slice(0, 10)
+);
+const [reportToDate, setReportToDate] = useState(
+  () => new Date().toISOString().slice(0, 10)
+);
 const [reportLoading, setReportLoading] = useState(false);
+const [showDriverReport, setShowDriverReport] = useState(false);
 const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
 const [excludedKitchenCategories, setExcludedKitchenCategories] = useState([]);
 const [productPrepById, setProductPrepById] = useState({});
   const [autoConfirmOrders, setAutoConfirmOrders] = useState(false);
+const showDriverColumn = selectedDriverId === "all";
 
 const [showPaymentModal, setShowPaymentModal] = useState(false);
 const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
@@ -475,27 +482,210 @@ useEffect(() => {
 
 useEffect(() => {
   secureFetch("/settings/integrations")
-  .then(data => setAutoConfirmOrders(!!data.auto_confirm_orders))
-  .catch(() => setAutoConfirmOrders(false));
+    .then((data) => setAutoConfirmOrders(!!data.auto_confirm_orders))
+    .catch(() => setAutoConfirmOrders(false));
 }, []);
 
+const buildDateRange = (from, to) => {
+  const start = new Date(`${from}T00:00:00`);
+  const end = new Date(`${to}T00:00:00`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return [];
+  const rangeStart = start <= end ? start : end;
+  const rangeEnd = start <= end ? end : start;
+  const dates = [];
+  const cursor = new Date(rangeStart);
+  while (cursor <= rangeEnd) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+};
+
 async function fetchDriverReport() {
-  if (!selectedDriverId || !reportDate) return;
+  if (!selectedDriverId || !reportFromDate || !reportToDate) return;
   setReportLoading(true);
   setDriverReport(null);
   try {
-  const data = await secureFetch(`/orders/driver-report?driver_id=${selectedDriverId}&date=${reportDate}`);
-setDriverReport(data);
+    if (selectedDriverId === "all") {
+      let driverList = Array.isArray(drivers) ? drivers : [];
+      let driverIds = driverList.map((d) => Number(d.id)).filter(Number.isFinite);
+      if (driverIds.length === 0) {
+        const list = await fetchDrivers();
+        driverList = Array.isArray(list) ? list : [];
+        driverIds = driverList.map((d) => Number(d.id)).filter(Number.isFinite);
+      }
+      if (driverIds.length === 0) {
+        setDriverReport({ error: "No drivers available" });
+        return;
+      }
 
+      const dates = reportFromDate === reportToDate ? [reportFromDate] : buildDateRange(reportFromDate, reportToDate);
+      if (dates.length === 0) {
+        setDriverReport({ error: "Invalid date range" });
+        return;
+      }
+
+      const tasks = [];
+      driverIds.forEach((driverId) => {
+        dates.forEach((date) => {
+          tasks.push({ driverId, date });
+        });
+      });
+
+      const limit = 6;
+      const results = new Array(tasks.length);
+      let idx = 0;
+
+      await Promise.all(
+        Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+          while (idx < tasks.length) {
+            const current = idx++;
+            const task = tasks[current];
+            try {
+              const data = await secureFetch(
+                `/orders/driver-report?driver_id=${task.driverId}&date=${task.date}`
+              );
+              results[current] = { data, driverId: task.driverId };
+            } catch {
+              results[current] = null;
+            }
+          }
+        })
+      );
+
+      const aggregated = {
+        packets_delivered: 0,
+        total_sales: 0,
+        sales_by_method: {},
+        orders: [],
+      };
+
+      const driverNameById = new Map(
+        (driverList || []).map((d) => [
+          Number(d.id),
+          d.name || d.full_name || d.username || String(d.id),
+        ])
+      );
+
+      results.forEach((result) => {
+        if (!result || !result.data) return;
+        const { data, driverId } = result;
+        aggregated.packets_delivered += Number(data.packets_delivered || 0);
+        aggregated.total_sales += Number(data.total_sales || 0);
+        if (data.sales_by_method && typeof data.sales_by_method === "object") {
+          Object.entries(data.sales_by_method).forEach(([method, amount]) => {
+            aggregated.sales_by_method[method] =
+              Number(aggregated.sales_by_method[method] || 0) + Number(amount || 0);
+          });
+        }
+        if (Array.isArray(data.orders)) {
+          aggregated.orders.push(
+            ...data.orders.map((ord) => {
+              const rawDriverId = ord.driver_id ?? ord.driverId ?? ord.driver?.id ?? null;
+              const resolvedDriverId =
+                rawDriverId != null ? Number(rawDriverId) : Number(driverId);
+              const driverName =
+                ord.driver_name ||
+                ord.driverName ||
+                ord.driver?.name ||
+                (Number.isFinite(resolvedDriverId)
+                  ? driverNameById.get(resolvedDriverId)
+                  : null) ||
+                null;
+              return {
+                ...ord,
+                driver_id: resolvedDriverId ?? ord.driver_id,
+                driver_name: driverName,
+              };
+            })
+          );
+        }
+      });
+
+      setDriverReport(aggregated);
+      return;
+    }
+
+    if (reportFromDate === reportToDate) {
+      const data = await secureFetch(
+        `/orders/driver-report?driver_id=${selectedDriverId}&date=${reportFromDate}`
+      );
+      setDriverReport(data);
+      return;
+    }
+
+    const dates = buildDateRange(reportFromDate, reportToDate);
+    if (dates.length === 0) {
+      setDriverReport({ error: "Invalid date range" });
+      return;
+    }
+
+    const limit = 4;
+    const results = new Array(dates.length);
+    let idx = 0;
+
+    await Promise.all(
+      Array.from({ length: Math.min(limit, dates.length) }, async () => {
+        while (idx < dates.length) {
+          const current = idx++;
+          const date = dates[current];
+          try {
+            results[current] = await secureFetch(
+              `/orders/driver-report?driver_id=${selectedDriverId}&date=${date}`
+            );
+          } catch {
+            results[current] = null;
+          }
+        }
+      })
+    );
+
+    const aggregated = {
+      packets_delivered: 0,
+      total_sales: 0,
+      sales_by_method: {},
+      orders: [],
+    };
+
+    results.forEach((data) => {
+      if (!data) return;
+      aggregated.packets_delivered += Number(data.packets_delivered || 0);
+      aggregated.total_sales += Number(data.total_sales || 0);
+      if (data.sales_by_method && typeof data.sales_by_method === "object") {
+        Object.entries(data.sales_by_method).forEach(([method, amount]) => {
+          aggregated.sales_by_method[method] =
+            Number(aggregated.sales_by_method[method] || 0) + Number(amount || 0);
+        });
+      }
+      if (Array.isArray(data.orders)) {
+        aggregated.orders.push(...data.orders);
+      }
+    });
+
+    setDriverReport(aggregated);
   } catch (err) {
     setDriverReport({ error: "Failed to load driver report" });
+  } finally {
+    setReportLoading(false);
   }
-  setReportLoading(false);
 }
 
+const handleToggleDriverReport = () => {
+  setShowDriverReport((prev) => {
+    const next = !prev;
+    if (!prev) {
+      setTimeout(() => {
+        fetchDriverReport();
+      }, 0);
+    }
+    return next;
+  });
+};
+
 useEffect(() => {
+  if (!showDriverReport) return;
   fetchDriverReport();
-}, [selectedDriverId, reportDate]);
+}, [selectedDriverId, reportFromDate, reportToDate, showDriverReport]);
 
 
 
@@ -670,10 +860,13 @@ else if (relevantItems.some(i => i.kitchen_status === "preparing"))
  async function fetchDrivers() {
   try {
    const data = await secureFetch("/staff/drivers");
-setDrivers(Array.isArray(data) ? data : data?.drivers || []);
+   const list = Array.isArray(data) ? data : data?.drivers || [];
+   setDrivers(list);
+   return list;
 
   } catch {
     setDrivers([]);
+    return [];
   }
 }
 
@@ -1495,56 +1688,120 @@ return (
 {/* --- HEADER & ACTIONS, Always Centered --- */}
 <div className="w-full flex flex-col items-center justify-center pt-1 pb-0 min-h-[50px]">
 
-  <div className="flex flex-col items-center justify-center w-full max-w-3xl">
-    <div className="flex flex-col md:flex-row items-center justify-center gap-5 w-full">
-      <select
-        className="w-full md:w-auto px-4 py-2 rounded-2xl text-base font-medium bg-white text-slate-900 border border-slate-200 shadow-sm focus:border-slate-400 focus:ring-slate-300 min-w-[180px]"
-        value={selectedDriverId || ""}
-        onChange={e => setSelectedDriverId(e.target.value)}
-      >
-        <option value="">{t("Select driver to view report")}</option>
-        {drivers.map(d => (
-          <option key={d.id} value={d.id}>{d.name}</option>
-        ))}
-      </select>
-      <button
-        className="w-full md:w-auto px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-40 transition"
-        disabled={!selectedDriverId}
-        onClick={async () => {
-          const driverOrders = orders.filter(
-            o => o.driver_id === Number(selectedDriverId) && o.driver_status !== "delivered"
-          );
-          const stops = await fetchOrderStops(driverOrders);
-          setMapStops(stops);
-          setShowRoute(true);
-        }}
-      >
-        🛵<span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-lg border border-emerald-300 font-semibold">LIVE</span> {t("Route")}
-      </button>
-      <div className="w-full md:w-auto flex flex-wrap items-center justify-between gap-2 bg-white rounded-xl px-3 py-2 border border-slate-200 shadow-sm">
-        <label className="font-semibold text-slate-600">{t("Date")}:</label>
-        <input
-          type="date"
-          className="border border-slate-200 px-2 py-1 rounded text-base sm:text-lg bg-white text-slate-900 focus:border-slate-400 focus:ring-slate-300"
-          value={reportDate}
-          max={new Date().toISOString().slice(0,10)}
-          onChange={e => setReportDate(e.target.value)}
-          disabled={reportLoading}
-        />
+  <div className="flex flex-col items-center justify-center w-full max-w-6xl">
+    <div className="flex flex-col gap-3 w-full">
+      <div className="flex flex-col md:flex-row md:flex-nowrap items-center justify-center gap-3 w-full">
+        <select
+          className="w-full md:w-auto px-4 py-2 rounded-2xl text-base font-medium bg-white text-slate-900 border border-slate-200 shadow-sm focus:border-slate-400 focus:ring-slate-300 min-w-[180px]"
+          value={selectedDriverId || ""}
+          onChange={(e) => {
+            setSelectedDriverId(e.target.value);
+          }}
+        >
+          <option value="">{t("Select Driver")}</option>
+          <option value="all">{t("All Drivers")}</option>
+          {drivers.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+
+        <div className="w-full md:w-auto flex items-center justify-center gap-3 flex-nowrap overflow-x-auto md:overflow-visible">
+          <button
+            className="w-full md:w-auto md:shrink-0 whitespace-nowrap leading-none px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            disabled={!selectedDriverId}
+            onClick={async () => {
+              const driverOrders = orders.filter(
+                (o) =>
+                  o.driver_id === Number(selectedDriverId) && o.driver_status !== "delivered"
+              );
+              const stops = await fetchOrderStops(driverOrders);
+              setMapStops(stops);
+              setShowRoute(true);
+            }}
+          >
+            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+              🛵
+              <span className="shrink-0 bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-lg border border-emerald-300 font-semibold">
+                LIVE
+              </span>
+              <span className="whitespace-nowrap">{t("Route")}</span>
+            </span>
+          </button>
+
+          <button
+            className="w-full md:w-auto md:shrink-0 whitespace-nowrap leading-none px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            disabled={!selectedDriverId}
+            onClick={() => setShowDrinkModal(true)}
+          >
+            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+              <span className="whitespace-nowrap">{t("Checklist")}</span>
+            </span>
+          </button>
+
+          <button
+            className="w-full md:w-auto md:shrink-0 whitespace-nowrap leading-none px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            disabled={!selectedDriverId}
+            onClick={handleToggleDriverReport}
+          >
+            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+              📊 <span className="whitespace-nowrap">{t("Driver Report")}</span>
+            </span>
+          </button>
+        </div>
+
+        {/* Date range sits next to Driver Report on big screens */}
+        <div className="hidden md:flex md:w-auto items-center gap-2 flex-nowrap whitespace-nowrap bg-white rounded-xl px-3 py-2 border border-slate-200 shadow-sm">
+          <input
+            type="date"
+            className="shrink-0 border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            value={reportFromDate}
+            max={reportToDate || new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setReportFromDate(e.target.value)}
+            disabled={reportLoading}
+          />
+          <input
+            type="date"
+            className="shrink-0 border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            value={reportToDate}
+            min={reportFromDate || undefined}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setReportToDate(e.target.value)}
+            disabled={reportLoading}
+          />
+        </div>
+      </div>
+
+      {/* On small screens keep date range on its own row */}
+      <div className="w-full flex items-center justify-center md:hidden">
+        <div className="w-full md:w-auto flex items-center gap-2 flex-nowrap overflow-x-auto whitespace-nowrap bg-white rounded-xl px-3 py-2 border border-slate-200 shadow-sm">
+          <input
+            type="date"
+            className="shrink-0 border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            value={reportFromDate}
+            max={reportToDate || new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setReportFromDate(e.target.value)}
+            disabled={reportLoading}
+          />
+          <input
+            type="date"
+            className="shrink-0 border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            value={reportToDate}
+            min={reportFromDate || undefined}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setReportToDate(e.target.value)}
+            disabled={reportLoading}
+          />
+        </div>
       </div>
     </div>
-    <button
-      className="mt-4 md:mt-0 md:absolute md:right-14 w-full md:w-auto px-4 py-2 rounded-2xl bg-white text-slate-700 font-semibold border border-slate-200 shadow-sm hover:bg-slate-100 transition text-center"
-      onClick={() => setShowDrinkModal(true)}
-    >
-      {t("Checklist")}
-    </button>
   </div>
 </div>
 
 
     {/* --- DRIVER REPORT --- */}
-    {selectedDriverId && (
+    {selectedDriverId && showDriverReport && (
       <div className="mt-2">
         {reportLoading ? (
           <div className="animate-pulse text-lg sm:text-xl">{t("Loading driver report...")}</div>
@@ -1585,11 +1842,14 @@ return (
               <table className="min-w-full text-sm bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <thead>
 	  <tr>
+	    {showDriverColumn && (
+	      <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Driver")}</th>
+	    )}
 	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Customer")}</th>
 	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Address")}</th>
 	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Total")}</th>
 	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Payment")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Delivered At")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Delivered")}</th>
 	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Pickup→Delivery")}</th>
 	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Kitchen→Delivery")}</th>
 	  </tr>
@@ -1597,6 +1857,9 @@ return (
 <tbody>
   {driverReport.orders.map(ord => (
     <tr key={ord.id} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
+      {showDriverColumn && (
+        <td className="p-3 text-slate-700">{ord.driver_name || "-"}</td>
+      )}
       <td className="p-3 text-slate-700">{ord.customer_name || "-"}</td>
       <td className="p-3 text-slate-500">{ord.customer_address || "-"}</td>
       <td className="p-3 text-slate-900 font-semibold">

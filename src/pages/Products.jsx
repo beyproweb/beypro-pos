@@ -71,8 +71,7 @@ const parseJsonDeep = (value, fallback) => {
   }
 };
 
-const API_URL =
-  import.meta.env.VITE_API_URL || "https://hurrypos-backend.onrender.com";
+const API_URL = import.meta.env.VITE_API_URL || "https://api.beypro.com/api";
 
 /**
  * Gradient colors for product cards (rotating)

@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import secureFetch from "../utils/secureFetch";
 import socket from "../utils/socket";
+import { useCurrency } from "./CurrencyContext";
 
 const NotificationsContext = createContext(null);
 
@@ -54,21 +55,115 @@ function normalizeExtra(value) {
 
 function inferLink(type, extra) {
   const normalizedType = String(type || "other").toLowerCase();
+  const normalizedEvent = String(extra?.event || "").toLowerCase();
+  if (extra?.route) return extra.route;
   if (normalizedType === "stock" || normalizedType === "stock_expiry") return "/stock";
   if (normalizedType === "ingredient") return "/ingredient-prices";
   if (normalizedType === "task") return "/task";
   if (normalizedType === "maintenance") return "/maintenance";
   if (normalizedType === "register") return "/tableoverview?tab=register";
-  if (["order", "payment", "driver"].includes(normalizedType)) return "/orders";
-  if (extra?.route) return extra.route;
+  if (normalizedType === "payment") return "/tableoverview?tab=tables";
+  if (normalizedType === "order") {
+    if (normalizedEvent === "order_preparing" || normalizedEvent === "order_delivered") return "/kitchen";
+    return "/tableoverview?tab=tables";
+  }
+  if (normalizedType === "driver") return "/orders";
   return null;
 }
 
-function normalizeNotification(raw) {
+function normalizeTableValue(value) {
+  if (value === undefined || value === null) return null;
+  const text = typeof value === "string" ? value.trim() : String(value);
+  return text || null;
+}
+
+function extractTableLabelFromPayload(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const tableKeys = ["table_label", "tableLabel", "table_number", "tableNumber", "table"];
+  for (const key of tableKeys) {
+    const candidate = normalizeTableValue(payload[key]);
+    if (candidate) return candidate;
+  }
+  const nested = payload.order;
+  if (nested && typeof nested === "object") {
+    for (const key of tableKeys) {
+      const candidate = normalizeTableValue(nested[key]);
+      if (candidate) return candidate;
+    }
+  }
+  return null;
+}
+
+function buildNewOrderNotificationMessage(payload, fallback = "New order") {
+  const tableRef = extractTableLabelFromPayload(payload);
+  if (tableRef) return `New order on Table ${tableRef}`;
+  return fallback;
+}
+
+function buildKitchenDeliveredNotificationMessage(payload, fallback = "Kitchen delivered order") {
+  const tableRef = extractTableLabelFromPayload(payload);
+  if (tableRef) return `Kitchen Delivered Table ${tableRef}`;
+  return fallback;
+}
+
+function buildKitchenPreparingNotificationMessage(payload, fallback = "Kitchen preparing order") {
+  const tableRef = extractTableLabelFromPayload(payload);
+  if (tableRef) return `Kitchen preparing Table ${tableRef}`;
+  return fallback;
+}
+
+function buildOrderCancelledNotificationMessage(payload, fallback = "Order cancelled") {
+  const tableRef = extractTableLabelFromPayload(payload);
+  const reason = payload?.reason ? ` (${payload.reason})` : "";
+  if (tableRef) return `Order cancelled Table ${tableRef}${reason}`;
+  return `${fallback}${reason}`;
+}
+
+function buildPaymentNotificationMessage(extra, formatCurrency) {
+  if (!extra) return null;
+  const tableRef = extractTableLabelFromPayload(extra);
+  const amountValue =
+    extra.order_total_with_extras ??
+    extra.orderTotalWithExtras ??
+    extra.amount ??
+    extra.total ??
+    extra.payment_total ??
+    extra.order_total ??
+    null;
+  let amountText = null;
+  if (amountValue !== undefined && amountValue !== null) {
+    if (typeof formatCurrency === "function") {
+      try {
+        amountText = formatCurrency(amountValue);
+      } catch {
+        amountText = String(amountValue);
+      }
+    } else {
+      amountText = String(amountValue);
+    }
+  }
+
+  const segments = [];
+  if (tableRef) segments.push(`Table ${tableRef}`);
+  if (amountText) segments.push(`Paid ${amountText}`);
+  else if (amountValue !== undefined && amountValue !== null) segments.push(`Paid ${amountValue}`);
+  else segments.push("Paid");
+
+  return segments.join(" ");
+}
+
+function normalizeNotification(raw, formatCurrency) {
   const extra = normalizeExtra(raw?.extra);
   const type = String(raw?.type || "other").toLowerCase();
   const timeMs = toTimeMs(raw?.time ?? raw?.timestamp ?? raw?.created_at);
   let message = String(raw?.message || "").trim() || "Notification";
+
+  if (type === "payment") {
+    const paymentMessage = buildPaymentNotificationMessage(extra, formatCurrency);
+    if (paymentMessage) {
+      message = paymentMessage;
+    }
+  }
 
   if (type === "driver") {
     const driverName = String(extra?.driverName || extra?.driver_name || "").trim();
@@ -76,6 +171,20 @@ function normalizeNotification(raw) {
     if (driverName && !message.toLowerCase().includes(driverName.toLowerCase())) {
       const suffix = orderId ? `order #${orderId}` : "order";
       message = `${driverName} assigned to ${suffix}`;
+    }
+  }
+
+  if (type === "order") {
+    const fallback = message;
+    const event = String(extra?.event || "").toLowerCase();
+    if (event === "order_confirmed") {
+      message = buildNewOrderNotificationMessage(extra, fallback);
+    } else if (event === "order_preparing") {
+      message = buildKitchenPreparingNotificationMessage(extra, fallback);
+    } else if (event === "order_delivered") {
+      message = buildKitchenDeliveredNotificationMessage(extra, fallback);
+    } else if (event === "order_cancelled") {
+      message = buildOrderCancelledNotificationMessage(extra, fallback);
     }
   }
 
@@ -145,6 +254,13 @@ export function NotificationsProvider({ children }) {
     inProgressTasks: null,
   });
   const driversCacheRef = useRef({ fetchedAtMs: 0, byId: new Map() });
+  const tableCacheRef = useRef(new Map());
+  const { formatCurrency } = useCurrency();
+  const formatCurrencyRef = useRef(formatCurrency);
+
+  useEffect(() => {
+    formatCurrencyRef.current = formatCurrency;
+  }, [formatCurrency]);
 
   const restaurantIdRef = useRef(getRestaurantId());
   const registerStatusRef = useRef(null);
@@ -183,9 +299,56 @@ export function NotificationsProvider({ children }) {
     persistLastSeen(now);
   }, [persistLastSeen]);
 
+  const upsertTableCache = useCallback((orderId, extra = {}) => {
+    if (!orderId) return;
+    const tableNumber =
+      extra.table_number ?? extra.tableNumber ?? extra.table ?? extra.table_label ?? extra.tableLabel ?? null;
+    const tableLabel = extra.table_label ?? extra.tableLabel ?? null;
+    if (tableNumber !== null || tableLabel !== null) {
+      tableCacheRef.current.set(orderId, { table_number: tableNumber, table_label: tableLabel });
+    }
+  }, []);
+
+  const ensureTableOnExtra = useCallback(
+    (raw) => {
+      if (!raw || typeof raw !== "object") return raw;
+      const extra = raw.extra && typeof raw.extra === "object" ? { ...raw.extra } : {};
+      const orderId =
+        extra.orderId ??
+        extra.order_id ??
+        raw.orderId ??
+        raw.order_id ??
+        raw.id ??
+        null;
+
+      // Merge from cache if missing
+      if (orderId) {
+        const cached = tableCacheRef.current.get(orderId);
+        if (cached) {
+          if (
+            extra.table_number === undefined &&
+            extra.tableNumber === undefined &&
+            extra.table === undefined &&
+            extra.table_label === undefined &&
+            extra.tableLabel === undefined
+          ) {
+            extra.table_number = cached.table_number ?? extra.table_number;
+            extra.table_label = cached.table_label ?? extra.table_label;
+          }
+        }
+        // Record any table info present on this payload
+        upsertTableCache(orderId, extra);
+      }
+
+      return { ...raw, extra };
+    },
+    [upsertTableCache]
+  );
+
   const pushNotification = useCallback(
     (raw) => {
-      const next = normalizeNotification(raw);
+      const enriched = ensureTableOnExtra(raw);
+      const next = normalizeNotification(enriched, formatCurrencyRef.current);
       setItems((prev) => dedupe(prev, next));
       if (bellOpen) {
         // If drawer is open, treat incoming notifications as "seen".
@@ -199,6 +362,23 @@ export function NotificationsProvider({ children }) {
     },
     [bellOpen, persistLastSeen]
   );
+
+  const fetchTableMeta = useCallback(async (orderId) => {
+    if (!orderId) return { table_number: null, table_label: null };
+    const cache = tableCacheRef.current;
+    if (cache.has(orderId)) return cache.get(orderId);
+    try {
+      const res = await secureFetch(`/orders/${orderId}`);
+      const table_number =
+        res?.table_number ?? res?.tableNumber ?? res?.table ?? res?.order?.table_number ?? null;
+      const table_label = res?.table_label ?? res?.tableLabel ?? res?.order?.table_label ?? null;
+      const meta = { table_number, table_label };
+      cache.set(orderId, meta);
+      return meta;
+    } catch {
+      return { table_number: null, table_label: null };
+    }
+  }, []);
 
   // Register open/close notifications
   useEffect(() => {
@@ -283,7 +463,9 @@ export function NotificationsProvider({ children }) {
     try {
       const rows = await secureFetch("/notifications?limit=120");
       if (!Array.isArray(rows)) return;
-      const normalized = rows.map((r) => normalizeNotification({ ...r, source: "db" }));
+      const normalized = rows.map((r) =>
+        normalizeNotification({ ...r, source: "db" }, formatCurrencyRef.current)
+      );
       setItems((prev) => {
         let merged = prev.slice();
         for (const n of normalized) {
@@ -373,8 +555,9 @@ export function NotificationsProvider({ children }) {
       const id = order?.id || payload?.orderId || payload?.id;
       const orderNumber = order?.order_number || payload?.order_number || payload?.number;
       const suffix = orderNumber ? `#${orderNumber}` : id ? `#${id}` : "";
+      const message = buildNewOrderNotificationMessage(payload, `New order ${suffix}`.trim());
       pushNotification({
-        message: `New order ${suffix}`.trim(),
+        message,
         type: "order",
         time: Date.now(),
         extra: {
@@ -382,6 +565,8 @@ export function NotificationsProvider({ children }) {
           orderId: id,
           order_number: orderNumber,
           order_type: order?.order_type,
+          table_number: order?.table_number ?? null,
+          table_label: order?.table_label ?? null,
         },
         source: "socket",
       });
@@ -390,26 +575,66 @@ export function NotificationsProvider({ children }) {
     const onOrderPreparing = (payload = {}) => {
       const orderId = payload?.orderId || payload?.id;
       const suffix = orderId ? `#${orderId}` : "";
-      pushNotification({
-        message: `Kitchen preparing order ${suffix}`.trim(),
-        type: "order",
-        time: Date.now(),
-        extra: { event: "order_preparing", orderId, ...payload },
-        source: "socket",
-      });
+      const enrichAndPush = async () => {
+        let enriched = payload;
+        if (!payload?.table_number && !payload?.table_label) {
+          const meta = await fetchTableMeta(orderId);
+          enriched = { ...payload, ...meta };
+        }
+        const message = buildKitchenPreparingNotificationMessage(
+          enriched,
+          `Kitchen preparing order ${suffix}`.trim()
+        );
+        pushNotification({
+          message,
+          type: "order",
+          time: Date.now(),
+          extra: { event: "order_preparing", orderId, ...enriched },
+          source: "socket",
+        });
+      };
+      enrichAndPush();
     };
 
     const onOrderDelivered = (payload = {}) => {
       const orderId = payload?.orderId || payload?.id;
       const suffix = orderId ? `#${orderId}` : "";
-      pushNotification({
-        message: `Kitchen delivered order ${suffix}`.trim(),
-        type: "order",
-        time: Date.now(),
-        extra: { event: "order_delivered", orderId, ...payload },
-        source: "socket",
-      });
+      const enrichAndPush = async () => {
+        let enriched = payload;
+        if (!payload?.table_number && !payload?.table_label) {
+          const meta = await fetchTableMeta(orderId);
+          enriched = { ...payload, ...meta };
+        }
+        const message = buildKitchenDeliveredNotificationMessage(
+          enriched,
+          `Kitchen delivered order ${suffix}`.trim()
+        );
+        pushNotification({
+          message,
+          type: "order",
+          time: Date.now(),
+          extra: { event: "order_delivered", orderId, ...enriched },
+          source: "socket",
+        });
+      };
+      enrichAndPush();
     };
+
+      const onOrderCancelled = (payload = {}) => {
+        const orderId = payload?.orderId || payload?.id;
+        const suffix = orderId ? `#${orderId}` : "";
+        const message = buildOrderCancelledNotificationMessage(
+          payload,
+          `Order cancelled ${suffix}`.trim()
+        );
+        pushNotification({
+          message,
+          type: "order",
+          time: Date.now(),
+          extra: { event: "order_cancelled", orderId, ...payload },
+          source: "socket",
+        });
+      };
 
     const onPayment = (payload = {}) => {
       const orderId = payload?.orderId || payload?.id;
@@ -552,6 +777,7 @@ export function NotificationsProvider({ children }) {
     socket.on("order_confirmed", onOrderConfirmed);
     socket.on("order_preparing", onOrderPreparing);
     socket.on("order_delivered", onOrderDelivered);
+    socket.on("order_cancelled", onOrderCancelled);
     socket.on("payment_made", onPayment);
     socket.on("driver_assigned", onDriverAssigned);
     socket.on("driver_delivered", onDriverDelivered);
@@ -565,6 +791,7 @@ export function NotificationsProvider({ children }) {
       socket.off("order_confirmed", onOrderConfirmed);
       socket.off("order_preparing", onOrderPreparing);
       socket.off("order_delivered", onOrderDelivered);
+      socket.off("order_cancelled", onOrderCancelled);
       socket.off("payment_made", onPayment);
       socket.off("driver_assigned", onDriverAssigned);
       socket.off("driver_delivered", onDriverDelivered);

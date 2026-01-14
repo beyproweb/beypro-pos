@@ -13,11 +13,39 @@ import { useTranslation } from "react-i18next";
 
 const EDGE_TRIGGER_THRESHOLD = 48;
 
+const tableKeys = ["table_label", "tableLabel", "table_number", "tableNumber", "table"];
+
 function stripEmojis(text) {
   return String(text || "")
     .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function normalizeTableValue(value) {
+  if (value === undefined || value === null) return null;
+  const text = typeof value === "string" ? value.trim() : String(value);
+  return text || null;
+}
+
+function getTableLabel(source) {
+  if (!source || typeof source !== "object") return null;
+  const orderRef = source.order;
+  const candidates = [
+    ...tableKeys.map((key) => normalizeTableValue(source[key])),
+    ...tableKeys.map((key) => normalizeTableValue(orderRef?.[key])),
+  ];
+  for (const value of candidates) {
+    if (value) return value;
+  }
+  return null;
+}
+
+function getTableFromMessage(message) {
+  const text = String(message || "");
+  const match = text.match(/table\s+([^\s#]+)/i);
+  if (match && match[1]) return match[1].trim();
+  return null;
 }
 
 function formatNotificationMessage(alert, t) {
@@ -28,11 +56,24 @@ function formatNotificationMessage(alert, t) {
   const orderId = extra.orderId ?? extra.order_id ?? null;
   const orderNumber = extra.order_number ?? extra.orderNumber ?? null;
   const orderSuffix = orderNumber ? `#${orderNumber}` : orderId ? `#${orderId}` : "";
+  const tableRef = getTableLabel(extra) || getTableFromMessage(alert?.message);
 
-  if (event === "order_confirmed") return t("New order {{order}}", { order: orderSuffix }).trim();
-  if (event === "order_preparing") return t("Kitchen preparing order {{order}}", { order: orderSuffix }).trim();
-  if (event === "order_delivered") return t("Kitchen delivered order {{order}}", { order: orderSuffix }).trim();
-  if (event === "payment_made") return t("Payment made {{order}}", { order: orderSuffix }).trim();
+  if (event === "order_confirmed") {
+    if (tableRef) return `New order on Table ${tableRef}`;
+    return t("New order {{order}}", { order: orderSuffix }).trim();
+  }
+  if (event === "order_preparing") {
+    if (tableRef) return `Kitchen preparing Table ${tableRef}`;
+    return t("Kitchen preparing order {{order}}", { order: orderSuffix }).trim();
+  }
+  if (event === "order_delivered") {
+    if (tableRef) return `Kitchen delivered Table ${tableRef}`;
+    return t("Kitchen delivered order {{order}}", { order: orderSuffix }).trim();
+  }
+  if (event === "payment_made") {
+    if (tableRef) return `Table ${tableRef} Paid ${orderSuffix}`.trim();
+    return t("Payment made {{order}}", { order: orderSuffix }).trim();
+  }
 
   if (event === "driver_assigned" || type === "driver") {
     const driverName = String(extra.driverName || extra.driver_name || "").trim() || t("Driver");

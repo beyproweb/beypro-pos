@@ -4,7 +4,10 @@ import { io } from "socket.io-client";
 import secureFetch, { getAuthToken, BASE_URL } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 // Use the same base as secureFetch to avoid env drift
-const SOCKET_URL = String(BASE_URL).replace(/\/api\/?$/, "");
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  String(BASE_URL).replace(/\/api\/?$/, "") ||
+  (typeof window !== "undefined" ? window.location.origin : "");
 
 /* ---------- SOCKET.IO HOOK ---------- */
 let socket;
@@ -14,8 +17,11 @@ export function useSocketIO(onOrderUpdate, orderId) {
     if (!socket) {
       try {
         socket = io(SOCKET_URL, {
-          transports: ["websocket", "polling"],
+          path: "/socket.io",
+          transports: ["polling", "websocket"],
+          upgrade: true,
           withCredentials: true,
+          timeout: 20000,
         });
       } catch (e) {
         console.warn("Socket init failed:", e);

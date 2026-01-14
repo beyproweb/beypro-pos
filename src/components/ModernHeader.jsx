@@ -85,6 +85,7 @@ export default function ModernHeader({
   const isSuppliersRoute = location.pathname.startsWith("/suppliers");
   const showHeaderTabs = !isSuppliersRoute;
 
+  const canSeeDashboardTab = useHasPermission("dashboard");
   const canSeeTablesTab = useHasPermission("tables");
   const canSeeKitchenTab = useHasPermission("kitchen");
   const canSeeHistoryTab = useHasPermission("history");
@@ -166,7 +167,7 @@ export default function ModernHeader({
     ];
 
     return all.filter((tab) => {
-      if (tab.id === "dashboard") return true;
+      if (tab.id === "dashboard") return canSeeDashboardTab;
       if (tab.id === "takeaway") return canSeeTakeawayTab;
       if (tab.id === "tables") return canSeeTablesTab;
       if (tab.id === "kitchen") return canSeeKitchenTab;
@@ -242,8 +243,20 @@ export default function ModernHeader({
     [isExpensesRoute, location.search, navigate]
   );
 
+  const mobileHeaderTabs = React.useMemo(() => {
+    const wanted = new Set(["dashboard", "tables", "phone"]);
+    return headerTabs.filter((tab) => wanted.has(tab.id));
+  }, [headerTabs]);
+
+  const supplierMobileTabs = React.useMemo(() => {
+    const tables = headerTabs.find((tab) => tab.id === "tables");
+    const cart = supplierTabs.find((tab) => tab.kind === "switch" && tab.key === "cart");
+
+    return [tables, cart].filter(Boolean);
+  }, [headerTabs, supplierTabs]);
+
   return (
-    <header className="sticky top-0 z-40 w-full px-6 h-16 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
+    <header className="sticky top-0 z-40 w-full px-3 md:px-6 h-auto md:h-16 py-2 md:py-0 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
       {/* Left: Drawer toggle + Back arrow */}
       <div className="flex items-center min-w-0 flex-shrink-0 gap-3">
         {onSidebarToggle && (
@@ -261,34 +274,77 @@ export default function ModernHeader({
       {/* Center: sticky subtitle (no flicker) */}
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4 gap-1">
         <StickySubtitle text={subtitle} />
-        {isSuppliersRoute && supplierTabs.length > 0 && (
-          <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap">
-            {supplierTabs.map((tab) => {
-              const isActive =
-                tab.kind === "switch"
-                  ? supplierView === tab.key
-                  : supplierView === "suppliers" && supplierSection === tab.key;
+        {isSuppliersRoute && (
+          <div className="flex flex-col items-center justify-center gap-2 max-w-full">
+            {supplierMobileTabs.length > 0 && (
+              <div className="flex md:hidden items-center justify-center gap-2 max-w-full rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+                {supplierMobileTabs.map((tab) => {
+                  const isCartTab = tab.kind === "switch" && tab.key === "cart";
+                  const isActive = isCartTab
+                    ? supplierView === "cart"
+                    : resolvedActiveHeaderTab === tab.id;
+                  const isDashboardTab = tab.id === "dashboard";
+                  return (
+                    <button
+                      key={tab.id ?? `${tab.kind}:${tab.key}`}
+                      type="button"
+                      onClick={() => {
+                        if (isCartTab) {
+                          handleSupplierTabClick(tab);
+                          return;
+                        }
+                        handleHeaderTabClick(tab.id);
+                      }}
+                      className={[
+                        "w-20 truncate",
+                        "inline-flex items-center justify-center",
+                        "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2.5 py-1.5 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                        "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
+                        "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
+                        isActive
+                          ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
+                          : isDashboardTab
+                            ? "bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-200 dark:hover:bg-indigo-500/25"
+                            : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+                      ].join(" ")}
+                    >
+                      {tab.label ?? tab.key}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-              return (
-                <button
-                  key={`${tab.kind}:${tab.key}`}
-                  type="button"
-                  onClick={() => handleSupplierTabClick(tab)}
-                  className={[
-                    "shrink-0 w-28 sm:w-32 truncate",
-                    "inline-flex items-center justify-center gap-2",
-                    "rounded-xl border border-slate-200/80 dark:border-slate-700/80 px-3 py-1.5 text-sm font-semibold",
-                    "transition-all duration-150",
-                    "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
-                    isActive
-                      ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
-                      : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
-                  ].join(" ")}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+            {supplierTabs.length > 0 && (
+              <div className="hidden md:flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+                {supplierTabs.map((tab) => {
+                  const isActive =
+                    tab.kind === "switch"
+                      ? supplierView === tab.key
+                      : supplierView === "suppliers" && supplierSection === tab.key;
+
+                  return (
+                    <button
+                      key={`${tab.kind}:${tab.key}`}
+                      type="button"
+                      onClick={() => handleSupplierTabClick(tab)}
+                      className={[
+                        "shrink-0 w-24 sm:w-28 truncate",
+                        "inline-flex items-center justify-center gap-2",
+                        "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2.5 py-1.5 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                        "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
+                        "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
+                        isActive
+                          ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
+                          : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+                      ].join(" ")}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -298,9 +354,9 @@ export default function ModernHeader({
           </div>
         )}
 
-        {!isSuppliersRoute && !centerNav && showHeaderTabs && headerTabs.length > 0 && (
-          <div className="hidden md:flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap">
-            {headerTabs.map((tab) => {
+        {!isSuppliersRoute && !centerNav && showHeaderTabs && mobileHeaderTabs.length > 0 && (
+          <div className="flex md:hidden items-center justify-center gap-2 max-w-full rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+            {mobileHeaderTabs.map((tab) => {
               const isActive = resolvedActiveHeaderTab === tab.id;
               const isDashboardTab = tab.id === "dashboard";
               return (
@@ -309,10 +365,40 @@ export default function ModernHeader({
                   type="button"
                   onClick={() => handleHeaderTabClick(tab.id)}
                   className={[
-                    "w-28 sm:w-32 truncate",
-                    "inline-flex items-center justify-center gap-2",
-                    "rounded-xl border border-slate-200/80 dark:border-slate-700/80 px-3 py-1.5 text-sm font-semibold",
-                    "transition-all duration-150",
+                    "w-20 truncate",
+                    "inline-flex items-center justify-center",
+                    "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2.5 py-1.5 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                    "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
+                    "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
+                    isActive
+                      ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
+                      : isDashboardTab
+                        ? "bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-200 dark:hover:bg-indigo-500/25"
+                        : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+                  ].join(" ")}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {!isSuppliersRoute && !centerNav && showHeaderTabs && headerTabs.length > 0 && (
+          <div className="hidden md:flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+                {headerTabs.map((tab) => {
+                  const isActive = resolvedActiveHeaderTab === tab.id;
+                  const isDashboardTab = tab.id === "dashboard";
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => handleHeaderTabClick(tab.id)}
+                      className={[
+                        "w-24 sm:w-28 truncate",
+                        "inline-flex items-center justify-center gap-2",
+                    "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2.5 py-1.5 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                        "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
                     "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
                     isActive
                       ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"

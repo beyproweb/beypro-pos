@@ -72,7 +72,7 @@ const getTableColor = (order) => {
   // 🟠 CHECK FOR RESERVATION - if reserved
   if (order.status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
     // 🟢 If reserved AND paid, show green
-    if (order.status === "paid" || order.payment_status === "paid" || order.is_paid === true) {
+    if (order.status === "Paid" || order.payment_status === "Paid" || order.is_paid === true) {
       return "bg-green-500 text-white";
     }
     // 🟠 If reserved but not paid, show orange
@@ -81,8 +81,8 @@ const getTableColor = (order) => {
 
   // Paid is always green, even if items haven't been hydrated yet.
   if (
-    order.status === "paid" ||
-    order.payment_status === "paid" ||
+    order.status === "Paid" ||
+    order.payment_status === "Paid" ||
     order.is_paid === true
   ) {
     return "bg-green-500 text-white";
@@ -161,7 +161,7 @@ const isOrderCancelledOrCanceled = (status) => {
 };
 
 const isOrderPaid = (order) =>
-  order?.status === "paid" || order?.payment_status === "paid" || order?.is_paid === true;
+  order?.status === "Paid" || order?.payment_status === "Paid" || order?.is_paid === true;
 
 const parseLooseDateToMs = (val) => {
   if (!val) return NaN;
@@ -403,6 +403,8 @@ const getRestaurantScopedCacheKey = (suffix) => {
 
 const getTableConfigsCacheKey = () => getRestaurantScopedCacheKey("tableConfigs.v1");
 const getTableCountCacheKey = () => getRestaurantScopedCacheKey("tableCount.v1");
+const getTableOrdersCacheKey = () => getRestaurantScopedCacheKey("tableOverview.orders.v1");
+const getTableOrdersCacheTsKey = () => getRestaurantScopedCacheKey("tableOverview.orders.ts");
 
 const safeParseJson = (raw) => {
   try {
@@ -437,6 +439,25 @@ const readInitialTableConfigs = () => {
   return [];
 };
 
+const readInitialTableOrders = () => {
+  const cachedOrders = safeParseJson(
+    typeof window !== "undefined" ? window?.localStorage?.getItem(getTableOrdersCacheKey()) : null
+  );
+  if (!Array.isArray(cachedOrders) || cachedOrders.length === 0) return [];
+  return cachedOrders.filter((o) => o && typeof o === "object" && o.table_number != null);
+};
+
+const writeTableOrdersCache = (orders) => {
+  try {
+    if (typeof window === "undefined") return;
+    if (!Array.isArray(orders)) return;
+    window?.localStorage?.setItem(getTableOrdersCacheKey(), JSON.stringify(orders));
+    window?.localStorage?.setItem(getTableOrdersCacheTsKey(), String(Date.now()));
+  } catch {
+    // ignore cache errors
+  }
+};
+
 const mergeTableConfigsByNumber = (prev, next) => {
   const map = new Map();
   (Array.isArray(prev) ? prev : []).forEach((t) => {
@@ -469,7 +490,7 @@ export default function TableOverview() {
   }, [location.search]);
 
   const activeTab = tabFromUrl;
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState(() => readInitialTableOrders());
   const [tableConfigs, setTableConfigs] = useState(() => readInitialTableConfigs());
   const [paymentFilter, setPaymentFilter] = useState("All");
   const [orderTypeFilter, setOrderTypeFilter] = useState("All");
@@ -487,6 +508,8 @@ export default function TableOverview() {
   const isMountedRef = useRef(true);
   const [now, setNow] = useState(new Date());
   const [kitchenOrders, setKitchenOrders] = useState([]); // used for kitchen
+  const [kitchenOpenOrders, setKitchenOpenOrders] = useState([]);
+  const [kitchenOpenOrdersLoading, setKitchenOpenOrdersLoading] = useState(false);
   const [productPrepById, setProductPrepById] = useState({});
   const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
   const [phoneOrders, setPhoneOrders] = useState([]); // For active phone orders if you want to display/manage them
@@ -499,6 +522,10 @@ export default function TableOverview() {
   const [yesterdayCloseCash, setYesterdayCloseCash] = useState(null);
   const [cashDataLoaded, setCashDataLoaded] = useState(false);
   const [lastOpenAt, setLastOpenAt] = useState(null);
+
+  const parsedOpeningCash = Number(openingCash || 0);
+  const parsedYesterdayCloseCash = Number(yesterdayCloseCash || 0);
+  const openingDifference = parsedOpeningCash - parsedYesterdayCloseCash;
   const canViewRegisterSummary = useHasPermission("settings-register-summary");
   const [packetOrders, setPacketOrders] = useState([]);
   const [showEntryForm, setShowEntryForm] = useState(false);
@@ -1113,7 +1140,7 @@ const fetchTakeawayOrders = useCallback(async () => {
 
           // ✅ Fallback for online-paid orders missing item paid flags
           const isOrderPaid =
-            order.status === "paid" || order.payment_status === "paid" || order.is_paid === true;
+            order.status === "Paid" || order.payment_status === "Paid" || order.is_paid === true;
           if (isOrderPaid) {
             items = items.map((i) => ({ ...i, paid: i.paid || true }));
           }
@@ -1258,7 +1285,7 @@ const fetchOrders = useCallback(async () => {
 		            );
 		            acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
 		            const nextStatus =
-		              acc[key].status === "paid" && order.status === "paid" ? "paid" : "confirmed";
+		              acc[key].status === "Paid" && order.status === "Paid" ? "Paid" : "Confirmed";
 		            acc[key].status = nextStatus;
 		            if (nextStatus !== "confirmed") {
 		              acc[key].confirmedSinceMs = null;
@@ -1279,6 +1306,7 @@ const fetchOrders = useCallback(async () => {
 		        (a, b) => Number(a.table_number) - Number(b.table_number)
 		      );
 		      writeTableOverviewConfirmedTimers(nextTimers);
+          writeTableOrdersCache(sorted);
 		      return sorted;
 		    });
 
@@ -1322,7 +1350,7 @@ const fetchOrders = useCallback(async () => {
       }));
 
       const isOrderPaid =
-        order.status === "paid" || order.payment_status === "paid" || order.is_paid === true;
+        order.status === "Paid" || order.payment_status === "Paid" || order.is_paid === true;
       if (isOrderPaid) {
         items = items.map((i) => ({ ...i, paid: i.paid || true }));
       }
@@ -1373,7 +1401,7 @@ const fetchOrders = useCallback(async () => {
 	          acc[key].merged_items = acc[key].items;
 	          acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
 	          acc[key].status =
-	            acc[key].status === "paid" && order.status === "paid" ? "paid" : "confirmed";
+	            acc[key].status === "Paid" && order.status === "Paid" ? "Paid" : "Confirmed";
 	        }
 	        const anyUnpaid = (acc[key].items || []).some((i) => !i.paid_at && !i.paid);
 	        acc[key].is_paid = !anyUnpaid;
@@ -1409,6 +1437,7 @@ const fetchOrders = useCallback(async () => {
 		        };
 		      });
 		      writeTableOverviewConfirmedTimers(nextTimers);
+          writeTableOrdersCache(nextOrders);
 		      return nextOrders;
 		    });
 
@@ -1527,6 +1556,90 @@ const fetchPhoneOrders = useCallback(async () => {
   }
 }, []);
 
+const fetchKitchenOpenOrders = useCallback(async () => {
+  try {
+    setKitchenOpenOrdersLoading(true);
+    const data = await secureFetch("/orders");
+    const list = Array.isArray(data) ? data : [];
+
+    const openOrders = list
+      .filter((o) => {
+        const status = normalizeOrderStatus(o?.status);
+        if (status === "closed") return false;
+        if (isOrderCancelledOrCanceled(status)) return false;
+        // include table + phone + packet + takeaway
+        const type = String(o?.order_type || "").toLowerCase();
+        return ["table", "phone", "packet", "takeaway"].includes(type);
+      })
+      .map((o) => ({
+        ...o,
+        status: normalizeOrderStatus(o?.status),
+      }))
+      .sort((a, b) => {
+        const am = parseLooseDateToMs(a?.created_at);
+        const bm = parseLooseDateToMs(b?.created_at);
+        if (Number.isFinite(am) && Number.isFinite(bm)) return bm - am;
+        return Number(b?.id || 0) - Number(a?.id || 0);
+      });
+
+    // Phase 1: render order shells quickly.
+    setKitchenOpenOrders((prev) => {
+      const prevById = new Map();
+      (Array.isArray(prev) ? prev : []).forEach((o) => {
+        if (o?.id != null) prevById.set(Number(o.id), o);
+      });
+      return openOrders.map((o) => {
+        const prevRow = prevById.get(Number(o.id));
+        const knownItems = Array.isArray(prevRow?.items) ? prevRow.items : null;
+        return knownItems ? { ...o, items: knownItems } : o;
+      });
+    });
+
+    const runWithConcurrency = async (arr, limit, task) => {
+      const list = Array.isArray(arr) ? arr : [];
+      const count = Math.max(1, Math.min(limit, list.length || 1));
+      const results = new Array(list.length);
+      let idx = 0;
+      await Promise.all(
+        Array.from({ length: count }, async () => {
+          while (idx < list.length) {
+            const current = idx++;
+            try {
+              results[current] = await task(list[current]);
+            } catch (err) {
+              console.warn("⚠️ Kitchen open order hydrate failed:", err);
+              results[current] = null;
+            }
+          }
+        })
+      );
+      return results.filter(Boolean);
+    };
+
+    // Phase 2: hydrate items/payment status for badges.
+    const hydrated = await runWithConcurrency(openOrders, 6, async (order) => {
+      const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+      const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+      const anyUnpaid = items.some((i) => !i.paid_at && !i.paid);
+      const inferredPaid = !anyUnpaid;
+      return {
+        ...order,
+        items,
+        is_paid: order?.is_paid === true ? true : inferredPaid,
+      };
+    });
+
+    const hydratedById = new Map(hydrated.map((o) => [Number(o.id), o]));
+    setKitchenOpenOrders((prev) =>
+      (Array.isArray(prev) ? prev : []).map((o) => hydratedById.get(Number(o.id)) || o)
+    );
+  } catch (err) {
+    console.error("❌ Fetch kitchen open orders failed:", err);
+  } finally {
+    setKitchenOpenOrdersLoading(false);
+  }
+}, []);
+
 // Fetch table configurations when viewing tables (inside component)
 const fetchTableConfigs = useCallback(async () => {
   try {
@@ -1555,7 +1668,7 @@ const fetchTableConfigs = useCallback(async () => {
         return;
       }
       if (tab === "kitchen" || tab === "open") {
-        fetchKitchenOrders();
+        fetchKitchenOpenOrders();
         return;
       }
       if (tab === "history") {
@@ -1574,7 +1687,7 @@ const fetchTableConfigs = useCallback(async () => {
       }
     },
     [
-      fetchKitchenOrders,
+      fetchKitchenOpenOrders,
       fetchOrders,
       fetchPacketOrders,
       fetchPhoneOrders,
@@ -1796,7 +1909,7 @@ const formatAreaLabel = (area) => {
             : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"}
         `}
       >
-        🌍 {t("All Areas")}
+        {t("All Areas")}
       </button>
 
       {Object.keys(groupedTables).map((area) => (
@@ -1811,32 +1924,50 @@ const formatAreaLabel = (area) => {
               : "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"}
           `}
         >
-          {area === "Hall" ? "🏠" :
-           area === "Main Hall" ? "🏠" :
-           area === "Terrace" ? "🌤️" :
-           area === "Garden" ? "🌿" :
-           area === "VIP" ? "⭐" : "📍"}{" "}
+          {area === "Hall" ? "" :
+           area === "Main Hall" ? "" :
+           area === "Terrace" ? "" :
+           area === "Garden" ? "" :
+           area === "VIP" ? "" : ""}{" "}
           {formatAreaLabel(area)}
         </button>
       ))}
     </div>
 
     {/* ================= TABLE GRID (BIGGER, CENTERED) ================= */}
-    <div className="w-full flex justify-center px-8">
+    <div className="w-full flex justify-center px-4 sm:px-8">
       <div className="
         grid
-        grid-cols-1
-        sm:grid-cols-2
-        lg:grid-cols-2
+        grid-cols-2
+        md:grid-cols-3
         xl:grid-cols-4
         2xl:grid-cols-4
-        gap-8
-        place-items-center
+        gap-3
+        sm:gap-8
+        place-items-stretch
         w-full
         max-w-[1600px]
       ">
 
         {(activeArea === "ALL" ? tables : groupedTables[activeArea]).map((table) => {
+          const isReservedTable = Boolean(
+            table.order &&
+              (table.order.status === "reserved" ||
+                table.order.order_type === "reservation" ||
+                table.order.reservation_date)
+          );
+          const isFreeTable = !table.order || isEffectivelyFreeOrder(table.order);
+          const isPaidTable = !isFreeTable && isOrderPaid(table.order);
+          const isUnpaidTable = !isFreeTable && !isPaidTable && hasUnpaidAnywhere(table.order);
+          const cardToneClass = isFreeTable
+            ? "bg-blue-100 border-sky-300 shadow-sky-500/15"
+            : isReservedTable
+              ? "bg-orange-100 border-orange-400 shadow-orange-500/20"
+              : isUnpaidTable
+                ? "bg-red-200 border-red-500 shadow-red-500/25"
+                : isPaidTable
+                  ? "bg-green-100 border-green-300 shadow-green-500/15"
+                  : "bg-indigo-100 border-indigo-500 shadow-indigo-500/20";
           const hasPreparingItems = Array.isArray(table.order?.items)
             ? table.order.items.some((i) => i.kitchen_status === "preparing")
             : false;
@@ -1858,24 +1989,29 @@ const formatAreaLabel = (area) => {
             key={table.tableNumber}
             onClick={() => handleTableClick(table)}
             className={`
-              group relative cursor-pointer p-6 rounded-[2.5rem]
-              ${getTableColor(table.order)}
-              shadow-2xl hover:shadow-accent/50 hover:scale-[1.035]
-              transition-all duration-200 border-4 border-white/30
+              group relative cursor-pointer
+              rounded-3xl
+              border-2
+              ${cardToneClass}
+              shadow-xl
+              hover:shadow-2xl
+              transition-all duration-200
               flex flex-col justify-between
-              w-[320px]
-              min-h-[280px]
+              w-full
+              max-w-[380px]
+              min-h-[220px]
+              overflow-hidden
             `}
-            style={{
-              borderColor: table.color || "#e2e2e2",
-            }}
           >
 
+            <div className="p-3 sm:p-5 flex flex-col h-full">
             {/* ------- TOP ROW ------- */}
-	            <div className="flex items-center justify-between mb-2">
-	              <div className="flex items-center gap-2">
-	                <span className="text-gray-800 text-lg font-bold">{t("Table")}</span>
-	                <span className="text-lg font-bold text-blue-500 bg-white/60 rounded-xl px-2">
+	            <div className="flex items-center justify-between gap-2 mb-2">
+	              <div className="flex items-center gap-2 min-w-0">
+	                <span className="text-slate-800 text-base sm:text-lg font-extrabold">
+                    {t("Table")}
+                  </span>
+	                <span className="text-base sm:text-lg font-extrabold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl px-2 py-0.5">
 	                  {String(table.tableNumber).padStart(2, "0")}
 	                </span>
 	                {table.order?.items?.length > 0 && (
@@ -1885,16 +2021,16 @@ const formatAreaLabel = (area) => {
 	                      e.stopPropagation();
 	                      handlePrintOrder(table.order.id);
 	                    }}
-	                    className="text-lg font-bold text-blue-500 bg-white/60 rounded-xl px-2 hover:bg-white/70 focus:outline-none focus:ring-2 focus:ring-white/70"
+	                    className="text-base sm:text-lg font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2 py-0.5 hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300"
 	                  >
 	                    🖨️
 	                  </button>
 	                )}
 	              </div>
 
-	              {table.order?.status === "confirmed" &&
+	              {table.order?.status === "Confirmed" &&
 	                table.order?.items?.length > 0 && (
-	                <span className="bg-blue-600 text-white rounded-xl px-3 py-1 font-mono text-sm shadow-md">
+	                <span className="shrink-0 bg-blue-600 text-white rounded-full px-3 py-1 font-mono text-[11px] sm:text-sm shadow-md">
 	                  ⏱ {getTimeElapsed(table.order)}
 	                </span>
 	              )}
@@ -1902,48 +2038,55 @@ const formatAreaLabel = (area) => {
 
             {/* LABEL */}
             {table.label && (
-              <div className="text-xs font-semibold bg-white/60 text-slate-700 rounded-full px-2 py-0.5 mb-1">
+              <div className="text-[11px] sm:text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded-full px-2 py-0.5 mb-1 w-fit max-w-full truncate">
                 {table.label}
               </div>
             )}
 
-            {/* AREA */}
-            <div className="text-[11px] bg-white/60 rounded-full px-2 py-0.5 inline-block mb-1 text-gray-600">
-              📍 {formatAreaLabel(table.area)}
-            </div>
-
-            {/* SEATS */}
-            {table.seats && (
-              <div className="text-[11px] bg-indigo-100 rounded-full px-2 py-0.5 inline-block mb-2 text-indigo-700">
-                🪑 {table.seats} {t("Seats")}
+            <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              {/* AREA */}
+              <div className="text-[11px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600 max-w-full truncate">
+                📍 {formatAreaLabel(table.area)}
               </div>
-            )}
+
+              {/* SEATS */}
+              {table.seats && (
+                <div className="text-[11px] bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 text-indigo-700 whitespace-nowrap">
+                  🪑 {table.seats} {t("Seats")}
+                </div>
+              )}
+            </div>
 
 	            {/* STATUS */}
 	            <div className="flex flex-col gap-2 flex-grow">
 	              {(!table.order ||
 	                (normalizeOrderStatus(table.order.status) === "draft" &&
 	                  (!Array.isArray(table.order.items) || table.order.items.length === 0))) ? (
-	                <div className="flex items-center justify-between gap-3">
-	                  <span className="inline-block px-4 py-1 rounded-full bg-green-200 text-green-900 font-extrabold text-base shadow">
+	                <div className="flex items-center justify-between gap-2">
+	                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-900 border border-green-200 font-extrabold text-sm shadow-sm whitespace-nowrap">
 	                    {t("Free")}
 	                  </span>
-	                  <span className="text-lg font-bold text-indigo-700">
+	                  <span className="text-[15px] sm:text-lg font-extrabold text-indigo-700 whitespace-nowrap">
 	                    {formatCurrency(getDisplayTotal(table.order))}
 	                  </span>
 	                </div>
 	              ) : (
 	                <>
-	                  <div className="flex items-start justify-between gap-3">
-	                    <span className="uppercase font-extrabold text-white tracking-wide">
+	                  <div className="flex items-start justify-between gap-2 min-w-0">
+	                    <span
+                        className={[
+                          "inline-flex items-center px-3 py-1 rounded-full text-sm font-extrabold shadow-sm whitespace-nowrap",
+                          getTableColor(table.order),
+                        ].join(" ")}
+                      >
 	                      {t(table.order.status === "draft" ? "Free" : table.order.status)}
 	                    </span>
-                      <div className="flex flex-col items-end">
-                        <span className="text-lg font-bold text-indigo-700">
+                      <div className="flex flex-col items-end min-w-0">
+                        <span className="text-[15px] sm:text-lg font-extrabold text-indigo-700 whitespace-nowrap">
                           {formatCurrency(getDisplayTotal(table.order))}
                         </span>
                         {showReadyAt && (
-                          <span className="mt-1 text-xs font-extrabold bg-yellow-400 text-slate-900 px-2 py-0.5 rounded-full shadow">
+                          <span className="mt-1 inline-flex max-w-full items-center text-[11px] sm:text-xs font-extrabold bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
                             {t("Ready at")} {readyAtLabel}
                           </span>
                         )}
@@ -1952,17 +2095,17 @@ const formatAreaLabel = (area) => {
 
 	                  {/* RESERVATION BADGE */}
 	                  {table.order.reservation && table.order.reservation.reservation_date && (
-	                    <div className="mt-2 p-2 bg-white/20 rounded-lg text-xs">
-	                      <div className="font-semibold text-white mb-1">🎫 RESERVED</div>
-                      <div className="flex gap-2 text-[10px] text-white/90">
+	                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-2xl text-xs">
+	                      <div className="font-extrabold text-blue-700 mb-1">🎫 {t("Reserved")}</div>
+                      <div className="flex gap-2 text-[10px] text-slate-700 min-w-0">
                         <div className="flex flex-col">
-                          <span className="font-semibold">🕐 {table.order.reservation.reservation_time || "—"}</span>
-                          <span className="font-semibold">👥 {table.order.reservation.reservation_clients || 0} {t("guests")}</span>
+                          <span className="font-semibold whitespace-nowrap">🕐 {table.order.reservation.reservation_time || "—"}</span>
+                          <span className="font-semibold whitespace-nowrap">👥 {table.order.reservation.reservation_clients || 0} {t("guests")}</span>
                         </div>
-                        <div className="flex-1">
-                          <span className="font-semibold">📅 {table.order.reservation.reservation_date || "—"}</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-semibold whitespace-nowrap">📅 {table.order.reservation.reservation_date || "—"}</span>
                           {table.order.reservation.reservation_notes && (
-                            <p className="text-[9px] line-clamp-1 text-white/80">📝 {table.order.reservation.reservation_notes}</p>
+                            <p className="text-[9px] line-clamp-1 text-slate-600">📝 {table.order.reservation.reservation_notes}</p>
                           )}
                         </div>
                       </div>
@@ -1971,7 +2114,7 @@ const formatAreaLabel = (area) => {
 
 	                  {/* KITCHEN BADGES */}
 	                  {table.order.items && (
-	                    <div className="flex flex-wrap gap-2 mt-1">
+	                    <div className="flex flex-wrap gap-1.5 mt-1">
 	                      {["new", "preparing", "ready", "delivered"].map((status) => {
 	                        const count = table.order.items.filter(
 	                          (i) => i.kitchen_status === status
@@ -1981,14 +2124,14 @@ const formatAreaLabel = (area) => {
 	                        return (
 	                          <span
 	                            key={status}
-	                            className={`px-2 py-0.5 rounded-full text-xs font-semibold
+	                            className={`px-2 py-0.5 rounded-full text-[11px] font-bold border shadow-sm whitespace-nowrap
 	                              ${status === "preparing"
-	                                ? "bg-yellow-400 text-indigo-700"
+	                                ? "bg-yellow-100 text-yellow-900 border-yellow-200"
 	                                : status === "ready"
-	                                ? "bg-blue-500 text-white"
+	                                ? "bg-blue-600 text-white border-blue-700"
 	                                : status === "delivered"
-	                                ? "bg-green-500 text-white"
-	                                : "bg-gray-400 text-white"}
+	                                ? "bg-green-600 text-white border-green-700"
+	                                : "bg-slate-400 text-white border-slate-500"}
 	                            `}
 	                          >
 	                            {count} {t(status)}
@@ -2002,22 +2145,22 @@ const formatAreaLabel = (area) => {
             </div>
 
 	            {/* TOTAL + ACTIONS */}
-	            <div className="flex items-end justify-between mt-4">
+	            <div className="flex items-end justify-between mt-3 sm:mt-4">
 	              {isDelayed(table.order) && (
-	                <span className="text-yellow-500 font-bold animate-pulse">⚠️</span>
+	                <span className="text-amber-600 font-extrabold animate-pulse">⚠️</span>
 	              )}
 
 	              <div className="flex flex-col items-end gap-2 ml-auto">
 	                {table.order?.items?.length > 0 && (
-	                  <div className="flex items-center gap-3">
+	                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
 	                    {/* UNPAID / PAID */}
 	                    {hasUnpaidAnywhere(table.order) ? (
-	                      <span className="px-3 py-1 bg-amber-100 text-amber-800 font-bold rounded-full shadow-sm">
+	                      <span className="px-3 py-1 bg-amber-50 text-amber-900 border border-amber-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
 	                        {t("Unpaid")}
 	                      </span>
 	                    ) : (
 	                      <>
-	                        <span className="px-3 py-1 bg-green-100 text-green-800 font-bold rounded-full shadow-sm">
+	                        <span className="px-3 py-1 bg-green-50 text-green-900 border border-green-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
 	                          ✅ {t("Paid")}
 	                        </span>
 
@@ -2027,7 +2170,7 @@ const formatAreaLabel = (area) => {
 	                            e.stopPropagation();
 	                            handleCloseTable(table.order);
 	                          }}
-	                          className="px-3 py-1.5 bg-gradient-to-r from-green-400 to-indigo-400 text-white font-bold rounded-full shadow"
+	                          className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-extrabold rounded-full shadow text-sm whitespace-nowrap hover:brightness-110 active:scale-[0.99] transition"
 	                        >
 	                          🔒 {t("Close")}
 	                        </button>
@@ -2037,6 +2180,7 @@ const formatAreaLabel = (area) => {
 	                )}
 	              </div>
 	            </div>
+            </div>
 
           </div>
         );
@@ -2224,121 +2368,109 @@ const formatAreaLabel = (area) => {
 {activeTab === "kitchen" && (
   <div className="px-3 md:px-8 py-6">
  
-    {kitchenOrders.length === 0 ? (
+    {kitchenOpenOrdersLoading ? (
       <div className="flex flex-col items-center mt-10">
-        <span className="text-6xl mb-3">🥲</span>
-        <span className="text-xl text-gray-400 font-semibold">{t("No kitchen orders in progress.")}</span>
+        <span className="text-5xl mb-3">⏳</span>
+        <span className="text-xl text-gray-400 font-semibold">{t("Loading orders...")}</span>
+      </div>
+    ) : kitchenOpenOrders.length === 0 ? (
+      <div className="flex flex-col items-center mt-10">
+        <span className="text-xl text-gray-400 font-semibold">{t("No open orders.")}</span>
       </div>
     ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-7">
-    {kitchenOrders.map(item => {
-  const orderType = String(item.order_type || "").trim().toLowerCase();
-  const takeawayNotes = item.takeaway_notes || item.notes;
-  const displayName = Array.isArray(item.merged_products)
-    ? item.merged_products.join(", ")
-    : item.product_name;
-  const mergedKey = item.merged_item_ids ? item.merged_item_ids.join("-") : item.item_id;
-  return (
-    <div
-      key={mergedKey}
+    {kitchenOpenOrders.map((order) => {
+      const orderType = String(order?.order_type || "").trim().toLowerCase();
+      const readyAtLabel = getReadyAtLabel(order, productPrepById);
+      const paid = isOrderPaid(order);
+      const paymentStatusLabel = paid ? t("Paid") : t("Unpaid");
+      const paymentStatusClass = paid
+        ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+        : "bg-amber-100 text-amber-800 border-amber-200";
 
-            className="rounded-3xl bg-gradient-to-br from-white/80 via-blue-50 to-indigo-50 border border-white/40 shadow-xl p-5 flex flex-col gap-3 hover:scale-[1.03] hover:shadow-2xl transition"
-          >
-            <div className="flex justify-between items-center">
-<div className="font-bold text-lg text-blue-800 flex flex-col">
-  {orderType === "phone" ? (
-    <>
-      <span>📞 {item.customer_name || item.customer_phone}</span>
-      {item.customer_address && (
-        <span className="text-xs text-green-700">{item.customer_address}</span>
-      )}
-      <span className="ml-1 px-2 py-0.5 rounded bg-blue-200 text-blue-800 text-xs font-bold">Phone</span>
-    </>
-  ) : orderType === "packet" ? (
-    <>
-      <span>🛵 {item.customer_name || "Online Order"}</span>
-      {item.customer_address && (
-        <span className="text-xs text-green-700">{item.customer_address}</span>
-      )}
-      {/* Platform badge */}
-      <span className="ml-1 px-2 py-0.5 rounded bg-orange-200 text-orange-800 text-xs font-bold">
-        {item.external_id ? "Yemeksepeti" : "Packet"}
-      </span>
-    </>
-  ) : orderType === "takeaway" ? (
-    <>
-      <span>🥡 {t("Pre Order")}</span>
-      {item.customer_name && (
-        <span className="text-sm text-slate-700">👤 {item.customer_name}</span>
-      )}
-      {item.customer_phone && (
-        <span className="text-xs text-slate-500">📞 {item.customer_phone}</span>
-      )}
-      {item.pickup_time && (
-        <span className="text-xs text-orange-700">
-          🕒 {t("Pickup")}: {item.pickup_time}
-        </span>
-      )}
-      {takeawayNotes && (
-        <span className="text-xs text-rose-600">📝 {takeawayNotes}</span>
-      )}
-      <span className="ml-1 px-2 py-0.5 rounded bg-orange-100 text-orange-700 text-xs font-bold">
-        {t("Pre Order")}
-      </span>
-    </>
-  ) : (
-    <>
-      <span>🍽 {t("Table")} {item.table_number}</span>
-      <span className="ml-1 px-2 py-0.5 rounded bg-indigo-200 text-indigo-800 text-xs font-bold">Table</span>
-    </>
-  )}
-</div>
+      const title = (() => {
+        if (orderType === "table") return `🍽️ ${t("Table")} ${order.table_number}`;
+        if (orderType === "phone") return `📞 ${t("Phone Order")}`;
+        if (orderType === "packet") return `🛵 ${t("Packet Order")}`;
+        if (orderType === "takeaway") return `🥡 ${t("Pre Order")}`;
+        return t("Order");
+      })();
 
-              <div className={`px-2 py-1 rounded-full text-xs font-bold
-	                ${item.kitchen_status === "preparing" ? "bg-yellow-400 text-indigo-700" :
-	                  item.kitchen_status === "ready" ? "bg-blue-500 text-white" :
-	                  item.kitchen_status === "delivered" ? "bg-green-500 text-white" :
-	                  "bg-gray-300 text-black"}`}>
-                {t(item.kitchen_status || "new")}
-              </div>
-            </div>
-            <div className="flex flex-col gap-1 text-gray-800 text-base">
-              <span className="font-semibold">{displayName}</span>
-              <span>{t("Qty")}: {item.quantity}</span>
-              {item.note && (
-                <span className="text-xs bg-yellow-100 text-yellow-900 rounded px-2 py-1 mt-1">📝 {item.note}</span>
-              )}
-{item.extras && Array.isArray(item.extras) && item.extras.length > 0 && (
-  <ul className="text-xs mt-2 ml-3 text-blue-700">
-    {item.extras.map((ex, idx) => {
-      const itemQty = parseInt(item.quantity || item.qty || 1);
-      const extraQty = parseInt(ex.quantity || ex.qty || 1);
-      const lineQty = itemQty * extraQty;
-      const unitPrice = parseFloat(ex.price || 0);
-      const total = (lineQty * unitPrice).toFixed(2);
+      const subtitle = (() => {
+        if (orderType === "table") return null;
+        if (orderType === "phone" || orderType === "packet") {
+          return order.customer_name || order.customer_phone || null;
+        }
+        if (orderType === "takeaway") {
+          return order.customer_name || order.customer_phone || null;
+        }
+        return null;
+      })();
+
       return (
-        <li key={idx} className="flex items-center gap-2">
-          <span>
-            ➕
-            {extraQty > 1 ? ` ${extraQty}x ` : " "}
-            {ex.name}
-          </span>
-          <span className="text-gray-500">
-            @ {formatCurrency(unitPrice)}
-          </span>
-          <span className="ml-2 text-blue-900 font-semibold">
-            {formatCurrency(total)}
-          </span>
-        </li>
-      );
-    })}
-  </ul>
-)}
+        <div
+          key={order.id}
+          className="rounded-3xl bg-white border border-slate-200 shadow-xl p-5 flex flex-col gap-3 hover:shadow-2xl transition"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-extrabold text-lg text-slate-900 truncate">{title}</div>
+              <div className="text-xs text-slate-500 font-semibold">
+                #{order.id}
+                {subtitle ? ` • ${subtitle}` : ""}
+              </div>
+              {order.customer_address && (orderType === "phone" || orderType === "packet") && (
+                <div className="text-xs text-slate-500 mt-1 line-clamp-2">
+                  📍 {order.customer_address}
+                </div>
+              )}
+              {order.pickup_time && orderType === "takeaway" && (
+                <div className="text-xs text-slate-600 mt-1">
+                  🕒 {t("Pickup")}: {order.pickup_time}
+                </div>
+              )}
+            </div>
 
-
+            <div className="flex flex-col items-end gap-2 flex-shrink-0">
+              <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${paymentStatusClass}`}>
+                {paymentStatusLabel}
+              </span>
+              {readyAtLabel && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-extrabold border bg-slate-100 text-slate-700 border-slate-200">
+                  ⏳ {t("Ready at")} {readyAtLabel}
+                </span>
+              )}
             </div>
           </div>
-        )})}
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-bold text-slate-800">
+              {formatCurrency(Number(order.total || 0))}
+            </div>
+            {order.payment_method && (
+              <span className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-2 py-1 rounded-full">
+                {t("Paid")}: {order.payment_method}
+              </span>
+            )}
+          </div>
+
+          {Array.isArray(order.items) && order.items.length > 0 && (
+            <div className="text-xs text-slate-600">
+              {order.items.slice(0, 3).map((it, idx) => (
+                <div key={`${order.id}-${it.id || idx}`} className="truncate">
+                  • {it.product_name || it.name || t("Item")} ×{it.quantity || 1}
+                </div>
+              ))}
+              {order.items.length > 3 && (
+                <div className="text-xs text-slate-400 italic">
+                  +{order.items.length - 3} {t("more")}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    })}
       </div>
     )}
   </div>
@@ -2346,17 +2478,11 @@ const formatAreaLabel = (area) => {
 
 
 {showRegisterModal && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-all">
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm transition-all">
     <div
-      className={`
-        relative bg-gradient-to-br from-white/90 via-indigo-50 to-blue-100
-        dark:from-gray-900 dark:via-slate-900 dark:to-gray-800
-        rounded-3xl shadow-2xl mx-3 w-full max-w-[520px] max-h-[90vh] overflow-y-auto
-        p-8 animate-fade-in
-        border-4 border-white/50 dark:border-black/20
-      `}
+      className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-[0_20px_70px_rgba(15,23,42,0.35)] border border-slate-200 dark:border-slate-800 mx-3 w-full max-w-[520px] max-h-[90vh] overflow-y-auto p-8 animate-fade-in"
       style={{
-        boxShadow: "0 12px 60px 0 rgba(30,34,90,0.18)",
+        boxShadow: "0 20px 70px 0 rgba(15,23,42,0.28)",
       }}
     >
       {/* Close Button */}
@@ -2373,16 +2499,15 @@ const formatAreaLabel = (area) => {
         <span className="block bg-white/80 dark:bg-gray-800/70 rounded-full p-2 shadow hover:shadow-xl">✕</span>
       </button>
 
-      {/* Title */}
-      <div className="flex items-center gap-3 mb-6">
-        <span className="text-3xl bg-gradient-to-r from-blue-500 via-fuchsia-400 to-indigo-400 text-white rounded-full p-3 shadow-md">💵</span>
-        <h2 className="text-2xl md:text-3xl font-extrabold bg-gradient-to-r from-blue-600 via-fuchsia-600 to-indigo-600 text-transparent bg-clip-text tracking-tight">
+      <div className="space-y-1 mb-5">
+        <p className="text-xs uppercase tracking-wide text-slate-400">{t("Register")}</p>
+        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
           {registerState === "unopened" || registerState === "closed"
-            ? t('Open Register')
-            : t('Register Summary')}
+            ? t("Open Register")
+            : t("Register Summary")}
         </h2>
+        <div className="h-px bg-slate-200 dark:bg-slate-700 mt-4" />
       </div>
-      <div className="h-[2px] w-full bg-gradient-to-r from-blue-200 via-indigo-300 to-fuchsia-200 rounded-full mb-5 opacity-60" />
 
 
       {/* Modal Content */}
@@ -2391,50 +2516,46 @@ const formatAreaLabel = (area) => {
       ) : registerState === "closed" || registerState === "unopened" ? (
         <>
           {/* Opening Cash Entry */}
-          <div className="mb-8">
-            <label className="block text-base font-semibold text-gray-700 mb-2">
-              💼 {t('Opening Cash')}
+          <div className="mb-8 space-y-3">
+            <label className="block text-sm font-semibold text-slate-700">
+              {t("Opening Cash")}
             </label>
             <input
               type="number"
               value={openingCash}
               onChange={e => setOpeningCash(e.target.value)}
-              className="w-full p-5 rounded-2xl border-2 border-blue-300 text-lg shadow-lg focus:border-blue-500 outline-none transition"
+              className="w-full px-4 py-3 rounded-2xl border border-slate-300 text-lg shadow-sm focus:border-blue-500 outline-none transition"
               placeholder={`${config?.symbol || ""}0.00`}
             />
             {yesterdayCloseCash !== null && (
-              <div className="text-blue-700 text-sm mt-2">
-                🔒 Last Closing:{" "}
-                {formatCurrency(parseFloat(yesterdayCloseCash || 0))}
-              </div>
+              <p className="text-sm text-slate-500">
+                {t("Last Closing")}: {formatCurrency(parsedYesterdayCloseCash)}
+              </p>
             )}
           </div>
           {/* Comparison Card */}
           {openingCash !== "" && yesterdayCloseCash !== null && (
-            <div className="bg-gradient-to-r from-white via-blue-50 to-indigo-50 border border-gray-200 rounded-3xl p-5 mt-2 shadow-md space-y-2">
-              <div className="flex justify-between items-center font-semibold">
-                <span>💼 {t("Opening")}</span>
-                <span className="text-green-700 tabular-nums">
-                  {formatCurrency(parseFloat(openingCash || 0))}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mt-2 shadow-sm space-y-3 text-sm text-slate-700">
+              <div className="flex justify-between">
+                <span className="text-slate-500">{t("Opening")}</span>
+                <span className="font-semibold text-slate-900 tabular-nums">
+                  {formatCurrency(parsedOpeningCash)}
                 </span>
               </div>
-              <div className="flex justify-between items-center font-semibold">
-                <span>🔒 {t("Last Closing")}</span>
-                <span className="text-blue-700 tabular-nums">
-                  {formatCurrency(parseFloat(yesterdayCloseCash || 0))}
+              <div className="flex justify-between">
+                <span className="text-slate-500">{t("Last Closing")}</span>
+                <span className="font-semibold text-slate-900 tabular-nums">
+                  {formatCurrency(parsedYesterdayCloseCash)}
                 </span>
               </div>
-              <div className={`flex justify-between items-center font-semibold ${
-                parseFloat(openingCash) !== parseFloat(yesterdayCloseCash)
-                  ? "text-red-600"
-                  : "text-green-600"
-              }`}>
-                <span>🔁 {t("Difference")}</span>
-                <span>
-                  {formatCurrency(
-                    parseFloat(openingCash || 0) -
-                      parseFloat(yesterdayCloseCash || 0)
-                  )}
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">{t("Difference")}</span>
+                <span
+                  className={`tabular-nums font-semibold ${
+                    openingDifference !== 0 ? "text-red-600" : "text-slate-900"
+                  }`}
+                >
+                  {formatCurrency(openingDifference)}
                 </span>
               </div>
             </div>
@@ -2456,59 +2577,58 @@ const netCash = opening + expected + entryTotal - expense;
 
         return (
           <>
-            {/* Summary Card */}
-            <div className="bg-white/80 border border-gray-200 rounded-3xl p-6 shadow-xl mb-7">
-              <div className="space-y-4 text-base font-semibold">
-                <div className="flex justify-between items-center">
-                  <span className="flex items-center gap-2 text-green-700"><span className="bg-green-400 text-white rounded-full px-2 py-1">💼</span> {t('Opening')}</span>
-                  <span className="tabular-nums text-green-800">
-                    {formatCurrency(opening)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="flex items-center gap-2 text-yellow-700"><span className="bg-yellow-400 text-white rounded-full px-2 py-1">💰</span> {t('Cash Sales')}</span>
-                  <span className="tabular-nums text-yellow-800">
-                    {formatCurrency(expected)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="flex items-center gap-2 text-orange-700"><span className="bg-orange-400 text-white rounded-full px-2 py-1">📉</span> {t('Cash Expenses')}</span>
-                  <span className="tabular-nums text-orange-800">
-                    {formatCurrency(expense)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-  <span className="flex items-center gap-2 text-lime-700">
-    <span className="bg-lime-400 text-white rounded-full px-2 py-1">➕</span> {t('Cash Entries')}
-  </span>
-  <span className="tabular-nums text-lime-800">
-    {formatCurrency(entryTotal)}
-  </span>
-</div>
-
-                <div className="h-[1px] w-full bg-gradient-to-r from-blue-200 to-fuchsia-200 rounded-full opacity-60 my-3" />
-                <div className="flex justify-between items-center text-lg">
-                  <span className="flex items-center gap-2 text-blue-900 font-bold">
-                    <span className="bg-blue-600 text-white rounded-full px-2 py-1">🧮</span>
-                    {t('Net Expected Cash')}
-                  </span>
-                  <span className="tabular-nums text-blue-900 font-extrabold text-2xl">
-                    {formatCurrency(netCash)}
-                  </span>
-                </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm mb-7 space-y-4 text-sm text-slate-700">
+              <div className="flex justify-between">
+                <span className="text-base sm:text-lg font-semibold text-sky-600">
+                  {t("Opening")}
+                </span>
+                <span className="font-bold text-slate-900 text-lg tabular-nums">
+                  {formatCurrency(opening)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-base sm:text-lg font-semibold text-emerald-600">
+                  {t("Cash Sales")}
+                </span>
+                <span className="font-bold text-slate-900 text-lg tabular-nums">
+                  {formatCurrency(expected)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-base sm:text-lg font-semibold text-amber-600">
+                  {t("Cash Expenses")}
+                </span>
+                <span className="font-bold text-slate-900 text-lg tabular-nums">
+                  {formatCurrency(expense)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-base sm:text-lg font-semibold text-lime-600">
+                  {t("Cash Entries")}
+                </span>
+                <span className="font-bold text-slate-900 text-lg tabular-nums">
+                  {formatCurrency(entryTotal)}
+                </span>
+              </div>
+              <div className="h-px bg-slate-200 my-3" />
+              <div className="flex justify-between items-center text-base font-semibold text-slate-900">
+                <span>{t("Net Expected Cash")}</span>
+                <span className="font-bold text-slate-900 text-lg tabular-nums">
+                  {formatCurrency(netCash)}
+                </span>
               </div>
             </div>
             {/* Actual Cash Input */}
             <div className="mb-7">
-              <label className="block text-base font-semibold text-gray-800 mb-2">
-                🔢 {t('Actual Counted Cash')}
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                {t("Actual Counted Cash")}
               </label>
               <input
                 type="number"
                 value={actualCash}
                 onChange={e => setActualCash(e.target.value)}
                 className={`
-                  w-full p-5 rounded-2xl border-2 text-lg shadow-lg outline-none transition
+                  w-full px-4 py-3 rounded-2xl border-2 text-lg shadow-sm outline-none transition
                   ${actualCash === ""
                     ? "border-gray-300"
                     : parseFloat(actualCash) === netCash
@@ -2519,15 +2639,15 @@ const netCash = opening + expected + entryTotal - expense;
               />
               {actualCash && (
                 parseFloat(actualCash) === netCash
-                  ? <p className="text-green-600 font-semibold mt-2">{t('Cash matches perfectly.')}</p>
-                  : (
-                      <p className="text-red-600 font-semibold mt-2">
-                        ❌ {t("Difference")}:{" "}
-                        {formatCurrency(
-                          Math.abs(parseFloat(actualCash || 0) - netCash)
-                        )}
-                      </p>
-                    )
+                    ? <p className="text-green-600 font-semibold mt-2">{t('Cash matches perfectly.')}</p>
+                    : (
+                        <p className="text-red-600 font-semibold mt-2">
+                          {t("Difference")}:{" "}
+                          {formatCurrency(
+                            Math.abs(parseFloat(actualCash || 0) - netCash)
+                          )}
+                        </p>
+                      )
               )}
             </div>
            {registerState === "open" && (
@@ -2537,13 +2657,11 @@ const netCash = opening + expected + entryTotal - expense;
       type="button"
       onClick={() => setShowEntryForm(v => !v)}
       className={`
-        flex items-center gap-2 px-4 py-2 rounded-xl font-semibold mb-3
-        transition-all shadow
-        ${showEntryForm ? 'bg-lime-200 text-lime-900' : 'bg-gray-100 text-gray-700 hover:bg-lime-100'}
+        px-4 py-2 rounded-xl font-semibold mb-3 transition-all shadow
+        ${showEntryForm ? "bg-slate-200 text-slate-900" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}
       `}
     >
-      <span>{showEntryForm ? "Hide Cash Entry" : "➕ Add Cash Entry"}</span>
-      <span className="text-lg">{showEntryForm ? "▲" : "▼"}</span>
+      {showEntryForm ? t("Hide Cash Entry") : t("Add Cash Entry")}
     </button>
     {/* Entry Form */}
     {showEntryForm && (
@@ -2636,55 +2754,47 @@ try {
       type="button"
       onClick={() => setShowRegisterLog(v => !v)}
       className={`
-        flex items-center gap-2 px-4 py-2 rounded-xl font-semibold
-        transition-all shadow
+        px-4 py-2 rounded-xl font-semibold transition-all shadow
         ${showRegisterLog ? 'bg-blue-200 text-blue-900' : 'bg-gray-100 text-gray-700 hover:bg-blue-100'}
       `}
     >
-      <span>{showRegisterLog ? 'Hide Register Log' : 'Show Register Log'}</span>
-      <span className="text-lg">{showRegisterLog ? "▲" : "▼"}</span>
+      {showRegisterLog ? t("Hide Register Log") : t("Show Register Log")}
     </button>
     {showRegisterLog && (
       <div className="bg-white/90 border border-blue-100 rounded-2xl p-4 mt-3 max-h-64 overflow-y-auto shadow">
         {/* Header Row */}
         <div className="flex text-xs font-bold text-gray-400 pb-2 px-1">
-          <span className="w-8"></span>
-          <span className="min-w-[80px]">Type</span>
-          <span className="min-w-[85px]">Amount</span>
+          <span className="min-w-[90px]">Type</span>
+          <span className="min-w-[90px]">Amount</span>
           <span className="flex-1">Reason / Note</span>
           <span className="w-14 text-right">Time</span>
         </div>
  <ul className="divide-y">
   {combinedEvents.map((event, idx) => (
     <li key={idx} className="flex items-center py-2 gap-2 text-sm">
-      <span className="text-xl">
-        {event.type === "open" && "🔓"}
-        {event.type === "close" && "🔒"}
-        {event.type === "expense" && "📉"}
-        {event.type === "entry" && "➕"}
-        {event.type === "sale" && "🧾"}
-        {event.type === "supplier" && "🚚"}
-        {event.type === "payroll" && "👤"}
-        {event.type === "change" && "💵"}
-        {!["open","close","expense","entry","sale","supplier","payroll","change"].includes(event.type) && "📝"}
-      </span>
-      <span className="font-bold min-w-[70px] capitalize">
+      <span className="font-semibold min-w-[90px] text-[10px] uppercase tracking-wide text-slate-500">
         {event.type}
       </span>
-      <span className="tabular-nums min-w-[85px] text-blue-900 font-semibold">
+      <span className="tabular-nums min-w-[90px] font-semibold text-slate-900">
         {event.amount ? formatCurrency(parseFloat(event.amount)) : ""}
       </span>
-      <span className={`
-        flex-1
-        ${event.type === "entry" ? "font-semibold text-lime-800" : ""}
-        ${event.type === "expense" ? "font-semibold text-orange-800" : ""}
-        ${!["entry", "expense"].includes(event.type) ? "text-gray-600 italic" : ""}
-        max-w-[180px]"
-      `}>
+      <span
+        className={`flex-1 text-sm max-w-[180px] ${
+          event.type === "entry"
+            ? "font-semibold text-lime-800"
+            : event.type === "expense"
+            ? "font-semibold text-orange-800"
+            : "text-gray-600 italic"
+        }`}
+      >
         {event.note || (["entry", "expense"].includes(event.type) ? "(No reason provided)" : "")}
       </span>
       <span className="ml-auto text-xs text-gray-400">
-        {event.created_at && new Date(event.created_at).toLocaleTimeString("tr-TR", {hour:"2-digit",minute:"2-digit"})}
+        {event.created_at &&
+          new Date(event.created_at).toLocaleTimeString("tr-TR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
       </span>
     </li>
   ))}
@@ -2725,12 +2835,12 @@ try {
           <button
             type="button"
             onClick={() => setShowChangeForm((prev) => !prev)}
-            className="flex items-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 transition"
+            className="rounded-xl border border-emerald-200 px-4 py-2 font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 transition"
           >
-            {showChangeForm ? "⬆️" : "⬇️"} 💵 {t("Change Cash")}
+            {showChangeForm ? t("Hide Change Cash") : t("Change Cash")}
           </button>
-        <button
-        onClick={async () => {
+          <button
+            onClick={async () => {
   const type =
     registerState === "unopened" || registerState === "closed"
       ? "open"

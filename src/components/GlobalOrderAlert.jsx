@@ -21,6 +21,7 @@ import {
 } from "../utils/receiptPrinter";
 import { useSetting } from "./hooks/useSetting";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
+import { useCurrency } from "../context/CurrencyContext";
 
 /* ------------------------------------------
  * Helpers: sounds, cooldowns, defaults
@@ -30,6 +31,7 @@ const DEFAULT_SOUNDS = {
   order_preparing: "prepare.mp3",
   order_ready: "chime.mp3",
   order_delivered: "success.mp3",
+  order_cancelled: "warning.mp3",
   payment_made: "cash.mp3",
   stock_low: "warning.mp3",
   stock_restocked: "pop.mp3",
@@ -48,6 +50,93 @@ const DEFAULT_NOTIFICATIONS = {
 };
 
 const SUPPORTED_EXTENSIONS = [".mp3", ".wav", ".ogg"];
+
+function extractTableLabel(source) {
+  if (!source || typeof source !== "object") return null;
+  const tableKeys = [
+    "table_label",
+    "tableLabel",
+    "table_number",
+    "tableNumber",
+    "table",
+  ];
+  const nested = source?.order;
+  const candidates = [
+    ...tableKeys.map((key) => source?.[key]),
+    ...tableKeys.map((key) => nested?.[key]),
+  ];
+
+  for (const value of candidates) {
+    if (value === undefined || value === null) continue;
+    const text = typeof value === "string" ? value.trim() : String(value);
+    if (text) return text;
+  }
+
+  return null;
+}
+
+function buildPaymentMessage(payload, formatCurrency) {
+  if (!payload || typeof payload !== "object") return null;
+  const tableRef = extractTableLabel(payload);
+  const amountValue =
+    payload.order_total_with_extras ??
+    payload.orderTotalWithExtras ??
+    payload.amount ??
+    payload.total ??
+    payload.order?.total ??
+    payload.payment_total ??
+    null;
+
+  let amountText = null;
+  if (amountValue !== undefined && amountValue !== null) {
+    if (typeof formatCurrency === "function") {
+      try {
+        amountText = formatCurrency(amountValue);
+      } catch (error) {
+        amountText = String(amountValue);
+      }
+    } else {
+      amountText = String(amountValue);
+    }
+  }
+
+  const segments = [];
+  if (tableRef) segments.push(`Table ${tableRef}`);
+  if (amountText) segments.push(`Paid ${amountText}`);
+  else if (amountValue !== undefined && amountValue !== null) segments.push(`Paid ${amountValue}`);
+  else segments.push("Paid");
+
+  return segments.join(" ");
+}
+
+function buildNewOrderMessage(payload) {
+  const tableRef = extractTableLabel(payload);
+  if (tableRef) return `New order on Table ${tableRef}`;
+  const orderId = payload?.order?.id || payload?.orderId || payload?.id;
+  const suffix = orderId ? ` #${orderId}` : "";
+  return `New order received${suffix}`;
+}
+
+function buildKitchenDeliveredMessage(payload) {
+  const tableRef = extractTableLabel(payload);
+  if (tableRef) return `Kitchen Delivered Table ${tableRef}`;
+  const orderId = payload?.orderId || payload?.id;
+  const suffix = orderId ? ` #${orderId}` : "";
+  return `Kitchen delivered order${suffix}`;
+}
+
+function buildKitchenPreparingMessage(payload) {
+  const tableRef = extractTableLabel(payload);
+  if (tableRef) return `Kitchen preparing Table ${tableRef}`;
+  return "👩‍🍳 Order set to preparing";
+}
+
+function buildOrderCancelledMessage(payload) {
+  const tableRef = extractTableLabel(payload);
+  const reason = payload?.reason ? ` (${payload.reason})` : "";
+  if (tableRef) return `Order cancelled Table ${tableRef}${reason}`;
+  return `Order cancelled${reason}`;
+}
 
 const clampVolume = (value, fallback = 1) => {
   if (typeof value !== "number" || Number.isNaN(value)) return fallback;
@@ -85,6 +174,7 @@ const cooldownMillis = {
   order_preparing: 3000,
   order_ready: 3000,
   order_delivered: 3000,
+  order_cancelled: 3000,
   payment_made: 2500,
   stock_low: 8000,
   stock_restocked: 6000,
@@ -147,6 +237,7 @@ export default function GlobalOrderAlert() {
       "order_preparing",
       "order_ready",
       "order_delivered",
+      "order_cancelled",
       "payment_made",
       "stock_low",
       "stock_restocked",
@@ -156,6 +247,7 @@ export default function GlobalOrderAlert() {
     ],
     []
   );
+  const { formatCurrency } = useCurrency();
 
   const alertEventKeyMap = {
     stock_low: "stock_low",
@@ -601,17 +693,22 @@ export default function GlobalOrderAlert() {
         (type === "table" && transactionSettings.disableAutoPrintTable) ||
         ((isPacketPhoneType || isPreOrderType) && transactionSettings.disableAutoPrintPacket);
 
-      notify("new_order", "🔔 New order received");
+      notify("new_order", buildNewOrderMessage(p));
       if (skipPrint) return;
       if (id) await printOrder(id);
     };
-    const onPreparing = () => notify("order_preparing", "👩‍🍳 Order set to preparing");
+    const onPreparing = (payload = {}) =>
+      notify("order_preparing", buildKitchenPreparingMessage(payload));
     const onReady = () => notify("order_ready", "✅ Order ready");
-    const onDelivered = () => notify("order_delivered", "🚚 Order delivered");
-const onPaid = (p) => {
-  console.log("💰 [Socket] payment_made event received:", p);
-  notify("payment_made", "💸 Payment made");
-};
+    const onDelivered = (payload) =>
+      notify("order_delivered", buildKitchenDeliveredMessage(payload));
+    const onCancelled = (payload = {}) =>
+      notify("order_cancelled", buildOrderCancelledMessage(payload));
+    const onPaid = (p) => {
+      console.log("💰 [Socket] payment_made event received:", p);
+      const paymentMsg = buildPaymentMessage(p, formatCurrency);
+      notify("payment_made", paymentMsg || "💸 Payment made");
+    };
     const onStockLow = () => notify("stock_low", "⚠️ Stock critical");
     const onRestocked = () => notify("stock_restocked", "📦 Stock replenished");
     const onDriverAssigned = (payload = {}) => {
@@ -630,6 +727,7 @@ const onPaid = (p) => {
     socket.on("payment_made", onPaid);
     socket.on("stock_critical", onStockLow);
     socket.on("stock_restocked", onRestocked);
+    socket.on("order_cancelled", onCancelled);
     socket.on("driver_assigned", onDriverAssigned);
 
     return () => {
@@ -640,9 +738,16 @@ const onPaid = (p) => {
       socket.off("payment_made", onPaid);
       socket.off("stock_critical", onStockLow);
       socket.off("stock_restocked", onRestocked);
+      socket.off("order_cancelled", onCancelled);
       socket.off("driver_assigned", onDriverAssigned);
     };
-  }, [notify, printOrder, transactionSettings.disableAutoPrintPacket, transactionSettings.disableAutoPrintTable]);
+  }, [
+    notify,
+    printOrder,
+    transactionSettings.disableAutoPrintPacket,
+    transactionSettings.disableAutoPrintTable,
+    formatCurrency,
+  ]);
 
   /* POLLING (fallback only if socket disconnected) */
   const prevSetRef = useRef({

@@ -7,8 +7,9 @@ export default defineConfig(({ mode }) => {
 
   // Your backend API target
   const backendURL = isDev
-    ? "http://localhost:5000"
-    : "https://hurrypos-backend.onrender.com";
+    // Use IPv4 localhost to avoid ::1 ECONNREFUSED when backend isn't bound on IPv6.
+    ? "http://127.0.0.1:5000"
+    : "https://api.beypro.com";
 
   /**
    * IMPORTANT:
@@ -39,6 +40,13 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api": {
           target: backendURL,
+          changeOrigin: true,
+          secure: false,
+        },
+        // Socket.IO uses /socket.io/* on the same origin; proxy it to backend in dev.
+        "/socket.io": {
+          target: backendURL,
+          ws: true,
           changeOrigin: true,
           secure: false,
         },

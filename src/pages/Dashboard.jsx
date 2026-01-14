@@ -5,6 +5,7 @@ import { useHasPermission } from "../components/hooks/useHasPermission";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
 import { useCurrency } from "../context/CurrencyContext";
+import { usePaymentMethods } from "../hooks/usePaymentMethods";
 
 import { useNavigate } from 'react-router-dom';
 import {
@@ -17,6 +18,15 @@ import {
 import axios from "axios";
 // adjust path as needed!
 // Set your API URL
+
+const toLocalYmd = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 const QUICK_ACCESS_CONFIG = [
   {
@@ -275,6 +285,7 @@ export default function Dashboard() {
   const { currentUser } = useAuth();
   const hasDashboardAccess = useHasPermission("dashboard");
   const hasCameraAccess = useHasPermission("settings-cameras");
+  const canSeeBusinessSnapshot = useHasPermission("business-snapshot");
   
   if (!hasDashboardAccess) {
     return (
@@ -297,6 +308,21 @@ export default function Dashboard() {
     cash: 2000,
     card: 1800,
     online: 720,
+    paymentBreakdown: [],
+    openOrders: 0,
+    openTables: 0,
+    openDeliveryOrders: 0,
+    openUnpaidTotal: 0,
+    onDutyStaff: [],
+    onDutySummary: {
+      onDuty: 0,
+      onTime: 0,
+      late: 0,
+      early: 0,
+      noSchedule: 0,
+      totalMinutesWorked: 0,
+      avgLatencyMinutes: 0,
+    },
     bestSelling: "Double Burger",
     bestSellingId: 11,
     lowStockCount: 2,
@@ -317,7 +343,7 @@ export default function Dashboard() {
     console.log("📷 Loading cameras...");
     setCamerasLoading(true);
     try {
-      const data = await secureFetch("/api/camera/list");
+      const data = await secureFetch("/camera/list");
       console.log("📷 Cameras loaded:", data);
       setCameras(Array.isArray(data) ? data.slice(0, 3) : []);
     } catch (err) {
@@ -355,16 +381,27 @@ export default function Dashboard() {
 // ---------------- FETCH SUMMARY (live + tenant-safe) ----------------
 const fetchSummaryStats = useCallback(async () => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toLocalYmd(new Date());
 
-    // 🧾 1️⃣ Main summary
-    const summaryRes = await secureFetch(`/reports/summary?from=${today}&to=${today}`);
-
-    // 💳 2️⃣ Payment breakdown
-    const paymentRes = await secureFetch(`/reports/sales-by-payment-method?from=${today}&to=${today}`);
+    const [
+      summaryRes,
+      paymentRes,
+      categoryRes,
+      stockRes,
+      ordersRes,
+      attendanceRes,
+      schedulesRes,
+    ] = await Promise.all([
+      secureFetch(`/reports/summary?from=${today}&to=${today}`),
+      secureFetch(`/reports/sales-by-payment-method?from=${today}&to=${today}`),
+      secureFetch(`/reports/sales-by-category-detailed?from=${today}&to=${today}`),
+      secureFetch(`/stock`),
+      secureFetch(`/orders?status=confirmed`),
+      secureFetch(`/staff/attendance`),
+      secureFetch(`/staff/schedule`),
+    ]);
 
     // 🥇 3️⃣ Best seller
-    const categoryRes = await secureFetch(`/reports/sales-by-category-detailed?from=${today}&to=${today}`);
     let bestSelling = "–";
     let bestTotal = 0;
     for (const category in categoryRes) {
@@ -377,41 +414,197 @@ const fetchSummaryStats = useCallback(async () => {
     }
 
     // ⚠️ 4️⃣ Low stock count
-    const stockRes = await secureFetch(`/stock`);
     const lowStockCount = Array.isArray(stockRes)
-      ? stockRes.filter((s) => s.critical_quantity && s.quantity <= s.critical_quantity).length
+      ? stockRes.filter((s) => {
+          if (s.critical_quantity === null || s.critical_quantity === undefined) {
+            return false;
+          }
+          return Number(s.quantity ?? 0) <= Number(s.critical_quantity ?? 0);
+        }).length
       : 0;
 
-    // 🧾 5️⃣ Orders in progress (tenant-safe)
-    const ordersRes = await secureFetch(`/orders?status=confirmed`);
-    const ordersInProgress = Array.isArray(ordersRes)
-      ? ordersRes.filter((o) => o.status !== "closed").length
-      : 0;
+    const confirmedOrders = Array.isArray(ordersRes) ? ordersRes : [];
+    const ordersInProgress = confirmedOrders.length;
+    const openTables = confirmedOrders.filter(
+      (order) => String(order?.order_type || "").toLowerCase() === "table"
+	    ).length;
+	    const openDeliveryOrders = confirmedOrders.filter((order) => {
+	      const type = String(order?.order_type || "").toLowerCase();
+	      return type === "packet" || type === "phone" || type === "takeaway";
+	    }).length;
+	    const openUnpaidTotal = confirmedOrders.reduce((sum, order) => {
+	      const value = Number(order?.total || 0);
+	      return sum + (Number.isFinite(value) ? value : 0);
+	    }, 0);
 
-    // 💰 Group payment breakdown
-    const cash = paymentRes.find((p) => p.method?.toLowerCase() === "cash")?.value || 0;
-    const card = paymentRes.find((p) => p.method?.toLowerCase().includes("card"))?.value || 0;
+      // 🧑‍🍳 5b️⃣ On-duty staff (active check-ins today)
+      const schedules = Array.isArray(schedulesRes) ? schedulesRes : [];
+      const attendance = Array.isArray(attendanceRes) ? attendanceRes : [];
+      const todayKey = today;
+      const now = Date.now();
+      const thresholdMinutes = 5;
+
+      const normalizeDateKey = (value) => {
+        if (!value) return "";
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return "";
+        return toLocalYmd(d);
+      };
+
+      const schedulesByStaff = new Map();
+      schedules.forEach((shift) => {
+        const staffId = Number(shift?.staff_id);
+        if (!Number.isFinite(staffId)) return;
+        const dateKey = normalizeDateKey(shift?.shift_date);
+        if (!dateKey || dateKey !== todayKey) return;
+        if (!schedulesByStaff.has(staffId)) schedulesByStaff.set(staffId, []);
+        schedulesByStaff.get(staffId).push(shift);
+      });
+
+      const getScheduledStart = (shift) => {
+        const start = String(shift?.shift_start || "").trim();
+        if (!start) return null;
+        const startWithSeconds = start.length === 5 ? `${start}:00` : start;
+        const dt = new Date(`${todayKey}T${startWithSeconds}`);
+        if (Number.isNaN(dt.getTime())) return null;
+        return dt;
+      };
+
+      const activeToday = attendance.filter((row) => {
+        if (!row || row.check_out_time) return false;
+        const dateKey = normalizeDateKey(row.check_in_time);
+        return dateKey === todayKey;
+      });
+
+      const onDutyStaff = activeToday
+        .map((row) => {
+          const staffId = Number(row.staff_id);
+          const staffName = row.staff_name || row.staffName || row.name || `#${row.staff_id}`;
+          const role = row.role || "";
+          const checkIn = new Date(row.check_in_time);
+          const minutesWorked = !Number.isNaN(checkIn.getTime())
+            ? Math.max(0, Math.floor((now - checkIn.getTime()) / 60000))
+            : 0;
+
+          const staffShifts = schedulesByStaff.get(staffId) || [];
+          const scheduledStart = staffShifts.length ? getScheduledStart(staffShifts[0]) : null;
+          const latencyMinutes =
+            scheduledStart && !Number.isNaN(checkIn.getTime())
+              ? Math.round((checkIn.getTime() - scheduledStart.getTime()) / 60000)
+              : null;
+
+          const status = (() => {
+            if (latencyMinutes === null) return "no_schedule";
+            if (Math.abs(latencyMinutes) <= thresholdMinutes) return "on_time";
+            return latencyMinutes > 0 ? "late" : "early";
+          })();
+
+          return {
+            staff_id: staffId,
+            name: staffName,
+            role,
+            check_in_time: row.check_in_time,
+            minutesWorked,
+            latencyMinutes,
+            status,
+          };
+        })
+        .sort((a, b) => (b.minutesWorked || 0) - (a.minutesWorked || 0));
+
+      const onDutySummary = (() => {
+        const base = {
+          onDuty: onDutyStaff.length,
+          onTime: 0,
+          late: 0,
+          early: 0,
+          noSchedule: 0,
+          totalMinutesWorked: 0,
+          avgLatencyMinutes: 0,
+        };
+        let latencySum = 0;
+        let latencyCount = 0;
+        onDutyStaff.forEach((s) => {
+          base.totalMinutesWorked += Number(s.minutesWorked || 0);
+          if (s.status === "on_time") base.onTime += 1;
+          else if (s.status === "late") base.late += 1;
+          else if (s.status === "early") base.early += 1;
+          else base.noSchedule += 1;
+
+          if (typeof s.latencyMinutes === "number" && Number.isFinite(s.latencyMinutes)) {
+            latencySum += s.latencyMinutes;
+            latencyCount += 1;
+          }
+        });
+        base.avgLatencyMinutes = latencyCount > 0 ? Math.round(latencySum / latencyCount) : 0;
+        return base;
+      })();
+
+	    // 💰 Group payment breakdown
+	    const normalizeMethod = (method) => (method || "").toString().toLowerCase().trim();
+	    const isCashMethod = (method) => {
+      const value = normalizeMethod(method);
+      return value === "cash" || value === "nakit";
+    };
+    const isCardMethod = (method) => {
+      const value = normalizeMethod(method);
+      return (
+        value.includes("card") ||
+        value.includes("credit") ||
+        value.includes("debit") ||
+        value.includes("visa") ||
+        value.includes("master") ||
+        value.includes("pos") ||
+        value.includes("kart")
+      );
+    };
+    const isOnlineMethod = (method) => {
+      const value = normalizeMethod(method);
+      return (
+        value.includes("online") ||
+        value.includes("iyzico") ||
+        value.includes("stripe") ||
+        value.includes("paypal") ||
+        value.includes("trendyol") ||
+        value.includes("yemeksepeti")
+      );
+    };
+
+    const cash = paymentRes
+      .filter((p) => isCashMethod(p.method))
+      .reduce((total, item) => total + (item.value || 0), 0);
+    const card = paymentRes
+      .filter((p) => isCardMethod(p.method))
+      .reduce((total, item) => total + (item.value || 0), 0);
     const online = paymentRes
-      .filter(
-        (p) =>
-          !["cash", "card", "credit card", "debit card"].includes(p.method?.toLowerCase())
-      )
-      .reduce((a, b) => a + (b.value || 0), 0);
+      .filter((p) => {
+        const method = normalizeMethod(p.method);
+        if (!method) return false;
+        if (isCashMethod(method) || isCardMethod(method)) return false;
+        return isOnlineMethod(method) || !!method;
+      })
+      .reduce((total, item) => total + (item.value || 0), 0);
 
-    // 📊 6️⃣ Apply to dashboard
-    setSummary({
-      dailySales: summaryRes.daily_sales || 0,
-      salesDelta: 0, // % change placeholder, can add /sales-trends later
-      dailyOrders: Math.round((summaryRes.daily_sales / (summaryRes.average_order_value || 1)) || 0),
-      ordersInProgress,
-      cash,
-      card,
-      online,
-      bestSelling,
-      lowStockCount,
-      newCustomers: 0, // optional later via /customers
-      repeatRate: 0,
-      avgDelivery: 0,
+	    // 📊 6️⃣ Apply to dashboard
+	    setSummary({
+	      dailySales: summaryRes.daily_sales || 0,
+	      salesDelta: 0, // % change placeholder, can add /sales-trends later
+	      dailyOrders: Math.round((summaryRes.daily_sales / (summaryRes.average_order_value || 1)) || 0),
+	      ordersInProgress,
+	      cash,
+	      card,
+	      online,
+	      paymentBreakdown: Array.isArray(paymentRes) ? paymentRes : [],
+	      openOrders: ordersInProgress,
+	      openTables,
+	      openDeliveryOrders,
+	      openUnpaidTotal,
+        onDutyStaff,
+        onDutySummary,
+	      bestSelling,
+	      lowStockCount,
+	      newCustomers: 0, // optional later via /customers
+	      repeatRate: 0,
+	      avgDelivery: 0,
       avgPrep: 0,
       salesTrend: [summaryRes.gross_sales || 0],
     });
@@ -560,11 +753,15 @@ const fetchSummaryStats = useCallback(async () => {
       const permissionKey =
         item.permission || item.path.replace("/", "").toLowerCase();
       if (currentUser.permissions?.includes("all")) return true;
-      if (permissionKey && currentUser.permissions?.includes(permissionKey))
-        return true;
+      if (permissionKey) {
+        const normalizedKey = String(permissionKey).toLowerCase().replaceAll(".", "-");
+        if (currentUser.permissions?.includes(normalizedKey)) return true;
+      }
       if (!permissionKey) return false;
       return currentUser.permissions?.some(
-        (perm) => permissionKey === perm.toLowerCase()
+        (perm) =>
+          String(permissionKey).toLowerCase().replaceAll(".", "-") ===
+          String(perm).toLowerCase().replaceAll(".", "-")
       );
     });
   }, [orderedConfigs, currentUser]);
@@ -707,11 +904,10 @@ const fetchSummaryStats = useCallback(async () => {
       <LiveCamerasSection cameras={cameras} loading={camerasLoading} onNavigate={() => navigate("/settings/cameras")} t={t} />
     )}
 
-    {/* Business Snapshot (only if user has higher-level access) */}
-{(currentUser.permissions?.includes("all") ||
-  currentUser.permissions?.includes("reports")) && (
-  <BusinessSnapshot summary={summary} onRefresh={fetchSummaryStats} />
-)}
+    {/* Business Snapshot */}
+    {canSeeBusinessSnapshot && (
+      <BusinessSnapshot summary={summary} onRefresh={fetchSummaryStats} />
+    )}
 
     </div>
   );
@@ -723,6 +919,7 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
+  const paymentMethods = usePaymentMethods();
 
   const snap = {
     dailySales: summary.dailySales ?? 0,
@@ -732,6 +929,23 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
     cash: summary.cash ?? 0,
     card: summary.card ?? 0,
     online: summary.online ?? 0,
+    openOrders: summary.openOrders ?? summary.ordersInProgress ?? 0,
+    openTables: summary.openTables ?? 0,
+    openDeliveryOrders: summary.openDeliveryOrders ?? 0,
+    openUnpaidTotal: summary.openUnpaidTotal ?? 0,
+    onDutyStaff: Array.isArray(summary.onDutyStaff) ? summary.onDutyStaff : [],
+    onDutySummary:
+      summary.onDutySummary && typeof summary.onDutySummary === "object"
+        ? summary.onDutySummary
+        : {
+            onDuty: 0,
+            onTime: 0,
+            late: 0,
+            early: 0,
+            noSchedule: 0,
+            totalMinutesWorked: 0,
+            avgLatencyMinutes: 0,
+          },
     bestSelling: summary.bestSelling ?? "-",
     lowStockCount: summary.lowStockCount ?? 0,
     newCustomers: summary.newCustomers ?? 0,
@@ -740,6 +954,154 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
     avgPrep: summary.avgPrep ?? 0,
     salesTrend: summary.salesTrend ?? [],
   };
+
+  const safeSlug = useCallback((value) => {
+    const base = (value || "")
+      .toString()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    return base;
+  }, []);
+
+  const paymentMix = useMemo(() => {
+    const methods = Array.isArray(paymentMethods) ? paymentMethods : [];
+    const breakdown = Array.isArray(summary.paymentBreakdown)
+      ? summary.paymentBreakdown
+      : [];
+
+    const keyToId = new Map();
+    methods.forEach((method) => {
+      const id = String(method?.id || "").trim();
+      if (!id) return;
+      keyToId.set(id, id);
+      keyToId.set(safeSlug(id), id);
+
+      const label = String(method?.label || "").trim();
+      if (label) {
+        keyToId.set(label.toLowerCase(), id);
+        keyToId.set(safeSlug(label), id);
+      }
+    });
+
+    const totalsById = new Map();
+    let otherTotal = 0;
+    breakdown.forEach((row) => {
+      const rawMethod = String(row?.method || "").trim();
+      const value = Number(row?.value || 0) || 0;
+      if (!rawMethod || !Number.isFinite(value) || value <= 0) return;
+
+      const id =
+        keyToId.get(safeSlug(rawMethod)) || keyToId.get(rawMethod.toLowerCase());
+      if (!id) {
+        otherTotal += value;
+        return;
+      }
+      totalsById.set(id, (totalsById.get(id) || 0) + value);
+    });
+
+    const items = methods.map((method) => ({
+      id: method.id,
+      label: method.label,
+      icon: method.icon || "💳",
+      amount: totalsById.get(method.id) || 0,
+    }));
+
+    if (otherTotal > 0) {
+      items.push({
+        id: "__other__",
+        label: t("Other", "Other"),
+        icon: "➕",
+        amount: otherTotal,
+      });
+    }
+
+    const total = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const sorted = [...items].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+
+    return {
+      methods,
+      total,
+      items: sorted,
+    };
+  }, [paymentMethods, summary.paymentBreakdown, safeSlug, t]);
+
+  const paymentStyles = useMemo(
+    () => [
+      {
+        bar: "bg-emerald-500",
+        tileBg: "bg-emerald-50",
+        ring: "ring-emerald-100",
+        text: "text-emerald-700",
+        darkBg: "dark:bg-emerald-500/10",
+        darkRing: "dark:ring-emerald-500/20",
+        darkText: "dark:text-emerald-300",
+      },
+      {
+        bar: "bg-sky-500",
+        tileBg: "bg-sky-50",
+        ring: "ring-sky-100",
+        text: "text-sky-700",
+        darkBg: "dark:bg-sky-500/10",
+        darkRing: "dark:ring-sky-500/20",
+        darkText: "dark:text-sky-300",
+      },
+      {
+        bar: "bg-pink-500",
+        tileBg: "bg-pink-50",
+        ring: "ring-pink-100",
+        text: "text-pink-700",
+        darkBg: "dark:bg-pink-500/10",
+        darkRing: "dark:ring-pink-500/20",
+        darkText: "dark:text-pink-300",
+      },
+      {
+        bar: "bg-amber-500",
+        tileBg: "bg-amber-50",
+        ring: "ring-amber-100",
+        text: "text-amber-800",
+        darkBg: "dark:bg-amber-500/10",
+        darkRing: "dark:ring-amber-500/20",
+        darkText: "dark:text-amber-300",
+      },
+      {
+        bar: "bg-violet-500",
+        tileBg: "bg-violet-50",
+        ring: "ring-violet-100",
+        text: "text-violet-700",
+        darkBg: "dark:bg-violet-500/10",
+        darkRing: "dark:ring-violet-500/20",
+        darkText: "dark:text-violet-300",
+      },
+      {
+        bar: "bg-teal-500",
+        tileBg: "bg-teal-50",
+        ring: "ring-teal-100",
+        text: "text-teal-800",
+        darkBg: "dark:bg-teal-500/10",
+        darkRing: "dark:ring-teal-500/20",
+        darkText: "dark:text-teal-300",
+      },
+    ],
+    []
+  );
+
+  const paymentStyleById = useMemo(() => {
+    const map = new Map();
+    (paymentMix.methods || []).forEach((method, idx) => {
+      map.set(method.id, paymentStyles[idx % paymentStyles.length]);
+    });
+    map.set("__other__", {
+      bar: "bg-slate-400",
+      tileBg: "bg-slate-50",
+      ring: "ring-slate-200",
+      text: "text-slate-700",
+      darkBg: "dark:bg-slate-500/10",
+      darkRing: "dark:ring-slate-500/20",
+      darkText: "dark:text-slate-300",
+    });
+    return map;
+  }, [paymentMix.methods, paymentStyles]);
 
   return (
     <section className="mb-10">
@@ -826,29 +1188,304 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
         </SnapshotCard>
       </div>
 
-      {/* Revenue breakdown */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        <MiniCard>
-          <div className="flex items-center gap-2 mb-1">
-            <CreditCard className="text-indigo-500 w-5 h-5" />
-            <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
-              {t("Revenue Breakdown")}
-            </div>
-          </div>
-          <div className="flex gap-4 text-sm font-semibold">
-            <span className="text-green-600">
-              {formatCurrency(snap.cash)}
-            </span>
-            <span className="text-gray-400">{t("Cash")}</span>
-            <span className="text-blue-600">
-              {formatCurrency(snap.card)}
-            </span>
-            <span className="text-gray-400">{t("Card")}</span>
-            <span className="text-pink-600">
-              {formatCurrency(snap.online)}
-            </span>
-            <span className="text-gray-400">{t("Online")}</span>
-          </div>
+      {/* Payment mix */}
+      <div className="grid grid-cols-1 gap-5">
+        <MiniCard className="p-7 sm:p-8">
+          {(() => {
+            const total = paymentMix.total || 0;
+            const pct = (value) => (total > 0 ? (value / total) * 100 : 0);
+            const barItems = paymentMix.items.filter((item) => (item.amount || 0) > 0);
+
+            return (
+              <>
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div className="text-sm font-extrabold text-gray-900 dark:text-white">
+                    {t("Payment Mix", "Payment Mix")}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 font-semibold">
+                    {t("Total", "Total")}:{" "}
+                    <span className="text-gray-900 dark:text-gray-100 font-extrabold">
+                      {formatCurrency(total)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex h-4 sm:h-5 rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden ring-1 ring-black/5 dark:ring-white/10">
+                  {barItems.length > 0 ? (
+                    barItems.map((item) => {
+                      const style = paymentStyleById.get(item.id) || paymentStyleById.get("__other__");
+                      return (
+                        <div
+                          key={item.id}
+                          className={`h-full ${style.bar}`}
+                          style={{ width: `${pct(item.amount)}%` }}
+                          title={`${item.label}: ${formatCurrency(item.amount)}`}
+                        />
+                      );
+                    })
+                  ) : (
+                    <div className="h-full w-full bg-gray-200 dark:bg-zinc-700" />
+                  )}
+                </div>
+
+                <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 text-center">
+                  {paymentMix.items.map((item) => {
+                    const style = paymentStyleById.get(item.id) || paymentStyleById.get("__other__");
+                    const percent = pct(item.amount || 0);
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-2xl ${style.tileBg} ${style.darkBg} py-3 ring-1 ${style.ring} ${style.darkRing}`}
+                      >
+                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1 px-3">
+                          <span className="text-base leading-none">{item.icon}</span>
+                          <span className="truncate">{t(item.label)}</span>
+                        </div>
+                        <div className={`text-lg font-extrabold ${style.text} ${style.darkText}`}>
+                          {Math.round(percent)}%
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 font-semibold">
+                          {formatCurrency(item.amount || 0)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
+        </MiniCard>
+
+        <MiniCard className="p-7 sm:p-8">
+          {(() => {
+            const openOrders = Number(snap.openOrders || 0);
+            const openTables = Number(snap.openTables || 0);
+            const openDelivery = Number(snap.openDeliveryOrders || 0);
+            const openTotal = Number(snap.openUnpaidTotal || 0);
+            const avgTicket = openOrders > 0 ? openTotal / openOrders : 0;
+
+            const tiles = [
+              {
+                label: t("Open Orders", "Open Orders"),
+                value: openOrders,
+                icon: <ClipboardList className="w-4 h-4" />,
+                bg: "bg-indigo-50",
+                ring: "ring-indigo-100",
+                text: "text-indigo-700",
+                darkBg: "dark:bg-indigo-500/10",
+                darkRing: "dark:ring-indigo-500/20",
+                darkText: "dark:text-indigo-300",
+              },
+              {
+                label: t("Tables", "Tables"),
+                value: openTables,
+                icon: <Utensils className="w-4 h-4" />,
+                bg: "bg-emerald-50",
+                ring: "ring-emerald-100",
+                text: "text-emerald-700",
+                darkBg: "dark:bg-emerald-500/10",
+                darkRing: "dark:ring-emerald-500/20",
+                darkText: "dark:text-emerald-300",
+              },
+              {
+                label: t("Delivery", "Delivery"),
+                value: openDelivery,
+                icon: <Package className="w-4 h-4" />,
+                bg: "bg-amber-50",
+                ring: "ring-amber-100",
+                text: "text-amber-800",
+                darkBg: "dark:bg-amber-500/10",
+                darkRing: "dark:ring-amber-500/20",
+                darkText: "dark:text-amber-300",
+              },
+              {
+                label: t("Avg Ticket", "Avg Ticket"),
+                value: formatCurrency(avgTicket),
+                icon: <TrendingUp className="w-4 h-4" />,
+                bg: "bg-sky-50",
+                ring: "ring-sky-100",
+                text: "text-sky-700",
+                darkBg: "dark:bg-sky-500/10",
+                darkRing: "dark:ring-sky-500/20",
+                darkText: "dark:text-sky-300",
+              },
+            ];
+
+            return (
+              <>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-zinc-800 flex items-center justify-center ring-1 ring-slate-200 dark:ring-white/10">
+                      <Clock className="w-5 h-5 text-slate-700 dark:text-slate-200" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-extrabold text-gray-900 dark:text-white">
+                        {t("Shift Pulse", "Shift Pulse")}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        {t("Unpaid total", "Unpaid total")}:{" "}
+                        <span className="font-extrabold text-gray-900 dark:text-gray-100">
+                          {formatCurrency(openTotal)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => navigate("/tableoverview?tab=tables")}
+                    className="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold hover:bg-slate-800 transition"
+                  >
+                    {t("Go to Tables", "Go to Tables")}
+                  </button>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                  {tiles.map((tile) => (
+                    <div
+                      key={tile.label}
+                      className={`rounded-2xl ${tile.bg} ${tile.darkBg} py-3 ring-1 ${tile.ring} ${tile.darkRing}`}
+                    >
+                      <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-center gap-2 px-3">
+                        <span className={`${tile.text} ${tile.darkText}`}>{tile.icon}</span>
+                        <span className="truncate">{tile.label}</span>
+                      </div>
+                      <div className={`mt-0.5 text-lg font-extrabold ${tile.text} ${tile.darkText}`}>
+                        {tile.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+        </MiniCard>
+
+        <MiniCard className="p-7 sm:p-8">
+          {(() => {
+            const summary = snap.onDutySummary || {};
+            const onDuty = Number(summary.onDuty || 0);
+            const onTime = Number(summary.onTime || 0);
+            const late = Number(summary.late || 0);
+            const early = Number(summary.early || 0);
+            const noSchedule = Number(summary.noSchedule || 0);
+            const totalMinutesWorked = Number(summary.totalMinutesWorked || 0);
+
+            const formatMinutes = (minutes) => {
+              const safeMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+              const hours = Math.floor(safeMinutes / 60);
+              const mins = safeMinutes % 60;
+              return `${hours}h ${String(mins).padStart(2, "0")}m`;
+            };
+
+            const badgeForStatus = (status, latencyMinutes) => {
+              if (status === "on_time") {
+                return {
+                  label: t("On time", "On time"),
+                  cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200",
+                };
+              }
+              if (status === "late") {
+                const mins = Math.abs(Number(latencyMinutes || 0));
+                return {
+                  label: `${t("Late", "Late")} ${mins}m`,
+                  cls: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200",
+                };
+              }
+              if (status === "early") {
+                const mins = Math.abs(Number(latencyMinutes || 0));
+                return {
+                  label: `${t("Early", "Early")} ${mins}m`,
+                  cls: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200",
+                };
+              }
+              return {
+                label: t("No schedule", "No schedule"),
+                cls: "bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200",
+              };
+            };
+
+            const staff = Array.isArray(snap.onDutyStaff) ? snap.onDutyStaff : [];
+            const top = staff.slice(0, 6);
+
+            return (
+              <>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center ring-1 ring-indigo-100 dark:ring-indigo-500/20">
+                      <Users className="w-5 h-5 text-indigo-700 dark:text-indigo-200" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-extrabold text-gray-900 dark:text-white">
+                        {t("On Duty Staff", "On Duty Staff")}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        {t("Worked today", "Worked today")}:{" "}
+                        <span className="font-extrabold text-gray-900 dark:text-gray-100">
+                          {formatMinutes(totalMinutesWorked)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => navigate("/staff")}
+                    className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-extrabold hover:bg-indigo-500 transition"
+                  >
+                    {t("Staff", "Staff")}
+                  </button>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+                  {[
+                    { label: t("On duty", "On duty"), value: onDuty, cls: "bg-indigo-50 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200 ring-indigo-100 dark:ring-indigo-500/20" },
+                    { label: t("On time", "On time"), value: onTime, cls: "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200 ring-emerald-100 dark:ring-emerald-500/20" },
+                    { label: t("Late", "Late"), value: late, cls: "bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-200 ring-rose-100 dark:ring-rose-500/20" },
+                    { label: t("Early", "Early"), value: early, cls: "bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-200 ring-sky-100 dark:ring-sky-500/20" },
+                    { label: t("No schedule", "No schedule"), value: noSchedule, cls: "bg-slate-50 text-slate-700 dark:bg-white/5 dark:text-slate-200 ring-slate-200 dark:ring-white/10" },
+                  ].map((tile) => (
+                    <div
+                      key={tile.label}
+                      className={`rounded-2xl py-3 ring-1 ${tile.cls}`}
+                    >
+                      <div className="text-[11px] font-semibold opacity-80 px-2 truncate">
+                        {tile.label}
+                      </div>
+                      <div className="text-lg font-extrabold">{tile.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {top.length > 0 ? (
+                  <div className="mt-5 space-y-2">
+                    {top.map((member) => {
+                      const badge = badgeForStatus(member.status, member.latencyMinutes);
+                      return (
+                        <div
+                          key={member.staff_id || member.name}
+                          className="flex items-center justify-between gap-3 rounded-2xl bg-white/60 dark:bg-zinc-900/50 px-4 py-3 ring-1 ring-black/5 dark:ring-white/10"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-extrabold text-gray-900 dark:text-white truncate">
+                              {member.name}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                              {(member.role && `${member.role} • `) || ""}
+                              {t("Worked", "Worked")}: {formatMinutes(member.minutesWorked || 0)}
+                            </div>
+                          </div>
+                          <span className={`shrink-0 px-3 py-1 rounded-full text-xs font-extrabold ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-2xl bg-slate-50 dark:bg-white/5 px-4 py-4 text-center text-sm font-semibold text-slate-600 dark:text-slate-200 ring-1 ring-slate-200 dark:ring-white/10">
+                    {t("No one checked in yet", "No one checked in yet")}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </MiniCard>
       </div>
     </section>
@@ -870,9 +1507,11 @@ function SnapshotCard({ children, onClick, className }) {
     </div>
   );
 }
-function MiniCard({ children }) {
+function MiniCard({ children, className }) {
   return (
-    <div className="rounded-xl bg-white dark:bg-zinc-900/80 shadow p-4 border border-gray-100 dark:border-zinc-800">
+    <div
+      className={`rounded-xl bg-white dark:bg-zinc-900/80 shadow p-5 border border-gray-100 dark:border-zinc-800 ${className || ""}`}
+    >
       {children}
     </div>
   );

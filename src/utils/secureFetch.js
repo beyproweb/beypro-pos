@@ -14,7 +14,7 @@ const ELECTRON_API = import.meta.env.VITE_API_URL || "https://api.beypro.com/api
 const BROWSER_API =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.MODE === "development"
-    ? "http://localhost:5000/api"
+    ? "/api"
     : "https://api.beypro.com/api");
 
 // FINAL API CHOICE:
@@ -25,6 +25,12 @@ export const BASE_URL =
   String(RAW)
     .replace(/\/api\/?$/, "")
     .replace(/\/+$/, "") + "/api";
+
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  window.__BEYPRO_API_URL__ = BASE_URL;
+  // eslint-disable-next-line no-console
+  console.info("🔗 Web API URL:", BASE_URL);
+}
 
 const hasLocalStorage = () =>
   typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -89,7 +95,12 @@ export default async function secureFetch(endpoint, options = {}) {
   const tokenHeader =
     rawToken && !rawToken.startsWith("Bearer ") ? `Bearer ${rawToken}` : rawToken;
 
-  const lower = endpoint.toLowerCase();
+  // Allow callers to pass endpoints with or without a leading `/api` prefix.
+  // `BASE_URL` already ends with `/api`, so we strip a single leading `/api`
+  // to avoid requests like `/api/api/...`.
+  const normalizedEndpoint = String(endpoint || "").replace(/^\/api(\/|$)/i, "/");
+
+  const lower = normalizedEndpoint.toLowerCase();
   const lowerPath = lower.replace(/[?#].*$/, "");
   const hasQrMenuSegment = /(?:^|\/)qr-menu(?:\/|$|[?#])/.test(lower);
 
@@ -113,11 +124,13 @@ const isPublic =
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
 
-  const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  const path = normalizedEndpoint.startsWith("/")
+    ? normalizedEndpoint
+    : `/${normalizedEndpoint}`;
   const fullUrl = `${BASE_URL}${path}`;
   const method = String(options.method || "GET").toUpperCase();
   const requestMeta = {
-    endpoint,
+    endpoint: normalizedEndpoint,
     method,
     url: fullUrl,
   };

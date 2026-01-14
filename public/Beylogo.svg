@@ -1,0 +1,56 @@
+<svg width="440" height="110" viewBox="0 0 440 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Text Gradient -->
+    <linearGradient id="beypro-gradient" x1="0" y1="0" x2="440" y2="110" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10B0FF"/>
+      <stop offset="0.45" stop-color="#A259F7"/>
+      <stop offset="1" stop-color="#FA2FB5"/>
+    </linearGradient>
+    <!-- Pie Colors -->
+    <linearGradient id="pie1" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#10B0FF"/>
+      <stop offset="1" stop-color="#1FFFC7"/>
+    </linearGradient>
+    <linearGradient id="pie2" x1="0" y1="1" x2="1" y2="0">
+      <stop stop-color="#A259F7"/>
+      <stop offset="1" stop-color="#7F3AFB"/>
+    </linearGradient>
+    <linearGradient id="pie3" x1="1" y1="1" x2="0" y2="0">
+      <stop stop-color="#FA2FB5"/>
+      <stop offset="1" stop-color="#FE70C7"/>
+    </linearGradient>
+    <linearGradient id="pie4" x1="1" y1="0" x2="0" y2="1">
+      <stop stop-color="#FFD600"/>
+      <stop offset="1" stop-color="#FF6B00"/>
+    </linearGradient>
+    <!-- Soft glow under pie chart -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- "Beypr" text, ending right before the "o" position -->
+<text x="24" y="82" font-family="Montserrat, sans-serif" font-size="84" font-weight="800" letter-spacing="2" textLength="239" lengthAdjust="spacingAndGlyphs" fill="url(#beypro-gradient)">
+  Beypr
+</text>
+<!-- Pie chart "o" perfectly aligned and sized like the font -->
+<!-- Pie chart "o" perfectly aligned and sized like the font (now radius 26) -->
+<g filter="url(#glow)" transform="translate(291,61)">
+  <!-- radius = 26, coordinates = ±18.4 -->
+  <!-- Top-right -->
+  <path d="M0,-26 A26,26 0 0,1 18.4,-18.4 L0,0 Z" fill="url(#pie1)"/>
+  <!-- Bottom-right -->
+  <path d="M18.4,-18.4 A26,26 0 0,1 18.4,18.4 L0,0 Z" fill="url(#pie2)"/>
+  <!-- Bottom-left -->
+  <path d="M18.4,18.4 A26,26 0 0,1 -18.4,18.4 L0,0 Z" fill="url(#pie3)"/>
+  <!-- Top-left -->
+  <path d="M-18.4,18.4 A26,26 0 0,1 0,-26 L0,0 Z" fill="url(#pie4)"/>
+  <!-- Center white hole, r=7 -->
+  <circle cx="0" cy="0" r="7" fill="#fff"/>
+</g>
+
+
+</svg>

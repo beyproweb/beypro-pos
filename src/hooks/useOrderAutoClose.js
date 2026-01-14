@@ -1,7 +1,12 @@
 import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  String(import.meta.env.VITE_API_URL || "")
+    .replace(/\/api\/?$/, "")
+    .replace(/\/+$/, "") ||
+  (typeof window !== "undefined" ? window.location.origin : "");
 let socket;
 
 export default function useOrderAutoClose(orderId, onResetToTypePicker) {
@@ -10,7 +15,14 @@ export default function useOrderAutoClose(orderId, onResetToTypePicker) {
 
   // --- Socket listener ---
   useEffect(() => {
-    if (!socket) socket = io(API_URL, { transports: ["websocket"] });
+    if (!socket) {
+      socket = io(SOCKET_URL, {
+        path: "/socket.io",
+        transports: ["polling", "websocket"],
+        upgrade: true,
+        timeout: 20000,
+      });
+    }
 
     const handleClosed = (payload = {}) => {
       const closedId = payload.orderId ?? payload.id;

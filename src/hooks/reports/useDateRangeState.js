@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 
+const toLocalYmd = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 /**
  * Centralises date range handling for report views.
  * Returns the selected range, computed `from`/`to` dates, and helpers for custom input fields.
@@ -11,14 +20,14 @@ export default function useDateRangeState(defaultRange = "today") {
 
   useEffect(() => {
     if (dateRange !== "today") return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toLocalYmd(new Date());
     setCustomStart(today);
     setCustomEnd(today);
   }, [dateRange]);
 
   const { from, to } = useMemo(() => {
     const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = toLocalYmd(today);
 
     if (dateRange === "today") {
       return { from: todayStr, to: todayStr };
@@ -28,7 +37,7 @@ export default function useDateRangeState(defaultRange = "today") {
       const start = new Date();
       start.setDate(start.getDate() - 6);
       return {
-        from: start.toISOString().slice(0, 10),
+        from: toLocalYmd(start),
         to: todayStr,
       };
     }

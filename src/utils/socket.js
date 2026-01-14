@@ -15,7 +15,10 @@ const isDev =
 const BASE_FROM_API = String(BASE_URL).replace(/\/api\/?$/, "");
 
 // Allow overriding via VITE_SOCKET_URL (rarely needed)
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || BASE_FROM_API;
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  BASE_FROM_API ||
+  (typeof window !== "undefined" ? window.location.origin : "");
 
 // 🧠 Log actual target for debugging
 console.log("🔌 [SOCKET] Environment:", {
@@ -26,12 +29,16 @@ console.log("🔌 [SOCKET] Environment:", {
 
 // Initialize socket connection
 const socket = io(SOCKET_URL, {
-  transports: ["websocket", "polling"],
+  path: "/socket.io",
+  // Start with polling (works through proxies) then upgrade to websocket when possible.
+  transports: ["polling", "websocket"],
+  upgrade: true,
   reconnection: true,
   reconnectionAttempts: 20,
   reconnectionDelay: 2000,
   withCredentials: true,
   autoConnect: true,
+  timeout: 20000,
 });
 
 // 🧠 Helper to safely get restaurant ID
@@ -91,7 +98,10 @@ socket.on("disconnect", (reason) => {
 
 // ⚠️ Connection errors
 socket.on("connect_error", (err) => {
-  console.error("[SOCKET] 🚫 Connection error:", err?.message || err);
+  // Some environments block websocket upgrades; polling may still succeed.
+  if (!socket.connected) {
+    console.warn("[SOCKET] 🚫 Connection error:", err?.message || err);
+  }
 });
 
 // 🖨️ Print request from backend (Mobile app → Backend → Electron)

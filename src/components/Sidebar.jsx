@@ -56,7 +56,7 @@ const MENU = [
   { labelKey: "Expenses", defaultLabel: "Expenses", path: "/expenses", icon: Receipt, permission: "expenses", moduleKey: "page.expenses" },
   { labelKey: "Integrations", defaultLabel: "Integrations", path: "/integrations", icon: Puzzle, permission: "integrations", moduleKey: "page.integrations" },
   { labelKey: "Maintenance", defaultLabel: "Maintenance", path: "/maintenance", icon: Wrench, permission: "dashboard", moduleKey: "page.maintenance" },
-  { labelKey: "QR Menu", defaultLabel: "QR Menu", path: "/qr-menu-settings", icon: QrCode, permission: "settings", moduleKey: "page.qr_menu_settings" },
+  { labelKey: "QR Menu", defaultLabel: "QR Menu", path: "/qr-menu-settings", icon: QrCode, permission: "qr-menu-settings", moduleKey: "page.qr_menu_settings" },
   { labelKey: "Customer Insights", defaultLabel: "Customer Insights", path: "/customer-insights", icon: UserCheck, permission: "dashboard", moduleKey: "page.customer_insights" },
   { labelKey: "Marketing Campaigns", defaultLabel: "Marketing Campaigns", path: "/marketing-campaigns", icon: Megaphone, permission: "dashboard", moduleKey: "page.marketing_campaigns" },
   { labelKey: "Cash History", defaultLabel: "Cash History", path: "/cash-register-history", icon: CreditCard, permission: "cash-register-history", moduleKey: "page.cash_register_history" },
@@ -83,7 +83,6 @@ const DEFAULT_HIDDEN_KEYS = [
   "Expenses",
   "Integrations",
   "Maintenance",
-  "QR Menu",
   "Customer Insights",
   "Cash History",
   "Marketing Campaigns",
@@ -226,6 +225,14 @@ export default function Sidebar({ isOpen, setIsOpen }) {
   const [customOrder, setCustomOrder] = useState(() => readOrder(orderStorageKey));
   const [dragKey, setDragKey] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
+  const hasDashboardPermission = useMemo(
+    () => (currentUser ? hasPermission("dashboard", currentUser) : false),
+    [currentUser]
+  );
+  const isAdminUser = useMemo(
+    () => String(currentUser?.role || "").toLowerCase() === "admin",
+    [currentUser]
+  );
 
   useEffect(() => {
     setHiddenKeys(readHiddenKeys(storageKey));
@@ -262,7 +269,12 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     }
 
     const filteredMenu = orderedMenu.filter((item) => {
-      if (item.labelKey !== "Dashboard" && hiddenKeys.includes(item.labelKey)) return false;
+      if (
+        item.labelKey !== "Dashboard" &&
+        hasDashboardPermission &&
+        hiddenKeys.includes(item.labelKey)
+      )
+        return false;
 
       if (item.moduleKey && !isModuleAllowed(item.moduleKey)) return false;
 
@@ -382,12 +394,12 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     safeNavigate("/login");
   }
 
-  const handleHideItem = (labelKey) => (event) => {
-    if (labelKey === "Dashboard") return;
-    event.preventDefault();
-    event.stopPropagation();
-    setHiddenKeys((prev) => (prev.includes(labelKey) ? prev : [...prev, labelKey]));
-  };
+    const handleHideItem = (labelKey) => (event) => {
+      if (!isAdminUser || labelKey === "Dashboard") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setHiddenKeys((prev) => (prev.includes(labelKey) ? prev : [...prev, labelKey]));
+    };
 
   const handleDragStartItem = (labelKey) => (event) => {
     if (!ORDERABLE_SET.has(labelKey)) return;
@@ -546,7 +558,11 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     >
 
       {/* Logo */}
-      <div className={`flex items-center gap-2 justify-center py-2 transition-all ${isOpen ? "pl-3" : ""}`}>
+      <div
+        className={`flex gap-2 py-2 transition-all ${
+          isOpen ? "flex-row items-center justify-center px-3" : "flex-col items-center justify-center"
+        }`}
+      >
         <button
           onClick={() => setIsOpen((prev) => !prev)}
           title={t(isOpen ? "Collapse sidebar" : "Expand sidebar", {
@@ -641,7 +657,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         {isOpen && (
           <>
             <span className="font-medium truncate flex-1">{label}</span>
-            {hideable && (
+            {hideable && isAdminUser && (
               <button
                 type="button"
                 onClick={handleHideItem(item.labelKey)}
@@ -732,17 +748,25 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           )}
         </div>
       )}
+
       <div className="mb-6 flex flex-col items-center gap-2 px-4 text-center">
-        <span
-          className="text-2xl font-extrabold tracking-wide select-none bg-gradient-to-r from-blue-200 via-fuchsia-200 to-indigo-200 bg-clip-text text-transparent drop-shadow-lg"
-        >
-          Beypro
-        </span>
         {displayName && (
-          <span className="text-xs uppercase tracking-[0.3em] text-white/60 truncate max-w-[180px]">
+          <span className="w-full max-w-[180px] truncate text-center text-xs uppercase tracking-[0.3em] text-white/60">
             {displayName}
           </span>
         )}
+        <NavLink
+          to="/dashboard"
+          className="flex items-center justify-center rounded-lg focus:outline-none focus:ring-2 focus:ring-fuchsia-400"
+          aria-label="Go to dashboard"
+          onClick={() => setIsOpen?.(false)}
+        >
+          <img
+            src="/Beylogo.svg"
+            alt="Beypro"
+            className={isOpen ? "h-8 w-auto" : "h-8 w-8"}
+          />
+        </NavLink>
       </div>
     </aside>
   );

@@ -1,5 +1,6 @@
 // src/components/hooks/useHasPermission.js
 import { useAuth } from "../../context/AuthContext";
+import { expandPermissionAliases, normalizePermissionKey, normalizePermissionList } from "../../utils/permissions";
 
 export function useHasPermission(perm) {
   const { currentUser } = useAuth();
@@ -11,19 +12,17 @@ export function useHasPermission(perm) {
     return true;
   }
 
-  // Normalize permissions array
-  const perms = Array.isArray(currentUser.permissions)
-    ? currentUser.permissions.map((p) => String(p).toLowerCase())
-    : [];
+  const perms = expandPermissionAliases(normalizePermissionList(currentUser.permissions));
+  const target = normalizePermissionKey(perm);
 
   // 🔥 "all" = full access for superusers & admins
   if (perms.includes("all")) return true;
 
   // Special rule: packet always allowed if explicitly given
-  if (perm === "packet-orders" && perms.includes("packet-orders")) {
+  if (target === "packet-orders" && perms.includes("packet-orders")) {
     return true;
   }
 
   // Default check
-  return perms.includes(perm.toLowerCase());
+  return perms.includes(target);
 }

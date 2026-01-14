@@ -43,7 +43,15 @@ const [newTransaction, setNewTransaction] = useState({
   paymentMethod: "Due",
 });
 
-  const BACKEND_URL = "http://localhost:5000";
+  const BACKEND_URL =
+    (
+      import.meta.env.VITE_API_URL ||
+      (import.meta.env.MODE === "development"
+        ? "http://localhost:5000"
+        : "https://api.beypro.com")
+    )
+      .replace(/\/api\/?$/, "")
+      .replace(/\/+$/, "");
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Cash");

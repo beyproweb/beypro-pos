@@ -344,7 +344,7 @@ function AppShell() {
               {/* QR menu settings (still protected) */}
               <Route
                 path="qr-menu-settings"
-                element={<ProtectedRoute permission="settings" moduleKey="page.qr_menu_settings"><QrMenuSettings /></ProtectedRoute>}
+                element={<ProtectedRoute permission="qr-menu-settings" moduleKey="page.qr_menu_settings"><QrMenuSettings /></ProtectedRoute>}
               />
               <Route
                 path="maintenance"

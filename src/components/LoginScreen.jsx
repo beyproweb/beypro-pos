@@ -42,9 +42,24 @@ export default function LoginScreen() {
         }),
       });
 
-      const data = await response.json();
+      const raw = await response.text();
+      let data;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        throw new Error(
+          raw?.slice?.(0, 120) ||
+            `Login failed (non-JSON response, ${response.status})`
+        );
+      }
+
       if (!response.ok || !data?.token) {
-        throw new Error(data?.error || data?.message || t("Invalid credentials"));
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            (raw ? raw.slice(0, 120) : "") ||
+            t("Invalid credentials")
+        );
       }
 
       const normalizedUser = normalizeUser({

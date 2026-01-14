@@ -1,6 +1,7 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { usePlanModules } from "../context/PlanModulesContext";
+import { expandPermissionAliases, normalizePermissionKey, normalizePermissionList } from "../utils/permissions";
 
 export default function ProtectedRoute({ children, permission, moduleKey }) {
   const { currentUser, loading } = useAuth();
@@ -31,9 +32,9 @@ export default function ProtectedRoute({ children, permission, moduleKey }) {
   }
 
   // ✅ Direct permission check
-  const allowed =
-    currentUser.permissions?.includes("all") ||
-    currentUser.permissions?.includes(permission?.toLowerCase());
+  const perms = expandPermissionAliases(normalizePermissionList(currentUser.permissions));
+  const required = normalizePermissionKey(permission);
+  const allowed = perms.includes("all") || perms.includes(required);
 
   console.log("   Result:", allowed ? "✅ Access granted" : "❌ Access denied");
 

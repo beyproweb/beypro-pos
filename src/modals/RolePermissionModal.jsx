@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 
 // ✅ Keep all permission keys lowercase
@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 const PERMISSION_LABELS = {
   // === MAIN PAGES (25 pages) ===
   dashboard: "📊 Dashboard",
+  "business-snapshot": "📊 Business Snapshot",
   "table-overview": "🍽 Table Overview",
   orders: "📋 Orders",
   kitchen: "🍳 Kitchen",
@@ -98,6 +99,7 @@ export default function RolePermissionModal({
   initialPermissions = [],
 }) {
   const [selected, setSelected] = useState([]);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (isOpen)
@@ -121,6 +123,18 @@ export default function RolePermissionModal({
     onClose();
   };
 
+  const normalizedQuery = search.trim().toLowerCase();
+  const visiblePermissions = useMemo(() => {
+    if (!normalizedQuery) return ALL_PERMISSIONS;
+    return ALL_PERMISSIONS.filter(
+      (perm) =>
+        perm.includes(normalizedQuery) ||
+        (PERMISSION_LABELS[perm] || "")
+          .toLowerCase()
+          .includes(normalizedQuery)
+    );
+  }, [normalizedQuery]);
+
   if (!isOpen) return null;
 
   if (!modalRoot) return null;
@@ -142,6 +156,18 @@ export default function RolePermissionModal({
           </button>
         </div>
 
+        <div className="flex flex-col gap-3 mb-4">
+          <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Search permissions
+          </label>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value || "")}
+            placeholder="e.g. dashboard, qr menu"
+            className="w-full rounded-2xl border border-indigo-200/70 dark:border-indigo-800 bg-white/80 dark:bg-gray-900/60 px-4 py-2 text-sm font-semibold text-gray-800 dark:text-gray-100 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/50 transition"
+          />
+        </div>
         <div className="flex justify-end gap-3 mb-4">
           <button
             onClick={handleSelectAll}
@@ -158,7 +184,7 @@ export default function RolePermissionModal({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-72 overflow-y-auto mb-8">
-          {ALL_PERMISSIONS.map((perm) => (
+          {visiblePermissions.map((perm) => (
             <label
               key={perm}
               className={`flex items-center gap-3 px-5 py-3 rounded-xl border-2

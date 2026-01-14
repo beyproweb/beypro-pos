@@ -161,25 +161,28 @@ useEffect(() => {
       setLoading(true);
 
     const payload = {
-  fullName: form.fullName,
-  email: form.email,
-  businessName: form.businessName,
-  billingCycle: form.billingCycle,
-  activePlan: form.activePlan,
-  password: form.password || "",
-  cardNumber: form.cardNumber || "",
-  expiry: form.expiry || "",
-  cvv: form.cvv || "",
-  phone: form.phone || "",
-  posLocation: form.posLocation || "",
-  posLocationLat: form.posLocationLat ? parseFloat(form.posLocationLat) : null,
-  posLocationLng: form.posLocationLng ? parseFloat(form.posLocationLng) : null,
-  usageType: form.usageType || "",
-  efatura: form.efatura || false,
-  invoiceTitle: form.invoiceTitle || "",
-  taxOffice: form.taxOffice || "",
-  invoiceType: form.invoiceType || "",
-};
+      fullName: form.fullName,
+      email: form.email,
+      businessName: form.businessName,
+      billingCycle: form.billingCycle,
+      billing_cycle: form.billingCycle,
+      activePlan: form.activePlan,
+      active_plan: form.activePlan,
+      subscription_plan: form.activePlan,
+      password: form.password || "",
+      cardNumber: form.cardNumber || "",
+      expiry: form.expiry || "",
+      cvv: form.cvv || "",
+      phone: form.phone || "",
+      posLocation: form.posLocation || "",
+      posLocationLat: form.posLocationLat ? parseFloat(form.posLocationLat) : null,
+      posLocationLng: form.posLocationLng ? parseFloat(form.posLocationLng) : null,
+      usageType: form.usageType || "",
+      efatura: form.efatura || false,
+      invoiceTitle: form.invoiceTitle || "",
+      taxOffice: form.taxOffice || "",
+      invoiceType: form.invoiceType || "",
+    };
 
 
       console.log("📦 Sending payload to /me:", payload);
@@ -199,6 +202,11 @@ useEffect(() => {
           email: form.email,
           fullName: form.fullName,
           businessName: form.businessName,
+          billingCycle: form.billingCycle,
+          billing_cycle: form.billingCycle,
+          activePlan: form.activePlan,
+          active_plan: form.activePlan,
+          subscription_plan: form.activePlan,
         };
         localStorage.setItem("beyproUser", JSON.stringify(updated));
         try {
@@ -513,7 +521,7 @@ return (
                       ? "bg-indigo-600 text-white"
                       : "text-indigo-600 hover:bg-indigo-200"
                   }`}
-                  disabled={isLoggedIn}
+                  disabled={loading}
                 >
                   {t(
                     cycle.charAt(0).toUpperCase() + cycle.slice(1)
@@ -522,6 +530,12 @@ return (
               ))}
             </div>
           </div>
+
+          {isLoggedIn && (
+            <p className="text-center text-sm text-gray-500">
+              {t("Select a plan, then click Save Changes to apply it.")}
+            </p>
+          )}
 
           {/* Plans Grid */}
           <div
@@ -565,17 +579,18 @@ return (
                       ))}
                     </ul>
                   </div>
-                  {form.activePlan !== plan.key && !isLoggedIn && (
+                  {form.activePlan !== plan.key && (
                     <button
                       onClick={() => {
                         setForm((p) => ({ ...p, activePlan: plan.key }));
                         setTimeout(() => {
-                          document
-                            .getElementById("details")
-                            ?.scrollIntoView({
-                              behavior: "smooth",
-                              block: "start",
-                            });
+                          const targetId = isLoggedIn
+                            ? "subscription-save-cta"
+                            : "details";
+                          document.getElementById(targetId)?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
                         }, 100);
                       }}
                       className="mt-auto w-full py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition"
@@ -592,7 +607,10 @@ return (
     </main>
 
     {/* Sticky Save CTA */}
-    <div className="sticky bottom-6 left-0 right-0 z-50 px-4 py-4 flex justify-center pointer-events-auto bg-white/80 backdrop-blur-md shadow-lg rounded-t-2xl">
+    <div
+      id="subscription-save-cta"
+      className="sticky bottom-6 left-0 right-0 z-50 px-4 py-4 flex justify-center pointer-events-auto bg-white/80 backdrop-blur-md shadow-lg rounded-t-2xl"
+    >
       {isLoggedIn ? (
         <button
           onClick={handleSave}
