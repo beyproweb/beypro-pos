@@ -37,12 +37,15 @@ function DrinkSettingsModal({ open, onClose, fetchDrinks, summaryByDriver = [] }
 function calcOrderTotalWithExtras(order) {
   if (!order?.items) return 0;
   return order.items.reduce((sum, item) => {
-    const base = (parseFloat(item.price) || 0) * item.quantity;
+    const qty = Number(item?.quantity) || 1;
+    const rawPrice = Number(item?.price) || 0;
+    const unitPrice =
+      Number(item?.unit_price) || (order?.external_id ? rawPrice / qty : rawPrice);
+    const base = unitPrice * qty;
     const extras = (item.extras || []).reduce(
-      (s, ex) =>
-        s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
+      (s, ex) => s + (Number(ex.price || ex.extraPrice || 0) * (Number(ex.quantity) || 1)),
       0
-    ) * item.quantity;
+    ) * qty;
     return sum + base + extras;
   }, 0);
 }
@@ -309,6 +312,7 @@ export default function Orders({ orders: propOrders, hideModal = false }) {
   const [drivers, setDrivers] = useState([]);
   const [editingDriver, setEditingDriver] = useState({});
   const [selectedDriverId, setSelectedDriverId] = useState("all");
+  const [restaurantCoords, setRestaurantCoords] = useState({ lat: 38.099579, lng: 27.718065, label: "Restaurant", address: "" }); // Fetch from /api/me
   const socketRef = useRef();
   const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
   const [activeTab, setActiveTab] = useState("phone");
@@ -388,11 +392,15 @@ const closePaymentModal = useCallback(() => {
 function calcOrderTotalWithExtras(order) {
   if (!order?.items) return 0;
   return order.items.reduce((sum, item) => {
-    const base = (parseFloat(item.price) || 0) * item.quantity;
+    const qty = Number(item?.quantity) || 1;
+    const rawPrice = Number(item?.price) || 0;
+    const unitPrice =
+      Number(item?.unit_price) || (order?.external_id ? rawPrice / qty : rawPrice);
+    const base = unitPrice * qty;
     const extras = (item.extras || []).reduce(
-      (s, ex) => s + (parseFloat(ex.price || ex.extraPrice || 0) * (ex.quantity || 1)),
+      (s, ex) => s + (Number(ex.price || ex.extraPrice || 0) * (Number(ex.quantity) || 1)),
       0
-    ) * item.quantity;
+    ) * qty;
     return sum + base + extras;
   }, 0);
 }
@@ -401,7 +409,10 @@ function calcOrderDiscount(order) {
   if (!order?.items) return 0;
   return order.items.reduce((sum, item) => {
     const qty = Number(item?.quantity) || 1;
-    const base = (Number(item?.price) || 0) * qty; // extras excluded
+    const rawPrice = Number(item?.price) || 0;
+    const unitPrice =
+      Number(item?.unit_price) || (order?.external_id ? rawPrice / qty : rawPrice);
+    const base = unitPrice * qty; // extras excluded
     const dv = Number(item?.discount_value) || 0;
     const dt = item?.discount_type;
     if (dv <= 0) return sum;
@@ -415,7 +426,10 @@ function calcOrderBaseTotal(order) {
   if (!order?.items) return 0;
   return order.items.reduce((sum, item) => {
     const qty = Number(item?.quantity) || 1;
-    const base = (Number(item?.price) || 0) * qty;
+    const rawPrice = Number(item?.price) || 0;
+    const unitPrice =
+      Number(item?.unit_price) || (order?.external_id ? rawPrice / qty : rawPrice);
+    const base = unitPrice * qty;
     return sum + base; // extras excluded
   }, 0);
 }
@@ -734,6 +748,35 @@ socket.on("connect", () => {
 
 
 useEffect(() => {
+  // Fetch restaurant coordinates and address from /api/me
+  const fetchRestaurantCoords = async () => {
+    try {
+      const data = await secureFetch("/me");
+      if (data) {
+        const lat = data.pos_location_lat || data.restaurant_lat || data.lat || data.latitude || data.latitude_existing;
+        const lng = data.pos_location_lng || data.restaurant_lng || data.lng || data.longitude || data.longitude_existing;
+        const address = data.pos_location || data.restaurant_address || data.address || data.full_address || data.location_address || data.plus_code || data.pluscode || data.plus_code_short || data.open_location_code || "";
+        const label = data.restaurant_name || data.name || data.restaurant || "Restaurant";
+        if (lat && lng) {
+          setRestaurantCoords({
+            lat: parseFloat(lat),
+            lng: parseFloat(lng),
+            label,
+            address,
+          });
+          console.log("🏪 Restaurant coords fetched:", { lat, lng, label, address });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch restaurant coordinates:", err);
+      // Keep using fallback coordinates
+    }
+  };
+
+  fetchRestaurantCoords();
+}, []);
+
+useEffect(() => {
   // ...existing fetchOrders
   fetchDrivers();
 }, []);
@@ -816,22 +859,82 @@ else if (relevantItems.some(i => i.kitchen_status === "preparing"))
 
   // Geocode orders into stops, start from restaurant
   async function fetchOrderStops(phoneOrders) {
+  // Ensure we have restaurant info (avoid race if /me hasn't returned yet)
+  if (
+    !restaurantCoords ||
+    !restaurantCoords.address ||
+    restaurantCoords.address === "Restaurant" ||
+    restaurantCoords.address === restaurantCoords.label
+  ) {
+    try {
+      const me = await secureFetch("/me");
+      const lat = me.pos_location_lat || me.restaurant_lat || me.lat || me.latitude || me.latitude_existing;
+      const lng = me.pos_location_lng || me.restaurant_lng || me.lng || me.longitude || me.longitude_existing;
+      const address = me.pos_location || me.restaurant_address || me.address || me.full_address || me.location_address || "";
+      const label = me.restaurant_name || me.name || me.restaurant || "Restaurant";
+      if (lat && lng) {
+        setRestaurantCoords({ lat: parseFloat(lat), lng: parseFloat(lng), label, address });
+        console.log("🏪 (fetchOrderStops) Restaurant coords refreshed:", { lat, lng, label, address });
+      }
+    } catch (e) {
+      // ignore - we'll use existing fallback
+    }
+  }
+
   const geoStops = await Promise.all(
     phoneOrders.map(async order => {
 
-      if (!order.customer_address) {
+      // Prefer the explicit customer_address but fall back to any available coordinates
+      const addr = order.customer_address || order.address || order.delivery_address || "";
 
-        return null;
+      // Try geocoding if we have an address
+      let coords = null;
+      if (addr) {
+        try {
+          coords = await geocodeAddress(addr);
+        } catch (e) {
+          console.warn("🗺️ geocodeAddress failed:", e);
+        }
       }
-      const coords = await geocodeAddress(order.customer_address);
+
+      // If geocoding failed, fall back to coordinates on the order (many APIs store them)
+      const fallbackLat = order.delivery_lat || order.delivery_latitude || order.lat || order.latitude || order.pickup_lat || order.pickup_latitude;
+      const fallbackLng = order.delivery_lng || order.delivery_longitude || order.lng || order.longitude || order.pickup_lng || order.pickup_longitude;
 
       if (coords && typeof coords.lat === "number" && typeof coords.lng === "number") {
-        return { lat: coords.lat, lng: coords.lng, label: order.customer_name || t("Customer") };
+        return {
+          lat: coords.lat,
+          lng: coords.lng,
+          label: order.customer_name || t("Customer"),
+          address: addr,
+          orderId: order.id,
+        };
       }
+
+      if (fallbackLat && fallbackLng) {
+        console.log("🗺️ Using fallback coords from order for orderId", order.id, { fallbackLat, fallbackLng });
+        return {
+          lat: Number(fallbackLat),
+          lng: Number(fallbackLng),
+          label: order.customer_name || t("Customer"),
+          address: addr,
+          orderId: order.id,
+        };
+      }
+
+      // No usable coordinates — log and skip
+      console.warn("🗺️ No coords for order, skipping stop:", order.id, addr);
       return null;
     })
   );
-  const stops = [RESTAURANT, ...geoStops.filter(Boolean)];
+  const restaurantStop = {
+    label: restaurantCoords.label || "Restaurant",
+    lat: restaurantCoords.lat,
+    lng: restaurantCoords.lng,
+    // only use address if it's a real address (don't fallback to label)
+    address: restaurantCoords.address || "",
+  };
+  const stops = [restaurantStop, ...geoStops.filter(Boolean)];
 
   return stops;
 }
@@ -1712,11 +1815,31 @@ return (
             className="w-full md:w-auto md:shrink-0 whitespace-nowrap leading-none px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
             disabled={!selectedDriverId}
             onClick={async () => {
+              // Ensure we have the latest restaurant info before building stops
+              try {
+                const me = await secureFetch("/me");
+                if (me) {
+                  const lat = me.restaurant_lat || me.lat || me.latitude || me.latitude_existing;
+                  const lng = me.restaurant_lng || me.lng || me.longitude || me.longitude_existing;
+                  const address = me.restaurant_address || me.address || me.full_address || me.location_address || me.plus_code || me.pluscode || me.open_location_code || "";
+                  const label = me.restaurant_name || me.name || me.restaurant || "Restaurant";
+                  if (lat && lng) {
+                    setRestaurantCoords({ lat: parseFloat(lat), lng: parseFloat(lng), label, address });
+                    console.log("🏪 (Live Route) Restaurant coords refreshed:", { lat, lng, label, address });
+                  }
+                }
+              } catch (e) {
+                console.warn("Could not refresh /me before building route:", e);
+              }
+
               const driverOrders = orders.filter(
                 (o) =>
                   o.driver_id === Number(selectedDriverId) && o.driver_status !== "delivered"
               );
+              console.log("🗺️ LIVE ROUTE DEBUG - driverOrders:", driverOrders);
+              console.log("🗺️ LIVE ROUTE DEBUG - driverOrders[0]?.customer_address:", driverOrders[0]?.customer_address);
               const stops = await fetchOrderStops(driverOrders);
+              console.log("🗺️ LIVE ROUTE DEBUG - stops after fetchOrderStops:", stops);
               setMapStops(stops);
               setShowRoute(true);
             }}
@@ -1890,23 +2013,29 @@ return (
       </div>
     )}
 
-    {/* --- LIVE ROUTE MODAL --- */}
+    {/* --- LIVE ROUTE MODAL (FULL SCREEN) --- */}
     {showRoute && (
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-white p-6 rounded-3xl relative shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 w-full max-w-6xl">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm">
+        <div className="relative w-full h-full max-w-7xl max-h-[95vh] mx-auto bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col">
+          {/* Close Button */}
           <button
             onClick={() => setShowRoute(false)}
-            className="absolute top-3 right-4 text-2xl text-slate-400 hover:text-rose-500 transition"
+            className="absolute top-4 right-4 z-10 p-2 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition shadow-lg"
+            title="Close Map"
           >
-            ✖
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
+
+          {/* Map Container */}
           <LiveRouteMap
             stopsOverride={mapStops}
             driverNameOverride={drivers.find(d => d.id === Number(selectedDriverId))?.name || ""}
             driverId={selectedDriverId}
+            orders={filteredOrders}
           />
         </div>
-        
       </div>
     )}
 
