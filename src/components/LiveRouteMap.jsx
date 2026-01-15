@@ -551,7 +551,7 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
         </MapContainer>
 
         {/* Legend */}
-        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-4 border border-slate-200 max-w-xs">
+        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-4 border border-slate-200 max-w-xs z-50" style={{ zIndex: 900 }}>
           <h3 className="font-bold text-sm text-slate-900 mb-3">{t("Legend")}</h3>
           <div className="space-y-2 text-xs">
             <div className="flex items-center gap-2">
@@ -724,6 +724,7 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
 
         .map-container {
           background-color: #f0f4f8;
+          z-index: 0;
         }
 
         .delivery-marker {
