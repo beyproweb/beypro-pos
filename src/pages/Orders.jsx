@@ -1888,7 +1888,7 @@ const renderCancelModal = () => {
         payload.refund_method = refundMethodId;
       }
 
-      await secureFetch(`/orders/${cancelOrder.id}/cancel`, {
+      const result = await secureFetch(`/orders/${cancelOrder.id}/cancel`, {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
@@ -1912,7 +1912,11 @@ const renderCancelModal = () => {
         }
       }
 
-      toast.success(t("Order cancelled"));
+      if (result?.externalSync?.ok === false) {
+        toast.warn(t("Order cancelled, but external sync failed."));
+      } else {
+        toast.success(t("Order cancelled"));
+      }
       setOrders((prev) =>
         prev.filter((o) => Number(o.id) !== Number(cancelOrder.id))
       );
