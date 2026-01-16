@@ -2329,6 +2329,14 @@ const totalDiscount = calcOrderDiscount(order);
       const isOnlinePayment = order.payment_method &&
         onlinePayments.some(type => order.payment_method.toLowerCase().includes(type));
       const isYemeksepeti = order.order_type === "packet" && order.external_id;
+      const externalOrderRef =
+        order.external_id ||
+        order.externalId ||
+        order.external_order_id ||
+        order.externalOrderId ||
+        order.order_code ||
+        order.orderCode ||
+        "";
 
  const statusVisual = (() => {
   const isPacketOrder = order.order_type === "packet";
@@ -2486,6 +2494,11 @@ const totalDiscount = calcOrderDiscount(order);
   <div className="flex flex-col flex-1 min-w-0">
     <div className="flex items-center gap-2">
       <span className="text-xl sm:text-2xl text-emerald-500">📍</span>
+      {externalOrderRef && (
+        <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/80 text-slate-700 border border-slate-200 text-xs sm:text-sm font-semibold shadow-sm flex-shrink-0">
+          {t("Order")} #{externalOrderRef}
+        </span>
+      )}
       {order.customer_address ? (
         <a
           href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.customer_address)}`}

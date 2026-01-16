@@ -893,6 +893,14 @@ export function computeReceiptSummary(order) {
 
   const rawItems = [...baseItems, ...suborderItems];
   const hasItems = rawItems.length > 0;
+  const isExternalOrder = Boolean(
+    order?.external_id ||
+      order?.externalId ||
+      order?.external_order_id ||
+      order?.externalOrderId ||
+      order?.external_source ||
+      order?.externalSource
+  );
 
   const items = [];
   let subtotal = 0;
@@ -909,8 +917,7 @@ export function computeReceiptSummary(order) {
     );
     const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
 
-    const unitPrice = pickNumber(
-      it.price,
+    const unitPriceExplicit = pickNumber(
       it.unit_price,
       it.unitPrice,
       it.price_per_unit,
@@ -918,6 +925,17 @@ export function computeReceiptSummary(order) {
       it.base_price,
       it.product_price
     );
+    let unitPrice = Number.isFinite(unitPriceExplicit)
+      ? unitPriceExplicit
+      : pickNumber(it.price, it.unit_price, it.unitPrice, it.product_price);
+    if (
+      isExternalOrder &&
+      !Number.isFinite(unitPriceExplicit) &&
+      Number.isFinite(unitPrice) &&
+      qty > 1
+    ) {
+      unitPrice = unitPrice / qty;
+    }
 
     const baseComponent =
       Number.isFinite(unitPrice) && unitPrice !== null ? unitPrice * qty : 0;
@@ -964,9 +982,7 @@ export function computeReceiptSummary(order) {
 
     // Show base unit price only (extras are already itemized below)
     const effectiveUnitPrice =
-      Number.isFinite(unitPrice) && unitPrice !== null
-        ? unitPrice
-        : 0;
+      Number.isFinite(unitPrice) && unitPrice !== null ? unitPrice : 0;
 
     subtotal += lineTotal;
 
@@ -1078,6 +1094,12 @@ export function renderReceiptText(order, providedLayout) {
   const showTableNumber = layout?.showTableNumber !== false;
   const showStaffName = layout?.showStaffName !== false;
   const invoiceRaw =
+    order?.external_id ??
+    order?.externalId ??
+    order?.external_order_id ??
+    order?.externalOrderId ??
+    order?.order_code ??
+    order?.orderCode ??
     order?.invoice_number ??
     order?.invoiceNumber ??
     order?.receipt_number ??
