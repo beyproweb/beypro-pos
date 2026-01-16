@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, WMSTileLayer, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import polyline from "@mapbox/polyline";
@@ -40,7 +40,41 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
   const mapRef = useRef(null);
   const scooterMarkerRef = useRef(null);
   const { t } = useTranslation();
+  // traffic tile URL can be configured via env: VITE_TRAFFIC_TILE_URL or use Mapbox token
+  const TRAFFIC_TILE_URL =
+    import.meta.env.VITE_TRAFFIC_TILE_URL ||
+    (import.meta.env.VITE_MAPBOX_TOKEN
+      ? `https://api.mapbox.com/v4/mapbox.mapbox-traffic-v1/{z}/{x}/{y}.png?access_token=${import.meta.env.VITE_MAPBOX_TOKEN}`
+      : null);
   const route = stopsOverride && stopsOverride.length > 1 ? stopsOverride : [];
+
+  const nearbyCounts = useMemo(() => {
+    if (!stops.length) return [];
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const distMeters = (a, b) => {
+      const R = 6371000;
+      const dLat = toRad(b.lat - a.lat);
+      const dLng = toRad(b.lng - a.lng);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+      const h =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return 2 * R * Math.asin(Math.sqrt(h));
+    };
+    const threshold = 75;
+    return stops.map((stop, idx) => {
+      if (typeof stop.lat !== "number" || typeof stop.lng !== "number") return 0;
+      let count = 0;
+      for (let i = 0; i < stops.length; i++) {
+        if (i === idx) continue;
+        const other = stops[i];
+        if (typeof other.lat !== "number" || typeof other.lng !== "number") continue;
+        if (distMeters(stop, other) <= threshold) count += 1;
+      }
+      return count;
+    });
+  }, [stops]);
 
   // Initialize stops with status info
   useEffect(() => {
@@ -203,6 +237,22 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
     fetchLiveRoute();
   }, [driverPos, nextStop]);
 
+  // Create a dedicated pane for traffic tiles so they render above base layers but below markers/popups
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    try {
+      if (!map.getPane("trafficPane")) {
+        map.createPane("trafficPane");
+        const pane = map.getPane("trafficPane");
+        pane.style.zIndex = 650; // above tile layers, below markers/popups (700+)
+        pane.style.pointerEvents = "none"; // allow clicks to pass through unless needed
+      }
+    } catch (err) {
+      // ignore if pane exists or createPane not supported
+    }
+  }, [mapRef.current]);
+
   // Fetch the optimized route from Google Directions API
   useEffect(() => {
     if (!route || route.length < 2) {
@@ -213,11 +263,35 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
     let isMounted = true;
 
     const fetchRoute = async () => {
-      const origin = `${route[0].lat},${route[0].lng}`;
-      const destination = `${route[route.length - 1].lat},${route[route.length - 1].lng}`;
+      let workingRoute = route;
+      try {
+        if (route.length > 2) {
+          const optimizeBody = {
+            waypoints: route.map(pt => ({
+              lat: pt.lat,
+              lng: pt.lng,
+              label: pt.label,
+              address: pt.address,
+              orderId: pt.orderId,
+            })),
+          };
+          const optimized = await secureFetch("drivers/optimize-route", {
+            method: "POST",
+            body: JSON.stringify(optimizeBody),
+          });
+          if (optimized?.optimized_waypoints?.length) {
+            workingRoute = optimized.optimized_waypoints;
+          }
+        }
+      } catch (err) {
+        console.warn("⚠️ Route optimization failed, using original order:", err);
+      }
+
+      const origin = `${workingRoute[0].lat},${workingRoute[0].lng}`;
+      const destination = `${workingRoute[workingRoute.length - 1].lat},${workingRoute[workingRoute.length - 1].lng}`;
       const waypoints =
-        route.length > 2
-          ? route.slice(1, -1).map(pt => `${pt.lat},${pt.lng}`).join("|")
+        workingRoute.length > 2
+          ? workingRoute.slice(1, -1).map(pt => `${pt.lat},${pt.lng}`).join("|")
           : "";
 
       const params = new URLSearchParams({
@@ -228,19 +302,42 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
 
       try {
         const data = await secureFetch(`drivers/google-directions?${params.toString()}`);
-        if (
+        
+        // Prefer backend-decoded polyline (more reliable)
+        if (isMounted && data.decoded_polyline && Array.isArray(data.decoded_polyline) && data.decoded_polyline.length > 0) {
+          console.log("✅ Using backend decoded_polyline with", data.decoded_polyline.length, "points");
+          setRouteCoords(data.decoded_polyline);
+          if (workingRoute !== route) setStops(workingRoute);
+        } else if (
           isMounted &&
           data.routes &&
           data.routes[0] &&
           data.routes[0].overview_polyline
         ) {
+          // Fallback: decode on client if backend didn't
+          console.log("ℹ️ Decoding overview_polyline on client");
           const latlngs = polyline
             .decode(data.routes[0].overview_polyline.points)
             .map(([lat, lng]) => ({ lat, lng }));
           setRouteCoords(latlngs);
+          if (workingRoute !== route) setStops(workingRoute);
+        } else {
+          // Last resort: draw straight lines between waypoints
+          console.warn("WARN: No polyline data available, falling back to direct route");
+          if (isMounted) {
+            const fallback = workingRoute.map(pt => ({ lat: pt.lat, lng: pt.lng }));
+            setRouteCoords(fallback);
+            if (workingRoute !== route) setStops(workingRoute);
+          }
         }
       } catch (err) {
-        if (isMounted) console.error("Error fetching route:", err);
+        console.error("Error fetching route:", err);
+        // On error, still fallback to direct route so UI remains useful
+        if (isMounted) {
+          const fallback = workingRoute.map(pt => ({ lat: pt.lat, lng: pt.lng }));
+          setRouteCoords(fallback);
+          if (workingRoute !== route) setStops(workingRoute);
+        }
       }
     };
 
@@ -391,12 +488,21 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; OpenStreetMap'
               />
-              {showTraffic && (
+              {showTraffic && TRAFFIC_TILE_URL ? (
+                <TileLayer
+                  url={TRAFFIC_TILE_URL}
+                  attribution={import.meta.env.VITE_TRAFFIC_ATTRIBUTION || ""}
+                  pane="trafficPane"
+                  opacity={0.75}
+                />
+              ) : null}
+              {showTraffic && !TRAFFIC_TILE_URL && (
                 <WMSTileLayer
                   url="https://ows.mundialis.de/services/service?"
                   layers="TRAFFIC"
                   transparent={true}
                   format="image/png"
+                  pane="trafficPane"
                 />
               )}
             </>
@@ -448,14 +554,18 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
                   },
                 }}
               >
-                  <Tooltip direction="right" offset={[12, 0]} opacity={0.95} permanent>
-                    <div style={{minWidth:120}}>
-                      <div style={{fontWeight:700, color:'#0f172a'}}>{stop.label || stop.customerName}</div>
-                      {stop.address ? (
-                        <div style={{fontSize:12, color:'#0f172a', marginTop:2}}>{stop.address}</div>
-                      ) : null}
+                <Tooltip direction="right" offset={[12, 0]} opacity={0.95} permanent>
+                  <div style={{minWidth:140}}>
+                    <div style={{fontWeight:700, color:'#0f172a'}}>
+                      {t("Stop")} #{idx}: {stop.label || stop.customerName}
                     </div>
-                  </Tooltip>
+                    {nearbyCounts[idx] > 0 ? (
+                      <div style={{fontSize:12, color:'#0f172a', marginTop:2}}>
+                        {nearbyCounts[idx] + 1} {t("nearby")}
+                      </div>
+                    ) : null}
+                  </div>
+                </Tooltip>
                 <Popup
                   closeButton={true}
                   className="delivery-popup"
@@ -479,7 +589,7 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
                             : "bg-green-500"
                         }`}
                       >
-                        {stop.status.toUpperCase()}
+                        {String(stop.status || "pending").toUpperCase()}
                       </span>
                     </div>
 
@@ -494,12 +604,6 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
                         <div>
                           <p className="text-xs text-slate-600 font-semibold">{t("Customer")}</p>
                           <p className="font-semibold text-slate-900">{stop.customerName}</p>
-                        </div>
-                      )}
-                      {stop.address && stop.address !== "Restaurant" && (
-                        <div>
-                          <p className="text-xs text-slate-600 font-semibold">{t("Address")}</p>
-                          <p className="text-sm text-slate-900 font-medium whitespace-normal break-words leading-snug bg-blue-50 p-2 rounded">{stop.address}</p>
                         </div>
                       )}
                       {stop.phone && (
@@ -550,8 +654,8 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
           )}
         </MapContainer>
 
-        {/* Legend */}
-        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-4 border border-slate-200 max-w-xs z-50" style={{ zIndex: 900 }}>
+      {/* Legend */}
+      <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-4 border border-slate-200 max-w-xs z-50" style={{ zIndex: 900 }}>
           <h3 className="font-bold text-sm text-slate-900 mb-3">{t("Legend")}</h3>
           <div className="space-y-2 text-xs">
             <div className="flex items-center gap-2">
@@ -597,11 +701,24 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500" style={{ borderRadius: "1px" }} />
                 <span className="text-slate-600">{t("Live Route")}</span>
-              </div>
+      </div>
+    </div>
+
+      {/* Stops List */}
+      <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg p-3 border border-slate-200 max-w-xs z-50" style={{ zIndex: 900 }}>
+        <div className="text-xs font-bold text-slate-700 mb-2">{t("Stops")}</div>
+        <div className="max-h-40 overflow-y-auto pr-1">
+          {stops.map((stop, idx) => (
+            <div key={`stop-list-${idx}`} className="text-xs text-slate-700 py-1 border-b border-slate-100 last:border-b-0">
+              {t("Stop")} #{idx}: {stop.label || stop.customerName}
             </div>
+          ))}
+        </div>
+      </div>
           </div>
         </div>
       </div>
+
 
       {/* Footer Stats */}
       <div className="bg-slate-50 border-t border-slate-200 px-6 py-3 flex items-center justify-between text-sm">
@@ -663,15 +780,6 @@ export default function LiveRouteMap({ stopsOverride, driverNameOverride, driver
                 <div>
                   <p className="text-xs font-semibold text-slate-600 mb-1">{t("Customer")}</p>
                   <p className="font-bold text-slate-900 text-sm">{selectedMarker.customerName}</p>
-                </div>
-              )}
-
-              {selectedMarker.address && selectedMarker.address !== "Restaurant" && (
-                <div>
-                  <p className="text-xs font-semibold text-slate-600 mb-1">{t("Address")}</p>
-                  <div className="bg-blue-50 border-2 border-blue-300 rounded p-2">
-                    <p className="text-sm text-slate-900 font-bold leading-snug">{selectedMarker.address}</p>
-                  </div>
                 </div>
               )}
 

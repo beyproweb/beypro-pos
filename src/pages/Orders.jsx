@@ -7,10 +7,11 @@ import { useTranslation } from "react-i18next";
 import { v4 as uuidv4 } from "uuid";
 import secureFetch from "../utils/secureFetch";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
-import { DEFAULT_PAYMENT_METHODS } from "../utils/paymentMethods";
+import { DEFAULT_PAYMENT_METHODS, getPaymentMethodLabel } from "../utils/paymentMethods";
 import { useCurrency } from "../context/CurrencyContext";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { logCashRegisterEvent } from "../utils/cashDrawer";
 import {
   renderReceiptText,
   printViaBridge,
@@ -308,6 +309,7 @@ export default function Orders({ orders: propOrders, hideModal = false }) {
   const [highlightedOrderId, setHighlightedOrderId] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [mapStops, setMapStops] = useState([]);
+  const [mapOrders, setMapOrders] = useState([]);
   const [showRoute, setShowRoute] = useState(false);
   const [drivers, setDrivers] = useState([]);
   const [editingDriver, setEditingDriver] = useState({});
@@ -346,6 +348,28 @@ const [showPaymentModal, setShowPaymentModal] = useState(false);
 const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
 const [splitPayments, setSplitPayments] = useState([{ method: "", amount: "" }]);
 const [pendingCloseOrderId, setPendingCloseOrderId] = useState(null);
+const [showCancelModal, setShowCancelModal] = useState(false);
+const [cancelOrder, setCancelOrder] = useState(null);
+const [cancelReason, setCancelReason] = useState("");
+const [cancelLoading, setCancelLoading] = useState(false);
+const [refundMethodId, setRefundMethodId] = useState("");
+
+const getDefaultRefundMethod = useCallback(
+  (order) => {
+    if (!methodOptionSource.length) return "";
+    const normalizedOrderPayment = (order?.payment_method || "").trim().toLowerCase();
+    if (!normalizedOrderPayment) {
+      return methodOptionSource[0].id;
+    }
+    const match = methodOptionSource.find((method) => {
+      const label = (method.label || "").trim().toLowerCase();
+      const id = (method.id || "").trim().toLowerCase();
+      return label === normalizedOrderPayment || id === normalizedOrderPayment;
+    });
+    return match?.id || methodOptionSource[0].id;
+  },
+  [methodOptionSource]
+);
 
 const handlePacketPrint = async (orderId) => {
   if (!orderId) {
@@ -386,6 +410,52 @@ const closePaymentModal = useCallback(() => {
   setShowPaymentModal(false);
   setEditingPaymentOrder(null);
   setPendingCloseOrderId(null);
+}, []);
+
+useEffect(() => {
+  if (!methodOptionSource.length) return;
+  setRefundMethodId((prev) => {
+    if (prev && methodOptionSource.some((method) => method.id === prev)) {
+      return prev;
+    }
+    return getDefaultRefundMethod(cancelOrder);
+  });
+}, [cancelOrder, getDefaultRefundMethod, methodOptionSource]);
+
+const isOrderPaid = useCallback((order) => {
+  const status = String(order?.status || "").trim().toLowerCase();
+  const paymentStatus = String(order?.payment_status || "").trim().toLowerCase();
+  if (order?.is_paid === true || status === "paid" || paymentStatus === "paid") {
+    return true;
+  }
+  const normalizedPayment = String(order?.payment_method || "").trim().toLowerCase();
+  if (!normalizedPayment) return false;
+  const onlinePayments = [
+    "online",
+    "online payment",
+    "online card",
+    "yemeksepeti online",
+  ];
+  return onlinePayments.some((type) => normalizedPayment.includes(type));
+}, []);
+
+const openCancelModalForOrder = useCallback(
+  (order) => {
+    if (!order) return;
+    setCancelOrder(order);
+    setCancelReason("");
+    setCancelLoading(false);
+    setRefundMethodId(getDefaultRefundMethod(order));
+    setShowCancelModal(true);
+  },
+  [getDefaultRefundMethod]
+);
+
+const closeCancelModal = useCallback(() => {
+  setShowCancelModal(false);
+  setCancelOrder(null);
+  setCancelReason("");
+  setCancelLoading(false);
 }, []);
 
 
@@ -790,9 +860,13 @@ if (!orders.length) setLoading(true);
 try {
   const data = await secureFetch("/orders?status=open_phone");
 
-  const phoneOrders = data.filter(
-    o => (o.order_type === "phone" || o.order_type === "packet") && o.status !== "closed"
-  );
+  const phoneOrders = data.filter((o) => {
+    const status = String(o.status || "").toLowerCase();
+    return (
+      (o.order_type === "phone" || o.order_type === "packet") &&
+      !["closed", "cancelled"].includes(status)
+    );
+  });
 
   const withKitchenStatus = [];
   for (const order of phoneOrders) {
@@ -1785,6 +1859,160 @@ const renderPaymentModal = () => {
   );
 };
 
+const renderCancelModal = () => {
+  if (!showCancelModal || !cancelOrder) return null;
+
+  const totalWithExtras = calcOrderTotalWithExtras(cancelOrder);
+  const totalDiscount = calcOrderDiscount(cancelOrder);
+  const discountedTotal = totalWithExtras - totalDiscount;
+  const refundAmount = isOrderPaid(cancelOrder) ? discountedTotal : 0;
+  const isUnpaidPaymentMethod =
+    (cancelOrder?.payment_method || "").toLowerCase().trim() === "unpaid";
+  const shouldShowRefundMethod = refundAmount > 0 && !isUnpaidPaymentMethod;
+
+  const handleConfirm = async () => {
+    if (!cancelOrder?.id) {
+      toast.error(t("Select an order first"));
+      return;
+    }
+    const trimmedReason = cancelReason.trim();
+    if (!trimmedReason) {
+      toast.warn(t("Enter a cancellation reason."));
+      return;
+    }
+
+    setCancelLoading(true);
+    try {
+      const payload = { reason: trimmedReason };
+      if (shouldShowRefundMethod && refundMethodId) {
+        payload.refund_method = refundMethodId;
+      }
+
+      await secureFetch(`/orders/${cancelOrder.id}/cancel`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+
+      if (refundAmount > 0 && shouldShowRefundMethod) {
+        const refundLabel =
+          getPaymentMethodLabel(methodOptionSource, refundMethodId) ||
+          refundMethodId ||
+          t("Unknown");
+        const note = cancelOrder?.id
+          ? `Refund for Order #${cancelOrder.id} (${refundLabel})`
+          : t("Refund recorded");
+        try {
+          await logCashRegisterEvent({
+            type: "expense",
+            amount: Number(refundAmount.toFixed(2)),
+            note,
+          });
+        } catch (logErr) {
+          console.warn("⚠️ Refund log failed:", logErr);
+        }
+      }
+
+      toast.success(t("Order cancelled"));
+      setOrders((prev) =>
+        prev.filter((o) => Number(o.id) !== Number(cancelOrder.id))
+      );
+      closeCancelModal();
+      if (!propOrders) await fetchOrders();
+    } catch (err) {
+      console.error("❌ Cancel order failed:", err);
+      toast.error(err?.message || t("Failed to cancel order"));
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-1">
+              {t("Cancel Order")}
+            </p>
+            <p className="text-lg font-bold text-slate-900">
+              {t("Order")} #{cancelOrder?.id || "-"}
+            </p>
+            <p className="text-sm text-rose-500 mt-1">
+              {cancelOrder?.customer_name || t("Customer")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={closeCancelModal}
+            className="text-slate-400 hover:text-slate-600"
+          >
+            ✕
+          </button>
+        </div>
+        <p className="text-sm text-slate-500 mb-3">
+          {t("The cancellation reason will be recorded for auditing.")}
+        </p>
+
+        {shouldShowRefundMethod ? (
+          <div className="space-y-3 rounded-2xl border border-dashed border-rose-100 bg-rose-50/60 p-4 mb-3">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-rose-500">
+              {t("Refund Method")}
+              <select
+                className="mt-1 w-full rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm text-rose-600 focus:border-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                value={refundMethodId}
+                onChange={(event) => setRefundMethodId(event.target.value)}
+              >
+                {methodOptionSource.map((method) => (
+                  <option key={method.id} value={method.id}>
+                    {method.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-xs text-rose-500">
+              {t("Refund amount")}: {formatCurrency(refundAmount)}
+            </p>
+          </div>
+        ) : (
+          <p className="mb-3 text-xs text-slate-500">
+            {t("No paid items detected. This will simply cancel the order.")}
+          </p>
+        )}
+
+        <textarea
+          rows={4}
+          value={cancelReason}
+          onChange={(event) => setCancelReason(event.target.value)}
+          placeholder={t("Why is the order being cancelled?")}
+          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 focus:outline-none"
+        />
+
+        <div className="mt-5 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={closeCancelModal}
+            className="rounded-2xl border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition"
+          >
+            {t("Back")}
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={cancelLoading || !cancelReason.trim()}
+            className={`rounded-2xl px-5 py-2 text-sm font-semibold text-white transition ${
+              cancelLoading || !cancelReason.trim()
+                ? "cursor-not-allowed bg-rose-200"
+                : "bg-rose-600 hover:bg-rose-700"
+            }`}
+          >
+            {cancelLoading ? t("Cancelling...") : t("Confirm Cancellation")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 return (
   <div className="min-h-screen w-full bg-[#f7f9fc] text-slate-900">
 
@@ -1832,14 +2060,29 @@ return (
                 console.warn("Could not refresh /me before building route:", e);
               }
 
-              const driverOrders = orders.filter(
-                (o) =>
-                  o.driver_id === Number(selectedDriverId) && o.driver_status !== "delivered"
-              );
+              let driverOrders = [];
+              try {
+                const data = await secureFetch(`drivers/${selectedDriverId}/active-orders`);
+                if (Array.isArray(data)) {
+                  driverOrders = data;
+                } else if (Array.isArray(data?.orders)) {
+                  driverOrders = data.orders;
+                }
+              } catch (e) {
+                console.warn("Could not fetch driver active orders:", e);
+              }
+
+              if (!driverOrders.length) {
+                driverOrders = orders.filter(
+                  (o) =>
+                    o.driver_id === Number(selectedDriverId) && o.driver_status !== "delivered"
+                );
+              }
               console.log("🗺️ LIVE ROUTE DEBUG - driverOrders:", driverOrders);
               console.log("🗺️ LIVE ROUTE DEBUG - driverOrders[0]?.customer_address:", driverOrders[0]?.customer_address);
               const stops = await fetchOrderStops(driverOrders);
               console.log("🗺️ LIVE ROUTE DEBUG - stops after fetchOrderStops:", stops);
+              setMapOrders(driverOrders);
               setMapStops(stops);
               setShowRoute(true);
             }}
@@ -2033,7 +2276,7 @@ return (
             stopsOverride={mapStops}
             driverNameOverride={drivers.find(d => d.id === Number(selectedDriverId))?.name || ""}
             driverId={selectedDriverId}
-            orders={filteredOrders}
+            orders={mapOrders.length ? mapOrders : filteredOrders}
           />
         </div>
       </div>
@@ -2541,6 +2784,17 @@ const totalDiscount = calcOrderDiscount(order);
         </button>
       )}
 
+    {order.status !== "cancelled" && order.status !== "closed" && (
+      <button
+        onClick={() => openCancelModalForOrder(order)}
+        className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl 
+                   bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs sm:text-sm 
+                   shadow transition-all"
+      >
+        ✖ {t("Cancel")}
+      </button>
+    )}
+
     {!autoConfirmOrders && order.status === "confirmed" && (
       <span
         className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl 
@@ -2705,6 +2959,7 @@ const totalDiscount = calcOrderDiscount(order);
 
   </div>
   {renderPaymentModal()}
+  {renderCancelModal()}
   <style>{`
     @keyframes pulseGlow {
       0% { filter: brightness(1.12) blur(0.8px);}
