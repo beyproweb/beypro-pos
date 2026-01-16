@@ -1055,7 +1055,12 @@ const fetchPacketOrders = useCallback(async () => {
 
     const ordersWithItems = await Promise.all(
       data
-        .filter((o) => o.status !== "closed")
+        .filter((o) => {
+          const status = normalizeOrderStatus(o?.status);
+          if (status === "closed") return false;
+          if (isOrderCancelledOrCanceled(status)) return false;
+          return true;
+        })
         .map(async (order) => {
           const items = (await secureFetch(`/orders/${order.id}/items`)).map((item) => ({
             ...item,
@@ -1099,7 +1104,13 @@ const fetchPacketOrdersCount = useCallback(async () => {
     const packetArray = Array.isArray(packet) ? packet : [];
     const phoneArray = Array.isArray(phone) ? phone : [];
     const filtered = [...packetArray, ...phoneArray].filter(
-      (o) => o && o.status !== "closed"
+      (o) => {
+        if (!o) return false;
+        const status = normalizeOrderStatus(o?.status);
+        if (status === "closed") return false;
+        if (isOrderCancelledOrCanceled(status)) return false;
+        return true;
+      }
     );
     setPacketOrdersCount(filtered.length);
   } catch (err) {
@@ -1121,7 +1132,14 @@ const [takeawayOrders, setTakeawayOrders] = useState([]);
 const fetchTakeawayOrders = useCallback(async () => {
   try {
     const data = await secureFetch("/orders?type=takeaway");
-    const filtered = Array.isArray(data) ? data.filter(o => o.status !== "closed") : [];
+    const filtered = Array.isArray(data)
+      ? data.filter((o) => {
+          const status = normalizeOrderStatus(o?.status);
+          if (status === "closed") return false;
+          if (isOrderCancelledOrCanceled(status)) return false;
+          return true;
+        })
+      : [];
 
     // Fetch items and receipt methods for accurate total display (like tables/packet)
     const ordersWithItems = await Promise.all(
@@ -1549,8 +1567,16 @@ const fetchPhoneOrders = useCallback(async () => {
   try {
     const data = await secureFetch("/orders?type=phone");
 
-    // Filter for open phone orders (not closed)
-    setPhoneOrders(data.filter((o) => o.order_type === "phone" && o.status !== "closed"));
+    // Filter for open phone orders (not closed/cancelled)
+    setPhoneOrders(
+      data.filter((o) => {
+        if (o?.order_type !== "phone") return false;
+        const status = normalizeOrderStatus(o?.status);
+        if (status === "closed") return false;
+        if (isOrderCancelledOrCanceled(status)) return false;
+        return true;
+      })
+    );
   } catch (err) {
     console.error("Fetch phone orders failed:", err);
   }
