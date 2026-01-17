@@ -1201,6 +1201,12 @@ export function renderReceiptText(order, providedLayout) {
     order?.customerAddress ??
     order?.address ??
     "";
+  const orderNote =
+    order?.takeaway_notes ??
+    order?.takeawayNotes ??
+    order?.notes ??
+    order?.note ??
+    "";
 
   if (layout.showHeader) {
     const headerLine = layout.headerTitle || layout.headerText || "Beypro POS";
@@ -1250,6 +1256,12 @@ export function renderReceiptText(order, providedLayout) {
       wrapText(addressValue, lineWidth).forEach((line) => add(line));
       wroteMeta = true;
     }
+  }
+  const noteValue = String(orderNote || "").trim();
+  if (noteValue) {
+    add("Note:");
+    wrapText(noteValue, lineWidth).forEach((line) => add(line));
+    wroteMeta = true;
   }
   if (wroteMeta) {
     add("");

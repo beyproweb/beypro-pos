@@ -2337,6 +2337,12 @@ const totalDiscount = calcOrderDiscount(order);
         order.order_code ||
         order.orderCode ||
         "";
+      const orderNote =
+        order.takeaway_notes ||
+        order.takeawayNotes ||
+        order.notes ||
+        order.note ||
+        "";
 
  const statusVisual = (() => {
   const isPacketOrder = order.order_type === "packet";
@@ -2624,6 +2630,14 @@ const totalDiscount = calcOrderDiscount(order);
 
 
             {/* Items */}
+  {orderNote && (
+    <div
+      className={`px-3 py-2 rounded-xl font-medium italic flex items-start gap-2 text-base transition ${statusVisual.noteBox}`}
+      style={{ wordBreak: "break-word", whiteSpace: "pre-line" }}
+    >
+      📝 <span>{orderNote}</span>
+    </div>
+  )}
 <details
   open={openDetails[order.id] || false}
   onToggle={(e) => {
