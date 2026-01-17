@@ -145,6 +145,16 @@ function ReceiptPreviewHTML({ order }) {
   const sub = items.reduce((s, it) => s + it.qty * it.price, 0);
   const tax = Math.round(sub * 0.1 * 100) / 100; // demo 10%
   const total = Math.round((sub + tax) * 100) / 100;
+  const customerBlock =
+    (order.customer_name || order.customer_phone || order.customer_address || order.takeaway_notes) &&
+    `
+      <div class="muted" style="text-align:left;margin-top:6px;">
+        ${order.customer_name ? `👤 ${order.customer_name}<br/>` : ""}
+        ${order.customer_phone ? `📞 ${order.customer_phone}<br/>` : ""}
+        ${order.customer_address ? `📍 ${order.customer_address}<br/>` : ""}
+        ${order.takeaway_notes ? `<span style="color:#b45309;">📝 ${order.takeaway_notes}</span>` : ""}
+      </div>
+    `;
 
   return (
     <div
@@ -158,6 +168,7 @@ function ReceiptPreviewHTML({ order }) {
           <div class="muted">${order.store ?? "Hurrybey"}</div>
           <div class="muted">${order.date}</div>
         </div>
+        ${customerBlock || ""}
         <hr />
         ${items
           .map(

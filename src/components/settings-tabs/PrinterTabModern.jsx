@@ -51,6 +51,10 @@ const SAMPLE_ORDER = {
   invoice_number: "1001",
   table_number: "12",
   staff_name: "John Doe",
+  customer_name: "YS Customer",
+  customer_phone: "+905551112233",
+  customer_address: "Dede Korkut Sk. No:5, Esentepe Şişli / İstanbul",
+  takeaway_notes: "Please do not ring; baby is sleeping.",
   items: [
     { name: "Smash Burger", qty: 2, price: 185 },
     { name: "Patates (Büyük)", qty: 1, price: 65 },
@@ -327,6 +331,10 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
 
   const tableRaw = order?.table_number ?? order?.tableNumber;
   const tableValue = tableRaw === null || tableRaw === undefined ? "" : String(tableRaw).trim();
+  const customerName = order?.customer_name || "";
+  const customerPhone = order?.customer_phone || "";
+  const customerAddress = order?.customer_address || "";
+  const customerNote = order?.takeaway_notes || order?.note || "";
 
   const staffRaw =
     order?.staff_name ??
@@ -433,6 +441,14 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
           ) : null}
         </div>
       ) : null}
+      {(customerName || customerPhone || customerAddress || customerNote) && (
+        <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50 p-2 text-left text-[12px] text-slate-800 space-y-1">
+          {customerName ? <div>👤 {customerName}</div> : null}
+          {customerPhone ? <div>📞 {customerPhone}</div> : null}
+          {customerAddress ? <div>📍 {customerAddress}</div> : null}
+          {customerNote ? <div className="text-amber-700">📝 {customerNote}</div> : null}
+        </div>
+      )}
       <div className="border-y border-dashed border-slate-200 py-2 text-[12px]">
         {items.map((item, idx) => (
           <div key={idx} className="flex justify-between py-1">
