@@ -1264,7 +1264,8 @@ function driverButtonDisabled(order) {
   if (normalizeDriverStatus(order.driver_status) === "delivered") return true;
   if (updating[order.id]) return true;
 
-  if (!order.driver_id) return true;
+  const isPickupNoDriverOk = isYemeksepetiPickupOrder(order);
+  if (!order.driver_id && !isPickupNoDriverOk) return true;
 
   const kitchenStatus = String(
     order.kitchen_status || order.overallKitchenStatus || ""
