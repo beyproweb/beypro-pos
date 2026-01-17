@@ -650,8 +650,14 @@ const groupedKitchenOrders = orders.reduce((acc, item) => {
   return acc;
 }, {});
 
-
-
+  const deliveredActionLabel = useMemo(() => {
+    if (selectedIds.length === 0) return t("Delivered");
+    const selectedItems = orders.filter((item) => selectedIds.includes(item.item_id));
+    const hasPacketOrder = selectedItems.some(
+      (item) => String(item.order_type || "").toLowerCase() === "packet"
+    );
+    return hasPacketOrder ? t("Ready for Pickup") : t("Delivered");
+  }, [orders, selectedIds, t]);
 
 return (
   <div className="min-h-screen px-2 pt-0 pb-3 sm:px-6 sm:pt-0 sm:pb-3 flex flex-col gap-4 sm:gap-8 relative">
@@ -673,19 +679,19 @@ return (
     {t("Preparing")}
   </button>
 
-  <button
-    onClick={() => {
-      console.debug("🟢 Delivered button clicked", {
-        selectedIds,
-        ordersCount: orders.length,
-      });
-      updateKitchenStatus("delivered");
-    }}
-    disabled={selectedIds.length === 0}
-    className="py-3 w-full rounded-xl shadow-sm bg-slate-600 hover:bg-slate-500 text-white font-semibold text-base transition disabled:opacity-40"
-  >
-    {t("Delivered")}
-  </button>
+	  <button
+	    onClick={() => {
+	      console.debug("🟢 Delivered button clicked", {
+	        selectedIds,
+	        ordersCount: orders.length,
+	      });
+	      updateKitchenStatus("delivered");
+	    }}
+	    disabled={selectedIds.length === 0}
+	    className="py-3 w-full rounded-xl shadow-sm bg-slate-600 hover:bg-slate-500 text-white font-semibold text-base transition disabled:opacity-40"
+	  >
+	    {deliveredActionLabel}
+	  </button>
 
   <button
     onClick={openCompileModal}
@@ -1231,17 +1237,17 @@ return (
     {t("Preparing")}
   </button>
 
-<button
-  onClick={() => {
-    updateKitchenStatus("delivered");
-    setPrepStart(null); // reset timer
-    setShowModal(false); // ✅ auto-close modal
-  }}
-  className="py-3 w-full rounded-xl shadow bg-slate-800 hover:bg-slate-700 text-white font-semibold text-base transition disabled:opacity-50"
-  disabled={selectedIds.length === 0}
->
-  {t("Delivered")}
-</button>
+	<button
+	  onClick={() => {
+	    updateKitchenStatus("delivered");
+	    setPrepStart(null); // reset timer
+	    setShowModal(false); // ✅ auto-close modal
+	  }}
+	  className="py-3 w-full rounded-xl shadow bg-slate-800 hover:bg-slate-700 text-white font-semibold text-base transition disabled:opacity-50"
+	  disabled={selectedIds.length === 0}
+	>
+	  {deliveredActionLabel}
+	</button>
 
 </div>
 
