@@ -2494,11 +2494,6 @@ const totalDiscount = calcOrderDiscount(order);
   <div className="flex flex-col flex-1 min-w-0">
     <div className="flex items-center gap-2">
       <span className="text-xl sm:text-2xl text-emerald-500">📍</span>
-      {externalOrderRef && (
-        <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/80 text-slate-700 border border-slate-200 text-xs sm:text-sm font-semibold shadow-sm flex-shrink-0">
-          {t("Order")} #{externalOrderRef}
-        </span>
-      )}
       {order.customer_address ? (
         <a
           href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.customer_address)}`}
@@ -2537,6 +2532,13 @@ const totalDiscount = calcOrderDiscount(order);
       )}
 
     </div>
+    {externalOrderRef && (
+      <div className="mt-2">
+        <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/80 text-slate-700 border border-slate-200 text-xs sm:text-sm font-semibold shadow-sm">
+          {t("Order")} #{externalOrderRef}
+        </span>
+      </div>
+    )}
   </div>
   {/* Right badges */}
   <div className="flex flex-row sm:flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto min-w-0 sm:min-w-[160px] overflow-x-auto sm:overflow-visible whitespace-nowrap pr-1">

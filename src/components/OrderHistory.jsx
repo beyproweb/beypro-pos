@@ -27,6 +27,15 @@ export default function OrderHistory({
         : FALLBACK_PAYMENT_OPTIONS,
     [paymentMethods]
   );
+  const normalizedPaymentOptions = useMemo(() => {
+    const base = Array.isArray(paymentFilterOptions)
+      ? paymentFilterOptions.slice()
+      : [];
+    if (!base.some((label) => String(label).toLowerCase() === "online")) {
+      base.push("Online");
+    }
+    return base;
+  }, [paymentFilterOptions]);
   const [closedOrders, setClosedOrders] = useState([]);
   const [showCancellationsOnly, setShowCancellationsOnly] = useState(false);
   const [editingPaymentOrderId, setEditingPaymentOrderId] = useState(null);
@@ -207,7 +216,8 @@ const filteredOrdersByTypeAndPayment = useMemo(() => {
     const orderType = String(order?.order_type || "").trim().toLowerCase();
     if (filterValue === "table") return orderType === "table";
     if (filterValue === "phone") return orderType === "phone";
-    if (filterValue === "online") return orderType === "online" || orderType === "packet";
+    if (filterValue === "online") return orderType === "online";
+    if (filterValue === "yemeksepeti") return orderType === "packet";
     if (filterValue === "preorder") return orderType === "takeaway";
     return true;
   };
@@ -291,7 +301,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             value={paymentFilter}
           >
             <option value="All">{t('All Payments')}</option>
-            {paymentFilterOptions.map((p) => (
+            {normalizedPaymentOptions.map((p) => (
               <option key={p} value={p}>
                 {t(p)}
               </option>
@@ -305,6 +315,7 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             <option value="All">{t("All Orders")}</option>
             <option value="table">{t("Table Orders")}</option>
             <option value="online">{t("Online Orders")}</option>
+            <option value="yemeksepeti">{t("Yemeksepeti Orders")}</option>
             <option value="phone">{t("Phone Orders")}</option>
             <option value="preorder">{t("Pre Orders")}</option>
           </select>
@@ -388,7 +399,14 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
             {order.order_type === "table" && order.table_number ? (
               <>🍽️ {t("Table")} {order.table_number}</>
             ) : order.order_type === "packet" ? (
-              <>🛵 {t("Packet Order")}</>
+              <>
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
+                    YS
+                  </span>
+                  {t("Yemeksepeti")}
+                </span>
+              </>
             ) : order.order_type === "phone" ? (
               <>📞 {t("Phone Order")}</>
             ) : order.order_type === "takeaway" ? (
