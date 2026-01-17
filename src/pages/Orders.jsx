@@ -1126,6 +1126,18 @@ useEffect(() => {
     });
 }, []);
 
+const isYemeksepetiOrder = (order) =>
+  String(order?.external_source || "").toLowerCase() === "yemeksepeti" ||
+  Boolean(order?.external_id);
+
+const isYemeksepetiPickupOrder = (order) => {
+  if (!isYemeksepetiOrder(order)) return false;
+  const expedition = String(order?.external_expedition_type || "").toLowerCase().trim();
+  if (expedition === "pickup") return true;
+  const address = String(order?.customer_address || "").toLowerCase().trim();
+  return address === "pickup order";
+};
+
   // Driver Button Logic
   const handleDriverMultifunction = async (order) => {
   setUpdating(prev => ({ ...prev, [order.id]: true }));
@@ -1134,9 +1146,12 @@ useEffect(() => {
 const allNonDrinksDelivered = areDriverItemsDelivered(order);
 
 if (!order.driver_status && allNonDrinksDelivered) {
+  // For Yemeksepeti pickup orders, the final external status is `order_picked_up`,
+  // so treat the first action as completion (driver_status = delivered).
+  const nextStatus = isYemeksepetiPickupOrder(order) ? "delivered" : "on_road";
   await secureFetch(`/orders/${order.id}/driver-status`, {
     method: "PATCH",
-    body: JSON.stringify({ driver_status: "on_road" }),
+    body: JSON.stringify({ driver_status: nextStatus }),
   });
   setHighlightedOrderId(order.id);
   setTimeout(() => setHighlightedOrderId(null), 2000);
@@ -1183,6 +1198,9 @@ useEffect(() => {
   if (!order.driver_id) {
     if (order.kitchen_status === "preparing") return t("preparing");
     return t("Waiting...");
+  }
+  if (isYemeksepetiPickupOrder(order) && normalizeDriverStatus(order.driver_status) === "on_road") {
+    return t("Picked up");
   }
   if (
     normalizeDriverStatus(order.driver_status) === "on_road" &&
@@ -2343,6 +2361,20 @@ const totalDiscount = calcOrderDiscount(order);
         order.notes ||
         order.note ||
         "";
+      const sanitizedOrderNote = (() => {
+        const noteRaw = String(orderNote || "").trim();
+        if (!noteRaw) return "";
+        const pay = String(order.payment_method || "").trim();
+        if (!pay) return noteRaw;
+        const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return noteRaw
+          .replace(new RegExp(escapeRegExp(pay), "gi"), "")
+          .replace(/\s{2,}/g, " ")
+          .replace(/[;,\-|–—]+\s*[;,\-|–—]+/g, "; ")
+          .replace(/^[;,\-|–—\s]+/g, "")
+          .replace(/[;,\-|–—\s]+$/g, "")
+          .trim();
+      })();
 
  const statusVisual = (() => {
   const isPacketOrder = order.order_type === "packet";
@@ -2630,12 +2662,12 @@ const totalDiscount = calcOrderDiscount(order);
 
 
             {/* Items */}
-  {orderNote && (
+  {sanitizedOrderNote && (
     <div
       className={`px-3 py-2 rounded-xl font-medium italic flex items-start gap-2 text-base transition ${statusVisual.noteBox}`}
       style={{ wordBreak: "break-word", whiteSpace: "pre-line" }}
     >
-      📝 <span>{orderNote}</span>
+      📝 <span>{sanitizedOrderNote}</span>
     </div>
   )}
 <details
@@ -2907,22 +2939,23 @@ const totalDiscount = calcOrderDiscount(order);
         disabled={driverButtonDisabled(order)}
         onClick={async () => {
           if (driverButtonDisabled(order)) return;
+          const nextStatus = isYemeksepetiPickupOrder(order) ? "delivered" : "on_road";
           setOrders((prev) =>
             prev.map((o) =>
-              o.id === order.id ? { ...o, driver_status: 'on_road' } : o
+              o.id === order.id ? { ...o, driver_status: nextStatus } : o
             )
           );
           await secureFetch(`/orders/${order.id}/driver-status`, {
             method: 'PATCH',
-            body: JSON.stringify({ driver_status: 'on_road' }),
+            body: JSON.stringify({ driver_status: nextStatus }),
           });
         }}
       >
-        {t("On Road")}
+        {isYemeksepetiPickupOrder(order) ? t("Picked up") : t("On Road")}
       </button>
     )}
 
-    {normalizeDriverStatus(order.driver_status) === "on_road" && (
+    {normalizeDriverStatus(order.driver_status) === "on_road" && !isYemeksepetiPickupOrder(order) && (
       <button
         className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-sky-500 hover:bg-sky-600 
                    text-white shadow transition"
@@ -2950,6 +2983,37 @@ const totalDiscount = calcOrderDiscount(order);
         }}
       >
         {t("Delivered")}
+      </button>
+    )}
+
+    {normalizeDriverStatus(order.driver_status) === "on_road" && isYemeksepetiPickupOrder(order) && (
+      <button
+        className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
+                   text-white shadow transition"
+        disabled={driverButtonDisabled(order)}
+        onClick={async () => {
+          if (driverButtonDisabled(order)) return;
+          setUpdating((prev) => ({ ...prev, [order.id]: true }));
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id ? { ...o, driver_status: 'delivered' } : o
+            )
+          );
+          try {
+            await secureFetch(`/orders/${order.id}/driver-status`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ driver_status: 'delivered' }),
+            });
+          } catch (err) {
+            console.error("❌ Failed to complete pickup order:", err);
+            if (!propOrders) await fetchOrders();
+          } finally {
+            setUpdating((prev) => ({ ...prev, [order.id]: false }));
+          }
+        }}
+      >
+        {t("Completed")}
       </button>
     )}
 

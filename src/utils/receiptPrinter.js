@@ -1207,6 +1207,31 @@ export function renderReceiptText(order, providedLayout) {
     order?.notes ??
     order?.note ??
     "";
+  const paymentMethodRaw =
+    order?.payment_method ??
+    order?.paymentMethod ??
+    order?.payment ??
+    "";
+
+  const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const stripPaymentFromText = (text, tokens) => {
+    const raw = text === null || text === undefined ? "" : String(text);
+    if (!raw.trim()) return "";
+    let cleaned = raw;
+    const list = Array.isArray(tokens) ? tokens : [];
+    for (const token of list) {
+      const t = token === null || token === undefined ? "" : String(token).trim();
+      if (!t) continue;
+      cleaned = cleaned.replace(new RegExp(escapeRegExp(t), "gi"), "");
+    }
+    cleaned = cleaned
+      .replace(/\s{2,}/g, " ")
+      .replace(/[;,\-|–—]+\s*[;,\-|–—]+/g, "; ")
+      .replace(/^[;,\-|–—\s]+/g, "")
+      .replace(/[;,\-|–—\s]+$/g, "")
+      .trim();
+    return cleaned;
+  };
 
   if (layout.showHeader) {
     const headerLine = layout.headerTitle || layout.headerText || "Beypro POS";
@@ -1257,7 +1282,7 @@ export function renderReceiptText(order, providedLayout) {
       wroteMeta = true;
     }
   }
-  const noteValue = String(orderNote || "").trim();
+  const noteValue = stripPaymentFromText(orderNote, [paymentMethodRaw]);
   if (noteValue) {
     add("Note:");
     wrapText(noteValue, lineWidth).forEach((line) => add(line));

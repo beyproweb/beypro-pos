@@ -13,6 +13,26 @@ const FALLBACK_PAYMENT_OPTIONS = [
   "Multinet",
 ];
 
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const stripPaymentFromText = (text, tokens) => {
+  const raw = text === null || text === undefined ? "" : String(text);
+  if (!raw.trim()) return "";
+  let cleaned = raw;
+  const list = Array.isArray(tokens) ? tokens : [];
+  for (const token of list) {
+    const t = token === null || token === undefined ? "" : String(token).trim();
+    if (!t) continue;
+    cleaned = cleaned.replace(new RegExp(escapeRegExp(t), "gi"), "");
+  }
+  cleaned = cleaned
+    .replace(/\s{2,}/g, " ")
+    .replace(/[;,\-|–—]+\s*[;,\-|–—]+/g, "; ")
+    .replace(/^[;,\-|–—\s]+/g, "")
+    .replace(/[;,\-|–—\s]+$/g, "")
+    .trim();
+  return cleaned;
+};
+
 export default function OrderHistory({
   fromDate, toDate, paymentFilter,
   orderTypeFilter,
@@ -390,6 +410,10 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 const externalOrderNumber = order.external_id
                   ? `#${String(order.external_id).trim()}`
                   : "";
+                const riderNoteValue = stripPaymentFromText(
+                  order.takeaway_notes || "",
+                  [order.payment_method || ""]
+                );
                 return (
                   <div
       key={order.id}
@@ -431,8 +455,16 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
               {order.customer_name && (
                 <span className="text-xs text-gray-700">{order.customer_name}</span>
               )}
+              {order.customer_phone && (
+                <span className="text-xs text-gray-600">{order.customer_phone}</span>
+              )}
               {order.customer_address && (
                 <span className="text-xs text-gray-500">{order.customer_address}</span>
+              )}
+              {riderNoteValue && (
+                <span className="text-xs text-amber-700 whitespace-pre-line">
+                  📝 {riderNoteValue}
+                </span>
               )}
             </>
           )}
