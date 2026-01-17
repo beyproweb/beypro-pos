@@ -257,6 +257,27 @@ export default function IntegrationsTab() {
       });
 
       toast.success(t("Integrations saved successfully"));
+
+      if (payload?.yemeksepeti?.menuSync) {
+        try {
+          const syncResult = await secureFetch(
+            "/integrations/yemeksepeti/menu-sync",
+            { method: "POST" }
+          );
+          const importId = syncResult?.catalogImportId;
+          toast.info(
+            importId
+              ? t("Menu sync triggered. Import ID: {{id}}", { id: importId })
+              : t("Menu sync triggered. Check backend logs for status.")
+          );
+        } catch (syncErr) {
+          console.error("❌ Menu sync failed:", syncErr);
+          toast.warn(
+            syncErr?.message ||
+              t("Menu sync failed. Check backend logs for details.")
+          );
+        }
+      }
     } catch (err) {
       console.error("❌ Failed to save integrations:", err);
       toast.error(err?.message || t("Failed to save"));

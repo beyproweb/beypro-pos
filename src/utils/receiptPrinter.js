@@ -557,6 +557,28 @@ function formatLine(left, right, width) {
   return `${trimmedLeft} ${rightStr}`.trimEnd();
 }
 
+function wrapText(text, width) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  const words = normalized.split(" ");
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if ((current.length + 1 + word.length) <= width) {
+      current = `${current} ${word}`;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 function buildEscposBytes(
   text,
   {
@@ -906,7 +928,13 @@ export function computeReceiptSummary(order) {
   let subtotal = 0;
 
   for (const it of rawItems) {
-    const name = it.name || it.product_name || "Item";
+    const name =
+      it.name ||
+      it.product_name ||
+      it.external_product_name ||
+      it.item_name ||
+      it.productTitle ||
+      "Item";
     const qtyRaw = pickNumber(
       it.qty,
       it.quantity,
@@ -1093,6 +1121,7 @@ export function renderReceiptText(order, providedLayout) {
   const showInvoiceNumber = layout?.showInvoiceNumber !== false;
   const showTableNumber = layout?.showTableNumber !== false;
   const showStaffName = layout?.showStaffName !== false;
+  const showPacketCustomerInfo = layout?.showPacketCustomerInfo !== false;
   const invoiceRaw =
     order?.external_id ??
     order?.externalId ??
@@ -1157,6 +1186,21 @@ export function renderReceiptText(order, providedLayout) {
   }
   const staffValue = staffRaw === null || staffRaw === undefined ? "" : String(staffRaw).trim();
   const taxNumberLine = resolveTaxNumberLine(layout);
+  const customerName =
+    order?.customer_name ??
+    order?.customerName ??
+    order?.customer?.name ??
+    "";
+  const customerPhone =
+    order?.customer_phone ??
+    order?.customerPhone ??
+    order?.customer?.phone ??
+    "";
+  const customerAddress =
+    order?.customer_address ??
+    order?.customerAddress ??
+    order?.address ??
+    "";
 
   if (layout.showHeader) {
     const headerLine = layout.headerTitle || layout.headerText || "Beypro POS";
@@ -1188,6 +1232,24 @@ export function renderReceiptText(order, providedLayout) {
   if (showStaffName && staffValue) {
     add(formatLine("Staff", staffValue, lineWidth));
     wroteMeta = true;
+  }
+  if (showPacketCustomerInfo) {
+    const nameValue = String(customerName || "").trim();
+    const phoneValue = String(customerPhone || "").trim();
+    const addressValue = String(customerAddress || "").trim();
+    if (nameValue) {
+      add(formatLine("Customer", nameValue, lineWidth));
+      wroteMeta = true;
+    }
+    if (phoneValue) {
+      add(formatLine("Phone", phoneValue, lineWidth));
+      wroteMeta = true;
+    }
+    if (addressValue) {
+      add("Address:");
+      wrapText(addressValue, lineWidth).forEach((line) => add(line));
+      wroteMeta = true;
+    }
   }
   if (wroteMeta) {
     add("");

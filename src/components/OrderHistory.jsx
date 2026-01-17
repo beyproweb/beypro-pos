@@ -387,6 +387,9 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 const paymentHistory = Array.isArray(order.paymentChanges)
                   ? order.paymentChanges
                   : [];
+                const externalOrderNumber = order.external_id
+                  ? `#${String(order.external_id).trim()}`
+                  : "";
                 return (
                   <div
       key={order.id}
@@ -405,6 +408,11 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                     YS
                   </span>
                   {t("Yemeksepeti")}
+                  {externalOrderNumber && (
+                    <span className="text-xs font-semibold text-slate-500">
+                      {externalOrderNumber}
+                    </span>
+                  )}
                 </span>
               </>
             ) : order.order_type === "phone" ? (
