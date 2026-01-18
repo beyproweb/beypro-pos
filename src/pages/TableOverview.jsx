@@ -1925,32 +1925,32 @@ const formatAreaLabel = (area) => {
     <div className="flex justify-center gap-3 flex-wrap mt-4 mb-10">
 
       {/* ALL AREAS */}
-      <button
-        onClick={() => setActiveArea("ALL")}
-        className={`
-          px-6 py-2.5 rounded-full font-semibold shadow 
-          transition-all duration-150 text-sm
-          ${activeArea === "ALL"
-            ? "bg-indigo-600 text-white scale-105 shadow-lg"
-            : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"}
-        `}
-      >
-        {t("All Areas")}
-      </button>
+	      <button
+	        onClick={() => setActiveArea("ALL")}
+	        className={`
+	          px-5 py-2 rounded-full font-semibold shadow 
+	          transition-all duration-150 text-xs
+	          ${activeArea === "ALL"
+	            ? "bg-indigo-600 text-white scale-[1.03] shadow-lg"
+	            : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"}
+	        `}
+	      >
+	        {t("All Areas")}
+	      </button>
 
       {Object.keys(groupedTables).map((area) => (
-        <button
-          key={area}
-          onClick={() => setActiveArea(area)}
-          className={`
-            px-6 py-2.5 rounded-full font-semibold shadow 
-            transition-all duration-150 text-sm
-            ${activeArea === area
-              ? "bg-blue-600 text-white scale-105 shadow-lg"
-              : "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"}
-          `}
-        >
-          {area === "Hall" ? "" :
+	        <button
+	          key={area}
+	          onClick={() => setActiveArea(area)}
+	          className={`
+	            px-5 py-2 rounded-full font-semibold shadow 
+	            transition-all duration-150 text-xs
+	            ${activeArea === area
+	              ? "bg-blue-600 text-white scale-[1.03] shadow-lg"
+	              : "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"}
+	          `}
+	        >
+	          {area === "Hall" ? "" :
            area === "Main Hall" ? "" :
            area === "Terrace" ? "" :
            area === "Garden" ? "" :
