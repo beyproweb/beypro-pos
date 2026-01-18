@@ -4179,14 +4179,18 @@ const cardGradient = item.paid
                       w-full
                     "
                   >
-                    <img
-                      src={product.image || "https://via.placeholder.com/100?text=🍔"}
-                      alt={product.name}
-                      className="
-                        w-full aspect-square object-cover rounded-md
-                        lg:h-16 lg:w-16 lg:rounded-xl lg:border lg:object-cover lg:shadow
-                      "
-                    />
+                    <div className="w-full aspect-square rounded-md overflow-hidden bg-slate-50 flex items-center justify-center lg:h-16 lg:w-16 lg:rounded-xl lg:border lg:shadow">
+                      {product.image ? (
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900" />
+                      )}
+                    </div>
                     <p className="text-sm font-semibold text-slate-700 text-center line-clamp-2 leading-tight">
                       {product.name}
                     </p>

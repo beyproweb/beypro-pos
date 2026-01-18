@@ -534,7 +534,7 @@ function LanguageSwitcher({ lang, setLang, t }) {
 function QrHeader({ orderType, table, onClose, t, restaurantName, lang, setLang }) {
   return (
     <header className="w-full sticky top-0 z-50 flex items-center justify-between bg-white/80 backdrop-blur-md border-b border-gray-200 px-6 py-4 shadow-sm">
-      <span className="text-3xl font-serif font-bold text-gray-900 tracking-tight">
+      <span className="text-[21px] font-serif font-bold text-gray-900 tracking-tight">
         {restaurantName || "Restaurant"}
       </span>
       <span className="text-lg font-medium text-gray-700 italic">
@@ -1862,7 +1862,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
                   setActiveCategory(cat);
                   scrollToCategory(idx); // ⬅️ auto-center when clicked
                 }}
-                className={`group flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all whitespace-nowrap
+                className={`group flex items-center gap-2 px-5 py-2.5 rounded-full text-base font-medium transition-all whitespace-nowrap
                   ${
                     active
                       ? "bg-neutral-900 text-white shadow-sm"
@@ -1870,7 +1870,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
                   }`}
               >
                 {imgSrc ? (
-                  <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300">
+                  <div className="relative w-7 h-7 rounded-full overflow-hidden border border-neutral-300">
                     <img
                       src={
                         /^https?:\/\//.test(imgSrc)
@@ -2041,7 +2041,7 @@ function ProductGrid({ products, onProductClick, t }) {
   const productList = Array.isArray(products) ? products : [];
 
   return (
-    <main className="w-full max-w-none mx-auto pt-6 pb-32 grid gap-4 sm:gap-5 lg:gap-6 xl:gap-8 [grid-template-columns:repeat(auto-fit,minmax(160px,1fr))] sm:[grid-template-columns:repeat(auto-fit,minmax(180px,1fr))] md:[grid-template-columns:repeat(auto-fit,minmax(200px,1fr))] xl:[grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+    <main className="w-full max-w-none mx-auto pt-6 pb-32 grid gap-4 sm:gap-5 lg:gap-6 xl:gap-8 [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] sm:[grid-template-columns:repeat(auto-fill,minmax(180px,1fr))] md:[grid-template-columns:repeat(auto-fill,minmax(200px,1fr))] xl:[grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
       {productList.length === 0 && (
         <div className="col-span-full text-center text-neutral-400 font-medium text-lg py-12 italic">
           {t("No products available.")}
@@ -2052,22 +2052,24 @@ function ProductGrid({ products, onProductClick, t }) {
         <div
           key={product.id}
           onClick={() => onProductClick(product)}
-          className="group relative bg-white/90 border border-neutral-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-        >
-          <div className="aspect-square w-full overflow-hidden bg-neutral-50">
-            <img
-              src={
-                product.image
-                  ? /^https?:\/\//.test(product.image)
-                    ? product.image
-                    : `${API_URL}/uploads/${product.image}`
-                  : "https://via.placeholder.com/400x400?text=No+Image"
-              }
-              alt={product.name}
-              className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
-              loading="lazy"
-            />
-          </div>
+	          className="group relative bg-white/90 border border-neutral-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer"
+	        >
+	          <div className="aspect-square w-full overflow-hidden bg-neutral-50">
+	            {product.image ? (
+	              <img
+	                src={
+	                  /^https?:\/\//.test(product.image)
+	                    ? product.image
+	                    : `${API_URL}/uploads/${product.image}`
+	                }
+	                alt={product.name}
+	                className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
+	                loading="lazy"
+	              />
+	            ) : (
+	              <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900" />
+	            )}
+	          </div>
 
           <div className="p-4 flex flex-col items-center text-center space-y-1">
             <h3 className="text-base font-medium text-neutral-800 tracking-wide group-hover:text-black transition-colors line-clamp-2">
@@ -2446,6 +2448,8 @@ function CartDrawer({
   hasActiveOrder,
   orderScreenStatus,
   onShowStatus,
+  isOrderStatusOpen,
+  onOpenCart,
 }) {
   const [show, setShow] = useState(false);
   const { formatCurrency } = useCurrency();
@@ -2491,6 +2495,11 @@ function CartDrawer({
     if (auto) setShow(cartLength > 0);
   }, [cartLength]);
 
+  // Never allow Cart + OrderStatus to overlap.
+  useEffect(() => {
+    if (isOrderStatusOpen) setShow(false);
+  }, [isOrderStatusOpen]);
+
   function removeItem(idx, isNew) {
     if (!isNew) return; // don't remove locked (read-only)
     setCart((prev) => {
@@ -2502,24 +2511,26 @@ function CartDrawer({
 return (
   <>
     {/* Floating cart button */}
-    {!show && (cartLength > 0 || hasActiveOrder) && (
-      <button
-        onClick={() => {
-          if (hasNewItems) {
-            storage.setItem("qr_cart_auto_open", "1");
-            setShow(true);
-          } else if (hasActiveOrder && onShowStatus) {
-            onShowStatus();
-          } else {
-            setShow(true);
-          }
-        }}
-        className={`fixed bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-full font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
-          hasActiveOrder
-            ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
-            : "bg-neutral-900 text-white hover:scale-105"
-        }`}
-      >
+	    {!show && (cartLength > 0 || hasActiveOrder) && (
+	      <button
+	        onClick={() => {
+	          if (hasNewItems) {
+              onOpenCart?.();
+	            storage.setItem("qr_cart_auto_open", "1");
+	            setShow(true);
+	          } else if (hasActiveOrder && onShowStatus) {
+	            onShowStatus();
+	          } else {
+              onOpenCart?.();
+	            setShow(true);
+	          }
+	        }}
+	        className={`fixed bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-full font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
+	          hasActiveOrder
+	            ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
+	            : "bg-neutral-900 text-white hover:scale-105"
+	        }`}
+	      >
         <span className="text-xl">🛒</span>
         <div className="flex flex-col items-start">
           <span className="text-sm">
@@ -2539,15 +2550,20 @@ return (
       </button>
     )}
 
-    {/* Cart Drawer */}
-    {show && (
-      <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm">
-        <div className="w-full max-w-md bg-white/95 rounded-t-3xl md:rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-6 flex flex-col">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-5 border-b border-neutral-200 pb-2">
-            <span className="text-lg font-serif font-semibold text-neutral-900 tracking-tight">
-              {t("Your Order")}
-            </span>
+	    {/* Cart Drawer */}
+	    {show && (
+	      <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShow(false);
+          }}
+        >
+	        <div className="w-[92vw] max-w-md max-h-[88vh] overflow-hidden bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-6 flex flex-col">
+	          {/* Header */}
+	          <div className="flex justify-between items-center mb-5 border-b border-neutral-200 pb-2">
+	            <span className="text-lg font-serif font-semibold text-neutral-900 tracking-tight">
+	              {t("Your Order")}
+	            </span>
             <button
               className="text-2xl text-neutral-400 hover:text-red-600 transition"
               onClick={() => setShow(false)}
@@ -2555,15 +2571,15 @@ return (
             >
               ×
             </button>
-          </div>
+	          </div>
 
-          {/* Cart Items */}
-          <div className="flex-1 overflow-y-auto max-h-[48vh] pr-1">
-            {cartLength === 0 ? (
-              <div className="text-neutral-400 text-center py-10 italic">
-                {t("Cart is empty.")}
-              </div>
-            ) : (
+	          {/* Cart Items */}
+	          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+	            {cartLength === 0 ? (
+	              <div className="text-neutral-400 text-center py-10 italic">
+	                {t("Cart is empty.")}
+	              </div>
+	            ) : (
               <div className="space-y-6">
                 {/* Locked (previously ordered) items */}
                 {prevItems.length > 0 && (
@@ -2761,11 +2777,11 @@ return (
               </button>
             </div>
           )}
-        </div>
-      </div>
-    )}
-  </>
-);
+	        </div>
+	      </div>
+	    )}
+	  </>
+	);
 
 }
 
@@ -2810,7 +2826,12 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
     : errorMessage || t("Something went wrong. Please try again.");
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40">
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
       {/* Modal container: fixed height with scrollable middle */}
       <div className="bg-white rounded-3xl shadow-2xl w-[92vw] max-w-md max-h-[88vh] flex flex-col">
         {/* Header */}
@@ -4305,28 +4326,34 @@ return (
 
 
 
-    <CartDrawer
-      cart={safeCart}
-      setCart={setCart}
-      onSubmitOrder={handleSubmitOrder}
-      orderType={orderType}
-      paymentMethod={paymentMethod}
-      setPaymentMethod={setPaymentMethod}
-      submitting={submitting}
-      onOrderAnother={handleOrderAnother}
-      t={t}
-      hasActiveOrder={hasActiveOrder}
-      orderScreenStatus={orderScreenStatus}
-      onShowStatus={() => {
-        const savedId = Number(storage.getItem("qr_active_order_id")) || null;
-        if (!orderId && savedId) {
-          setOrderId(savedId);
-        }
-        setOrderStatus("success");
-        setShowStatus(true);
-        storage.setItem("qr_show_status", "1");
-      }}
-    />
+	    <CartDrawer
+	      cart={safeCart}
+	      setCart={setCart}
+	      onSubmitOrder={handleSubmitOrder}
+	      orderType={orderType}
+	      paymentMethod={paymentMethod}
+	      setPaymentMethod={setPaymentMethod}
+	      submitting={submitting}
+	      onOrderAnother={handleOrderAnother}
+	      t={t}
+	      hasActiveOrder={hasActiveOrder}
+	      orderScreenStatus={orderScreenStatus}
+	      onShowStatus={() => {
+	        window.dispatchEvent(new Event("qr:cart-close"));
+	        const savedId = Number(storage.getItem("qr_active_order_id")) || null;
+	        if (!orderId && savedId) {
+	          setOrderId(savedId);
+	        }
+	        setOrderStatus("success");
+	        setShowStatus(true);
+	        storage.setItem("qr_show_status", "1");
+	      }}
+          isOrderStatusOpen={showStatus}
+          onOpenCart={() => {
+            setShowStatus(false);
+            storage.setItem("qr_show_status", "0");
+          }}
+	    />
 
 
     <AddToCartModal

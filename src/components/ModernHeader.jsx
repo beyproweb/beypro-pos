@@ -276,12 +276,12 @@ export default function ModernHeader({
         <StickySubtitle text={subtitle} />
         {isSuppliersRoute && (
           <div className="flex flex-col items-center justify-center gap-2 max-w-full">
-            {supplierMobileTabs.length > 0 && (
-              <div className="flex md:hidden items-center justify-center gap-2 max-w-full rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
-                {supplierMobileTabs.map((tab) => {
-                  const isCartTab = tab.kind === "switch" && tab.key === "cart";
-                  const isActive = isCartTab
-                    ? supplierView === "cart"
+	            {supplierMobileTabs.length > 0 && (
+	              <div className="hidden items-center justify-center gap-2 max-w-full rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+	                {supplierMobileTabs.map((tab) => {
+	                  const isCartTab = tab.kind === "switch" && tab.key === "cart";
+	                  const isActive = isCartTab
+	                    ? supplierView === "cart"
                     : resolvedActiveHeaderTab === tab.id;
                   const isDashboardTab = tab.id === "dashboard";
                   return (
@@ -354,12 +354,12 @@ export default function ModernHeader({
           </div>
         )}
 
-        {!isSuppliersRoute && !centerNav && showHeaderTabs && mobileHeaderTabs.length > 0 && (
-          <div className="flex md:hidden items-center justify-center gap-2 max-w-full rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
-            {mobileHeaderTabs.map((tab) => {
-              const isActive = resolvedActiveHeaderTab === tab.id;
-              const isDashboardTab = tab.id === "dashboard";
-              return (
+	        {!isSuppliersRoute && !centerNav && showHeaderTabs && mobileHeaderTabs.length > 0 && (
+	          <div className="hidden items-center justify-center gap-2 max-w-full rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+	            {mobileHeaderTabs.map((tab) => {
+	              const isActive = resolvedActiveHeaderTab === tab.id;
+	              const isDashboardTab = tab.id === "dashboard";
+	              return (
                 <button
                   key={tab.id}
                   type="button"

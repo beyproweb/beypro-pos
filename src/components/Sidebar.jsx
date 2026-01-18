@@ -69,6 +69,10 @@ const MENU = [
   { labelKey: "Settings", defaultLabel: "Settings", path: "/settings", icon: Settings, permission: "settings", moduleKey: "page.settings" },
 ];
 
+// Always keep these directly under Dashboard in the sidebar.
+const PINNED_KEYS = ["Dashboard", "Orders", "Packet", "Phone", "Register"];
+const PINNED_SET = new Set(PINNED_KEYS);
+
 const HIDDEN_STORAGE_KEY = "beyproHiddenSidebarItems";
 const ORDER_STORAGE_KEY = "beyproSidebarOrder";
 const SIDEBAR_ITEM_DRAG_TYPE = "application/x-sidebar-item";
@@ -160,11 +164,11 @@ function readHiddenKeys(storageKey) {
   try {
     const raw = window.localStorage.getItem(storageKey);
     if (!raw) {
-      return DEFAULT_HIDDEN_KEYS.filter((key) => key !== "Dashboard");
+      return DEFAULT_HIDDEN_KEYS.filter((key) => !PINNED_SET.has(key));
     }
     const parsed = JSON.parse(raw || "[]");
     if (!Array.isArray(parsed)) return [];
-    const filtered = parsed.filter((key) => key && key !== "Dashboard");
+    const filtered = parsed.filter((key) => key && !PINNED_SET.has(key));
     return filtered;
   } catch {
     return [];
@@ -268,9 +272,16 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       return [dynamicItem];
     }
 
-    const filteredMenu = orderedMenu.filter((item) => {
+    const lookup = new Map(MENU.map((item) => [item.labelKey, item]));
+    const pinnedMenu = PINNED_KEYS.map((key) => lookup.get(key)).filter(Boolean);
+    const menuWithPinned = [
+      ...pinnedMenu,
+      ...orderedMenu.filter((item) => !PINNED_SET.has(item.labelKey)),
+    ];
+
+    const filteredMenu = menuWithPinned.filter((item) => {
       if (
-        item.labelKey !== "Dashboard" &&
+        !PINNED_SET.has(item.labelKey) &&
         hasDashboardPermission &&
         hiddenKeys.includes(item.labelKey)
       )
@@ -283,7 +294,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     });
 
     return [...filteredMenu, dynamicItem];
-  }, [currentUser, hiddenKeys, isLoggedIn, orderedMenu]);
+  }, [currentUser, hasDashboardPermission, hiddenKeys, isLoggedIn, isModuleAllowed, orderedMenu]);
 
   const canSeeLocalization = useMemo(() => {
     if (!currentUser) return false;
@@ -395,7 +406,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
   }
 
     const handleHideItem = (labelKey) => (event) => {
-      if (!isAdminUser || labelKey === "Dashboard") return;
+      if (!isAdminUser || PINNED_SET.has(labelKey)) return;
       event.preventDefault();
       event.stopPropagation();
       setHiddenKeys((prev) => (prev.includes(labelKey) ? prev : [...prev, labelKey]));
@@ -618,9 +629,9 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       defaultValue: item.defaultLabel ?? item.labelKey,
     });
     const hideable =
-      item.action !== "logout" && item.path !== "/login" && item.labelKey !== "Dashboard";
+      item.action !== "logout" && item.path !== "/login" && !PINNED_SET.has(item.labelKey);
     const isOrderable = ORDERABLE_SET.has(item.labelKey);
-    const canDrag = isOrderable && isOpen;
+    const canDrag = isOrderable && isOpen && !PINNED_SET.has(item.labelKey);
     const isDragOver = canDrag && dragOverKey === item.labelKey && dragKey !== item.labelKey;
 
     return item.action === "logout" ? (
