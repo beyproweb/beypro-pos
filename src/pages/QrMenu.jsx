@@ -3417,9 +3417,9 @@ if (savedTable) {
         ? raw.data
         : [];
 
-      const openOrder = list.find(
-        (o) => !["closed", "completed", "canceled"].includes((o?.status || "").toLowerCase())
-      );
+        const openOrder = list.find(
+          (o) => !["closed", "completed", "canceled", "cancelled"].includes((o?.status || "").toLowerCase())
+        );
 
       if (openOrder) {
         const status = (openOrder?.status || "").toLowerCase();
@@ -3429,7 +3429,7 @@ if (savedTable) {
           openOrder.payment_state === "paid";
 
         // 🚫 DO NOT close for paid orders
-        if (["closed", "completed", "canceled"].includes(status)) {
+        if (["closed", "completed", "canceled", "cancelled"].includes(status)) {
           resetToTypePicker();
           return;
         }
@@ -3494,7 +3494,7 @@ if (savedTable) {
       }
       setOrderScreenStatus(s);
 
-      if (["closed", "completed", "canceled"].includes(s)) {
+      if (["closed", "completed", "canceled", "cancelled"].includes(s)) {
         // Backend closed the order – mark it inactive for the floating cart
         setActiveOrder(null);
       }
@@ -3648,7 +3648,11 @@ payload = await res.json();
         if (cancelled) return;
         const list = parseArray(orders);
         const occupied = toArray(list)
-          .filter((order) => order?.table_number && order.status !== "closed")
+          .filter((order) => {
+            if (!order?.table_number) return false;
+            const status = String(order?.status || "").toLowerCase();
+            return !["closed", "completed", "canceled", "cancelled"].includes(status);
+          })
           .map((order) => Number(order.table_number));
         setOccupiedTables(occupied);
       })
