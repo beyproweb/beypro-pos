@@ -2348,6 +2348,10 @@ const totalDiscount = calcOrderDiscount(order);
       const isOnlinePayment = order.payment_method &&
         onlinePayments.some(type => order.payment_method.toLowerCase().includes(type));
       const isYemeksepeti = order.order_type === "packet" && order.external_id;
+      const hasUnmatchedYsItems =
+        isYemeksepeti &&
+        Array.isArray(order.items) &&
+        order.items.some((item) => !item.product_id);
       const externalOrderRef =
         order.external_id ||
         order.externalId ||
@@ -2587,6 +2591,14 @@ const totalDiscount = calcOrderDiscount(order);
     <svg width="28" height="28" viewBox="0 0 24 24" className="inline -mt-0.5 ml-1"><circle cx="12" cy="12" r="12" fill="#FF3B30"/><text x="12" y="16" textAnchor="middle" fontSize="13" fill="#fff" fontWeight="bold">YS</text></svg>
   </span>
 )}
+    {hasUnmatchedYsItems && (
+      <a
+        href="/settings/integrations#yemeksepeti-mapping"
+        className="inline-flex items-center justify-center w-full sm:w-auto px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-amber-500 text-white text-xs sm:text-sm font-bold shadow border border-amber-200 flex-shrink-0"
+      >
+        {t("Needs Yemeksepeti mapping")}
+      </a>
+    )}
     <div className="flex items-center justify-end gap-2 w-full sm:w-auto flex-nowrap overflow-x-auto sm:overflow-visible whitespace-nowrap">
      
       <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide transition flex-shrink-0 ${statusVisual.statusChip}`}>

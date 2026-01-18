@@ -194,6 +194,24 @@ export default function IntegrationsTab() {
   const [integrations, setIntegrations] = useState(() => getDefaultIntegrations());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [ysMappingType, setYsMappingType] = useState("product");
+  const [ysUnmatchedItems, setYsUnmatchedItems] = useState([]);
+  const [ysMappedItems, setYsMappedItems] = useState([]);
+  const [ysMappingLoading, setYsMappingLoading] = useState(false);
+  const [ysMappingError, setYsMappingError] = useState("");
+  const [ysModalOpen, setYsModalOpen] = useState(false);
+  const [ysSelectedItem, setYsSelectedItem] = useState(null);
+  const [ysCandidates, setYsCandidates] = useState([]);
+  const [ysCandidatesLoading, setYsCandidatesLoading] = useState(false);
+  const [ysSearch, setYsSearch] = useState("");
+  const [ysSelectedCandidate, setYsSelectedCandidate] = useState(null);
+
+  const formatShortDate = (value) => {
+    if (!value) return "-";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "-";
+    return parsed.toLocaleString();
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -217,6 +235,58 @@ export default function IntegrationsTab() {
       mounted = false;
     };
   }, [t]);
+
+  const loadYsMappings = async (itemType = ysMappingType) => {
+    setYsMappingLoading(true);
+    setYsMappingError("");
+    try {
+      const [unmatched, mapped] = await Promise.all([
+        secureFetch(`/integrations/yemeksepeti/unmatched?itemType=${encodeURIComponent(itemType)}`),
+        secureFetch(`/integrations/yemeksepeti/mappings?itemType=${encodeURIComponent(itemType)}`),
+      ]);
+      setYsUnmatchedItems(unmatched?.items || []);
+      setYsMappedItems(mapped?.items || []);
+    } catch (err) {
+      console.error("❌ Failed to load Yemeksepeti mappings:", err);
+      setYsMappingError(err?.message || t("Failed to load settings"));
+    } finally {
+      setYsMappingLoading(false);
+    }
+  };
+
+  const loadYsCandidates = async (itemType = ysMappingType) => {
+    setYsCandidatesLoading(true);
+    try {
+      if (itemType === "extra") {
+        const groups = await secureFetch("/extras-groups");
+        const extras = (groups || []).flatMap((group) =>
+          (group.items || []).map((item) => ({
+            id: item.id,
+            name: item.name,
+            groupName: group.group_name,
+          }))
+        );
+        setYsCandidates(extras);
+        return;
+      }
+      const products = await secureFetch("/products");
+      setYsCandidates(products || []);
+    } catch (err) {
+      console.error("❌ Failed to load Yemeksepeti candidates:", err);
+      toast.error(t("Failed to load settings"));
+    } finally {
+      setYsCandidatesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadYsMappings(ysMappingType);
+  }, [ysMappingType]);
+
+  useEffect(() => {
+    setYsCandidates([]);
+    setYsSelectedCandidate(null);
+  }, [ysMappingType]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -283,6 +353,55 @@ export default function IntegrationsTab() {
       toast.error(err?.message || t("Failed to save"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openYsMatchModal = async (item) => {
+    setYsSelectedItem(item);
+    setYsSelectedCandidate(null);
+    setYsSearch("");
+    setYsModalOpen(true);
+    if (!ysCandidates.length) {
+      await loadYsCandidates(ysMappingType);
+    }
+  };
+
+  const handleYsMapSave = async () => {
+    if (!ysSelectedItem || !ysSelectedCandidate) return;
+    try {
+      await secureFetch("/integrations/yemeksepeti/map", {
+        method: "POST",
+        body: JSON.stringify({
+          itemType: ysMappingType,
+          platformItemId: ysSelectedItem.platform_item_id,
+          beyproId: ysSelectedCandidate.id,
+          remoteCodeUsed: ysSelectedItem.remote_code || ysSelectedItem.remote_code_used || "",
+        }),
+      });
+      toast.success(t("Mapping saved"));
+      setYsModalOpen(false);
+      setYsSelectedItem(null);
+      setYsSelectedCandidate(null);
+      await loadYsMappings(ysMappingType);
+    } catch (err) {
+      console.error("❌ Failed to save Yemeksepeti mapping:", err);
+      toast.error(err?.message || t("Failed to save settings"));
+    }
+  };
+
+  const handleYsUnmap = async (item) => {
+    try {
+      await secureFetch(
+        `/integrations/yemeksepeti/map/${ysMappingType}/${encodeURIComponent(
+          item.platform_item_id
+        )}`,
+        { method: "DELETE" }
+      );
+      toast.success(t("Mapping removed"));
+      await loadYsMappings(ysMappingType);
+    } catch (err) {
+      console.error("❌ Failed to remove Yemeksepeti mapping:", err);
+      toast.error(err?.message || t("Failed to save settings"));
     }
   };
 
@@ -596,6 +715,277 @@ export default function IntegrationsTab() {
             </div>
           </div>
         </div>
+
+        <div id="yemeksepeti-mapping" className="mt-6 border-t pt-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                  {t("Yemeksepeti Mapping")}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-300">
+                  {t("Map existing Yemeksepeti items to Beypro products and extras.")}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex rounded-full border border-slate-200 dark:border-slate-600 overflow-hidden">
+                  {["product", "extra"].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setYsMappingType(type)}
+                      className={`px-3 py-1.5 text-xs font-semibold ${
+                        ysMappingType === type
+                          ? "bg-indigo-600 text-white"
+                          : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                      }`}
+                    >
+                      {type === "product" ? t("Products") : t("Extras")}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadYsMappings(ysMappingType)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-full border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  {t("Refresh")}
+                </button>
+              </div>
+            </div>
+
+            {ysMappingError && (
+              <div className="px-3 py-2 text-xs rounded-lg bg-red-50 text-red-700 border border-red-200">
+                {ysMappingError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h5 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    {t("Unmatched items")}
+                  </h5>
+                  <span className="text-xs text-slate-500">
+                    {ysMappingLoading ? t("Loading...") : ysUnmatchedItems.length}
+                  </span>
+                </div>
+                <div className="overflow-auto max-h-[320px] border border-slate-100 dark:border-slate-800 rounded-lg">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 text-left">{t("Platform ID")}</th>
+                        <th className="px-3 py-2 text-left">{t("Name")}</th>
+                        <th className="px-3 py-2 text-left">{t("Remote Code")}</th>
+                        <th className="px-3 py-2 text-left">{t("Updated")}</th>
+                        <th className="px-3 py-2 text-right">{t("Action")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ysUnmatchedItems.map((item) => (
+                        <tr key={item.id} className="border-t border-slate-100 dark:border-slate-800">
+                          <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                            {item.platform_item_id}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                            {item.platform_item_name || "-"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                            {item.remote_code || "-"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                            {formatShortDate(item.updated_at)}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openYsMatchModal(item)}
+                              className="px-2.5 py-1 rounded-full bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700"
+                            >
+                              {t("Match")}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {!ysMappingLoading && ysUnmatchedItems.length === 0 && (
+                        <tr>
+                          <td colSpan="5" className="px-3 py-6 text-center text-slate-400">
+                            {t("No unmatched items")}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h5 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    {t("Mapped items")}
+                  </h5>
+                  <span className="text-xs text-slate-500">
+                    {ysMappingLoading ? t("Loading...") : ysMappedItems.length}
+                  </span>
+                </div>
+                <div className="overflow-auto max-h-[320px] border border-slate-100 dark:border-slate-800 rounded-lg">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 text-left">{t("Platform ID")}</th>
+                        <th className="px-3 py-2 text-left">{t("Beypro Item")}</th>
+                        <th className="px-3 py-2 text-left">{t("Remote Code")}</th>
+                        <th className="px-3 py-2 text-right">{t("Action")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ysMappedItems.map((item) => (
+                        <tr key={`${item.platform_item_id}-${item.beypro_id}`} className="border-t border-slate-100 dark:border-slate-800">
+                          <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                            {item.platform_item_id}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700 dark:text-slate-200">
+                            {item.beypro_name || item.beypro_id}
+                          </td>
+                          <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                            {item.remote_code_used || "-"}
+                          </td>
+                          <td className="px-3 py-2 text-right space-x-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openYsMatchModal({
+                                  platform_item_id: item.platform_item_id,
+                                  remote_code: item.remote_code_used,
+                                })
+                              }
+                              className="px-2.5 py-1 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold"
+                            >
+                              {t("Change")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleYsUnmap(item)}
+                              className="px-2.5 py-1 rounded-full bg-red-500 text-white text-xs font-semibold hover:bg-red-600"
+                            >
+                              {t("Unmap")}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {!ysMappingLoading && ysMappedItems.length === 0 && (
+                        <tr>
+                          <td colSpan="4" className="px-3 py-6 text-center text-slate-400">
+                            {t("No mappings yet")}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {ysModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-xl shadow-xl border border-slate-200 dark:border-slate-700 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h5 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                    {t("Match Yemeksepeti item")}
+                  </h5>
+                  <p className="text-xs text-slate-500 dark:text-slate-300">
+                    {ysSelectedItem?.platform_item_id
+                      ? `${t("Platform ID")}: ${ysSelectedItem.platform_item_id}`
+                      : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setYsModalOpen(false)}
+                  className="text-slate-500 hover:text-slate-700"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mt-4">
+                <input
+                  type="text"
+                  value={ysSearch}
+                  onChange={(e) => setYsSearch(e.target.value)}
+                  placeholder={t("Search Beypro items...")}
+                  className="w-full p-2 border rounded-lg bg-white dark:bg-slate-800 dark:text-white border-slate-200 dark:border-slate-700"
+                />
+              </div>
+
+              <div className="mt-3 max-h-64 overflow-auto border border-slate-100 dark:border-slate-800 rounded-lg">
+                {ysCandidatesLoading ? (
+                  <div className="p-4 text-center text-sm text-slate-500">{t("Loading...")}</div>
+                ) : (
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+                    {ysCandidates
+                      .filter((item) => {
+                        const name = String(item.name || "").toLowerCase();
+                        const query = String(ysSearch || "").toLowerCase();
+                        return !query || name.includes(query) || String(item.id).includes(query);
+                      })
+                      .map((item) => (
+                        <li
+                          key={item.id}
+                          className={`px-4 py-2 flex items-center justify-between cursor-pointer ${
+                            ysSelectedCandidate?.id === item.id
+                              ? "bg-indigo-50 dark:bg-indigo-900/40"
+                              : "hover:bg-slate-50 dark:hover:bg-slate-800"
+                          }`}
+                          onClick={() => setYsSelectedCandidate(item)}
+                        >
+                          <div>
+                            <div className="font-medium text-slate-700 dark:text-slate-200">
+                              {item.name || item.ingredient_name || "-"}
+                            </div>
+                            <div className="text-xs text-slate-400">
+                              #{item.id} {item.groupName ? `• ${item.groupName}` : ""}
+                            </div>
+                          </div>
+                          {ysSelectedCandidate?.id === item.id && (
+                            <span className="text-xs font-semibold text-indigo-600">
+                              {t("Selected")}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    {!ysCandidatesLoading && ysCandidates.length === 0 && (
+                      <li className="p-4 text-center text-sm text-slate-400">
+                        {t("No items available")}
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </div>
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setYsModalOpen(false)}
+                  className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+                >
+                  {t("Cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleYsMapSave}
+                  disabled={!ysSelectedCandidate}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold disabled:opacity-50"
+                >
+                  {t("Save mapping")}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Trendyol Go integration card */}
         <div className="border-t pt-6">
