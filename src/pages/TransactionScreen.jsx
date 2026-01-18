@@ -536,6 +536,9 @@ const isDebtEligible = canShowDebtButton && !hasUnconfirmedItems && hasConfirmed
   const safeProducts = Array.isArray(products) ? products : [];
   const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
   const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
+  const [categoryColumnSlots, setCategoryColumnSlots] = useState(0);
+  const rightCategoryColumnRef = useRef(null);
+  const categoryMeasureRef = useRef(null);
 const [excludedItems, setExcludedItems] = useState([]);
 const [excludedCategories, setExcludedCategories] = useState([]);
 const excludedItemsSet = useMemo(
@@ -558,6 +561,42 @@ const productsInActiveCategory = safeProducts.filter(
     (p.category || "").trim().toLowerCase() ===
     (activeCategory || "").trim().toLowerCase()
 );
+const categoryColumns = useMemo(() => {
+  const entries = categories.map((cat, index) => ({ cat, index }));
+  if (entries.length === 0) {
+    return { right: [], left: [], bottom: [] };
+  }
+  const slots = categoryColumnSlots > 0 ? categoryColumnSlots : entries.length;
+  return {
+    right: entries.slice(0, slots),
+    left: entries.slice(slots, slots * 2),
+    bottom: entries.slice(slots * 2),
+  };
+}, [categories, categoryColumnSlots]);
+
+const measureCategorySlots = useCallback(() => {
+  if (typeof window === "undefined") return;
+  const column = rightCategoryColumnRef.current;
+  const sample = categoryMeasureRef.current;
+  if (!column || !sample) return;
+  const columnHeight = column.clientHeight;
+  const itemHeight = sample.clientHeight;
+  if (!columnHeight || !itemHeight) return;
+  const gapRaw = window.getComputedStyle(column).rowGap;
+  const gap = Number.isFinite(parseFloat(gapRaw)) ? parseFloat(gapRaw) : 0;
+  const slots = Math.max(1, Math.floor((columnHeight + gap) / (itemHeight + gap)));
+  setCategoryColumnSlots((prev) => (prev === slots ? prev : slots));
+}, []);
+
+useLayoutEffect(() => {
+  if (typeof window === "undefined" || categories.length === 0) return;
+  const id = window.requestAnimationFrame(measureCategorySlots);
+  window.addEventListener("resize", measureCategorySlots);
+  return () => {
+    window.cancelAnimationFrame(id);
+    window.removeEventListener("resize", measureCategorySlots);
+  };
+}, [categories.length, categoryColumnSlots, measureCategorySlots]);
 
 useEffect(() => {
   if (!deferHeavyUi) return;
@@ -892,6 +931,10 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
 const widthClass =
   variant === "mobile"
     ? "min-w-[100px] max-w-[110px] snap-start"
+    : variant === "bar"
+    ? "min-w-[110px] max-w-[130px]"
+    : variant === "grid"
+    ? "w-[100px]"
     : "w-full";
   const activeClasses = "border-indigo-500 bg-white shadow";
   const inactiveClasses = "border-slate-200 hover:border-indigo-300 hover:bg-slate-50";
@@ -900,7 +943,11 @@ const widthClass =
   const iconClasses = "text-[20px] leading-tight";           // bigger ✔
 
   const labelClasses =
-    "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[75px]"; // bigger ✔
+    variant === "grid"
+      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[90px]"
+      : variant === "bar"
+      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[110px]"
+      : "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[75px]";
 
   return (
     <button
@@ -4073,7 +4120,7 @@ const cardGradient = item.paid
   if (loading || deferHeavyUi) {
     return (
       <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
-        <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-x-hidden">
+        <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 pl-4 sm:pl-6 lg:pl-8 xl:pl-10 pr-0 overflow-x-hidden">
           <div className="mt-6 rounded-2xl bg-white shadow-lg ring-1 ring-slate-200 p-6 text-center text-slate-700 font-semibold">
             {t("Loading...")}
           </div>
@@ -4084,7 +4131,7 @@ const cardGradient = item.paid
 
   return (
     <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
-      <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:px-10 overflow-x-hidden">
+      <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 pl-4 sm:pl-6 lg:pl-8 xl:pl-10 pr-0 overflow-x-hidden">
   <section className="flex flex-1 min-h-0 flex-row gap-2 pb-4 overflow-hidden">
 
     {/* === LEFT: CART PANEL (desktop only) === */}
@@ -4092,24 +4139,9 @@ const cardGradient = item.paid
       <div className="sticky top-0 h-full">{renderCartContent("desktop")}</div>
     </div>
 
-    {/* === CENTER: VERTICAL CATEGORY BAR === */}
-  <aside className="w-[10%] min-w-[85px] max-w-[110px] bg-white rounded-xl shadow-md ring-1 ring-slate-200 p-2 overflow-hidden">
-    <div className="flex flex-col gap-2 overflow-y-auto max-h-[calc(100vh-140px)] pr-1 
-                    scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-transparent">
-      {categories.map((cat, idx) => (
-        <div key={idx}>
-          {renderCategoryButton(cat, idx, "vertical")}
-        </div>
-      ))}
-    </div>
-  </aside>
-
-
-    {/* === RIGHT: PRODUCTS GRID === */}
-    <article className="flex-1 min-w-0 flex flex-col rounded-2xl bg-white shadow-lg ring-1 ring-slate-200 p-3 overflow-hidden">
-      
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200">
       {/* Header */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 pt-0 pb-2">
         <h2 className="text-xl font-semibold text-slate-800">
           {activeCategory ? t(activeCategory) : t("Products")}
         </h2>
@@ -4118,40 +4150,87 @@ const cardGradient = item.paid
         </span>
       </div>
 
-      {/* Product Grid */}
-      <div className="flex-1 overflow-y-auto pr-1">
-  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1">
-    {productsInActiveCategory.map((product) => (
-      <button
-        key={product.id}
-        onClick={() => addToCart(product)}
-        className="
-          flex flex-col items-center gap-1
-          rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm
-          hover:bg-indigo-50
-          w-full                           /* <— fix overlapping */
-        "
-      >
-        <img
-          src={product.image || 'https://via.placeholder.com/100?text=🍔'}
-          alt={product.name}
-          className="
-            w-full aspect-square object-cover rounded-md   /* <— MOBILE FIX */
-            lg:h-16 lg:w-16 lg:rounded-xl lg:border lg:object-cover lg:shadow /* unchanged desktop */
-          "
-        />
-        <p className="text-sm font-semibold text-slate-700 text-center line-clamp-2 leading-tight">
-          {product.name}
-        </p>
-        <span className="text-base font-bold text-indigo-600">
-          {formatCurrency(parseFloat(product.price))}
-        </span>
-      </button>
-    ))}
-  </div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {categoryColumns.left.length > 0 && (
+          <aside className="h-full w-[10%] min-w-[90px] max-w-[120px] border-r border-slate-200 bg-slate-50 p-2">
+            <div className="flex flex-col gap-2 overflow-y-auto h-full pr-1 scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-transparent">
+              {categoryColumns.left.map((entry) => (
+                <div key={`left-${entry.cat}-${entry.index}`}>
+                  {renderCategoryButton(entry.cat, entry.index, "vertical")}
+                </div>
+              ))}
+            </div>
+          </aside>
+        )}
 
+        {/* === CENTER: PRODUCTS GRID === */}
+        <article className="flex-1 min-w-0 flex flex-col bg-white pl-3 pr-0 pb-3 overflow-hidden">
+          <div className="flex-1 overflow-y-auto pr-0">
+            <div className="flex items-start justify-center px-0 pb-0">
+              <div className="grid w-full max-w-[980px] grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 lg:grid-rows-4 lg:auto-rows-fr gap-2">
+                {productsInActiveCategory.map((product) => (
+                  <button
+                    key={product.id}
+                    onClick={() => addToCart(product)}
+                    className="
+                      flex flex-col items-center gap-1
+                      rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm
+                      hover:bg-indigo-50
+                      w-full
+                    "
+                  >
+                    <img
+                      src={product.image || "https://via.placeholder.com/100?text=🍔"}
+                      alt={product.name}
+                      className="
+                        w-full aspect-square object-cover rounded-md
+                        lg:h-16 lg:w-16 lg:rounded-xl lg:border lg:object-cover lg:shadow
+                      "
+                    />
+                    <p className="text-sm font-semibold text-slate-700 text-center line-clamp-2 leading-tight">
+                      {product.name}
+                    </p>
+                    <span className="text-base font-bold text-indigo-600">
+                      {formatCurrency(parseFloat(product.price))}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </article>
+
+        {/* === RIGHT: CATEGORY COLUMN (PRIMARY) === */}
+        <aside className="h-full w-[10%] min-w-[90px] max-w-[120px] border-l border-slate-200 bg-slate-50 p-2">
+          <div
+            ref={rightCategoryColumnRef}
+            className="flex flex-col gap-2 overflow-y-auto h-full pr-1 scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-transparent"
+          >
+            {categoryColumns.right.map((entry, idx) => (
+              <div
+                key={`right-${entry.cat}-${entry.index}`}
+                ref={idx === 0 ? categoryMeasureRef : null}
+              >
+                {renderCategoryButton(entry.cat, entry.index, "vertical")}
+              </div>
+            ))}
+          </div>
+        </aside>
       </div>
-    </article>
+
+      {/* === BOTTOM CATEGORY BAR === */}
+      {categoryColumns.bottom.length > 0 && (
+        <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="flex flex-wrap gap-2">
+            {categoryColumns.bottom.map((entry) => (
+              <div key={`bottom-${entry.cat}-${entry.index}`}>
+                {renderCategoryButton(entry.cat, entry.index, "bar")}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   </section>
 
     </div>

@@ -590,7 +590,9 @@ function compileTotals(selectedOrders) {
     extras.forEach(ex => {
       if (!ex?.name) return;
       const key = ex.name;
-      extrasSummary[key] = (extrasSummary[key] || 0) + (Number(ex.quantity) || 1);
+      const perItemQty = Number(ex.quantity) || 1;
+      const itemQty = Number(item.quantity) || 1;
+      extrasSummary[key] = (extrasSummary[key] || 0) + perItemQty * itemQty;
     });
 
     // ✅ Notes
@@ -1110,9 +1112,14 @@ return (
 
                     {parsedExtras.length > 0 && (
                       <ul className="text-xs sm:text-sm list-disc pl-5 text-slate-600 dark:text-slate-200">
-                        {parsedExtras.map((ex, idx) => (
-                          <li key={idx}>➕ {ex.name} ×{ex.quantity}</li>
-                        ))}
+                        {parsedExtras.map((ex, idx) => {
+                          const perItemQty = Number(ex.quantity) || 1;
+                          const itemQty = Number(item.quantity) || 1;
+                          const totalQty = perItemQty * itemQty;
+                          return (
+                            <li key={idx}>➕ {ex.name} ×{totalQty}</li>
+                          );
+                        })}
                       </ul>
                     )}
                   </div>

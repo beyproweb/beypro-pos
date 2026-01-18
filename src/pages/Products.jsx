@@ -792,13 +792,13 @@ const handleRenameCategory = async (original, value) => {
 
     await fetchCategories();
     await fetchProducts();
-  } catch (err) {
-    console.error("❌ Failed to rename category:", err);
-    alert("Failed to rename category — check console.");
-  } finally {
-    setCategoryAction({ name: null, type: null });
-  }
-};
+	  } catch (err) {
+	    console.error("❌ Failed to rename category:", err?.details || err);
+	    alert(err?.message || "Failed to rename category — check console.");
+	  } finally {
+	    setCategoryAction({ name: null, type: null });
+	  }
+	};
 
 
   const handleDeleteCategoryEntry = async (name) => {

@@ -152,8 +152,20 @@ const isPublic =
 
   const json = await res.json();
   if (!res.ok) {
-    const err = new Error(json?.error || `❌ Request failed [${res.status}]`);
-    err.details = { ...requestMeta, status: res.status, body: json };
+    const errorMessage =
+      json?.error ||
+      json?.message ||
+      json?.msg ||
+      json?.detail ||
+      (Array.isArray(json?.errors) ? json.errors.map((e) => e?.message || e).join(", ") : "") ||
+      `❌ Request failed [${res.status}]`;
+
+    const err = new Error(errorMessage);
+    err.details = {
+      ...requestMeta,
+      status: res.status,
+      body: json,
+    };
     throw err;
   }
   return json;
