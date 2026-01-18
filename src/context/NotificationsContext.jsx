@@ -152,6 +152,12 @@ function buildPaymentNotificationMessage(extra, formatCurrency) {
   return segments.join(" ");
 }
 
+function getYsStatusLabel(event) {
+  const normalized = String(event || "").toLowerCase();
+  if (!normalized.startsWith("ys_order_")) return null;
+  return normalized.replace("ys_order_", "").replace(/_/g, " ");
+}
+
 function normalizeNotification(raw, formatCurrency) {
   const extra = normalizeExtra(raw?.extra);
   const type = String(raw?.type || "other").toLowerCase();
@@ -174,10 +180,27 @@ function normalizeNotification(raw, formatCurrency) {
     }
   }
 
+  if (type === "stock") {
+    const event = String(extra?.event || "").toLowerCase();
+    if (event === "stock_deducted") {
+      const name = extra?.stockName || extra?.stock_name || extra?.name || "Stock";
+      const qty = extra?.quantity ?? extra?.qty ?? null;
+      const unit = extra?.unit || "";
+      const qtyText = qty !== null && qty !== undefined ? ` (-${qty} ${unit})`.trim() : "";
+      message = `Stock deducted: ${name}${qtyText ? ` ${qtyText}` : ""}`;
+    }
+  }
+
   if (type === "order") {
     const fallback = message;
     const event = String(extra?.event || "").toLowerCase();
-    if (event === "order_confirmed") {
+    const orderNumber = extra?.order_number ?? extra?.orderNumber ?? null;
+    const orderId = extra?.orderId ?? extra?.order_id ?? null;
+    const orderSuffix = orderNumber ? `#${orderNumber}` : orderId ? `#${orderId}` : "";
+    const ysLabel = getYsStatusLabel(event);
+    if (ysLabel) {
+      message = `Yemeksepeti order ${orderSuffix} ${ysLabel}`.replace(/\s{2,}/g, " ").trim();
+    } else if (event === "order_confirmed") {
       message = buildNewOrderNotificationMessage(extra, fallback);
     } else if (event === "order_preparing") {
       message = buildKitchenPreparingNotificationMessage(extra, fallback);
@@ -206,7 +229,11 @@ function mergeKeyForNotification(notification) {
   const extra = notification?.extra && typeof notification.extra === "object" ? notification.extra : {};
 
   const orderId = extra.orderId ?? extra.order_id ?? extra.id;
-  if ((type === "order" || type === "payment" || type === "driver") && orderId) {
+  if (type === "order" && orderId) {
+    const event = String(extra?.event || "").toLowerCase();
+    return event ? `order:${orderId}:${event}` : `order:${orderId}`;
+  }
+  if ((type === "payment" || type === "driver") && orderId) {
     return `order:${orderId}`;
   }
 

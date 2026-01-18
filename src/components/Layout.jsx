@@ -8,7 +8,7 @@ import NotificationBell from "./NotificationBell";
 import { ToastContainer } from "react-toastify";
 import { useHeader } from "../context/HeaderContext";
 import "react-toastify/dist/ReactToastify.css";
-import { X } from "lucide-react";
+import { ArrowUpDown, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const EDGE_TRIGGER_THRESHOLD = 48;
@@ -48,6 +48,12 @@ function getTableFromMessage(message) {
   return null;
 }
 
+function getYsStatusLabel(event) {
+  const normalized = String(event || "").toLowerCase();
+  if (!normalized.startsWith("ys_order_")) return null;
+  return normalized.replace("ys_order_", "").replace(/_/g, " ");
+}
+
 function formatNotificationMessage(alert, t) {
   const type = String(alert?.type || "other").toLowerCase();
   const extra = alert?.extra && typeof alert.extra === "object" ? alert.extra : {};
@@ -57,6 +63,11 @@ function formatNotificationMessage(alert, t) {
   const orderNumber = extra.order_number ?? extra.orderNumber ?? null;
   const orderSuffix = orderNumber ? `#${orderNumber}` : orderId ? `#${orderId}` : "";
   const tableRef = getTableLabel(extra) || getTableFromMessage(alert?.message);
+  const ysLabel = getYsStatusLabel(event);
+
+  if (ysLabel) {
+    return `Yemeksepeti order ${orderSuffix} ${ysLabel}`.replace(/\s{2,}/g, " ").trim();
+  }
 
   if (event === "order_confirmed") {
     if (tableRef) return `New order on Table ${tableRef}`;
@@ -92,6 +103,13 @@ function formatNotificationMessage(alert, t) {
   if (event === "task_completed") return t("Task completed: {{title}}", { title: extra.title || "" }).trim();
   if (event === "maintenance_created") return t("Maintenance created: {{title}}", { title: extra.title || "" }).trim();
   if (event === "maintenance_resolved") return t("Maintenance resolved: {{title}}", { title: extra.title || "" }).trim();
+  if (event === "stock_deducted") {
+    const name = extra.stockName || extra.stock_name || extra.name || "Stock";
+    const qty = extra.quantity ?? extra.qty ?? null;
+    const unit = extra.unit || "";
+    const suffix = qty !== null && qty !== undefined ? ` (-${qty} ${unit})`.trim() : "";
+    return `Stock deducted: ${name}${suffix ? ` ${suffix}` : ""}`.trim();
+  }
 
   // Backend saved notifications may contain emojis; strip for bell.
   return stripEmojis(alert?.message || "");
@@ -118,6 +136,7 @@ export default function Layout({
   const [filter, setFilter] = useState("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [search, setSearch] = useState("");
+  const [sortNewestFirst, setSortNewestFirst] = useState(true);
   const contentRef = useRef(null);
 
   // Username from localStorage for welcome
@@ -445,6 +464,17 @@ export default function Layout({
         <option value="other">Other</option>
       </select>
 
+      <button
+        type="button"
+        onClick={() => setSortNewestFirst((value) => !value)}
+        className="inline-flex items-center gap-1 rounded px-2 py-1.5 bg-blue-900/40 hover:bg-blue-800/50 text-blue-100 font-bold shadow transition-all border border-blue-800"
+        title={sortNewestFirst ? "Sort: newest first" : "Sort: oldest first"}
+        aria-label="Toggle notification sort order"
+      >
+        <ArrowUpDown className="h-4 w-4" />
+        <span className="text-xs">{sortNewestFirst ? "Latest" : "Oldest"}</span>
+      </button>
+
       <label className="ml-auto flex items-center gap-2 text-xs text-blue-200 font-bold select-none">
         <input
           type="checkbox"
@@ -523,26 +553,36 @@ export default function Layout({
     </div>
     {/* List */}
    {/* List */}
-<ul className="space-y-2 px-4 py-3 max-h-[90vh] overflow-y-auto">
-  {lowStockAlerts
-    .filter((alert) => {
-      if (!unreadOnly) return true;
-      return (alert.timeMs || 0) > (notificationsLastSeenAtMs || 0);
-    })
-    .filter(alert =>
-      filter === "all" ? true :
-      filter === "order" ? ["order", "order_delayed", "order_ready"].includes(alert.type) :
-      alert.type === filter
-    )
-    .filter((alert) => {
-      const q = search.trim().toLowerCase();
-      if (!q) return true;
-      return (
-        String(alert.message || "").toLowerCase().includes(q) ||
-        String(alert.type || "").toLowerCase().includes(q)
-      );
-    })
-    .map((alert) => {
+    <ul className="space-y-2 px-4 py-3 max-h-[90vh] overflow-y-auto">
+    {(() => {
+      const filteredAlerts = lowStockAlerts
+        .filter((alert) => {
+          if (!unreadOnly) return true;
+          return (alert.timeMs || 0) > (notificationsLastSeenAtMs || 0);
+        })
+        .filter((alert) =>
+          filter === "all"
+            ? true
+            : filter === "order"
+              ? ["order", "order_delayed", "order_ready"].includes(alert.type)
+              : alert.type === filter
+        )
+        .filter((alert) => {
+          const q = search.trim().toLowerCase();
+          if (!q) return true;
+          return (
+            String(alert.message || "").toLowerCase().includes(q) ||
+            String(alert.type || "").toLowerCase().includes(q)
+          );
+        });
+
+      const sortedAlerts = filteredAlerts.slice().sort((a, b) => {
+        const aTime = a?.timeMs || (a?.time ? new Date(a.time).getTime() : 0);
+        const bTime = b?.timeMs || (b?.time ? new Date(b.time).getTime() : 0);
+        return sortNewestFirst ? bTime - aTime : aTime - bTime;
+      });
+
+      return sortedAlerts.map((alert) => {
       const timeMs = alert?.timeMs || (alert?.time ? new Date(alert.time).getTime() : 0);
       const isUnread = timeMs > (notificationsLastSeenAtMs || 0);
       const type = String(alert.type || "other").toLowerCase();
@@ -581,9 +621,9 @@ export default function Layout({
           <span className="ml-auto text-xs text-blue-300 font-bold">{timeLabel}</span>
         </li>
       );
-    })
-  }
-</ul>
+    });
+    })()}
+    </ul>
 
   </div>
 )}
