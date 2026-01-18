@@ -21,10 +21,15 @@ const StaffCheckIn = () => {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const containerRef = useRef(null);
   const [filter, setFilter] = useState("day");
+  const [checkinGeo, setCheckinGeo] = useState({
+    enabled: false,
+    radiusMeters: 150,
+  });
 
   useEffect(() => {
     fetchStaff();
     fetchAttendance();
+    fetchCheckinSettings();
   }, []);
 
   const staffLookup = useMemo(() => {
@@ -85,10 +90,38 @@ const StaffCheckIn = () => {
 
   const sendCheckInData = async (staffId, action) => {
     try {
+      let geoPayload = {};
+      if (checkinGeo.enabled) {
+        if (!navigator?.geolocation) {
+          throw new Error("Location is required for staff check-in/out.");
+        }
+        const position = await new Promise((resolve, reject) => {
+          const timeoutMs = 10000;
+          const timeoutId = window.setTimeout(() => {
+            reject(new Error("Location request timed out."));
+          }, timeoutMs);
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              window.clearTimeout(timeoutId);
+              resolve(pos);
+            },
+            () => {
+              window.clearTimeout(timeoutId);
+              reject(new Error("Location permission is required."));
+            },
+            { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 }
+          );
+        });
+        geoPayload = {
+          geo_lat: position.coords.latitude,
+          geo_lng: position.coords.longitude,
+        };
+      }
       const payload = {
         staffId,
         deviceId: "BeyproDevice001",
         action,
+        ...geoPayload,
       };
       const data = await secureFetch("/staff/checkin", {
         method: "POST",
@@ -145,6 +178,18 @@ const StaffCheckIn = () => {
     } catch (err) {
       console.error("❌ Error fetching attendance:", err);
       setMessage("Error fetching attendance");
+    }
+  };
+
+  const fetchCheckinSettings = async () => {
+    try {
+      const res = await secureFetch("/settings/users");
+      setCheckinGeo({
+        enabled: res?.staffCheckinGeoEnabled === true,
+        radiusMeters: Number(res?.staffCheckinGeoRadiusMeters) || 150,
+      });
+    } catch (err) {
+      console.error("❌ Failed to load check-in settings:", err);
     }
   };
 

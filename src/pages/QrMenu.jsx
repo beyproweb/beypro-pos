@@ -2796,7 +2796,7 @@ async function startOnlinePaymentSession(id) {
 
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier }) {
+function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier, errorMessage }) {
   if (!open) return null;
 
   const title =
@@ -2807,7 +2807,7 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
   const message =
     status === "success" ? t("Thank you! Your order has been received.")
     : status === "pending" ? t("Please wait...")
-    : t("Something went wrong. Please try again.");
+    : errorMessage || t("Something went wrong. Please try again.");
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40">
@@ -3005,6 +3005,7 @@ const shareUrl = useMemo(() => {
         const res = await secureFetch(`/public/qr-menu-customization/${encodeURIComponent(restaurantIdentifier)}`);
         const c = res?.customization || {};
         setBrandName(c.title || c.main_title || "");
+        setOrderSelectCustomization((prev) => ({ ...prev, ...c }));
       } catch (err) {
         // ignore, fallback handled in QrHeader
       }
@@ -3051,6 +3052,8 @@ const shareUrl = useMemo(() => {
   const [showTakeawayForm, setShowTakeawayForm] = useState(false);
   const [orderSelectCustomization, setOrderSelectCustomization] = useState({
     delivery_enabled: true,
+    table_geo_enabled: false,
+    table_geo_radius_meters: 150,
   });
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
   const [pendingPopularProduct, setPendingPopularProduct] = useState(null);
@@ -3218,7 +3221,7 @@ useEffect(() => {
 // === Always-mounted Order Status (portal) ===
 const statusPortal = showStatus
   ? createPortal(
-      <OrderStatusModal
+        <OrderStatusModal
         open={true}
         status={orderStatus}
         orderId={orderId}
@@ -3229,6 +3232,7 @@ const statusPortal = showStatus
         onFinished={resetToTypePicker}
         t={t}
         appendIdentifier={appendIdentifier}
+        errorMessage={lastError}
       />,
       document.body
     )
@@ -3720,7 +3724,9 @@ if (!orderType)
         setShowHelp={setShowHelp}
         platform={platform}
         onPopularClick={handlePopularProductClick}
-        onCustomizationLoaded={setOrderSelectCustomization}
+        onCustomizationLoaded={(next) =>
+          setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
+        }
       />
 
       {showOrderTypePrompt && pendingPopularProduct && (
@@ -3936,7 +3942,7 @@ async function postJSON(url, body) {
   }
 }
 
-function buildOrderPayload({ orderType, table, items, total, customer, takeaway, paymentMethod }) {
+function buildOrderPayload({ orderType, table, items, total, customer, takeaway, paymentMethod, tableGeo }) {
   const itemsPayload = (items || []).map(i => ({
     product_id: i.id,
     quantity: i.quantity,
@@ -3968,6 +3974,8 @@ function buildOrderPayload({ orderType, table, items, total, customer, takeaway,
     order_type: isOnline ? "packet" : isTakeaway ? "takeaway" : "table",
     total: Number(total) || 0,
     items: itemsPayload,
+    table_geo_lat: isTable ? tableGeo?.lat ?? null : null,
+    table_geo_lng: isTable ? tableGeo?.lng ?? null : null,
 
     // ✅ Safely handle missing objects
     customer_name: isTakeaway
@@ -4038,6 +4046,30 @@ async function handleSubmitOrder() {
       }
     }
 
+    let tableGeo = null;
+    if (orderType === "table" && orderSelectCustomization.table_geo_enabled) {
+      if (!navigator?.geolocation) {
+        throw new Error("Location is required for table orders. Please rescan at the restaurant.");
+      }
+      tableGeo = await new Promise((resolve, reject) => {
+        const timeoutMs = 10000;
+        const timeoutId = window.setTimeout(() => {
+          reject(new Error("Location request timed out. Please rescan at the restaurant."));
+        }, timeoutMs);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            window.clearTimeout(timeoutId);
+            resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          },
+          () => {
+            window.clearTimeout(timeoutId);
+            reject(new Error("Location permission is required for table orders."));
+          },
+          { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 }
+        );
+      });
+    }
+
     // ---------- APPEND to existing order ----------
     if (orderId) {
       const itemsPayload = newItems.map((i) => ({
@@ -4057,6 +4089,8 @@ await postJSON(appendIdentifier("/orders/order-items"), {
   order_id: orderId,
   receipt_id: null,
   items: itemsPayload,
+  table_geo_lat: tableGeo?.lat ?? null,
+  table_geo_lng: tableGeo?.lng ?? null,
 });
 
 
@@ -4147,6 +4181,7 @@ const created = await postJSON(
     customer: orderType === "online" ? customerInfo : null,
     takeaway: orderType === "takeaway" ? takeaway : null,
     paymentMethod,
+    tableGeo,
   })
 );
 

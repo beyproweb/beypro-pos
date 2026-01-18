@@ -38,6 +38,8 @@ export default function QrMenuSettings() {
   social_tiktok: "",
   social_website: "",
   delivery_enabled: true,
+  table_geo_enabled: false,
+  table_geo_radius_meters: 150,
 });
 
 function updateField(key, value) {
@@ -563,6 +565,49 @@ async function saveAllCustomization() {
               {t(
                 "Toggle whether delivery/online ordering appears in the QR menu order picker."
               )}
+            </p>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="font-semibold">{t("Table Order Location Check")}</label>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <span
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  settings.table_geo_enabled
+                    ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                    : "bg-rose-100 text-rose-700 border border-rose-200"
+                }`}
+              >
+                {settings.table_geo_enabled
+                  ? t("Location check enabled")
+                  : t("Location check disabled")}
+              </span>
+              <button
+                type="button"
+                className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition"
+                onClick={() => updateField("table_geo_enabled", !settings.table_geo_enabled)}
+              >
+                {settings.table_geo_enabled
+                  ? t("Disable Location Check")
+                  : t("Enable Location Check")}
+              </button>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="25"
+                  max="1000"
+                  step="5"
+                  value={settings.table_geo_radius_meters ?? 150}
+                  onChange={(e) =>
+                    updateField("table_geo_radius_meters", Number(e.target.value) || 0)
+                  }
+                  className="w-24 p-2 rounded-xl border bg-white dark:bg-zinc-800"
+                />
+                <span className="text-sm text-gray-600">{t("meters")}</span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {t("Require table orders to be within this distance of the restaurant.")}
             </p>
           </div>
 

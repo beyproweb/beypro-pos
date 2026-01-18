@@ -44,6 +44,14 @@ export default function UserManagementTab() {
             allowedWifiIps: Array.isArray(res.allowedWifiIps)
               ? res.allowedWifiIps
               : prev.allowedWifiIps,
+            staffCheckinGeoEnabled:
+              typeof res.staffCheckinGeoEnabled === "boolean"
+                ? res.staffCheckinGeoEnabled
+                : prev.staffCheckinGeoEnabled,
+            staffCheckinGeoRadiusMeters:
+              typeof res.staffCheckinGeoRadiusMeters === "number"
+                ? res.staffCheckinGeoRadiusMeters
+                : prev.staffCheckinGeoRadiusMeters,
           }));
 
           if (res.roles) {
@@ -92,6 +100,8 @@ export default function UserManagementTab() {
     },
     pinRequired: true,
     allowedWifiIps: [],
+    staffCheckinGeoEnabled: false,
+    staffCheckinGeoRadiusMeters: 150,
   });
   const [allowedIpInput, setAllowedIpInput] = useState("");
   const [newAvatarFileName, setNewAvatarFileName] = useState("");
@@ -115,6 +125,9 @@ export default function UserManagementTab() {
   const allowedIps = Array.isArray(usersConfig.allowedWifiIps)
     ? usersConfig.allowedWifiIps
     : [];
+  const staffCheckinGeoEnabled = usersConfig.staffCheckinGeoEnabled === true;
+  const staffCheckinGeoRadiusMeters =
+    Number(usersConfig.staffCheckinGeoRadiusMeters) || 150;
 
   const DEFAULT_AVATAR =
     "https://www.pngkey.com/png/full/115-1150152_default-profile-picture-avatar-png-green.png";
@@ -434,6 +447,64 @@ export default function UserManagementTab() {
               {t("No Wi-Fi IP restrictions are currently configured.")}
             </p>
           )}
+        </div>
+      </div>
+
+      <div className="mb-12 border-b pb-6 border-indigo-100 dark:border-indigo-800">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+            {t("Restrict QR check-ins to a distance")}
+          </h3>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {staffCheckinGeoEnabled ? t("Enabled") : t("Disabled")}
+          </span>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {t("Require staff to be within a radius of the restaurant to check in/out.")}
+        </p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <label className="inline-flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={staffCheckinGeoEnabled}
+              onChange={() =>
+                setUsersConfig((prev) => ({
+                  ...prev,
+                  staffCheckinGeoEnabled: !prev.staffCheckinGeoEnabled,
+                }))
+              }
+              className="h-5 w-5 accent-indigo-600"
+            />
+            <span className="text-sm text-gray-700 dark:text-gray-300">
+              {t("Enable distance check")}
+            </span>
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="25"
+              max="2000"
+              step="5"
+              value={staffCheckinGeoRadiusMeters}
+              onChange={(e) =>
+                setUsersConfig((prev) => ({
+                  ...prev,
+                  staffCheckinGeoRadiusMeters: Number(e.target.value) || 0,
+                }))
+              }
+              className="w-28 p-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-gray-800 dark:text-white"
+            />
+            <span className="text-sm text-gray-600 dark:text-gray-300">
+              {t("meters")}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveSettings}
+            className="px-4 py-2 rounded-xl bg-indigo-500 text-white text-sm font-semibold hover:bg-indigo-600 transition"
+          >
+            {t("Save")}
+          </button>
         </div>
       </div>
 
