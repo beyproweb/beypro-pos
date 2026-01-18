@@ -308,58 +308,79 @@ const OrderStatusScreen = ({
         <div className="w-full mb-4">
           <div className="font-semibold text-gray-800 mb-3 text-lg">🛍️ {t("Items Ordered")}</div>
           <ul className="space-y-3">
-            {items.map((item) => (
-              <li
-                key={item.id}
-                className="p-4 rounded-2xl border border-neutral-200 bg-white/80 shadow-sm hover:shadow-md transition"
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex flex-col flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base font-medium text-gray-900">{item.name}</span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-semibold ${badgeColor(
-                          item.kitchen_status
-                        )}`}
-                      >
-                        {t(item.kitchen_status.charAt(0).toUpperCase() + item.kitchen_status.slice(1))}
-                      </span>
+            {items.map((item) => {
+              const quantity = Number(item.quantity || 1);
+              const basePrice = Number(item.price || 0);
+              const baseTotal = basePrice * quantity;
+              const perItemExtrasTotal = (item.extras || []).reduce((sum, ex) => {
+                const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                const perItemQty = Number(ex.quantity || 1);
+                return sum + unit * perItemQty;
+              }, 0);
+              const extrasTotal = perItemExtrasTotal * quantity;
+
+              return (
+                <li
+                  key={item.id}
+                  className="p-4 rounded-2xl border border-neutral-200 bg-white/80 shadow-sm hover:shadow-md transition"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-base font-medium text-gray-900">{item.name}</span>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-semibold ${badgeColor(
+                            item.kitchen_status
+                          )}`}
+                        >
+                          {t(item.kitchen_status.charAt(0).toUpperCase() + item.kitchen_status.slice(1))}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {formatCurrency(basePrice)} ×{quantity}
+                      </div>
+
+                      {item.extras?.length > 0 && (
+                        <div className="mt-2 text-sm text-gray-700 space-y-1">
+                          {item.extras.map((ex, i) => {
+                            const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                            const perItemQty = Number(ex.quantity || 1);
+                            const totalQty = perItemQty * quantity;
+                            const lineTotal = unit * totalQty;
+                            return (
+                              <div key={i} className="flex justify-between">
+                                <span>
+                                  ➕ {ex.name} ×{totalQty}
+                                </span>
+                                <span>{formatCurrency(lineTotal)}</span>
+                              </div>
+                            );
+                          })}
+                          {extrasTotal > 0 && (
+                            <div className="flex justify-between pt-1 text-xs font-semibold text-gray-700">
+                              <span>{t("Extras total")}</span>
+                              <span>{formatCurrency(extrasTotal)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {item.note && (
+                        <div className="mt-2 text-xs italic text-amber-700 bg-amber-50 border-l-4 border-amber-400 px-3 py-1 rounded">
+                          📝 {t("Note")}: {item.note}
+                        </div>
+                      )}
                     </div>
 
-                    {item.extras?.length > 0 && (
-                      <div className="mt-2 text-sm text-gray-700 space-y-1">
-                        {item.extras.map((ex, i) => (
-                          <div key={i} className="flex justify-between">
-                            <span>
-                              ➕ {ex.name} ×{ex.quantity || 1}
-                            </span>
-                            <span>
-                              {formatCurrency(
-                                (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
-                                  (ex.quantity || 1)
-                              )}
-                            </span>
-                          </div>
-                        ))}
+                    <div className="text-right pl-3">
+                      <div className="text-sm text-indigo-600 font-medium mt-1">
+                        {formatCurrency(baseTotal)}
                       </div>
-                    )}
-
-                    {item.note && (
-                      <div className="mt-2 text-xs italic text-amber-700 bg-amber-50 border-l-4 border-amber-400 px-3 py-1 rounded">
-                        📝 {t("Note")}: {item.note}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-right pl-3">
-                    <div className="font-semibold text-gray-800">×{item.quantity}</div>
-                    <div className="text-sm text-indigo-600 font-medium mt-1">
-                      {formatCurrency((item.price || 0) * (item.quantity || 1))}
                     </div>
                   </div>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         </div>
 

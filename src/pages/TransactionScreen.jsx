@@ -3310,45 +3310,63 @@ return (
 
     {/* --- Receipt Items List --- */}
     <ul className="space-y-2">
-      {items.map((item, index) => (
-        <li
-          key={`${item.unique_id}-${index}`}
-          className="p-3 bg-green-50 rounded-lg shadow-sm flex flex-col gap-1"
-        >
-          {/* --- Top Row: Name + Paid --- */}
-          <div className="flex justify-between items-center flex-wrap">
-            <span className="font-semibold text-base sm:text-lg break-words max-w-[65vw]">
-              {item.name}
-            </span>
-            <span className="font-bold text-gray-800 flex flex-col items-end text-base sm:text-lg">
-              {formatCurrency(item.price * item.quantity)}
-              <span className="text-xs text-red-600 font-extrabold mt-1">{t("paid")}</span>
-            </span>
-          </div>
+      {items.map((item, index) => {
+        const quantity = Number(item.quantity || 1);
+        const basePrice = Number(item.price || 0);
+        const baseTotal = basePrice * quantity;
+        const perItemExtrasTotal = (item.extras || []).reduce((sum, ex) => {
+          const unit = parseFloat(ex.price || ex.extraPrice || 0) || 0;
+          const perItemQty = Number(ex.quantity || 1);
+          return sum + unit * perItemQty;
+        }, 0);
+        const extrasTotal = perItemExtrasTotal * quantity;
 
-          {/* --- Extras (if any) --- */}
-          {item.extras?.length > 0 && (
-            <ul className="ml-2 mt-1 text-xs sm:text-sm text-gray-600 list-disc list-inside">
-              {item.extras.map((ex, idx) => {
-                const exQtyPerItem = ex.quantity || 1;
-                const itemQty = item.quantity || 1;
-                const totalQty = exQtyPerItem * itemQty;
-                const unit =
-                  parseFloat(ex.price || ex.extraPrice || 0) || 0;
-                const lineTotal = unit * totalQty;
-                return (
-                  <li key={idx}>
-                    {ex.name} ×{totalQty} – {formatCurrency(lineTotal)}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+        return (
+          <li
+            key={`${item.unique_id}-${index}`}
+            className="p-3 bg-green-50 rounded-lg shadow-sm flex flex-col gap-1"
+          >
+            {/* --- Top Row: Name + Paid --- */}
+            <div className="flex justify-between items-center flex-wrap">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-semibold text-base sm:text-lg break-words max-w-[65vw]">
+                  {item.name}
+                </span>
+                <span className="text-xs sm:text-sm text-gray-600">
+                  {formatCurrency(basePrice)} ×{quantity}
+                </span>
+              </div>
+              <span className="font-bold text-gray-800 flex flex-col items-end text-base sm:text-lg">
+                {formatCurrency(baseTotal)}
+                <span className="text-xs text-red-600 font-extrabold mt-1">{t("paid")}</span>
+              </span>
+            </div>
 
-          {/* --- Quantity --- */}
-          <div className="text-xs sm:text-sm text-gray-600 mt-1">
-            {t("Quantity")}: {item.quantity}
-          </div>
+            {/* --- Extras (if any) --- */}
+            {item.extras?.length > 0 && (
+              <div className="ml-2 mt-1 text-xs sm:text-sm text-gray-600 space-y-1">
+                <ul className="list-disc list-inside">
+                  {item.extras.map((ex, idx) => {
+                    const exQtyPerItem = Number(ex.quantity || 1);
+                    const totalQty = exQtyPerItem * quantity;
+                    const unit =
+                      parseFloat(ex.price || ex.extraPrice || 0) || 0;
+                    const lineTotal = unit * totalQty;
+                    return (
+                      <li key={idx}>
+                        {ex.name} ×{totalQty} – {formatCurrency(lineTotal)}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {extrasTotal > 0 && (
+                  <div className="flex items-center justify-between text-xs font-semibold text-gray-700">
+                    <span>{t("Extras total")}</span>
+                    <span>{formatCurrency(extrasTotal)}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
           {/* --- Notes --- */}
           {item.note && item.note.trim() !== "" && (
@@ -3362,8 +3380,9 @@ return (
               </div>
             </div>
           )}
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
 
     {/* --- Payment Method(s) --- */}
@@ -3724,7 +3743,6 @@ const renderCartContent = (variant = "desktop") => {
             const quantity = Number(item.quantity) || 1;
             const baseTotal = basePrice * quantity;
             const extrasTotal = perItemExtrasTotal * quantity;
-            const lineTotal = baseTotal + extrasTotal;
             const showNote =
               typeof item.note === "string" ? item.note.trim() !== "" : !!item.note;
             const isEditable = !item.confirmed && !item.paid;
@@ -3829,7 +3847,10 @@ const cardGradient = item.paid
             toggleCartItemExpansion(itemKey);
           }}
         >
-          {item.name} ×{quantity}
+          {item.name}
+          <span className="ml-2 text-[11px] font-medium text-slate-600">
+            {formatCurrency(basePrice)} ×{quantity}
+          </span>
         </span>
         {hasProductDiscountMeta && (
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
@@ -3873,10 +3894,17 @@ const cardGradient = item.paid
         {isExpanded ? "▲" : "▼"}
       </button>
       <span className="font-semibold text-indigo-600 whitespace-nowrap">
-        {formatCurrency(lineTotal)}
+        {formatCurrency(baseTotal)}
       </span>
     </div>
   </div>
+
+  {!isExpanded && extrasTotal > 0 && (
+    <div className="flex items-center justify-between pl-6 pr-1 text-xs text-slate-600">
+      <span>{t("Extras total")}</span>
+      <span className="font-semibold text-slate-700">{formatCurrency(extrasTotal)}</span>
+    </div>
+  )}
 
   {/* Expanded Details */}
   {isExpanded && (
@@ -3903,6 +3931,10 @@ const cardGradient = item.paid
                   );
                 })}
               </ul>
+              <div className="flex items-center justify-between pt-1 text-xs font-semibold text-slate-700">
+                <span>{t("Extras total")}</span>
+                <span>{formatCurrency(extrasTotal)}</span>
+              </div>
             </div>
           )}
 

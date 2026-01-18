@@ -1006,7 +1006,9 @@ export function computeReceiptSummary(order) {
     }
 
     const extrasForQty = Number.isFinite(extrasPerUnit) ? extrasPerUnit * qty : 0;
-    const lineTotal = baseComponent + extrasForQty;
+    const baseTotal = baseComponent;
+    const extrasTotal = extrasForQty;
+    const lineTotal = baseTotal + extrasTotal;
 
     // Show base unit price only (extras are already itemized below)
     const effectiveUnitPrice =
@@ -1028,6 +1030,8 @@ export function computeReceiptSummary(order) {
       name,
       qty,
       unitPrice: effectiveUnitPrice,
+      baseTotal,
+      extrasTotal,
       lineTotal,
       extrasDetails,
       note,
@@ -1295,15 +1299,26 @@ export function renderReceiptText(order, providedLayout) {
   add(divider);
 
   for (const item of summary.items) {
-    // Show full line total (base + extras) on the main line
-    const left = `${formatQuantity(item.qty)} x ${item.name}`;
-    const right = formatReceiptMoney(item.lineTotal);
+    const baseTotal = Number.isFinite(item.baseTotal)
+      ? item.baseTotal
+      : Number.isFinite(item.unitPrice) && Number.isFinite(item.qty)
+        ? item.unitPrice * item.qty
+        : 0;
+    const extrasTotal = Number.isFinite(item.extrasTotal)
+      ? item.extrasTotal
+      : Math.max(0, (item.lineTotal || 0) - baseTotal);
+    const left = `${item.name} ${formatReceiptMoney(item.unitPrice)} x${formatQuantity(item.qty)}`;
+    const right = formatReceiptMoney(baseTotal);
     add(formatLine(left, right, lineWidth));
 
     for (const detail of item.extrasDetails) {
       const extraLeft = `+ ${formatQuantity(detail.qty)}x ${formatReceiptMoney(detail.unitPrice)} ${detail.name}`;
       const extraRight = formatReceiptMoney(detail.total);
       add(formatLine(extraLeft, extraRight, lineWidth));
+    }
+
+    if (extrasTotal > 0) {
+      add(formatLine("  Extras total", formatReceiptMoney(extrasTotal), lineWidth));
     }
 
     if (item.note) {
