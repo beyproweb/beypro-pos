@@ -491,6 +491,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelQuantities, setCancelQuantities] = useState({});
   const [payQuantities, setPayQuantities] = useState({});
+  const [disablePayForReopenedOnlineOrder, setDisablePayForReopenedOnlineOrder] = useState(false);
 
   const updateSelectionQuantity = useCallback(
     (key, qty, maxQty) => {
@@ -763,6 +764,18 @@ const isCashMethod = useCallback(
   },
   [paymentMethods]
 );
+
+const isOrderOnline = useCallback((candidate) => {
+  if (!candidate) return false;
+  const type = String(candidate.order_type || candidate.orderType || "").toLowerCase();
+  const payment = String(
+    candidate.payment_method ||
+      candidate.paymentMethod ||
+      candidate.method ||
+      ""
+  ).toLowerCase();
+  return type === "online" || payment === "online";
+}, []);
 
 const reopenOrderIfNeeded = useCallback(
   async (orderCandidate) => {
