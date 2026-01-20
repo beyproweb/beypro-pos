@@ -1928,19 +1928,16 @@ const handlePrintOrder = async (orderId) => {
 };
 
 
-const navigateToOrder = useCallback(
-  (order) => {
-    if (!order) return;
-    const tableNumber =
-      order.table_number ?? order.tableNumber ?? order?.table_number;
-    if (tableNumber !== null && tableNumber !== undefined && tableNumber !== "") {
-      navigate(`/transaction/${tableNumber}`, { state: { order } });
-      return;
-    }
-    navigate(`/transaction/phone/${order.id}`, { state: { order } });
-  },
-  [navigate]
-);
+const navigateToOrder = (order) => {
+  if (!order) return;
+  const tableNumber =
+    order.table_number ?? order.tableNumber ?? order?.table_number;
+  if (tableNumber !== null && tableNumber !== undefined && tableNumber !== "") {
+    navigate(`/transaction/${tableNumber}`, { state: { order } });
+    return;
+  }
+  navigate(`/transaction/phone/${order.id}`, { state: { order } });
+};
 
 const handleTableClick = (table) => {
   // Use the already-loaded register state to avoid a blocking network request on click.
@@ -2669,8 +2666,8 @@ const totalGuests = React.useMemo(() => {
 
       const title = (() => {
         if (orderType === "table") return `🍽️ ${tableLabelText} ${order.table_number}`;
-        if (orderType === "phone") return `📞 ${t("Phone Order")}`;
-        if (orderType === "packet") return `🛵 ${t("Packet Order")}`;
+      if (orderType === "phone") return `📞 ${t("Phone Order")}`;
+      if (orderType === "packet") return "🛵 Yemeksepti";
         if (orderType === "takeaway") return `🥡 ${t("Pre Order")}`;
         return t("Order");
       })();

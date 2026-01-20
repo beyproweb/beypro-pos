@@ -595,7 +595,6 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
     [suborderItems]
   );
   const allPaidIncludingSuborders = allCartItemsPaid && allSuborderPaid;
-  const isPhoneOrder = orderType === "phone";
 const [debtSearch, setDebtSearch] = useState("");
 const [debtSearchResults, setDebtSearchResults] = useState([]);
 const [debtSearchLoading, setDebtSearchLoading] = useState(false);
@@ -603,6 +602,7 @@ const orderType = String(
   order?.order_type || (orderId ? "phone" : "table") || "table"
 ).toLowerCase();
 const normalizedStatus = normalizeOrderStatus(order?.status);
+const isPhoneOrder = orderType === "phone";
 const [tableSettings, setTableSettings] = useState({
   tableLabelText: "",
   showAreas: true,
@@ -2911,7 +2911,6 @@ if ((orderId && orderType === "phone") && getButtonLabel() === "Confirm") {
   await fetchOrderItems(order.id);
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
   setHeader(prev => ({ ...prev, subtitle: "" }));
-  showToast(t("Phone order confirmed and sent to kitchen"));
   scheduleNavigate("/orders", 400);
   return;
 }
@@ -2921,7 +2920,6 @@ if (orderType === "takeaway" && getButtonLabel() === "Confirm") {
   await fetchOrderItems(order.id);
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
   setHeader(prev => ({ ...prev, subtitle: "" }));
-  showToast(t("Takeaway order confirmed and sent to kitchen"));
   // 🚫 Do NOT open pay modal or navigate
   return;
 }
@@ -3853,8 +3851,12 @@ const renderCartContent = (variant = "desktop") => {
                 <button
                   onClick={handleMultifunction}
                   className={primaryButtonClass}
-                  disabled={isPhoneOrder}
-                  title={isPhoneOrder ? t("Payments are handled through the Orders screen") : undefined}
+                  disabled={isPhoneOrder && primaryActionLabel === "Pay"}
+                  title={
+                    isPhoneOrder && primaryActionLabel === "Pay"
+                      ? t("Payments are handled through the Orders screen")
+                      : undefined
+                  }
                 >
                   {t(primaryActionLabel)}
                 </button>
@@ -3906,8 +3908,12 @@ const renderCartContent = (variant = "desktop") => {
         <button
           onClick={handleMultifunction}
           className={`${primaryButtonClass} flex-1 min-w-[120px]`}
-          disabled={isPhoneOrder}
-          title={isPhoneOrder ? t("Payments are handled through the Orders screen") : undefined}
+          disabled={isPhoneOrder && primaryActionLabel === "Pay"}
+          title={
+            isPhoneOrder && primaryActionLabel === "Pay"
+              ? t("Payments are handled through the Orders screen")
+              : undefined
+          }
         >
           {t(primaryActionLabel)}
         </button>
