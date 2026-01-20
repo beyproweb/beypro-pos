@@ -3,6 +3,7 @@ import React from "react";
 import { Menu } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useSetting } from "./hooks/useSetting";
 import { useHasPermission } from "./hooks/useHasPermission";
 import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 
@@ -94,11 +95,20 @@ export default function ModernHeader({
   const canSeeRegisterTab = useHasPermission("register");
   const canSeeTakeawayTab = useHasPermission("takeaway");
   const canSeeExpensesTab = useHasPermission("expenses");
+  const [tableSettings, setTableSettings] = React.useState({
+    tableLabelText: "",
+    showAreas: true,
+  });
+  useSetting("tables", setTableSettings, {
+    tableLabelText: "",
+    showAreas: true,
+  });
+  const tableLabelText = String(tableSettings.tableLabelText || "").trim() || t("Tables");
 
   const supplierTabs = React.useMemo(() => {
     const tabs = [
       { kind: "nav", key: "dashboard", label: t("Dashboard") },
-      ...(canSeeTablesTab ? [{ kind: "nav", key: "tables", label: t("Tables") }] : []),
+      ...(canSeeTablesTab ? [{ kind: "nav", key: "tables", label: tableLabelText }] : []),
       { kind: "switch", key: "suppliers", label: t("Add Product") },
       { kind: "switch", key: "cart", label: t("Supplier Cart") },
       { kind: "section", key: "supplier-overview", label: t("Overview") },
@@ -108,7 +118,7 @@ export default function ModernHeader({
     ];
 
     return tabs;
-  }, [canSeeTablesTab, t]);
+  }, [canSeeTablesTab, t, tableLabelText]);
 
   const supplierView = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
@@ -157,7 +167,7 @@ export default function ModernHeader({
     const all = [
       { id: "dashboard", label: t("Dashboard") },
       { id: "takeaway", label: t("Pre Order") },
-      { id: "tables", label: t("Tables") },
+      { id: "tables", label: tableLabelText },
       { id: "kitchen", label: t("All Orders") },
       { id: "history", label: t("History") },
       { id: "packet", label: t("Packet") },
@@ -180,6 +190,7 @@ export default function ModernHeader({
     });
   }, [
     t,
+    tableLabelText,
     canSeeTakeawayTab,
     canSeeTablesTab,
     canSeeKitchenTab,

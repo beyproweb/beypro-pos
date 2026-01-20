@@ -6,6 +6,7 @@ import {
   slugifyPaymentId,
   formatPaymentLabel,
 } from "../utils/paymentMethods";
+import { getPaymentItemKey } from "../utils/getPaymentItemKey";
 
 export default function PaymentModal({
   show,
@@ -24,6 +25,7 @@ export default function PaymentModal({
   splits,
   setSplits,
   totalDue,
+  cancelQuantities = {},
   activeSplitMethod,
   setActiveSplitMethod,
   confirmPaymentWithSplits,
@@ -116,20 +118,31 @@ export default function PaymentModal({
     const items =
       selectedForPayment.length > 0
         ? cartItems.filter(
-            (i) => selectedForPayment.includes(i.unique_id) && !i.paid
+            (i) =>
+              selectedForPayment.includes(getPaymentItemKey(i)) && !i.paid
           )
         : cartItems.filter((i) => !i.paid);
+
     let subtotal = items.reduce((sum, i) => {
-      const base = i.price * i.quantity;
-      const extras =
-        (i.extras || []).reduce(
-          (s, ex) =>
-            s +
-            (parseFloat(ex.price || ex.extraPrice || 0) *
-              (ex.quantity || 1)),
-          0
-        ) * i.quantity;
-      return sum + base + extras;
+      const key = getPaymentItemKey(i);
+      const qty = Math.max(
+        1,
+        Math.min(
+          Number(i.quantity) || 1,
+          Number(cancelQuantities?.[key]) ||
+            Number(i.quantity) ||
+            1
+        )
+      );
+      const base = (parseFloat(i.price) || 0) * qty;
+      const extrasTotal = (i.extras || []).reduce(
+        (s, ex) =>
+          s +
+          (parseFloat(ex.price || ex.extraPrice || 0) *
+            (ex.quantity || 1)),
+        0
+      ) * qty;
+      return sum + base + extrasTotal;
     }, 0);
 
     if (discountType === "percent") {
@@ -188,7 +201,7 @@ export default function PaymentModal({
                     (selectedForPayment.length > 0
                       ? cartItems.filter(
                           (i) =>
-                            selectedForPayment.includes(i.unique_id) &&
+                            selectedForPayment.includes(getPaymentItemKey(i)) &&
                             !i.paid
                         )
                       : cartItems.filter((i) => !i.paid)
@@ -290,7 +303,7 @@ export default function PaymentModal({
                       ? selectedForPayment
                       : cartItems
                           .filter((i) => !i.paid && i.confirmed)
-                          .map((i) => i.unique_id);
+                          .map((i) => getPaymentItemKey(i));
                   await confirmPayment(method.id, idsToPay);
                   onClose();
                 }}

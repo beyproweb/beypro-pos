@@ -3,6 +3,7 @@ import { settingsTabs } from "../constants/settingsTabs";
 import { useTranslation } from "react-i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import { useNavigate, useParams } from "react-router-dom";
+import { useSetting } from "../components/hooks/useSetting";
 
 // Tab components
 import ShopHoursTab from "../components/settings-tabs/ShopHoursTab";
@@ -41,6 +42,15 @@ export default function SettingsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { tabKey } = useParams();
+  const [tableSettings, setTableSettings] = useState({
+    tableLabelText: "",
+    showAreas: true,
+  });
+  useSetting("tables", setTableSettings, {
+    tableLabelText: "",
+    showAreas: true,
+  });
+  const tableLabelText = String(tableSettings.tableLabelText || "").trim() || t("Tables");
 
   // ✅ List of all valid settings permissions
   const settingsPermissions = [
@@ -77,9 +87,13 @@ export default function SettingsPage() {
   // ✅ Only show tabs the user actually has permission for
   const normalizedTabKey = tabKey ? tabKey.toLowerCase() : null;
 
-  const permittedTabs = settingsTabs.filter((tab) =>
-    useHasPermission(tab.permission)
-  );
+  const permittedTabs = settingsTabs
+    .filter((tab) => useHasPermission(tab.permission))
+    .map((tab) =>
+      tab.key === "tables"
+        ? { ...tab, label: `🪑 ${tableLabelText}` }
+        : tab
+    );
   const defaultTab = permittedTabs.length > 0 ? permittedTabs[0].key : null;
   const hasTabAccess = normalizedTabKey
     ? permittedTabs.some((tab) => tab.key === normalizedTabKey)

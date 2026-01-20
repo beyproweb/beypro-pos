@@ -21,6 +21,7 @@ const accentOptions = [
   { label: "Violet", value: "violet-500", preview: "#8b5cf6" },
   { label: "Lime", value: "lime-500", preview: "#84cc16" },
   { label: "Sky", value: "sky-500", preview: "#0ea5e9" },
+  { label: "White", value: "white", preview: "#ffffff", ring: "#e2e8f0" },
 
   // Gradient accents (new)
   { label: "Sunset", value: "sunset", preview: "linear-gradient(135deg, #f43f5e, #f59e0b)" },
@@ -148,7 +149,7 @@ const handleSave = async () => {
                   className={`h-10 w-10 rounded-full shadow-md transition-all duration-300 border-2 ${
                     isSelected ? "ring-2 ring-offset-2 ring-accent" : "border-white"
                   }`}
-                  style={{ background: c.preview }}
+                  style={{ background: c.preview, boxShadow: isSelected ? undefined : `0 0 0 1px ${c.ring || "transparent"}` }}
                   title={c.label}
                 />
                 {c.value === "default" && (

@@ -25,13 +25,14 @@ import {
 import { fetchOrderWithItems } from "../utils/orderPrinting";
 import { openCashDrawer, logCashRegisterEvent } from "../utils/cashDrawer";
 import { useCurrency } from "../context/CurrencyContext";
+import { loadRegisterSummary } from "../utils/registerSummaryCache";
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.MODE === "development"
     ? "http://localhost:5000/api"
     : "https://api.beypro.com/api");
 const isDelayed = (order) => {
-  if (!order || order.status !== "confirmed" || !order.created_at) return false;
+  if (!order || normalizeOrderStatus(order.status) !== "confirmed" || !order.created_at) return false;
   // Only treat as delayed if there is at least one item
   if (!Array.isArray(order.items) || order.items.length === 0) return false;
   const created = new Date(order.created_at);
@@ -45,12 +46,13 @@ const isEffectivelyFreeOrder = (order) => {
 
   const status = normalizeOrderStatus(order.status);
   if (status === "closed") return true;
-  if (status === "draft") return true;
 
   // Reservations should be visible even if they have no items yet.
   if (status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
     return false;
   }
+
+  if (status === "draft") return true;
 
   const total = Number(order.total || 0);
   const items = Array.isArray(order.items) ? order.items : null;
@@ -69,10 +71,12 @@ const isEffectivelyFreeOrder = (order) => {
 const getTableColor = (order) => {
   if (!order) return "bg-gray-400 text-black";
 
+  const status = normalizeOrderStatus(order.status);
+
   // 🟠 CHECK FOR RESERVATION - if reserved
-  if (order.status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
+  if (status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
     // 🟢 If reserved AND paid, show green
-    if (order.status === "Paid" || order.payment_status === "Paid" || order.is_paid === true) {
+    if (isOrderPaid(order)) {
       return "bg-green-500 text-white";
     }
     // 🟠 If reserved but not paid, show orange
@@ -80,11 +84,7 @@ const getTableColor = (order) => {
   }
 
   // Paid is always green, even if items haven't been hydrated yet.
-  if (
-    order.status === "Paid" ||
-    order.payment_status === "Paid" ||
-    order.is_paid === true
-  ) {
+  if (isOrderPaid(order)) {
     return "bg-green-500 text-white";
   }
 
@@ -97,13 +97,13 @@ const getTableColor = (order) => {
   if (!items) {
     // Empty orders (0 total) should look free immediately.
     if (total <= 0) return "bg-gray-400 text-black";
-    if (order.status === "confirmed") return "bg-red-500 text-white";
+    if (status === "confirmed") return "bg-red-500 text-white";
     return "bg-gray-400 text-black";
   }
 
   // 🧹 No items at all → treat as Free (neutral), not yellow (unless status says otherwise)
   if (items.length === 0) {
-    if (order.status === "confirmed") return "bg-red-500 text-white";
+    if (status === "confirmed") return "bg-red-500 text-white";
     return "bg-gray-400 text-black";
   }
 
@@ -123,7 +123,7 @@ const getTableColor = (order) => {
   }
 
   // 🟡 confirmed but unpaid (fallback)
-  if (order.status === "confirmed") {
+  if (status === "confirmed") {
     return "bg-yellow-400 text-black";
   }
 
@@ -155,13 +155,39 @@ const normalizeOrderStatus = (status) => {
   return normalized === "occupied" ? "confirmed" : normalized;
 };
 
+const formatLocalYmd = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const normalizeDateToYmd = (value) => {
+  if (!value) return "";
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return formatLocalYmd(value);
+  }
+  const raw = String(value).trim();
+  if (!raw) return "";
+  // Fast-path for YYYY-MM-DD strings
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (Number.isFinite(parsed.getTime())) return formatLocalYmd(parsed);
+  return raw.slice(0, 10);
+};
+
 const isOrderCancelledOrCanceled = (status) => {
   const normalized = normalizeOrderStatus(status);
   return normalized === "cancelled" || normalized === "canceled";
 };
 
-const isOrderPaid = (order) =>
-  order?.status === "Paid" || order?.payment_status === "Paid" || order?.is_paid === true;
+const isOrderPaid = (order) => {
+  const status = normalizeOrderStatus(order?.status);
+  const paymentStatus = String(order?.payment_status || "").toLowerCase();
+  return status === "paid" || paymentStatus === "paid" || order?.is_paid === true;
+};
 
 const parseLooseDateToMs = (val) => {
   if (!val) return NaN;
@@ -484,6 +510,7 @@ export default function TableOverview() {
   const navigate = useNavigate();
   const location = useLocation();
   const didAutoOpenRegisterRef = useRef(false);
+  const lastDayKeyRef = useRef(formatLocalYmd(new Date()));
   const tabFromUrl = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
     return String(params.get("tab") || "tables").toLowerCase();
@@ -498,10 +525,19 @@ export default function TableOverview() {
     return new Date().toISOString().slice(0, 10);
   });
   const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reservationsToday, setReservationsToday] = useState([]);
   const [transactionSettings, setTransactionSettings] = useState(
     DEFAULT_TRANSACTION_SETTINGS
   );
   useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
+  const [tableSettings, setTableSettings] = useState({
+    tableLabelText: "",
+    showAreas: true,
+  });
+  useSetting("tables", setTableSettings, {
+    tableLabelText: "",
+    showAreas: true,
+  });
   const alertIntervalRef = useRef(null);
   const ordersFetchSeqRef = useRef(0);
   const didInitialOrdersLoadRef = useRef(false);
@@ -681,6 +717,20 @@ const handleCloseTable = async (orderOrId) => {
     await secureFetch(`/orders/${orderId}/close`, { method: "POST" });
     toast.success("✅ Table closed successfully!");
 
+    // Reset guest count ("seats") for the table once it's closed.
+    const tableNumber = Number(order?.table_number);
+    if (Number.isFinite(tableNumber)) {
+      upsertTableConfigLocal(tableNumber, { guests: null });
+      try {
+        await secureFetch(`/tables/${tableNumber}`, {
+          method: "PATCH",
+          body: JSON.stringify({ guests: null }),
+        });
+      } catch (err) {
+        console.error("❌ Failed to reset table guests after close:", err);
+      }
+    }
+
     // optional: return to overview
     setTimeout(() => {
       fetchOrders();
@@ -757,87 +807,21 @@ const handleCloseTable = async (orderOrId) => {
 
   const initializeRegisterSummary = useCallback(async () => {
     try {
-      let openTime = null;
-      const data = await fetchRegisterStatus();
-
-      setRegisterState(data.status);
-      setYesterdayCloseCash(data.yesterday_close ?? null);
-      setLastOpenAt(data.last_open_at || null);
-      setOpeningCash("");
+      const summary = await loadRegisterSummary();
+      setRegisterState(summary.registerState);
+      setOpeningCash(summary.openingCash);
+      setExpectedCash(summary.expectedCash);
+      setDailyCashExpense(summary.dailyCashExpense);
+      setYesterdayCloseCash(summary.yesterdayCloseCash);
+      setLastOpenAt(summary.lastOpenAt);
       setActualCash("");
-
-      if (data.status === "open") {
-        openTime = data.last_open_at;
-        const opening =
-          data.opening_cash !== undefined && data.opening_cash !== null
-            ? data.opening_cash.toString()
-            : "";
-        setOpeningCash(opening);
-      }
-
-      if (!openTime) {
-        setCashDataLoaded(true);
-        return;
-      }
-
-      const cashTotalRes = await secureFetch(
-        `/reports/daily-cash-total?openTime=${encodeURIComponent(openTime)}`
-      );
-
-      let cashSales = parseFloat(cashTotalRes?.cash_total || 0);
-
-      if (!Number.isFinite(cashSales) || cashSales <= 0) {
-        try {
-          const today = new Date().toISOString().slice(0, 10);
-          const hist = await secureFetch(
-            `/reports/cash-register-history?from=${today}&to=${today}`
-          );
-          const row = Array.isArray(hist)
-            ? hist.find((r) => r.date === today)
-            : null;
-          if (row && row.cash_sales != null) {
-            cashSales = parseFloat(row.cash_sales || 0);
-          }
-        } catch {
-          // ignore fallback errors
-        }
-      }
-
-      setExpectedCash(Number.isFinite(cashSales) ? cashSales : 0);
-
-      const cashExpArr = await secureFetch(
-        `/reports/daily-cash-expenses?openTime=${encodeURIComponent(openTime)}`
-      ).catch(() => []);
-      const logExpense = parseFloat(cashExpArr?.[0]?.total_expense || 0);
-
-      const today = new Date().toISOString().slice(0, 10);
-      const extraExpenses = await secureFetch(
-        `/expenses?from=${today}&to=${today}`
-      )
-        .then((rows) =>
-          Array.isArray(rows)
-            ? rows.reduce(
-                (sum, e) => sum + (parseFloat(e.amount || 0) || 0),
-                0
-              )
-            : 0
-        )
-        .catch(() => 0);
-
-      const totalExpense = (isNaN(logExpense) ? 0 : logExpense) + extraExpenses;
-
-      console.log(
-        "📉 New Daily Cash Expense (log + expenses):",
-        totalExpense
-      );
-      setDailyCashExpense(totalExpense);
       setCashDataLoaded(true);
-      console.log("✅ All cash data loaded");
     } catch (err) {
       console.error("❌ Error in modal init:", err);
       toast.error("Failed to load register data");
+      setCashDataLoaded(true);
     }
-  }, [fetchRegisterStatus]);
+  }, []);
 
   const loadRegisterData = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -1157,9 +1141,7 @@ const fetchTakeawayOrders = useCallback(async () => {
           }));
 
           // ✅ Fallback for online-paid orders missing item paid flags
-          const isOrderPaid =
-            order.status === "Paid" || order.payment_status === "Paid" || order.is_paid === true;
-          if (isOrderPaid) {
+          if (isOrderPaid(order)) {
             items = items.map((i) => ({ ...i, paid: i.paid || true }));
           }
 
@@ -1214,7 +1196,7 @@ useEffect(() => {
 
 
 useEffect(() => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = formatLocalYmd(new Date());
   setFromDate(today);
   setToDate(today);
 }, []);
@@ -1224,12 +1206,35 @@ const fetchOrders = useCallback(async () => {
     const seq = ++ordersFetchSeqRef.current;
     const isInitialLoad = !didInitialOrdersLoadRef.current;
     // Always use secureFetch → tenant_id + auth included
-    const data = await secureFetch("/orders");
+    const [ordersRes, reservationsRes] = await Promise.allSettled([
+      secureFetch("/orders"),
+      (async () => {
+        const today = formatLocalYmd(new Date());
+        return secureFetch(`/orders/reservations?start_date=${today}&end_date=${today}`);
+      })(),
+    ]);
+
+    const data = ordersRes.status === "fulfilled" ? ordersRes.value : null;
 
     if (!Array.isArray(data)) {
       console.error("❌ Unexpected orders response:", data);
       toast.error("Failed to load orders");
       return;
+    }
+
+    const normalizeReservationList = (value) => {
+      const list = Array.isArray(value?.reservations) ? value.reservations : Array.isArray(value) ? value : [];
+      return list.filter((row) => {
+        const status = normalizeOrderStatus(row?.status);
+        if (!status) return true;
+        return status !== "closed" && status !== "cancelled" && status !== "canceled";
+      });
+    };
+
+    if (reservationsRes.status === "fulfilled") {
+      setReservationsToday(normalizeReservationList(reservationsRes.value));
+    } else {
+      setReservationsToday([]);
     }
 
     const openTableOrders = data
@@ -1248,6 +1253,9 @@ const fetchOrders = useCallback(async () => {
         };
       });
 
+    // Show all reservations (badge already carries the date/time).
+    const visibleTableOrders = openTableOrders;
+
 	    // Phase 1: render table statuses/colors immediately from order rows.
 	    // Preserve any previously-hydrated items to avoid UI flicker while refreshing.
 		    setOrders((prev) => {
@@ -1259,14 +1267,14 @@ const fetchOrders = useCallback(async () => {
 		      const storedTimers = readTableOverviewConfirmedTimers();
 		      const nextTimers = { ...storedTimers };
 		      const nextTableKeys = new Set(
-		        openTableOrders.map((o) => String(Number(o.table_number)))
+		        visibleTableOrders.map((o) => String(Number(o.table_number)))
 		      );
 		      for (const prevKey of prevByTable.keys()) {
 		        if (!nextTableKeys.has(String(prevKey))) delete nextTimers[String(prevKey)];
 		      }
 
 		      const merged = Object.values(
-		        openTableOrders.reduce((acc, order) => {
+		        visibleTableOrders.reduce((acc, order) => {
 		          const key = Number(order.table_number);
 		          const tableKey = String(key);
 		          const prevMerged = prevByTable.get(key);
@@ -1303,7 +1311,16 @@ const fetchOrders = useCallback(async () => {
 		            );
 		            acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
 		            const nextStatus =
-		              acc[key].status === "Paid" && order.status === "Paid" ? "Paid" : "Confirmed";
+		              acc[key].status === "paid" && order.status === "paid"
+		                ? "paid"
+		                : acc[key].status === "reserved" ||
+		                  order.status === "reserved" ||
+		                  acc[key].order_type === "reservation" ||
+		                  order.order_type === "reservation" ||
+		                  acc[key].reservation_date ||
+		                  order.reservation_date
+		                ? "reserved"
+		                : "confirmed";
 		            acc[key].status = nextStatus;
 		            if (nextStatus !== "confirmed") {
 		              acc[key].confirmedSinceMs = null;
@@ -1352,7 +1369,7 @@ const fetchOrders = useCallback(async () => {
     };
 
     // Phase 2: hydrate items/reservations (slower) and update.
-    const hydrated = await runWithConcurrency(openTableOrders, 6, async (order) => {
+    const hydrated = await runWithConcurrency(visibleTableOrders, 6, async (order) => {
       const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
       const itemsArr = Array.isArray(itemsRaw) ? itemsRaw : [];
 
@@ -1368,7 +1385,9 @@ const fetchOrders = useCallback(async () => {
       }));
 
       const isOrderPaid =
-        order.status === "Paid" || order.payment_status === "Paid" || order.is_paid === true;
+        order.status === "paid" ||
+        String(order.payment_status || "").toLowerCase() === "paid" ||
+        order.is_paid === true;
       if (isOrderPaid) {
         items = items.map((i) => ({ ...i, paid: i.paid || true }));
       }
@@ -1419,7 +1438,16 @@ const fetchOrders = useCallback(async () => {
 	          acc[key].merged_items = acc[key].items;
 	          acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
 	          acc[key].status =
-	            acc[key].status === "Paid" && order.status === "Paid" ? "Paid" : "Confirmed";
+	            acc[key].status === "paid" && order.status === "paid"
+	              ? "paid"
+	              : acc[key].status === "reserved" ||
+	                order.status === "reserved" ||
+	                acc[key].order_type === "reservation" ||
+	                order.order_type === "reservation" ||
+	                acc[key].reservation_date ||
+	                order.reservation_date
+	              ? "reserved"
+	              : "confirmed";
 	        }
 	        const anyUnpaid = (acc[key].items || []).some((i) => !i.paid_at && !i.paid);
 	        acc[key].is_paid = !anyUnpaid;
@@ -1556,12 +1584,25 @@ const fetchKitchenOrders = useCallback(async () => {
   }
 }, []);
 
+useEffect(() => {
+  const interval = setInterval(() => {
+    React.startTransition(() => setNow(new Date()));
+  }, 1000);
+  return () => clearInterval(interval);
+}, []);
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      React.startTransition(() => setNow(new Date()));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+    if (tableSettings.showAreas !== false) return;
+    if (activeArea !== "ALL") setActiveArea("ALL");
+  }, [tableSettings.showAreas, activeArea]);
+
+  // If the app stays open across midnight, refresh tables so reservations appear on their day.
+  useEffect(() => {
+    const dayKey = formatLocalYmd(now);
+    if (lastDayKeyRef.current === dayKey) return;
+    lastDayKeyRef.current = dayKey;
+    if (activeTab === "tables") fetchOrders();
+  }, [now, activeTab, fetchOrders]);
 
 const fetchPhoneOrders = useCallback(async () => {
   try {
@@ -1685,6 +1726,49 @@ const fetchTableConfigs = useCallback(async () => {
   }
 }, []);
 
+const upsertTableConfigLocal = useCallback((tableNumber, patch) => {
+  const normalizedNumber = Number(tableNumber);
+  if (!Number.isFinite(normalizedNumber)) return;
+
+  setTableConfigs((prev) => {
+    const prevArr = Array.isArray(prev) ? prev : [];
+    let found = false;
+    const next = prevArr.map((cfg) => {
+      if (Number(cfg?.number) !== normalizedNumber) return cfg;
+      found = true;
+      return { ...cfg, ...patch };
+    });
+
+    const resolved = found
+      ? next
+      : mergeTableConfigsByNumber(prevArr, [{ number: normalizedNumber, active: true, ...patch }]);
+
+    try {
+      localStorage.setItem(getTableConfigsCacheKey(), JSON.stringify(resolved));
+      localStorage.setItem(getTableCountCacheKey(), String(resolved.length));
+    } catch {}
+
+    return resolved;
+  });
+}, []);
+
+const handleGuestsChange = useCallback(
+  async (tableNumber, nextGuests) => {
+    upsertTableConfigLocal(tableNumber, { guests: nextGuests });
+    try {
+      await secureFetch(`/tables/${tableNumber}`, {
+        method: "PATCH",
+        body: JSON.stringify({ guests: nextGuests }),
+      });
+    } catch (err) {
+      console.error("❌ Failed to update table guests:", err);
+      toast.error(t("Failed to update table"));
+      fetchTableConfigs();
+    }
+  },
+  [fetchTableConfigs, upsertTableConfigLocal, t]
+);
+
 
   const loadDataForTab = useCallback(
     (tab) => {
@@ -1750,9 +1834,21 @@ useEffect(() => {
   };
 }, [activeTab, loadDataForTab, fetchOrders, fetchPacketOrdersCount]);
 
-  useEffect(() => {
-    loadDataForTab(activeTab);
-  }, [activeTab, loadDataForTab]);
+useEffect(() => {
+  loadDataForTab(activeTab);
+}, [activeTab, loadDataForTab]);
+
+useEffect(() => {
+  const handler = () => fetchKitchenOpenOrders();
+  if (window && typeof window.addEventListener === "function") {
+    window.addEventListener("beypro:kitchen-orders-reload", handler);
+  }
+  return () => {
+    if (window && typeof window.removeEventListener === "function") {
+      window.removeEventListener("beypro:kitchen-orders-reload", handler);
+    }
+  };
+}, [fetchKitchenOpenOrders]);
 
   // Ensure table configs load when Tables tab is active
   useEffect(() => {
@@ -1762,23 +1858,53 @@ useEffect(() => {
   }, [activeTab, tableConfigs.length, fetchTableConfigs]);
 
 
+const isReservationOrder = (order) =>
+  Boolean(order) &&
+  (normalizeOrderStatus(order.status) === "reserved" ||
+    order.order_type === "reservation" ||
+    Boolean(order.reservation_date));
+
 const tables = tableConfigs
   .map((cfg) => {
-    const orderRaw = orders.find(
-      (o) =>
-        o.table_number === cfg.number &&
-        !isOrderCancelledOrCanceled(o.status)
+    const parsedCfgNumber = Number(cfg.number);
+    const orderRaw = orders.find((o) => {
+      if (o?.table_number == null) return false;
+      if (isOrderCancelledOrCanceled(o.status)) return false;
+      return Number(o.table_number) === parsedCfgNumber;
+    });
+    const reservationFallback = reservationsToday.find(
+      (res) => Number(res.table_number) === parsedCfgNumber
     );
-    const order = isEffectivelyFreeOrder(orderRaw) ? null : orderRaw;
+    const order =
+      orderRaw && isReservationOrder(orderRaw)
+        ? orderRaw
+        : isEffectivelyFreeOrder(orderRaw)
+        ? reservationFallback
+          ? {
+              ...reservationFallback,
+              status: "reserved",
+              order_type: "reservation",
+              table_number: parsedCfgNumber,
+              total: 0,
+              items: [],
+            }
+          : null
+        : orderRaw;
 
-    return {
-      tableNumber: cfg.number,
-      seats: cfg.seats || cfg.chairs || null,
-      area: cfg.area || "Main Hall",
-      label: cfg.label || "",
-      color: cfg.color || null,
-      order,
-    };
+	    return {
+	      tableNumber: cfg.number,
+	      seats: cfg.seats || cfg.chairs || null,
+	      guests:
+	        cfg.guests === null || cfg.guests === undefined || cfg.guests === ""
+	          ? null
+	          : Number.isFinite(Number(cfg.guests))
+	          ? Number(cfg.guests)
+	          : null,
+	      area: cfg.area || "Main Hall",
+	      label: cfg.label || "",
+	      color: cfg.color || null,
+	      order,
+	    };
   })
   .sort((a, b) => a.tableNumber - b.tableNumber);
 
@@ -1802,6 +1928,20 @@ const handlePrintOrder = async (orderId) => {
 };
 
 
+const navigateToOrder = useCallback(
+  (order) => {
+    if (!order) return;
+    const tableNumber =
+      order.table_number ?? order.tableNumber ?? order?.table_number;
+    if (tableNumber !== null && tableNumber !== undefined && tableNumber !== "") {
+      navigate(`/transaction/${tableNumber}`, { state: { order } });
+      return;
+    }
+    navigate(`/transaction/phone/${order.id}`, { state: { order } });
+  },
+  [navigate]
+);
+
 const handleTableClick = (table) => {
   // Use the already-loaded register state to avoid a blocking network request on click.
   // useRegisterGuard on TransactionScreen will still enforce access if the register is closed.
@@ -1811,6 +1951,17 @@ const handleTableClick = (table) => {
       autoClose: 2500,
     });
     setShowRegisterModal(true);
+    return;
+  }
+
+  const requireGuests = transactionSettings.requireGuestsBeforeOpen ?? true;
+  const seatLimit = Number.isFinite(Number(table.seats)) ? Number(table.seats) : 0;
+  const guestSelection =
+    table.guests === null || table.guests === undefined ? null : Number(table.guests);
+  if (requireGuests && seatLimit > 0 && (!guestSelection || guestSelection <= 0)) {
+    toast.warning(t("Please select number of seats before opening this table"), {
+      style: { background: "#312E81", color: "#F8FAFC" },
+    });
     return;
   }
 
@@ -1892,13 +2043,34 @@ const groupedTables = tables.reduce((acc, tbl) => {
   acc[area].push(tbl);
   return acc;
 }, {});
+const areaKeys = Object.keys(groupedTables);
+const showAreaTabs = tableSettings.showAreas !== false && areaKeys.length > 1;
 
 const formatAreaLabel = (area) => {
   const raw = area || "Main Hall";
   return t(raw, { defaultValue: raw });
 };
+const tableLabelText = String(tableSettings.tableLabelText || "").trim() || t("Table");
 
+const totalSeats = React.useMemo(() => {
+  return (Array.isArray(tables) ? tables : []).reduce((sum, table) => {
+    const seats = Number(table?.seats);
+    if (!Number.isFinite(seats) || seats <= 0) return sum;
+    return sum + Math.trunc(seats);
+  }, 0);
+}, [tables]);
 
+const totalGuests = React.useMemo(() => {
+  return (Array.isArray(tables) ? tables : []).reduce((sum, table) => {
+    const seats = Number(table?.seats);
+    if (!Number.isFinite(seats) || seats <= 0) return sum;
+    const guests = Number.isFinite(table?.guests) ? Math.trunc(Number(table.guests)) : 0;
+    const clamped = Math.min(Math.max(0, guests), Math.trunc(seats));
+    return sum + clamped;
+  }, 0);
+}, [tables]);
+
+	
   return (
     <div className="min-h-screen bg-transparent px-0 pt-4 relative">
       {canSeePacketTab &&
@@ -1908,7 +2080,7 @@ const formatAreaLabel = (area) => {
         <button
           type="button"
           onClick={() => handleTabSelect("packet")}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20 hover:brightness-110 active:scale-[0.98] transition"
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20 hover:brightness-110 active:scale-[0.98] transition"
           aria-label={t("Packet")}
         >
           <span className="text-lg leading-none">🛵</span>
@@ -1916,13 +2088,25 @@ const formatAreaLabel = (area) => {
           <span className="min-w-7 px-2 py-0.5 rounded-full bg-white/20 font-extrabold text-sm text-white text-center">
             {packetOrdersCount}
           </span>
-        </button>
-      )}
-{activeTab === "tables" && (
-  <div className="w-full flex flex-col items-center">
+	        </button>
+	      )}
 
-    {/* ================= AREA TABS ================= */}
-    <div className="flex justify-center gap-3 flex-wrap mt-4 mb-10">
+      {activeTab === "tables" &&
+        !transactionSettings.disableTableOverviewGuestsFloatingButton && (
+        <div className="fixed bottom-6 left-6 z-40 flex items-center gap-3 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20">
+          <span className="text-lg leading-none">👥</span>
+          <span className="font-semibold">{t("Guests")}</span>
+          <span className="min-w-7 px-2 py-0.5 rounded-full bg-white/20 font-extrabold text-sm text-white text-center">
+            {totalSeats > 0 ? `${totalGuests}/${totalSeats}` : totalGuests}
+          </span>
+        </div>
+      )}
+	{activeTab === "tables" && (
+	  <div className="w-full flex flex-col items-center">
+	
+	    {/* ================= AREA TABS ================= */}
+    {showAreaTabs && (
+      <div className="flex justify-center gap-3 flex-wrap mt-4 mb-10">
 
       {/* ALL AREAS */}
 	      <button
@@ -1959,6 +2143,7 @@ const formatAreaLabel = (area) => {
         </button>
       ))}
     </div>
+    )}
 
     {/* ================= TABLE GRID (BIGGER, CENTERED) ================= */}
     <div className="w-full flex justify-center px-4 sm:px-8">
@@ -1975,7 +2160,7 @@ const formatAreaLabel = (area) => {
         max-w-[1600px]
       ">
 
-        {(activeArea === "ALL" ? tables : groupedTables[activeArea]).map((table) => {
+        {(showAreaTabs ? (activeArea === "ALL" ? tables : groupedTables[activeArea]) : tables).map((table) => {
           const isReservedTable = Boolean(
             table.order &&
               (table.order.status === "reserved" ||
@@ -2009,6 +2194,17 @@ const formatAreaLabel = (area) => {
             (hasPreparingItems ||
               !!table.order?.estimated_ready_at ||
               !!table.order?.prep_started_at);
+          const reservationInfo =
+            table.order?.reservation && table.order.reservation.reservation_date
+              ? table.order.reservation
+              : table.order?.reservation_date
+              ? {
+                  reservation_date: table.order.reservation_date,
+                  reservation_time: table.order.reservation_time ?? null,
+                  reservation_clients: table.order.reservation_clients ?? 0,
+                  reservation_notes: table.order.reservation_notes ?? "",
+                }
+              : null;
 
           return (
           <div
@@ -2035,7 +2231,7 @@ const formatAreaLabel = (area) => {
 	            <div className="flex items-center justify-between gap-2 mb-2">
 	              <div className="flex items-center gap-2 min-w-0">
 	                <span className="text-slate-800 text-base sm:text-lg font-extrabold">
-                    {t("Table")}
+                    {tableLabelText}
                   </span>
 	                <span className="text-base sm:text-lg font-extrabold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl px-2 py-0.5">
 	                  {String(table.tableNumber).padStart(2, "0")}
@@ -2054,7 +2250,7 @@ const formatAreaLabel = (area) => {
 	                )}
 	              </div>
 
-	              {table.order?.status === "Confirmed" &&
+	              {normalizeOrderStatus(table.order?.status) === "confirmed" &&
 	                table.order?.items?.length > 0 && (
 	                <span className="shrink-0 bg-blue-600 text-white rounded-full px-3 py-1 font-mono text-[11px] sm:text-sm shadow-md">
 	                  ⏱ {getTimeElapsed(table.order)}
@@ -2071,14 +2267,71 @@ const formatAreaLabel = (area) => {
 
             <div className="flex flex-wrap items-center gap-1.5 mb-2">
               {/* AREA */}
-              <div className="text-[11px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600 max-w-full truncate">
-                📍 {formatAreaLabel(table.area)}
-              </div>
+              {tableSettings.showAreas !== false && (
+                <div className="text-[11px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600 max-w-full truncate">
+                  📍 {formatAreaLabel(table.area)}
+                </div>
+              )}
 
               {/* SEATS */}
               {table.seats && (
-                <div className="text-[11px] bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 text-indigo-700 whitespace-nowrap">
+                <div className="inline-flex items-center text-sm bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-indigo-700 whitespace-nowrap font-semibold">
                   🪑 {table.seats} {t("Seats")}
+                </div>
+              )}
+
+              {/* GUESTS */}
+              {table.seats && (
+                <div
+                  className="inline-flex items-center text-sm bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1 text-emerald-800 whitespace-nowrap gap-2 font-semibold"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span>👥</span>
+                  {(() => {
+                    const seats = Math.max(0, Math.trunc(Number(table.seats)));
+                    const options = Array.from({ length: seats + 1 }, (_, n) => n);
+
+                    const fallbackGuestsRaw = reservationInfo?.reservation_clients;
+                    const fallbackGuestsNum =
+                      fallbackGuestsRaw === null ||
+                      fallbackGuestsRaw === undefined ||
+                      fallbackGuestsRaw === ""
+                        ? null
+                        : Number(fallbackGuestsRaw);
+
+                    const effectiveGuests = Number.isFinite(table.guests)
+                      ? table.guests
+                      : Number.isFinite(fallbackGuestsNum)
+                      ? fallbackGuestsNum
+                      : null;
+
+                    const clamped = Number.isFinite(effectiveGuests)
+                      ? Math.min(Math.max(0, Math.trunc(effectiveGuests)), seats)
+                      : null;
+
+                    return (
+                      <>
+                        <select
+                          className="bg-transparent outline-none font-bold pr-1"
+                          value={Number.isFinite(clamped) ? String(clamped) : ""}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const next = raw === "" ? null : Math.trunc(Number(raw));
+                            handleGuestsChange(table.tableNumber, next);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <option value="">—</option>
+                          {options.map((n) => (
+                            <option key={n} value={String(n)}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-emerald-700/70">/{seats}</span>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -2120,18 +2373,18 @@ const formatAreaLabel = (area) => {
 	                  </div>
 
 	                  {/* RESERVATION BADGE */}
-	                  {table.order.reservation && table.order.reservation.reservation_date && (
+	                  {reservationInfo && reservationInfo.reservation_date && (
 	                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-2xl text-xs">
 	                      <div className="font-extrabold text-blue-700 mb-1">🎫 {t("Reserved")}</div>
                       <div className="flex gap-2 text-[10px] text-slate-700 min-w-0">
                         <div className="flex flex-col">
-                          <span className="font-semibold whitespace-nowrap">🕐 {table.order.reservation.reservation_time || "—"}</span>
-                          <span className="font-semibold whitespace-nowrap">👥 {table.order.reservation.reservation_clients || 0} {t("guests")}</span>
+                          <span className="font-semibold whitespace-nowrap">🕐 {reservationInfo.reservation_time || "—"}</span>
+                          <span className="font-semibold whitespace-nowrap">👥 {reservationInfo.reservation_clients || 0} {t("guests")}</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <span className="font-semibold whitespace-nowrap">📅 {table.order.reservation.reservation_date || "—"}</span>
-                          {table.order.reservation.reservation_notes && (
-                            <p className="text-[9px] line-clamp-1 text-slate-600">📝 {table.order.reservation.reservation_notes}</p>
+                          <span className="font-semibold whitespace-nowrap">📅 {reservationInfo.reservation_date || "—"}</span>
+                          {reservationInfo.reservation_notes && (
+                            <p className="text-[9px] line-clamp-1 text-slate-600">📝 {reservationInfo.reservation_notes}</p>
                           )}
                         </div>
                       </div>
@@ -2415,7 +2668,7 @@ const formatAreaLabel = (area) => {
         : "bg-amber-100 text-amber-800 border-amber-200";
 
       const title = (() => {
-        if (orderType === "table") return `🍽️ ${t("Table")} ${order.table_number}`;
+        if (orderType === "table") return `🍽️ ${tableLabelText} ${order.table_number}`;
         if (orderType === "phone") return `📞 ${t("Phone Order")}`;
         if (orderType === "packet") return `🛵 ${t("Packet Order")}`;
         if (orderType === "takeaway") return `🥡 ${t("Pre Order")}`;
@@ -2436,7 +2689,16 @@ const formatAreaLabel = (area) => {
       return (
         <div
           key={order.id}
-          className="rounded-3xl bg-white border border-slate-200 shadow-xl p-5 flex flex-col gap-3 hover:shadow-2xl transition"
+          className="rounded-3xl bg-white border border-slate-200 shadow-xl p-5 flex flex-col gap-3 hover:shadow-2xl transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              navigateToOrder(order);
+            }
+          }}
+          onClick={() => navigateToOrder(order)}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">

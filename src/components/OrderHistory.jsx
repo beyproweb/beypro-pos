@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -11,6 +11,7 @@ const FALLBACK_PAYMENT_OPTIONS = [
   "Credit Card",
   "Sodexo",
   "Multinet",
+  "Partial Payment",
 ];
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -31,6 +32,20 @@ const stripPaymentFromText = (text, tokens) => {
     .replace(/[;,\-|–—\s]+$/g, "")
     .trim();
   return cleaned;
+};
+
+const normalizePaymentLabel = (value) => String(value || "").trim();
+
+const getPaymentBadgeClasses = (method) => {
+  const m = normalizePaymentLabel(method).toLowerCase();
+  if (!m) return "bg-slate-100 text-slate-700";
+  if (m.includes("cash")) return "bg-emerald-100 text-emerald-800";
+  if (m.includes("credit") || m.includes("card")) return "bg-blue-100 text-blue-800";
+  if (m.includes("sodexo")) return "bg-amber-100 text-amber-800";
+  if (m.includes("multinet")) return "bg-violet-100 text-violet-800";
+  if (m.includes("online")) return "bg-sky-100 text-sky-800";
+  if (m.includes("partial")) return "bg-slate-100 text-slate-800";
+  return "bg-slate-100 text-slate-800";
 };
 
 export default function OrderHistory({
@@ -54,9 +69,35 @@ export default function OrderHistory({
     if (!base.some((label) => String(label).toLowerCase() === "online")) {
       base.push("Online");
     }
+    if (!base.some((label) => String(label).toLowerCase() === "partial payment")) {
+      base.push("Partial Payment");
+    }
     return base;
   }, [paymentFilterOptions]);
-  const [closedOrders, setClosedOrders] = useState([]);
+  const CLOSED_ORDERS_CACHE_KEY = "orderHistory.closedOrdersCache";
+  const [closedOrders, setClosedOrders] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CLOSED_ORDERS_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return [];
+  });
+  const lastLoadedOrdersRef = useRef(closedOrders);
+  const persistClosedOrders = useCallback((orders) => {
+    const normalized = Array.isArray(orders) ? orders : [];
+    setClosedOrders(normalized);
+    lastLoadedOrdersRef.current = normalized;
+    try {
+      localStorage.setItem(CLOSED_ORDERS_CACHE_KEY, JSON.stringify(normalized));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
   const [showCancellationsOnly, setShowCancellationsOnly] = useState(false);
   const [editingPaymentOrderId, setEditingPaymentOrderId] = useState(null);
   const [paymentMethodDraft, setPaymentMethodDraft] = useState({});
@@ -94,16 +135,48 @@ export default function OrderHistory({
   const calculateItemTotal = useCallback((item) => {
     const qty = parseInt(item?.quantity || item?.qty || 1);
     const base = (parseFloat(item?.price) || 0) * qty;
-    const extrasTotal = (item?.extras || []).reduce((sum, ex) => {
+    let extras = item?.extras;
+    if (typeof extras === "string") {
+      try {
+        extras = JSON.parse(extras);
+      } catch {
+        extras = [];
+      }
+    }
+    if (extras && typeof extras === "object" && !Array.isArray(extras)) {
+      extras = Object.values(extras);
+    }
+    const extrasList = Array.isArray(extras) ? extras : [];
+
+    const extrasTotal = extrasList.reduce((sum, ex) => {
       const extraQty = parseInt(ex.quantity || ex.qty || 1);
       return sum + qty * extraQty * (parseFloat(ex.price || 0) || 0);
     }, 0);
     return base + extrasTotal;
   }, []);
 
+  const resolveItemPaymentMethod = useCallback((order, item) => {
+    const direct =
+      item?.payment_method ||
+      item?.paymentMethod ||
+      item?.method ||
+      "";
+    const normalizedDirect = normalizePaymentLabel(direct);
+    if (normalizedDirect) return normalizedDirect;
+
+    const singleReceiptMethod =
+      Array.isArray(order?.receiptMethods) && order.receiptMethods.length === 1
+        ? normalizePaymentLabel(order.receiptMethods[0]?.payment_method)
+        : "";
+    if (singleReceiptMethod) return singleReceiptMethod;
+
+    return normalizePaymentLabel(order?.payment_method) || "";
+  }, []);
+
 function calculateGrandTotal(items = []) {
+  const list = Array.isArray(items) ? items : [];
   let total = 0;
-  for (const item of items) {
+  for (const item of list) {
     if (isCancelledItem(item)) continue;
     total += calculateItemTotal(item);
   }
@@ -111,7 +184,24 @@ function calculateGrandTotal(items = []) {
 }
 
 const getOrderEventDate = (order) => {
-  const timestamp = order?.kitchen_delivered_at || order?.created_at;
+  const itemPaidAtMs = Array.isArray(order?.items)
+    ? order.items.reduce((max, item) => {
+        const ms = item?.paid_at ? new Date(item.paid_at).getTime() : 0;
+        return Number.isFinite(ms) ? Math.max(max, ms) : max;
+      }, 0)
+    : 0;
+
+    const paymentMs = Array.isArray(order?.payments)
+      ? order.payments.reduce((max, p) => {
+          const ms = p?.created_at ? new Date(p.created_at).getTime() : 0;
+          return Number.isFinite(ms) ? Math.max(max, ms) : max;
+        }, 0)
+      : 0;
+
+  const timestamp =
+    (itemPaidAtMs || paymentMs)
+      ? new Date(Math.max(itemPaidAtMs || 0, paymentMs || 0)).toISOString()
+      : order?.kitchen_delivered_at || order?.created_at;
   if (!timestamp) return null;
   const parsed = new Date(timestamp);
   return Number.isFinite(parsed.getTime()) ? parsed : null;
@@ -135,19 +225,60 @@ const formatPaymentChangeTimestamp = (value) => {
   });
 };
 
-const fetchPaymentChangesForOrder = async (orderId) => {
-  if (!orderId) return [];
-  try {
-    const resp = await secureFetch(`/orders/${orderId}/payment-changes`);
-    return Array.isArray(resp) ? resp : [];
-  } catch (err) {
-    console.warn(
-      `⚠️ Failed to fetch payment changes for order ${orderId}:`,
-      err
-    );
-    return [];
-  }
-};
+  const fetchPaymentChangesForOrder = async (orderId) => {
+    if (!orderId) return [];
+    try {
+      const resp = await secureFetch(`/orders/${orderId}/payment-changes`);
+      return Array.isArray(resp) ? resp : [];
+    } catch (err) {
+      console.warn(
+        `⚠️ Failed to fetch payment changes for order ${orderId}:`,
+        err
+      );
+      return [];
+    }
+  };
+
+  const ensurePaymentDetails = async (order) => {
+    if (!order?.id) return order;
+    const [paymentsRaw, methodsRes, paymentChangesRaw] = await Promise.all([
+      secureFetch(`/orders/${order.id}/payments`),
+      order.receipt_id
+        ? secureFetch(`/reports/receipt-methods/${order.receipt_id}`)
+        : Promise.resolve([]),
+      fetchPaymentChangesForOrder(order.id),
+    ]);
+
+    const payments = Array.isArray(paymentsRaw)
+      ? paymentsRaw.map((p) => ({
+          ...p,
+          amount: toMoneyNumber(p.amount),
+        }))
+      : [];
+
+    let receiptMethods = [];
+    if (Array.isArray(methodsRes)) {
+      receiptMethods = methodsRes;
+    } else if (methodsRes && typeof methodsRes === "object") {
+      receiptMethods = Object.entries(methodsRes).map(([method, amount]) => ({
+        payment_method: method,
+        amount,
+      }));
+    }
+
+    const paymentChanges =
+      Array.isArray(paymentChangesRaw) && paymentChangesRaw.length > 0
+        ? paymentChangesRaw
+            .slice()
+            .sort(
+              (a, b) =>
+                getPaymentChangeTimestampMs(b.changed_at) -
+                getPaymentChangeTimestampMs(a.changed_at)
+            )
+        : [];
+
+    return { ...order, payments, receiptMethods, paymentChanges };
+  };
 
 	  // Fetch closed orders
 	const fetchClosedOrders = async () => {
@@ -164,40 +295,124 @@ const fetchPaymentChangesForOrder = async (orderId) => {
  const enriched = await Promise.all(
   data.map(async (order) => {
     const itemsRaw = await secureFetch(`/orders/${order.id}/items?include_cancelled=1`);
-    const items = itemsRaw.map(item => ({
+
+    const items = (Array.isArray(itemsRaw) ? itemsRaw : []).map((item) => ({
       ...item,
       discount_type: item.discount_type || null,
       discount_value: item.discount_value ? parseFloat(item.discount_value) : 0,
-      name: item.product_name || item.order_item_name || item.external_product_name || "Unnamed"
+      name: item.product_name || item.order_item_name || item.external_product_name || "Unnamed",
     }));
 
-    const paymentsRaw = await secureFetch(`/orders/${order.id}/payments`);
-    const payments = Array.isArray(paymentsRaw)
-      ? paymentsRaw.map((p) => ({
-          ...p,
-          amount: toMoneyNumber(p.amount),
-        }))
-      : [];
+    const payments = [];
+    const receiptMethods = [];
+    const paymentChanges = [];
 
-    let receiptMethods = [];
-    if (order.receipt_id) {
-      const methodsRes = await secureFetch(`/reports/receipt-methods/${order.receipt_id}`);
-      receiptMethods = Array.isArray(methodsRes) ? methodsRes : [];
+    // Derive payments from paid items if no explicit payments exist (do not merge; show each partial)
+    let derivedPaidItemPayments = [];
+    if (Array.isArray(items)) {
+      derivedPaidItemPayments = items
+        .filter((it) => it?.paid_at)
+        .map((it) => {
+          const itemTotal = calculateItemTotal(it);
+          return {
+            id: `${it.unique_id || it.id || "item"}::${it.paid_at}`,
+            payment_method: it.payment_method || t("Partial Payment"),
+            amount: toMoneyNumber(itemTotal),
+            created_at: it.paid_at,
+          };
+        });
     }
 
-    const paymentChangesRaw = await fetchPaymentChangesForOrder(order.id);
-    const paymentChanges =
-      Array.isArray(paymentChangesRaw) && paymentChangesRaw.length > 0
-        ? paymentChangesRaw
-            .slice()
-            .sort(
-              (a, b) =>
-                getPaymentChangeTimestampMs(b.changed_at) -
-                getPaymentChangeTimestampMs(a.changed_at)
-            )
+    const normalizePayments = (arr = [], prefix = "p") =>
+      Array.isArray(arr)
+        ? arr
+            .map((p, idx) => {
+              const amount = toMoneyNumber(p?.amount);
+              return {
+                id: p?.id || `${prefix}-${idx}-${order.id}`,
+                payment_method: p?.payment_method || p?.method || t("Payment"),
+                amount,
+                created_at: p?.created_at || order?.kitchen_delivered_at || order?.created_at,
+              };
+            })
         : [];
 
-    return { ...order, items, payments, receiptMethods, paymentChanges };
+    const normalizedPayments = normalizePayments(payments, "p");
+    const normalizedReceiptMethods = normalizePayments(receiptMethods, "rm");
+    const normalizedDerived = derivedPaidItemPayments.map((p, idx) => ({
+      ...p,
+      id: p.id || `derived-${idx}-${order.id}`,
+    }));
+
+    const paidAtSet = new Set(
+      normalizedDerived
+        .map((p) => (p?.created_at ? new Date(p.created_at).getTime() : 0))
+        .filter((ms) => Number.isFinite(ms) && ms > 0)
+    );
+    const methodSet = new Set(
+      normalizedDerived
+        .map((p) => String(p?.payment_method || "").toLowerCase().trim())
+        .filter(Boolean)
+    );
+    const hasMultiplePaidEvents =
+      paidAtSet.size > 1 || normalizedDerived.length > 1 || methodSet.size > 1;
+    const hasUnpaidItems = Array.isArray(items)
+      ? items.some((it) => !it?.paid_at)
+      : false;
+
+    const groupDerived = (entries) => {
+      const map = new Map();
+      entries.forEach((p) => {
+        const method = String(p.payment_method || t("Payment"));
+        const ts = p?.created_at ? new Date(p.created_at).toISOString() : "";
+        const key = `${method}__${ts}`;
+        const current = map.get(key) || {
+          id: p.id || key,
+          payment_method: method,
+          amount: 0,
+          created_at: p.created_at,
+        };
+        current.amount += toMoneyNumber(p.amount);
+        map.set(key, current);
+      });
+      return Array.from(map.values());
+    };
+
+    // Prefer derived splits when partial (some unpaid or multiple paid events)
+    let baseSplits = [];
+    if (paymentChanges.length > 0 && normalizedReceiptMethods.length > 0) {
+      baseSplits = normalizedReceiptMethods;
+    } else if (normalizedDerived.length > 0 && (hasMultiplePaidEvents || hasUnpaidItems)) {
+      baseSplits = groupDerived(normalizedDerived);
+    } else if (normalizedPayments.length > 0) {
+      baseSplits = normalizedPayments;
+    } else if (normalizedReceiptMethods.length > 0) {
+      baseSplits = normalizedReceiptMethods;
+    } else {
+      baseSplits = groupDerived(normalizedDerived);
+    }
+
+    baseSplits = baseSplits.filter((p) => Math.abs(Number(p.amount) || 0) > 0.0001);
+
+    const combinedPayments = baseSplits;
+
+    // Sort payments newest first for display
+    const sortedPayments = Array.isArray(combinedPayments)
+      ? combinedPayments.slice().sort((a, b) => {
+          const am = a?.created_at ? new Date(a.created_at).getTime() : 0;
+          const bm = b?.created_at ? new Date(b.created_at).getTime() : 0;
+          return bm - am;
+        })
+      : [];
+
+    return {
+      ...order,
+      items,
+      payments: sortedPayments,
+      // Expose splits source for editor + display
+      receiptMethods: baseSplits,
+      paymentChanges,
+    };
   })
 );
 
@@ -209,12 +424,15 @@ const fetchPaymentChangesForOrder = async (orderId) => {
       return hasItems || isCancelled;
     });
 
-    setClosedOrders(nonEmptyOrders);
-  } catch (err) {
-    console.error("❌ Fetch closed orders failed:", err);
-    toast.error(t("Failed to load order history"));
-  }
-};
+	    persistClosedOrders(nonEmptyOrders);
+	  } catch (err) {
+	    console.error("❌ Fetch closed orders failed:", err);
+	    toast.error(t("Failed to load order history"));
+	    if (lastLoadedOrdersRef.current && lastLoadedOrdersRef.current.length > 0) {
+	      setClosedOrders(lastLoadedOrdersRef.current);
+	    }
+	  }
+	};
 
 const filteredOrders = useMemo(() => {
   if (showCancellationsOnly) {
@@ -268,15 +486,32 @@ const totals = useMemo(() => {
   return { totalOrders, totalAmount };
 }, [filteredOrdersByTypeAndPayment]);
 
-const groupedClosedOrders = useMemo(() => {
-  return filteredOrdersByTypeAndPayment.reduce((acc, order) => {
-    const eventDate = getOrderEventDate(order);
-    const dateKey = eventDate ? eventDate.toLocaleDateString() : "Unknown";
-    if (!acc[dateKey]) acc[dateKey] = [];
-    acc[dateKey].push(order);
-    return acc;
-  }, {});
-}, [filteredOrdersByTypeAndPayment]);
+  const groupedClosedOrders = useMemo(() => {
+    const groups = filteredOrdersByTypeAndPayment.reduce((acc, order) => {
+      const eventDate = getOrderEventDate(order);
+      const dateKey = eventDate ? eventDate.toLocaleDateString() : "Unknown";
+      if (!acc[dateKey]) acc[dateKey] = [];
+      acc[dateKey].push(order);
+      return acc;
+    }, {});
+
+    // Sort orders within each date by event time desc
+    Object.keys(groups).forEach((dateKey) => {
+      groups[dateKey] = groups[dateKey].slice().sort((a, b) => {
+        const ams = getOrderEventDate(a)?.getTime() || 0;
+        const bms = getOrderEventDate(b)?.getTime() || 0;
+        return bms - ams;
+      });
+    });
+
+    return Object.fromEntries(
+      Object.entries(groups).sort(([a], [b]) => {
+        const ad = new Date(a).getTime();
+        const bd = new Date(b).getTime();
+        return bd - ad;
+      })
+    );
+  }, [filteredOrdersByTypeAndPayment]);
 
 function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
   let arr = draft || [];
@@ -405,7 +640,11 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                 const paymentEditingAllowed = !isOrderCancelled && !isOnlinePayment;
                 const showPaymentEditor = paymentEditingAllowed && editingPaymentOrderId === order.id;
                 const paymentHistory = Array.isArray(order.paymentChanges)
-                  ? order.paymentChanges
+                  ? order.paymentChanges.filter((change) => {
+                      const oldMethod = String(change?.old_method || "").trim().toLowerCase();
+                      const newMethod = String(change?.new_method || "").trim().toLowerCase();
+                      return oldMethod && newMethod && oldMethod !== newMethod;
+                    })
                   : [];
                 const externalOrderNumber = order.external_id
                   ? `#${String(order.external_id).trim()}`
@@ -540,6 +779,16 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
                       <span className="bg-indigo-100 text-indigo-700 rounded px-2 py-0.5 font-mono">
                         {t("Qty")}: {item.quantity}
                       </span>
+                      {!!item?.paid_at && (
+                        <span
+                          className={`rounded px-2 py-0.5 text-[12px] font-bold ${getPaymentBadgeClasses(
+                            resolveItemPaymentMethod(order, item)
+                          )}`}
+                          title={t("Payment method")}
+                        >
+                          {resolveItemPaymentMethod(order, item)}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <span className="text-lg font-extrabold text-indigo-800 text-right min-w-[90px] pl-4">
@@ -580,84 +829,6 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
           <span className="text-gray-400 text-xs">{t("No items")}</span>
         )}
       </div>
-
-      {order.payments && order.payments.length > 0 && (
-        <div className="mt-3 rounded-2xl bg-white/80 px-3 py-2 text-sm text-slate-600 shadow-inner border border-slate-100 dark:bg-zinc-900/60 dark:border-zinc-800">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">
-            {t("Payments")}
-          </p>
-          <div className="space-y-1">
-            {(() => {
-              const cancelledItemsTotal = Array.isArray(order.items)
-                ? order.items.reduce((sum, item) => {
-                    if (!isCancelledItem(item)) return sum;
-                    return sum + calculateItemTotal(item);
-                  }, 0)
-                : 0;
-              const paidTotalFromPayments = Array.isArray(order.payments)
-                ? order.payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
-                : 0;
-              const paidTotalFromReceiptMethods = Array.isArray(order.receiptMethods)
-                ? order.receiptMethods.reduce(
-                    (sum, row) => sum + toMoneyNumber(row?.amount ?? 0),
-                    0
-                  )
-                : 0;
-              const paidTotalFallbackFromOrder =
-                Number.isFinite(Number(order?.total)) ? Number(order.total) : calculateGrandTotal(order.items || []);
-              const paidTotal =
-                paidTotalFromPayments > 0.0001
-                  ? paidTotalFromPayments
-                  : paidTotalFromReceiptMethods > 0.0001
-                    ? paidTotalFromReceiptMethods
-                    : paidTotalFallbackFromOrder;
-
-              const visiblePayments = order.payments.filter(
-                (payment) => Math.abs(Number(payment.amount) || 0) > 0.0001
-              );
-
-              return (
-                <>
-                  {visiblePayments.map((payment) => (
-              <div key={payment.id} className="flex items-center justify-between">
-                <span>
-                  {new Date(payment.created_at).toLocaleString([], {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}{" "}
-                  · {payment.payment_method || t("Payment")}
-                </span>
-                <span className="font-semibold text-slate-900 dark:text-white">
-                  {formatCurrency(Number(payment.amount) || 0)}
-                </span>
-              </div>
-                  ))}
-
-                  <div className="mt-2 border-t border-slate-200/60 pt-2 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-500">{t("Paid")}</span>
-                      <span className="font-extrabold text-slate-900 dark:text-white">
-                        {formatCurrency(paidTotal)}
-                      </span>
-                    </div>
-                    {cancelledItemsTotal > 0.0001 && (
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-rose-600">{t("cancelled")}</span>
-                        <span className="font-extrabold text-rose-700">
-                          -{formatCurrency(cancelledItemsTotal)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
 
       {/* --- Payment/Total Block --- */}
       <div className="flex items-center justify-between mt-4 border-t border-indigo-100 pt-3">
@@ -815,8 +986,13 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
               }),
             });
             toast.success("Payment methods updated!");
+            await fetchClosedOrders();
+            setPaymentMethodDraft((pm) => {
+              const next = { ...(pm || {}) };
+              delete next[order.id];
+              return next;
+            });
             setEditingPaymentOrderId(null);
-            setTimeout(fetchClosedOrders, 350);
           }}
         >💾</button>
         <button
@@ -825,40 +1001,31 @@ function autoFillSplitAmounts(draft, idxChanged, value, order, isAmountChange) {
         >✖️</button>
       </>
     ) : (
-      <>
-        <span className="flex flex-wrap gap-2">
-          {order.receiptMethods
-            .filter((pm) => parseFloat(pm.amount) > 0)
-            .map((m, idx, arr) => (
-              <span
-                key={idx}
-                className="flex items-center gap-1 px-3 py-2 rounded-xl border-2 border-blue-300 bg-white/80 shadow text-lg font-extrabold text-blue-700"
-              >
-                {m.payment_method}
-                <span className="ml-2 font-extrabold text-indigo-900 text-lg">
-                  {formatCurrency(parseFloat(m.amount) || 0)}
-                </span>
-                {idx !== arr.length - 1 && (
-                  <span className="mx-1 font-bold text-fuchsia-500">+</span>
-                )}
-              </span>
-            ))}
-        </span>
-        {paymentEditingAllowed && (
-          <button
-            className="ml-2 px-2 py-1 rounded text-base font-bold bg-fuchsia-500 text-white"
-            onClick={() => {
-              setEditingPaymentOrderId(order.id);
-              setPaymentMethodDraft((pm) => ({
-                ...pm,
-                [order.id]: order.receiptMethods.map((obj) => ({ ...obj })),
-              }));
-            }}
-          >
-            {t("Edit Splits")} ✏️
-          </button>
-        )}
-      </>
+        <>
+          <span className="text-sm font-semibold text-slate-500">
+            {t("Split payment details are hidden. Click edit to adjust.")}
+          </span>
+          {paymentEditingAllowed && (
+            <button
+              className="ml-2 px-2 py-1 rounded text-base font-bold bg-fuchsia-500 text-white"
+              onClick={async () => {
+                const detailed = await ensurePaymentDetails(order);
+                setClosedOrders((prev) =>
+                  prev.map((o) => (o.id === detailed.id ? detailed : o))
+                );
+                setEditingPaymentOrderId(order.id);
+                setPaymentMethodDraft((pm) => ({
+                  ...pm,
+                  [order.id]: (detailed.receiptMethods || order.receiptMethods || []).map((obj) => ({
+                    ...obj,
+                  })),
+                }));
+              }}
+            >
+              {t("Edit Splits")} ✏️
+            </button>
+          )}
+        </>
     )
   ) : (
     showPaymentEditor ? (

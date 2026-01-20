@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import secureFetch from "../../utils/secureFetch";
 import { useTranslation } from "react-i18next";
+import { saveSetting, useSetting } from "../hooks/useSetting";
 
 export default function TablesSettingsTab() {
   const { t } = useTranslation();
@@ -12,6 +13,10 @@ export default function TablesSettingsTab() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [areaFilter, setAreaFilter] = useState("ALL");
+  const [tableSettings, setTableSettings] = useState({
+    tableLabelText: "",
+    showAreas: true,
+  });
 
   // --- Helpers / Derived data ---
   const activeTables = useMemo(
@@ -83,6 +88,11 @@ export default function TablesSettingsTab() {
     fetchTables();
   }, []);
 
+  useSetting("tables", setTableSettings, {
+    tableLabelText: "",
+    showAreas: true,
+  });
+
   const handleSaveTotal = async () => {
     if (!Number.isFinite(Number(desiredTotal)) || desiredTotal < 0) return;
     setSaving(true);
@@ -128,6 +138,26 @@ export default function TablesSettingsTab() {
     }
   };
 
+  const handleSaveTableSettings = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const payload = {
+        tableLabelText: String(tableSettings.tableLabelText || "").trim(),
+        showAreas: !!tableSettings.showAreas,
+      };
+      await saveSetting("tables", payload);
+      setTableSettings((prev) => ({ ...prev, ...payload }));
+      setToast(t("Saved"));
+    } catch (err) {
+      console.error("❌ Failed to save table settings:", err);
+      setError(t("Failed to save table settings"));
+    } finally {
+      setSaving(false);
+      setTimeout(() => setToast(""), 1500);
+    }
+  };
+
   // --- UI helpers ---
   const getAreaValue = (tbl) => tbl.area || "Main Hall";
 
@@ -141,11 +171,11 @@ export default function TablesSettingsTab() {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h2 className="text-2xl sm:text-3xl font-extrabold bg-gradient-to-r from-indigo-500 via-fuchsia-500 to-blue-500 bg-clip-text text-transparent">
-            🪑 {t("Table Layout & Seating")}
+            🪑 {t("Venue Layout & Seating")}
           </h2>
           <p className="mt-1 text-sm text-gray-500 max-w-xl">
             {t(
-              "Design your restaurant, hotel or cafe floor plan: set table count, sitting area and number of chairs per table for the Table Overview screen."
+              "Design your restaurant, hotel or cafe floor plan: set the number of seats, areas, and chair counts for your overview screen."
             )}
           </p>
         </div>
@@ -238,6 +268,47 @@ export default function TablesSettingsTab() {
         <h3 className="text-sm font-semibold text-gray-700 mb-2">
           {t("Sitting Areas")}
         </h3>
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-600">
+            <input
+              type="checkbox"
+              checked={!!tableSettings.showAreas}
+              onChange={(e) =>
+                setTableSettings((prev) => ({
+                  ...prev,
+                  showAreas: e.target.checked,
+                }))
+              }
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            {t("Enable areas in Table Overview")}
+          </label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold text-gray-600">
+              {t("Table Label")}
+            </label>
+            <input
+              type="text"
+              value={tableSettings.tableLabelText || ""}
+              onChange={(e) =>
+                setTableSettings((prev) => ({
+                  ...prev,
+                  tableLabelText: e.target.value,
+                }))
+              }
+              placeholder={t("Table")}
+              className="w-36 rounded-xl border border-gray-200 px-3 py-1.5 text-xs text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <button
+              type="button"
+              onClick={handleSaveTableSettings}
+              disabled={saving}
+              className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {saving ? t("Saving...") : t("Save")}
+            </button>
+          </div>
+        </div>
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setAreaFilter("ALL")}

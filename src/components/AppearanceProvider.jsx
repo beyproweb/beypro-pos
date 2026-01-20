@@ -67,6 +67,7 @@ useEffect(() => {
       "violet-500": { solid: "139 92 246", from: "139 92 246", to: "236 72 153" }, // violet -> pink
       "lime-500": { solid: "132 204 22", from: "132 204 22", to: "34 197 94" }, // lime -> green
       "sky-500": { solid: "14 165 233", from: "14 165 233", to: "99 102 241" }, // sky -> indigo
+      white: { solid: "255 255 255", from: "255 255 255", to: "226 232 240" }, // white → slate-200
 
       // Gradient accents (new)
       sunset: { solid: "249 115 22", from: "244 63 94", to: "245 158 11" }, // rose -> amber
@@ -79,10 +80,15 @@ useEffect(() => {
 
     const key = appearance.accent;
     const selected = accentMap[key] || accentMap.default;
+    const textColor =
+      key === "white" && appliedTheme !== "dark"
+        ? "15 23 42" // slate-900 for readability on light backgrounds
+        : selected.solid;
 
     root.style.setProperty("--accent-color", selected.solid);
     root.style.setProperty("--accent-from", selected.from);
     root.style.setProperty("--accent-to", selected.to);
+    root.style.setProperty("--base-text-color", textColor);
     document.body.classList.toggle("contrast-more", appearance.highContrast);
   }, [loaded, appearance]);
 

@@ -8,10 +8,15 @@
   --accent-from: 14 165 233;
   --accent-to: 99 102 241; /* indigo-500 */
   --font-size: 16px;
+  --base-text-color: 15 23 42; /* slate-900 */
 }
 
 html {
   overflow-y: scroll;
+}
+
+body {
+  color: rgb(var(--base-text-color) / 1);
 }
 
 /* ✅ Accent gradient background helper

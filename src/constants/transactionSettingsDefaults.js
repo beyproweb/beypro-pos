@@ -5,4 +5,6 @@ export const DEFAULT_TRANSACTION_SETTINGS = {
   disableAutoPrintTable: false,
   disableAutoPrintPacket: false,
   disableTableOverviewOrdersFloatingButton: false,
+  disableTableOverviewGuestsFloatingButton: false,
+  requireGuestsBeforeOpen: true,
 };

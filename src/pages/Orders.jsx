@@ -868,11 +868,31 @@ try {
     );
   });
 
-  const withKitchenStatus = [];
-  for (const order of phoneOrders) {
+  const runWithConcurrency = async (arr, limit, task) => {
+    const list = Array.isArray(arr) ? arr : [];
+    const count = Math.max(1, Math.min(limit, list.length || 1));
+    const results = new Array(list.length);
+    let idx = 0;
+    await Promise.all(
+      Array.from({ length: count }, async () => {
+        while (idx < list.length) {
+          const current = idx++;
+          try {
+            results[current] = await task(list[current]);
+          } catch (err) {
+            console.warn("⚠️ Orders fetch failed:", err);
+            results[current] = null;
+          }
+        }
+      })
+    );
+    return results.filter(Boolean);
+  };
+
+  const withKitchenStatus = await runWithConcurrency(phoneOrders, 6, async (order) => {
     let items = await secureFetch(`/orders/${order.id}/items`);
     if (!items?.length) {
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 200));
       items = await secureFetch(`/orders/${order.id}/items`);
     }
 
@@ -907,9 +927,8 @@ else if (relevantItems.some(i => i.kitchen_status === "ready"))
 else if (relevantItems.some(i => i.kitchen_status === "preparing"))
   overallKitchenStatus = "preparing";
 
-   withKitchenStatus.push({ ...order, items: normalizedItems, overallKitchenStatus });
-
-  }
+    return { ...order, items: normalizedItems, overallKitchenStatus };
+  });
 
   // ✅ Merge instead of overwrite
   setOrders(prev => {
@@ -2061,9 +2080,9 @@ return (
           ))}
         </select>
 
-        <div className="w-full md:w-auto flex items-center justify-center gap-3 flex-nowrap overflow-x-auto md:overflow-visible">
+        <div className="w-full md:w-auto flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3">
           <button
-            className="w-full md:w-auto md:shrink-0 whitespace-nowrap leading-none px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap leading-none px-4 sm:px-6 py-2 rounded-2xl bg-slate-900 text-white text-sm sm:text-base font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
             disabled={!selectedDriverId}
             onClick={async () => {
               // Ensure we have the latest restaurant info before building stops
@@ -2110,32 +2129,32 @@ return (
               setShowRoute(true);
             }}
           >
-            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+            <span className="inline-flex items-center gap-2 sm:whitespace-nowrap">
               🛵
               <span className="shrink-0 bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-lg border border-emerald-300 font-semibold">
                 LIVE
               </span>
-              <span className="whitespace-nowrap">{t("Route")}</span>
+              <span className="sm:whitespace-nowrap">{t("Route")}</span>
             </span>
           </button>
 
           <button
-            className="w-full md:w-auto md:shrink-0 whitespace-nowrap leading-none px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap leading-none px-4 sm:px-6 py-2 rounded-2xl bg-slate-900 text-white text-sm sm:text-base font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
             disabled={!selectedDriverId}
             onClick={() => setShowDrinkModal(true)}
           >
-            <span className="inline-flex items-center gap-2 whitespace-nowrap">
-              <span className="whitespace-nowrap">{t("Checklist")}</span>
+            <span className="inline-flex items-center gap-2 sm:whitespace-nowrap">
+              <span className="sm:whitespace-nowrap">{t("Checklist")}</span>
             </span>
           </button>
 
           <button
-            className="w-full md:w-auto md:shrink-0 whitespace-nowrap leading-none px-6 py-2 rounded-2xl bg-slate-900 text-white font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap leading-none px-4 sm:px-6 py-2 rounded-2xl bg-slate-900 text-white text-sm sm:text-base font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
             disabled={!selectedDriverId}
             onClick={handleToggleDriverReport}
           >
-            <span className="inline-flex items-center gap-2 whitespace-nowrap">
-              📊 <span className="whitespace-nowrap">{t("Driver Report")}</span>
+            <span className="inline-flex items-center gap-2 sm:whitespace-nowrap">
+              📊 <span className="sm:whitespace-nowrap">{t("Driver Report")}</span>
             </span>
           </button>
         </div>

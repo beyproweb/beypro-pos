@@ -10,6 +10,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import { useTranslation } from "react-i18next";
 import { useSwipeable } from "react-swipeable";
+import { ArrowLeftRight, GitMerge, HandCoins } from "lucide-react";
 import ExtrasModal from "../modals/ExtrasModal";
 import DiscountModal from "../modals/DiscountModal";
 import PaymentModal from "../modals/PaymentModal";
@@ -23,6 +24,7 @@ import socket from "../utils/socket";
 import { useAuth } from "../context/AuthContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { getPaymentMethodLabel } from "../utils/paymentMethods";
+import { getPaymentItemKey } from "../utils/getPaymentItemKey";
 import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../utils/cashDrawer";
 import {
   renderReceiptText,
@@ -30,11 +32,11 @@ import {
   getReceiptLayout,
 } from "../utils/receiptPrinter";
 import { fetchOrderWithItems } from "../utils/orderPrinting";
-import TableActionButtons from "../components/TableActionButtons";
 import { useCurrency } from "../context/CurrencyContext";
 import { useSetting } from "../components/hooks/useSetting";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
 import { getReservationSchedule, isEarlyReservationClose } from "../utils/reservationSchedule";
+import { loadRegisterSummary } from "../utils/registerSummaryCache";
 const normalizeGroupKey = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim().toLowerCase().replace(/\s+/g, " ");
@@ -195,6 +197,31 @@ const normalizeSuborderItems = (value) => {
 const isCancelledStatus = (status) => {
   const normalized = String(status || "").toLowerCase();
   return normalized === "cancelled" || normalized === "canceled";
+};
+
+const resolveItemPaymentMethod = (order, item) => {
+  const direct =
+    item?.payment_method ||
+    item?.paymentMethod ||
+    item?.method ||
+    "";
+  const normalizedDirect = typeof direct === "string" ? direct.trim() : "";
+  if (normalizedDirect) return normalizedDirect;
+
+  const singleReceiptMethod =
+    Array.isArray(order?.receiptMethods) && order.receiptMethods.length === 1
+      ? (order.receiptMethods[0]?.payment_method || "").trim()
+      : "";
+  if (singleReceiptMethod) return singleReceiptMethod;
+
+  return (order?.payment_method || "").trim();
+};
+
+const normalizeOrderStatus = (status) => {
+  const normalized = String(status || "").toLowerCase();
+  // Backend may send "occupied" for active table orders; treat it as "confirmed"
+  // so Reservation/Cancel/Debt controls render immediately.
+  return normalized === "occupied" ? "confirmed" : normalized;
 };
 
 const isActiveTableStatus = (status) => {
@@ -455,12 +482,58 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [transactionSettings, setTransactionSettings] = useState(
     DEFAULT_TRANSACTION_SETTINGS
   );
+  const dispatchKitchenOrdersReload = useCallback(() => {
+    if (!window || typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new Event("beypro:kitchen-orders-reload"));
+  }, []);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelQuantities, setCancelQuantities] = useState({});
+  const [payQuantities, setPayQuantities] = useState({});
+
+  const updateSelectionQuantity = useCallback(
+    (key, qty, maxQty) => {
+      if (!key) return;
+      const limit = Math.max(1, Number(maxQty) || 1);
+      const normalizedQty = Math.min(
+        Math.max(1, Number(qty) || 1),
+        limit
+      );
+      setCancelQuantities((prev) => {
+        const next = { ...(prev || {}) };
+        next[key] = normalizedQty;
+        return next;
+      });
+      setPayQuantities((prev) => {
+        const next = { ...(prev || {}) };
+        next[key] = normalizedQty;
+        return next;
+      });
+    },
+    []
+  );
+
+  const removeSelectionQuantity = useCallback((key) => {
+    if (!key) return;
+    setCancelQuantities((prev) => {
+      const next = { ...(prev || {}) };
+      if (next[key] !== undefined) {
+        delete next[key];
+      }
+      return next;
+    });
+    setPayQuantities((prev) => {
+      const next = { ...(prev || {}) };
+      if (next[key] !== undefined) {
+        delete next[key];
+      }
+      return next;
+    });
+  }, []);
   const [refundMethodId, setRefundMethodId] = useState("");
   const [toast, setToast] = useState({ show: false, message: "" });
+  const didAutoOpenRegisterRef = useRef(false);
   const confirmReservationCloseResolverRef = useRef(null);
   const [confirmReservationCloseToast, setConfirmReservationCloseToast] = useState({
     show: false,
@@ -521,13 +594,24 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
     () => suborderItems.every((item) => isPaidItem(item)),
     [suborderItems]
   );
+  const allPaidIncludingSuborders = allCartItemsPaid && allSuborderPaid;
+  const isPhoneOrder = orderType === "phone";
 const [debtSearch, setDebtSearch] = useState("");
 const [debtSearchResults, setDebtSearchResults] = useState([]);
 const [debtSearchLoading, setDebtSearchLoading] = useState(false);
 const orderType = String(
   order?.order_type || (orderId ? "phone" : "table") || "table"
 ).toLowerCase();
-const normalizedStatus = (order?.status || "").toLowerCase();
+const normalizedStatus = normalizeOrderStatus(order?.status);
+const [tableSettings, setTableSettings] = useState({
+  tableLabelText: "",
+  showAreas: true,
+});
+useSetting("tables", setTableSettings, {
+  tableLabelText: "",
+  showAreas: true,
+});
+const tableLabelText = String(tableSettings.tableLabelText || "").trim() || t("Table");
 // Debt can be added only when order is confirmed/paid AND there are confirmed items and no unconfirmed items
 const hasUnconfirmedItems = cartItems.some((i) => !i.confirmed);
 const hasConfirmedUnpaidItems = cartItems.some((i) => i.confirmed && !i.paid);
@@ -536,9 +620,13 @@ const isDebtEligible = canShowDebtButton && !hasUnconfirmedItems && hasConfirmed
   const safeProducts = Array.isArray(products) ? products : [];
   const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
   const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
-  const [categoryColumnSlots, setCategoryColumnSlots] = useState(0);
-  const rightCategoryColumnRef = useRef(null);
-  const categoryMeasureRef = useRef(null);
+const [categoryColumnSlots, setCategoryColumnSlots] = useState(0);
+const rightCategoryColumnRef = useRef(null);
+const categoryMeasureRef = useRef(null);
+const bottomBarRef = useRef(null);
+const [bottomBarScrollable, setBottomBarScrollable] = useState(false);
+const [bottomScrollEnd, setBottomScrollEnd] = useState(false);
+const [bottomScrollStart, setBottomScrollStart] = useState(true);
 const [excludedItems, setExcludedItems] = useState([]);
 const [excludedCategories, setExcludedCategories] = useState([]);
 const excludedItemsSet = useMemo(
@@ -556,17 +644,51 @@ const excludedCategoriesSet = useMemo(
 );
 const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
 const activeCategory = categories[currentCategoryIndex] || "";
+const [catalogSearch, setCatalogSearch] = useState("");
+const normalizedCatalogSearch = useMemo(() => normalizeGroupKey(catalogSearch), [catalogSearch]);
+const catalogSearchTokens = useMemo(() => {
+  if (!normalizedCatalogSearch) return [];
+  return normalizedCatalogSearch.split(" ").map((t) => t.trim()).filter(Boolean);
+}, [normalizedCatalogSearch]);
+const isCatalogSearching = catalogSearchTokens.length > 0;
+const matchesCatalogQuery = useCallback(
+  (value) => {
+    if (!catalogSearchTokens.length) return true;
+    const haystack = normalizeGroupKey(value);
+    if (!haystack) return false;
+    return catalogSearchTokens.every((token) => haystack.includes(token));
+  },
+  [catalogSearchTokens]
+);
 const productsInActiveCategory = safeProducts.filter(
   (p) =>
     (p.category || "").trim().toLowerCase() ===
     (activeCategory || "").trim().toLowerCase()
 );
+const visibleProducts = useMemo(() => {
+  if (!isCatalogSearching) return productsInActiveCategory;
+  return safeProducts.filter((p) => {
+    const name = p?.name ?? "";
+    const category = p?.category ?? "";
+    return matchesCatalogQuery(name) || matchesCatalogQuery(category);
+  });
+}, [isCatalogSearching, productsInActiveCategory, safeProducts, matchesCatalogQuery]);
+const matchingCategories = useMemo(() => {
+  if (!isCatalogSearching) return [];
+  return categories
+    .map((cat, idx) => ({ cat, idx }))
+    .filter((entry) => matchesCatalogQuery(entry.cat))
+    .slice(0, 10);
+}, [categories, isCatalogSearching, matchesCatalogQuery]);
 const categoryColumns = useMemo(() => {
   const entries = categories.map((cat, index) => ({ cat, index }));
   if (entries.length === 0) {
     return { right: [], left: [], bottom: [] };
   }
-  const slots = categoryColumnSlots > 0 ? categoryColumnSlots : entries.length;
+  const MIN_TABS_PER_COLUMN = 8;
+  const measuredSlots =
+    categoryColumnSlots > 0 ? categoryColumnSlots : Math.min(MIN_TABS_PER_COLUMN, entries.length);
+  const slots = Math.max(measuredSlots, MIN_TABS_PER_COLUMN);
   return {
     right: entries.slice(0, slots),
     left: entries.slice(slots, slots * 2),
@@ -588,6 +710,21 @@ const measureCategorySlots = useCallback(() => {
   setCategoryColumnSlots((prev) => (prev === slots ? prev : slots));
 }, []);
 
+const updateBottomOverflow = useCallback(() => {
+  const node = bottomBarRef.current;
+  if (!node) {
+    setBottomBarScrollable(false);
+    setBottomScrollEnd(false);
+    return;
+  }
+  const scrollable = node.scrollWidth > node.clientWidth + 1;
+  const atStart = node.scrollLeft <= 1;
+  const atEnd = node.scrollLeft + node.clientWidth >= node.scrollWidth - 1;
+  setBottomBarScrollable(scrollable);
+  setBottomScrollStart(atStart);
+  setBottomScrollEnd(atEnd);
+}, []);
+
 useLayoutEffect(() => {
   if (typeof window === "undefined" || categories.length === 0) return;
   const id = window.requestAnimationFrame(measureCategorySlots);
@@ -596,7 +733,20 @@ useLayoutEffect(() => {
     window.cancelAnimationFrame(id);
     window.removeEventListener("resize", measureCategorySlots);
   };
-}, [categories.length, categoryColumnSlots, measureCategorySlots]);
+}, [categories.length, measureCategorySlots]);
+
+useEffect(() => {
+  const node = bottomBarRef.current;
+  if (!node) return;
+  const handleScroll = () => updateBottomOverflow();
+  updateBottomOverflow();
+  node.addEventListener("scroll", handleScroll);
+  window.addEventListener("resize", updateBottomOverflow);
+  return () => {
+    node.removeEventListener("scroll", handleScroll);
+    window.removeEventListener("resize", updateBottomOverflow);
+  };
+}, [updateBottomOverflow]);
 
 useEffect(() => {
   if (!deferHeavyUi) return;
@@ -822,6 +972,29 @@ const handleSaveReservation = async () => {
       return;
     }
 
+    const savedReservation = response?.reservation || null;
+    if (savedReservation) {
+      setExistingReservation(savedReservation);
+      setOrder((prev) => ({
+        ...(prev || {}),
+        reservation_date: savedReservation.reservation_date ?? reservationDate,
+        reservation_time: savedReservation.reservation_time ?? reservationTime,
+        reservation_clients: savedReservation.reservation_clients ?? parseInt(reservationClients),
+        reservation_notes: savedReservation.reservation_notes ?? reservationNotes,
+        status: savedReservation.status ?? prev?.status,
+      }));
+    } else {
+      // Fallback: show badge immediately even if backend didn't return the row
+      const fallback = {
+        reservation_date: reservationDate,
+        reservation_time: reservationTime,
+        reservation_clients: parseInt(reservationClients) || 0,
+        reservation_notes: reservationNotes,
+      };
+      setExistingReservation(fallback);
+      setOrder((prev) => ({ ...(prev || {}), ...fallback }));
+    }
+
     // 2️⃣ If it's a new reservation (not existing), confirm unconfirmed items like confirm order button
     if (!existingReservation) {
       // Confirm any unconfirmed items and send to kitchen
@@ -877,11 +1050,40 @@ const handleSaveReservation = async () => {
         : t("✅ Reservation confirmed and order sent to kitchen")
     );
     setShowReservationModal(false);
-    setExistingReservation(null);
     resetReservationForm();
   } catch (err) {
     console.error("❌ Failed to save reservation:", err);
     showToast(err.message || t("Failed to save reservation"));
+  } finally {
+    setReservationLoading(false);
+  }
+};
+
+const handleDeleteReservation = async () => {
+  if (!order?.id) return;
+  if (!existingReservation?.reservation_date) return;
+
+  const ok = window.confirm(t("Delete this reservation?"));
+  if (!ok) return;
+
+  setReservationLoading(true);
+  try {
+    const response = await secureFetch(`/orders/${order.id}/reservations${identifier}`, {
+      method: "DELETE",
+    });
+
+    if (response?.error) throw new Error(response.error);
+    if (response?.success === false) throw new Error(response.message || t("Failed to delete reservation"));
+
+    const nextOrder = response?.order || response;
+    setOrder((prev) => ({ ...(prev || {}), ...(nextOrder || {}) }));
+    setExistingReservation(null);
+    resetReservationForm();
+    showToast(t("✅ Reservation deleted"));
+    setShowReservationModal(false);
+  } catch (err) {
+    console.error("❌ Failed to delete reservation:", err);
+    showToast(err?.message || t("Failed to delete reservation"));
   } finally {
     setReservationLoading(false);
   }
@@ -921,47 +1123,69 @@ const openReservationModal = async () => {
 };
 
 const renderCategoryButton = (cat, idx, variant = "desktop") => {
+  const normalizedVariant = variant === "bar" ? "vertical" : variant;
   const slug = (cat || "").trim().toLowerCase();
   const catSrc = categoryImages[slug] || "";
   const isActive = currentCategoryIndex === idx;
   const hasImg = !!catSrc;
 
   const baseClasses =
-    "flex flex-col items-center justify-center gap-1 rounded-md border px-1.5 py-2 text-center transition select-none";
-const widthClass =
-  variant === "mobile"
-    ? "min-w-[100px] max-w-[110px] snap-start"
-    : variant === "bar"
-    ? "min-w-[110px] max-w-[130px]"
-    : variant === "grid"
-    ? "w-[100px]"
-    : "w-full";
+    "flex flex-col items-center justify-center gap-1 rounded-xl border bg-white px-1.5 py-2 text-center shadow-sm transition-all duration-150 select-none touch-manipulation hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 active:scale-[0.99]";
+
+  const paddingClass =
+    normalizedVariant === "mobile"
+      ? "px-1 py-1"
+      : normalizedVariant === "grid"
+      ? "px-0.5 py-0.5"
+      : normalizedVariant === "vertical"
+      ? "px-0.5 py-0.5"
+      : "px-1 py-1.5";
+
+  const widthClass =
+    normalizedVariant === "mobile"
+      ? "min-w-[70px] max-w-[80px] snap-start"
+      : normalizedVariant === "grid"
+      ? "w-[70px]"
+      : normalizedVariant === "vertical"
+      ? "w-[70px]"
+      : "w-full";
   const activeClasses = "border-indigo-500 bg-white shadow";
   const inactiveClasses = "border-slate-200 hover:border-indigo-300 hover:bg-slate-50";
 
-  const imageClasses = "h-10 w-10 object-cover rounded-md"; // bigger ✔
-  const iconClasses = "text-[20px] leading-tight";           // bigger ✔
+  const imageClasses =
+    normalizedVariant === "vertical"
+      ? "h-8 w-8 object-cover rounded-md"
+      : "h-8 w-8 object-cover rounded-md";
+  const iconClasses = "text-[16px] leading-tight";
 
   const labelClasses =
-    variant === "grid"
-      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[90px]"
-      : variant === "bar"
-      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[110px]"
-      : "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[75px]";
+    normalizedVariant === "grid"
+      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[80px]"
+      : normalizedVariant === "vertical"
+      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[80px]"
+      : "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[70px]";
 
   return (
     <button
       key={`${variant}-${cat}-${idx}`}
       type="button"
       onClick={() => setCurrentCategoryIndex(idx)}
-      className={`${widthClass} ${baseClasses} ${isActive ? activeClasses : inactiveClasses}`}
+      className={`${widthClass} ${baseClasses} ${paddingClass} ${isActive ? activeClasses : inactiveClasses}`}
     >
       {hasImg ? (
         <img src={catSrc} alt={cat} className={imageClasses} />
       ) : (
-        <span className={iconClasses}>
-          {categoryIcons[cat] || categoryIcons.default}
-        </span>
+        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-slate-100 to-slate-200">
+          <span className="text-lg font-semibold text-slate-500">
+            {(cat || "")
+              .split(" ")
+              .map((part) => part[0])
+              .filter(Boolean)
+              .slice(0, 2)
+              .join("")
+              .toUpperCase()}
+          </span>
+        </div>
       )}
       <span className={labelClasses}>{t(cat)}</span>
     </button>
@@ -995,6 +1219,7 @@ const cartScrollRef = useRef(null);
 const lastVisibleCartItemRef = useRef(null);
 const [expandedCartItems, setExpandedCartItems] = useState(() => new Set());
 const [selectedCartItemIds, setSelectedCartItemIds] = useState(() => new Set());
+const [showPaidCartItems, setShowPaidCartItems] = useState(false);
 const clearCartState = useCallback(() => {
   setCartItems([]);
   setReceiptItems([]);
@@ -1011,6 +1236,7 @@ const clearCartState = useCallback(() => {
   setIsSplitMode(false);
   setShowExtrasModal(false);
   setSelectedPaymentMethod("");
+  setPayQuantities({});
   setIsFloatingCartOpen(false);
 }, []);
 
@@ -1248,6 +1474,7 @@ const toggleCartItemSelection = useCallback((itemId) => {
 }, []);
 
 const clearSelectedCartItems = useCallback(() => {
+  if (cartItems.length === 0) return;
   if (selectedCartItemIds.size === 0) return;
 
   const selectedKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
@@ -1407,7 +1634,7 @@ useEffect(() => {
       : String(order.order_type || "").toLowerCase() === "phone"
       ? order.customer_name?.trim() || t("Phone Order")
       : order.customer_name || order.customer_phone || t("Phone Order")
-    : `${t("Table")} ${tableId}`;
+    : `${tableLabelText} ${tableId}`;
 
   setHeader({
     title: headerTitle,
@@ -1451,9 +1678,17 @@ const handleQuickDiscount = () => {
   setToast({ show: true, message: t("Quick Discount is coming soon!") });
 };
 
+useEffect(() => {
+  loadRegisterSummary().catch((err) => {
+    console.warn("⚠️ Failed to prefetch register summary:", err);
+  });
+}, []);
+
 const handleOpenCashRegister = () => {
-  // TODO: open your register modal, or show a toast for now
-  setToast({ show: true, message: t("Open Cash Register is coming soon!") });
+  loadRegisterSummary().catch(() => {});
+  navigate("/tableoverview?tab=register", {
+    state: { openRegisterModal: true },
+  });
 };
 
 // Returns the total after discount is applied
@@ -1548,10 +1783,18 @@ useEffect(() => {
     [safeParseExtras]
   );
 
-  // 💡 Compute total of selected cart items
-  const selectedItemsTotal = cartItems
-    .filter((item) => selectedCartItemIds.has(String(item.unique_id || item.id)))
-    .reduce((sum, item) => sum + computeItemLineTotal(item), 0);
+  // 💡 Compute total of selected cart items (supports partial quantity selection)
+  const selectedItemsTotal = cartItems.reduce((sum, item) => {
+    const key = String(item.unique_id || item.id);
+    if (!selectedCartItemIds.has(key)) return sum;
+    const maxQty = Math.max(1, Number(item.quantity) || 1);
+    const selectedQty = Math.min(
+      maxQty,
+      Number(payQuantities?.[key] || maxQty)
+    );
+    const perUnit = computeItemLineTotal(item) / maxQty;
+    return sum + perUnit * selectedQty;
+  }, 0);
 
   const totalPaidAmount = useMemo(() => {
     return cartItems.reduce((sum, item) => {
@@ -1584,6 +1827,20 @@ useEffect(() => {
     const keys = new Set(Array.from(selectedCartItemIds, (id) => String(id)));
     return cartItems.filter((item) => keys.has(String(item.unique_id || item.id)));
   }, [cartItems, selectedCartItemIds]);
+
+  const unpaidCartItems = useMemo(() => {
+    return (Array.isArray(cartItems) ? cartItems : []).filter((item) => !item?.paid);
+  }, [cartItems]);
+
+  const paidCartItems = useMemo(() => {
+    return (Array.isArray(cartItems) ? cartItems : []).filter((item) => !!item?.paid);
+  }, [cartItems]);
+
+  useEffect(() => {
+    if (unpaidCartItems.length === 0 && paidCartItems.length > 0) {
+      setShowPaidCartItems(true);
+    }
+  }, [paidCartItems.length, unpaidCartItems.length]);
  
 // --- New split payment state ---
 const [splits, setSplits] = useState({});
@@ -1648,11 +1905,19 @@ const [splits, setSplits] = useState({});
 
   const openCancelModal = useCallback(() => {
     if (!order?.id) return;
+    if (normalizedStatus !== "confirmed") {
+      showToast(t("Order must be confirmed before cancelling."));
+      return;
+    }
+    if (selectedCartItems.length === 0) {
+      showToast(t("Select item to cancel"));
+      return;
+    }
     setCancelReason("");
     setCancelQuantities({});
     setRefundMethodId(getDefaultRefundMethod());
     setShowCancelModal(true);
-  }, [getDefaultRefundMethod, order?.id]);
+  }, [getDefaultRefundMethod, order?.id, normalizedStatus, selectedCartItems.length, t]);
 
   const closeCancelModal = useCallback(() => {
     setShowCancelModal(false);
@@ -1848,6 +2113,8 @@ if (!rMethods) throw new Error("Failed to save receipt methods");
     setSelectedForPayment([]);
     setShowPaymentModal(false);
     setSelectedCartItemIds(new Set());
+    dispatchKitchenOrdersReload();
+    dispatchKitchenOrdersReload();
 
     // 8) If all items are paid, mark order as paid
 const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
@@ -1877,6 +2144,23 @@ const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
   }
 };
 
+const resetTableGuests = async (tableNumber) => {
+  const normalizedNumber =
+    tableNumber === null || tableNumber === undefined
+      ? NaN
+      : Number(tableNumber);
+  if (!Number.isFinite(normalizedNumber)) return;
+
+  try {
+    await secureFetch(`/tables/${normalizedNumber}${identifier}`, {
+      method: "PATCH",
+      body: JSON.stringify({ guests: null }),
+    });
+  } catch (err) {
+    console.warn("⚠️ Failed to reset table guests:", err);
+  }
+};
+
 const runAutoCloseIfConfigured = useCallback(
   async (shouldClose) => {
     if (!shouldClose || !order?.id) return;
@@ -1900,6 +2184,7 @@ const runAutoCloseIfConfigured = useCallback(
 
     try {
       await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+      await resetTableGuests(order?.table_number ?? order?.tableNumber);
     } catch (err) {
       console.warn("⚠️ Auto-close failed:", err?.message || err);
     }
@@ -2271,13 +2556,14 @@ const createOrFetchTableOrder = async (tableNumber) => {
     if (newOrder.payment_method === "Online") correctedStatus = "paid";
 
     setOrder({ ...newOrder, status: correctedStatus });
-
-    await fetchOrderItems(newOrder.id, {
+    // Render the screen immediately; hydrate items in the background.
+    setLoading(false);
+    fetchOrderItems(newOrder.id, {
       orderTypeOverride: newOrder.order_type,
       sourceOverride: newOrder.source,
+    }).catch((err) => {
+      console.error("❌ Error fetching order items:", err);
     });
-
-    setLoading(false);
   } catch (err) {
     console.error("❌ Error creating/fetching table order:", err);
     setLoading(false);
@@ -2510,24 +2796,30 @@ const handleMultifunction = async () => {
       ? cartItems
           .filter(
             (item) =>
-              !item.paid && selectionKeys.has(String(item.unique_id || item.id))
+              !item.paid && selectionKeys.has(getPaymentItemKey(item))
           )
-          .map((item) => item.unique_id)
+          .map((item) => getPaymentItemKey(item))
+          .filter(Boolean)
       : selectedForPayment.length > 0
       ? [...selectedForPayment]
       : cartItems
           .filter((item) => !item.paid && item.confirmed)
-          .map((item) => item.unique_id);
+          .map((item) => getPaymentItemKey(item))
+          .filter(Boolean);
 
   if (selectionKeys.size > 0 && paymentIds.length === 0) {
     showToast(t("Selected items are already paid"));
     return;
   }
 
-  if (paymentIds.length === 0 && cartItems.some((item) => !item.paid && item.confirmed)) {
+  if (
+    paymentIds.length === 0 &&
+    cartItems.some((item) => !item.paid && item.confirmed)
+  ) {
     paymentIds = cartItems
       .filter((item) => !item.paid && item.confirmed)
-      .map((item) => item.unique_id);
+      .map((item) => getPaymentItemKey(item))
+      .filter(Boolean);
   }
 
   if (paymentIds.length > 0) {
@@ -2535,7 +2827,7 @@ const handleMultifunction = async () => {
   }
 
   const total = cartItems
-    .filter((i) => paymentIds.includes(i.unique_id))
+    .filter((i) => paymentIds.includes(getPaymentItemKey(i)))
     .reduce((sum, i) => sum + i.price * i.quantity, 0);
 
   // ✅ Allow phone orders to close even if empty
@@ -2560,6 +2852,7 @@ const handleMultifunction = async () => {
         return;
       }
     } else {
+      await resetTableGuests(order?.table_number ?? order?.tableNumber);
       navigate("/tableoverview?tab=tables");
       return;
     }
@@ -2651,9 +2944,6 @@ if (
   return;
 }
 
-// 4️⃣ Try to close if all items are paid — OR any phone order ready to close
-const allPaidIncludingSuborders = allCartItemsPaid && allSuborderPaid;
-
 if (orderType === "phone" && order.status !== "closed") {
   // ✅ Allow phone orders to close after payment
   try {
@@ -2705,6 +2995,7 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncluding
   // ✅ All delivered → close and go immediately
   try {
     await secureFetch(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+    await resetTableGuests(order?.table_number ?? order?.tableNumber);
     setDiscountValue(0);
     setDiscountType("percent");
     debugNavigate("/tableoverview?tab=tables"); // <— correct route
@@ -2788,17 +3079,44 @@ const confirmPayment = async (method, payIds = null) => {
   const methodLabel = resolvePaymentLabel(method);
   const methodIsCash = isCashMethod(method);
   const receiptId = uuidv4();
+
+  // Map of selected IDs to desired quantity (defaults to full qty)
+  const selectionQty = new Map(
+    Array.from(selectedCartItemIds).map((id) => {
+      const key = String(id);
+      const item = cartItems.find((i) => getPaymentItemKey(i) === key);
+      const maxQty = Math.max(1, Number(item?.quantity) || 1);
+      const desired = Number(payQuantities?.[key]) || maxQty;
+      return [key, Math.min(Math.max(1, desired), maxQty)];
+    })
+  );
+
   const ids =
     payIds && payIds.length > 0
       ? payIds
-      : cartItems.filter((i) => !i.paid && i.confirmed).map((i) => i.unique_id);
+      : cartItems
+          .filter((i) => !i.paid && i.confirmed)
+          .map((i) => getPaymentItemKey(i));
+  const idsSet = new Set(
+    (Array.isArray(ids) ? ids : [])
+      .map((id) => (id === null || id === undefined ? "" : String(id)))
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
   let paidTotal = 0;
   let isFullyPaidAfter = false;
 
   if (order.status !== "paid") {
-    let total = cartItems
-      .filter((i) => ids.includes(i.unique_id))
-      .reduce((sum, i) => sum + i.price * i.quantity, 0);
+    const unpaidItems = cartItems.filter(
+      (i) => idsSet.has(getPaymentItemKey(i)) && !i.paid
+    );
+    let total = unpaidItems
+      .reduce((sum, i) => {
+        const maxQty = Math.max(1, Number(i.quantity) || 1);
+        const qty = selectionQty.get(getPaymentItemKey(i)) || maxQty;
+        const perUnit = computeItemLineTotal(i) / maxQty;
+        return sum + perUnit * qty;
+      }, 0);
 
     if (discountValue > 0) {
       if (discountType === "percent") total -= total * (discountValue / 100);
@@ -2807,22 +3125,25 @@ const confirmPayment = async (method, payIds = null) => {
 
     paidTotal = total;
 
-    const enhancedItems = cartItems
-      .filter((i) => ids.includes(i.unique_id))
-      .map((i) => ({
-        product_id: i.product_id || i.id,
-        quantity: i.quantity,
-        price: i.price,
-        ingredients: i.ingredients,
-        extras: i.extras,
-        unique_id: i.unique_id,
-        payment_method: methodLabel,
-        receipt_id: receiptId,
-        note: i.note || null,
-        discountType: discountValue > 0 ? discountType : null,
-        discountValue: discountValue > 0 ? discountValue : 0,
-        confirmed: true,
-      }));
+    const enhancedItems = unpaidItems
+      .map((i) => {
+        const qty =
+          selectionQty.get(getPaymentItemKey(i)) || Number(i.quantity) || 1;
+        return {
+          product_id: i.product_id || i.id,
+          quantity: qty,
+          price: i.price,
+          ingredients: i.ingredients,
+          extras: i.extras,
+          unique_id: i.unique_id,
+          payment_method: methodLabel,
+          receipt_id: receiptId,
+          note: i.note || null,
+          discountType: discountValue > 0 ? discountType : null,
+          discountValue: discountValue > 0 ? discountValue : 0,
+          confirmed: true,
+        };
+      });
 
     await secureFetch(`/orders/sub-orders${identifier}`, {
       method: "POST",
@@ -2857,13 +3178,29 @@ const confirmPayment = async (method, payIds = null) => {
       }),
     });
 
-    setCartItems((prev) =>
-      prev.map((item) =>
-        selectedForPayment.includes(item.unique_id)
-          ? { ...item, paid: true, paid_at: new Date().toISOString() }
-          : item
-      )
-    );
+    setCartItems((prev) => {
+      const next = [];
+      (Array.isArray(prev) ? prev : []).forEach((item) => {
+        const key = getPaymentItemKey(item);
+        if (!idsSet.has(key) || item.paid) {
+          next.push(item);
+          return;
+        }
+        const originalQty = Math.max(1, Number(item.quantity) || 1);
+        const payQty = selectionQty.get(key) || originalQty;
+        const remainingQty = Math.max(0, originalQty - payQty);
+        if (remainingQty > 0) {
+          next.push({ ...item, quantity: remainingQty, paid: false, paid_at: null });
+        }
+        next.push({
+          ...item,
+          quantity: payQty,
+          paid: true,
+          paid_at: new Date().toISOString(),
+        });
+      });
+      return next;
+    });
 
     if (
       selectedForPayment.length > 0 &&
@@ -2965,7 +3302,7 @@ useEffect(() => {
 
 
 const selectedForPaymentTotal = cartItems
-  .filter(i => selectedForPayment.includes(i.unique_id))
+  .filter(i => selectedForPayment.includes(getPaymentItemKey(i)))
   .reduce((sum, i) => sum + i.price * i.quantity, 0);
 
 const finalizeCartItem = useCallback(
@@ -3247,6 +3584,7 @@ const removeItem = (uniqueId) => {
 
 // Clears only UNCONFIRMED items from the cart
 const clearUnconfirmedCartItems = () => {
+  if (cartItems.length === 0) return;
   const hasUnconfirmed = cartItems.some((item) => !item.confirmed);
   if (!hasUnconfirmed) {
     showToast(t("Select item to cancel"));
@@ -3470,8 +3808,15 @@ const renderCartContent = (variant = "desktop") => {
 
   const hasSelection = selectedCartItemIds.size > 0;
   const primaryActionLabel = getButtonLabel();
-  const showPayLater = !orderId && primaryActionLabel === "Pay";
-  const payLaterDisabled = !showPayLater;
+  // Pay Later should only appear after the order is confirmed (or later states).
+  const showPayLaterInClearSlot =
+    !orderId &&
+    cartItems.length > 0 &&
+    !hasUnconfirmedCartItems &&
+    ["confirmed", "unpaid", "paid"].includes(normalizedStatus);
+  const payLaterLabel = showPayLaterInClearSlot && (normalizedStatus === "paid" || allPaidIncludingSuborders)
+    ? t("Close Later")
+    : t("Pay Later");
   const debtDisabled = !isDebtEligible || isDebtSaving;
   const baseButtonClass =
     "flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed";
@@ -3483,63 +3828,47 @@ const renderCartContent = (variant = "desktop") => {
     "flex-1 min-w-0 rounded-lg bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed";
 
   const cancelButtonClass =
-    "rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-center text-sm font-semibold text-rose-600 transition hover:bg-rose-100";
-  const canShowCancelButton = ["confirmed", "paid", "unpaid"].includes(normalizedStatus);
+    "rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-center text-sm font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50";
+  const cancelDisabled =
+    normalizedStatus !== "confirmed" || hasUnconfirmedCartItems || cartItems.length === 0;
+  const canShowCancelButton = orderType === "table";
 
 	  const actionControls = isDesktop ? (
 	    <div className="flex w-full flex-col gap-3">
 		      <div className="flex flex-wrap gap-3">
 		        <button
-		          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
-		          className={baseButtonClass}
-		        >
-		          {t("Clear")}
-		        </button>
-		        <button onClick={handleMultifunction} className={primaryButtonClass}>
-		          {t(primaryActionLabel)}
-		        </button>
-            <button
               type="button"
-              disabled={payLaterDisabled}
-              onClick={() => {
-                if (payLaterDisabled) return;
+		          onClick={() => {
+                if (!showPayLaterInClearSlot) {
+                  (hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems)();
+                  return;
+                }
                 setIsFloatingCartOpen(false);
                 navigate("/tableoverview?tab=tables");
               }}
-              className={payLaterButtonClass}
-            >
-              {t("Pay Later")}
-            </button>
-		        <button
-		          onClick={() => {
-                if (debtDisabled) return;
-                handleOpenDebtModal();
-              }}
-		          className={debtButtonClass}
-		          disabled={debtDisabled}
-	          >
-	            {isDebtSaving ? t("Saving...") : t("Add to Debt")}
-	          </button>
+		          className={showPayLaterInClearSlot ? payLaterButtonClass : baseButtonClass}
+		        >
+		          {showPayLaterInClearSlot ? payLaterLabel : t("Clear")}
+		        </button>
+                <button
+                  onClick={handleMultifunction}
+                  className={primaryButtonClass}
+                  disabled={isPhoneOrder}
+                  title={isPhoneOrder ? t("Payments are handled through the Orders screen") : undefined}
+                >
+                  {t(primaryActionLabel)}
+                </button>
 	      </div>
-	      {!orderId && (
-	        <TableActionButtons
-	          onMove={() => setShowMoveTableModal(true)}
-	          onMerge={() => setShowMergeTableModal(true)}
-	          cartMode
-	          moveLabel={t("Move Table")}
-	          mergeLabel={t("Merge Table")}
-	        />
-	      )}
 	      {canShowCancelButton && (
-	        <>
+	        <div className="flex flex-wrap gap-3">
 	          <button
 	            type="button"
 	            onClick={() => {
               openReservationModal();
             }}
-            disabled={hasConfirmedCartUnpaid || allCartItemsPaid}
-            className={`w-full rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition ${
-              hasConfirmedCartUnpaid || allCartItemsPaid
+            disabled={cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)}
+            className={`flex-1 min-w-[160px] rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition ${
+              cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)
                 ? "bg-blue-300 cursor-not-allowed"
                 : "bg-blue-500 hover:bg-blue-600"
             }`}
@@ -3549,77 +3878,50 @@ const renderCartContent = (variant = "desktop") => {
           <button
             type="button"
             onClick={openCancelModal}
-            className={`w-full ${cancelButtonClass}`}
+            disabled={cancelDisabled}
+            className={`flex-1 min-w-[160px] ${cancelButtonClass}`}
           >
             {t("Cancel")}
           </button>
-        </>
+        </div>
       )}
     </div>
 	  ) : (
 	    <div className="flex w-full flex-col gap-2">
 		      <div className="flex flex-wrap gap-2">
 		        <button
-		          onClick={hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems}
-		          className={`${baseButtonClass} flex-1 min-w-[120px]`}
-		        >
-		          {t("Clear")}
-		        </button>
-        <button
-          onClick={handleCartPrint}
-          className={`${baseButtonClass} flex-1 min-w-[120px]`}
-          title={t("Print Receipt")}
-        >
-          {t("Print")}
-        </button>
-        <button
-          onClick={() => {
-            if (debtDisabled) return;
-            handleOpenDebtModal();
-          }}
-          className={`${debtButtonClass} flex-1 min-w-[120px]`}
-          disabled={debtDisabled}
-        >
-          {isDebtSaving ? t("Saving...") : t("Add to Debt")}
-        </button>
-		        <button
-		          onClick={handleMultifunction}
-		          className={`${primaryButtonClass} flex-1 min-w-[120px]`}
-		        >
-		          {t(primaryActionLabel)}
-		        </button>
-            <button
               type="button"
-              disabled={payLaterDisabled}
-              onClick={() => {
-                if (payLaterDisabled) return;
+		          onClick={() => {
+                if (!showPayLaterInClearSlot) {
+                  (hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems)();
+                  return;
+                }
                 setIsFloatingCartOpen(false);
                 navigate("/tableoverview?tab=tables");
               }}
-              className={`${payLaterButtonClass} flex-1 min-w-[120px]`}
-            >
-              {t("Pay Later")}
-            </button>
+		          className={`${showPayLaterInClearSlot ? payLaterButtonClass : baseButtonClass} flex-1 min-w-[120px]`}
+		        >
+		          {showPayLaterInClearSlot ? payLaterLabel : t("Clear")}
+		        </button>
+        <button
+          onClick={handleMultifunction}
+          className={`${primaryButtonClass} flex-1 min-w-[120px]`}
+          disabled={isPhoneOrder}
+          title={isPhoneOrder ? t("Payments are handled through the Orders screen") : undefined}
+        >
+          {t(primaryActionLabel)}
+        </button>
 		      </div>
-	      {!orderId && (
-	        <TableActionButtons
-	          onMove={() => setShowMoveTableModal(true)}
-	          onMerge={() => setShowMergeTableModal(true)}
-	          cartMode
-	          moveLabel={t("Move Table")}
-	          mergeLabel={t("Merge Table")}
-	        />
-	      )}
 	      {canShowCancelButton && (
-	        <div className="flex flex-col gap-2">
+	        <div className="flex flex-wrap gap-2">
 	          <button
 	            type="button"
 	            onClick={() => {
               openReservationModal();
             }}
-            disabled={hasConfirmedCartUnpaid || allCartItemsPaid}
-            className={`w-full rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition ${
-              hasConfirmedCartUnpaid || allCartItemsPaid
+            disabled={cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)}
+            className={`flex-1 min-w-[120px] rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition ${
+              cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)
                 ? "bg-blue-300 cursor-not-allowed"
                 : "bg-blue-500 hover:bg-blue-600"
             }`}
@@ -3629,6 +3931,7 @@ const renderCartContent = (variant = "desktop") => {
           <button
             type="button"
             onClick={openCancelModal}
+            disabled={cancelDisabled}
             className={`${cancelButtonClass} flex-1 min-w-[120px]`}
           >
             {t("Cancel")}
@@ -3641,32 +3944,77 @@ const renderCartContent = (variant = "desktop") => {
   return (
    <aside className={containerClasses}>
   {/* === Header === */}
-  <header className="flex items-center justify-between border-b border-slate-200 px-3 pt-2 pb-2">
-    <div className="space-y-0.5">
-      <div className="flex items-center gap-2">
+  <header className="flex items-start justify-between border-b border-slate-200 px-3 pt-2 pb-2">
+    <div className="flex min-w-0 flex-1 flex-col space-y-0.5">
+      <div className="flex w-full flex-wrap items-center gap-2">
         <h2 className="hidden text-lg font-semibold text-slate-800 lg:block">{t("Cart")}</h2>
-        <button
-          onClick={handleCartPrint}
-          className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700 shadow hover:bg-slate-200 transition"
-          title={t("Print Receipt")}
-        >
-          🖨️ <span className="hidden sm:inline">{t("Print")}</span>
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1 rounded-full bg-white/70 px-1 py-0.5 shadow-sm ring-1 ring-slate-200">
+            {!orderId && (
+              <button
+                type="button"
+                onClick={() => setShowMoveTableModal(true)}
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                title={t("Move Table")}
+                aria-label={t("Move Table")}
+              >
+                <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">{t("Move")}</span>
+              </button>
+            )}
+            {!orderId && (
+              <button
+                type="button"
+                onClick={() => setShowMergeTableModal(true)}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-50"
+                title={t("Merge Table")}
+                aria-label={t("Merge Table")}
+              >
+                <GitMerge className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">{t("Merge")}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (debtDisabled) return;
+                handleOpenDebtModal();
+              }}
+              disabled={debtDisabled}
+              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              title={t("Add to Debt")}
+              aria-label={t("Add to Debt")}
+            >
+              <HandCoins className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">
+                {isDebtSaving ? t("Saving...") : t("Debt")}
+              </span>
+            </button>
+          </div>
+        </div>
       </div>
-      <p className="text-xs text-slate-500">
-        {orderId ? t("Phone Order") : `${t("Table")} ${tableId}`}
+      <p className="text-[0.94rem] text-slate-500">
+        {orderId ? t("Phone Order") : `${tableLabelText} ${tableId}`}
       </p>
       {invoiceNumber && (
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
-          {t("Invoice")} #{invoiceNumber}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
+            {t("Invoice")} #{invoiceNumber}
+          </p>
+          <button
+            type="button"
+            onClick={handleCartPrint}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-sm text-slate-700 shadow hover:bg-slate-200 transition"
+            title={t("Print Receipt")}
+            aria-label={t("Print Receipt")}
+          >
+            🖨️
+          </button>
+        </div>
       )}
     </div>
 
-    <div className="flex items-center gap-1.5">
-      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-        {cartItems.filter((i) => !i.paid).length} {t("Items")}
-      </span>
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
       {hasSelection && (
         <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-600">
           {selectedCartItemIds.size} {t("Selected")}
@@ -3685,37 +4033,55 @@ const renderCartContent = (variant = "desktop") => {
     </div>
   </header>
 
-  {/* 🎫 === Reservation Badge === */}
+  {/* === Reservation === */}
   {existingReservation && existingReservation.reservation_date && (
-    <div className="mx-3 mb-2 rounded-xl bg-orange-50 border border-orange-200 px-4 py-3 dark:bg-orange-900/20 dark:border-orange-800 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 text-orange-600 dark:text-orange-400 text-lg">📅</div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-bold text-orange-700 dark:text-orange-300 mb-2">
-            {t("RESERVED")}
-          </h3>
-          <div className="grid grid-cols-2 gap-2 text-xs text-orange-600 dark:text-orange-300">
-            <div>
-              <span className="font-semibold">🕐 {t("Time")}:</span>
-              <span className="ml-1">{existingReservation.reservation_time || "—"}</span>
-            </div>
-            <div>
-              <span className="font-semibold">👥 {t("Guests")}:</span>
-              <span className="ml-1">{existingReservation.reservation_clients || 0}</span>
-            </div>
-            <div className="col-span-2">
-              <span className="font-semibold">📅 {t("Date")}:</span>
-              <span className="ml-1">{existingReservation.reservation_date || "—"}</span>
-            </div>
-            {existingReservation.reservation_notes && (
-              <div className="col-span-2">
-                <span className="font-semibold">📝 {t("Notes")}:</span>
-                <p className="ml-1 text-[11px] text-orange-600 dark:text-orange-300 break-words line-clamp-2">
-                  {existingReservation.reservation_notes}
-                </p>
-              </div>
-            )}
+    <div className="mx-3 mb-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200">
+              {t("Reserved")}
+            </span>
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">
+              {existingReservation.reservation_date || "—"}
+            </span>
           </div>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-slate-700 dark:text-slate-200">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
+                {t("Time")}
+              </div>
+              <div className="truncate font-bold">
+                {existingReservation.reservation_time || "—"}
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
+                {t("Guests")}
+              </div>
+              <div className="truncate font-bold">
+                {existingReservation.reservation_clients || 0}
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
+                {t("Date")}
+              </div>
+              <div className="truncate font-bold">
+                {existingReservation.reservation_date || "—"}
+              </div>
+            </div>
+          </div>
+          {existingReservation.reservation_notes && (
+            <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:bg-zinc-800 dark:text-slate-200">
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
+                {t("Notes")}
+              </div>
+              <div className="line-clamp-2 break-words">
+                {existingReservation.reservation_notes}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -3732,10 +4098,16 @@ const renderCartContent = (variant = "desktop") => {
           {t("Cart is empty.")}
         </div>
       ) : (
-        <ul className="flex flex-col gap-1.5">
-          {/* === Group items by product name + extras + note === */}
-    {Object.values(
-  cartItems.reduce((acc, item) => {
+        <div className="flex flex-col gap-2">
+          {unpaidCartItems.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-xs font-medium text-slate-400">
+              {t("No unpaid items")}
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {/* === Group unpaid items by product name + extras + note === */}
+              {Object.values(
+                unpaidCartItems.reduce((acc, item) => {
     const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
     const noteKey =
       typeof item.note === "string" ? item.note.trim() : JSON.stringify(item.note || "");
@@ -3764,8 +4136,8 @@ const renderCartContent = (variant = "desktop") => {
     acc[key].quantity += Number(item.quantity) || 1;
     acc[key].items.push(item);
     return acc;
-  }, {})
-).map((item, idx) => {
+                }, {})
+              ).map((item, idx) => {
             const extrasList = safeParseExtras(item.extras);
             const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
             const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
@@ -3875,13 +4247,60 @@ const cardGradient = item.paid
 >
   <div className="flex items-center justify-between gap-1">
     <div className="flex items-center gap-1 flex-1">
-            <input
-              type="checkbox"
-              className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              checked={isSelected}
-              onChange={() => toggleCartItemSelection(selectionKey)}
-              onClick={(e) => e.stopPropagation()}
-            />
+            <div className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                checked={isSelected}
+                disabled={!!item.paid}
+                onChange={() => {
+                  if (item.paid) return;
+                  toggleCartItemSelection(selectionKey);
+                  const maxQty = Math.max(1, Number(item.quantity) || 1);
+                  if (!isSelected) {
+                    updateSelectionQuantity(selectionKey, maxQty, maxQty);
+                  } else {
+                    removeSelectionQuantity(selectionKey);
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+              {isSelected && !item.paid && (Number(item.quantity) || 1) > 1 && (
+                <select
+                  className="h-7 rounded-md border border-slate-300 bg-white px-1 text-xs font-semibold text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  value={String(
+                    Math.min(
+                      Math.max(
+                        1,
+                        Number(
+                          payQuantities?.[selectionKey] ??
+                            cancelQuantities?.[selectionKey] ??
+                            Number(item.quantity)
+                        ) || 1
+                      ),
+                      Math.max(1, Number(item.quantity) || 1)
+                    )
+                  )}
+                  onChange={(e) => {
+                    const nextVal = Math.min(
+                      Math.max(1, Number(e.target.value) || 1),
+                      Math.max(1, Number(item.quantity) || 1)
+                    );
+                    updateSelectionQuantity(selectionKey, nextVal, Math.max(1, Number(item.quantity) || 1));
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  title={t("Select quantity to pay")}
+                >
+                  {Array.from({ length: Number(item.quantity) || 1 }, (_, idx) => idx + 1).map(
+                    (n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    )
+                  )}
+                </select>
+              )}
+            </div>
       <div className="min-w-0 flex-1">
         <span
           className="truncate font-semibold text-slate-800 block"
@@ -3947,9 +4366,16 @@ const cardGradient = item.paid
   </div>
 
   {!isExpanded && extrasTotal > 0 && (
-    <div className="flex items-center justify-between pl-6 pr-1 text-xs text-slate-600">
-      <span>{t("Extras total")}</span>
-      <span className="font-semibold text-slate-700">{formatCurrency(extrasTotal)}</span>
+    <div className="flex flex-col gap-1 pl-6 pr-1 text-xs text-slate-600">
+      <div className="flex items-center justify-between">
+        <span>{t("Extras total")}</span>
+        <span className="font-semibold text-slate-700">{formatCurrency(extrasTotal)}</span>
+      </div>
+      <div className="h-px bg-slate-200" />
+      <div className="flex items-center justify-between text-sm font-semibold text-indigo-900">
+        <span>{t("Total with extras")}</span>
+        <span>{formatCurrency(baseTotal + extrasTotal)}</span>
+      </div>
     </div>
   )}
 
@@ -4051,8 +4477,177 @@ const cardGradient = item.paid
 </li>
 
             );
-          })}
-        </ul>
+              })}
+            </ul>
+          )}
+
+          {paidCartItems.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white/70">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-700"
+                onClick={() => setShowPaidCartItems((prev) => !prev)}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                    {t("Paid")}
+                  </span>
+                  <span className="text-slate-500">
+                    {paidCartItems.length} {t("items")}
+                  </span>
+                </span>
+                <span className="text-slate-400">{showPaidCartItems ? "▲" : "▼"}</span>
+              </button>
+              {showPaidCartItems && (
+                <ul className="flex flex-col gap-1.5 px-2 pb-2">
+                  {/* === Group paid items by product name + extras + note === */}
+                  {Object.values(
+                    paidCartItems.reduce((acc, item) => {
+                      const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
+                      const noteKey =
+                        typeof item.note === "string"
+                          ? item.note.trim()
+                          : JSON.stringify(item.note || "");
+                      const pricingKey = [
+                        Number(item.price) || 0,
+                        Number(item.original_price ?? item.originalPrice ?? 0) || 0,
+                        String(item.discount_type ?? item.discountType ?? ""),
+                        Number(item.discount_value ?? item.discountValue ?? 0) || 0,
+                        normalizeYmd(item.promo_start ?? item.promoStart ?? ""),
+                        normalizeYmd(item.promo_end ?? item.promoEnd ?? ""),
+                      ].join("|");
+
+                      const statusSlice = item.paid
+                        ? `paid:${item.receipt_id || "yes"}`
+                        : item.confirmed
+                          ? "confirmed"
+                          : "unconfirmed";
+
+                      const key = item.confirmed
+                        ? `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}__uid:${item.unique_id}`
+                        : `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
+
+                      if (!acc[key]) acc[key] = { ...item, quantity: 0, items: [] };
+                      acc[key].quantity += Number(item.quantity) || 1;
+                      acc[key].items.push(item);
+                      return acc;
+                    }, {})
+                  ).map((item, idx) => {
+                    const extrasList = safeParseExtras(item.extras);
+                    const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
+                    const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
+                      const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                      const qty = Number(ex.quantity) || 1;
+                      return sum + price * qty;
+                    }, 0);
+                    const basePrice = parseFloat(item.price) || 0;
+                    const originalUnitPrice = Number(item.original_price ?? item.originalPrice ?? 0);
+                    const discountType = String(item.discount_type ?? item.discountType ?? "none");
+                    const discountValue = Number(item.discount_value ?? item.discountValue ?? 0);
+                    const hasProductDiscountMeta =
+                      discountType !== "none" &&
+                      Number.isFinite(discountValue) &&
+                      discountValue > 0;
+                    const isDiscountApplied =
+                      Boolean(item.discount_applied) ||
+                      (Number.isFinite(originalUnitPrice) &&
+                        Math.abs(originalUnitPrice - basePrice) > 0.0001);
+                    const quantity = Number(item.quantity) || 1;
+                    const baseTotal = basePrice * quantity;
+                    const extrasTotal = perItemExtrasTotal * quantity;
+                    const showNote =
+                      typeof item.note === "string" ? item.note.trim() !== "" : !!item.note;
+                    const paidMethod = resolveItemPaymentMethod(order, item);
+
+                    const cardGradient =
+                      "bg-gradient-to-br from-green-200 via-green-100 to-green-50 border-green-300";
+
+                    const itemKey = item.unique_id || `${item.id}-${idx}`;
+                    const isExpanded = expandedCartItems.has(itemKey);
+
+                    return (
+                      <li
+                        data-cart-item="true"
+                        key={`paid-${itemKey}`}
+                        className={`relative flex flex-col gap-1 overflow-hidden rounded-lg border border-slate-200 p-2 text-[13px] shadow-sm transition ${cardGradient}`}
+                        onClick={() => toggleCartItemExpansion(itemKey)}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="min-w-0 flex-1">
+                            <span className="truncate font-semibold text-slate-800 block">
+                              {item.name}
+                              <span className="ml-2 text-[11px] font-medium text-slate-600">
+                                {formatCurrency(basePrice)} ×{quantity}
+                              </span>
+                            </span>
+                            {hasProductDiscountMeta && (
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 font-semibold ${
+                                    isDiscountApplied
+                                      ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700"
+                                      : "border-slate-200 bg-slate-50 text-slate-500"
+                                  }`}
+                                >
+                                  {discountType === "percentage"
+                                    ? `-${discountValue}%`
+                                    : `-${formatCurrency(discountValue)}`}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                            {t("paid")}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-col gap-1 text-xs text-slate-600">
+                          {!!paidMethod && (
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold">{t("Paid via")}:</span>
+                              <span className="font-semibold text-indigo-700">
+                                {paidMethod}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between border-t border-slate-200 pt-1 text-[12px] text-slate-500">
+                            <span>{t("Amount paid")}</span>
+                            <span className="font-semibold text-slate-900">
+                              {formatCurrency(baseTotal + extrasTotal)}
+                            </span>
+                          </div>
+                          {extrasTotal > 0 && (
+                            <div className="flex items-center justify-between text-[12px] text-slate-500">
+                              <span>{t("Extras paid")}</span>
+                              <span className="font-semibold text-slate-800">
+                                {formatCurrency(extrasTotal)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        {isExpanded && (
+                          <div className="mt-1 rounded-md bg-white/70 px-2 py-1 text-[11px] text-slate-700">
+                            {showNote && (
+                              <div className="break-words">
+                                <span className="font-semibold">{t("Note")}:</span>{" "}
+                                {typeof item.note === "string" ? item.note : ""}
+                              </div>
+                            )}
+                            {normalizedExtras.length > 0 && (
+                              <div className="mt-1">
+                                <span className="font-semibold">{t("Extras")}:</span>{" "}
+                                {normalizedExtras.map((ex) => ex.name || ex.label).filter(Boolean).join(", ")}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   </div>
@@ -4067,7 +4662,7 @@ const cardGradient = item.paid
     </div>
 
     {discountValue > 0 && (
-      <div className="flex justify-between text-xs font-semibold text-fuchsia-600">
+      <div className="flex justify-between text-xs font-semibold text-indigo-600">
         <span>
           {t("Discount")}{" "}
           {discountType === "percent"
@@ -4098,10 +4693,14 @@ const cardGradient = item.paid
 
 	    {actionControls}
 
-	    <div className={`flex ${isDesktop ? "gap-1.5" : "flex-col gap-1.5"}`}>
+    <div
+      className={`${
+        isDesktop ? "flex gap-1.5" : "grid grid-cols-2 gap-2"
+      }`}
+    >
 	      <button
 	        onClick={() => setShowDiscountModal(true)}
-        className={`${isDesktop ? "flex-1" : "w-full"} rounded-md bg-fuchsia-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-fuchsia-600`}
+        className={`${isDesktop ? "flex-1" : "w-full"} rounded-md bg-indigo-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-indigo-600`}
       >
         {t("Discount")}
       </button>
@@ -4117,11 +4716,12 @@ const cardGradient = item.paid
 
   );
 };
-  if (loading || deferHeavyUi) {
+  const shouldBlockUi = deferHeavyUi || (loading && !tableId);
+  if (shouldBlockUi) {
     return (
-      <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
-        <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 pl-4 sm:pl-6 lg:pl-8 xl:pl-10 pr-0 overflow-x-hidden">
-          <div className="mt-6 rounded-2xl bg-white shadow-lg ring-1 ring-slate-200 p-6 text-center text-slate-700 font-semibold">
+      <div className="relative h-full min-h-0 w-full bg-slate-50 dark:bg-slate-900 overflow-x-hidden">
+        <div className="flex h-full min-h-0 w-full flex-col gap-2 px-2 sm:px-3 lg:px-4 overflow-x-hidden">
+          <div className="mt-3 rounded-2xl bg-white dark:bg-zinc-900 p-6 text-center font-semibold text-slate-700 dark:text-slate-100 shadow-lg ring-1 ring-slate-200 dark:ring-zinc-800">
             {t("Loading...")}
           </div>
         </div>
@@ -4130,30 +4730,69 @@ const cardGradient = item.paid
   }
 
   return (
-    <div className="relative min-h-screen w-full bg-slate-50 overflow-x-hidden">
-      <div className="mx-auto flex min-h-screen w-full max-w-screen-2xl flex-col gap-4 pl-4 sm:pl-6 lg:pl-8 xl:pl-10 pr-0 overflow-x-hidden">
-  <section className="flex flex-1 min-h-0 flex-row gap-2 pb-4 overflow-hidden">
+    <div className="relative flex h-full min-h-[calc(100vh-80px)] w-full flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden">
+      <div className="flex flex-1 min-h-0 w-full flex-col gap-2 px-2 sm:px-3 lg:px-4 overflow-x-hidden">
+  <section className="flex flex-1 min-h-0 flex-row gap-2 pb-1 overflow-hidden">
 
     {/* === LEFT: CART PANEL (desktop only) === */}
     <div className="hidden lg:block w-[30%] min-w-[320px] max-w-[380px] h-full overflow-hidden">
       <div className="sticky top-0 h-full">{renderCartContent("desktop")}</div>
     </div>
 
-    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-slate-200">
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 shadow-lg ring-1 ring-slate-200 dark:ring-zinc-800">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 pt-0 pb-2">
-        <h2 className="text-xl font-semibold text-slate-800">
-          {activeCategory ? t(activeCategory) : t("Products")}
-        </h2>
-        <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700">
-          {productsInActiveCategory.length} {t("Products")}
-        </span>
+      <div className="border-b border-slate-100 dark:border-zinc-800 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="relative w-full max-w-[280px]">
+              <input
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                placeholder={t("Search products or categories")}
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 pr-9 text-sm text-slate-700 dark:text-slate-100 shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+              />
+              {catalogSearch.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setCatalogSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-100 dark:bg-zinc-700 px-2 py-0.5 text-xs font-bold text-slate-600 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-zinc-600"
+                  aria-label={t("Clear search")}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+              {visibleProducts.length} {t("Products")}
+            </span>
+          </div>
+          <h2 className="text-lg font-semibold text-slate-800 text-right min-w-[140px]">
+            {activeCategory ? t(activeCategory) : t("Products")}
+          </h2>
+        </div>
+        {isCatalogSearching && matchingCategories.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {matchingCategories.map((entry) => (
+              <button
+                key={`catmatch-${entry.idx}`}
+                type="button"
+                onClick={() => {
+                  setCurrentCategoryIndex(entry.idx);
+                  setCatalogSearch("");
+                }}
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                {t(entry.cat)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {categoryColumns.left.length > 0 && (
-          <aside className="h-full w-[10%] min-w-[90px] max-w-[120px] border-r border-slate-200 bg-slate-50 p-2">
-            <div className="flex flex-col gap-2 overflow-y-auto h-full pr-1 scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-transparent">
+          <aside className="h-full w-[10%] min-w-[90px] max-w-[120px] border-r border-slate-200 bg-slate-50 p-1.5">
+            <div className="flex h-full flex-col items-center gap-1.5 overflow-y-auto px-0.5 scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-transparent">
               {categoryColumns.left.map((entry) => (
                 <div key={`left-${entry.cat}-${entry.index}`}>
                   {renderCategoryButton(entry.cat, entry.index, "vertical")}
@@ -4164,39 +4803,44 @@ const cardGradient = item.paid
         )}
 
         {/* === CENTER: PRODUCTS GRID === */}
-        <article className="flex-1 min-w-0 flex flex-col bg-white pl-3 pr-0 pb-3 overflow-hidden">
+        <article className="flex min-w-0 flex-1 flex-col bg-white px-0 py-2 overflow-hidden">
           <div className="flex-1 overflow-y-auto pr-0">
-            <div className="flex items-start justify-center px-0 pb-0">
-              <div className="grid w-full max-w-[980px] grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 lg:grid-rows-4 lg:auto-rows-fr gap-2">
-                {productsInActiveCategory.map((product) => (
+            <div className="flex items-start justify-start">
+              <div className="grid w-full grid-cols-2 gap-x-1 gap-y-1.5 sm:grid-cols-3 md:grid-cols-5 px-1 sm:px-1.5">
+                {visibleProducts.map((product) => (
                   <button
                     key={product.id}
                     onClick={() => addToCart(product)}
                     className="
-                      flex flex-col items-center gap-1
-                      rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm
-                      hover:bg-indigo-50
-                      w-full
+                      flex w-full min-h-[120px] flex-col overflow-hidden rounded-md border border-slate-300 bg-white/95 text-center shadow-[0_1px_2px_rgba(0,0,0,0.08)]
+                      hover:border-indigo-300 hover:shadow-[0_2px_4px_rgba(0,0,0,0.12)] active:bg-indigo-50
+                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60
                     "
                   >
-                    <div className="w-full aspect-square rounded-md overflow-hidden bg-slate-50 flex items-center justify-center lg:h-16 lg:w-16 lg:rounded-xl lg:border lg:shadow">
-                      {product.image ? (
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900" />
-                      )}
+                    <div className="relative w-full overflow-hidden border-b border-slate-200 bg-white p-1">
+                      <div className="aspect-[1/1]">
+                        <div className="flex h-full w-full items-center justify-center overflow-hidden">
+                          {product.image ? (
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                              className="h-full w-full object-cover scale-90 rounded-sm"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="h-full w-full bg-gradient-to-b from-slate-50 to-slate-200" />
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-sm font-semibold text-slate-700 text-center line-clamp-2 leading-tight">
-                      {product.name}
-                    </p>
-                    <span className="text-base font-bold text-indigo-600">
-                      {formatCurrency(parseFloat(product.price))}
-                    </span>
+                    <div className="flex w-full flex-col items-center justify-center gap-0.5 bg-slate-100 px-1.5 py-1">
+                      <p className="w-full text-[14px] font-semibold text-slate-700 leading-tight line-clamp-1">
+                        {product.name}
+                      </p>
+                      <span className="text-[12px] font-semibold text-indigo-600">
+                        {formatCurrency(parseFloat(product.price))}
+                      </span>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -4205,10 +4849,10 @@ const cardGradient = item.paid
         </article>
 
         {/* === RIGHT: CATEGORY COLUMN (PRIMARY) === */}
-        <aside className="h-full w-[10%] min-w-[90px] max-w-[120px] border-l border-slate-200 bg-slate-50 p-2">
+        <aside className="h-full w-[10%] min-w-[90px] max-w-[120px] border-l border-slate-200 bg-slate-50 p-1.5">
           <div
             ref={rightCategoryColumnRef}
-            className="flex flex-col gap-2 overflow-y-auto h-full pr-1 scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-transparent"
+            className="flex h-full flex-col items-center gap-1.5 overflow-hidden px-0.5"
           >
             {categoryColumns.right.map((entry, idx) => (
               <div
@@ -4224,14 +4868,65 @@ const cardGradient = item.paid
 
       {/* === BOTTOM CATEGORY BAR === */}
       {categoryColumns.bottom.length > 0 && (
-        <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
-          <div className="flex flex-wrap gap-2">
+        <div className="relative border-t border-slate-200 bg-slate-50 px-3 py-1.5 sticky bottom-0">
+          <div
+            ref={bottomBarRef}
+            className="flex flex-nowrap gap-1.5 overflow-x-auto scrollbar-hide"
+          >
             {categoryColumns.bottom.map((entry) => (
               <div key={`bottom-${entry.cat}-${entry.index}`}>
                 {renderCategoryButton(entry.cat, entry.index, "bar")}
               </div>
             ))}
           </div>
+          {bottomBarScrollable && !bottomScrollStart && (
+            <button
+              type="button"
+              onClick={() =>
+                bottomBarRef.current?.scrollBy({
+                  left: -bottomBarRef.current.clientWidth,
+                  behavior: "smooth",
+                })
+              }
+              className="pointer-events-auto absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1 shadow-md shadow-slate-300/80 transition hover:bg-white"
+              aria-label={t("Scroll categories")}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                className="h-4 w-4 text-slate-600"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 5l-7 7 7 7" />
+              </svg>
+            </button>
+          )}
+          {bottomBarScrollable && !bottomScrollEnd && (
+            <button
+              type="button"
+              onClick={() =>
+                bottomBarRef.current?.scrollBy({
+                  left: bottomBarRef.current.clientWidth,
+                  behavior: "smooth",
+                })
+              }
+              className="pointer-events-auto absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1 shadow-md shadow-slate-300/80 transition hover:bg-white"
+              aria-label={t("Scroll categories")}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                className="h-4 w-4 text-slate-600"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -4340,6 +5035,7 @@ const cardGradient = item.paid
   splits={splits}
   setSplits={setSplits}
   totalDue={totalDue}
+  cancelQuantities={cancelQuantities}
   activeSplitMethod={activeSplitMethod}
   setActiveSplitMethod={setActiveSplitMethod}
   confirmPaymentWithSplits={confirmPaymentWithSplits}
@@ -4362,7 +5058,7 @@ const cardGradient = item.paid
               if (orderType === "phone") return t("Phone Order");
               if (orderType === "takeaway") return t("Takeaway Order");
               const tableNumber = order?.table_number || order?.tableNumber || "";
-              return `${t("Table")} ${tableNumber || order?.id || ""}`.trim();
+              return `${tableLabelText} ${tableNumber || order?.id || ""}`.trim();
             })()}
           </p>
           <p className="text-sm text-rose-500 mt-1">
@@ -4568,6 +5264,20 @@ const cardGradient = item.paid
       </div>
 
       <div className="mt-6 flex flex-wrap justify-end gap-3">
+        {existingReservation?.reservation_date && (
+          <button
+            type="button"
+            onClick={handleDeleteReservation}
+            disabled={reservationLoading}
+            className={`mr-auto rounded-2xl border px-5 py-2 text-sm font-semibold transition ${
+              reservationLoading
+                ? "cursor-not-allowed border-rose-200 bg-rose-100 text-rose-400 dark:border-rose-900 dark:bg-rose-900/30 dark:text-rose-300/60"
+                : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-900/20 dark:text-rose-200"
+            }`}
+          >
+            {t("Delete Reservation")}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setShowReservationModal(false)}

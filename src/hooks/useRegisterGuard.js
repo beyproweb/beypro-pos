@@ -4,10 +4,11 @@ import secureFetch from "../utils/secureFetch";   // ✅ use the wrapper
 
 const needsRegisterAttention = (status) => status === "closed" || status === "unopened";
 
-export function useRegisterGuard() {
+export function useRegisterGuard(options = {}) {
   const [registerState, setRegisterState] = useState("loading");
   const location = useLocation();
   const navigate = useNavigate();
+  const redirect = options.redirect !== false;
 
   useEffect(() => {
     let isActive = true;
@@ -23,6 +24,7 @@ export function useRegisterGuard() {
         // to TableOverview; the register modal is rendered there and can be opened even if the
         // "register" tab isn't visible for their role (important for new accounts/roles).
         if (!needsRegisterAttention(status)) return;
+        if (!redirect) return;
 
         const isTransaction = location.pathname.startsWith("/transaction");
         if (!isTransaction) return;

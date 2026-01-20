@@ -533,11 +533,11 @@ function LanguageSwitcher({ lang, setLang, t }) {
 /* ====================== HEADER ====================== */
 function QrHeader({ orderType, table, onClose, t, restaurantName, lang, setLang }) {
   return (
-    <header className="w-full sticky top-0 z-50 flex items-center justify-between bg-white/80 backdrop-blur-md border-b border-gray-200 px-6 py-4 shadow-sm">
-      <span className="text-[21px] font-serif font-bold text-gray-900 tracking-tight">
+    <header className="w-full sticky top-0 z-50 flex items-center justify-between gap-3 bg-white/85 backdrop-blur-md border-b border-gray-200 px-4 md:px-6 py-3 shadow-sm">
+      <span className="text-[18px] md:text-[20px] font-serif font-bold text-gray-900 tracking-tight">
         {restaurantName || "Restaurant"}
       </span>
-      <span className="text-lg font-medium text-gray-700 italic">
+      <span className="text-base md:text-lg font-medium text-gray-700 italic">
         {orderType === "table"
           ? table
             ? `${t("Table")} ${table}`
@@ -1821,13 +1821,13 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
   }, []);
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-white/90 border-t border-neutral-200 z-[100] backdrop-blur-md shadow-[0_-2px_12px_rgba(0,0,0,0.05)]">
-      <div className="relative w-full">
+    <nav className="fixed bottom-0 inset-x-0 bg-white/95 border-t border-neutral-200 z-[100] backdrop-blur-md shadow-[0_-2px_12px_rgba(0,0,0,0.05)] px-2 sm:px-3">
+      <div className="relative w-full max-w-6xl mx-auto">
         {/* Left arrow */}
         {canScrollLeft && (
           <button
             onClick={() => scrollByAmount(-250)}
-            className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 border border-neutral-200 shadow-sm hover:shadow-md hover:bg-white transition z-10"
+            className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 border border-neutral-200 shadow-sm hover:shadow-md hover:bg-white transition z-10"
             aria-label="Scroll left"
           >
             <ChevronLeft className="w-5 h-5 text-neutral-600" />
@@ -1838,7 +1838,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
         {canScrollRight && (
           <button
             onClick={() => scrollByAmount(250)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 border border-neutral-200 shadow-sm hover:shadow-md hover:bg-white transition z-10"
+            className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 border border-neutral-200 shadow-sm hover:shadow-md hover:bg-white transition z-10"
             aria-label="Scroll right"
           >
             <ChevronRight className="w-5 h-5 text-neutral-600" />
@@ -1848,7 +1848,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
         {/* Scrollable Categories */}
         <div
           ref={scrollRef}
-          className="flex gap-3 px-12 py-3 overflow-x-auto scrollbar-none scroll-smooth"
+          className="flex flex-nowrap gap-2 md:gap-3 px-10 sm:px-12 py-2 md:py-3 overflow-x-auto scrollbar-none scroll-smooth"
         >
           {categoryList.map((cat, idx) => {
             const key = cat?.toLowerCase?.();
@@ -1862,7 +1862,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
                   setActiveCategory(cat);
                   scrollToCategory(idx); // ⬅️ auto-center when clicked
                 }}
-                className={`group flex items-center gap-2 px-5 py-2.5 rounded-full text-base font-medium transition-all whitespace-nowrap
+                className={`group flex items-center gap-2 px-4 md:px-5 py-2 rounded-full text-sm md:text-base font-medium transition-all whitespace-nowrap
                   ${
                     active
                       ? "bg-neutral-900 text-white shadow-sm"
@@ -1892,6 +1892,59 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
         </div>
       </div>
     </nav>
+  );
+}
+
+/* ====================== RIGHT CATEGORY RAIL ====================== */
+function CategoryRail({ categories, activeCategory, setActiveCategory, categoryImages }) {
+  const categoryList = Array.isArray(categories) ? categories : [];
+
+  return (
+    <aside className="w-full h-full">
+      <div className="h-full rounded-2xl border border-neutral-200 bg-white/85 shadow-sm p-3 flex flex-col">
+        <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500 mb-2 px-1">
+          Categories
+        </div>
+        <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2">
+          {categoryList.map((cat) => {
+            const key = cat?.toLowerCase?.();
+            const imgSrc = categoryImages?.[key];
+            const active = activeCategory === cat;
+
+            return (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all text-left
+                  ${
+                    active
+                      ? "bg-neutral-900 text-white border-neutral-900 shadow-sm"
+                      : "bg-white text-neutral-700 border-neutral-200 hover:border-neutral-300"
+                  }`}
+              >
+                {imgSrc ? (
+                  <div className="relative w-8 h-8 rounded-xl overflow-hidden border border-neutral-200">
+                    <img
+                      src={
+                        /^https?:\/\//.test(imgSrc)
+                          ? imgSrc
+                          : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
+                      }
+                      alt={cat}
+                      className="object-cover w-full h-full"
+                      loading="lazy"
+                    />
+                  </div>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-neutral-300" />
+                )}
+                <span className="truncate">{cat}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </aside>
   );
 }
 
@@ -2041,7 +2094,7 @@ function ProductGrid({ products, onProductClick, t }) {
   const productList = Array.isArray(products) ? products : [];
 
   return (
-    <main className="w-full max-w-none mx-auto pt-6 pb-32 grid gap-4 sm:gap-5 lg:gap-6 xl:gap-8 [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] sm:[grid-template-columns:repeat(auto-fill,minmax(180px,1fr))] md:[grid-template-columns:repeat(auto-fill,minmax(200px,1fr))] xl:[grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+    <main className="w-full max-w-none mx-auto pt-3 pb-28 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 lg:gap-4 xl:gap-5">
       {productList.length === 0 && (
         <div className="col-span-full text-center text-neutral-400 font-medium text-lg py-12 italic">
           {t("No products available.")}
@@ -2052,36 +2105,36 @@ function ProductGrid({ products, onProductClick, t }) {
         <div
           key={product.id}
           onClick={() => onProductClick(product)}
-	          className="group relative bg-white/90 border border-neutral-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-	        >
-	          <div className="aspect-square w-full overflow-hidden bg-neutral-50">
-	            {product.image ? (
-	              <img
-	                src={
-	                  /^https?:\/\//.test(product.image)
-	                    ? product.image
-	                    : `${API_URL}/uploads/${product.image}`
-	                }
-	                alt={product.name}
-	                className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
-	                loading="lazy"
-	              />
-	            ) : (
-	              <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900" />
-	            )}
-	          </div>
+          className="group relative bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[2px] transition-all duration-300 cursor-pointer"
+        >
+          <div className="aspect-[4/5] w-full overflow-hidden bg-neutral-50">
+            {product.image ? (
+              <img
+                src={
+                  /^https?:\/\//.test(product.image)
+                    ? product.image
+                    : `${API_URL}/uploads/${product.image}`
+                }
+                alt={product.name}
+                className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
+                loading="lazy"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900" />
+            )}
+          </div>
 
-          <div className="p-4 flex flex-col items-center text-center space-y-1">
-            <h3 className="text-base font-medium text-neutral-800 tracking-wide group-hover:text-black transition-colors line-clamp-2">
+          <div className="p-3 flex flex-col items-center text-center space-y-1.5">
+            <h3 className="text-sm font-medium text-neutral-800 tracking-wide group-hover:text-black transition-colors line-clamp-2">
               {product.name}
             </h3>
-            <p className="text-[15px] font-semibold text-neutral-600 group-hover:text-neutral-800 transition-colors">
+            <p className="text-[15px] font-semibold text-neutral-700 group-hover:text-neutral-900 transition-colors">
               {formatCurrency(parseFloat(product.price || 0))}
             </p>
           </div>
 
           {/* Subtle highlight border */}
-          <span className="absolute inset-0 rounded-3xl ring-0 ring-neutral-400/0 group-hover:ring-1 group-hover:ring-neutral-300 transition-all duration-300"></span>
+          <span className="absolute inset-0 rounded-2xl ring-0 ring-neutral-400/0 group-hover:ring-1 group-hover:ring-neutral-300 transition-all duration-300"></span>
         </div>
       ))}
     </main>
@@ -2450,8 +2503,10 @@ function CartDrawer({
   onShowStatus,
   isOrderStatusOpen,
   onOpenCart,
+  layout = "drawer",
 }) {
-  const [show, setShow] = useState(false);
+  const isPanel = layout === "panel";
+  const [show, setShow] = useState(isPanel);
   const { formatCurrency } = useCurrency();
   const paymentMethods = usePaymentMethods();
 
@@ -2484,21 +2539,24 @@ function CartDrawer({
 
   // 👂 close by global event
   useEffect(() => {
+    if (isPanel) return;
     const handler = () => setShow(false);
     window.addEventListener("qr:cart-close", handler);
     return () => window.removeEventListener("qr:cart-close", handler);
-  }, []);
+  }, [isPanel]);
 
   // 🚪 auto-open only if allowed
   useEffect(() => {
+    if (isPanel) return;
     const auto = storage.getItem("qr_cart_auto_open") !== "0";
     if (auto) setShow(cartLength > 0);
-  }, [cartLength]);
+  }, [cartLength, isPanel]);
 
   // Never allow Cart + OrderStatus to overlap.
   useEffect(() => {
+    if (isPanel) return;
     if (isOrderStatusOpen) setShow(false);
-  }, [isOrderStatusOpen]);
+  }, [isOrderStatusOpen, isPanel]);
 
   function removeItem(idx, isNew) {
     if (!isNew) return; // don't remove locked (read-only)
@@ -2508,280 +2566,292 @@ function CartDrawer({
     });
   }
 
-return (
-  <>
-    {/* Floating cart button */}
-	    {!show && (cartLength > 0 || hasActiveOrder) && (
-	      <button
-	        onClick={() => {
-	          if (hasNewItems) {
-              onOpenCart?.();
-	            storage.setItem("qr_cart_auto_open", "1");
-	            setShow(true);
-	          } else if (hasActiveOrder && onShowStatus) {
-	            onShowStatus();
-	          } else {
-              onOpenCart?.();
-	            setShow(true);
-	          }
-	        }}
-	        className={`fixed bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-full font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
-	          hasActiveOrder
-	            ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
-	            : "bg-neutral-900 text-white hover:scale-105"
-	        }`}
-	      >
-        <span className="text-xl">🛒</span>
-        <div className="flex flex-col items-start">
-          <span className="text-sm">
-            {hasNewItems ? t("View Cart") : t("Your Order")}
-          </span>
-          {hasActiveOrder && statusLabel && (
-            <span className="text-[11px] uppercase tracking-wide opacity-90">
-              {statusLabel}
-            </span>
-          )}
-        </div>
-        {hasNewItems && (
-          <span className="ml-3 inline-flex items-center justify-center rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-            {newItemsCount}
-          </span>
+  const cartPanel = (
+    <div
+      className={`${isPanel ? "h-full rounded-2xl border border-neutral-200 bg-white/95 shadow-sm" : "w-[92vw] max-w-md max-h-[88vh] overflow-hidden bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)]"} p-4 sm:p-6 flex flex-col`}
+    >
+      {/* Header */}
+      <div className="flex justify-between items-center mb-4 border-b border-neutral-200 pb-2">
+        <span className="text-base sm:text-lg font-serif font-semibold text-neutral-900 tracking-tight">
+          {t("Your Order")}
+        </span>
+        {!isPanel && (
+          <button
+            className="text-2xl text-neutral-400 hover:text-red-600 transition"
+            onClick={() => setShow(false)}
+            aria-label={t("Close")}
+          >
+            ×
+          </button>
         )}
-      </button>
-    )}
+      </div>
 
-	    {/* Cart Drawer */}
-	    {show && (
-	      <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setShow(false);
-          }}
-        >
-	        <div className="w-[92vw] max-w-md max-h-[88vh] overflow-hidden bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-6 flex flex-col">
-	          {/* Header */}
-	          <div className="flex justify-between items-center mb-5 border-b border-neutral-200 pb-2">
-	            <span className="text-lg font-serif font-semibold text-neutral-900 tracking-tight">
-	              {t("Your Order")}
-	            </span>
-            <button
-              className="text-2xl text-neutral-400 hover:text-red-600 transition"
-              onClick={() => setShow(false)}
-              aria-label={t("Close")}
-            >
-              ×
-            </button>
-	          </div>
-
-	          {/* Cart Items */}
-	          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-	            {cartLength === 0 ? (
-	              <div className="text-neutral-400 text-center py-10 italic">
-	                {t("Cart is empty.")}
-	              </div>
-	            ) : (
-              <div className="space-y-6">
-                {/* Locked (previously ordered) items */}
-                {prevItems.length > 0 && (
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">
-                      {t("Previously ordered")}
-                    </div>
-                    <ul className="space-y-3">
-                      {prevItems.map((item, i) => (
-                        <li
-                          key={`prev-${i}`}
-                          className="flex justify-between gap-3 border-b border-neutral-200 pb-2 opacity-70"
-                        >
-                          <div className="flex-1">
-                            <span className="font-medium text-neutral-900 block">
-                              {item.name}{" "}
-                              <span className="text-xs text-neutral-500">
-                                ×{item.quantity}
-                              </span>
-                            </span>
-                            {item.extras?.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {item.extras.map((ex, j) => {
-                                  const perItemQty = ex.quantity || 1;
-                                  const itemQty = item.quantity || 1;
-                                  const totalQty = perItemQty * itemQty;
-                                  const unit =
-                                    parseFloat(ex.price ?? ex.extraPrice ?? 0) ||
-                                    0;
-                                  const line = unit * totalQty;
-                                  return (
-                                    <span
-                                      key={j}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
-                                    >
-                                      {ex.name} ×{totalQty}{" "}
-                                      {formatCurrency(line)}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {item.note && (
-                              <div className="text-xs text-amber-700 mt-1 italic">
-                                📝 {t("Note")}: {item.note}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-right shrink-0">
-                            <div className="font-medium text-neutral-700">
-                              {formatCurrency(lineTotal(item))}
-                            </div>
-                            <div className="text-[10px] text-neutral-400 mt-1">
-                              {t("Locked")}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* New items */}
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-neutral-600 font-medium mb-2">
-                    {t("New items")}
-                  </div>
-                  {newItems.length === 0 ? (
-                    <div className="text-neutral-400 text-sm italic">
-                      {t("No new items yet.")}
-                    </div>
-                  ) : (
-                    <ul className="space-y-3">
-                      {newItems.map((item, i) => (
-                        <li
-                          key={`new-${i}`}
-                          className="flex justify-between gap-3 border-b border-neutral-200 pb-2"
-                        >
-                          <div className="flex-1">
-                            <span className="font-medium text-neutral-900 block">
-                              {item.name}{" "}
-                              <span className="text-xs text-neutral-500">
-                                ×{item.quantity}
-                              </span>
-                            </span>
-                            {item.extras?.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {item.extras.map((ex, j) => {
-                                  const perItemQty = ex.quantity || 1;
-                                  const itemQty = item.quantity || 1;
-                                  const totalQty = perItemQty * itemQty;
-                                  const unit =
-                                    parseFloat(ex.price ?? ex.extraPrice ?? 0) ||
-                                    0;
-                                  const line = unit * totalQty;
-                                  return (
-                                    <span
-                                      key={j}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
-                                    >
-                                      {ex.name} ×{totalQty}{" "}
-                                      {formatCurrency(line)}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {item.note && (
-                              <div className="text-xs text-amber-700 mt-1 italic">
-                                📝 {t("Note")}: {item.note}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-right shrink-0">
-                            <div className="font-medium text-neutral-700">
-                              {formatCurrency(lineTotal(item))}
-                            </div>
-                            <button
-                              onClick={() => removeItem(i, true)}
-                              className="text-xs text-red-400 hover:text-red-600 mt-1 transition"
-                            >
-                              {t("Remove")}
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+      {/* Cart Items */}
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        {cartLength === 0 ? (
+          <div className="text-neutral-400 text-center py-8 italic">
+            {t("Cart is empty.")}
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {/* Locked (previously ordered) items */}
+            {prevItems.length > 0 && (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">
+                  {t("Previously ordered")}
                 </div>
+                <ul className="space-y-3">
+                  {prevItems.map((item, i) => (
+                    <li
+                      key={`prev-${i}`}
+                      className="flex justify-between gap-3 border-b border-neutral-200 pb-2 opacity-70"
+                    >
+                      <div className="flex-1">
+                        <span className="font-medium text-neutral-900 block">
+                          {item.name}{" "}
+                          <span className="text-xs text-neutral-500">
+                            ×{item.quantity}
+                          </span>
+                        </span>
+                        {item.extras?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.extras.map((ex, j) => {
+                              const perItemQty = ex.quantity || 1;
+                              const itemQty = item.quantity || 1;
+                              const totalQty = perItemQty * itemQty;
+                              const unit =
+                                parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                              const line = unit * totalQty;
+                              return (
+                                <span
+                                  key={j}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
+                                >
+                                  {ex.name} ×{totalQty}{" "}
+                                  {formatCurrency(line)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {item.note && (
+                          <div className="text-xs text-amber-700 mt-1 italic">
+                            📝 {t("Note")}: {item.note}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-medium text-neutral-700">
+                          {formatCurrency(lineTotal(item))}
+                        </div>
+                        <div className="text-[10px] text-neutral-400 mt-1">
+                          {t("Locked")}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
+
+            {/* New items */}
+            <div>
+              <div className="text-xs uppercase tracking-wide text-neutral-600 font-medium mb-2">
+                {t("New items")}
+              </div>
+              {newItems.length === 0 ? (
+                <div className="text-neutral-400 text-sm italic">
+                  {t("No new items yet.")}
+                </div>
+              ) : (
+                <ul className="space-y-3">
+                  {newItems.map((item, i) => (
+                    <li
+                      key={`new-${i}`}
+                      className="flex justify-between gap-3 border-b border-neutral-200 pb-2"
+                    >
+                      <div className="flex-1">
+                        <span className="font-medium text-neutral-900 block">
+                          {item.name}{" "}
+                          <span className="text-xs text-neutral-500">
+                            ×{item.quantity}
+                          </span>
+                        </span>
+                        {item.extras?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.extras.map((ex, j) => {
+                              const perItemQty = ex.quantity || 1;
+                              const itemQty = item.quantity || 1;
+                              const totalQty = perItemQty * itemQty;
+                              const unit =
+                                parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                              const line = unit * totalQty;
+                              return (
+                                <span
+                                  key={j}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
+                                >
+                                  {ex.name} ×{totalQty}{" "}
+                                  {formatCurrency(line)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {item.note && (
+                          <div className="text-xs text-amber-700 mt-1 italic">
+                            📝 {t("Note")}: {item.note}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-medium text-neutral-700">
+                          {formatCurrency(lineTotal(item))}
+                        </div>
+                        <button
+                          onClick={() => removeItem(i, true)}
+                          className="text-xs text-red-400 hover:text-red-600 mt-1 transition"
+                        >
+                          {t("Remove")}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      {cartLength > 0 && (
+        <div className="mt-5 border-t border-neutral-200 pt-4 space-y-3">
+          {/* Total */}
+          <div className="flex justify-between items-center text-base">
+            <span className="font-medium text-neutral-700">
+              {t("Total")}:
+            </span>
+            <span className="text-lg font-semibold text-neutral-900">
+              {formatCurrency(total)}
+            </span>
           </div>
 
-          {/* Footer */}
-          {cartLength > 0 && (
-            <div className="mt-6 border-t border-neutral-200 pt-4 space-y-4">
-              {/* Total */}
-              <div className="flex justify-between items-center text-base">
-                <span className="font-medium text-neutral-700">
-                  {t("Total")}:
-                </span>
-                <span className="text-lg font-semibold text-neutral-900">
-                  {useCurrency().formatCurrency(total)}
-                </span>
-              </div>
+          {/* Payment */}
+          <div className="flex flex-col gap-2">
+            <label className="font-medium text-neutral-800">
+              {t("Payment")}
+            </label>
+            <select
+              className="rounded-lg border border-neutral-300 px-3 py-2 bg-white text-sm focus:ring-1 focus:ring-neutral-400"
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+            >
+              {/* POS-configured payment methods; filter for QR usage */}
+              {paymentMethods
+                .filter((m) => m.enabled !== false)
+                .map((method) => (
+                  <option key={method.id} value={method.id}>
+                    {method.icon ? `${method.icon} ` : ""}{method.label}
+                  </option>
+                ))}
+            </select>
+          </div>
 
-              {/* Payment */}
-              <div className="flex flex-col gap-2">
-                <label className="font-medium text-neutral-800">
-                  {t("Payment")}
-                </label>
-                <select
-                  className="rounded-lg border border-neutral-300 px-3 py-2 bg-white text-sm focus:ring-1 focus:ring-neutral-400"
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                >
-                  {/* POS-configured payment methods; filter for QR usage */}
-                  {paymentMethods
-                    .filter((m) => m.enabled !== false)
-                    .map((method) => (
-                      <option key={method.id} value={method.id}>
-                        {method.icon ? `${method.icon} ` : ""}{method.label}
-                      </option>
-                    ))}
-                </select>
-              </div>
+          {/* Submit */}
+          <button
+            onClick={onSubmitOrder}
+            disabled={submitting || newItems.length === 0}
+            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium hover:bg-neutral-800 disabled:opacity-50 transition-all"
+          >
+            {submitting ? t("Please wait...") : t("Submit Order")}
+          </button>
 
-              {/* Submit */}
-              <button
-                onClick={onSubmitOrder}
-                disabled={submitting || newItems.length === 0}
-                className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium hover:bg-neutral-800 disabled:opacity-50 transition-all"
-              >
-                {submitting ? t("Please wait...") : t("Submit Order")}
-              </button>
-
-              {/* Order Another */}
-              <button
-                onClick={() => setShow(false)}
-                className="w-full py-3 rounded-full border border-neutral-300 text-neutral-700 font-medium hover:bg-neutral-100 transition-all"
-              >
-                {t("Order Another")}
-              </button>
-
-              {/* Clear new */}
-              <button
-                onClick={() => {
-                  const lockedOnly = cartArray.filter((i) => i.locked);
-                  setCart(lockedOnly);
-                  storage.setItem("qr_cart", JSON.stringify(lockedOnly));
-                }}
-                className="w-full mt-2 py-2 rounded-md text-xs text-neutral-500 bg-neutral-100 hover:bg-neutral-200 transition"
-              >
-                {t("Clear New Items")}
-              </button>
-            </div>
+          {/* Order Another */}
+          {!isPanel && (
+            <button
+              onClick={() => setShow(false)}
+              className="w-full py-3 rounded-full border border-neutral-300 text-neutral-700 font-medium hover:bg-neutral-100 transition-all"
+            >
+              {t("Order Another")}
+            </button>
           )}
-	        </div>
-	      </div>
-	    )}
-	  </>
-	);
+
+          {/* Clear new */}
+          <button
+            onClick={() => {
+              const lockedOnly = cartArray.filter((i) => i.locked);
+              setCart(lockedOnly);
+              storage.setItem("qr_cart", JSON.stringify(lockedOnly));
+            }}
+            className="w-full mt-1 py-2 rounded-md text-xs text-neutral-600 bg-neutral-100 hover:bg-neutral-200 transition"
+          >
+            {t("Clear New Items")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      {/* Floating cart button */}
+      {!isPanel && !show && (cartLength > 0 || hasActiveOrder) && (
+        <button
+          onClick={() => {
+            if (hasNewItems) {
+              onOpenCart?.();
+              storage.setItem("qr_cart_auto_open", "1");
+              setShow(true);
+            } else if (hasActiveOrder && onShowStatus) {
+              onShowStatus();
+            } else {
+              onOpenCart?.();
+              setShow(true);
+            }
+          }}
+          className={`fixed bottom-16 left-4 md:left-6 flex items-center gap-3 px-5 py-3 rounded-full font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
+            hasActiveOrder
+              ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
+              : "bg-neutral-900 text-white hover:scale-105"
+          }`}
+        >
+          <span className="text-xl">🛒</span>
+          <div className="flex flex-col items-start">
+            <span className="text-sm">
+              {hasNewItems ? t("View Cart") : t("Your Order")}
+            </span>
+            {hasActiveOrder && statusLabel && (
+              <span className="text-[11px] uppercase tracking-wide opacity-90">
+                {statusLabel}
+              </span>
+            )}
+          </div>
+          {hasNewItems && (
+            <span className="ml-3 inline-flex items-center justify-center rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
+              {newItemsCount}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* Cart Drawer */}
+      {isPanel ? (
+        <div className="h-full">{cartPanel}</div>
+      ) : (
+        show && (
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setShow(false);
+            }}
+          >
+            {cartPanel}
+          </div>
+        )
+      )}
+    </>
+  );
 
 }
 
@@ -3237,6 +3307,21 @@ useEffect(() => {
 useEffect(() => {
   storage.setItem("qr_payment_method", paymentMethod);
 }, [paymentMethod]);
+
+const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
+  if (typeof window === "undefined") return false;
+  return window.innerWidth >= 1280;
+});
+
+useEffect(() => {
+  const handleResize = () => {
+    if (typeof window === "undefined") return;
+    setIsDesktopLayout(window.innerWidth >= 1280);
+  };
+  handleResize();
+  window.addEventListener("resize", handleResize);
+  return () => window.removeEventListener("resize", handleResize);
+}, []);
 
 
 // === Always-mounted Order Status (portal) ===
@@ -4290,71 +4375,117 @@ return (
       className={`${isDarkMain ? "dark " : ""}flex-1`}
       style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
     >
-      <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-neutral-900 dark:to-black flex flex-col">
-    <QrHeader
-      orderType={orderType}
-      table={table}
-      onClose={handleCloseOrderPage}
-      t={t}
-      restaurantName={brandName}
-      lang={lang}
-      setLang={setLang}
-    />
+      <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-50 dark:bg-neutral-900 flex flex-col">
+        <QrHeader
+          orderType={orderType}
+          table={table}
+          onClose={handleCloseOrderPage}
+          t={t}
+          restaurantName={brandName}
+          lang={lang}
+          setLang={setLang}
+        />
 
-    <div className="container mx-auto px-3 sm:px-4 md:px-6 lg:px-8 w-full">
-      <ProductGrid
-        products={productsInActiveCategory}
-        onProductClick={(product) => {
-          setSelectedProduct(product);
-          setShowAddModal(true);
-        }}
-        t={t}
-      />
+        <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-24">
+          <div className="grid grid-cols-1 xl:grid-cols-[320px,1fr,220px] gap-4 lg:gap-5 xl:gap-6 items-start">
+            {isDesktopLayout && (
+              <aside className="hidden xl:block sticky top-[76px] h-[calc(100vh-140px)]">
+                <CartDrawer
+                  cart={safeCart}
+                  setCart={setCart}
+                  onSubmitOrder={handleSubmitOrder}
+                  orderType={orderType}
+                  paymentMethod={paymentMethod}
+                  setPaymentMethod={setPaymentMethod}
+                  submitting={submitting}
+                  onOrderAnother={handleOrderAnother}
+                  t={t}
+                  hasActiveOrder={hasActiveOrder}
+                  orderScreenStatus={orderScreenStatus}
+                  onShowStatus={() => {
+                    window.dispatchEvent(new Event("qr:cart-close"));
+                    const savedId = Number(storage.getItem("qr_active_order_id")) || null;
+                    if (!orderId && savedId) {
+                      setOrderId(savedId);
+                    }
+                    setOrderStatus("success");
+                    setShowStatus(true);
+                    storage.setItem("qr_show_status", "1");
+                  }}
+                  isOrderStatusOpen={showStatus}
+                  onOpenCart={() => {
+                    setShowStatus(false);
+                    storage.setItem("qr_show_status", "0");
+                  }}
+                  layout="panel"
+                />
+              </aside>
+            )}
+
+            <section className="order-2 xl:order-none">
+              <ProductGrid
+                products={productsInActiveCategory}
+                onProductClick={(product) => {
+                  setSelectedProduct(product);
+                  setShowAddModal(true);
+                }}
+                t={t}
+              />
+            </section>
+
+            <aside className="hidden lg:block sticky top-[76px] h-[calc(100vh-140px)]">
+              <CategoryRail
+                categories={categories}
+                activeCategory={activeCategory}
+                setActiveCategory={setActiveCategory}
+                categoryImages={categoryImages}
+              />
+            </aside>
+          </div>
+        </div>
+
+        {/* ✅ Hide category bar when any modal (status, delivery, or takeaway) is open */}
+        {!showStatus && !showDeliveryForm && !showTakeawayForm && (
+          <CategoryBar
+            categories={categories}
+            activeCategory={activeCategory}
+            setActiveCategory={setActiveCategory}
+            categoryImages={categoryImages}
+          />
+        )}
+      </div>
     </div>
 
-{/* ✅ Hide category bar when any modal (status, delivery, or takeaway) is open */}
-{!showStatus && !showDeliveryForm && !showTakeawayForm && (
-  <CategoryBar
-    categories={categories}
-    activeCategory={activeCategory}
-    setActiveCategory={setActiveCategory}
-    categoryImages={categoryImages}
-  />
-)}
-
-
-
-
-
-	    <CartDrawer
-	      cart={safeCart}
-	      setCart={setCart}
-	      onSubmitOrder={handleSubmitOrder}
-	      orderType={orderType}
-	      paymentMethod={paymentMethod}
-	      setPaymentMethod={setPaymentMethod}
-	      submitting={submitting}
-	      onOrderAnother={handleOrderAnother}
-	      t={t}
-	      hasActiveOrder={hasActiveOrder}
-	      orderScreenStatus={orderScreenStatus}
-	      onShowStatus={() => {
-	        window.dispatchEvent(new Event("qr:cart-close"));
-	        const savedId = Number(storage.getItem("qr_active_order_id")) || null;
-	        if (!orderId && savedId) {
-	          setOrderId(savedId);
-	        }
-	        setOrderStatus("success");
-	        setShowStatus(true);
-	        storage.setItem("qr_show_status", "1");
-	      }}
-          isOrderStatusOpen={showStatus}
-          onOpenCart={() => {
-            setShowStatus(false);
-            storage.setItem("qr_show_status", "0");
-          }}
-	    />
-
+    {!isDesktopLayout && (
+      <CartDrawer
+        cart={safeCart}
+        setCart={setCart}
+        onSubmitOrder={handleSubmitOrder}
+        orderType={orderType}
+        paymentMethod={paymentMethod}
+        setPaymentMethod={setPaymentMethod}
+        submitting={submitting}
+        onOrderAnother={handleOrderAnother}
+        t={t}
+        hasActiveOrder={hasActiveOrder}
+        orderScreenStatus={orderScreenStatus}
+        onShowStatus={() => {
+          window.dispatchEvent(new Event("qr:cart-close"));
+          const savedId = Number(storage.getItem("qr_active_order_id")) || null;
+          if (!orderId && savedId) {
+            setOrderId(savedId);
+          }
+          setOrderStatus("success");
+          setShowStatus(true);
+          storage.setItem("qr_show_status", "1");
+        }}
+        isOrderStatusOpen={showStatus}
+        onOpenCart={() => {
+          setShowStatus(false);
+          storage.setItem("qr_show_status", "0");
+        }}
+      />
+    )}
 
     <AddToCartModal
       open={showAddModal}
@@ -4428,10 +4559,6 @@ return (
 )}
 
 
-
-
-    </div>
-  </div>
     {suppressMenuFlash && (
       <div className="fixed inset-0 z-[120] bg-white" aria-hidden="true" />
     )}
