@@ -230,6 +230,7 @@ export default function GlobalOrderAlert() {
   const soundPlayingRef = useRef(false);
   const lastSoundAtRef = useRef({});
   useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
+  const [autoConfirmOrders, setAutoConfirmOrders] = useState(true);
 
   const eventKeys = useMemo(
     () => [
@@ -286,6 +287,22 @@ export default function GlobalOrderAlert() {
     };
     socket.on("connect", handleConnect);
     return () => socket.off("connect", handleConnect);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    secureFetch("/settings/integrations")
+      .then((data) => {
+        if (!mounted) return;
+        setAutoConfirmOrders(!!data.auto_confirm_orders);
+      })
+      .catch((err) => {
+        console.warn("⚠️ Failed to load integrations settings:", err);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   /* Unlock browser audio */
@@ -691,7 +708,8 @@ export default function GlobalOrderAlert() {
       const isPreOrderType = preOrderTypes.includes(type);
       const skipPrint =
         (type === "table" && transactionSettings.disableAutoPrintTable) ||
-        ((isPacketPhoneType || isPreOrderType) && transactionSettings.disableAutoPrintPacket);
+        ((isPacketPhoneType || isPreOrderType) && transactionSettings.disableAutoPrintPacket) ||
+        (!autoConfirmOrders && (isPacketPhoneType || isPreOrderType));
 
       notify("new_order", buildNewOrderMessage(p));
       if (skipPrint) return;
@@ -747,6 +765,7 @@ export default function GlobalOrderAlert() {
     transactionSettings.disableAutoPrintPacket,
     transactionSettings.disableAutoPrintTable,
     formatCurrency,
+    autoConfirmOrders,
   ]);
 
   /* POLLING (fallback only if socket disconnected) */

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
 import StaffCheckIn from '../components/ui/StaffCheckIn';
 import StaffSchedule from '../components/ui/StaffSchedule';
 import Payroll from '../components/ui/Payroll';
@@ -99,11 +99,11 @@ const Staff = () => {
 
   const tabDefinitions = useMemo(
     () => [
-      { id: "checkin", title: t("Check-In/Check-Out"), component: <StaffCheckIn /> },
-      { id: "schedule", title: t("Staff Schedule"), component: <StaffSchedule /> },
-      { id: "payroll", title: t("Payroll"), component: <Payroll /> },
+      { id: "checkin", title: "Check-In", component: <StaffCheckIn /> },
+      { id: "schedule", title: "Staff Schedule", component: <StaffSchedule /> },
+      { id: "payroll", title: "Payroll", component: <Payroll /> },
     ],
-    [t]
+    []
   );
 
   const accessibleTabs = useMemo(
@@ -194,7 +194,7 @@ const Staff = () => {
     t,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setHeader((prev) => ({
       ...prev,
       title: t("Staff Management"),

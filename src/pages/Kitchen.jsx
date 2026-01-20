@@ -6,6 +6,29 @@ import { useHeader } from "../context/HeaderContext";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v1";
+const ONLINE_SOURCE_DISPLAY_NAMES = {
+  yemeksepeti: "Yemeksepeti",
+  migros: "Migros",
+  trendyol: "Trendyol",
+  getir: "Getir",
+  glovo: "Glovo",
+};
+
+const formatOnlineSourceLabel = (source) => {
+  if (!source) return null;
+  const trimmed = String(source).trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.toLowerCase();
+  if (!normalized) return trimmed;
+  if (Object.prototype.hasOwnProperty.call(ONLINE_SOURCE_DISPLAY_NAMES, normalized)) {
+    return ONLINE_SOURCE_DISPLAY_NAMES[normalized];
+  }
+  const parts = normalized
+    .split(/[^a-z0-9]+/)
+    .filter((chunk) => chunk.length)
+    .map((chunk) => chunk[0].toUpperCase() + chunk.slice(1));
+  return parts.length ? parts.join(" ") : trimmed;
+};
 export default function Kitchen() {
   const [orders, setOrders] = useState([]);
   const [selectedIds, setSelectedIds] = useState(() => {
@@ -827,6 +850,14 @@ return (
         const ordersArePacket = group.type === "packet";
         const ordersArePhone = group.type === "phone";
         const ordersAreTakeaway = group.type === "takeaway";
+        const sourceBadgeLabel = (() => {
+          if (ordersArePacket) {
+            const onlineLabel = formatOnlineSourceLabel(first.external_source);
+            return onlineLabel || t("Packet");
+          }
+          if (ordersArePhone) return t("Phone");
+          return null;
+        })();
 
         // ✨ 4-tone palette matching POS
         const groupTheme = ordersArePacket
@@ -976,13 +1007,9 @@ return (
 
                 <div className="flex items-center gap-2 shrink-0">
                   {/* Badge (hide for takeaway to avoid duplicate label) */}
-                  {(ordersArePacket || ordersArePhone) && (
+                  {sourceBadgeLabel && (
                     <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${groupTheme.badge}`}>
-                      {ordersArePacket
-                        ? `Packet${first.external_id ? " · Online" : ""}`
-                        : ordersArePhone
-                        ? "Phone"
-                        : null}
+                      {sourceBadgeLabel}
                     </span>
                   )}
 
