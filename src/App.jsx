@@ -8,7 +8,7 @@ import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
 import Products from "./pages/Products";
-import Kitchen from "./pages/Kitchen";
+import Kitchen from "./pages/KitchenNew";
 import Suppliers from "./pages/Suppliers";
 import Stock from "./pages/Stock";
 import TableOverview from "./pages/TableOverview";

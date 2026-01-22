@@ -2334,7 +2334,7 @@ return (
     />
 
    {/* --- ORDERS LIST --- */}
-<div className="min-h-screen px-0 sm:px-0 py-0 w-full mx-auto relative bg-[#f7f9fc] text-slate-900 transition-colors duration-300">
+<div className="min-h-screen px-4 sm:px-6 lg:px-8 py-6 w-full mx-auto relative bg-[#f7f9fc] text-slate-900">
 <div
   className={`
     grid
@@ -2358,15 +2358,17 @@ const totalDiscount = calcOrderDiscount(order);
       const driverStatus = normalizeDriverStatus(order.driver_status);
       const isDelivered = driverStatus === "delivered";
       const isPicked = driverStatus === "on_road";
+      const isCancelled = order.status === "cancelled";
       const kitchenStatus = order.kitchen_status || order.overallKitchenStatus;
-      const isReady = kitchenStatus === "ready";
+      const isReady = (kitchenStatus === "ready" || kitchenStatus === "delivered") && !isDelivered && !isPicked;
       const isPrep = kitchenStatus === "preparing";
       const onlinePayments = [
         "online", "online payment", "online card", "yemeksepeti online"
       ];
       const isOnlinePayment = order.payment_method &&
         onlinePayments.some(type => order.payment_method.toLowerCase().includes(type));
-      const isYemeksepeti = order.order_type === "packet" && order.external_id;
+      const isYemeksepeti = String(order?.external_source || "").toLowerCase() === "yemeksepeti";
+      const isMigros = String(order?.external_source || "").toLowerCase() === "migros";
       const hasUnmatchedYsItems =
         isYemeksepeti &&
         Array.isArray(order.items) &&
@@ -2433,8 +2435,23 @@ const totalDiscount = calcOrderDiscount(order);
     };
   }
 
-  // 🍳 Preparing / Ready
-  if (isReady || isPrep) {
+  // ✅ Ready for Pickup/Delivery
+  if (isReady) {
+    return {
+      card: "bg-purple-50 border-4 border-purple-400 text-purple-900 shadow-md",
+      header: "bg-purple-100 border border-purple-300 shadow-sm",
+      timer: "bg-purple-200 text-purple-900 border border-purple-300 shadow-sm",
+      nameChip: "bg-purple-50 text-purple-800 border border-purple-300",
+      phoneBtn: "bg-purple-600 text-white hover:bg-purple-700 shadow-sm",
+      statusChip: "bg-purple-500 text-white border border-purple-600 shadow-sm",
+      priceTag: "bg-purple-100 text-purple-800 border border-purple-300 shadow-sm",
+      extrasRow: "bg-purple-50 text-purple-800 border border-purple-300 shadow-sm",
+      noteBox: "bg-purple-50 text-purple-900 border border-purple-300 shadow-sm",
+    };
+  }
+
+  // 🍳 Preparing
+  if (isPrep) {
     return {
       card: "bg-amber-50 border-4 border-amber-400 text-amber-900 shadow-md",
       header: "bg-amber-100 border border-amber-300 shadow-sm",
@@ -2488,15 +2505,30 @@ const totalDiscount = calcOrderDiscount(order);
           : "";
       const kitchenBadgeClass =
         isDelivered
-          ? "bg-teal-600 text-white hover:bg-teal-700 shadow-sm"
+          ? "bg-emerald-600 text-white shadow-sm"
           : kitchenStatus === "new"
-          ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
-          : statusVisual.phoneBtn;
+          ? "bg-slate-700 text-white shadow-sm"
+          : kitchenStatus === "preparing"
+          ? "bg-amber-500 text-white shadow-sm"
+          : kitchenStatus === "ready" || kitchenStatus === "delivered"
+          ? "bg-indigo-500 text-white shadow-sm"
+          : "bg-slate-400 text-white shadow-sm";
 
 
 
       const assignedDriver = drivers.find((d) => Number(d.id) === Number(order.driver_id));
       const assignedDriverName = assignedDriver?.name ? String(assignedDriver.name) : "";
+      const driverAvatarUrl =
+        assignedDriver?.avatar || assignedDriver?.photoUrl || assignedDriver?.photo_url || "";
+      const driverInitials = assignedDriverName
+        ? assignedDriverName
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0])
+            .join("")
+            .toUpperCase()
+        : "DR";
       const rawDriverStatus = String(order.driver_status || "").trim().toLowerCase();
       const isPickedUp = rawDriverStatus === "picked_up";
       const driverStatusBaseLabel = isDelivered
@@ -2524,6 +2556,42 @@ const totalDiscount = calcOrderDiscount(order);
         return `${driverStatusBaseLabel}: ${assignedDriverName}`;
       })();
 
+      const cardTone = isCancelled
+        ? "bg-rose-200"
+        : isDelivered
+        ? "bg-emerald-200"
+        : isPicked || isPickedUp
+        ? "bg-sky-200"
+        : isReady
+        ? "bg-indigo-200"
+        : isPrep
+        ? "bg-amber-200"
+        : "bg-slate-100";
+
+      const statusBarLabel = isCancelled
+        ? t("cancelled")
+        : isDelivered
+        ? t("Delivered")
+        : isPicked || isPickedUp
+        ? t("On the Road")
+        : isReady
+        ? t("Order ready!")
+        : isPrep
+        ? t("Preparing")
+        : t("Awaiting Driver");
+
+      const statusBarClass = isCancelled
+        ? "bg-rose-500"
+        : isDelivered
+        ? "bg-emerald-500"
+        : isPicked || isPickedUp
+        ? "bg-sky-500"
+        : isReady
+        ? "bg-indigo-500"
+        : isPrep
+        ? "bg-amber-500"
+        : "bg-slate-500";
+
       return (
         <div
           key={order.id}
@@ -2537,7 +2605,7 @@ const totalDiscount = calcOrderDiscount(order);
 
           {/* CARD */}
 <div
-  className={`w-full h-full rounded-[28px] p-7 flex flex-col gap-5 transition-all duration-500 ${statusVisual.card}`}
+  className={`w-full h-full rounded-[32px] ${cardTone} border border-slate-300 shadow-[0_12px_30px_rgba(15,23,42,0.12)] p-6 sm:p-7 flex flex-col gap-5`}
   style={{ minHeight: 210 }}
 >
 
@@ -2546,269 +2614,183 @@ const totalDiscount = calcOrderDiscount(order);
 
 
             {/* CARD HEADER */}
-<div
- className="flex flex-col gap-[2px] w-full pb-0 mb-[2px]"
-  style={{ minWidth: 0 }}
->
-  {/* Top Row: Address + Timer */}
-  <div className={`relative rounded-t-3xl px-5 sm:px-6 py-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between transition-colors duration-500 ${statusVisual.header}`}>
-  {/* Address + icon */}
-  <div className="flex flex-col flex-1 min-w-0">
-    <div className="flex items-center gap-2">
-      <span className="text-xl sm:text-2xl text-emerald-500">📍</span>
-      {order.customer_address ? (
-        <a
-          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.customer_address)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="
-            text-lg sm:text-2xl font-extrabold text-slate-900
-            leading-snug break-words w-full underline decoration-emerald-300 decoration-2 underline-offset-4 hover:decoration-emerald-500 transition-colors
-          "
-          style={{
-            wordBreak: "break-word",
-            whiteSpace: "pre-line",
-            overflowWrap: "break-word",
-            maxWidth: "100%",
-            display: "block"
-          }}
-        >
-          {order.customer_address}
-        </a>
-      ) : (
-        <span
-          className="
-            text-lg sm:text-2xl font-extrabold text-slate-900
-            leading-snug break-words w-full
-          "
-          style={{
-            wordBreak: "break-word",
-            whiteSpace: "pre-line",
-            overflowWrap: "break-word",
-            maxWidth: "100%",
-            display: "block"
-          }}
-        >
-          {t("No address available")}
-        </span>
-      )}
+<div className="flex flex-col gap-4 w-full">
+  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+    <div className="flex items-start gap-3 min-w-0 flex-1">
+      <span className="text-2xl text-emerald-500">📍</span>
+      <div className="min-w-0">
+        {order.customer_address ? (
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.customer_address)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-lg sm:text-2xl font-extrabold text-slate-900 leading-snug break-words w-full underline decoration-emerald-200 decoration-2 underline-offset-4 hover:decoration-emerald-400 transition-colors"
+            style={{
+              wordBreak: "break-word",
+              whiteSpace: "pre-line",
+              overflowWrap: "break-word",
+              maxWidth: "100%",
+              display: "block",
+            }}
+          >
+            {order.customer_address}
+          </a>
+        ) : (
+          <span
+            className="text-lg sm:text-2xl font-extrabold text-slate-900 leading-snug break-words w-full"
+            style={{
+              wordBreak: "break-word",
+              whiteSpace: "pre-line",
+              overflowWrap: "break-word",
+              maxWidth: "100%",
+              display: "block",
+            }}
+          >
+            {t("No address available")}
+          </span>
+        )}
 
-    </div>
-    {externalOrderRef && (
-      <div className="mt-2">
-        <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/80 text-slate-700 border border-slate-200 text-xs sm:text-sm font-semibold shadow-sm">
-          {t("Order")} #{externalOrderRef}
-        </span>
+        {externalOrderRef && (
+          <div className="mt-2">
+            <span className="inline-flex items-center px-3 py-1 rounded-full bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-semibold shadow-sm">
+              {t("Order")} #{externalOrderRef}
+            </span>
+          </div>
+        )}
       </div>
-    )}
+    </div>
+
+    <div className="flex flex-col items-start lg:items-end gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {isYemeksepeti && (
+          <span className="inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-gradient-to-r from-pink-500 to-orange-400 text-white text-sm sm:text-lg lg:text-xl font-extrabold shadow gap-2 tracking-wider border border-pink-200">
+            Yemeksepeti
+            <svg width="28" height="28" viewBox="0 0 24 24" className="inline -mt-0.5 ml-1"><circle cx="12" cy="12" r="12" fill="#FF3B30"/><text x="12" y="16" textAnchor="middle" fontSize="13" fill="#fff" fontWeight="bold">YS</text></svg>
+          </span>
+        )}
+        {isMigros && (
+          <span className="inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-gradient-to-r from-orange-600 to-red-500 text-white text-sm sm:text-lg lg:text-xl font-extrabold shadow gap-2 tracking-wider border border-orange-200">
+            Migros
+            <svg width="28" height="28" viewBox="0 0 24 24" className="inline -mt-0.5 ml-1"><circle cx="12" cy="12" r="12" fill="#FF6600"/><text x="12" y="16" textAnchor="middle" fontSize="13" fill="#fff" fontWeight="bold">MG</text></svg>
+          </span>
+        )}
+        {hasUnmatchedYsItems && (
+          <a
+            href="/settings/integrations#yemeksepeti-mapping"
+            className="inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-amber-500 text-white text-xs sm:text-sm font-bold shadow border border-amber-200"
+          >
+            {t("Needs Yemeksepeti mapping")}
+          </a>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-semibold shadow-sm">
+          {assignedDriverName ? `${t("Picked up by")}: ${assignedDriverName}` : driverStatusLabel}
+        </span>
+        <span className="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-mono font-semibold text-xs sm:text-sm shadow-sm">
+          {getWaitingTimer(order)}
+        </span>
+        {order && order.items?.length > 0 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePacketPrint(order.id);
+            }}
+            className="p-2 rounded-full bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 transition"
+            title={t("Print Receipt")}
+          >
+            🖨️
+          </button>
+        )}
+      </div>
+    </div>
   </div>
-  {/* Right badges */}
-  <div className="flex flex-row sm:flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto min-w-0 sm:min-w-[160px] overflow-x-auto sm:overflow-visible whitespace-nowrap pr-1">
-    {isYemeksepeti && (
-  <span className="inline-flex items-center justify-center w-full sm:w-auto px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-gradient-to-r from-pink-500 to-orange-400 text-white text-sm sm:text-lg lg:text-xl font-extrabold shadow gap-2 tracking-wider border border-pink-200 flex-shrink-0" style={{ letterSpacing: 1 }}>
-    Yemeksepeti
-    <svg width="28" height="28" viewBox="0 0 24 24" className="inline -mt-0.5 ml-1"><circle cx="12" cy="12" r="12" fill="#FF3B30"/><text x="12" y="16" textAnchor="middle" fontSize="13" fill="#fff" fontWeight="bold">YS</text></svg>
-  </span>
-)}
-    {hasUnmatchedYsItems && (
+
+  <div className="flex flex-wrap items-center gap-2">
+    <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm sm:text-base font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm">
+      <span>👤</span> {order.customer_name}
+    </span>
+
+    {order.customer_phone && (
       <a
-        href="/settings/integrations#yemeksepeti-mapping"
-        className="inline-flex items-center justify-center w-full sm:w-auto px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-amber-500 text-white text-xs sm:text-sm font-bold shadow border border-amber-200 flex-shrink-0"
+        href={`tel:${order.customer_phone}`}
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm sm:text-base font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm hover:bg-slate-50 transition"
+        title={t("Click to call")}
+        style={{ textDecoration: "none" }}
       >
-        {t("Needs Yemeksepeti mapping")}
+        <svg className="mr-1" width="18" height="18" fill="none" viewBox="0 0 24 24">
+          <path
+            fill="currentColor"
+            d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1.003 1.003 0 011.11-.21c1.21.49 2.53.76 3.88.76.55 0 1 .45 1 1v3.5c0 .55-.45 1-1 1C7.72 22 2 16.28 2 9.5c0-.55.45-1 1-1H6.5c.55 0 1 .45 1 1 0 1.35.27 2.67.76 3.88.17.39.09.85-.21 1.11l-2.2 2.2z"
+          />
+        </svg>
+        {order.customer_phone}
       </a>
     )}
-    <div className="flex items-center justify-end gap-2 w-full sm:w-auto flex-nowrap overflow-x-auto sm:overflow-visible whitespace-nowrap">
-     
-      <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide transition flex-shrink-0 ${statusVisual.statusChip}`}>
-        {driverStatusLabel}
-      </span>
-  
-       <span className={`flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl font-mono font-semibold text-sm transition flex-shrink-0 ${statusVisual.timer}`}>
-        <span className="text-base opacity-80"></span> {getWaitingTimer(order)}
-      </span>
-      {order && order.items?.length > 0 && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handlePacketPrint(order.id);
-          }}
-          className="px-2.5 py-1.5 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-800 font-semibold sm:font-bold rounded-full shadow hover:brightness-105 border border-slate-300 transition flex-shrink-0"
-          title={t("Print Receipt")}
-        >
-          🖨️
-        </button>
-        
-      )}
-    </div>
 
-  </div>
-
-
-
-  </div>
-  {/* Second Row: Customer + Statuses */}
-  <div className="flex flex-wrap items-center justify-between gap-3 mt-1 w-full">
-    <div className="flex flex-wrap items-center gap-3 my-2">
-      <span className={`inline-flex items-center justify-center sm:justify-start px-4 py-2 rounded-xl text-base sm:text-xl font-semibold transition ${statusVisual.nameChip}`}>
-        <span className="mr-2">👤</span> {order.customer_name}
-      </span>
-
-      {order.customer_phone && (
-        <a
-          href={`tel:${order.customer_phone}`}
-          className={`inline-flex items-center justify-center sm:justify-start px-3 py-2 rounded-xl font-semibold text-base sm:text-lg transition-transform duration-200 hover:-translate-y-0.5 ${statusVisual.phoneBtn}`}
-          title={t("Click to call")}
-          style={{ textDecoration: "none" }}
-        >
-          <svg className="mr-2" width="22" height="22" fill="none" viewBox="0 0 24 24">
-            <path
-              fill="currentColor"
-              d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1.003 1.003 0 011.11-.21c1.21.49 2.53.76 3.88.76.55 0 1 .45 1 1v3.5c0 .55-.45 1-1 1C7.72 22 2 16.28 2 9.5c0-.55.45-1 1-1H6.5c.55 0 1 .45 1 1 0 1.35.27 2.67.76 3.88.17.39.09.85-.21 1.11l-2.2 2.2z"
-            />
-          </svg>
-          {order.customer_phone}
-        </a>
-      )}
-      {kitchenBadgeLabel &&
-        !(kitchenBadgeLabel === t("Order ready!") && (isPicked || isPickedUp)) && (
-        <span
-          className={`inline-flex items-center justify-center sm:justify-start px-3 py-2 rounded-xl font-semibold text-base sm:text-lg transition ${kitchenBadgeClass}`}
-        >
-          {kitchenBadgeIcon ? <span className="mr-2">{kitchenBadgeIcon}</span> : null}
-          {kitchenBadgeLabel}
-        </span>
-      )}
-      {readyAtLabel && (
-        <span className="px-3 py-2 rounded-xl font-semibold text-base sm:text-lg bg-slate-100 text-slate-700 border border-slate-200 shadow-sm flex items-center gap-1">
-          ⏳ {t("Ready at")} {readyAtLabel}
-        </span>
-      )}
-    </div>
-
- 
-  </div>
-
-
-  </div>
-
-
-            {/* Items */}
-  {sanitizedOrderNote && (
-    <div
-      className={`px-3 py-2 rounded-xl font-medium italic flex items-start gap-2 text-base transition ${statusVisual.noteBox}`}
-      style={{ wordBreak: "break-word", whiteSpace: "pre-line" }}
-    >
-      📝 <span>{sanitizedOrderNote}</span>
-    </div>
-  )}
-<details
-  open={openDetails[order.id] || false}
-  onToggle={(e) => {
-    setOpenDetails((prev) => ({
-      ...prev,
-      [order.id]: e.target.open,
-    }));
-    localStorage.setItem(
-      "orderDetailsState",
-      JSON.stringify({
-        ...openDetails,
-        [order.id]: e.target.open,
-      })
-    );
-  }}
-  className="w-full"
->
-  <summary className="cursor-pointer flex items-center gap-2 text-base font-semibold select-none hover:underline">
-    <span className="text-lg sm:text-xl">🛒</span>
-    {t("Order Items")} <span className="text-sm opacity-60">({order.items?.length ?? 0})</span>
-  </summary>
-
-  <ul className="pl-0 mt-2 flex flex-col gap-2">
-    {(order.items ?? []).map((item, idx) => (
-      <li
-        key={item.unique_id || idx}
-        className="flex flex-col gap-1 px-2 py-2 rounded-xl bg-slate-50 border border-slate-200 shadow-sm"
+    {kitchenBadgeLabel &&
+      !(kitchenBadgeLabel === t("Order ready!") && (isPicked || isPickedUp)) && (
+      <span
+        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm sm:text-base font-semibold shadow-sm ${kitchenBadgeClass}`}
       >
-        {/* Main Product Row */}
-        <div className="flex items-center justify-between flex-nowrap gap-2 w-full">
-          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-            <span className="inline-block min-w-[28px] h-7 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 font-mono font-semibold text-base border border-emerald-200 flex-shrink-0">
-              {item.quantity}×
-            </span>
+        {kitchenBadgeIcon ? <span>{kitchenBadgeIcon}</span> : null}
+        {kitchenBadgeLabel}
+      </span>
+    )}
 
-            <div className="flex items-center gap-2 min-w-0 flex-nowrap">
-              <span className="text-base sm:text-xl font-semibold text-slate-900 break-words tracking-wide truncate max-w-[140px] sm:max-w-[240px]">
-                {item.product_name ||
-                  item.external_product_name ||
-                  item.order_item_name ||
-                  t("Unnamed")}
-              </span>
+    {readyAtLabel && (
+      <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm sm:text-base font-semibold bg-slate-100 text-slate-700 border border-slate-200 shadow-sm">
+        ⏳ {t("Ready at")} {readyAtLabel}
+      </span>
+    )}
+  </div>
+</div>
 
-              <span className="inline-flex items-center px-2 py-0.5 rounded-lg font-semibold text-xs tracking-wide border flex-shrink-0 bg-slate-100 text-slate-500 border-slate-200">
-                {t("Item")}
-              </span>
-            </div>
-          </div>
-
-          <span
-            className={`text-base sm:text-xl font-semibold font-mono px-3 py-1 rounded-xl border transition whitespace-nowrap ${statusVisual.priceTag}`}
-          >
-            {formatCurrency(Number(item.price || 0))}
-          </span>
-        </div>
-
-        {item.extras?.length > 0 && (
-          <div className="ml-3 sm:ml-6 mt-2 flex flex-col gap-1">
-            {item.extras.map((ex, i) => {
-              const perItemQty = ex.quantity || 1;
-              const itemQty = item.quantity || 1;
-              const totalQty = perItemQty * itemQty;
-              const unit = parseFloat(ex.price || ex.extraPrice || 0) || 0;
-              const lineTotal = unit * totalQty;
-              return (
-                <div
-                  key={i}
-                  className={`flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 px-3 py-1 rounded-xl text-base font-medium transition ${statusVisual.extrasRow}`}
-                  style={{ fontSize: "1.08em" }}
-                >
-                  <span className="flex items-center gap-2 font-semibold">
-                    ➕ {ex.name}
-                    <span className="ml-2 font-semibold text-inherit text-base sm:text-lg tracking-wide">
-                      ×{totalQty}
-                    </span>
-                  </span>
-                  <span className="font-mono text-center sm:text-right w-full sm:w-auto">
-                    {formatCurrency(lineTotal)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+            {/* ORDER DETAILS */}
+<div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 flex flex-col gap-4">
+  <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="flex items-center gap-3">
+      <div className="h-12 w-12 rounded-full bg-white border border-slate-300 shadow-sm flex items-center justify-center overflow-hidden">
+        {driverAvatarUrl ? (
+          <img
+            src={driverAvatarUrl}
+            alt={assignedDriverName || t("Driver")}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span className="text-sm font-bold text-slate-700">{driverInitials}</span>
         )}
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[11px] font-semibold tracking-[0.2em] text-slate-400 uppercase">
+          {t("Driver")}
+        </span>
+        <span className="text-lg font-semibold text-slate-900">
+          {assignedDriverName || t("Driver")}
+        </span>
+      </div>
+    </div>
 
-        {item.note && (
-          <div
-            className={`ml-3 sm:ml-6 mt-2 px-3 py-1 rounded-xl font-medium italic flex items-start sm:items-center gap-2 text-base transition ${statusVisual.noteBox}`}
-          >
-            📝 <span style={{ wordBreak: "break-word" }}>{item.note}</span>
-          </div>
-        )}
-      </li>
-    ))}
-  </ul>
-</details>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-lg sm:text-2xl font-extrabold text-emerald-600">
+        {formatCurrency(discountedTotal)}
+      </span>
+      <span className="px-2.5 py-1 rounded-full bg-white border border-slate-200 text-sm font-semibold text-slate-700 shadow-sm">
+        {order.payment_method ? order.payment_method : "—"}
+      </span>
+      {!isOnlinePayment && (
+        <button
+          className="px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-700 hover:text-emerald-700 hover:border-emerald-300 font-semibold text-sm shadow-sm transition"
+          onClick={() => openPaymentModalForOrder(order)}
+        >
+          ✏️ {t("Edit")}
+        </button>
+      )}
+    </div>
+  </div>
 
-
-{/* --- DRIVER + PAYMENT + TOTAL + BUTTONS --- */}
-<div className="flex flex-col w-full mt-auto pt-0 gap-2">
-
-<div className="flex items-center justify-between w-full gap-2 mt-2 flex-nowrap overflow-x-auto">
-  <div className="flex items-center gap-2 flex-1 min-w-0">
-    <span className="font-semibold font-mono text-slate-500 text-sm tracking-wide uppercase flex-shrink-0">
-      {t("Driver")}:
-    </span>
-  <div className="relative flex-1 min-w-[140px] max-w-full sm:w-[160px]">
+  <div className="relative min-w-[180px]">
       <select
         value={order.driver_id || ""}
         onChange={async (e) => {
@@ -2827,10 +2809,8 @@ const totalDiscount = calcOrderDiscount(order);
             )
           );
         }}
-         className="appearance-none w-full h-[42px] px-3 pr-8 bg-white border border-slate-200 rounded-xl 
-               text-slate-800 text-sm font-mono shadow-sm 
-               focus:ring-2 focus:ring-emerald-300/70 focus:border-emerald-300 transition-all"
-  >
+        className="appearance-none w-full h-[42px] px-3 pr-8 bg-white border border-slate-200 rounded-xl text-slate-800 text-sm font-mono shadow-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300 transition-all"
+      >
         <option value="">{t("Unassigned")}</option>
         {drivers.map((d) => (
           <option key={d.id} value={d.id}>
@@ -2841,22 +2821,118 @@ const totalDiscount = calcOrderDiscount(order);
       <span className="pointer-events-none absolute right-3 top-1/2 transform -translate-y-1/2 text-emerald-400 text-base">
         ▼
       </span>
-    </div>
   </div>
 
-  <span
-    className="flex items-center justify-center h-[42px] text-m sm:text-lg font-extrabold font-mono text-emerald-700 
-               bg-emerald-50 border border-emerald-200 px-3 sm:px-5 rounded-2xl text-right sm:ml-auto
-               w-auto whitespace-nowrap flex-shrink-0"
+  {sanitizedOrderNote && (
+    <div
+      className="px-3 py-2 rounded-xl font-medium italic flex items-start gap-2 text-base bg-amber-50 text-amber-900 border border-amber-200 shadow-sm"
+      style={{ wordBreak: "break-word", whiteSpace: "pre-line" }}
+    >
+      📝 <span>{sanitizedOrderNote}</span>
+    </div>
+  )}
+
+  <details
+    open={openDetails[order.id] || false}
+    onToggle={(e) => {
+      setOpenDetails((prev) => ({
+        ...prev,
+        [order.id]: e.target.open,
+      }));
+      localStorage.setItem(
+        "orderDetailsState",
+        JSON.stringify({
+          ...openDetails,
+          [order.id]: e.target.open,
+        })
+      );
+    }}
+    className="w-full"
   >
-    &nbsp;{formatCurrency(discountedTotal)}
-  </span>
+    <summary className="cursor-pointer flex items-center gap-2 text-sm font-semibold text-slate-700 select-none hover:text-slate-900">
+      <span className="text-base">🛒</span>
+      {t("Order Items")} ({order.items?.length ?? 0})
+    </summary>
+
+    <ul className="pl-0 mt-3 flex flex-col gap-2">
+      {(order.items ?? []).map((item, idx) => (
+        <li
+          key={item.unique_id || idx}
+          className="flex flex-col gap-1 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm"
+        >
+          {/* Main Product Row */}
+          <div className="flex items-center justify-between flex-nowrap gap-2 w-full">
+            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+              <span className="inline-block min-w-[28px] h-7 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 font-mono font-semibold text-base border border-emerald-200 flex-shrink-0">
+                {item.quantity}×
+              </span>
+
+              <div className="flex items-center gap-2 min-w-0 flex-nowrap">
+                <span className="text-base sm:text-xl font-semibold text-slate-900 break-words tracking-wide truncate max-w-[140px] sm:max-w-[240px]">
+                  {item.product_name ||
+                    item.external_product_name ||
+                    item.order_item_name ||
+                    t("Unnamed")}
+                </span>
+
+                <span className="inline-flex items-center px-2 py-0.5 rounded-lg font-semibold text-xs tracking-wide border flex-shrink-0 bg-slate-100 text-slate-500 border-slate-200">
+                  {t("Item")}
+                </span>
+              </div>
+            </div>
+
+            <span
+              className="text-base sm:text-xl font-semibold font-mono px-3 py-1 rounded-xl border bg-emerald-50 text-emerald-700 border-emerald-200 whitespace-nowrap"
+            >
+              {formatCurrency(Number(item.price || 0))}
+            </span>
+          </div>
+
+          {item.extras?.length > 0 && (
+            <div className="ml-3 sm:ml-6 mt-2 flex flex-col gap-1">
+              {item.extras.map((ex, i) => {
+                const perItemQty = ex.quantity || 1;
+                const itemQty = item.quantity || 1;
+                const totalQty = perItemQty * itemQty;
+                const unit = parseFloat(ex.price || ex.extraPrice || 0) || 0;
+                const lineTotal = unit * totalQty;
+                return (
+                  <div
+                    key={i}
+                    className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 px-3 py-1 rounded-xl text-base font-medium bg-slate-50 text-slate-700 border border-slate-200"
+                    style={{ fontSize: "1.08em" }}
+                  >
+                    <span className="flex items-center gap-2 font-semibold">
+                      ➕ {ex.name}
+                      <span className="ml-2 font-semibold text-inherit text-base sm:text-lg tracking-wide">
+                        ×{totalQty}
+                      </span>
+                    </span>
+                    <span className="font-mono text-center sm:text-right w-full sm:w-auto">
+                      {formatCurrency(lineTotal)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {item.note && (
+            <div
+              className="ml-3 sm:ml-6 mt-2 px-3 py-1 rounded-xl font-medium italic flex items-start sm:items-center gap-2 text-base bg-amber-50 text-amber-900 border border-amber-200"
+            >
+              📝 <span style={{ wordBreak: "break-word" }}>{item.note}</span>
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  </details>
 </div>
 
-
-<div className="flex items-center w-full mt-2 gap-2 sm:gap-3 flex-nowrap overflow-x-auto sm:flex-wrap sm:overflow-visible sm:justify-between">
-  {/* --- Status (Left Side) --- */}
-  <div className="flex items-center gap-2 flex-nowrap overflow-x-auto sm:flex-wrap sm:overflow-visible sm:flex-1">
+{/* --- ACTIONS --- */}
+<div className="flex flex-wrap items-center justify-between gap-3">
+  <div className="flex flex-wrap items-center gap-2">
     {["packet", "phone"].includes(order.order_type) &&
       order.status !== "confirmed" &&
       order.status !== "closed" && (
@@ -2873,9 +2949,7 @@ const totalDiscount = calcOrderDiscount(order);
               prev.map((o) => (o.id === updated.id ? { ...updated, items } : o))
             );
           }}
-          className="animate-pulse inline-flex items-center justify-center px-3 py-1.5 rounded-xl 
-                     bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs sm:text-sm 
-                     shadow transition-all"
+          className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm shadow transition-all"
         >
           ⚡ {t("Confirm")}
         </button>
@@ -2884,80 +2958,40 @@ const totalDiscount = calcOrderDiscount(order);
     {order.status !== "cancelled" && order.status !== "closed" && (
       <button
         onClick={() => openCancelModalForOrder(order)}
-        className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl 
-                   bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs sm:text-sm 
-                   shadow transition-all"
+        className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs sm:text-sm shadow transition-all"
       >
-        ✖ {t("Cancel")}
+        ❌ {t("Cancel")}
       </button>
     )}
 
     {!autoConfirmOrders && order.status === "confirmed" && (
-      <span
-        className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl 
-                   bg-emerald-100 text-emerald-700 font-semibold text-xs sm:text-sm 
-                   border border-emerald-300 shadow-sm"
-      >
+      <span className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs sm:text-sm border border-emerald-200 shadow-sm">
         ✅ {t("confirmed")}
       </span>
     )}
 
     {autoConfirmOrders && order.status === "confirmed" && (
-      <span
-        className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl 
-                   bg-emerald-100 text-emerald-700 font-semibold text-xs sm:text-sm 
-                   border border-emerald-300 shadow-sm"
-      >
+      <span className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs sm:text-sm border border-emerald-200 shadow-sm">
         ⚙️ {t("Auto Confirmed")}
       </span>
     )}
 
     {order.status === "draft" && (
-      <span className="px-3 py-1.5 rounded-xl font-semibold text-xs sm:text-sm bg-slate-100 text-slate-500 border border-slate-200 shadow-sm">
+      <span className="px-4 py-2 rounded-full font-semibold text-xs sm:text-sm bg-slate-100 text-slate-500 border border-slate-200 shadow-sm">
         {t("draft")}
       </span>
     )}
     {order.status === "cancelled" && (
-      <span className="px-3 py-1.5 rounded-xl font-semibold text-xs sm:text-sm bg-rose-100 text-rose-700 border border-rose-200 shadow-sm">
+      <span className="px-4 py-2 rounded-full font-semibold text-xs sm:text-sm bg-rose-100 text-rose-700 border border-rose-200 shadow-sm">
         {t("cancelled")}
       </span>
     )}
     {order.status === "closed" && (
-      <span className="px-3 py-1.5 rounded-xl font-semibold text-xs sm:text-sm bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
+      <span className="px-4 py-2 rounded-full font-semibold text-xs sm:text-sm bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
         {t("closed")}
       </span>
     )}
   </div>
-
-  {/* --- Payment + Edit (Right Side, unchanged) --- */}
-  <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 pl-1">
-    <div className="flex items-center gap-2">
-      <span className="font-semibold text-slate-700 text-s sm:text-base">
-        {t("Paid")}:
-      </span>
-      <span
-        className="px-1.5 py-1 rounded-xl bg-emerald-100 border border-emerald-300 
-                   text-emerald-800 font-bold text-s sm:text-base shadow-sm"
-      >
-        {order.payment_method ? order.payment_method : "—"}
-      </span>
-    </div>
-
-    {!isOnlinePayment && (
-      <button
-        className="px-1.5 py-1.5 rounded-xl bg-white border border-slate-300 
-                   text-slate-700 hover:text-emerald-700 hover:border-emerald-400 
-                   font-semibold text-sm sm:text-base shadow-sm transition"
-        onClick={() => openPaymentModalForOrder(order)}
-      >
-        ✏️ {t("Edit")}
-      </button>
-    )}
-  </div>
-</div>
-
-
-
 </div>
 
 
@@ -2966,7 +3000,7 @@ const totalDiscount = calcOrderDiscount(order);
   <div className="flex flex-col sm:flex-row gap-2 mt-1 w-full">
     {!normalizeDriverStatus(order.driver_status) && (
       <button
-        className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-slate-900 hover:bg-slate-800 
+        className="w-full px-5 py-3 rounded-full font-semibold text-base bg-teal-600 hover:bg-teal-700 
                    text-white shadow transition"
         disabled={driverButtonDisabled(order)}
         onClick={async () => {
@@ -2989,7 +3023,7 @@ const totalDiscount = calcOrderDiscount(order);
 
     {normalizeDriverStatus(order.driver_status) === "on_road" && !isYemeksepetiPickupOrder(order) && (
       <button
-        className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-sky-500 hover:bg-sky-600 
+        className="w-full px-5 py-3 rounded-full font-semibold text-base bg-sky-500 hover:bg-sky-600 
                    text-white shadow transition"
         disabled={driverButtonDisabled(order)}
         onClick={async () => {
@@ -3020,7 +3054,7 @@ const totalDiscount = calcOrderDiscount(order);
 
     {normalizeDriverStatus(order.driver_status) === "on_road" && isYemeksepetiPickupOrder(order) && (
       <button
-        className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
+        className="w-full px-5 py-3 rounded-full font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
                    text-white shadow transition"
         disabled={driverButtonDisabled(order)}
         onClick={async () => {
@@ -3051,7 +3085,7 @@ const totalDiscount = calcOrderDiscount(order);
 
     {normalizeDriverStatus(order.driver_status) === "delivered" && (
       <button
-        className="w-full px-5 py-3 rounded-2xl font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
+        className="w-full px-5 py-3 rounded-full font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
                    text-white shadow transition"
         onClick={async () => {
           if (isOnlinePayment) {
@@ -3074,7 +3108,7 @@ const totalDiscount = calcOrderDiscount(order);
     )}
     
   </div>
-  
+
 </div>
 
 

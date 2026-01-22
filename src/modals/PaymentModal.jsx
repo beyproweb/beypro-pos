@@ -298,6 +298,8 @@ export default function PaymentModal({
                 key={method.id}
                 onClick={async () => {
                   setSelectedPaymentMethod(method.id);
+                  // Close instantly for snappier UX
+                  onClose();
                   const idsToPay =
                     selectedForPayment.length > 0
                       ? selectedForPayment
@@ -305,7 +307,6 @@ export default function PaymentModal({
                           .filter((i) => !i.paid && i.confirmed)
                           .map((i) => getPaymentItemKey(i));
                   await confirmPayment(method.id, idsToPay);
-                  onClose();
                 }}
                 className={`w-full py-2 rounded-xl border text-lg font-medium transition ${
                   selectedPaymentMethod === method.id
@@ -324,6 +325,8 @@ export default function PaymentModal({
           {isSplitMode && (
             <button
               onClick={async () => {
+                // Close instantly for snappier UX
+                onClose();
                 await confirmPaymentWithSplits(splits);
                 navigate("/tables");
               }}

@@ -486,6 +486,11 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
     if (!window || typeof window.dispatchEvent !== "function") return;
     window.dispatchEvent(new Event("beypro:kitchen-orders-reload"));
   }, []);
+
+  const dispatchOrdersLocalRefresh = useCallback(() => {
+    if (!window || typeof window.dispatchEvent !== "function") return;
+    window.dispatchEvent(new Event("beypro:orders-local-refresh"));
+  }, []);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelLoading, setCancelLoading] = useState(false);
@@ -2035,6 +2040,9 @@ const [splits, setSplits] = useState({});
 
 // New: payment confirm with splits (cleaned)
 const confirmPaymentWithSplits = async (splits) => {
+  // Close the modal immediately for a snappier feel
+  setShowPaymentModal(false);
+
   try {
     // 1) Use the discounted total shown to the user
     const totalDue = calculateDiscountedTotal();
@@ -2115,41 +2123,42 @@ const rMethods = await secureFetch(`/orders/receipt-methods${identifier}`, {
 });
 if (!rMethods) throw new Error("Failed to save receipt methods");
 
-
-    // 7) UI updates
-    await new Promise((r) => setTimeout(r, 100));
-    if (window && typeof window.playPaidSound === "function") window.playPaidSound();
-
-    await refreshReceiptAfterPayment();
-    await fetchOrderItems(order.id);
-    await fetchSubOrders();
+    // ⚡ INSTANT: Update UI + dispatch refresh (don't block on background)
     setSelectedForPayment([]);
     setShowPaymentModal(false);
     setSelectedCartItemIds(new Set());
-    dispatchKitchenOrdersReload();
-    dispatchKitchenOrdersReload();
+    dispatchOrdersLocalRefresh();
+    if (window && typeof window.playPaidSound === "function") window.playPaidSound();
 
-    // 8) If all items are paid, mark order as paid
-const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
-
-  if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
- await secureFetch(`/orders/${order.id}/status${identifier}`, {
-    method: "PUT",
-    body: JSON.stringify({
-      status: "paid",
-      total: totalDue,
-      payment_method: Object.keys(cleanedSplits).join("+"),
-    }),
-  });
-  setOrder((prev) => ({ ...prev, status: "paid" }));
-  await runAutoCloseIfConfigured(true);
-}
-
-    if (cashPortion > 0) {
-      const note = order?.id ? `Order #${order.id} (split)` : "Split payment";
-      await logCashRegisterEvent({ type: "sale", amount: cashPortion, note });
-      await openCashDrawer();
-    }
+    // ⚡ All heavy lifting happens in background without blocking
+    Promise.allSettled([
+      refreshReceiptAfterPayment(),
+      fetchOrderItems(order.id),
+      fetchSubOrders(),
+      dispatchKitchenOrdersReload(),
+      (async () => {
+        const allItems = await secureFetch(`/orders/${order.id}/items${identifier}`);
+        if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
+          await secureFetch(`/orders/${order.id}/status${identifier}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              status: "paid",
+              total: totalDue,
+              payment_method: Object.keys(cleanedSplits).join("+"),
+            }),
+          });
+          setOrder((prev) => ({ ...prev, status: "paid" }));
+          await runAutoCloseIfConfigured(true);
+        }
+      })(),
+      (async () => {
+        if (cashPortion > 0) {
+          const note = order?.id ? `Order #${order.id} (split)` : "Split payment";
+          await logCashRegisterEvent({ type: "sale", amount: cashPortion, note });
+          await openCashDrawer();
+        }
+      })(),
+    ]).catch((err) => console.warn("⚠️ Background tasks failed:", err));
 
   } catch (err) {
     console.error("❌ confirmPaymentWithSplits failed:", err);
@@ -2391,8 +2400,10 @@ const fetchTakeawayOrder = async (id) => {
     const items = await secureFetch(`/orders/${newOrder.id}/items${identifier}`);
 
     setOrder(newOrder);
-    setCartItems(
-      Array.isArray(items)
+    
+    // 🔧 CRITICAL FIX: Preserve unconfirmed items that are still in the cart
+    setCartItems((prevCart) => {
+      const formattedItems = Array.isArray(items)
         ? items.map((i) => ({
             id: i.product_id,
             name: i.name || i.product_name,
@@ -2404,8 +2415,20 @@ const fetchTakeawayOrder = async (id) => {
             unique_id: i.unique_id,
             kitchen_status: i.kitchen_status,
           }))
-        : []
-    );
+        : [];
+
+      const confirmedKeys = new Set(
+        formattedItems.map((i) => String(i.unique_id || `${i.id}-${JSON.stringify(i.extras || [])}`))
+      );
+
+      const unconfirmedItems = prevCart.filter((item) => {
+        if (item.confirmed || item.paid) return false;
+        const key = String(item.unique_id || `${item.id}-${JSON.stringify(item.extras || [])}`);
+        return !confirmedKeys.has(key);
+      });
+
+      return [...formattedItems, ...unconfirmedItems];
+    });
     setLoading(false);
   } catch (err) {
     console.error("❌ Error fetching takeaway order:", err);
@@ -2490,7 +2513,20 @@ const fetchOrderItems = async (orderId, options = {}) => {
       };
     });
 
-    setCartItems(formatted);
+    // 🔧 CRITICAL FIX: Preserve unconfirmed items that are still in the cart
+    // This prevents items from disappearing when socket events trigger a refresh
+    setCartItems((prevCart) => {
+      const confirmedKeys = new Set(
+        formatted.map((i) => String(i.unique_id || `${i.id}-${JSON.stringify(i.extras || [])}`))
+      );
+      // Keep only unconfirmed items that are not already returned by the server
+      const unconfirmedItems = prevCart.filter((item) => {
+        if (item.confirmed || item.paid) return false;
+        const key = String(item.unique_id || `${item.id}-${JSON.stringify(item.extras || [])}`);
+        return !confirmedKeys.has(key);
+      });
+      return [...formatted, ...unconfirmedItems];
+    });
     setReceiptItems(formatted.filter((i) => i.paid));
 
     return formatted;
@@ -3087,6 +3123,9 @@ if (order?.order_type === "table" && order?.source === "qr") {
 
 
 const confirmPayment = async (method, payIds = null) => {
+  // Close the modal immediately for a snappier feel
+  setShowPaymentModal(false);
+
   const methodLabel = resolvePaymentLabel(method);
   const methodIsCash = isCashMethod(method);
   const receiptId = uuidv4();
@@ -3168,27 +3207,7 @@ const confirmPayment = async (method, payIds = null) => {
       }),
     });
 
-    const cleanedSplits = {};
-    Object.entries(splits || {}).forEach(([methodId, amt]) => {
-      const val = parseFloat(amt);
-      if (val > 0) {
-        const label = resolvePaymentLabel(methodId);
-        cleanedSplits[label] = val;
-      }
-    });
-    const receiptMethodsPayload =
-      Object.keys(cleanedSplits).length > 0
-        ? cleanedSplits
-        : { [methodLabel]: paidTotal };
-    await secureFetch(`/orders/receipt-methods${identifier}`, {
-      method: "POST",
-      body: JSON.stringify({
-        order_id: order.id,
-        receipt_id: receiptId,
-        methods: receiptMethodsPayload,
-      }),
-    });
-
+    // ⚡ INSTANT: Update UI immediately + dispatch refresh (don't wait for everything)
     setCartItems((prev) => {
       const next = [];
       (Array.isArray(prev) ? prev : []).forEach((item) => {
@@ -3213,14 +3232,39 @@ const confirmPayment = async (method, payIds = null) => {
       return next;
     });
 
-    if (
-      selectedForPayment.length > 0 &&
-      window &&
-      typeof window.playPaidSound === "function"
-    )
-      window.playPaidSound();
+    // ⚡ Fire table update IMMEDIATELY (don't block on receipt methods)
+    dispatchOrdersLocalRefresh();
+    if (window && typeof window.playPaidSound === "function") window.playPaidSound();
 
-    await refreshReceiptAfterPayment();
+    // ⚡ Run all background tasks in parallel (fire and forget)
+    const cleanedSplits = {};
+    Object.entries(splits || {}).forEach(([methodId, amt]) => {
+      const val = parseFloat(amt);
+      if (val > 0) {
+        const label = resolvePaymentLabel(methodId);
+        cleanedSplits[label] = val;
+      }
+    });
+    const receiptMethodsPayload =
+      Object.keys(cleanedSplits).length > 0
+        ? cleanedSplits
+        : { [methodLabel]: paidTotal };
+    
+    // These run in background without blocking
+    Promise.allSettled([
+      secureFetch(`/orders/receipt-methods${identifier}`, {
+        method: "POST",
+        body: JSON.stringify({
+          order_id: order.id,
+          receipt_id: receiptId,
+          methods: receiptMethodsPayload,
+        }),
+      }),
+      refreshReceiptAfterPayment(),
+      fetchOrderItems(order.id),
+      fetchSubOrders(),
+    ]).catch((err) => console.warn("⚠️ Background tasks failed:", err));
+    dispatchOrdersLocalRefresh();
 
     const allItems2 = await secureFetch(`/orders/${order.id}/items${identifier}`);
 
@@ -4867,8 +4911,8 @@ const cardGradient = item.paid
           </div>
         </article>
 
-        {/* === RIGHT: CATEGORY COLUMN (PRIMARY) === */}
-        <aside className="h-full w-[10%] min-w-[90px] max-w-[120px] border-l border-slate-200 bg-slate-50 p-1.5">
+        {/* === RIGHT: CATEGORY COLUMN (PRIMARY, DESKTOP ONLY) === */}
+        <aside className="hidden lg:block h-full w-[10%] min-w-[90px] max-w-[120px] border-l border-slate-200 bg-slate-50 p-1.5">
           <div
             ref={rightCategoryColumnRef}
             className="flex h-full flex-col items-center gap-1.5 overflow-hidden px-0.5"
@@ -4885,9 +4929,9 @@ const cardGradient = item.paid
         </aside>
       </div>
 
-      {/* === BOTTOM CATEGORY BAR === */}
+      {/* === BOTTOM CATEGORY BAR (DESKTOP) === */}
       {categoryColumns.bottom.length > 0 && (
-        <div className="relative border-t border-slate-200 bg-slate-50 px-3 py-1.5 sticky bottom-0">
+        <div className="hidden lg:block relative border-t border-slate-200 bg-slate-50 px-3 py-1.5 sticky bottom-0">
           <div
             ref={bottomBarRef}
             className="flex flex-nowrap gap-1.5 overflow-x-auto scrollbar-hide"
@@ -4954,29 +4998,43 @@ const cardGradient = item.paid
     </div>
 
       <div
-        className={`lg:hidden fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[120%]" : "translate-y-0"}`}
+        className={`lg:hidden fixed right-4 bottom-[108px] z-40 transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[140%]" : "translate-y-0"}`}
       >
         <button
           type="button"
           onClick={() => setIsFloatingCartOpen(true)}
-          className="flex w-full items-center justify-between rounded-3xl bg-indigo-600 px-5 py-4 text-white shadow-2xl"
+          className="flex h-[74px] w-[74px] items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 text-white shadow-xl shadow-indigo-700/25 ring-2 ring-white/50 backdrop-blur-sm active:scale-[0.97] transition"
+          aria-label={t("View Cart")}
         >
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold uppercase tracking-widest text-indigo-100">
-              {t("Total")}
+          <div className="flex flex-col items-center leading-tight">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-indigo-100">
+              {t("Cart")}
             </span>
-            <span className="text-2xl font-bold">
+            <span className="text-[13px] font-bold">
               {formatCurrency(calculateDiscountedTotal())}
             </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-indigo-500 px-3 py-1 text-xs font-semibold">
+            <span className="text-[12px] font-semibold text-indigo-100/90">
               {cartItems.filter((i) => !i.paid).length} {t("Items")}
             </span>
-            <span className="text-sm font-semibold">{t("View Cart")}</span>
           </div>
         </button>
       </div>
+
+      {/* === MOBILE CATEGORY BAR (BELOW FLOATING CART) === */}
+      {categoryColumns.bottom.length > 0 && (
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-slate-50 px-3 py-2 shadow-inner">
+          <div
+            ref={bottomBarRef}
+            className="flex flex-nowrap gap-1.5 overflow-x-auto scrollbar-hide"
+          >
+            {categoryColumns.bottom.map((entry) => (
+              <div key={`mobile-bottom-${entry.cat}-${entry.index}`}>
+                {renderCategoryButton(entry.cat, entry.index, "bar")}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div
         className={`lg:hidden fixed inset-0 z-50 transition-all duration-300 ${isFloatingCartOpen ? "pointer-events-auto" : "pointer-events-none"}`}

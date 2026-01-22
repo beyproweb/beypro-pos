@@ -102,13 +102,71 @@ function buildNewOrderNotificationMessage(payload, fallback = "New order") {
 
 function buildKitchenDeliveredNotificationMessage(payload, fallback = "Kitchen delivered order") {
   const tableRef = extractTableLabelFromPayload(payload);
-  if (tableRef) return `Kitchen Delivered Table ${tableRef}`;
+  
+  // Extract order details
+  const orderData = payload?.order || payload;
+  const orderType = String(orderData?.order_type || "").toLowerCase().trim();
+  const customerName = String(orderData?.customer_name || "").trim();
+  const externalId = orderData?.external_id || orderData?.externalId || "";
+  const externalSource = String(orderData?.external_source || "").toLowerCase();
+  const orderId = orderData?.id || orderData?.order_id || "";
+  
+  // Table order
+  if (tableRef) {
+    return `Kitchen Delivered Table ${tableRef}`;
+  }
+  
+  // Online order (Yemeksepeti, Migros, etc.)
+  if (externalId && externalSource) {
+    const sourceName = externalSource === "yemeksepeti" ? "Yemeksepeti" : 
+                       externalSource === "migros" ? "Migros" : 
+                       externalSource.charAt(0).toUpperCase() + externalSource.slice(1);
+    const customerInfo = customerName ? ` - ${customerName}` : "";
+    return `Kitchen Delivered ${sourceName} order #${externalId}${customerInfo}`;
+  }
+  
+  // Phone/packet order
+  if (orderType === "packet" || orderType === "phone") {
+    const customerInfo = customerName ? ` - ${customerName}` : "";
+    const orderInfo = orderId ? ` #${orderId}` : "";
+    return `Kitchen Delivered Phone order${orderInfo}${customerInfo}`;
+  }
+  
   return fallback;
 }
 
 function buildKitchenPreparingNotificationMessage(payload, fallback = "Kitchen preparing order") {
   const tableRef = extractTableLabelFromPayload(payload);
-  if (tableRef) return `Kitchen preparing Table ${tableRef}`;
+  
+  // Extract order details
+  const orderData = payload?.order || payload;
+  const orderType = String(orderData?.order_type || "").toLowerCase().trim();
+  const customerName = String(orderData?.customer_name || "").trim();
+  const externalId = orderData?.external_id || orderData?.externalId || "";
+  const externalSource = String(orderData?.external_source || "").toLowerCase();
+  const orderId = orderData?.id || orderData?.order_id || "";
+  
+  // Table order
+  if (tableRef) {
+    return `Kitchen preparing Table ${tableRef}`;
+  }
+  
+  // Online order (Yemeksepeti, Migros, etc.)
+  if (externalId && externalSource) {
+    const sourceName = externalSource === "yemeksepeti" ? "Yemeksepeti" : 
+                       externalSource === "migros" ? "Migros" : 
+                       externalSource.charAt(0).toUpperCase() + externalSource.slice(1);
+    const customerInfo = customerName ? ` - ${customerName}` : "";
+    return `Kitchen preparing ${sourceName} order #${externalId}${customerInfo}`;
+  }
+  
+  // Phone/packet order
+  if (orderType === "packet" || orderType === "phone") {
+    const customerInfo = customerName ? ` - ${customerName}` : "";
+    const orderInfo = orderId ? ` #${orderId}` : "";
+    return `Kitchen preparing Phone order${orderInfo}${customerInfo}`;
+  }
+  
   return fallback;
 }
 
@@ -203,9 +261,13 @@ function normalizeNotification(raw, formatCurrency) {
     } else if (event === "order_confirmed") {
       message = buildNewOrderNotificationMessage(extra, fallback);
     } else if (event === "order_preparing") {
-      message = buildKitchenPreparingNotificationMessage(extra, fallback);
+      // extra.order contains the full order data from backend
+      const payload = extra?.order ? { order: extra.order } : extra;
+      message = buildKitchenPreparingNotificationMessage(payload, fallback);
     } else if (event === "order_delivered") {
-      message = buildKitchenDeliveredNotificationMessage(extra, fallback);
+      // extra.order contains the full order data from backend
+      const payload = extra?.order ? { order: extra.order } : extra;
+      message = buildKitchenDeliveredNotificationMessage(payload, fallback);
     } else if (event === "order_cancelled") {
       message = buildOrderCancelledNotificationMessage(extra, fallback);
     }
@@ -608,15 +670,26 @@ export function NotificationsProvider({ children }) {
           const meta = await fetchTableMeta(orderId);
           enriched = { ...payload, ...meta };
         }
+        // Build order object for message builder
+        const orderData = {
+          id: orderId,
+          order_id: payload?.order_id,
+          table_number: enriched?.table_number,
+          table_label: enriched?.table_label,
+          customer_name: payload?.customer_name,
+          order_type: payload?.order_type,
+          external_source: payload?.external_source,
+          external_id: payload?.external_id,
+        };
         const message = buildKitchenPreparingNotificationMessage(
-          enriched,
+          { order: orderData },
           `Kitchen preparing order ${suffix}`.trim()
         );
         pushNotification({
           message,
           type: "order",
           time: Date.now(),
-          extra: { event: "order_preparing", orderId, ...enriched },
+          extra: { event: "order_preparing", order: orderData },
           source: "socket",
         });
       };
@@ -632,15 +705,26 @@ export function NotificationsProvider({ children }) {
           const meta = await fetchTableMeta(orderId);
           enriched = { ...payload, ...meta };
         }
+        // Build order object for message builder
+        const orderData = {
+          id: orderId,
+          order_id: payload?.order_id,
+          table_number: enriched?.table_number,
+          table_label: enriched?.table_label,
+          customer_name: payload?.customer_name,
+          order_type: payload?.order_type,
+          external_source: payload?.external_source,
+          external_id: payload?.external_id,
+        };
         const message = buildKitchenDeliveredNotificationMessage(
-          enriched,
+          { order: orderData },
           `Kitchen delivered order ${suffix}`.trim()
         );
         pushNotification({
           message,
           type: "order",
           time: Date.now(),
-          extra: { event: "order_delivered", orderId, ...enriched },
+          extra: { event: "order_delivered", order: orderData },
           source: "socket",
         });
       };
@@ -739,6 +823,27 @@ export function NotificationsProvider({ children }) {
       });
     };
 
+    const onDriverOnRoad = (payload = {}) => {
+      const orderId = payload?.orderId || payload?.id || payload?.order_id;
+      const customerName = String(
+        payload?.customer_name || payload?.customerName || payload?.customer || ""
+      ).trim();
+
+      const message = customerName
+        ? `${customerName} - on the way`
+        : orderId
+          ? `Order #${orderId} - on the way`
+          : "On the way";
+
+      pushNotification({
+        message,
+        type: "driver",
+        time: Date.now(),
+        extra: { event: "driver_on_road", orderId, customerName, ...payload },
+        source: "socket",
+      });
+    };
+
     const onTaskCreated = (task = {}) => {
       if (!task?.title) return;
       pushNotification({
@@ -807,6 +912,7 @@ export function NotificationsProvider({ children }) {
     socket.on("order_cancelled", onOrderCancelled);
     socket.on("payment_made", onPayment);
     socket.on("driver_assigned", onDriverAssigned);
+    socket.on("driver_on_road", onDriverOnRoad);
     socket.on("driver_delivered", onDriverDelivered);
     socket.on("task_created", onTaskCreated);
     socket.on("task_updated", onTaskUpdated);
@@ -821,6 +927,7 @@ export function NotificationsProvider({ children }) {
       socket.off("order_cancelled", onOrderCancelled);
       socket.off("payment_made", onPayment);
       socket.off("driver_assigned", onDriverAssigned);
+      socket.off("driver_on_road", onDriverOnRoad);
       socket.off("driver_delivered", onDriverDelivered);
       socket.off("task_created", onTaskCreated);
       socket.off("task_updated", onTaskUpdated);

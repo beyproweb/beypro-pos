@@ -73,14 +73,65 @@ function formatNotificationMessage(alert, t) {
     if (tableRef) return `New order on Table ${tableRef}`;
     return t("New order {{order}}", { order: orderSuffix }).trim();
   }
+  
   if (event === "order_preparing") {
     if (tableRef) return `Kitchen preparing Table ${tableRef}`;
+    // Extract order details for customer name
+    const orderData = extra?.order || extra;
+    const orderType = String(orderData?.order_type || "").toLowerCase().trim();
+    const customerName = String(orderData?.customer_name || "").trim();
+    const externalId = orderData?.external_id || "";
+    const externalSource = String(orderData?.external_source || "").toLowerCase();
+    const id = orderData?.id || orderData?.order_id || orderId;
+    
+    // Online order (Yemeksepeti, Migros, etc.)
+    if (externalId && externalSource) {
+      const sourceName = externalSource === "yemeksepeti" ? "Yemeksepeti" : 
+                         externalSource === "migros" ? "Migros" : 
+                         externalSource.charAt(0).toUpperCase() + externalSource.slice(1);
+      const customerInfo = customerName ? ` - ${customerName}` : "";
+      return `Kitchen preparing ${sourceName} order #${externalId}${customerInfo}`;
+    }
+    
+    // Phone/packet order
+    if (orderType === "packet" || orderType === "phone") {
+      const customerInfo = customerName ? ` - ${customerName}` : "";
+      const idInfo = id ? ` #${id}` : "";
+      return `Kitchen preparing Phone order${idInfo}${customerInfo}`;
+    }
+    
     return t("Kitchen preparing order {{order}}", { order: orderSuffix }).trim();
   }
+  
   if (event === "order_delivered") {
     if (tableRef) return `Kitchen delivered Table ${tableRef}`;
+    // Extract order details for customer name
+    const orderData = extra?.order || extra;
+    const orderType = String(orderData?.order_type || "").toLowerCase().trim();
+    const customerName = String(orderData?.customer_name || "").trim();
+    const externalId = orderData?.external_id || "";
+    const externalSource = String(orderData?.external_source || "").toLowerCase();
+    const id = orderData?.id || orderData?.order_id || orderId;
+    
+    // Online order (Yemeksepeti, Migros, etc.)
+    if (externalId && externalSource) {
+      const sourceName = externalSource === "yemeksepeti" ? "Yemeksepeti" : 
+                         externalSource === "migros" ? "Migros" : 
+                         externalSource.charAt(0).toUpperCase() + externalSource.slice(1);
+      const customerInfo = customerName ? ` - ${customerName}` : "";
+      return `Kitchen Delivered ${sourceName} order #${externalId}${customerInfo}`;
+    }
+    
+    // Phone/packet order
+    if (orderType === "packet" || orderType === "phone") {
+      const customerInfo = customerName ? ` - ${customerName}` : "";
+      const idInfo = id ? ` #${id}` : "";
+      return `Kitchen Delivered Phone order${idInfo}${customerInfo}`;
+    }
+    
     return t("Kitchen delivered order {{order}}", { order: orderSuffix }).trim();
   }
+  
   if (event === "payment_made") {
     if (tableRef) return `Table ${tableRef} Paid ${orderSuffix}`.trim();
     return t("Payment made {{order}}", { order: orderSuffix }).trim();
@@ -93,6 +144,12 @@ function formatNotificationMessage(alert, t) {
       if (customerName) return t("Order ({{customer}}) delivered", { customer: customerName });
       if (orderSuffix) return t("Order {{order}} delivered", { order: orderSuffix });
       return t("Order delivered");
+    }
+    if (event === "driver_on_road") {
+      const customerName = String(extra.customerName || extra.customer_name || "").trim();
+      if (customerName) return `${customerName} - on the way`;
+      if (orderSuffix) return t("Order {{order}} - on the way", { order: orderSuffix });
+      return "On the way";
     }
     if (event === "driver_assigned") {
       return t("Driver {{driver}} assigned to order {{order}}", { driver: driverName, order: orderSuffix });

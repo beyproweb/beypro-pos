@@ -68,6 +68,7 @@ const [orderTimers, setOrderTimers] = useState(() => {
 });
 const [drivers, setDrivers] = useState([]);
 const [recentlyAssigned, setRecentlyAssigned] = useState({});
+const [viewMode, setViewMode] = useState("grouped");
 const audioCtxRef = useRef(null);
 const prevOrdersRef = useRef([]);
 
@@ -646,6 +647,81 @@ function compileTotals(selectedOrders) {
     }
   };
 
+  const StatusOrderItem = ({ item }) => {
+    const itemId = item.item_id;
+    const isSelected = selectedIds.includes(itemId);
+    const parsedExtras = safeParse(item.extras);
+    const type = String(item.order_type || "").toLowerCase();
+    const orderLabel = (() => {
+      if (type === "table") return `${t("Table")} ${item.table_number}`;
+      if (item.customer_name) return item.customer_name;
+      if (item.order_id) return `${t("Order")} #${item.order_id}`;
+      return `${t("Order")} #${itemId}`;
+    })();
+
+    const orderIcon = (() => {
+      if (type === "table") return "🍽";
+      if (type === "packet") return "🛵";
+      if (type === "phone") return "📱";
+      if (type === "takeaway") return "🥡";
+      return "🍴";
+    })();
+
+    const elapsed = Math.floor((Date.now() - (orderTimers[item.order_id] || Date.now())) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    const timerText = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    const timerTone = elapsed >= 1200 ? "bg-rose-600" : elapsed >= 600 ? "bg-amber-500" : "bg-teal-500";
+
+    return (
+      <div
+        onClick={() => toggleSelect(itemId)}
+        className={`rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/60 shadow px-3 py-3 flex flex-col gap-2 cursor-pointer transition ${
+          isSelected ? "ring-2 ring-slate-600 scale-[0.99]" : ""
+        } ${recentlyAssigned[itemId] ? "shadow-[0_0_0_2px_rgba(124,110,246,0.5)]" : ""}`}
+      >
+        <div className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => toggleSelect(itemId)}
+            onClick={(e) => e.stopPropagation()}
+            className="w-4 h-4 mt-0.5 accent-slate-700"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">
+              {orderIcon} {orderLabel}
+            </div>
+            <div className="font-semibold text-sm sm:text-base text-slate-900 dark:text-slate-100 truncate">
+              {item.product_name}
+            </div>
+            <div className="text-xs text-slate-600 dark:text-slate-400">{t("Qty")}: {item.quantity}</div>
+          </div>
+          <span className={`text-xs font-mono px-2 py-1 rounded-md text-white ${timerTone}`}>{timerText}</span>
+        </div>
+
+        {item.note && (
+          <div className="text-xs text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-zinc-800 rounded px-2 py-1 line-clamp-2">
+            📝 {item.note}
+          </div>
+        )}
+
+        {parsedExtras.length > 0 && (
+          <ul className="text-xs text-slate-600 dark:text-slate-300 space-y-1">
+            {parsedExtras.map((ex, idx) => {
+              const perItemQty = Number(ex.quantity) || 1;
+              const itemQty = Number(item.quantity) || 1;
+              const totalQty = perItemQty * itemQty;
+              return (
+                <li key={idx}>➕ {ex.name} ×{totalQty}</li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    );
+  };
+
   useEffect(() => {
   if (orders.length) {
     console.log("🔥 DEBUG Kitchen Orders Raw:", orders);
@@ -674,6 +750,24 @@ const groupedKitchenOrders = orders.reduce((acc, item) => {
   }
   return acc;
 }, {});
+
+  // Group by kitchen status for the All Orders view
+  const ordersByStatus = useMemo(() => {
+    const grouped = { new: [], preparing: [], delivered: [] };
+
+    orders.forEach((item) => {
+      const status = item.kitchen_status || "new";
+      if (status === "preparing") {
+        grouped.preparing.push(item);
+      } else if (status === "delivered" || status === "packet_delivered") {
+        grouped.delivered.push(item);
+      } else {
+        grouped.new.push(item);
+      }
+    });
+
+    return grouped;
+  }, [orders]);
 
   const deliveredActionLabel = useMemo(() => {
     if (selectedIds.length === 0) return t("Delivered");
@@ -838,325 +932,394 @@ return (
 
    {/* Orders */}
 <section className="flex-1 mt-4 sm:mt-6">
-  {Object.keys(groupedKitchenOrders).length === 0 ? (
-    <div className="text-center text-slate-500 dark:text-slate-400 py-10 text-base sm:text-lg">
-      {t("No kitchen orders yet.")}
-    </div>
-  ) : (
-    <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-      {Object.entries(groupedKitchenOrders).map(([groupKey, group]) => {
-        const items = group.items;
-        const first = group.header;
-        const ordersArePacket = group.type === "packet";
-        const ordersArePhone = group.type === "phone";
-        const ordersAreTakeaway = group.type === "takeaway";
-        const sourceBadgeLabel = (() => {
-          if (ordersArePacket) {
-            const onlineLabel = formatOnlineSourceLabel(first.external_source);
-            return onlineLabel || t("Packet");
-          }
-          if (ordersArePhone) return t("Phone");
-          return null;
-        })();
+  <div className="flex gap-2 mb-4 flex-wrap">
+    <button
+      onClick={() => setViewMode("grouped")}
+      className={`px-4 py-2 rounded-lg font-semibold transition ${
+        viewMode === "grouped"
+          ? "bg-slate-800 text-white shadow-md"
+          : "bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300"
+      }`}
+    >
+      📋 {t("Grouped")}
+    </button>
+    <button
+      onClick={() => setViewMode("status")}
+      className={`px-4 py-2 rounded-lg font-semibold transition ${
+        viewMode === "status"
+          ? "bg-slate-800 text-white shadow-md"
+          : "bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300"
+      }`}
+    >
+      🎯 {t("All Orders")}
+    </button>
+  </div>
 
-        // ✨ 4-tone palette matching POS
-        const groupTheme = ordersArePacket
-          ? {
-              container: "border-l-[#3FA7D6]",
-              header: "bg-[#E8F7FB] text-slate-800",
-              badge: "bg-[#CBEFFC] text-[#0F5177]",
+  {viewMode === "grouped" && (
+    Object.keys(groupedKitchenOrders).length === 0 ? (
+      <div className="text-center text-slate-500 dark:text-slate-400 py-10 text-base sm:text-lg">
+        {t("No kitchen orders yet.")}
+      </div>
+    ) : (
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        {Object.entries(groupedKitchenOrders).map(([groupKey, group]) => {
+          const items = group.items;
+          const first = group.header;
+          const ordersArePacket = group.type === "packet";
+          const ordersArePhone = group.type === "phone";
+          const ordersAreTakeaway = group.type === "takeaway";
+          const sourceBadgeLabel = (() => {
+            if (ordersArePacket) {
+              const onlineLabel = formatOnlineSourceLabel(first.external_source);
+              return onlineLabel || t("Packet");
             }
-          : ordersArePhone
-          ? {
-              container: "border-l-[#7C6EF6]",
-              header: "bg-[#EFEDFF] text-slate-800",
-              badge: "bg-[#DCD6FF] text-[#3B33A8]",
-            }
-          : ordersAreTakeaway
-          ? {
-              container: "border-l-[#FB923C]",
-              header: "bg-[#FFF0E5] text-slate-800",
-              badge: "bg-[#FFE0CC] text-[#9A3412]",
-            }
-          : {
-              container: "border-l-[#14B8A6]",
-              header: "bg-[#EBFDFB] text-slate-800",
-              badge: "bg-[#CFFAF5] text-[#0F766E]",
-            };
+            if (ordersArePhone) return t("Phone");
+            return null;
+          })();
 
-        const allSelected = items.every((item) =>
-          selectedIds.includes(item.item_id)
-        );
+          const groupTheme = ordersArePacket
+            ? {
+                container: "border-l-[#3FA7D6]",
+                header: "bg-[#E8F7FB] text-slate-800",
+                badge: "bg-[#CBEFFC] text-[#0F5177]",
+              }
+            : ordersArePhone
+            ? {
+                container: "border-l-[#7C6EF6]",
+                header: "bg-[#EFEDFF] text-slate-800",
+                badge: "bg-[#DCD6FF] text-[#3B33A8]",
+              }
+            : ordersAreTakeaway
+            ? {
+                container: "border-l-[#FB923C]",
+                header: "bg-[#FFF0E5] text-slate-800",
+                badge: "bg-[#FFE0CC] text-[#9A3412]",
+              }
+            : {
+                container: "border-l-[#14B8A6]",
+                header: "bg-[#EBFDFB] text-slate-800",
+                badge: "bg-[#CFFAF5] text-[#0F766E]",
+              };
 
-        return (
-	          <div
-	            key={groupKey}
-	            className={`p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 
-	            bg-slate-200 dark:bg-zinc-900/50 shadow-md hover:shadow-lg 
-	            transition hover:scale-[1.01] flex flex-col gap-3 border-l-[6px] ${groupTheme.container}`}
-	          >
-            {/* === Card Header === */}
+          const allSelected = items.every((item) => selectedIds.includes(item.item_id));
+
+          return (
             <div
-              onClick={() => toggleSelectGroup(items)}
-              className={`cursor-pointer flex items-start gap-3 font-semibold 
-              text-base sm:text-lg mb-1 rounded-xl px-4 py-2 border border-slate-200 
-              ${groupTheme.header} dark:bg-zinc-800 dark:text-slate-200 
-              transition select-none ${allSelected ? "ring-2 ring-[#14B8A6]" : ""}`}
+              key={groupKey}
+              className={`p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 
+              bg-slate-200 dark:bg-zinc-900/50 shadow-md hover:shadow-lg 
+              transition hover:scale-[1.01] flex flex-col gap-3 border-l-[6px] ${groupTheme.container}`}
             >
-              <span className="text-2xl">
-                {group.type === "table" && "🍽"}
-                {group.type === "packet" && "🛵"}
-                {group.type === "takeaway" && "🥡"}
-              </span>
+              <div
+                onClick={() => toggleSelectGroup(items)}
+                className={`cursor-pointer flex items-start gap-3 font-semibold 
+                text-base sm:text-lg mb-1 rounded-xl px-4 py-2 border border-slate-200 
+                ${groupTheme.header} dark:bg-zinc-800 dark:text-slate-200 
+                transition select-none ${allSelected ? "ring-2 ring-[#14B8A6]" : ""}`}
+              >
+                <span className="text-2xl">
+                  {group.type === "table" && "🍽"}
+                  {group.type === "packet" && "🛵"}
+                  {group.type === "takeaway" && "🥡"}
+                </span>
 
-              <div className="flex items-start justify-between flex-1 min-w-0 gap-3">
-                <div className="flex flex-col min-w-0">
-                  {group.type === "table" && (
-                    <span className="font-black text-lg truncate">
-                      {t("Table")} {first.table_number}
-                    </span>
-                  )}
-
-                  {(group.type === "phone" || group.type === "packet") && (
-                    <>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          {first.customer_name && (
-                            <span className="block truncate max-w-[160px] font-medium leading-tight">
-                              {first.customer_name}
-                            </span>
-                          )}
-                          {first.customer_phone && (
-                            <a
-                              href={`tel:${first.customer_phone}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-xs text-slate-600 hover:text-slate-900 underline decoration-slate-300 hover:decoration-slate-500 leading-tight"
-                              style={{ textDecorationThickness: "1px" }}
-                            >
-                              {first.customer_phone}
-                            </a>
-                          )}
-                          {first.driver_name && (
-                            <div className="text-xs sm:text-sm font-extrabold text-[#1E3A8A] dark:text-indigo-200">
-                              {t("Pick up by")}: {first.driver_name}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {first.customer_address && (
-                        <a
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(first.customer_address)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-1 text-sm text-slate-700 dark:text-slate-200 font-semibold leading-snug break-words whitespace-normal underline decoration-emerald-300 decoration-2 underline-offset-2 hover:decoration-emerald-500 transition-colors"
-                          style={{
-                            wordBreak: "break-word",
-                            overflowWrap: "break-word",
-                            whiteSpace: "pre-line",
-                            display: "block",
-                          }}
-                        >
-                          <span className="mr-1">📍</span>
-                          {first.customer_address}
-                        </a>
-                      )}
-                    </>
-                  )}
-
-                  {ordersAreTakeaway && (
-                    <>
+                <div className="flex items-start justify-between flex-1 min-w-0 gap-3">
+                  <div className="flex flex-col min-w-0">
+                    {group.type === "table" && (
                       <span className="font-black text-lg truncate">
-                        {t("Take Away")}
+                        {t("Table")} {first.table_number}
                       </span>
-                      {first.customer_name && (
-                        <span className="text-sm text-slate-700">
-                          👤 {first.customer_name}
+                    )}
+
+                    {(group.type === "phone" || group.type === "packet") && (
+                      <>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            {first.customer_name && (
+                              <span className="block truncate max-w-[160px] font-medium leading-tight">
+                                {first.customer_name}
+                              </span>
+                            )}
+                            {first.customer_phone && (
+                              <a
+                                href={`tel:${first.customer_phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs text-slate-600 hover:text-slate-900 underline decoration-slate-300 hover:decoration-slate-500 leading-tight"
+                                style={{ textDecorationThickness: "1px" }}
+                              >
+                                {first.customer_phone}
+                              </a>
+                            )}
+                            {first.driver_name && (
+                              <div className="text-xs sm:text-sm font-extrabold text-[#1E3A8A] dark:text-indigo-200">
+                                {t("Pick up by")}: {first.driver_name}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {first.customer_address && (
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(first.customer_address)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1 text-sm text-slate-700 dark:text-slate-200 font-semibold leading-snug break-words whitespace-normal underline decoration-emerald-300 decoration-2 underline-offset-2 hover:decoration-emerald-500 transition-colors"
+                            style={{
+                              wordBreak: "break-word",
+                              overflowWrap: "break-word",
+                              whiteSpace: "pre-line",
+                              display: "block",
+                            }}
+                          >
+                            <span className="mr-1">📍</span>
+                            {first.customer_address}
+                          </a>
+                        )}
+                      </>
+                    )}
+
+                    {ordersAreTakeaway && (
+                      <>
+                        <span className="font-black text-lg truncate">
+                          {t("Take Away")}
                         </span>
-                      )}
-                      {first.customer_phone && (
-                        <a
-                          href={`tel:${first.customer_phone}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-xs text-slate-600 hover:text-slate-900 underline decoration-slate-300 hover:decoration-slate-500"
-                          style={{ textDecorationThickness: "1px" }}
+                        {first.customer_name && (
+                          <span className="text-sm text-slate-700">
+                            👤 {first.customer_name}
+                          </span>
+                        )}
+                        {first.customer_phone && (
+                          <a
+                            href={`tel:${first.customer_phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-slate-600 hover:text-slate-900 underline decoration-slate-300 hover:decoration-slate-500"
+                            style={{ textDecorationThickness: "1px" }}
+                          >
+                            {first.customer_phone}
+                          </a>
+                        )}
+                        {first.pickup_time && (
+                          (() => {
+                            const raw = String(first.pickup_time);
+                            const match = raw.match(/(\d{1,2}:\d{2})/);
+                            const display = match ? match[1] : raw;
+                            return (
+                              <span className="text-xs text-orange-600">
+                                🕒 {t("Pickup")}: {display}
+                              </span>
+                            );
+                          })()
+                        )}
+                        {(first.takeaway_notes || first.notes) && (
+                          <span className="text-xs text-rose-600 truncate max-w-[220px]">
+                            📝 {(first.takeaway_notes || first.notes || "").slice(0, 140)}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {sourceBadgeLabel && (
+                      <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${groupTheme.badge}`}>
+                        {sourceBadgeLabel}
+                      </span>
+                    )}
+
+                    {(() => {
+                      const arrival = orderTimers[first.order_id] || Date.now();
+                      const elapsed = Math.floor((Date.now() - arrival) / 1000);
+                      const toneCritical = "bg-rose-600";
+                      const toneWarning = "bg-amber-500";
+                      const toneNormal = "bg-[#14B8A6]";
+
+                      const mins = Math.floor(elapsed / 60);
+                      const secs = elapsed % 60;
+                      const text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+                      const colorClass =
+                        elapsed >= 1200
+                          ? `${toneCritical} animate-pulse`
+                          : elapsed >= 600
+                          ? toneWarning
+                          : toneNormal;
+
+                      return (
+                        <span
+                          className={`shrink-0 text-xs font-mono px-2 py-0.5 rounded-lg shadow text-white border border-white/10 ${colorClass}`}
                         >
-                          {first.customer_phone}
-                        </a>
-                      )}
-                      {first.pickup_time && (
-                        (() => {
-                          const raw = String(first.pickup_time);
-                          const match = raw.match(/(\d{1,2}:\d{2})/);
-                          const display = match ? match[1] : raw;
-                          return (
-                            <span className="text-xs text-orange-600">
-                              🕒 {t("Pickup")}: {display}
-                            </span>
-                          );
-                        })()
-                      )}
-                      {(first.takeaway_notes || first.notes) && (
-                        <span className="text-xs text-rose-600 truncate max-w-[220px]">
-                          📝 {(first.takeaway_notes || first.notes || "").slice(0, 140)}
+                          {text}
                         </span>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {/* Badge (hide for takeaway to avoid duplicate label) */}
-                  {sourceBadgeLabel && (
-                    <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${groupTheme.badge}`}>
-                      {sourceBadgeLabel}
-                    </span>
-                  )}
-
-                  {/* 🕒 Live elapsed timer (counts up from 00:00) */}
-                  {(() => {
-                    const arrival = orderTimers[first.order_id] || Date.now();
-                    const elapsed = Math.floor((Date.now() - arrival) / 1000);
-                    const toneCritical = "bg-rose-600";
-                    const toneWarning = "bg-amber-500";
-                    const toneNormal = "bg-[#14B8A6]";
-
-                    const mins = Math.floor(elapsed / 60);
-                    const secs = elapsed % 60;
-                    const text = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-                    const colorClass =
-                      elapsed >= 1200
-                        ? `${toneCritical} animate-pulse`
-                        : elapsed >= 600
-                        ? toneWarning
-                        : toneNormal;
-
-                    return (
-                      <span
-                        className={`shrink-0 text-xs font-mono px-2 py-0.5 rounded-lg shadow text-white border border-white/10 ${colorClass}`}
-                      >
-                        {text}
-                      </span>
-                    );
-                  })()}
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* 🎫 === Reservation Badge === */}
-            {first.reservation && first.reservation.reservation_date && (
-              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg px-3 py-2">
-                <div className="flex items-start gap-2">
-                  <div className="flex-shrink-0 text-orange-600 dark:text-orange-400">📅</div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-[0.05em] mb-1">
-                      {t("RESERVED")}
-                    </h4>
-                    <div className="grid grid-cols-2 gap-1.5 text-[11px] text-orange-600 dark:text-orange-300">
-                      <div>
-                        <span className="font-semibold">🕐 {t("Time")}:</span>
-                        <span className="ml-1">{first.reservation.reservation_time || "—"}</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold">👥 {t("Guests")}:</span>
-                        <span className="ml-1">{first.reservation.reservation_clients || 0}</span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="font-semibold">📅 {t("Date")}:</span>
-                        <span className="ml-1">{first.reservation.reservation_date || "—"}</span>
-                      </div>
-                      {first.reservation.reservation_notes && (
+              {first.reservation && first.reservation.reservation_date && (
+                <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg px-3 py-2">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-shrink-0 text-orange-600 dark:text-orange-400">📅</div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-[0.05em] mb-1">
+                        {t("RESERVED")}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-1.5 text-[11px] text-orange-600 dark:text-orange-300">
+                        <div>
+                          <span className="font-semibold">🕐 {t("Time")}:</span>
+                          <span className="ml-1">{first.reservation.reservation_time || "—"}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold">👥 {t("Guests")}:</span>
+                          <span className="ml-1">{first.reservation.reservation_clients || 0}</span>
+                        </div>
                         <div className="col-span-2">
-                          <span className="font-semibold">📝 {t("Notes")}:</span>
-                          <p className="ml-1 text-[10px] text-orange-600 dark:text-orange-300 break-words line-clamp-1">
-                            {first.reservation.reservation_notes}
-                          </p>
+                          <span className="font-semibold">📅 {t("Date")}:</span>
+                          <span className="ml-1">{first.reservation.reservation_date || "—"}</span>
+                        </div>
+                        {first.reservation.reservation_notes && (
+                          <div className="col-span-2">
+                            <span className="font-semibold">📝 {t("Notes")}:</span>
+                            <p className="ml-1 text-[10px] text-orange-600 dark:text-orange-300 break-words line-clamp-1">
+                              {first.reservation.reservation_notes}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-5">
+                {items.map((item) => {
+                  const itemId = item.item_id;
+                  const isSelected = selectedIds.includes(itemId);
+                  const isPreparing = item.kitchen_status === "preparing";
+                  const parsedExtras = safeParse(item.extras);
+                  const statusClass = (() => {
+                    switch (item.kitchen_status) {
+                      case "new":
+                        return "bg-[#F0F9FF] border-sky-200 text-slate-800 dark:bg-sky-900/30 dark:border-sky-700/60";
+                      case "preparing":
+                        return "bg-[#FFF7E6] border-amber-200 text-slate-800 dark:bg-amber-900/30 dark:border-amber-700/60";
+                      case "delivered":
+                        return "bg-[#ECFDF5] border-emerald-200 text-slate-800 dark:bg-emerald-900/30 dark:border-emerald-700/60";
+                      default:
+                        return "bg-white border-slate-300 text-slate-800 dark:bg-zinc-900/40 dark:border-zinc-700";
+                    }
+                  })();
+                  const recentAssignmentClass = recentlyAssigned[itemId]
+                    ? "shadow-[0_0_0_2px_rgba(124,110,246,0.5)]"
+                    : "";
+
+                  return (
+                    <div
+                      key={itemId}
+                      onClick={() => toggleSelect(itemId)}
+                      className={`flex flex-col gap-1 rounded-lg border shadow px-4 py-3 
+                      transition cursor-pointer ${statusClass} ${recentAssignmentClass} 
+                      ${isSelected ? "ring-2 ring-[#14B8A6] scale-[0.99]" : ""}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => toggleSelect(itemId)}
+                          className="w-5 h-5 accent-[#14B8A6]"
+                        />
+                        <span className="font-semibold text-base truncate">
+                          {item.product_name}
+                        </span>
+                        {isPreparing && (
+                          <span className="ml-2 animate-spin text-slate-500 text-lg">⏳</span>
+                        )}
+                      </div>
+
+                      <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                        {t("Qty")}: <b>{item.quantity}</b>
+                      </div>
+
+                      {item.note && (
+                        <div className="text-xs text-slate-700 dark:text-slate-200 
+                        bg-slate-100 dark:bg-zinc-800 rounded px-2 py-1">
+                          📝 {item.note}
                         </div>
                       )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {/* === Items === */}
-            <div className="flex flex-col gap-5">
-              {items.map((item) => {
-                const itemId = item.item_id;
-                const isSelected = selectedIds.includes(itemId);
-                const isPreparing = item.kitchen_status === "preparing";
-                const parsedExtras = safeParse(item.extras);
-                const statusClass = (() => {
-                  switch (item.kitchen_status) {
-                    case "new":
-                      return "bg-[#F0F9FF] border-sky-200 text-slate-800 dark:bg-sky-900/30 dark:border-sky-700/60";
-                    case "preparing":
-                      return "bg-[#FFF7E6] border-amber-200 text-slate-800 dark:bg-amber-900/30 dark:border-amber-700/60";
-                    case "delivered":
-                      return "bg-[#ECFDF5] border-emerald-200 text-slate-800 dark:bg-emerald-900/30 dark:border-emerald-700/60";
-                    default:
-                      return "bg-white border-slate-300 text-slate-800 dark:bg-zinc-900/40 dark:border-zinc-700";
-                  }
-                })();
-                const recentAssignmentClass = recentlyAssigned[itemId]
-                  ? "shadow-[0_0_0_2px_rgba(124,110,246,0.5)]"
-                  : "";
-
-                return (
-                  <div
-                    key={itemId}
-                    onClick={() => toggleSelect(itemId)}
-                    className={`flex flex-col gap-1 rounded-lg border shadow px-4 py-3 
-                    transition cursor-pointer ${statusClass} ${recentAssignmentClass} 
-                    ${isSelected ? "ring-2 ring-[#14B8A6] scale-[0.99]" : ""}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={() => toggleSelect(itemId)}
-                        className="w-5 h-5 accent-[#14B8A6]"
-                      />
-                      <span className="font-semibold text-base truncate">
-                        {item.product_name}
-                      </span>
-                      {isPreparing && (
-                        <span className="ml-2 animate-spin text-slate-500 text-lg">⏳</span>
+                      {parsedExtras.length > 0 && (
+                        <ul className="text-xs sm:text-sm list-disc pl-5 text-slate-600 dark:text-slate-200">
+                          {parsedExtras.map((ex, idx) => {
+                            const perItemQty = Number(ex.quantity) || 1;
+                            const itemQty = Number(item.quantity) || 1;
+                            const totalQty = perItemQty * itemQty;
+                            return (
+                              <li key={idx}>➕ {ex.name} ×{totalQty}</li>
+                            );
+                          })}
+                        </ul>
                       )}
                     </div>
-
-                    <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
-                      {t("Qty")}: <b>{item.quantity}</b>
-                    </div>
-
-                    {item.note && (
-                      <div className="text-xs text-slate-700 dark:text-slate-200 
-                      bg-slate-100 dark:bg-zinc-800 rounded px-2 py-1">
-                        📝 {item.note}
-                      </div>
-                    )}
-
-                    {parsedExtras.length > 0 && (
-                      <ul className="text-xs sm:text-sm list-disc pl-5 text-slate-600 dark:text-slate-200">
-                        {parsedExtras.map((ex, idx) => {
-                          const perItemQty = Number(ex.quantity) || 1;
-                          const itemQty = Number(item.quantity) || 1;
-                          const totalQty = perItemQty * itemQty;
-                          return (
-                            <li key={idx}>➕ {ex.name} ×{totalQty}</li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
+          );
+        })}
+      </div>
+    )
+  )}
+
+  {viewMode === "status" && (
+    orders.length === 0 ? (
+      <div className="text-center text-slate-500 dark:text-slate-400 py-10 text-base sm:text-lg">
+        {t("No kitchen orders yet.")}
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+        <div className="rounded-2xl border border-slate-200 dark:border-zinc-700 bg-blue-50 dark:bg-blue-900/20 shadow-md overflow-hidden">
+          <div className="bg-blue-600 text-white px-4 py-3 font-bold text-lg flex items-center gap-2">
+            🍳 {t("Cooking")}
+            <span className="ml-auto bg-blue-700 px-2.5 py-1 rounded-full text-sm font-semibold">{ordersByStatus.new.length}</span>
           </div>
-        );
-      })}
-    </div>
+          <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+            {ordersByStatus.new.length === 0 ? (
+              <div className="text-center text-slate-500 dark:text-slate-400 py-8 text-sm">{t("No items cooking")}</div>
+            ) : (
+              ordersByStatus.new.map((item) => <StatusOrderItem key={item.item_id} item={item} />)
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 dark:border-zinc-700 bg-orange-50 dark:bg-orange-900/20 shadow-md overflow-hidden">
+          <div className="bg-orange-500 text-white px-4 py-3 font-bold text-lg flex items-center gap-2">
+            ⏳ {t("Preparing")}
+            <span className="ml-auto bg-orange-600 px-2.5 py-1 rounded-full text-sm font-semibold">{ordersByStatus.preparing.length}</span>
+          </div>
+          <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+            {ordersByStatus.preparing.length === 0 ? (
+              <div className="text-center text-slate-500 dark:text-slate-400 py-8 text-sm">{t("No items preparing")}</div>
+            ) : (
+              ordersByStatus.preparing.map((item) => <StatusOrderItem key={item.item_id} item={item} />)
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 dark:border-zinc-700 bg-emerald-50 dark:bg-emerald-900/20 shadow-md overflow-hidden">
+          <div className="bg-emerald-600 text-white px-4 py-3 font-bold text-lg flex items-center gap-2">
+            ✅ {t("Completed")}
+            <span className="ml-auto bg-emerald-700 px-2.5 py-1 rounded-full text-sm font-semibold">{ordersByStatus.delivered.length}</span>
+          </div>
+          <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+            {ordersByStatus.delivered.length === 0 ? (
+              <div className="text-center text-slate-500 dark:text-slate-400 py-8 text-sm">{t("No completed items")}</div>
+            ) : (
+              ordersByStatus.delivered.map((item) => <StatusOrderItem key={item.item_id} item={item} />)
+            )}
+          </div>
+        </div>
+      </div>
+    )
   )}
 </section>
 

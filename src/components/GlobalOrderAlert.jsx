@@ -120,7 +120,29 @@ function buildNewOrderMessage(payload) {
 function buildKitchenDeliveredMessage(payload) {
   const tableRef = extractTableLabel(payload);
   if (tableRef) return `Kitchen Delivered Table ${tableRef}`;
-  const orderId = payload?.orderId || payload?.id;
+  
+  // Get customer name and order ID
+  const customerName = String(payload?.customer_name || "").trim();
+  const orderId = payload?.orderId || payload?.id || "";
+  const orderType = String(payload?.order_type || "").toLowerCase().trim();
+  const externalSource = String(payload?.external_source || "").toLowerCase();
+  const externalId = payload?.external_id || "";
+  
+  // Online order (Yemeksepeti, Migros)
+  if (externalSource && externalId) {
+    const sourceName = externalSource === "yemeksepeti" ? "Yemeksepeti" : 
+                       externalSource === "migros" ? "Migros" : externalSource;
+    const nameInfo = customerName ? ` - ${customerName}` : "";
+    return `Kitchen Delivered ${sourceName} #${externalId}${nameInfo}`;
+  }
+  
+  // Phone/packet order
+  if (orderType === "phone" || orderType === "packet") {
+    const nameInfo = customerName ? ` - ${customerName}` : "";
+    const idInfo = orderId ? ` #${orderId}` : "";
+    return `Kitchen Delivered Phone order${idInfo}${nameInfo}`;
+  }
+  
   const suffix = orderId ? ` #${orderId}` : "";
   return `Kitchen delivered order${suffix}`;
 }
@@ -128,6 +150,29 @@ function buildKitchenDeliveredMessage(payload) {
 function buildKitchenPreparingMessage(payload) {
   const tableRef = extractTableLabel(payload);
   if (tableRef) return `Kitchen preparing Table ${tableRef}`;
+  
+  // Get customer name and order ID
+  const customerName = String(payload?.customer_name || "").trim();
+  const orderId = payload?.orderId || payload?.id || "";
+  const orderType = String(payload?.order_type || "").toLowerCase().trim();
+  const externalSource = String(payload?.external_source || "").toLowerCase();
+  const externalId = payload?.external_id || "";
+  
+  // Online order (Yemeksepeti, Migros)
+  if (externalSource && externalId) {
+    const sourceName = externalSource === "yemeksepeti" ? "Yemeksepeti" : 
+                       externalSource === "migros" ? "Migros" : externalSource;
+    const nameInfo = customerName ? ` - ${customerName}` : "";
+    return `Kitchen preparing ${sourceName} #${externalId}${nameInfo}`;
+  }
+  
+  // Phone/packet order
+  if (orderType === "phone" || orderType === "packet") {
+    const nameInfo = customerName ? ` - ${customerName}` : "";
+    const idInfo = orderId ? ` #${orderId}` : "";
+    return `Kitchen preparing Phone order${idInfo}${nameInfo}`;
+  }
+  
   return "👩‍🍳 Order set to preparing";
 }
 

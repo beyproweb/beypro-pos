@@ -1808,7 +1808,7 @@ const handleGuestsChange = useCallback(
 
 // now safe to reference loadDataForTab
 useEffect(() => {
-  if (!window.socket) return;
+  if (!window) return;
   let rafId = null;
   const refetch = () => {
     if (rafId) window.cancelAnimationFrame(rafId);
@@ -1822,15 +1822,31 @@ useEffect(() => {
       loadDataForTab(activeTab);
     });
   };
-  window.socket.on("orders_updated", refetch);
-  // Some backend flows (e.g. closing empty orders) emit `order_closed` without `orders_updated`.
-  window.socket.on("order_closed", refetch);
+
+  // ⚡ Instant refresh without animation frame delay for local events
+  const instantRefetch = () => {
+    if (activeTab !== "packet") fetchPacketOrdersCount();
+    if (activeTab === "tables") {
+      fetchOrders();
+      return;
+    }
+    loadDataForTab(activeTab);
+  };
+
+  if (window.socket) {
+    window.socket.on("orders_updated", refetch);
+    // Some backend flows (e.g. closing empty orders) emit `order_closed` without `orders_updated`.
+    window.socket.on("order_closed", refetch);
+  }
+  // ⚡ Immediate local refreshes (dispatched from TransactionScreen)
+  window.addEventListener("beypro:orders-local-refresh", instantRefetch);
   return () => {
     if (rafId) window.cancelAnimationFrame(rafId);
     if (window.socket) {
       window.socket.off("orders_updated", refetch);
       window.socket.off("order_closed", refetch);
     }
+    window.removeEventListener("beypro:orders-local-refresh", instantRefetch);
   };
 }, [activeTab, loadDataForTab, fetchOrders, fetchPacketOrdersCount]);
 
@@ -2273,7 +2289,7 @@ const totalGuests = React.useMemo(() => {
               {/* SEATS */}
               {table.seats && (
                 <div className="inline-flex items-center text-sm bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-indigo-700 whitespace-nowrap font-semibold">
-                  🪑 {table.seats} {t("Seats")}
+                  {table.seats} {t("Seats")}
                 </div>
               )}
 

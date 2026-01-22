@@ -205,6 +205,7 @@ export default function IntegrationsTab() {
   const [ysCandidatesLoading, setYsCandidatesLoading] = useState(false);
   const [ysSearch, setYsSearch] = useState("");
   const [ysSelectedCandidate, setYsSelectedCandidate] = useState(null);
+  const [migrosRemoteId, setMigrosRemoteId] = useState("");
 
   const formatShortDate = (value) => {
     if (!value) return "-";
@@ -217,16 +218,25 @@ export default function IntegrationsTab() {
     let mounted = true;
     setLoading(true);
 
-    secureFetch("/settings/integrations")
-      .then((data) => {
+    const restaurantId = localStorage.getItem("restaurant_id");
+
+    Promise.all([
+      secureFetch("/settings/integrations"),
+      restaurantId
+        ? secureFetch(`/settings/restaurants/${restaurantId}/external-ids`).catch(() => ({ migrosRemoteId: "" }))
+        : Promise.resolve({ migrosRemoteId: "" })
+    ])
+      .then(([integrationsData, externalIds]) => {
         if (!mounted) return;
-        setIntegrations(normalizeIntegrations(data));
+        setIntegrations(normalizeIntegrations(integrationsData));
+        setMigrosRemoteId(externalIds?.migrosRemoteId || "");
         setLoading(false);
       })
       .catch((err) => {
         console.warn("⚠️ Failed to load integrations settings:", err);
         if (!mounted) return;
         setIntegrations(getDefaultIntegrations());
+        setMigrosRemoteId("");
         setLoading(false);
         toast.error(t("Failed to load settings"));
       });
@@ -321,10 +331,30 @@ export default function IntegrationsTab() {
           integrations?.getir?.autoConfirmOrders === true,
       };
 
+      // Save integrations settings
       await secureFetch("/settings/integrations", {
         method: "POST",
         body: JSON.stringify(payload),
       });
+
+      // Save Migros Remote ID to restaurants table
+      const restaurantId = localStorage.getItem("restaurant_id");
+      if (restaurantId) {
+        try {
+          await secureFetch(`/settings/restaurants/${restaurantId}/external-ids`, {
+            method: "POST",
+            body: JSON.stringify({ migrosRemoteId }),
+          });
+        } catch (remoteIdErr) {
+          if (remoteIdErr?.message?.includes("DUPLICATE_MIGROS_REMOTE_ID")) {
+            toast.error(t("This Migros Remote ID is already used by another restaurant"));
+            setSaving(false);
+            return;
+          }
+          console.error("⚠️ Failed to save Migros Remote ID:", remoteIdErr);
+          toast.warn(t("Settings saved, but failed to update Migros Remote ID"));
+        }
+      }
 
       toast.success(t("Integrations saved successfully"));
 
@@ -1240,6 +1270,24 @@ export default function IntegrationsTab() {
                       },
                     }))
                   }
+                  className="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-indigo-200 dark:border-indigo-700 pt-4 mt-4">
+              <div>
+                <label className="block mb-1 font-medium text-gray-700 dark:text-gray-200">
+                  {t("Migros Remote ID")}
+                </label>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  {t("Used to map Migros webhooks: /api/integrations/migros/order/:remoteId")}
+                </div>
+                <input
+                  type="text"
+                  value={migrosRemoteId}
+                  onChange={(e) => setMigrosRemoteId(e.target.value)}
+                  placeholder="MIGROS_XXX"
                   className="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
                 />
               </div>
