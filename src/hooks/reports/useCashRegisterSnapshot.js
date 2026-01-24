@@ -9,14 +9,50 @@ const initialState = {
   available: 0,
 };
 
+const CACHE_VERSION = "reports.cache.v1";
+const CACHE_KEY = `${CACHE_VERSION}:cashSnapshot`;
+
+function readCache() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(data) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify({ data, cachedAt: Date.now() })
+    );
+  } catch {
+    // Ignore cache write failures
+  }
+}
+
 export default function useCashRegisterSnapshot() {
-  const [state, setState] = useState(initialState);
+  const [state, setState] = useState(() => {
+    const cached = readCache();
+    return cached ? { ...cached, loading: false, error: null } : initialState;
+  });
   const [reloadToken, setReloadToken] = useState(0);
 
   const refetch = useCallback(() => setReloadToken((token) => token + 1), []);
 
   useEffect(() => {
     let cancelled = false;
+    const cached = readCache();
+
+    if (reloadToken === 0 && cached) {
+      setState({ ...cached, loading: false, error: null });
+      return undefined;
+    }
 
     async function load() {
       setState((prev) => ({ ...prev, loading: true, error: null }));
@@ -42,13 +78,15 @@ export default function useCashRegisterSnapshot() {
         }
 
         if (cancelled) return;
-        setState({
+        const nextState = {
           loading: false,
           error: null,
           opening: openingCash,
           expenses: cashExpenses,
           available: cashAvailable,
-        });
+        };
+        setState(nextState);
+        writeCache(nextState);
       } catch (error) {
         if (cancelled) return;
         setState((prev) => ({

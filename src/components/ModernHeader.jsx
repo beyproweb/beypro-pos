@@ -57,6 +57,7 @@ export default function ModernHeader({
   onBellClick,
   rightContent,
   previousRoute,
+  tableStats = null,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -104,6 +105,10 @@ export default function ModernHeader({
     showAreas: true,
   });
   const tableLabelText = String(tableSettings.tableLabelText || "").trim() || t("Tables");
+  const freeTablesCount =
+    Number.isFinite(tableStats?.freeTables) && tableStats.freeTables >= 0
+      ? tableStats.freeTables
+      : null;
 
   const supplierTabs = React.useMemo(() => {
     const tabs = [
@@ -431,9 +436,16 @@ export default function ModernHeader({
         {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
 
         {title && (
-          <span className="text-xl md:text-2xl font-bold tracking-tight text-indigo-700 dark:text-violet-300 drop-shadow mr-1">
-            {title}
-          </span>
+          <div className="flex items-center gap-3">
+            {isTableOverviewRoute && freeTablesCount !== null && (
+              <span className="inline-flex items-center px-3 py-1 rounded-full border border-indigo-600 bg-gradient-to-r from-indigo-600 to-blue-500 text-sm font-semibold text-white shadow-lg shadow-indigo-500/40">
+                {freeTablesCount} {t("Free")}
+              </span>
+            )}
+            <span className="text-xl md:text-2xl font-bold tracking-tight text-indigo-700 dark:text-violet-300 drop-shadow mr-1">
+              {title}
+            </span>
+          </div>
         )}
 
         {rightContent && rightContent}

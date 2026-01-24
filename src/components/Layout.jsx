@@ -189,7 +189,7 @@ export default function Layout({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { title, subtitle, tableNav, centerNav, actions } = useHeader();
+  const { title, subtitle, tableNav, centerNav, actions, tableStats } = useHeader();
   const [filter, setFilter] = useState("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [search, setSearch] = useState("");
@@ -437,6 +437,7 @@ export default function Layout({
           onSidebarToggle={() => setIsSidebarOpen((v) => !v)}
           rightContent={rightContent}
           userName={username}
+          tableStats={tableStats}
         />
 
         {/* Global order alert and notifications */}
@@ -444,7 +445,9 @@ export default function Layout({
         {/* Page content */}
         <main
           ref={contentRef}
-          className="flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors overflow-y-auto"
+          className={`flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors ${
+            location.pathname.includes("/transaction") ? "overflow-hidden" : "overflow-y-auto"
+          }`}
         >
           <div className="max-w-full min-h-[calc(100vh-70px)]">
             <Outlet

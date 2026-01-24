@@ -25,7 +25,7 @@ import {
 import { fetchOrderWithItems } from "../utils/orderPrinting";
 import { openCashDrawer, logCashRegisterEvent } from "../utils/cashDrawer";
 import { useCurrency } from "../context/CurrencyContext";
-import { loadRegisterSummary } from "../utils/registerSummaryCache";
+import { loadRegisterSummary, clearRegisterSummaryCache } from "../utils/registerSummaryCache";
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.MODE === "development"
@@ -76,7 +76,7 @@ const getTableColor = (order) => {
   // 🟠 CHECK FOR RESERVATION - if reserved
   if (status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
     // 🟢 If reserved AND paid, show green
-    if (isOrderPaid(order)) {
+    if (isOrderFullyPaid(order)) {
       return "bg-green-500 text-white";
     }
     // 🟠 If reserved but not paid, show orange
@@ -84,7 +84,7 @@ const getTableColor = (order) => {
   }
 
   // Paid is always green, even if items haven't been hydrated yet.
-  if (isOrderPaid(order)) {
+  if (isOrderFullyPaid(order)) {
     return "bg-green-500 text-white";
   }
 
@@ -188,6 +188,8 @@ const isOrderPaid = (order) => {
   const paymentStatus = String(order?.payment_status || "").toLowerCase();
   return status === "paid" || paymentStatus === "paid" || order?.is_paid === true;
 };
+
+const isOrderFullyPaid = (order) => isOrderPaid(order) && !hasUnpaidAnywhere(order);
 
 const parseLooseDateToMs = (val) => {
   if (!val) return NaN;
@@ -367,7 +369,7 @@ const getOrderTabHint = (order) => {
   if (type === "packet") return "packet";
   if (type === "phone") return "phone";
   if (order.table_number != null) return "tables";
-  return isOrderPaid(order) ? "history" : "kitchen";
+  return isOrderFullyPaid(order) ? "history" : "kitchen";
 };
 
 const formatOpenOrderLabel = (order) => {
@@ -387,24 +389,44 @@ const formatOpenOrderLabel = (order) => {
 const getDisplayTotal = (order) => {
   if (!order) return 0;
 
-  if (order.receiptMethods?.length > 0) {
-    return order.receiptMethods.reduce((sum, m) => sum + parseFloat(m.amount || 0), 0);
+  const computeLineTotal = (item) => {
+    if (!item || typeof item !== "object") return 0;
+    const qty = Math.max(1, Math.trunc(Number(item?.quantity ?? item?.qty ?? 1) || 1));
+
+    const rawTotal =
+      item?.total_price ?? item?.totalPrice ?? item?.line_total ?? item?.lineTotal ?? null;
+    const parsedTotal = Number(rawTotal);
+    if (Number.isFinite(parsedTotal) && parsedTotal > 0) return parsedTotal;
+
+    const unitPrice = Number(item?.price ?? item?.unit_price ?? item?.unitPrice ?? 0) || 0;
+    const base = unitPrice * qty;
+
+    const extrasTotal = Array.isArray(item?.extras)
+      ? item.extras.reduce((sum, ex) => {
+          const exQty = Math.max(1, Math.trunc(Number(ex?.quantity ?? 1) || 1));
+          const exPrice = Number(ex?.price ?? 0) || 0;
+          return sum + exQty * exPrice;
+        }, 0) * qty
+      : 0;
+
+    return base + extrasTotal;
+  };
+
+  if (hasUnpaidAnywhere(order)) {
+    const items = Array.isArray(order.items) ? order.items : [];
+    const suborders = Array.isArray(order.suborders) ? order.suborders : [];
+    const unpaidMainTotal = items
+      .filter((i) => !i?.paid_at && !i?.paid)
+      .reduce((sum, i) => sum + computeLineTotal(i), 0);
+    const unpaidSubTotal = suborders
+      .flatMap((sub) => (Array.isArray(sub?.items) ? sub.items : []))
+      .filter((i) => !i?.paid_at && !i?.paid)
+      .reduce((sum, i) => sum + computeLineTotal(i), 0);
+    return unpaidMainTotal + unpaidSubTotal;
   }
 
-  if (order.items?.some(i => !i.paid_at && !i.paid)) {
-    return order.items
-      .filter(i => !i.paid_at && !i.paid)
-      .reduce((sum, i) => {
-        const base = i.price * i.quantity;
-        const extrasTotal = Array.isArray(i.extras)
-          ? i.extras.reduce((extraSum, ex) => {
-              const exQty = parseInt(ex.quantity || 1);
-              const exPrice = parseFloat(ex.price || 0);
-              return extraSum + exQty * exPrice;
-            }, 0) * i.quantity // extras apply per product quantity
-          : 0;
-        return sum + base + extrasTotal;
-      }, 0);
+  if (order.receiptMethods?.length > 0) {
+    return order.receiptMethods.reduce((sum, m) => sum + parseFloat(m.amount || 0), 0);
   }
 
   return parseFloat(order.total || 0);
@@ -510,6 +532,7 @@ export default function TableOverview() {
   const navigate = useNavigate();
   const location = useLocation();
   const didAutoOpenRegisterRef = useRef(false);
+  const didResetGuestsOnEntryRef = useRef(false);
   const lastDayKeyRef = useRef(formatLocalYmd(new Date()));
   const tabFromUrl = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
@@ -567,7 +590,7 @@ export default function TableOverview() {
   const [showEntryForm, setShowEntryForm] = useState(false);
 const [entryAmount, setEntryAmount] = useState("");
 const [entryReason, setEntryReason] = useState("");
-  const { currentUser } = useAuth();
+  const { currentUser, loading: authLoading } = useAuth();
   const { t } = useTranslation();
   const { setHeader } = useHeader();
   const hasPermission = useHasPermission;
@@ -580,6 +603,41 @@ const [entryReason, setEntryReason] = useState("");
   const canSeeRegisterTab = useHasPermission("register");
   const canSeeTakeawayTab = useHasPermission("takeaway");
 const [activeArea, setActiveArea] = useState("ALL");
+
+  // Avoid tab flicker while auth/permissions are still loading by caching the last allowed tabs
+  const lastPermissionsRef = useRef({
+    tables: true,
+    kitchen: true,
+    history: true,
+    packet: true,
+    phone: true,
+    register: true,
+    takeaway: true,
+  });
+
+  const effectivePermissions = React.useMemo(() => {
+    if (authLoading) return lastPermissionsRef.current;
+    const next = {
+      tables: canSeeTablesTab,
+      kitchen: canSeeKitchenTab,
+      history: canSeeHistoryTab,
+      packet: canSeePacketTab,
+      phone: canSeePhoneTab,
+      register: canSeeRegisterTab,
+      takeaway: canSeeTakeawayTab,
+    };
+    lastPermissionsRef.current = next;
+    return next;
+  }, [
+    authLoading,
+    canSeeTablesTab,
+    canSeeKitchenTab,
+    canSeeHistoryTab,
+    canSeePacketTab,
+    canSeePhoneTab,
+    canSeeRegisterTab,
+    canSeeTakeawayTab,
+  ]);
 
 const [registerEntries, setRegisterEntries] = useState(0);
   const [showRegisterLog, setShowRegisterLog] = useState(false);
@@ -862,24 +920,16 @@ const groupByDate = (orders) => {
 
   const visibleTabs = React.useMemo(() => {
     return TAB_LIST.filter((tab) => {
-      if (tab.id === "takeaway") return canSeeTakeawayTab;
-      if (tab.id === "tables") return canSeeTablesTab;
-      if (tab.id === "kitchen") return canSeeKitchenTab;
-      if (tab.id === "history") return canSeeHistoryTab;
-      if (tab.id === "packet") return canSeePacketTab;
-      if (tab.id === "phone") return canSeePhoneTab;
-      if (tab.id === "register") return canSeeRegisterTab;
+      if (tab.id === "takeaway") return effectivePermissions.takeaway;
+      if (tab.id === "tables") return effectivePermissions.tables;
+      if (tab.id === "kitchen") return effectivePermissions.kitchen;
+      if (tab.id === "history") return effectivePermissions.history;
+      if (tab.id === "packet") return effectivePermissions.packet;
+      if (tab.id === "phone") return effectivePermissions.phone;
+      if (tab.id === "register") return effectivePermissions.register;
       return true;
     });
-  }, [
-    canSeeTakeawayTab,
-    canSeeTablesTab,
-    canSeeKitchenTab,
-    canSeeHistoryTab,
-    canSeePacketTab,
-    canSeePhoneTab,
-    canSeeRegisterTab,
-  ]);
+  }, [effectivePermissions]);
 
   const handleTabSelect = useCallback(
     (tabId, options = {}) => {
@@ -920,29 +970,6 @@ const groupByDate = (orders) => {
       setShowRegisterModal(true);
     }
   }, [location.state, registerState]);
-
-  useEffect(() => {
-    const titlesByTab = {
-      takeaway: t("Pre Order"),
-      tables: t("Tables"),
-      kitchen: t("All Orders"),
-      history: t("History"),
-      packet: t("Packet"),
-      phone: t("Phone"),
-      register: t("Register"),
-    };
-    const headerTitle = titlesByTab[activeTab] || t("Orders");
-    setHeader((prev) => ({
-      ...prev,
-      title: headerTitle,
-      subtitle: undefined,
-      tableNav: null,
-    }));
-  }, [
-    activeTab,
-    t,
-    setHeader,
-  ]);
 
 useEffect(() => () => setHeader({}), [setHeader]);
 
@@ -1141,8 +1168,14 @@ const fetchTakeawayOrders = useCallback(async () => {
           }));
 
           // ✅ Fallback for online-paid orders missing item paid flags
+          // Only do this if the backend doesn't provide per-item paid markers at all.
           if (isOrderPaid(order)) {
-            items = items.map((i) => ({ ...i, paid: i.paid || true }));
+            const hasAnyPaidMarker = items.some(
+              (i) => i?.paid_at != null || typeof i?.paid === "boolean"
+            );
+            if (!hasAnyPaidMarker) {
+              items = items.map((i) => ({ ...i, paid: true }));
+            }
           }
 
           let receiptMethods = [];
@@ -1389,7 +1422,12 @@ const fetchOrders = useCallback(async () => {
         String(order.payment_status || "").toLowerCase() === "paid" ||
         order.is_paid === true;
       if (isOrderPaid) {
-        items = items.map((i) => ({ ...i, paid: i.paid || true }));
+        const hasAnyPaidMarker = items.some(
+          (i) => i?.paid_at != null || typeof i?.paid === "boolean"
+        );
+        if (!hasAnyPaidMarker) {
+          items = items.map((i) => ({ ...i, paid: true }));
+        }
       }
 
       let reservation = null;
@@ -1908,21 +1946,79 @@ const tables = tableConfigs
         : orderRaw;
 
 	    return {
-	      tableNumber: cfg.number,
-	      seats: cfg.seats || cfg.chairs || null,
-	      guests:
-	        cfg.guests === null || cfg.guests === undefined || cfg.guests === ""
-	          ? null
-	          : Number.isFinite(Number(cfg.guests))
-	          ? Number(cfg.guests)
-	          : null,
-	      area: cfg.area || "Main Hall",
-	      label: cfg.label || "",
-	      color: cfg.color || null,
-	      order,
-	    };
+      tableNumber: cfg.number,
+      seats: cfg.seats || cfg.chairs || null,
+      guests:
+        cfg.guests === null || cfg.guests === undefined || cfg.guests === ""
+          ? null
+          : Number.isFinite(Number(cfg.guests))
+          ? Number(cfg.guests)
+          : null,
+      area: cfg.area || "Main Hall",
+      label: cfg.label || "",
+      color: cfg.color || null,
+      order,
+    };
   })
   .sort((a, b) => a.tableNumber - b.tableNumber);
+
+const freeTablesCount = React.useMemo(() => {
+  if (!Array.isArray(tables)) return 0;
+  return tables.filter((table) => isEffectivelyFreeOrder(table.order)).length;
+}, [tables]);
+
+// Reset guest count ("seats") to 0 when returning to TableOverview,
+// but only for tables that are currently free.
+useEffect(() => {
+  if (activeTab !== "tables") return;
+  if (!didInitialOrdersLoadRef.current) return;
+  if (didResetGuestsOnEntryRef.current) return;
+
+  didResetGuestsOnEntryRef.current = true;
+
+  const freeTableNumbersToReset = (Array.isArray(tables) ? tables : [])
+    .filter((table) => isEffectivelyFreeOrder(table?.order))
+    .filter((table) => Number.isFinite(Number(table?.guests)) && Number(table.guests) !== 0)
+    .map((table) => Number(table.tableNumber))
+    .filter((n) => Number.isFinite(n));
+
+  if (freeTableNumbersToReset.length === 0) return;
+
+  freeTableNumbersToReset.forEach((tableNumber) => {
+    upsertTableConfigLocal(tableNumber, { guests: 0 });
+  });
+
+  (async () => {
+    await Promise.allSettled(
+      freeTableNumbersToReset.map((tableNumber) =>
+        secureFetch(`/tables/${tableNumber}`, {
+          method: "PATCH",
+          body: JSON.stringify({ guests: 0 }),
+        })
+      )
+    );
+  })();
+}, [activeTab, tables, upsertTableConfigLocal]);
+
+useEffect(() => {
+  const titlesByTab = {
+    takeaway: t("Pre Order"),
+    tables: t("Tables"),
+    kitchen: t("All Orders"),
+    history: t("History"),
+    packet: t("Packet"),
+    phone: t("Phone"),
+    register: t("Register"),
+  };
+  const headerTitle = titlesByTab[activeTab] || t("Orders");
+  setHeader((prev) => ({
+    ...prev,
+    title: headerTitle,
+    subtitle: undefined,
+    tableNav: null,
+    tableStats: activeTab === "tables" ? { freeTables: freeTablesCount } : undefined,
+  }));
+}, [activeTab, t, setHeader, freeTablesCount]);
 
 
 
@@ -2181,8 +2277,8 @@ const totalGuests = React.useMemo(() => {
                 table.order.reservation_date)
           );
           const isFreeTable = !table.order || isEffectivelyFreeOrder(table.order);
-          const isPaidTable = !isFreeTable && isOrderPaid(table.order);
-          const isUnpaidTable = !isFreeTable && !isPaidTable && hasUnpaidAnywhere(table.order);
+          const isPaidTable = !isFreeTable && isOrderFullyPaid(table.order);
+          const isUnpaidTable = !isFreeTable && hasUnpaidAnywhere(table.order);
           const cardToneClass = isFreeTable
             ? "bg-blue-100 border-sky-300 shadow-sky-500/15"
             : isReservedTable
@@ -2674,7 +2770,7 @@ const totalGuests = React.useMemo(() => {
     {kitchenOpenOrders.map((order) => {
       const orderType = String(order?.order_type || "").trim().toLowerCase();
       const readyAtLabel = getReadyAtLabel(order, productPrepById);
-      const paid = isOrderPaid(order);
+      const paid = isOrderFullyPaid(order);
       const paymentStatusLabel = paid ? t("Paid") : t("Unpaid");
       const paymentStatusClass = paid
         ? "bg-emerald-100 text-emerald-800 border-emerald-200"
@@ -3194,7 +3290,12 @@ try {
         : t("Register closed successfully.")
     );
 
+    // Invalidate cached register summary so state reflects immediately on reopen
+    clearRegisterSummaryCache();
     refreshRegisterState();
+    if (type === "open") {
+      handleTabSelect("tables", { replace: true });
+    }
     setShowRegisterModal(false);
   } catch (err) {
     console.error(`❌ Failed to ${type} register:`, err);

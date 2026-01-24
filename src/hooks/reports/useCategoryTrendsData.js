@@ -3,6 +3,36 @@ import secureFetch from "../../utils/secureFetch";
 
 const initialState = { loading: false, error: null, data: [], from: "", to: "" };
 
+const CACHE_VERSION = "reports.cache.v1";
+
+function getCacheKey(range, from, to) {
+  return `${CACHE_VERSION}:categoryTrends:${range}:${from}:${to}`;
+}
+
+function readCache(key) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(key, data) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({ data, cachedAt: Date.now() })
+    );
+  } catch {
+    // Ignore cache write failures
+  }
+}
+
 function resolveRange(range, customFrom, customTo) {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
@@ -25,7 +55,12 @@ function resolveRange(range, customFrom, customTo) {
 }
 
 export default function useCategoryTrendsData(range, customFrom, customTo) {
-  const [state, setState] = useState(initialState);
+  const [state, setState] = useState(() => {
+    const resolved = resolveRange(range, customFrom, customTo);
+    if (!resolved) return initialState;
+    const cached = readCache(getCacheKey(range, resolved.from, resolved.to));
+    return cached ? { ...cached, loading: false, error: null } : initialState;
+  });
   const [reloadToken, setReloadToken] = useState(0);
 
   const resolved = useMemo(() => resolveRange(range, customFrom, customTo), [range, customFrom, customTo]);
@@ -39,6 +74,13 @@ export default function useCategoryTrendsData(range, customFrom, customTo) {
     }
 
     let cancelled = false;
+    const cacheKey = getCacheKey(range, resolved.from, resolved.to);
+    const cached = readCache(cacheKey);
+
+    if (reloadToken === 0 && cached) {
+      setState({ ...cached, loading: false, error: null });
+      return undefined;
+    }
 
     async function load() {
       setState((prev) => ({
@@ -52,13 +94,15 @@ export default function useCategoryTrendsData(range, customFrom, customTo) {
       try {
         const data = await secureFetch(`/reports/category-trends?from=${resolved.from}&to=${resolved.to}`);
         if (cancelled) return;
-        setState({
+        const nextState = {
           loading: false,
           error: null,
           data: Array.isArray(data) ? data : [],
           from: resolved.from,
           to: resolved.to,
-        });
+        };
+        setState(nextState);
+        writeCache(cacheKey, nextState);
       } catch (error) {
         if (cancelled) return;
         setState((prev) => ({

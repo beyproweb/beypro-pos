@@ -10,6 +10,7 @@ import { useCurrency } from "../context/CurrencyContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { UtensilsCrossed, Soup, Bike, Phone, Share2 } from "lucide-react";
 import { Instagram, Music2, Globe } from "lucide-react";
+import { Html5Qrcode } from "html5-qrcode";
 
 const RAW_API = import.meta.env.VITE_API_URL || "";
 const API_ROOT = RAW_API.replace(/\/+$/, "");
@@ -241,6 +242,30 @@ function getTableFromLocation() {
   }
 }
 
+function extractTableNumberFromQrText(raw) {
+  if (!raw) return null;
+  const text = String(raw).trim();
+  if (!text) return null;
+  try {
+    const url = new URL(text);
+    const tableParam = url.searchParams.get("table");
+    if (tableParam) {
+      const n = Number(tableParam);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  } catch {
+    // not a URL
+  }
+  const match = text.match(/(?:table|masa)\s*#?\s*(\d+)/i);
+  if (match) {
+    const n = Number(match[1]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const fallback = Number(text);
+  if (Number.isFinite(fallback) && fallback > 0) return fallback;
+  return null;
+}
+
 /* ====================== SMALL HELPERS ====================== */
 function detectBrand(num) {
   const n = (num || "").replace(/\s+/g, "");
@@ -382,6 +407,13 @@ const DICT = {
     "Save QR Menu to Phone": "Save QR Menu to Phone",
     "Tap here to install the menu as an app": "Tap here to install the menu as an app",
     "Add to Home Screen": "Add to Home Screen",
+    "Scan Table QR": "Scan Table QR",
+    "Scan the QR code on your table to continue.": "Scan the QR code on your table to continue.",
+    "Invalid table QR code.": "Invalid table QR code.",
+    "This QR is for table": "This QR is for table",
+    "Please scan table": "Please scan table",
+    "Camera permission is required.": "Camera permission is required.",
+    Cancel: "Cancel",
   },
   tr: {
     "Order Type": "Sipariş Türü",
@@ -477,18 +509,39 @@ const DICT = {
     "Save QR Menu to Phone": "QR Menüyü Telefona Kaydet",
     "Tap here to install the menu as an app": "Menüyü uygulama olarak yüklemek için buraya dokunun",
     "Add to Home Screen": "Ana Ekrana Ekle",
+    "Scan Table QR": "Masa QR'ını Tara",
+    "Scan the QR code on your table to continue.": "Devam etmek için masanızdaki QR kodunu tarayın.",
+    "Invalid table QR code.": "Geçersiz masa QR kodu.",
+    "This QR is for table": "Bu QR şu masa için",
+    "Please scan table": "Lütfen şu masayı tarayın",
+    "Camera permission is required.": "Kamera izni gereklidir.",
+    Cancel: "İptal",
   },
   de: {
     "Share QR Menu": "QR-Menü teilen",
     "Save QR Menu to Phone": "QR-Menü auf dem Handy speichern",
     "Tap here to install the menu as an app": "Tippen Sie hier, um das Menü als App zu installieren",
     "Add to Home Screen": "Zum Startbildschirm hinzufügen",
+    "Scan Table QR": "Tisch-QR scannen",
+    "Scan the QR code on your table to continue.": "Scannen Sie den QR-Code auf Ihrem Tisch, um fortzufahren.",
+    "Invalid table QR code.": "Ungültiger Tisch-QR-Code.",
+    "This QR is for table": "Dieser QR ist für Tisch",
+    "Please scan table": "Bitte scannen Sie Tisch",
+    "Camera permission is required.": "Kameraberechtigung ist erforderlich.",
+    Cancel: "Abbrechen",
   },
   fr: {
     "Share QR Menu": "Partager le menu QR",
     "Save QR Menu to Phone": "Enregistrer le menu QR sur le téléphone",
     "Tap here to install the menu as an app": "Appuyez ici pour installer le menu comme une application",
     "Add to Home Screen": "Ajouter à l'écran d'accueil",
+    "Scan Table QR": "Scanner le QR de la table",
+    "Scan the QR code on your table to continue.": "Scannez le code QR sur votre table pour continuer.",
+    "Invalid table QR code.": "Code QR de table invalide.",
+    "This QR is for table": "Ce QR est pour la table",
+    "Please scan table": "Veuillez scanner la table",
+    "Camera permission is required.": "L'autorisation de la caméra est requise.",
+    Cancel: "Annuler",
   },
 };
 
@@ -526,6 +579,43 @@ function LanguageSwitcher({ lang, setLang, t }) {
         ))}
       </select>
     </div>
+  );
+}
+
+function TableQrScannerModal({ open, tableNumber, onClose, error, t }) {
+  if (!open) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden">
+        <div className="p-5 border-b border-gray-100">
+          <div className="text-lg font-semibold text-gray-900">{t("Scan Table QR")}</div>
+          <div className="text-sm text-gray-600 mt-1">
+            {t("Scan the QR code on your table to continue.")}
+          </div>
+          {tableNumber ? (
+            <div className="mt-2 text-xs text-gray-500">
+              {t("Table")} {String(tableNumber).padStart(2, "0")}
+            </div>
+          ) : null}
+        </div>
+        <div className="p-5">
+          <div id="qr-table-reader" className="w-full rounded-2xl overflow-hidden bg-gray-100" />
+          {error ? (
+            <div className="mt-3 text-sm text-red-600">{error}</div>
+          ) : null}
+        </div>
+        <div className="p-4 pt-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            {t("Cancel")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -3150,6 +3240,11 @@ const shareUrl = useMemo(() => {
   const [pendingPopularProduct, setPendingPopularProduct] = useState(null);
   const [showOrderTypePrompt, setShowOrderTypePrompt] = useState(false);
   const [suppressMenuFlash, setSuppressMenuFlash] = useState(true);
+  const tableScannerRef = useRef(null);
+  const tableScanInFlight = useRef(false);
+  const [showTableScanner, setShowTableScanner] = useState(false);
+  const [tableScanTarget, setTableScanTarget] = useState(null);
+  const [tableScanError, setTableScanError] = useState("");
 
   const safeProducts = useMemo(() => toArray(products), [products]);
   const safeCategories = useMemo(() => toArray(categories), [categories]);
@@ -3191,6 +3286,59 @@ const [showQrPrompt, setShowQrPrompt] = useState(() => {
 // === PWA INSTALL HANDLER ===
 const [deferredPrompt, setDeferredPrompt] = useState(null);
 const [canInstall, setCanInstall] = useState(false);
+const stopTableScanner = useCallback(async () => {
+  const scanner = tableScannerRef.current;
+  if (!scanner) return;
+  try {
+    await scanner.stop();
+  } catch {}
+  try {
+    await scanner.clear();
+  } catch {}
+  tableScannerRef.current = null;
+}, []);
+
+const closeTableScanner = useCallback(() => {
+  setShowTableScanner(false);
+  setTableScanTarget(null);
+  setTableScanError("");
+  tableScanInFlight.current = false;
+  stopTableScanner();
+}, [stopTableScanner]);
+
+const openTableScanner = useCallback((tableNumber) => {
+  if (!tableNumber) return;
+  setTableScanTarget(tableNumber);
+  setTableScanError("");
+  setShowTableScanner(true);
+}, []);
+
+const handleTableScanSuccess = useCallback(
+  (decodedText) => {
+    if (tableScanInFlight.current) return;
+    const scannedTable = extractTableNumberFromQrText(decodedText);
+    if (!scannedTable) {
+      setTableScanError(t("Invalid table QR code."));
+      return;
+    }
+    if (tableScanTarget && Number(scannedTable) !== Number(tableScanTarget)) {
+      setTableScanError(
+        `${t("This QR is for table")} ${scannedTable}. ${t("Please scan table")} ${tableScanTarget}.`
+      );
+      return;
+    }
+    tableScanInFlight.current = true;
+    const finalTable = tableScanTarget || scannedTable;
+    stopTableScanner().finally(() => {
+      setShowTableScanner(false);
+      setTableScanError("");
+      setTable(finalTable);
+      saveSelectedTable(finalTable);
+      tableScanInFlight.current = false;
+    });
+  },
+  [stopTableScanner, t, tableScanTarget]
+);
   const resetToTypePicker = () => {
     setShowStatus(false);
     setOrderStatus("pending");
@@ -3265,6 +3413,36 @@ useEffect(() => {
   window.addEventListener("beforeinstallprompt", handler);
   return () => window.removeEventListener("beforeinstallprompt", handler);
 }, [appendIdentifier]);
+
+useEffect(() => {
+  if (!showTableScanner) return;
+  let active = true;
+  const start = async () => {
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      if (!active) return;
+      const scanner = new Html5Qrcode("qr-table-reader");
+      tableScannerRef.current = scanner;
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+        (decodedText) => {
+          if (!active) return;
+          handleTableScanSuccess(decodedText);
+        },
+        () => {}
+      );
+    } catch (err) {
+      if (!active) return;
+      setTableScanError(t("Camera permission is required."));
+    }
+  };
+  start();
+  return () => {
+    active = false;
+    stopTableScanner();
+  };
+}, [handleTableScanSuccess, showTableScanner, stopTableScanner, t]);
 
 function handleInstallClick() {
   if (!deferredPrompt) return;
@@ -3881,13 +4059,20 @@ const myTable =
   occupiedNumbers={filteredOccupied}
   occupiedLabel={t("Occupied")}
   onSelect={(tbl) => {
-    setTable(tbl.tableNumber);
-    saveSelectedTable(tbl.tableNumber);
+    openTableScanner(tbl?.tableNumber);
   }}
   onBack={() => {
     setOrderType(null);
   }}
 />
+
+      <TableQrScannerModal
+        open={showTableScanner}
+        tableNumber={tableScanTarget}
+        onClose={closeTableScanner}
+        error={tableScanError}
+        t={t}
+      />
 
 
 

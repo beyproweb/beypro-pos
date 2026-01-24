@@ -122,12 +122,14 @@ export default function KitchenNew() {
   }, [fetchOrders]);
 
   useEffect(() => {
-    setHeader("🍳 Kitchen Display");
+    setHeader((prev) => ({
+      ...prev,
+      title: <span className="hidden sm:inline">{t("Kitchen")}</span>,
+    }));
   }, [setHeader, t]);
 
-  // Add a gear button into header actions
-  useEffect(() => {
-    const actionsNode = (
+  const actionsNode = useMemo(
+    () => (
       <button
         type="button"
         onClick={() => setShowSettings(true)}
@@ -136,11 +138,40 @@ export default function KitchenNew() {
       >
         <span className="text-lg">⚙️</span>
       </button>
-    );
+    ),
+    [t]
+  );
 
-    setHeader((prev) => ({ ...prev, actions: actionsNode }));
-    return () => setHeader((prev) => ({ ...prev, actions: null }));
-  }, [setHeader, t]);
+  const headerTabs = useMemo(
+    () => [
+      { id: "all", label: t("ALL ORDERS") },
+      { id: "new", label: t("TABLE") },
+      { id: "ready", label: t("PACKET") },
+      { id: "cooking", label: t("COOKING") },
+    ],
+    [t]
+  );
+
+  const headerNav = useMemo(
+    () => (
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-center gap-1 sm:gap-2 max-w-full rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+        {headerTabs.map((tab) => (
+          <HeaderTabButton
+            key={tab.id}
+            label={tab.label}
+            active={activeTab === tab.id}
+            onClick={() => setActiveTab(tab.id)}
+          />
+        ))}
+      </div>
+    ),
+    [activeTab, headerTabs]
+  );
+
+  useEffect(() => {
+    setHeader((prev) => ({ ...prev, actions: actionsNode, centerNav: headerNav }));
+    return () => setHeader((prev) => ({ ...prev, actions: null, centerNav: null }));
+  }, [actionsNode, headerNav, setHeader]);
 
   // Load compile settings + products
   useEffect(() => {
@@ -287,12 +318,9 @@ export default function KitchenNew() {
         body: JSON.stringify({ ids: itemIds, status }),
       });
 
-      // If status is "preparing", switch to cooking tab and keep selection
       if (status === "preparing") {
         setActiveTab("cooking");
-        // Keep selectedOrderIds intact (don't clear)
       } else {
-        // For other statuses, clear selection
         setSelectedOrderIds(new Set());
       }
 
@@ -354,36 +382,6 @@ export default function KitchenNew() {
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-zinc-900">
-      {/* Tabs */}
-      <div className="bg-white dark:bg-zinc-800 border-b border-gray-300 dark:border-zinc-700">
-        <div className="flex">
-          <TabButton
-            label={t("ALL ORDERS")}
-            active={activeTab === "all"}
-            onClick={() => setActiveTab("all")}
-            color="green"
-          />
-          <TabButton
-            label={t("TABLE")}
-            active={activeTab === "new"}
-            onClick={() => setActiveTab("new")}
-            color="gray"
-          />
-          <TabButton
-            label={t("PACKET")}
-            active={activeTab === "ready"}
-            onClick={() => setActiveTab("ready")}
-            color="gray"
-          />
-          <TabButton
-            label={t("COOKING")}
-            active={activeTab === "cooking"}
-            onClick={() => setActiveTab("cooking")}
-            color="gray"
-          />
-        </div>
-      </div>
-
       {/* Order Grid */}
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
@@ -414,21 +412,21 @@ export default function KitchenNew() {
           <button
             onClick={() => updateKitchenStatus("preparing")}
             disabled={selectedOrderIds.size === 0}
-            className="flex-1 py-4 px-6 bg-green-600 hover:bg-green-700 text-white font-bold text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="flex-1 py-3 px-3 sm:py-4 sm:px-6 bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {t("PREPARING")}
           </button>
           <button
             onClick={() => updateKitchenStatus("delivered")}
             disabled={selectedOrderIds.size === 0}
-            className="flex-1 py-4 px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="flex-1 py-3 px-3 sm:py-4 sm:px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {t("DELIVERED")}
           </button>
           <button
             onClick={openCompileModal}
             disabled={selectedOrderIds.size === 0}
-            className="flex-1 py-4 px-6 bg-yellow-500 hover:bg-yellow-600 text-white font-bold text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="flex-1 py-3 px-3 sm:py-4 sm:px-6 bg-yellow-500 hover:bg-yellow-600 text-white font-bold text-sm sm:text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {t("COMPILE")}
           </button>
@@ -509,26 +507,6 @@ export default function KitchenNew() {
   );
 }
 
-// Tab Button Component
-function TabButton({ label, active, onClick, color }) {
-  const bgColor = active
-    ? color === "green"
-      ? "bg-green-600"
-      : "bg-gray-500"
-    : "bg-gray-200 dark:bg-zinc-700";
-
-  return (
-    <button
-      onClick={onClick}
-      className={`flex-1 py-4 px-6 font-bold text-base ${bgColor} ${
-        active ? "text-white" : "text-gray-700 dark:text-gray-300"
-      } hover:opacity-90 transition`}
-    >
-      {label}
-    </button>
-  );
-}
-
 // Order Card Component
 function OrderCard({ order, selected, onToggle, timer, timerClass, safeParse, t }) {
   const type = String(order.order_type || "").toLowerCase();
@@ -582,18 +560,16 @@ function OrderCard({ order, selected, onToggle, timer, timerClass, safeParse, t 
             onClick={(e) => e.stopPropagation()}
             className="w-5 h-5 accent-blue-600 flex-shrink-0"
           />
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="font-bold text-base text-gray-900 dark:text-white whitespace-nowrap">
-              ORDER #{order.order_id}
-            </div>
-            <div className={`text-xl font-bold ${timerClass} whitespace-nowrap`}>{timer}</div>
+          <div className="font-bold text-lg text-gray-900 dark:text-white whitespace-nowrap">
+            {orderLabel}
           </div>
         </div>
+        <div className={`text-xl font-bold ${timerClass} whitespace-nowrap`}>{timer}</div>
       </div>
 
       {/* Order Info */}
-      <div className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-zinc-700 pb-2">
-        {orderLabel}
+      <div className="mb-3 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-zinc-700 pb-2">
+        {t("Order ID")} #{order.order_id}
       </div>
 
       {/* Items */}
@@ -637,5 +613,26 @@ function OrderCard({ order, selected, onToggle, timer, timerClass, safeParse, t 
         })}
       </div>
     </div>
+  );
+}
+
+function HeaderTabButton({ label, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "w-auto min-w-[64px] sm:min-w-[80px] md:min-w-[96px] text-center",
+        "inline-flex items-center justify-center gap-2",
+        "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2 py-1.5 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-[12px] md:text-[13px] lg:text-sm font-semibold leading-tight",
+        "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
+        "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
+        active
+          ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-sm shadow-emerald-500/20 ring-1 ring-white/50"
+          : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+      ].join(" ")}
+    >
+      {label}
+    </button>
   );
 }

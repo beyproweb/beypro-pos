@@ -3,8 +3,50 @@ import secureFetch from "../../utils/secureFetch";
 
 const initialState = { loading: false, error: null, data: [] };
 
+const CACHE_VERSION = "reports.cache.v1";
+
+function getCacheKey(timeframe, from, to) {
+  return `${CACHE_VERSION}:profitLoss:${timeframe}:${from}:${to}`;
+}
+
+function readCache(key) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(key, data) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({ data, cachedAt: Date.now() })
+    );
+  } catch {
+    // Ignore cache write failures
+  }
+}
+
 export default function useProfitLossData(timeframe) {
-  const [state, setState] = useState(initialState);
+  const [state, setState] = useState(() => {
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+    const from = timeframe === "weekly"
+      ? new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6)
+          .toISOString()
+          .slice(0, 10)
+      : timeframe === "monthly"
+      ? new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
+      : todayStr;
+    const cached = readCache(getCacheKey(timeframe, from, todayStr));
+    return cached ? { ...cached, loading: false, error: null } : initialState;
+  });
   const [reloadToken, setReloadToken] = useState(0);
 
   const { from, to } = useMemo(() => {
@@ -33,13 +75,26 @@ export default function useProfitLossData(timeframe) {
 
   useEffect(() => {
     let cancelled = false;
+    const cacheKey = getCacheKey(timeframe, from, to);
+    const cached = readCache(cacheKey);
+
+    if (reloadToken === 0 && cached) {
+      setState({ ...cached, loading: false, error: null });
+      return undefined;
+    }
 
     async function load() {
       setState((prev) => ({ ...prev, loading: true, error: null }));
       try {
         const data = await secureFetch(`/reports/profit-loss?timeframe=${timeframe}&from=${from}&to=${to}`);
         if (cancelled) return;
-        setState({ loading: false, error: null, data: Array.isArray(data) ? data : [] });
+        const nextState = {
+          loading: false,
+          error: null,
+          data: Array.isArray(data) ? data : [],
+        };
+        setState(nextState);
+        writeCache(cacheKey, nextState);
       } catch (error) {
         if (cancelled) return;
         setState((prev) => ({

@@ -10,7 +10,18 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import { useTranslation } from "react-i18next";
 import { useSwipeable } from "react-swipeable";
-import { ArrowLeftRight, GitMerge, HandCoins } from "lucide-react";
+import {
+  ArrowLeftRight,
+  BadgePercent,
+  CalendarClock,
+  CheckCircle2,
+  CircleX,
+  GitMerge,
+  HandCoins,
+  Search,
+  Trash2,
+  Wallet,
+} from "lucide-react";
 import ExtrasModal from "../modals/ExtrasModal";
 import DiscountModal from "../modals/DiscountModal";
 import PaymentModal from "../modals/PaymentModal";
@@ -629,7 +640,6 @@ const isDebtEligible = canShowDebtButton && !hasUnconfirmedItems && hasConfirmed
 const [categoryColumnSlots, setCategoryColumnSlots] = useState(0);
 const rightCategoryColumnRef = useRef(null);
 const categoryMeasureRef = useRef(null);
-const bottomBarRef = useRef(null);
 const [bottomBarScrollable, setBottomBarScrollable] = useState(false);
 const [bottomScrollEnd, setBottomScrollEnd] = useState(false);
 const [bottomScrollStart, setBottomScrollStart] = useState(true);
@@ -648,6 +658,11 @@ const excludedCategoriesSet = useMemo(
     ),
   [excludedCategories]
 );
+const [topRowScroll, setTopRowScroll] = useState({ canScrollLeft: false, canScrollRight: false });
+const [rightColScroll, setRightColScroll] = useState({ canScrollUp: false, canScrollDown: false });
+const [rightColThumb, setRightColThumb] = useState({ heightPct: 0, translatePct: 0 });
+const topRowRef = useRef(null);
+
 const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
 const activeCategory = categories[currentCategoryIndex] || "";
 const [catalogSearch, setCatalogSearch] = useState("");
@@ -689,18 +704,27 @@ const matchingCategories = useMemo(() => {
 const categoryColumns = useMemo(() => {
   const entries = categories.map((cat, index) => ({ cat, index }));
   if (entries.length === 0) {
-    return { right: [], left: [], bottom: [] };
+    return { top: [], right: [], bottom: [], left: [] };
   }
-  const MIN_TABS_PER_COLUMN = 8;
-  const measuredSlots =
-    categoryColumnSlots > 0 ? categoryColumnSlots : Math.min(MIN_TABS_PER_COLUMN, entries.length);
-  const slots = Math.max(measuredSlots, MIN_TABS_PER_COLUMN);
   return {
-    right: entries.slice(0, slots),
-    left: entries.slice(slots, slots * 2),
-    bottom: entries.slice(slots * 2),
+    top: entries, // Show ALL categories in the top row
+    right: [],
+    left: [],
+    bottom: [],
   };
-}, [categories, categoryColumnSlots]);
+}, [categories]);
+
+const updateRightThumb = useCallback(() => {
+  const node = rightCategoryColumnRef.current;
+  if (!node) return;
+  const { scrollTop, scrollHeight, clientHeight } = node;
+  const trackHeight = Math.max(1, scrollHeight);
+  const visible = Math.max(1, clientHeight);
+  const heightPct = Math.min(100, (visible / trackHeight) * 100);
+  const maxScroll = Math.max(1, scrollHeight - clientHeight);
+  const translatePct = Math.min(100 - heightPct, (scrollTop / maxScroll) * (100 - heightPct));
+  setRightColThumb({ heightPct, translatePct });
+}, []);
 
 const measureCategorySlots = useCallback(() => {
   if (typeof window === "undefined") return;
@@ -716,21 +740,6 @@ const measureCategorySlots = useCallback(() => {
   setCategoryColumnSlots((prev) => (prev === slots ? prev : slots));
 }, []);
 
-const updateBottomOverflow = useCallback(() => {
-  const node = bottomBarRef.current;
-  if (!node) {
-    setBottomBarScrollable(false);
-    setBottomScrollEnd(false);
-    return;
-  }
-  const scrollable = node.scrollWidth > node.clientWidth + 1;
-  const atStart = node.scrollLeft <= 1;
-  const atEnd = node.scrollLeft + node.clientWidth >= node.scrollWidth - 1;
-  setBottomBarScrollable(scrollable);
-  setBottomScrollStart(atStart);
-  setBottomScrollEnd(atEnd);
-}, []);
-
 useLayoutEffect(() => {
   if (typeof window === "undefined" || categories.length === 0) return;
   const id = window.requestAnimationFrame(measureCategorySlots);
@@ -742,17 +751,52 @@ useLayoutEffect(() => {
 }, [categories.length, measureCategorySlots]);
 
 useEffect(() => {
-  const node = bottomBarRef.current;
-  if (!node) return;
-  const handleScroll = () => updateBottomOverflow();
-  updateBottomOverflow();
-  node.addEventListener("scroll", handleScroll);
-  window.addEventListener("resize", updateBottomOverflow);
-  return () => {
-    node.removeEventListener("scroll", handleScroll);
-    window.removeEventListener("resize", updateBottomOverflow);
+const checkScroll = (ref, setter, isVertical) => {
+  if (!ref?.current) return;
+  if (isVertical) {
+    const { scrollTop, scrollHeight, clientHeight } = ref.current;
+    setter({
+      canScrollUp: scrollTop > 0,
+      canScrollDown: scrollTop + clientHeight < scrollHeight - 1,
+    });
+    if (ref?.current === rightCategoryColumnRef.current) {
+      updateRightThumb();
+    }
+  } else {
+    const { scrollLeft, scrollWidth, clientWidth } = ref.current;
+    setter({
+      canScrollLeft: scrollLeft > 0,
+      canScrollRight: scrollLeft + clientWidth < scrollWidth - 1,
+      });
+    }
   };
-}, [updateBottomOverflow]);
+
+  const handleTopRowScroll = () => checkScroll(topRowRef, setTopRowScroll, false);
+  const handleRightColScroll = () => checkScroll(rightCategoryColumnRef, setRightColScroll, true);
+
+  const handleResize = () => {
+    handleTopRowScroll();
+    handleRightColScroll();
+  };
+
+  topRowRef.current?.addEventListener("scroll", handleTopRowScroll);
+  rightCategoryColumnRef.current?.addEventListener("scroll", handleRightColScroll);
+  window.addEventListener("resize", handleResize);
+
+  handleTopRowScroll();
+  handleRightColScroll();
+  updateRightThumb();
+
+  return () => {
+    topRowRef.current?.removeEventListener("scroll", handleTopRowScroll);
+    rightCategoryColumnRef.current?.removeEventListener("scroll", handleRightColScroll);
+    window.removeEventListener("resize", handleResize);
+  };
+}, [updateRightThumb]);
+
+useLayoutEffect(() => {
+  updateRightThumb();
+}, [categories.length, updateRightThumb]);
 
 useEffect(() => {
   if (!deferHeavyUi) return;
@@ -1148,39 +1192,47 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const hasImg = !!catSrc;
 
   const baseClasses =
-    "flex flex-col items-center justify-center gap-1 rounded-xl border bg-white px-1.5 py-2 text-center shadow-sm transition-all duration-150 select-none touch-manipulation hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 active:scale-[0.99]";
+    "flex flex-col items-center justify-center gap-0.5 rounded-lg border bg-white/90 px-1 py-1.5 text-center shadow-[0_6px_14px_rgba(15,23,42,0.06)] transition-all duration-150 select-none touch-manipulation hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98]";
 
   const paddingClass =
     normalizedVariant === "mobile"
-      ? "px-1 py-1"
+      ? "px-1 py-1.5"
       : normalizedVariant === "grid"
-      ? "px-0.5 py-0.5"
+      ? "px-1 py-1"
       : normalizedVariant === "vertical"
-      ? "px-0.5 py-0.5"
-      : "px-1 py-1.5";
+      ? "px-1 py-1"
+      : normalizedVariant === "horizontal"
+      ? "px-1 py-1"
+      : "px-1.5 py-1.5";
 
   const widthClass =
     normalizedVariant === "mobile"
-      ? "min-w-[70px] max-w-[80px] snap-start"
+      ? "min-w-[70px] max-w-[79px] snap-start"
       : normalizedVariant === "grid"
       ? "w-[70px]"
       : normalizedVariant === "vertical"
       ? "w-[70px]"
+      : normalizedVariant === "horizontal"
+      ? "w-[70px]"
       : "w-full";
-  const activeClasses = "border-indigo-500 bg-white shadow";
-  const inactiveClasses = "border-slate-200 hover:border-indigo-300 hover:bg-slate-50";
+  const activeClasses = "border-indigo-300 bg-white shadow-[0_12px_24px_rgba(99,102,241,0.18)]";
+  const inactiveClasses = "border-white/60 hover:border-indigo-200 hover:bg-white";
 
   const imageClasses =
     normalizedVariant === "vertical"
-      ? "h-8 w-8 object-cover rounded-md"
-      : "h-8 w-8 object-cover rounded-md";
+      ? "h-[55px] w-[55px] object-cover rounded-xl"
+      : normalizedVariant === "horizontal"
+      ? "h-[55px] w-[55px] object-cover rounded-xl"
+      : "h-[55px] w-[55px] object-cover rounded-xl";
   const iconClasses = "text-[16px] leading-tight";
 
   const labelClasses =
     normalizedVariant === "grid"
-      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[80px]"
+      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[71px]"
       : normalizedVariant === "vertical"
-      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[80px]"
+      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[71px]"
+      : normalizedVariant === "horizontal"
+      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[71px]"
       : "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[70px]";
 
   return (
@@ -1193,8 +1245,8 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
       {hasImg ? (
         <img src={catSrc} alt={cat} className={imageClasses} />
       ) : (
-        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-slate-100 to-slate-200">
-          <span className="text-lg font-semibold text-slate-500">
+        <div className="flex h-[55px] w-[55px] items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-slate-100 to-slate-200">
+          <span className="text-sm font-semibold text-slate-500">
             {(cat || "")
               .split(" ")
               .map((part) => part[0])
@@ -1498,25 +1550,24 @@ const clearSelectedCartItems = useCallback(() => {
   const selectedKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
   const hasUnconfirmedSelected = cartItems.some((item) => {
     const key = String(item.unique_id || item.id);
-    return selectedKeys.has(key) && !item.confirmed;
+    return selectedKeys.has(key) && !item.confirmed && !isPaidItem(item);
   });
 
   if (!hasUnconfirmedSelected) {
-    showToast(t("Select item to cancel"));
     return;
   }
 
   setCartItems((prev) =>
     prev.filter((item) => {
       const key = String(item.unique_id || item.id);
-      const shouldRemove = selectedKeys.has(key) && !item.confirmed;
+      const shouldRemove = selectedKeys.has(key) && !item.confirmed && !isPaidItem(item);
       return !shouldRemove;
     })
   );
 
   setSelectedCartItemIds(new Set());
   setSelectedForPayment((prev) => prev.filter((id) => !selectedKeys.has(id)));
-}, [cartItems, selectedCartItemIds, t]);
+}, [cartItems, selectedCartItemIds]);
 
 useEffect(() => {
   ensureExtrasGroups().catch((err) => {
@@ -3638,24 +3689,40 @@ const removeItem = (uniqueId) => {
 };
 
 // Clears only UNCONFIRMED items from the cart
-const clearUnconfirmedCartItems = () => {
+const clearUnconfirmedCartItems = useCallback(() => {
   if (cartItems.length === 0) return;
-  const hasUnconfirmed = cartItems.some((item) => !item.confirmed);
+  const hasUnconfirmed = cartItems.some((item) => !item.confirmed && !isPaidItem(item));
   if (!hasUnconfirmed) {
-    showToast(t("Select item to cancel"));
     return;
   }
 
   setCartItems((prev) =>
     prev.filter((item) => {
-      return item.confirmed;
+      return item.confirmed || isPaidItem(item);
     })
   );
 
 
   setSelectedCartItemIds(new Set());
   setSelectedForPayment([]);
-};
+}, [cartItems]);
+
+const clearCartFromClearButton = useCallback(() => {
+  if (cartItems.length === 0) return;
+
+  const selectedKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
+  const hasClearableSelected = cartItems.some((item) => {
+    const key = String(item.unique_id || item.id);
+    return selectedKeys.has(key) && !item.confirmed && !isPaidItem(item);
+  });
+
+  if (hasClearableSelected) {
+    clearSelectedCartItems();
+    return;
+  }
+
+  clearUnconfirmedCartItems();
+}, [cartItems, selectedCartItemIds, clearSelectedCartItems, clearUnconfirmedCartItems]);
 
   useEffect(() => {
     if (order?.id) fetchSubOrders();
@@ -3854,8 +3921,8 @@ return (
 const renderCartContent = (variant = "desktop") => {
   const isDesktop = variant === "desktop";
   const containerClasses = isDesktop
-    ? "flex min-h-0 flex-col rounded-3xl bg-white shadow-xl ring-1 ring-slate-200 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-120px)] overflow-hidden"
-    : "flex w-full max-h-[calc(100vh-96px)] flex-col rounded-t-3xl bg-white shadow-2xl overflow-hidden";
+    ? "flex h-full min-h-0 flex-col rounded-[28px] bg-transparent shadow-none ring-0 lg:sticky lg:top-4 lg:self-start lg:mb-[64px] lg:max-h-[calc(100vh-180px)] overflow-hidden"
+    : "flex w-full max-h-[calc(100vh-96px)] flex-col rounded-t-[28px] bg-slate-50/95 shadow-[0_20px_35px_rgba(15,23,42,0.25)] ring-1 ring-white/60 backdrop-blur-xl overflow-hidden";
   const headerPadding = isDesktop ? "px-5 pt-5 pb-3" : "px-5 pt-4 pb-3";
   const footerPadding = isDesktop
     ? "px-5 py-5"
@@ -3863,161 +3930,33 @@ const renderCartContent = (variant = "desktop") => {
 
   const hasSelection = selectedCartItemIds.size > 0;
   const primaryActionLabel = getButtonLabel();
-  // Pay Later should only appear after the order is confirmed (or later states).
   const showPayLaterInClearSlot =
     !orderId &&
     cartItems.length > 0 &&
     !hasUnconfirmedCartItems &&
     ["confirmed", "unpaid", "paid"].includes(normalizedStatus);
-  const payLaterLabel = showPayLaterInClearSlot && (normalizedStatus === "paid" || allPaidIncludingSuborders)
-    ? t("Close Later")
-    : t("Pay Later");
+  const payLaterLabel =
+    showPayLaterInClearSlot && (normalizedStatus === "paid" || allPaidIncludingSuborders)
+      ? t("Close Later")
+      : t("Pay Later");
   const debtDisabled = !isDebtEligible || isDebtSaving;
-  const baseButtonClass =
-    "flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed";
-  const primaryButtonClass =
-    "flex-1 min-w-0 rounded-lg bg-indigo-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed";
-  const payLaterButtonClass =
-    "flex-1 min-w-0 rounded-lg bg-slate-900 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed";
-  const debtButtonClass =
-    "flex-1 min-w-0 rounded-lg bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed";
 
-  const cancelButtonClass =
-    "rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-center text-sm font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50";
-  const cancelDisabled =
-    normalizedStatus !== "confirmed" || hasUnconfirmedCartItems || cartItems.length === 0;
-  const canShowCancelButton = orderType === "table";
-
-	  const actionControls = isDesktop ? (
-	    <div className="flex w-full flex-col gap-3">
-		      <div className="flex flex-wrap gap-3">
-		        <button
-              type="button"
-		          onClick={() => {
-                if (!showPayLaterInClearSlot) {
-                  (hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems)();
-                  return;
-                }
-                setIsFloatingCartOpen(false);
-                navigate("/tableoverview?tab=tables");
-              }}
-		          className={showPayLaterInClearSlot ? payLaterButtonClass : baseButtonClass}
-		        >
-		          {showPayLaterInClearSlot ? payLaterLabel : t("Clear")}
-		        </button>
-                <button
-                  onClick={handleMultifunction}
-                  className={primaryButtonClass}
-                  disabled={isPhoneOrder && primaryActionLabel === "Pay"}
-                  title={
-                    isPhoneOrder && primaryActionLabel === "Pay"
-                      ? t("Payments are handled through the Orders screen")
-                      : undefined
-                  }
-                >
-                  {t(primaryActionLabel)}
-                </button>
-	      </div>
-	      {canShowCancelButton && (
-	        <div className="flex flex-wrap gap-3">
-	          <button
-	            type="button"
-	            onClick={() => {
-              openReservationModal();
-            }}
-            disabled={cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)}
-            className={`flex-1 min-w-[160px] rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition ${
-              cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)
-                ? "bg-blue-300 cursor-not-allowed"
-                : "bg-blue-500 hover:bg-blue-600"
-            }`}
-          >
-            {t("Reservation")}
-          </button>
-          <button
-            type="button"
-            onClick={openCancelModal}
-            disabled={cancelDisabled}
-            className={`flex-1 min-w-[160px] ${cancelButtonClass}`}
-          >
-            {t("Cancel")}
-          </button>
-        </div>
-      )}
-    </div>
-	  ) : (
-	    <div className="flex w-full flex-col gap-2">
-		      <div className="flex flex-wrap gap-2">
-		        <button
-              type="button"
-		          onClick={() => {
-                if (!showPayLaterInClearSlot) {
-                  (hasSelection ? clearSelectedCartItems : clearUnconfirmedCartItems)();
-                  return;
-                }
-                setIsFloatingCartOpen(false);
-                navigate("/tableoverview?tab=tables");
-              }}
-		          className={`${showPayLaterInClearSlot ? payLaterButtonClass : baseButtonClass} flex-1 min-w-[120px]`}
-		        >
-		          {showPayLaterInClearSlot ? payLaterLabel : t("Clear")}
-		        </button>
-        <button
-          onClick={handleMultifunction}
-          className={`${primaryButtonClass} flex-1 min-w-[120px]`}
-          disabled={isPhoneOrder && primaryActionLabel === "Pay"}
-          title={
-            isPhoneOrder && primaryActionLabel === "Pay"
-              ? t("Payments are handled through the Orders screen")
-              : undefined
-          }
-        >
-          {t(primaryActionLabel)}
-        </button>
-		      </div>
-	      {canShowCancelButton && (
-	        <div className="flex flex-wrap gap-2">
-	          <button
-	            type="button"
-	            onClick={() => {
-              openReservationModal();
-            }}
-            disabled={cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)}
-            className={`flex-1 min-w-[120px] rounded-lg px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition ${
-              cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)
-                ? "bg-blue-300 cursor-not-allowed"
-                : "bg-blue-500 hover:bg-blue-600"
-            }`}
-          >
-            {t("Reservation")}
-          </button>
-          <button
-            type="button"
-            onClick={openCancelModal}
-            disabled={cancelDisabled}
-            className={`${cancelButtonClass} flex-1 min-w-[120px]`}
-          >
-            {t("Cancel")}
-          </button>
-        </div>
-      )}
-    </div>
-  );
+  // Action buttons rendered in the full-page footer.
 
   return (
    <aside className={containerClasses}>
   {/* === Header === */}
-  <header className="flex items-start justify-between border-b border-slate-200 px-3 pt-2 pb-2">
+  <header className={`flex-none items-start justify-between border-b border-slate-200 bg-transparent ${headerPadding}`}>
     <div className="flex min-w-0 flex-1 flex-col space-y-0.5">
       <div className="flex w-full flex-wrap items-center gap-2">
         <h2 className="hidden text-lg font-semibold text-slate-800 lg:block">{t("Cart")}</h2>
         <div className="ml-auto flex items-center gap-1">
-          <div className="flex flex-wrap items-center gap-1 rounded-full bg-white/70 px-1 py-0.5 shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-center gap-1 rounded-full bg-white/80 px-1.5 py-1 shadow-sm ring-1 ring-white/80">
             {!orderId && (
               <button
                 type="button"
                 onClick={() => setShowMoveTableModal(true)}
-                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/90 px-2.5 py-1 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-50"
                 title={t("Move Table")}
                 aria-label={t("Move Table")}
               >
@@ -4029,7 +3968,7 @@ const renderCartContent = (variant = "desktop") => {
               <button
                 type="button"
                 onClick={() => setShowMergeTableModal(true)}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-50"
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white/90 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-50"
                 title={t("Merge Table")}
                 aria-label={t("Merge Table")}
               >
@@ -4037,14 +3976,14 @@ const renderCartContent = (variant = "desktop") => {
                 <span className="hidden sm:inline">{t("Merge")}</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                if (debtDisabled) return;
-                handleOpenDebtModal();
-              }}
-              disabled={debtDisabled}
-              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              <button
+                type="button"
+                onClick={() => {
+                  if (debtDisabled) return;
+                  handleOpenDebtModal();
+                }}
+                disabled={debtDisabled}
+              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
               title={t("Add to Debt")}
               aria-label={t("Add to Debt")}
             >
@@ -4153,21 +4092,27 @@ const renderCartContent = (variant = "desktop") => {
   {/* === Body === */}
   <div ref={cartScrollRef} className="min-h-0 flex-1 overflow-y-auto">
     <div
-      className="min-h-0 flex-1 px-3 pb-2 space-y-1.5 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
+      className="min-h-full px-3 pb-2 grid grid-rows-[auto_1fr] gap-1.5 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
       style={{ WebkitOverflowScrolling: "touch" }}
     >
-      {cartItems.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-xs font-medium text-slate-400">
-          {t("Cart is empty.")}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {unpaidCartItems.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-xs font-medium text-slate-400">
-              {t("No unpaid items")}
+      <div>
+        {cartItems.length === 0 ? (
+          <div className="h-full rounded-2xl border border-dashed border-slate-200 bg-white/70 py-8 text-center text-xs font-medium text-slate-500 shadow-inner grid place-items-center">
+            <div>
+              <div className="mx-auto mb-2 h-12 w-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 text-2xl leading-[48px]">
+                🛒
+              </div>
+              {t("Cart is empty.")}
             </div>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {unpaidCartItems.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-xs font-medium text-slate-400">
+                {t("No unpaid items")}
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
               {/* === Group unpaid items by product name + extras + note === */}
               {Object.values(
                 unpaidCartItems.reduce((acc, item) => {
@@ -4428,6 +4373,7 @@ const cardGradient = item.paid
     </div>
   </div>
 
+
   {!isExpanded && extrasTotal > 0 && (
     <div className="flex flex-col gap-1 pl-6 pr-1 text-xs text-slate-600">
       <div className="flex items-center justify-between">
@@ -4541,11 +4487,11 @@ const cardGradient = item.paid
 
             );
               })}
-            </ul>
-          )}
+              </ul>
+            )}
 
-          {paidCartItems.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white/70">
+            {paidCartItems.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-white/70">
               <button
                 type="button"
                 className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-700"
@@ -4709,36 +4655,39 @@ const cardGradient = item.paid
                 </ul>
               )}
             </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
+      <div aria-hidden className="min-h-0" />
     </div>
   </div>
 
   {/* === Footer === */}
-  <footer className="space-y-2 border-t border-slate-200 bg-slate-50 px-3 py-2 shadow-inner">
-    <div className="flex justify-between text-xs font-medium text-slate-600">
-      <span>{t("Subtotal")}:</span>
-      <span className="text-slate-900">
-        {formatCurrency(calculateDiscountedTotal())}
-      </span>
-    </div>
-
-    {discountValue > 0 && (
-      <div className="flex justify-between text-xs font-semibold text-indigo-600">
-        <span>
-          {t("Discount")}{" "}
-          {discountType === "percent"
-            ? `(${discountValue}%)`
-            : `(-${formatCurrency(discountValue)})`}
+  {variant === "desktop" ? (
+    <footer className={`flex-none sticky bottom-0 z-10 space-y-2 border-t border-slate-200 bg-slate-50 ${footerPadding}`}>
+      <div className="flex justify-between text-xs font-medium text-slate-600">
+        <span>{t("Subtotal")}:</span>
+        <span className="text-slate-900">
+          {formatCurrency(calculateDiscountedTotal())}
         </span>
-        <span>-{formatCurrency(discountValue)}</span>
       </div>
-    )}
+
+      {discountValue > 0 && (
+        <div className="flex justify-between text-xs font-semibold text-indigo-600">
+          <span>
+            {t("Discount")}{" "}
+            {discountType === "percent"
+              ? `(${discountValue}%)`
+              : `(-${formatCurrency(discountValue)})`}
+          </span>
+          <span>-{formatCurrency(discountValue)}</span>
+        </div>
+      )}
 
    <div
-  className={`flex justify-between items-center rounded-2xl bg-white px-3 py-3 text-lg font-bold shadow-sm
-  ${selectedCartItemIds.size > 0 ? "text-emerald-700 border border-emerald-300 bg-emerald-50" : "text-indigo-700"}`}
+  className={`flex justify-between items-center rounded-2xl bg-white/90 px-3 py-3 text-lg font-bold shadow-[0_10px_20px_rgba(99,102,241,0.18)] mb-[3px]
+  ${selectedCartItemIds.size > 0 ? "text-emerald-700 border border-emerald-200 bg-emerald-50/80" : "text-indigo-700 border border-indigo-100"}`}
 >
   <span>
     {selectedCartItemIds.size > 0
@@ -4753,32 +4702,122 @@ const cardGradient = item.paid
   </span>
 </div>
 
-
-	    {actionControls}
-
-    <div
-      className={`${
-        isDesktop ? "flex gap-1.5" : "grid grid-cols-2 gap-2"
-      }`}
-    >
-	      <button
-	        onClick={() => setShowDiscountModal(true)}
-        className={`${isDesktop ? "flex-1" : "w-full"} rounded-md bg-indigo-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-indigo-600`}
-      >
-        {t("Discount")}
-      </button>
-      <button
-        onClick={handleOpenCashRegister}
-        className={`${isDesktop ? "flex-1" : "w-full"} rounded-md bg-emerald-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600`}
-      >
-        {t("Register")}
-      </button>
+    </footer>
+  ) : (
+    <div className="lg:hidden px-4 pb-3 pt-2">
+      <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-inner">
+        <div className="flex justify-between text-xs font-medium text-slate-600">
+          <span>{t("Subtotal")}:</span>
+          <span className="text-slate-900">
+            {formatCurrency(calculateDiscountedTotal())}
+          </span>
+        </div>
+        {discountValue > 0 && (
+          <div className="flex justify-between text-xs font-semibold text-indigo-600">
+            <span>
+              {t("Discount")}{" "}
+              {discountType === "percent"
+                ? `(${discountValue}%)`
+                : `(-${formatCurrency(discountValue)})`}
+            </span>
+            <span>-{formatCurrency(discountValue)}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between text-sm font-bold text-indigo-700 mt-2">
+          <span>{selectedCartItemIds.size > 0 ? t("Selected Total") : t("Total")}:</span>
+          <span>
+            {selectedCartItemIds.size > 0
+              ? formatCurrency(selectedItemsTotal)
+              : formatCurrency(calculateDiscountedTotal())}
+          </span>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (!showPayLaterInClearSlot) {
+              clearCartFromClearButton();
+              return;
+            }
+            setIsFloatingCartOpen(false);
+            navigate("/tableoverview?tab=tables");
+          }}
+          className="flex-1 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+        >
+          {showPayLaterInClearSlot ? payLaterLabel : t("Clear")}
+        </button>
+        <button
+          type="button"
+          onClick={handleMultifunction}
+          disabled={isPhoneOrder && primaryActionLabel === "Pay"}
+          title={
+            isPhoneOrder && primaryActionLabel === "Pay"
+              ? t("Payments are handled through the Orders screen")
+              : undefined
+          }
+          className="flex-1 rounded-full bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(99,102,241,0.35)]"
+        >
+          {t(primaryActionLabel)}
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            openReservationModal();
+          }}
+          disabled={cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)}
+          className={`flex-1 min-w-[120px] rounded-full px-4 py-2 text-center text-xs font-semibold text-white shadow-[0_10px_20px_rgba(99,102,241,0.3)] transition ${
+            cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)
+              ? "bg-indigo-300 cursor-not-allowed"
+              : "bg-gradient-to-br from-indigo-400 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-600"
+          }`}
+        >
+          {t("Reservation")}
+        </button>
+        <button
+          type="button"
+          onClick={openCancelModal}
+          disabled={cartItems.length === 0 || normalizedStatus !== "confirmed" || cartItems.some((item) => item.confirmed && !isPaidItem(item))}
+          className="flex-1 min-w-[120px] rounded-full border border-rose-200 bg-rose-50/80 px-4 py-2 text-center text-xs font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {t("Cancel")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowDiscountModal(true)}
+          className="flex-1 min-w-[120px] rounded-full bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 px-4 py-2 text-center text-xs font-semibold text-white shadow-[0_10px_22px_rgba(245,158,11,0.35)] hover:from-amber-500 hover:to-orange-600"
+        >
+          {t("Discount")}
+        </button>
+        <button
+          type="button"
+          onClick={handleOpenCashRegister}
+          className="flex-1 min-w-[120px] rounded-full bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 px-4 py-2 text-center text-xs font-semibold text-white shadow-[0_10px_22px_rgba(16,185,129,0.35)] hover:from-emerald-600 hover:to-teal-700"
+        >
+          {t("Register")}
+        </button>
+      </div>
     </div>
-  </footer>
+  )}
 </aside>
 
   );
 };
+  const footerPrimaryActionLabel = getButtonLabel();
+  const showPayLaterInFooter =
+    !orderId &&
+    cartItems.length > 0 &&
+    !hasUnconfirmedCartItems &&
+    ["confirmed", "unpaid", "paid"].includes(normalizedStatus);
+  const footerPayLaterLabel =
+    showPayLaterInFooter && (normalizedStatus === "paid" || allPaidIncludingSuborders)
+      ? t("Close Later")
+      : t("Pay Later");
+  const footerCancelDisabled =
+    normalizedStatus !== "confirmed" || hasUnconfirmedCartItems || cartItems.length === 0;
+  const footerCanShowCancel = orderType === "table";
   const shouldBlockUi = deferHeavyUi || (loading && !tableId);
   if (shouldBlockUi) {
     return (
@@ -4793,39 +4832,47 @@ const cardGradient = item.paid
   }
 
   return (
-    <div className="relative flex h-full min-h-[calc(100vh-80px)] w-full flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden">
-      <div className="flex flex-1 min-h-0 w-full flex-col gap-2 px-2 sm:px-3 lg:px-4 overflow-x-hidden">
-  <section className="flex flex-1 min-h-0 flex-row gap-2 pb-1 overflow-hidden">
+    <div className="relative flex h-full min-h-[calc(100vh-80px)] w-full flex-col overflow-hidden">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-slate-50" />
+      <div className="flex h-full min-h-0 w-full flex-col gap-0 px-2 sm:px-3 lg:px-4 overflow-hidden">
+  <section className="flex flex-1 min-h-0 flex-row gap-3 pb-2 overflow-hidden bg-slate-50">
 
     {/* === LEFT: CART PANEL (desktop only) === */}
     <div className="hidden lg:block w-[30%] min-w-[320px] max-w-[380px] h-full overflow-hidden">
       <div className="sticky top-0 h-full">{renderCartContent("desktop")}</div>
     </div>
 
-    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 shadow-lg ring-1 ring-slate-200 dark:ring-zinc-800">
+    {/* Separator between cart and products (desktop only) */}
+    <div
+      className="hidden lg:block h-full w-px self-stretch rounded-full bg-gradient-to-b from-transparent via-slate-200 to-transparent shadow-[0_0_0_1px_rgba(148,163,184,0.08)]"
+      aria-hidden="true"
+    />
+
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-transparent shadow-none ring-0">
       {/* Header */}
-      <div className="border-b border-slate-100 dark:border-zinc-800 px-3 py-2">
+      <div className="border-b border-slate-200 bg-transparent px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <div className="relative w-full max-w-[280px]">
+            <div className="relative w-full max-w-[360px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={catalogSearch}
                 onChange={(e) => setCatalogSearch(e.target.value)}
                 placeholder={t("Search products or categories")}
-                className="w-full rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 pr-9 text-sm text-slate-700 dark:text-slate-100 shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+                className="w-full rounded-full border border-white/70 bg-white/90 px-9 py-2 text-sm text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)] outline-none transition placeholder:text-slate-400 focus:border-indigo-200 focus:ring-4 focus:ring-indigo-100"
               />
               {catalogSearch.trim() && (
                 <button
                   type="button"
                   onClick={() => setCatalogSearch("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-100 dark:bg-zinc-700 px-2 py-0.5 text-xs font-bold text-slate-600 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-zinc-600"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 hover:bg-slate-200"
                   aria-label={t("Clear search")}
                 >
                   ✕
                 </button>
               )}
             </div>
-            <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+            <span className="rounded-full bg-indigo-50/80 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
               {visibleProducts.length} {t("Products")}
             </span>
           </div>
@@ -4852,51 +4899,90 @@ const cardGradient = item.paid
         )}
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {categoryColumns.left.length > 0 && (
-          <aside className="h-full w-[10%] min-w-[90px] max-w-[120px] border-r border-slate-200 bg-slate-50 p-1.5">
-            <div className="flex h-full flex-col items-center gap-1.5 overflow-y-auto px-0.5 scrollbar-thin scrollbar-thumb-indigo-300 scrollbar-track-transparent">
-              {categoryColumns.left.map((entry) => (
-                <div key={`left-${entry.cat}-${entry.index}`}>
-                  {renderCategoryButton(entry.cat, entry.index, "vertical")}
+      <style>{`
+        [data-category-scroll]::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+
+      <div className="flex flex-col h-full min-h-0 overflow-hidden">
+        {/* === TOP ROW (LEFT TO RIGHT) === */}
+        {categoryColumns.top.length > 0 && (
+          <div className="flex flex-none border-b border-slate-200 bg-transparent p-1 relative">
+            <div 
+              ref={topRowRef}
+              data-category-scroll
+              className="flex flex-row items-center gap-1.5 justify-start overflow-x-auto px-1.5 py-1 scroll-smooth"
+              style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            >
+              {categoryColumns.top.map((entry) => (
+                <div key={`top-${entry.cat}-${entry.index}`}>
+                  {renderCategoryButton(entry.cat, entry.index, "horizontal")}
                 </div>
               ))}
             </div>
-          </aside>
+            {topRowScroll.canScrollLeft && (
+              <button
+                onClick={() => {
+                  if (topRowRef.current) {
+                    topRowRef.current.scrollBy({ left: -60, behavior: 'smooth' });
+                  }
+                }}
+                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-6 w-6 rounded-full bg-indigo-500 text-white shadow-lg flex items-center justify-center hover:bg-indigo-600 transition"
+                aria-label="Scroll left"
+              >
+                ‹
+              </button>
+            )}
+            {topRowScroll.canScrollRight && (
+              <button
+                onClick={() => {
+                  if (topRowRef.current) {
+                    topRowRef.current.scrollBy({ left: 60, behavior: 'smooth' });
+                  }
+                }}
+                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-6 w-6 rounded-full bg-indigo-500 text-white shadow-lg flex items-center justify-center hover:bg-indigo-600 transition"
+                aria-label="Scroll right"
+              >
+                ›
+              </button>
+            )}
+          </div>
         )}
 
-        {/* === CENTER: PRODUCTS GRID === */}
-        <article className="flex min-w-0 flex-1 flex-col bg-white px-0 py-2 overflow-hidden">
-          <div className="flex-1 overflow-y-auto pr-0">
-            <div className="flex items-start justify-start">
-              <div className="grid w-full grid-cols-2 gap-x-1 gap-y-1.5 sm:grid-cols-3 md:grid-cols-5 px-1 sm:px-1.5">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* === CENTER: PRODUCTS GRID === */}
+          <article className="flex min-w-0 flex-1 min-h-0 flex-col bg-transparent px-0 py-2 overflow-hidden">
+          <div className="h-[calc(100vh-260px)] overflow-y-scroll pr-1 pb-[120px] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+              <div className="flex items-start justify-start">
+                <div className="grid w-full grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3 md:grid-cols-5 px-2 sm:px-2.5">
                 {visibleProducts.map((product) => (
                   <button
                     key={product.id}
                     onClick={() => addToCart(product)}
                     className="
-                      flex w-full min-h-[120px] flex-col overflow-hidden rounded-md border border-slate-300 bg-white/95 text-center shadow-[0_1px_2px_rgba(0,0,0,0.08)]
-                      hover:border-indigo-300 hover:shadow-[0_2px_4px_rgba(0,0,0,0.12)] active:bg-indigo-50
+                      flex w-full min-h-[110px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/90 text-center shadow-[0_10px_22px_rgba(15,23,42,0.08)]
+                      hover:border-indigo-200 hover:shadow-[0_14px_28px_rgba(99,102,241,0.18)] active:bg-indigo-50
                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60
                     "
                   >
-                    <div className="relative w-full overflow-hidden border-b border-slate-200 bg-white p-1">
+                    <div className="relative w-full overflow-hidden border-b border-white/70 bg-white/80 p-1.5">
                       <div className="aspect-[1/1]">
                         <div className="flex h-full w-full items-center justify-center overflow-hidden">
                           {product.image ? (
                             <img
                               src={product.image}
                               alt={product.name}
-                              className="h-full w-full object-cover scale-90 rounded-sm"
+                              className="h-full w-full object-cover scale-90 rounded-xl"
                               loading="lazy"
                             />
                           ) : (
-                            <div className="h-full w-full bg-gradient-to-b from-slate-50 to-slate-200" />
+                            <div className="h-full w-full rounded-xl bg-gradient-to-br from-slate-100 to-slate-200" />
                           )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex w-full flex-col items-center justify-center gap-0.5 bg-slate-100 px-1.5 py-1">
+                    <div className="flex w-full flex-col items-center justify-center gap-0.5 bg-white/80 px-1.5 py-2">
                       <p className="w-full text-[14px] font-semibold text-slate-700 leading-tight line-clamp-1">
                         {product.name}
                       </p>
@@ -4906,99 +4992,102 @@ const cardGradient = item.paid
                     </div>
                   </button>
                 ))}
+                </div>
               </div>
             </div>
-          </div>
-        </article>
+          </article>
 
-        {/* === RIGHT: CATEGORY COLUMN (PRIMARY, DESKTOP ONLY) === */}
-        <aside className="hidden lg:block h-full w-[10%] min-w-[90px] max-w-[120px] border-l border-slate-200 bg-slate-50 p-1.5">
-          <div
-            ref={rightCategoryColumnRef}
-            className="flex h-full flex-col items-center gap-1.5 overflow-hidden px-0.5"
-          >
-            {categoryColumns.right.map((entry, idx) => (
-              <div
-                key={`right-${entry.cat}-${entry.index}`}
-                ref={idx === 0 ? categoryMeasureRef : null}
-              >
-                {renderCategoryButton(entry.cat, entry.index, "vertical")}
-              </div>
-            ))}
-          </div>
-        </aside>
-      </div>
-
-      {/* === BOTTOM CATEGORY BAR (DESKTOP) === */}
-      {categoryColumns.bottom.length > 0 && (
-        <div className="hidden lg:block relative border-t border-slate-200 bg-slate-50 px-3 py-1.5 sticky bottom-0">
-          <div
-            ref={bottomBarRef}
-            className="flex flex-nowrap gap-1.5 overflow-x-auto scrollbar-hide"
-          >
-            {categoryColumns.bottom.map((entry) => (
-              <div key={`bottom-${entry.cat}-${entry.index}`}>
-                {renderCategoryButton(entry.cat, entry.index, "bar")}
-              </div>
-            ))}
-          </div>
-          {bottomBarScrollable && !bottomScrollStart && (
-            <button
-              type="button"
-              onClick={() =>
-                bottomBarRef.current?.scrollBy({
-                  left: -bottomBarRef.current.clientWidth,
-                  behavior: "smooth",
-                })
-              }
-              className="pointer-events-auto absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1 shadow-md shadow-slate-300/80 transition hover:bg-white"
-              aria-label={t("Scroll categories")}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                className="h-4 w-4 text-slate-600"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 5l-7 7 7 7" />
-              </svg>
-            </button>
-          )}
-          {bottomBarScrollable && !bottomScrollEnd && (
-            <button
-              type="button"
-              onClick={() =>
-                bottomBarRef.current?.scrollBy({
-                  left: bottomBarRef.current.clientWidth,
-                  behavior: "smooth",
-                })
-              }
-              className="pointer-events-auto absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1 shadow-md shadow-slate-300/80 transition hover:bg-white"
-              aria-label={t("Scroll categories")}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                className="h-4 w-4 text-slate-600"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          )}
+          {/* Right category column removed */}
         </div>
-      )}
+      </div>
     </div>
   </section>
+
+      <div className="hidden lg:block fixed bottom-0 left-0 right-0 z-30 w-full border-t border-slate-200 bg-slate-50 px-3 py-3">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleMultifunction}
+            disabled={isPhoneOrder && footerPrimaryActionLabel === "Pay"}
+            title={
+              isPhoneOrder && footerPrimaryActionLabel === "Pay"
+                ? t("Payments are handled through the Orders screen")
+                : undefined
+            }
+            className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 px-5 py-3 text-lg font-semibold text-white shadow-[0_10px_24px_rgba(99,102,241,0.35)] transition hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+            {t(footerPrimaryActionLabel)}
+          </button>
+
+          {footerCanShowCancel && (
+            <button
+              type="button"
+              onClick={() => openReservationModal()}
+              disabled={cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)}
+              className={`flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-lg font-semibold text-white shadow-[0_10px_22px_rgba(99,102,241,0.3)] transition ${
+                cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)
+                  ? "bg-indigo-300 cursor-not-allowed"
+                  : "bg-gradient-to-br from-indigo-400 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-600"
+              }`}
+            >
+              <CalendarClock className="h-5 w-5" aria-hidden="true" />
+              {t("Reservation")}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!showPayLaterInFooter) {
+                clearCartFromClearButton();
+                return;
+              }
+              setIsFloatingCartOpen(false);
+              navigate("/tableoverview?tab=tables");
+            }}
+            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-2xl border border-white/70 bg-white/80 px-5 py-3 text-lg font-semibold text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.10)] backdrop-blur hover:bg-white"
+          >
+            <Trash2 className="h-5 w-5" aria-hidden="true" />
+            {showPayLaterInFooter ? footerPayLaterLabel : t("Clear")}
+          </button>
+
+          {footerCanShowCancel && (
+            <button
+              type="button"
+              onClick={openCancelModal}
+              disabled={footerCancelDisabled}
+              className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/80 px-5 py-3 text-lg font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CircleX className="h-5 w-5" aria-hidden="true" />
+              {t("Cancel")}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowDiscountModal(true)}
+            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 px-5 py-3 text-lg font-semibold text-white shadow-[0_10px_22px_rgba(245,158,11,0.35)] hover:from-amber-500 hover:to-orange-600"
+          >
+            <BadgePercent className="h-5 w-5" aria-hidden="true" />
+            {t("Discount")}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenCashRegister}
+            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 px-5 py-3 text-lg font-semibold text-white shadow-[0_10px_22px_rgba(16,185,129,0.35)] hover:from-emerald-600 hover:to-teal-700"
+          >
+            <Wallet className="h-5 w-5" aria-hidden="true" />
+            {t("Register")}
+          </button>
+        </div>
+      </div>
 
     </div>
 
       <div
-        className={`lg:hidden fixed right-4 bottom-[108px] z-40 transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[140%]" : "translate-y-0"}`}
+        className={`lg:hidden fixed left-4 bottom-[45px] z-40 transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[140%]" : "translate-y-0"}`}
       >
         <button
           type="button"
@@ -5020,21 +5109,7 @@ const cardGradient = item.paid
         </button>
       </div>
 
-      {/* === MOBILE CATEGORY BAR (BELOW FLOATING CART) === */}
-      {categoryColumns.bottom.length > 0 && (
-        <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-slate-50 px-3 py-2 shadow-inner">
-          <div
-            ref={bottomBarRef}
-            className="flex flex-nowrap gap-1.5 overflow-x-auto scrollbar-hide"
-          >
-            {categoryColumns.bottom.map((entry) => (
-              <div key={`mobile-bottom-${entry.cat}-${entry.index}`}>
-                {renderCategoryButton(entry.cat, entry.index, "bar")}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* category chain rendered on right then left */}
 
       <div
         className={`lg:hidden fixed inset-0 z-50 transition-all duration-300 ${isFloatingCartOpen ? "pointer-events-auto" : "pointer-events-none"}`}
