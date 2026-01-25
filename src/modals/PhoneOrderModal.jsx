@@ -281,22 +281,9 @@ const handleStartOrder = async (options = {}) => {
       total: 0,
     };
 
-    // Fire order creation without blocking the modal; pass a nonce so TransactionScreen can reuse the same promise.
-    const creationNonce = `phone-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const creationPromise = secureFetch(`/orders`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-
-    if (typeof window !== "undefined") {
-      const bag = (window.__hurryposPhoneCreatePromises =
-        window.__hurryposPhoneCreatePromises || {});
-      bag[creationNonce] = creationPromise;
-    }
-
-    // Navigate instantly; TransactionScreen will consume the pending creation promise via the nonce.
+    // Navigate instantly; TransactionScreen will create the order on first confirm.
     navigate(`/transaction/phone/new`, {
-      state: { phoneOrderDraft: body, creationNonce },
+      state: { phoneOrderDraft: body },
     });
   } catch (err) {
     alert("❌ Failed to start order: " + (err.message || "Unknown error"));

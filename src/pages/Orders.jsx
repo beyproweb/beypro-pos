@@ -124,12 +124,12 @@ const removeDrink = async (id) => {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 p-7 max-w-4xl w-full text-slate-900">
-        <h2 className="font-semibold text-xl sm:text-2xl mb-4 tracking-tight text-slate-900">
+      <div className="bg-white rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 p-7 max-w-4xl w-full text-slate-900 dark:bg-slate-950 dark:text-slate-100 dark:border-slate-800 dark:shadow-[0_30px_60px_-35px_rgba(0,0,0,0.6)]">
+        <h2 className="font-semibold text-xl sm:text-2xl mb-4 tracking-tight text-slate-900 dark:text-slate-100">
           ⚙️ {t("Settings")}
         </h2>
 
-        <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-2xl p-1 mb-4">
+        <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-2xl p-1 mb-4 dark:bg-slate-900/60 dark:border-slate-700">
           {tabs.map(({ key, label }) => {
             const isActive = activeTab === key;
             return (
@@ -139,8 +139,8 @@ const removeDrink = async (id) => {
                 disabled={isActive}
                 className={`px-4 py-2 rounded-2xl text-sm sm:text-base font-semibold transition ${
                   isActive
-                    ? "bg-white text-slate-900 shadow border border-slate-200"
-                    : "text-slate-500 hover:text-slate-800"
+                    ? "bg-white text-slate-900 shadow border border-slate-200 dark:bg-slate-950 dark:text-slate-100 dark:border-slate-700"
+                    : "text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
                 }`}
               >
                 {label}
@@ -153,7 +153,7 @@ const removeDrink = async (id) => {
           <>
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
               <input
-                className="flex-1 border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-300"
+                className="flex-1 border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                 value={input}
                 placeholder={t("Drink name (e.g. Cola)")}
                 onChange={(e) => setInput(e.target.value)}
@@ -161,7 +161,7 @@ const removeDrink = async (id) => {
                 disabled={saving}
               />
               <button
-                className="bg-slate-900 text-white px-4 py-2 rounded-xl hover:bg-slate-800 transition"
+                className="bg-slate-900 text-white px-4 py-2 rounded-xl hover:bg-slate-800 transition dark:bg-indigo-600 dark:hover:bg-indigo-500"
                 onClick={addDrink}
                 disabled={saving || !input.trim()}
               >
@@ -176,7 +176,7 @@ const removeDrink = async (id) => {
                 {drinks.map((d) => (
                   <span
                     key={d.id}
-                    className="inline-flex items-center gap-2 bg-slate-100 text-slate-800 px-3 py-1 rounded-xl border border-slate-200"
+                    className="inline-flex items-center gap-2 bg-slate-100 text-slate-800 px-3 py-1 rounded-xl border border-slate-200 dark:bg-slate-900/60 dark:text-slate-100 dark:border-slate-700"
                   >
                     {d.name}
                     <button
@@ -208,10 +208,10 @@ const removeDrink = async (id) => {
               summaryByDriver.map((driver) => (
                 <div
                   key={driver.driverId}
-                  className="border border-slate-200 rounded-3xl p-4 bg-white shadow-sm"
+                  className="border border-slate-200 rounded-3xl p-4 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/60"
                 >
                   <div className="flex flex-wrap items-center gap-2 mb-3">
-                    <span className="text-lg font-semibold text-slate-900">
+                    <span className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                       🛵 {driver.driverName}
                     </span>
                     <div className="flex flex-wrap gap-2 ml-auto">
@@ -311,6 +311,7 @@ export default function Orders({ orders: propOrders, hideModal = false }) {
   const [mapStops, setMapStops] = useState([]);
   const [mapOrders, setMapOrders] = useState([]);
   const [showRoute, setShowRoute] = useState(false);
+  const [selectedDriverId, setSelectedDriverId] = useState("");
   const [drivers, setDrivers] = useState([]);
   const [editingDriver, setEditingDriver] = useState({});
   const [restaurantCoords, setRestaurantCoords] = useState({ lat: 38.099579, lng: 27.718065, label: "Restaurant", address: "" }); // Fetch from /api/me
@@ -602,6 +603,13 @@ async function fetchDriverReport() {
         return;
       }
 
+      const selectedId = Number(selectedDriverId);
+      const hasSelectedDriver =
+        String(selectedDriverId || "").trim() !== "" && Number.isFinite(selectedId);
+      if (hasSelectedDriver) {
+        driverIds = [selectedId];
+      }
+
       const dates = reportFromDate === reportToDate ? [reportFromDate] : buildDateRange(reportFromDate, reportToDate);
       if (dates.length === 0) {
         setDriverReport({ error: "Invalid date range" });
@@ -710,7 +718,7 @@ const handleToggleDriverReport = () => {
 useEffect(() => {
   if (!showDriverReport) return;
   fetchDriverReport();
-}, [reportFromDate, reportToDate, showDriverReport]);
+}, [reportFromDate, reportToDate, selectedDriverId, showDriverReport]);
 
 
 
@@ -896,7 +904,7 @@ else if (relevantItems.some(i => i.kitchen_status === "preparing"))
 
 
   // Geocode orders into stops, start from restaurant
-  async function fetchOrderStops(phoneOrders) {
+async function fetchOrderStops(phoneOrders) {
   // Ensure we have restaurant info (avoid race if /me hasn't returned yet)
   if (
     !restaurantCoords ||
@@ -976,6 +984,21 @@ else if (relevantItems.some(i => i.kitchen_status === "preparing"))
 
   return stops;
 }
+
+const openRouteForSelectedDriver = async () => {
+  const selectedId = Number(selectedDriverId);
+  const hasSelectedDriver =
+    String(selectedDriverId || "").trim() !== "" && Number.isFinite(selectedId);
+
+  const scopedOrders = hasSelectedDriver
+    ? (orders || []).filter((order) => Number(order?.driver_id) === selectedId)
+    : (orders || []);
+
+  setMapOrders(scopedOrders);
+  const stops = await fetchOrderStops(scopedOrders);
+  setMapStops(stops);
+  setShowRoute(true);
+};
 
 
   // Payment Method Update
@@ -1626,6 +1649,29 @@ const drinkSummaryByDriver = useMemo(() => {
     .filter(Boolean);
 }, [drivers, orders, drinksList]);
 
+const filteredDrinkSummaryByDriver = useMemo(() => {
+  const selectedId = Number(selectedDriverId);
+  const hasSelectedDriver =
+    String(selectedDriverId || "").trim() !== "" && Number.isFinite(selectedId);
+  if (!hasSelectedDriver) return drinkSummaryByDriver;
+  return drinkSummaryByDriver.filter(
+    (entry) => Number(entry?.driverId) === selectedId
+  );
+}, [drinkSummaryByDriver, selectedDriverId]);
+
+const assignedOrderCountForSelectedDriver = useMemo(() => {
+  const list = Array.isArray(orders) ? orders : [];
+  const selectedId = Number(selectedDriverId);
+  const hasSelectedDriver =
+    String(selectedDriverId || "").trim() !== "" && Number.isFinite(selectedId);
+
+  if (hasSelectedDriver) {
+    return list.filter((order) => Number(order?.driver_id) === selectedId).length;
+  }
+
+  return list.filter((order) => Number.isFinite(Number(order?.driver_id))).length;
+}, [orders, selectedDriverId]);
+
 const renderPaymentModal = () => {
   if (!showPaymentModal || !editingPaymentOrder) return null;
 
@@ -1635,22 +1681,22 @@ const renderPaymentModal = () => {
 
   return (
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 transition-all duration-300">
-      <div className="relative bg-white rounded-3xl w-[94vw] max-w-md mx-auto p-7 shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 animate-fade-in">
+      <div className="relative bg-white rounded-3xl w-[94vw] max-w-md mx-auto p-7 shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] border border-slate-200 animate-fade-in dark:bg-slate-950 dark:border-slate-800 dark:shadow-[0_30px_60px_-35px_rgba(0,0,0,0.6)]">
         {/* Close */}
         <button
           onClick={closePaymentModal}
-          className="absolute top-3 right-4 text-2xl text-slate-400 hover:text-emerald-500 transition"
+          className="absolute top-3 right-4 text-2xl text-slate-400 hover:text-emerald-500 transition dark:hover:text-emerald-300"
           title={t("Close")}
         >
           ✕
         </button>
         {/* Title */}
         <div className="flex flex-col items-center mb-5">
-          <div className="text-3xl font-semibold text-slate-900 mb-1">💸 {t("Payment")}</div>
-          <div className="text-sm font-medium text-slate-500 mb-2">
+          <div className="text-3xl font-semibold text-slate-900 mb-1 dark:text-slate-100">💸 {t("Payment")}</div>
+          <div className="text-sm font-medium text-slate-500 mb-2 dark:text-slate-300">
             {t("Order")} #{editingPaymentOrder.id}
           </div>
-          <div className="text-xs bg-slate-100 text-slate-500 rounded-xl px-4 py-1 font-medium tracking-[0.35em] uppercase border border-slate-200">
+          <div className="text-xs bg-slate-100 text-slate-500 rounded-xl px-4 py-1 font-medium tracking-[0.35em] uppercase border border-slate-200 dark:bg-slate-900/60 dark:text-slate-300 dark:border-slate-700">
             {t("Split between multiple payment methods if needed.")}
           </div>
         </div>
@@ -1659,7 +1705,7 @@ const renderPaymentModal = () => {
           {splitPayments.map((pay, idx) => (
             <div
               key={idx}
-              className="flex gap-3 items-center group animate-fade-in border-b border-slate-200 pb-2"
+              className="flex gap-3 items-center group animate-fade-in border-b border-slate-200 pb-2 dark:border-slate-800"
             >
               <select
                 value={pay.method}
@@ -1668,7 +1714,7 @@ const renderPaymentModal = () => {
                   copy[idx].method = e.target.value;
                   setSplitPayments(copy);
                 }}
-                className="rounded-xl border border-slate-200 px-3 py-2 font-medium text-base bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400"
+                className="rounded-xl border border-slate-200 px-3 py-2 font-medium text-base bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-500/30"
               >
                 {!methodOptionSource.some((method) => method.label === pay.method) &&
                   pay.method && (
@@ -1686,7 +1732,7 @@ const renderPaymentModal = () => {
                 inputMode="decimal"
                 min="0"
                 step="0.01"
-                className="w-28 rounded-xl border border-slate-200 px-4 py-2 text-base text-right font-mono bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400"
+                className="w-28 rounded-xl border border-slate-200 px-4 py-2 text-base text-right font-mono bg-white text-slate-900 focus:ring-2 focus:ring-slate-300 focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:ring-indigo-500/30"
                 placeholder={`${config?.symbol || ""}0.00`}
                 value={pay.amount}
                 onChange={(e) => {
@@ -1705,7 +1751,7 @@ const renderPaymentModal = () => {
               />
               {splitPayments.length > 1 && (
                 <button
-                  className="ml-2 p-2 bg-slate-100 text-rose-500 rounded-full hover:bg-rose-100 border border-slate-200 transition"
+                  className="ml-2 p-2 bg-slate-100 text-rose-500 rounded-full hover:bg-rose-100 border border-slate-200 transition dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-rose-950/25"
                   onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))}
                   title={t("Remove")}
                 >
@@ -1715,7 +1761,7 @@ const renderPaymentModal = () => {
             </div>
           ))}
           <button
-            className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium shadow transition-all"
+            className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium shadow transition-all dark:bg-indigo-600 dark:hover:bg-indigo-500"
             onClick={() =>
               setSplitPayments([...splitPayments, { method: fallbackMethodLabel, amount: "" }])
             }
@@ -1724,15 +1770,15 @@ const renderPaymentModal = () => {
           </button>
         </div>
         {/* Total Summary */}
-        <div className="bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl shadow-inner text-center">
-  <span className="text-2xl sm:text-4xl text-emerald-700 font-extrabold font-mono tracking-tight">
+        <div className="bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl shadow-inner text-center dark:bg-emerald-950/25 dark:border-emerald-500/30">
+  <span className="text-2xl sm:text-4xl text-emerald-700 font-extrabold font-mono tracking-tight dark:text-emerald-200">
     {formatCurrency(grandTotal)}
 
 
           </span>
-          <span className="text-sm sm:text-base text-slate-600 flex gap-2 items-center">
+          <span className="text-sm sm:text-base text-slate-600 flex gap-2 items-center dark:text-slate-300">
             {t("Split Amount Paid")}:&nbsp;
-            <span className="text-lg sm:text-xl font-semibold text-slate-900 font-mono">
+            <span className="text-lg sm:text-xl font-semibold text-slate-900 font-mono dark:text-slate-100">
               {formatCurrency(
                 splitPayments.reduce(
                   (sum, p) => sum + Number(p.amount || 0),
@@ -1772,7 +1818,7 @@ const renderPaymentModal = () => {
         {/* Save/Cancel */}
         <div className="flex gap-3 justify-end mt-5">
           <button
-            className="px-5 py-2 rounded-xl bg-white text-slate-600 font-medium border border-slate-200 hover:bg-slate-100"
+            className="px-5 py-2 rounded-xl bg-white text-slate-600 font-medium border border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-800"
             onClick={closePaymentModal}
           >
             {t("Cancel")}
@@ -1780,8 +1826,8 @@ const renderPaymentModal = () => {
           <button
             className={`px-6 py-2 rounded-xl font-semibold shadow text-white transition-all duration-150 ${
               splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) === grandTotal
-                ? "bg-emerald-500 hover:bg-emerald-400 scale-[1.02]"
-                : "bg-slate-300 cursor-not-allowed text-slate-500"
+                ? "bg-emerald-500 hover:bg-emerald-400 scale-[1.02] dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                : "bg-slate-300 cursor-not-allowed text-slate-500 dark:bg-slate-700 dark:text-slate-300"
             }`}
             disabled={splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) !== grandTotal}
             onClick={async () => {
@@ -1915,13 +1961,13 @@ const renderCancelModal = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 dark:bg-slate-950 dark:border-slate-800">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-1">
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-1 dark:text-slate-500">
               {t("Cancel Order")}
             </p>
-            <p className="text-lg font-bold text-slate-900">
+            <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
               {t("Order")} #{cancelOrder?.id || "-"}
             </p>
             <p className="text-sm text-rose-500 mt-1">
@@ -1931,21 +1977,21 @@ const renderCancelModal = () => {
           <button
             type="button"
             onClick={closeCancelModal}
-            className="text-slate-400 hover:text-slate-600"
+            className="text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200"
           >
             ✕
           </button>
         </div>
-        <p className="text-sm text-slate-500 mb-3">
+        <p className="text-sm text-slate-500 mb-3 dark:text-slate-300">
           {t("The cancellation reason will be recorded for auditing.")}
         </p>
 
         {shouldShowRefundMethod ? (
-          <div className="space-y-3 rounded-2xl border border-dashed border-rose-100 bg-rose-50/60 p-4 mb-3">
+          <div className="space-y-3 rounded-2xl border border-dashed border-rose-100 bg-rose-50/60 p-4 mb-3 dark:border-rose-500/25 dark:bg-rose-950/20">
             <label className="block text-xs font-semibold uppercase tracking-wide text-rose-500">
               {t("Refund Method")}
               <select
-                className="mt-1 w-full rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm text-rose-600 focus:border-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                className="mt-1 w-full rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm text-rose-600 focus:border-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-100 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-200 dark:focus:ring-rose-500/20"
                 value={refundMethodId}
                 onChange={(event) => setRefundMethodId(event.target.value)}
               >
@@ -1956,12 +2002,12 @@ const renderCancelModal = () => {
                 ))}
               </select>
             </label>
-            <p className="text-xs text-rose-500">
+            <p className="text-xs text-rose-500 dark:text-rose-300">
               {t("Refund amount")}: {formatCurrency(refundAmount)}
             </p>
           </div>
         ) : (
-          <p className="mb-3 text-xs text-slate-500">
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             {t("No paid items detected. This will simply cancel the order.")}
           </p>
         )}
@@ -1971,14 +2017,14 @@ const renderCancelModal = () => {
           value={cancelReason}
           onChange={(event) => setCancelReason(event.target.value)}
           placeholder={t("Why is the order being cancelled?")}
-          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 focus:outline-none"
+          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:ring-rose-500/20"
         />
 
         <div className="mt-5 flex flex-wrap justify-end gap-3">
           <button
             type="button"
             onClick={closeCancelModal}
-            className="rounded-2xl border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition"
+            className="rounded-2xl border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
           >
             {t("Back")}
           </button>
@@ -2001,25 +2047,31 @@ const renderCancelModal = () => {
 };
 
 return (
-  <div className="min-h-screen w-full bg-[#f7f9fc] text-slate-900">
+  <div className="min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
 
 {/* --- HEADER & ACTIONS, Always Centered --- */}
-<div className="w-full flex flex-col items-center justify-center pt-1 pb-0 min-h-[50px]">
+<div className="w-full flex flex-col items-center justify-center py-2 min-h-[44px]">
 
   <div className="flex flex-col items-center justify-center w-full max-w-6xl">
-    <div className="flex flex-col gap-3 w-full">
-      <div className="flex flex-col md:flex-row md:flex-nowrap items-center justify-center gap-3 w-full">
+    <div className="flex flex-col gap-2 w-full">
+      <div className="flex flex-col md:flex-row md:flex-nowrap items-center justify-center gap-2 w-full">
         <div className="w-full md:w-auto flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3">
           <button
-            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap leading-none px-4 sm:px-6 py-2 rounded-2xl bg-slate-900 text-white text-sm sm:text-base font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap h-10 px-4 sm:px-5 rounded-md bg-white/80 text-slate-800 border border-slate-200 text-sm sm:text-base font-semibold shadow-sm hover:bg-white hover:border-slate-300 active:bg-slate-50 disabled:opacity-40 transition inline-flex items-center justify-center gap-2"
             disabled={!drivers.length}
-            onClick={async () => {
-              alert(t("Please select a driver from an order to view their route"));
-            }}
+            onClick={openRouteForSelectedDriver}
           >
             <span className="inline-flex items-center gap-2 sm:whitespace-nowrap">
-              🛵
-              <span className="shrink-0 bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-lg border border-emerald-300 font-semibold">
+              <span className="inline-flex h-4 w-4 items-center justify-center text-slate-600" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                  <path d="M5 16a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z" />
+                  <path d="M15 16a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z" />
+                  <path d="M7 16h6l2-7h4" />
+                  <path d="M9 16l-1-5H5" />
+                  <path d="M6 11h2" />
+                </svg>
+              </span>
+              <span className="shrink-0 bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-md border border-emerald-300 font-semibold leading-none">
                 LIVE
               </span>
               <span className="sm:whitespace-nowrap">{t("Route")}</span>
@@ -2027,7 +2079,7 @@ return (
           </button>
 
           <button
-            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap leading-none px-4 sm:px-6 py-2 rounded-2xl bg-slate-900 text-white text-sm sm:text-base font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap h-10 px-4 sm:px-5 rounded-md bg-white/80 text-slate-800 border border-slate-200 text-sm sm:text-base font-semibold shadow-sm hover:bg-white hover:border-slate-300 active:bg-slate-50 disabled:opacity-40 transition inline-flex items-center justify-center gap-2"
             disabled={!drivers.length}
             onClick={() => setShowDrinkModal(true)}
           >
@@ -2037,21 +2089,49 @@ return (
           </button>
 
           <button
-            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap leading-none px-4 sm:px-6 py-2 rounded-2xl bg-slate-900 text-white text-sm sm:text-base font-semibold shadow hover:bg-slate-800 hover:-translate-y-0.5 inline-flex items-center justify-center gap-2 disabled:opacity-40 transition"
+            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap h-10 px-4 sm:px-5 rounded-md bg-white/80 text-slate-800 border border-slate-200 text-sm sm:text-base font-semibold shadow-sm hover:bg-white hover:border-slate-300 active:bg-slate-50 disabled:opacity-40 transition inline-flex items-center justify-center gap-2"
             disabled={!drivers.length}
             onClick={handleToggleDriverReport}
           >
             <span className="inline-flex items-center gap-2 sm:whitespace-nowrap">
-              📊 <span className="sm:whitespace-nowrap">{t("Driver Report")}</span>
+              <span className="inline-flex h-4 w-4 items-center justify-center text-slate-600" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                  <path d="M4 19V5" />
+                  <path d="M4 19h16" />
+                  <path d="M8 17v-6" />
+                  <path d="M12 17V9" />
+                  <path d="M16 17v-4" />
+                </svg>
+              </span>
+              <span className="sm:whitespace-nowrap">{t("Driver Report")}</span>
             </span>
           </button>
         </div>
 
+        <div className="w-full md:w-auto flex items-center justify-center gap-2">
+          <select
+            value={selectedDriverId}
+            onChange={(e) => setSelectedDriverId(e.target.value)}
+            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap h-10 px-3 pr-8 rounded-md bg-white/80 text-slate-800 border border-slate-200 text-sm sm:text-base font-semibold shadow-sm hover:bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
+            disabled={!drivers.length}
+          >
+            <option value="">{t("All Drivers")}</option>
+            {drivers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <span className="h-10 inline-flex items-center rounded-md bg-white/80 border border-slate-200 px-3 text-sm sm:text-base font-semibold text-slate-700 shadow-sm whitespace-nowrap">
+            Assigned: {assignedOrderCountForSelectedDriver}
+          </span>
+        </div>
+
         {/* Date range sits next to Driver Report on big screens */}
-        <div className="hidden md:flex md:w-auto items-center gap-2 flex-nowrap whitespace-nowrap bg-white rounded-xl px-3 py-2 border border-slate-200 shadow-sm">
+        <div className="hidden md:flex md:w-auto items-center gap-2 flex-nowrap whitespace-nowrap bg-white/80 rounded-md h-10 px-2 border border-slate-200 shadow-sm">
           <input
             type="date"
-            className="shrink-0 border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            className="shrink-0 h-10 border border-slate-200 rounded-md px-4 text-slate-800 bg-white shadow-sm text-sm sm:text-base font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
             value={reportFromDate}
             max={reportToDate || new Date().toISOString().slice(0, 10)}
             onChange={(e) => setReportFromDate(e.target.value)}
@@ -2059,7 +2139,7 @@ return (
           />
           <input
             type="date"
-            className="shrink-0 border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            className="shrink-0 h-10 border border-slate-200 rounded-md px-4 text-slate-800 bg-white shadow-sm text-sm sm:text-base font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
             value={reportToDate}
             min={reportFromDate || undefined}
             max={new Date().toISOString().slice(0, 10)}
@@ -2071,10 +2151,10 @@ return (
 
       {/* On small screens keep date range on its own row */}
       <div className="w-full flex items-center justify-center md:hidden">
-        <div className="w-full md:w-auto flex items-center gap-2 flex-nowrap overflow-x-auto whitespace-nowrap bg-white rounded-xl px-3 py-2 border border-slate-200 shadow-sm">
+        <div className="w-full md:w-auto flex items-center gap-2 flex-nowrap overflow-x-auto whitespace-nowrap bg-white/80 rounded-md h-10 px-2 border border-slate-200 shadow-sm">
           <input
             type="date"
-            className="shrink-0 border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            className="shrink-0 h-10 border border-slate-200 rounded-md px-4 text-slate-800 bg-white shadow-sm text-sm sm:text-base font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
             value={reportFromDate}
             max={reportToDate || new Date().toISOString().slice(0, 10)}
             onChange={(e) => setReportFromDate(e.target.value)}
@@ -2082,7 +2162,7 @@ return (
           />
           <input
             type="date"
-            className="shrink-0 border-2 border-blue-100 rounded-xl px-3 py-1 text-gray-800 bg-white shadow-sm focus:ring-2 focus:ring-blue-400 transition"
+            className="shrink-0 h-10 border border-slate-200 rounded-md px-4 text-slate-800 bg-white shadow-sm text-sm sm:text-base font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
             value={reportToDate}
             min={reportFromDate || undefined}
             max={new Date().toISOString().slice(0, 10)}
@@ -2104,28 +2184,28 @@ return (
         ) : driverReport?.error ? (
           <div className="text-red-600 font-bold">{driverReport.error}</div>
         ) : driverReport ? (
-          <div className="rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] p-8 bg-white border border-slate-200 space-y-5">
+          <div className="rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] p-8 bg-white border border-slate-200 space-y-5 dark:bg-slate-950/60 dark:border-slate-800 dark:shadow-[0_30px_60px_-35px_rgba(0,0,0,0.6)]">
             <div className="flex flex-wrap gap-10 items-center mb-3">
               <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">{t("Packets Delivered")}</div>
-                <div className="text-xl sm:text-4xl font-extrabold text-slate-900">{driverReport.packets_delivered}</div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] dark:text-slate-400">{t("Packets Delivered")}</div>
+                <div className="text-xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-100">{driverReport.packets_delivered}</div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">{t("Total Sales")}</div>
-                <div className="text-xl sm:text-4xl font-extrabold text-slate-900">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] dark:text-slate-400">{t("Total Sales")}</div>
+                <div className="text-xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-100">
                   {driverReport.total_sales != null
                     ? formatCurrency(driverReport.total_sales)
                     : "-"}
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em]">{t("By Payment Method")}</div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] dark:text-slate-400">{t("By Payment Method")}</div>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(driverReport.sales_by_method).map(
                     ([method, amt]) => (
                       <span
                         key={method}
-                        className="bg-slate-100 border border-slate-200 shadow-sm px-3 py-1 rounded-lg font-semibold text-sm text-slate-700"
+                        className="bg-slate-100 border border-slate-200 shadow-sm px-3 py-1 rounded-lg font-semibold text-sm text-slate-700 dark:bg-slate-900/60 dark:border-slate-700 dark:text-slate-200"
                       >
                         {method}: {formatCurrency(amt)}
                       </span>
@@ -2135,40 +2215,40 @@ return (
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <table className="min-w-full text-sm bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden dark:bg-slate-950/40 dark:border-slate-800">
                 <thead>
 	  <tr>
 	    {showDriverColumn && (
-	      <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Driver")}</th>
+	      <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Driver")}</th>
 	    )}
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Customer")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Address")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Total")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Payment")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Delivered")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Pickup→Delivery")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50">{t("Kitchen→Delivery")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Customer")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Address")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Total")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Payment")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Delivered")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Pickup→Delivery")}</th>
+	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Kitchen→Delivery")}</th>
 	  </tr>
 </thead>
 <tbody>
   {driverReport.orders.map(ord => (
-    <tr key={ord.id} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
+    <tr key={ord.id} className="border-t border-slate-100 hover:bg-slate-50 transition-colors dark:border-slate-800 dark:hover:bg-slate-900/30">
       {showDriverColumn && (
-        <td className="p-3 text-slate-700">{ord.driver_name || "-"}</td>
+        <td className="p-3 text-slate-700 dark:text-slate-200">{ord.driver_name || "-"}</td>
       )}
-      <td className="p-3 text-slate-700">{ord.customer_name || "-"}</td>
-      <td className="p-3 text-slate-500">{ord.customer_address || "-"}</td>
-      <td className="p-3 text-slate-900 font-semibold">
+      <td className="p-3 text-slate-700 dark:text-slate-200">{ord.customer_name || "-"}</td>
+      <td className="p-3 text-slate-500 dark:text-slate-400">{ord.customer_address || "-"}</td>
+      <td className="p-3 text-slate-900 font-semibold dark:text-slate-100">
         {formatCurrency(parseFloat(ord.total || 0))}
       </td>
-      <td className="p-3 text-slate-600">{ord.payment_method}</td>
-      <td className="p-3 text-slate-500">{ord.delivered_at ? new Date(ord.delivered_at).toLocaleTimeString() : "-"}</td>
-      <td className="p-3 text-slate-500">
+      <td className="p-3 text-slate-600 dark:text-slate-300">{ord.payment_method}</td>
+      <td className="p-3 text-slate-500 dark:text-slate-400">{ord.delivered_at ? new Date(ord.delivered_at).toLocaleTimeString() : "-"}</td>
+      <td className="p-3 text-slate-500 dark:text-slate-400">
         {ord.delivery_time_seconds
           ? (ord.delivery_time_seconds / 60).toFixed(1) + ` ${t("min")}`
           : "-"}
       </td>
-      <td className="p-3 text-slate-500">
+      <td className="p-3 text-slate-500 dark:text-slate-400">
         {ord.kitchen_to_delivery_seconds
           ? (ord.kitchen_to_delivery_seconds / 60).toFixed(1) + ` ${t("min")}`
           : "-"}
@@ -2189,7 +2269,7 @@ return (
     {/* --- LIVE ROUTE MODAL (FULL SCREEN) --- */}
     {showRoute && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm">
-        <div className="relative w-full h-full max-w-7xl max-h-[95vh] mx-auto bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col">
+        <div className="relative w-full h-full max-w-7xl max-h-[95vh] mx-auto bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col dark:bg-slate-950">
           {/* Close Button */}
           <button
             onClick={() => setShowRoute(false)}
@@ -2218,21 +2298,22 @@ return (
       open={showDrinkModal}
       onClose={() => setShowDrinkModal(false)}
       fetchDrinks={fetchDrinks}
-      summaryByDriver={drinkSummaryByDriver}
+      summaryByDriver={filteredDrinkSummaryByDriver}
     />
 
-   {/* --- ORDERS LIST --- */}
-<div className="min-h-screen px-4 sm:px-6 lg:px-8 py-6 w-full mx-auto relative bg-[#f7f9fc] text-slate-900">
+{/* --- ORDERS LIST --- */}
+<div className="min-h-screen px-4 sm:px-6 lg:px-8 py-6 w-full mx-auto relative bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
 <div
   className={`
     grid
-    gap-8
+    gap-6
     w-full
-    py-8
+    py-6
     auto-rows-fr
     ${orders.length === 1 ? "grid-cols-1 justify-items-center" : "grid-cols-1"}
     sm:grid-cols-1
-    ${orders.length === 1 ? "md:grid-cols-1 lg:grid-cols-1" : "md:grid-cols-2 lg:grid-cols-2"}
+    md:grid-cols-1
+    lg:grid-cols-1
   `}
 >
 
@@ -2296,84 +2377,91 @@ const totalDiscount = calcOrderDiscount(order);
   // ✅ Delivered Orders (Completed)
   if (isDelivered) {
     return {
-      card: "bg-emerald-50 border-4 border-emerald-400 text-emerald-900 shadow-md",
-      header: "bg-emerald-100 border border-emerald-300 shadow-sm",
-      timer: "bg-emerald-200 text-emerald-900 border border-emerald-300 shadow-sm",
-      nameChip: "bg-emerald-50 text-emerald-800 border border-emerald-300",
-      phoneBtn: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm",
-      statusChip: "bg-emerald-500 text-white border border-emerald-600 shadow-sm",
-      priceTag: "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm",
-      extrasRow: "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-sm",
-      noteBox: "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-sm",
+      card: "bg-emerald-50 border-4 border-emerald-400 text-emerald-900 shadow-md dark:bg-emerald-950/25 dark:border-emerald-500/40 dark:text-emerald-100 dark:shadow-[0_10px_20px_rgba(0,0,0,0.4)]",
+      header: "bg-emerald-100 border border-emerald-300 shadow-sm dark:bg-emerald-950/25 dark:border-emerald-500/30",
+      timer: "bg-emerald-200 text-emerald-900 border border-emerald-300 shadow-sm dark:bg-emerald-950/35 dark:text-emerald-100 dark:border-emerald-500/30",
+      nameChip: "bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/25 dark:text-emerald-100 dark:border-emerald-500/30",
+      phoneBtn: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm dark:bg-emerald-600 dark:hover:bg-emerald-500",
+      statusChip: "bg-emerald-500 text-white border border-emerald-600 shadow-sm dark:bg-emerald-600 dark:border-emerald-500/40",
+      priceTag: "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm dark:bg-emerald-950/25 dark:text-emerald-100 dark:border-emerald-500/30",
+      extrasRow: "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-sm dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-500/30",
+      noteBox: "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-sm dark:bg-emerald-950/20 dark:text-emerald-100 dark:border-emerald-500/30",
     };
   }
 
   // 🚗 On Road (Driver picked up)
   if (isPicked) {
     return {
-      card: "bg-sky-50 border-4 border-sky-400 text-sky-900 shadow-md",
-      header: "bg-sky-100 border border-sky-300 shadow-sm",
-      timer: "bg-sky-200 text-sky-900 border border-sky-300 shadow-sm",
-      nameChip: "bg-sky-50 text-sky-800 border border-sky-300",
-      phoneBtn: "bg-sky-600 text-white hover:bg-sky-700 shadow-sm",
-      statusChip: "bg-sky-500 text-white border border-sky-600 shadow-sm",
-      priceTag: "bg-sky-100 text-sky-800 border border-sky-300 shadow-sm",
-      extrasRow: "bg-sky-50 text-sky-800 border border-sky-300 shadow-sm",
-      noteBox: "bg-sky-50 text-sky-800 border border-sky-300 shadow-sm",
+      card: "bg-sky-50 border-4 border-sky-400 text-sky-900 shadow-md dark:bg-sky-950/25 dark:border-sky-500/40 dark:text-sky-100 dark:shadow-[0_10px_20px_rgba(0,0,0,0.4)]",
+      header: "bg-sky-100 border border-sky-300 shadow-sm dark:bg-sky-950/25 dark:border-sky-500/30",
+      timer: "bg-sky-200 text-sky-900 border border-sky-300 shadow-sm dark:bg-sky-950/35 dark:text-sky-100 dark:border-sky-500/30",
+      nameChip: "bg-sky-50 text-sky-800 border border-sky-300 dark:bg-sky-950/25 dark:text-sky-100 dark:border-sky-500/30",
+      phoneBtn: "bg-sky-600 text-white hover:bg-sky-700 shadow-sm dark:bg-sky-600 dark:hover:bg-sky-500",
+      statusChip: "bg-sky-500 text-white border border-sky-600 shadow-sm dark:bg-sky-600 dark:border-sky-500/40",
+      priceTag: "bg-sky-100 text-sky-800 border border-sky-300 shadow-sm dark:bg-sky-950/25 dark:text-sky-100 dark:border-sky-500/30",
+      extrasRow: "bg-sky-50 text-sky-800 border border-sky-300 shadow-sm dark:bg-sky-950/20 dark:text-sky-100 dark:border-sky-500/30",
+      noteBox: "bg-sky-50 text-sky-800 border border-sky-300 shadow-sm dark:bg-sky-950/20 dark:text-sky-100 dark:border-sky-500/30",
     };
   }
 
   // ✅ Ready for Pickup/Delivery
   if (isReady) {
     return {
-      card: "bg-red-50 border-4 border-red-700 text-red-950 shadow-md",
-      header: "bg-red-100 border border-red-300 shadow-sm",
-      timer: "bg-red-200 text-red-950 border border-red-300 shadow-sm",
-      nameChip: "bg-red-100 text-red-950 border border-red-300",
-      phoneBtn: "bg-red-800 text-white hover:bg-red-900 shadow-sm",
-      statusChip: "bg-red-700 text-white border border-red-800 shadow-sm",
-      priceTag: "bg-red-100 text-red-900 border border-red-300 shadow-sm",
-      extrasRow: "bg-red-50 text-red-900 border border-red-300 shadow-sm",
-      noteBox: "bg-red-50 text-red-950 border border-red-300 shadow-sm",
+      card: "bg-red-50 border-4 border-red-700 text-red-950 shadow-md dark:bg-rose-950/25 dark:border-rose-500/40 dark:text-rose-100 dark:shadow-[0_10px_20px_rgba(0,0,0,0.4)]",
+      header: "bg-red-100 border border-red-300 shadow-sm dark:bg-rose-950/25 dark:border-rose-500/30",
+      timer: "bg-red-200 text-red-950 border border-red-300 shadow-sm dark:bg-rose-950/35 dark:text-rose-100 dark:border-rose-500/30",
+      nameChip: "bg-red-100 text-red-950 border border-red-300 dark:bg-rose-950/25 dark:text-rose-100 dark:border-rose-500/30",
+      phoneBtn: "bg-red-800 text-white hover:bg-red-900 shadow-sm dark:bg-rose-600 dark:hover:bg-rose-500",
+      statusChip: "bg-red-700 text-white border border-red-800 shadow-sm dark:bg-rose-600 dark:border-rose-500/40",
+      priceTag: "bg-red-100 text-red-900 border border-red-300 shadow-sm dark:bg-rose-950/25 dark:text-rose-100 dark:border-rose-500/30",
+      extrasRow: "bg-red-50 text-red-900 border border-red-300 shadow-sm dark:bg-rose-950/20 dark:text-rose-100 dark:border-rose-500/30",
+      noteBox: "bg-red-50 text-red-950 border border-red-300 shadow-sm dark:bg-rose-950/20 dark:text-rose-100 dark:border-rose-500/30",
     };
   }
 
   // 🍳 Preparing
   if (isPrep) {
     return {
-      card: "bg-amber-50 border-4 border-amber-400 text-amber-900 shadow-md",
-      header: "bg-amber-100 border border-amber-300 shadow-sm",
-      timer: "bg-amber-200 text-amber-900 border border-amber-300 shadow-sm",
-      nameChip: "bg-amber-50 text-amber-800 border border-amber-300",
-      phoneBtn: "bg-amber-600 text-white hover:bg-amber-700 shadow-sm",
-      statusChip: "bg-amber-500 text-white border border-amber-600 shadow-sm",
-      priceTag: "bg-amber-100 text-amber-800 border border-amber-300 shadow-sm",
-      extrasRow: "bg-amber-50 text-amber-800 border border-amber-300 shadow-sm",
-      noteBox: "bg-amber-50 text-amber-900 border border-amber-300 shadow-sm",
+      card: "bg-amber-50 border-4 border-amber-400 text-amber-900 shadow-md dark:bg-amber-950/20 dark:border-amber-500/40 dark:text-amber-100 dark:shadow-[0_10px_20px_rgba(0,0,0,0.4)]",
+      header: "bg-amber-100 border border-amber-300 shadow-sm dark:bg-amber-950/25 dark:border-amber-500/30",
+      timer: "bg-amber-200 text-amber-900 border border-amber-300 shadow-sm dark:bg-amber-950/35 dark:text-amber-100 dark:border-amber-500/30",
+      nameChip: "bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-950/25 dark:text-amber-100 dark:border-amber-500/30",
+      phoneBtn: "bg-amber-600 text-white hover:bg-amber-700 shadow-sm dark:bg-amber-600 dark:hover:bg-amber-500",
+      statusChip: "bg-amber-500 text-white border border-amber-600 shadow-sm dark:bg-amber-600 dark:border-amber-500/40",
+      priceTag: "bg-amber-100 text-amber-800 border border-amber-300 shadow-sm dark:bg-amber-950/25 dark:text-amber-100 dark:border-amber-500/30",
+      extrasRow: "bg-amber-50 text-amber-800 border border-amber-300 shadow-sm dark:bg-amber-950/20 dark:text-amber-100 dark:border-amber-500/30",
+      noteBox: "bg-amber-50 text-amber-900 border border-amber-300 shadow-sm dark:bg-amber-950/20 dark:text-amber-100 dark:border-amber-500/30",
     };
   }
 
   // 🕓 Pending / Unconfirmed (default)
   return {
-    card: `bg-slate-50 border-4 ${isPacketOrder ? "border-fuchsia-400" : "border-slate-400"} text-slate-900 shadow-md`,
-    header: "bg-slate-100 border border-slate-300 shadow-sm",
-    timer: "bg-slate-200 text-slate-700 border border-slate-300 shadow-sm",
-    nameChip: "bg-slate-50 text-slate-900 border border-slate-300",
-    phoneBtn: "bg-slate-900 text-white hover:bg-slate-800 shadow-sm",
-    statusChip: "bg-slate-200 text-slate-700 border border-slate-300 shadow-sm",
-    priceTag: "bg-slate-100 text-slate-900 border border-slate-300 shadow-sm",
-    extrasRow: "bg-slate-50 text-slate-900 border border-slate-300 shadow-sm",
-    noteBox: "bg-slate-50 text-slate-900 border border-slate-300 shadow-sm",
+    card: `bg-slate-50 border-4 ${
+      isPacketOrder ? "border-fuchsia-400 dark:border-fuchsia-500" : "border-slate-400 dark:border-slate-700"
+    } text-slate-900 shadow-md dark:bg-slate-900/55 dark:text-slate-100 dark:shadow-[0_10px_20px_rgba(0,0,0,0.4)]`,
+    header: "bg-slate-100 border border-slate-300 shadow-sm dark:bg-slate-900/60 dark:border-slate-700",
+    timer: "bg-slate-200 text-slate-700 border border-slate-300 shadow-sm dark:bg-slate-800/70 dark:text-slate-200 dark:border-slate-700",
+    nameChip: "bg-slate-50 text-slate-900 border border-slate-300 dark:bg-slate-900/60 dark:text-slate-100 dark:border-slate-700",
+    phoneBtn: "bg-slate-900 text-white hover:bg-slate-800 shadow-sm dark:bg-indigo-600 dark:hover:bg-indigo-500",
+    statusChip: "bg-slate-200 text-slate-700 border border-slate-300 shadow-sm dark:bg-slate-800/70 dark:text-slate-200 dark:border-slate-700",
+    priceTag: "bg-slate-100 text-slate-900 border border-slate-300 shadow-sm dark:bg-slate-900/60 dark:text-slate-100 dark:border-slate-700",
+    extrasRow: "bg-slate-50 text-slate-900 border border-slate-300 shadow-sm dark:bg-slate-900/55 dark:text-slate-100 dark:border-slate-700",
+    noteBox: "bg-slate-50 text-slate-900 border border-slate-300 shadow-sm dark:bg-slate-900/55 dark:text-slate-100 dark:border-slate-700",
   };
 })();
 
+      const normalizedDriverStatus = normalizeDriverStatus(order.driver_status);
+      const isDriverOnRoad = normalizedDriverStatus === "on_road";
       const isKitchenDelivered =
         kitchenStatus === "delivered" || Boolean(order?.kitchen_delivered_at);
       const readyAtLabel =
         isPrep && !isKitchenDelivered ? getReadyAtLabel(order) : "";
       const kitchenBadgeLabel =
+        isDriverOnRoad
+          ? t("On Road")
+          :
         isDelivered
-          ? t("Order Delivered!")
+          ? t("Delivered")
           : kitchenStatus === "new"
           ? t("New Order")
           : kitchenStatus === "preparing"
@@ -2383,24 +2471,25 @@ const totalDiscount = calcOrderDiscount(order);
           : "";
       const kitchenBadgeIcon =
         isDelivered
-          ? "✅"
+          ? ""
           : kitchenStatus === "new"
           ? ""
           : kitchenStatus === "preparing"
-          ? "🍳"
+          ? ""
           : kitchenStatus === "ready" || kitchenStatus === "delivered"
-          ? "✅"
+          ? ""
           : "";
-      const kitchenBadgeClass =
-        isDelivered
-          ? "bg-emerald-600 text-white shadow-sm"
-          : kitchenStatus === "new"
-          ? "bg-blue-500 text-white shadow-sm"
-          : kitchenStatus === "preparing"
-          ? "bg-amber-500 text-white shadow-sm"
-          : kitchenStatus === "ready" || kitchenStatus === "delivered"
-          ? "bg-red-700 text-white shadow-sm"
-          : "bg-slate-400 text-white shadow-sm";
+      const kitchenBadgeClass = isDelivered
+        ? "bg-emerald-600 text-white shadow-sm"
+        : isDriverOnRoad
+        ? "bg-sky-500 text-white shadow-sm"
+        : kitchenStatus === "new"
+        ? "bg-blue-500 text-white shadow-sm"
+        : kitchenStatus === "preparing"
+        ? "bg-amber-500 text-white shadow-sm"
+        : kitchenStatus === "ready" || kitchenStatus === "delivered"
+        ? "bg-red-700 text-white shadow-sm"
+        : "bg-slate-400 text-white shadow-sm";
 
 
 
@@ -2422,7 +2511,7 @@ const totalDiscount = calcOrderDiscount(order);
       const driverStatusBaseLabel = isDelivered
         ? t("Delivered")
         : isPickedUp
-        ? t("Picked up by")
+        ? t("On Road")
         : isPicked
         ? t("Driver On Road")
         : t("Awaiting Driver");
@@ -2432,7 +2521,7 @@ const totalDiscount = calcOrderDiscount(order);
 
         // Driver assigned but not yet picked up / on road
         if (!isPickedUp && !isPicked && !isDelivered) {
-          return `${t("Picked up by")}: ${assignedDriverName}`;
+          return `${t("Driver")}: ${assignedDriverName}`;
         }
 
         // Picked up status (mobile) OR on-road status (dashboard)
@@ -2473,7 +2562,7 @@ const totalDiscount = calcOrderDiscount(order);
         : isDelivered
         ? "bg-emerald-500"
         : isPicked || isPickedUp
-        ? "bg-sky-600"
+        ? "bg-sky-800"
         : isReady
         ? "bg-red-700"
         : isPrep
@@ -2493,18 +2582,11 @@ const totalDiscount = calcOrderDiscount(order);
 
           {/* CARD */}
 <div
-  className={`w-full h-full rounded-[32px] ${cardTone} border border-slate-300 shadow-[0_12px_30px_rgba(15,23,42,0.12)] p-6 sm:p-7 flex flex-col gap-5`}
-  style={{ minHeight: 210 }}
+  className={`w-full rounded-lg ${cardTone} border border-slate-900/10 shadow-sm flex flex-col overflow-hidden`}
+  style={{ minHeight: 150 }}
 >
-
-
-
-
-
-            {/* CARD HEADER */}
-<div className="flex flex-col gap-4 w-full">
-  {/* Address stays full-width; status/timer/order-type move below so they don't squeeze the address. */}
-  <div className="flex items-start gap-3 min-w-0">
+  {/* TOP BAR: Address + Timer + Print */}
+  <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white/30 border-b border-slate-300/50">
     <div className="min-w-0 flex-1">
       {order.customer_address ? (
         <a
@@ -2512,542 +2594,522 @@ const totalDiscount = calcOrderDiscount(order);
           target="_blank"
           rel="noopener noreferrer"
           title={order.customer_address}
-          className="block w-full rounded-2xl bg-white/70 border border-slate-200 px-4 py-3 text-lg sm:text-2xl font-extrabold text-slate-900 leading-snug shadow-sm whitespace-pre-line break-words max-h-32 overflow-auto"
+          className="block font-semibold text-base leading-snug text-slate-900 hover:text-blue-700 truncate"
         >
           {order.customer_address}
         </a>
       ) : (
-        <div className="w-full rounded-2xl bg-white/70 border border-slate-200 px-4 py-3 text-lg sm:text-2xl font-extrabold text-slate-900 leading-snug shadow-sm">
+        <div className="font-semibold text-base leading-snug text-slate-500 truncate">
           {t("No address available")}
         </div>
       )}
-    </div>
-  </div>
-
-	  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-	    <div className="flex flex-wrap items-center gap-2">
-	      {hasUnmatchedYsItems && (
-	        <a
-	          href="/settings/integrations#yemeksepeti-mapping"
-	          className="inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-amber-500 text-white text-xs sm:text-sm font-bold shadow border border-amber-200"
+      {hasUnmatchedYsItems && (
+        <a
+          href="/settings/integrations#yemeksepeti-mapping"
+          className="mt-1 inline-flex items-center justify-center px-2.5 py-1 rounded-md bg-amber-500 text-white text-xs font-bold"
         >
-	          {t("Needs Yemeksepeti mapping")}
-	        </a>
-	      )}
-	    </div>
-
-    {/* Status + timer moved down near Auto Confirmed for consistent layout */}
-  </div>
-
-		  <div className="flex items-center justify-between gap-2 w-full">
-		    <div className="flex flex-wrap items-center gap-2 min-w-0">
-		      {/* Order type badge sits next to customer name */}
-		      {order.order_type && (
-		        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm sm:text-base font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm">
-		        {order.order_type === "phone" && <>{t("Phone Order")}</>}
-		        {order.order_type === "packet" && (
-		          <>
-	            {order.external_source === "yemeksepeti" && (
-	              <>
-	                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gradient-to-r from-pink-500 to-orange-400 text-white text-xs font-bold">YS</span>
-	                Yemeksepeti
-	              </>
-	            )}
-	            {order.external_source === "migros" && (
-	              <>
-	                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gradient-to-r from-orange-600 to-red-500 text-white text-xs font-bold">MG</span>
-	                Migros
-	              </>
-	            )}
-	            {order.external_source === "trendyol" && (
-	              <>
-	                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gradient-to-r from-orange-500 to-red-600 text-white text-xs font-bold">TY</span>
-	                Trendyol
-	              </>
-	            )}
-	            {order.external_source === "getir" && (
-	              <>
-	                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-bold">GT</span>
-	                Getir
-	              </>
-	            )}
-	            {!order.external_source && (
-	              <>
-	                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-	                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-	                </svg>
-	                {t("Online Order")}
-	              </>
-	            )}
-	          </>
-	        )}
-	        {order.order_type === "table" && (
-	          <>
-	            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-	              <path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.9 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/>
-	            </svg>
-	            {t("Table")}
-	          </>
-	        )}
-	        {order.order_type === "takeaway" && (
-	          <>
-	            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-	              <path d="M18.06 23h1.66c.84 0 1.53-.65 1.63-1.47L23 5.05h-5V1h-1.97v4.05h-4.97l.3 2.34c1.71.47 3.31 1.32 4.27 2.26 1.44 1.42 2.43 2.89 2.43 5.29V23zM1 22v-1h15.03v1c0 .54-.45 1-1.03 1H2c-.55 0-1-.46-1-1zm15.03-7C16.03 7 1 7 1 15h15.03zM1 17h15v2H1z"/>
-	            </svg>
-	            {t("Takeaway")}
-	          </>
-		        )}
-		        </span>
-		      )}
-
-		      <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm sm:text-base font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm">
-		        <span>👤</span> {order.customer_name}
-		      </span>
-
-		      {order.customer_phone && (
-		        <a
-		          href={`tel:${order.customer_phone}`}
-		          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm sm:text-base font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm hover:bg-slate-50 transition"
-		          title={t("Click to call")}
-		          style={{ textDecoration: "none" }}
-		        >
-		          <svg className="mr-1" width="18" height="18" fill="none" viewBox="0 0 24 24">
-		            <path
-		              fill="currentColor"
-		              d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1.003 1.003 0 011.11-.21c1.21.49 2.53.76 3.88.76.55 0 1 .45 1 1v3.5c0 .55-.45 1-1 1C7.72 22 2 16.28 2 9.5c0-.55.45-1 1-1H6.5c.55 0 1 .45 1 1 0 1.35.27 2.67.76 3.88.17.39.09.85-.21 1.11l-2.2 2.2z"
-		            />
-		          </svg>
-		          {order.customer_phone}
-		        </a>
-		      )}
-
-		    </div>
-
-		    {order && order.items?.length > 0 && (
-		      <div className="ml-auto flex items-center gap-2">
-		        <span className="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-mono font-semibold text-xs sm:text-sm shadow-sm">
-		          {getWaitingTimer(order)}
-		        </span>
-		        <button
-		          onClick={(e) => {
-		            e.stopPropagation();
-		            handlePacketPrint(order.id);
-		          }}
-		          className="p-1.5 rounded-full bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 transition text-sm"
-		          title={t("Print Receipt")}
-		        >
-		          🖨️
-		        </button>
-		      </div>
-		    )}
-		  </div>
-</div>
-
-            {/* ORDER DETAILS */}
-<div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 flex flex-col gap-4">
-  <div className="flex items-center justify-between gap-3 sm:gap-4">
-    <div className="flex items-center gap-3 min-w-0">
-      <div className="h-[60px] w-[60px] rounded-full bg-white border border-slate-300 shadow-sm flex items-center justify-center overflow-hidden flex-shrink-0">
-        {driverAvatarUrl ? (
-          <img
-            src={driverAvatarUrl}
-            alt={assignedDriverName || t("Driver")}
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <span className="text-sm font-bold text-slate-700">{driverInitials}</span>
-        )}
-      </div>
-      <div className="flex flex-col justify-center">
-        <span className="text-[10px] sm:text-[11px] font-semibold tracking-[0.2em] text-slate-400 uppercase mb-0.5">
-          {t("Driver")}
-        </span>
-        <select
-          value={order.driver_id || ""}
-          onChange={async (e) => {
-            const driverId = e.target.value;
-            await secureFetch(`/orders/${order.id}`, {
-              method: "PUT",
-              body: JSON.stringify({
-                driver_id: driverId,
-                total: order.total,
-                payment_method: order.payment_method,
-              }),
-            });
-            setOrders((prev) =>
-              prev.map((o) =>
-                o.id === order.id ? { ...o, driver_id: driverId } : o
-              )
-            );
-          }}
-          className="appearance-none bg-white border border-slate-200 rounded-xl text-slate-900 text-xs sm:text-sm font-semibold px-2 py-0.5 pr-6 shadow-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300 transition-all whitespace-nowrap"
-        >
-          <option value="">{t("Unassigned")}</option>
-          {drivers.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-      </div>
+          {t("Needs Yemeksepeti mapping")}
+        </a>
+      )}
     </div>
-
-    <div className="flex flex-col items-end gap-1 sm:gap-2 flex-shrink-0">
-      <div className="flex items-center gap-2 sm:gap-3">
-        <span className="text-base sm:text-2xl font-extrabold text-emerald-600">
-          {formatCurrency(discountedTotal)}
+    {order?.items?.length > 0 && (
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span
+          className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md font-mono font-semibold text-sm ${statusVisual.timer}`}
+        >
+          {getWaitingTimer(order)}
         </span>
         <button
-          onClick={() => openPaymentModalForOrder(order)}
-          className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-white border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 shadow-sm transition"
-          title={t("Edit payment")}
+          onClick={(e) => {
+            e.stopPropagation();
+            handlePacketPrint(order.id);
+          }}
+          className="h-7 w-7 inline-flex items-center justify-center rounded-md bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 transition text-base"
+          title={t("Print Receipt")}
+          type="button"
         >
-          {order.payment_method ? order.payment_method : "—"}
-          {!isOnlinePayment && <span>✏️</span>}
+          🖨️
         </button>
       </div>
-    </div>
+    )}
   </div>
 
-  {sanitizedOrderNote && (
-    <div
-      className="px-3 py-2 rounded-xl font-medium italic flex items-start gap-2 text-base bg-amber-50 text-amber-900 border border-amber-200 shadow-sm"
-      style={{ wordBreak: "break-word", whiteSpace: "pre-line" }}
-    >
-      📝 <span>{sanitizedOrderNote}</span>
-    </div>
-  )}
+  {/* MIDDLE ROW: Order Source + Customer + Phone + Status Badge */}
+  <div className="flex items-center gap-2 px-4 py-2 bg-white/20 border-b border-slate-300/50">
+    {order.order_type && (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
+        {order.order_type === "phone" ? t("Phone Order") : null}
+        {order.order_type === "packet" ? t("Packet") : null}
+        {order.order_type === "table" ? t("Table") : null}
+        {order.order_type === "takeaway" ? t("Takeaway") : null}
+      </span>
+    )}
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
+      {order.customer_name || t("Customer")}
+    </span>
+    {order.customer_phone && (
+      <a
+        href={`tel:${order.customer_phone}`}
+        className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700 hover:bg-white transition"
+        title={t("Click to call")}
+        style={{ textDecoration: "none" }}
+      >
+        📞 {order.customer_phone}
+      </a>
+    )}
+    {readyAtLabel && (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none bg-amber-100 text-amber-800 border border-amber-300">
+        {t("Ready at")} {readyAtLabel}
+      </span>
+    )}
+    {kitchenBadgeLabel && (
+      <span
+        className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none ${kitchenBadgeClass}`}
+      >
+        {kitchenBadgeLabel}
+      </span>
+    )}
+  </div>
 
-  <details
-    open={openDetails[order.id] || false}
-    onToggle={(e) => {
-      setOpenDetails((prev) => ({
-        ...prev,
-        [order.id]: e.target.open,
-      }));
-      localStorage.setItem(
-        "orderDetailsState",
-        JSON.stringify({
-          ...openDetails,
+  {/* DRIVER ROW: Avatar + Name + Auto Confirmed + Cancel */}
+  <div className="flex items-center gap-3 px-4 py-2.5 bg-white/15 border-b border-slate-300/50">
+    <div className="h-9 w-9 rounded-full bg-white border border-slate-300 flex items-center justify-center overflow-hidden flex-shrink-0">
+      {driverAvatarUrl ? (
+        <img
+          src={driverAvatarUrl}
+          alt={assignedDriverName || t("Driver")}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <span className="text-xs font-bold text-slate-700">{driverInitials}</span>
+      )}
+    </div>
+    <select
+      value={order.driver_id || ""}
+      onChange={async (e) => {
+        const driverId = e.target.value;
+        await secureFetch(`/orders/${order.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            driver_id: driverId,
+            total: order.total,
+            payment_method: order.payment_method,
+          }),
+        });
+        setOrders((prev) =>
+          prev.map((o) => (o.id === order.id ? { ...o, driver_id: driverId } : o))
+        );
+      }}
+      className="appearance-none bg-white border border-slate-300 rounded-md text-slate-900 text-sm font-semibold px-2.5 py-1 pr-6 focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 transition-all"
+    >
+      <option value="">{t("Unassigned")}</option>
+      {drivers.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.name}
+        </option>
+      ))}
+    </select>
+    {autoConfirmOrders && order.status === "confirmed" ? (
+      <>
+        <span className="inline-flex items-center h-8 rounded-md bg-emerald-100 text-emerald-800 px-3 text-[13px] font-semibold leading-none border border-emerald-300">
+          ✓ {t("Auto Confirmed")}
+        </span>
+        <button
+          type="button"
+          onClick={() => openCancelModalForOrder(order)}
+          className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
+        >
+          {t("Cancel")}
+        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => openPaymentModalForOrder(order)}
+            className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-[13px] font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
+            title={t("Edit payment")}
+            type="button"
+          >
+            {order.payment_method ? order.payment_method : "—"}
+            {!isOnlinePayment && (
+              <span className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center text-slate-400" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+                </svg>
+              </span>
+            )}
+          </button>
+          <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700">
+            {formatCurrency(discountedTotal)}
+          </span>
+        </div>
+      </>
+    ) : (
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => openCancelModalForOrder(order)}
+          className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
+        >
+          {t("Cancel")}
+        </button>
+        <button
+          onClick={() => openPaymentModalForOrder(order)}
+          className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-[13px] font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
+          title={t("Edit payment")}
+          type="button"
+        >
+          {order.payment_method ? order.payment_method : "—"}
+          {!isOnlinePayment && (
+            <span className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center text-slate-400" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+              </svg>
+            </span>
+          )}
+        </button>
+        <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700">
+          {formatCurrency(discountedTotal)}
+        </span>
+      </div>
+    )}
+  </div>
+
+	  {/* BOTTOM ROW: Order Items (left) + On Road (right) */}
+	  <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white/10">
+    <details
+      open={openDetails[order.id] || false}
+      onToggle={(e) => {
+        setOpenDetails((prev) => ({
+          ...prev,
           [order.id]: e.target.open,
-        })
-      );
-    }}
-    className="w-full"
-  >
-    <summary className="cursor-pointer flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 select-none hover:text-slate-900">
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-base">🛒</span>
-          {t("Order Items")} ({order.items?.length ?? 0})
-	          {kitchenBadgeLabel &&
-	            !(kitchenBadgeLabel === t("Order ready!") && (isPicked || isPickedUp)) && (
-	            <span
-	              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-sm font-semibold shadow-sm ml-2 ${kitchenBadgeClass}`}
-	            >
-	              {kitchenBadgeIcon ? <span>{kitchenBadgeIcon}</span> : null}
-	              {kitchenBadgeLabel}
-	            </span>
-	          )}
-	          {readyAtLabel && (
-	            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-sm font-semibold shadow-sm bg-amber-50 text-amber-700 border border-amber-200">
-	              ⏳ {t("Ready at")} {readyAtLabel}
-	            </span>
-	          )}
-	        </div>
-        {(order.order_type === "packet" || order.order_type === "phone") && (externalOrderRef || order.id) && (
-          <span className="text-[10px] font-bold text-slate-700 ml-6">
-            Order ID: #{externalOrderRef || order.id}
+        }));
+        localStorage.setItem(
+          "orderDetailsState",
+          JSON.stringify({
+            ...openDetails,
+            [order.id]: e.target.open,
+          })
+        );
+      }}
+      className="min-w-0"
+    >
+      <summary className="cursor-pointer text-sm font-semibold text-slate-700 select-none hover:text-slate-900">
+        {t("Order Items")} <span className="text-slate-500">#{externalOrderRef || order.id}</span>
+      </summary>
+      <div className="mt-2 rounded-md border border-white/70 bg-white/50 px-2.5 py-2">
+        <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-sm text-slate-800">
+          {(order.items ?? []).map((item, idx) => {
+            const name =
+              item.product_name ||
+              item.external_product_name ||
+              item.order_item_name ||
+              t("Unnamed");
+            const qty = Number(item.quantity || 1);
+            const unit = Number(item.price || 0);
+            const lineTotal = unit * qty;
+            return (
+              <React.Fragment key={item.unique_id || item.id || idx}>
+              <div className="min-w-0">
+                <span className="font-mono font-bold text-slate-700">{qty}×</span>{" "}
+                <span className="font-semibold truncate inline-block align-bottom max-w-[30ch]">
+                  {name}
+                </span>
+              </div>
+              <div className="font-mono font-semibold text-slate-700 whitespace-nowrap text-right">
+                {formatCurrency(lineTotal)}
+              </div>
+              </React.Fragment>
+            );
+          })}
+        </div>
+        {sanitizedOrderNote && (
+          <div className="mt-1 text-xs text-slate-700 italic">
+            📝 {sanitizedOrderNote}
+          </div>
+        )}
+      </div>
+    </details>
+
+	    <div className="flex items-center gap-2 flex-shrink-0">
+	      {!normalizeDriverStatus(order.driver_status) && (
+	          <button
+	            type="button"
+	            disabled={driverButtonDisabled(order)}
+	            className={`inline-flex items-center justify-center rounded-md px-3 py-1.5 text-base font-bold text-white transition disabled:opacity-50 ${
+	              kitchenStatus === "new"
+                ? "bg-blue-600 hover:bg-blue-700"
+                : kitchenStatus === "preparing"
+                ? "bg-amber-600 hover:bg-amber-700"
+                : kitchenStatus === "ready" || kitchenStatus === "delivered"
+                ? "bg-red-600 hover:bg-red-700"
+                : "bg-teal-600 hover:bg-teal-700"
+            }`}
+            onClick={async () => {
+              if (driverButtonDisabled(order)) return;
+              const nextStatus = isYemeksepetiPickupOrder(order) ? "delivered" : "on_road";
+              setOrders((prev) =>
+                prev.map((o) => (o.id === order.id ? { ...o, driver_status: nextStatus } : o))
+              );
+              await secureFetch(`/orders/${order.id}/driver-status`, {
+                method: "PATCH",
+                body: JSON.stringify({ driver_status: nextStatus }),
+              });
+            }}
+	          >
+	            {isYemeksepetiPickupOrder(order) ? t("Picked up") : t("On Road")}
+	          </button>
+	      )}
+	        {normalizeDriverStatus(order.driver_status) === "on_road" && (
+	          <button
+	            type="button"
+	            disabled={driverButtonDisabled(order)}
+            className="inline-flex items-center justify-center rounded-md bg-sky-800 hover:bg-sky-900 px-3 py-1.5 text-base font-bold text-white transition disabled:opacity-50"
+            onClick={async () => {
+              if (driverButtonDisabled(order)) return;
+              setUpdating((prev) => ({ ...prev, [order.id]: true }));
+              setOrders((prev) =>
+                prev.map((o) => (o.id === order.id ? { ...o, driver_status: "delivered" } : o))
+              );
+              try {
+                await secureFetch(`/orders/${order.id}/driver-status`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ driver_status: "delivered" }),
+                });
+              } catch (err) {
+                console.error("❌ Failed to mark delivered:", err);
+                if (!propOrders) await fetchOrders();
+              } finally {
+                setUpdating((prev) => ({ ...prev, [order.id]: false }));
+              }
+            }}
+	          >
+	            {isYemeksepetiPickupOrder(order) ? t("Completed") : t("Delivered")}
+	          </button>
+	        )}
+	        {normalizeDriverStatus(order.driver_status) === "delivered" && (
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-base font-bold text-white transition"
+            onClick={async () => {
+              if (isOnlinePayment) {
+                try {
+                  await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
+                  setOrders((prev) => prev.filter((o) => Number(o.id) !== Number(order.id)));
+                } catch (err) {
+                  console.error("❌ Failed to close online-paid order:", err);
+                  toast.error(t("Failed to close order"));
+                  if (!propOrders) await fetchOrders();
+                }
+                return;
+              }
+              openPaymentModalForOrder(order, { closeAfterSave: true });
+            }}
+          >
+            {t("Close")}
+          </button>
+	        )}
+	    </div>
+	  </div>
+</div>
+
+{/* Ultra-compact order card layout (no collapses) - HIDDEN */}
+  <div className="hidden flex-col gap-2">
+    {/* Address row */}
+    <div className="min-w-0 flex items-start justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        {order.customer_address ? (
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.customer_address)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={order.customer_address}
+            className="block w-full rounded-2xl bg-white/70 border border-slate-200 px-3 py-2 text-sm sm:text-base font-extrabold text-slate-900 leading-tight break-words line-clamp-2 dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100"
+          >
+            {order.customer_address}
+          </a>
+        ) : (
+          <div className="w-full rounded-2xl bg-white/70 border border-slate-200 px-3 py-2 text-sm sm:text-base font-extrabold text-slate-900 leading-tight dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100">
+            {t("No address available")}
+          </div>
+        )}
+        {hasUnmatchedYsItems && (
+          <a
+            href="/settings/integrations#yemeksepeti-mapping"
+            className="mt-1 inline-flex items-center justify-center px-2.5 py-1 rounded-full bg-amber-500 text-white text-[11px] font-bold shadow border border-amber-200"
+          >
+            {t("Needs Yemeksepeti mapping")}
+          </a>
+        )}
+      </div>
+      {order?.items?.length > 0 && (
+        <div className="flex items-center gap-2 flex-shrink-0 scale-[0.95] origin-top-right">
+          <span
+            className={`inline-flex items-center justify-center px-3 py-1.5 rounded-full font-mono font-semibold text-sm sm:text-base shadow-sm ${statusVisual.timer}`}
+          >
+            {getWaitingTimer(order)}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePacketPrint(order.id);
+            }}
+            className="h-9 w-9 inline-flex items-center justify-center rounded-full bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 transition text-sm sm:text-base dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/40"
+            title={t("Print Receipt")}
+            type="button"
+          >
+            🖨️
+          </button>
+        </div>
+      )}
+    </div>
+
+    {/* Customer/Phone row + timer right */}
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {order.order_type && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100">
+            {order.order_type === "phone" ? t("Phone Order") : null}
+            {order.order_type === "packet" ? t("Packet") : null}
+            {order.order_type === "table" ? t("Table") : null}
+            {order.order_type === "takeaway" ? t("Takeaway") : null}
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100">
+          👤 {order.customer_name || t("Customer")}
+        </span>
+        {order.customer_phone && (
+          <a
+            href={`tel:${order.customer_phone}`}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm hover:bg-slate-50 transition dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/40"
+            title={t("Click to call")}
+            style={{ textDecoration: "none" }}
+          >
+            📞 {order.customer_phone}
+          </a>
+        )}
+        {readyAtLabel && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold shadow-sm bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/25 dark:text-amber-200 dark:border-amber-500/30">
+            ⏳ {t("Ready at")} {readyAtLabel}
+          </span>
+        )}
+        {kitchenBadgeLabel && (
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold shadow-sm ${kitchenBadgeClass}`}
+          >
+            {kitchenBadgeLabel}
           </span>
         )}
       </div>
-    </summary>
+    </div>
 
-    <ul className="pl-0 mt-3 flex flex-col gap-2">
-      {(order.items ?? []).map((item, idx) => (
-        <li
-          key={item.unique_id || idx}
-          className="flex flex-col gap-1 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm"
-        >
-          {/* Main Product Row */}
-          <div className="flex items-center justify-between flex-nowrap gap-2 w-full">
-            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-              <span className="inline-block min-w-[28px] h-7 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 font-mono font-semibold text-base border border-emerald-200 flex-shrink-0">
-                {item.quantity}×
-              </span>
-
-              <div className="flex items-center gap-2 min-w-0 flex-nowrap">
-                <span className="text-base sm:text-xl font-semibold text-slate-900 break-words tracking-wide truncate max-w-[140px] sm:max-w-[240px]">
-                  {item.product_name ||
-                    item.external_product_name ||
-                    item.order_item_name ||
-                    t("Unnamed")}
-                </span>
-
-                <span className="inline-flex items-center px-2 py-0.5 rounded-lg font-semibold text-xs tracking-wide border flex-shrink-0 bg-slate-100 text-slate-500 border-slate-200">
-                  {t("Item")}
-                </span>
-              </div>
-            </div>
-
-            <span
-              className="text-base sm:text-xl font-semibold font-mono px-3 py-1 rounded-xl border bg-emerald-50 text-emerald-700 border-emerald-200 whitespace-nowrap"
-            >
-              {formatCurrency(Number(item.price || 0))}
-            </span>
+    {/* Driver / Order Items / Amount row */}
+    <div className="grid items-start gap-2 sm:grid-cols-[minmax(200px,0.9fr)_minmax(320px,1.6fr)_minmax(170px,0.7fr)]">
+      {/* Driver */}
+      <div className="min-w-0 flex items-center gap-2">
+        <div className="h-10 w-10 rounded-full bg-white border border-slate-300 shadow-sm flex items-center justify-center overflow-hidden flex-shrink-0 dark:bg-slate-950/50 dark:border-slate-800">
+          {driverAvatarUrl ? (
+            <img
+              src={driverAvatarUrl}
+              alt={assignedDriverName || t("Driver")}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-100">{driverInitials}</span>
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[9px] font-semibold tracking-[0.24em] text-slate-400 uppercase leading-none">
+            {t("Driver")}
           </div>
-
-          {item.extras?.length > 0 && (
-            <div className="ml-3 sm:ml-6 mt-2 flex flex-col gap-1">
-              {item.extras.map((ex, i) => {
-                const perItemQty = ex.quantity || 1;
-                const itemQty = item.quantity || 1;
-                const totalQty = perItemQty * itemQty;
-                const unit = parseFloat(ex.price || ex.extraPrice || 0) || 0;
-                const lineTotal = unit * totalQty;
-                return (
-                  <div
-                    key={i}
-                    className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 px-3 py-1 rounded-xl text-base font-medium bg-slate-50 text-slate-700 border border-slate-200"
-                    style={{ fontSize: "1.08em" }}
-                  >
-                    <span className="flex items-center gap-2 font-semibold">
-                      ➕ {ex.name}
-                      <span className="ml-2 font-semibold text-inherit text-base sm:text-lg tracking-wide">
-                        ×{totalQty}
-                      </span>
-                    </span>
-                    <span className="font-mono text-center sm:text-right w-full sm:w-auto">
-                      {formatCurrency(lineTotal)}
-                    </span>
-                  </div>
+          <div className="mt-0.5 flex items-center gap-2 flex-nowrap">
+            <select
+              value={order.driver_id || ""}
+              onChange={async (e) => {
+                const driverId = e.target.value;
+                await secureFetch(`/orders/${order.id}`, {
+                  method: "PUT",
+                  body: JSON.stringify({
+                    driver_id: driverId,
+                    total: order.total,
+                    payment_method: order.payment_method,
+                  }),
+                });
+                setOrders((prev) =>
+                  prev.map((o) => (o.id === order.id ? { ...o, driver_id: driverId } : o))
                 );
-              })}
-            </div>
-          )}
-
-          {item.note && (
-            <div
-              className="ml-3 sm:ml-6 mt-2 px-3 py-1 rounded-xl font-medium italic flex items-start sm:items-center gap-2 text-base bg-amber-50 text-amber-900 border border-amber-200"
+              }}
+              className="appearance-none bg-white border border-slate-200 rounded-xl text-slate-900 text-[12px] font-semibold px-2 py-1 pr-6 shadow-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300 transition-all whitespace-nowrap max-w-[200px] dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100"
             >
-              📝 <span style={{ wordBreak: "break-word" }}>{item.note}</span>
-            </div>
-          )}
-        </li>
-      ))}
-    </ul>
-  </details>
-</div>
-
-	{/* --- ACTIONS --- */}
-<div className="mt-auto flex flex-wrap items-center justify-between gap-3">
-  <div className="flex flex-wrap items-center gap-2">
-    {["packet", "phone"].includes(order.order_type) &&
-      order.status !== "confirmed" &&
-      order.status !== "closed" && (
-        <button
-          onClick={async () => {
-            const res = await secureFetch(`/orders/${order.id}/confirm-online`, { method: "POST" });
-            if (!res.ok) {
-              const err = await res.json();
-              return alert(`Confirm failed: ${err.error}`);
-            }
-            const { order: updated } = await res.json();
-            const items = await secureFetch(`/orders/${order.id}/items`);
-            setOrders((prev) =>
-              prev.map((o) => (o.id === updated.id ? { ...updated, items } : o))
-            );
-          }}
-          className={`inline-flex items-center justify-center px-4 py-2 rounded-full text-white font-semibold text-xs sm:text-sm shadow transition-all ${
-            kitchenStatus === "new"
-              ? "bg-blue-600 hover:bg-blue-700"
-              : kitchenStatus === "preparing"
-              ? "bg-amber-600 hover:bg-amber-700"
-              : kitchenStatus === "ready" || kitchenStatus === "delivered"
-              ? "bg-red-600 hover:bg-red-700"
-              : "bg-emerald-600 hover:bg-emerald-700"
-          }`}
-        >
-          ⚡ {t("Confirm")}
-        </button>
-      )}
-
-    {order.status !== "cancelled" && order.status !== "closed" && (
-      <button
-        onClick={() => openCancelModalForOrder(order)}
-        className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs sm:text-sm shadow transition-all"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-        </svg>
-        {t("Cancel")}
-      </button>
-    )}
-
-    {!autoConfirmOrders && order.status === "confirmed" && (
-      <span className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs sm:text-sm border border-emerald-200 shadow-sm">
-        ✅ {t("confirmed")}
-      </span>
-    )}
-
-    {autoConfirmOrders && order.status === "confirmed" && (
-      <span className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs sm:text-sm border border-emerald-200 shadow-sm">
-        ⚙️ {t("Auto Confirmed")}
-      </span>
-    )}
-
-    {/* Driver status + timer next to Auto Confirmed */}
-    <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-slate-700 border border-slate-200 text-xs sm:text-sm font-semibold shadow-sm">
-      {assignedDriverName ? `${t("Picked up by")}: ${assignedDriverName}` : driverStatusLabel}
-    </span>
-
-    {order.status === "draft" && (
-      <span className="px-4 py-2 rounded-full font-semibold text-xs sm:text-sm bg-slate-100 text-slate-500 border border-slate-200 shadow-sm">
-        {t("draft")}
-      </span>
-    )}
-    {order.status === "cancelled" && (
-      <span className="px-4 py-2 rounded-full font-semibold text-xs sm:text-sm bg-rose-100 text-rose-700 border border-rose-200 shadow-sm">
-        {t("cancelled")}
-      </span>
-    )}
-    {order.status === "closed" && (
-      <span className="px-4 py-2 rounded-full font-semibold text-xs sm:text-sm bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">
-        {t("closed")}
-      </span>
-    )}
-  </div>
-</div>
-
-
-
-  {/* === ACTION BUTTON === */}
-  <div className="flex flex-col sm:flex-row gap-2 mt-1 w-full">
-    {!normalizeDriverStatus(order.driver_status) && (
-      <button
-        className={`w-full px-5 py-3 rounded-full font-semibold text-base text-white shadow transition ${
-          kitchenStatus === "new"
-            ? "bg-blue-600 hover:bg-blue-700"
-            : kitchenStatus === "preparing"
-            ? "bg-amber-600 hover:bg-amber-700"
-            : kitchenStatus === "ready" || kitchenStatus === "delivered"
-            ? "bg-red-600 hover:bg-red-700"
-            : "bg-teal-600 hover:bg-teal-700"
-        }`}
-        disabled={driverButtonDisabled(order)}
-        onClick={async () => {
-          if (driverButtonDisabled(order)) return;
-          const nextStatus = isYemeksepetiPickupOrder(order) ? "delivered" : "on_road";
-          setOrders((prev) =>
-            prev.map((o) =>
-              o.id === order.id ? { ...o, driver_status: nextStatus } : o
-            )
-          );
-          await secureFetch(`/orders/${order.id}/driver-status`, {
-            method: 'PATCH',
-            body: JSON.stringify({ driver_status: nextStatus }),
-          });
-        }}
-      >
-        {isYemeksepetiPickupOrder(order) ? t("Picked up") : t("On Road")}
-      </button>
-    )}
-
-	    {normalizeDriverStatus(order.driver_status) === "on_road" && !isYemeksepetiPickupOrder(order) && (
-	      <button
-	        className="w-full px-5 py-3 rounded-full font-semibold text-base bg-blue-800 hover:bg-blue-900 
-	                   text-white shadow transition"
-	        disabled={driverButtonDisabled(order)}
-	        onClick={async () => {
-	          if (driverButtonDisabled(order)) return;
-          setUpdating((prev) => ({ ...prev, [order.id]: true }));
-          setOrders((prev) =>
-            prev.map((o) =>
-              o.id === order.id ? { ...o, driver_status: 'delivered' } : o
-            )
-          );
-          try {
-            await secureFetch(`/orders/${order.id}/driver-status`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ driver_status: 'delivered' }),
-            });
-          } catch (err) {
-            console.error("❌ Failed to mark delivered:", err);
-            if (!propOrders) await fetchOrders();
-          } finally {
-            setUpdating((prev) => ({ ...prev, [order.id]: false }));
-          }
-        }}
-      >
-        {t("Delivered")}
-      </button>
-    )}
-
-    {normalizeDriverStatus(order.driver_status) === "on_road" && isYemeksepetiPickupOrder(order) && (
-      <button
-        className="w-full px-5 py-3 rounded-full font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
-                   text-white shadow transition"
-        disabled={driverButtonDisabled(order)}
-        onClick={async () => {
-          if (driverButtonDisabled(order)) return;
-          setUpdating((prev) => ({ ...prev, [order.id]: true }));
-          setOrders((prev) =>
-            prev.map((o) =>
-              o.id === order.id ? { ...o, driver_status: 'delivered' } : o
-            )
-          );
-          try {
-            await secureFetch(`/orders/${order.id}/driver-status`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ driver_status: 'delivered' }),
-            });
-          } catch (err) {
-            console.error("❌ Failed to complete pickup order:", err);
-            if (!propOrders) await fetchOrders();
-          } finally {
-            setUpdating((prev) => ({ ...prev, [order.id]: false }));
-          }
-        }}
-      >
-        {t("Completed")}
-      </button>
-    )}
-
-    {normalizeDriverStatus(order.driver_status) === "delivered" && (
-      <button
-        className="w-full px-5 py-3 rounded-full font-semibold text-base bg-emerald-500 hover:bg-emerald-600 
-                   text-white shadow transition"
-        onClick={async () => {
-          if (isOnlinePayment) {
-            try {
-              await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
-              setOrders((prev) => prev.filter((o) => Number(o.id) !== Number(order.id)));
-            } catch (err) {
-              console.error("❌ Failed to close online-paid order:", err);
-              toast.error(t("Failed to close order"));
-              if (!propOrders) await fetchOrders();
-            }
-            return;
-          }
-
-          openPaymentModalForOrder(order, { closeAfterSave: true });
-        }}
-      >
-        {t("Close Order")}
-      </button>
-    )}
-    
-  </div>
-
-</div>
-
-
-            
+              <option value="">{t("Unassigned")}</option>
+              {drivers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+            {autoConfirmOrders && order.status === "confirmed" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 text-[12px] font-semibold border border-emerald-200 shadow-sm whitespace-nowrap dark:bg-emerald-950/25 dark:text-emerald-200 dark:border-emerald-500/30">
+                ✓ {t("Auto Confirmed")}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => openCancelModalForOrder(order)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-rose-600 text-white px-3 py-1 text-[12px] font-semibold shadow-sm hover:bg-rose-700 transition whitespace-nowrap"
+            >
+              ✕ {t("Cancel")}
+            </button>
           </div>
+        </div>
+      </div>
 
-     
+{/* Order items + status */}
+      <div className="min-w-0 flex flex-col gap-2">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,max-content))] items-center gap-2 text-[12px] font-semibold text-slate-600 dark:text-slate-300">
+          {order.status === "draft" && (
+            <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 shadow-sm dark:bg-slate-900/50 dark:text-slate-200 dark:border-slate-700">
+              {t("draft")}
+            </span>
+          )}
+          {order.status === "cancelled" && (
+            <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-semibold bg-rose-100 text-rose-700 border border-rose-200 shadow-sm dark:bg-rose-950/25 dark:text-rose-200 dark:border-rose-500/30">
+              {t("cancelled")}
+            </span>
+          )}
+          {order.status === "closed" && (
+            <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 shadow-sm dark:bg-slate-900/50 dark:text-slate-200 dark:border-slate-700">
+              {t("closed")}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Amount */}
+      <div className="flex flex-col items-end gap-1">
+        <div className="mt-0.5 flex items-center gap-2">
+          <button
+            onClick={() => openPaymentModalForOrder(order)}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-slate-200 text-base sm:text-xl font-extrabold text-slate-700 hover:text-emerald-700 hover:border-emerald-300 shadow-sm transition dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100 dark:hover:text-emerald-200 dark:hover:border-emerald-500/40"
+            title={t("Edit payment")}
+            type="button"
+          >
+            {order.payment_method ? order.payment_method : "—"}
+            {!isOnlinePayment && (
+              <span className="text-sm sm:text-base opacity-80" aria-hidden="true">
+                ✎
+              </span>
+            )}
+          </button>
+          <div className="text-base sm:text-xl font-extrabold text-emerald-700 dark:text-emerald-200">
+            {formatCurrency(discountedTotal)}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
       );
     })}

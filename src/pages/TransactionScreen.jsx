@@ -371,6 +371,26 @@ const writeCachedCategoryImages = (imagesByCategory) => {
   } catch {}
 };
 
+const readCachedCategoryOrderKeys = () => {
+  const raw =
+    typeof window !== "undefined"
+      ? window?.localStorage?.getItem(getRestaurantScopedCacheKey("categoryOrderKeys.v1"))
+      : null;
+  const parsed = safeParseJson(raw);
+  return Array.isArray(parsed)
+    ? parsed.map((v) => String(v ?? "").trim()).filter(Boolean)
+    : [];
+};
+
+const writeCachedCategoryOrderKeys = (orderKeys) => {
+  try {
+    localStorage.setItem(
+      getRestaurantScopedCacheKey("categoryOrderKeys.v1"),
+      JSON.stringify(Array.isArray(orderKeys) ? orderKeys : [])
+    );
+  } catch {}
+};
+
 const prefetchImageUrls = (urls, limit = 48) => {
   if (typeof window === "undefined") return;
   if (!Array.isArray(urls) || urls.length === 0) return;
@@ -457,7 +477,6 @@ export default function TransactionScreen() {
           order_type: "phone",
         }
       : null);
-  const creatingPhoneOrderRef = useRef(false);
     const { t } = useTranslation(); // ✅ Enable translations
   const restaurantSlug = typeof window !== "undefined"
     ? localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id")
@@ -636,7 +655,44 @@ const canShowDebtButton = normalizedStatus === "confirmed";
 const isDebtEligible = canShowDebtButton && !hasUnconfirmedItems && hasConfirmedUnpaidItems;
   const safeProducts = Array.isArray(products) ? products : [];
   const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
-  const categories = [...new Set(safeProducts.map((p) => p.category))].filter(Boolean);
+  const rawCategories = useMemo(
+    () => [...new Set(safeProducts.map((p) => p.category))].filter(Boolean),
+    [safeProducts]
+  );
+  const [categoryOrderKeys, setCategoryOrderKeys] = useState(() =>
+    readCachedCategoryOrderKeys()
+  );
+  useEffect(() => {
+    writeCachedCategoryOrderKeys(categoryOrderKeys);
+  }, [categoryOrderKeys]);
+  const categories = useMemo(() => {
+    const base = Array.isArray(rawCategories) ? rawCategories : [];
+    if (base.length === 0) return [];
+    if (!Array.isArray(categoryOrderKeys) || categoryOrderKeys.length === 0) return base;
+
+    const baseByKey = new Map(base.map((cat) => [normalizeGroupKey(cat), cat]));
+    const usedKeys = new Set();
+    const ordered = [];
+
+    categoryOrderKeys.forEach((key) => {
+      const normalized = normalizeGroupKey(key);
+      if (!normalized) return;
+      const match = baseByKey.get(normalized);
+      if (!match) return;
+      if (usedKeys.has(normalized)) return;
+      usedKeys.add(normalized);
+      ordered.push(match);
+    });
+
+    base.forEach((cat) => {
+      const key = normalizeGroupKey(cat);
+      if (!key || usedKeys.has(key)) return;
+      usedKeys.add(key);
+      ordered.push(cat);
+    });
+
+    return ordered;
+  }, [rawCategories, categoryOrderKeys]);
 const [categoryColumnSlots, setCategoryColumnSlots] = useState(0);
 const rightCategoryColumnRef = useRef(null);
 const categoryMeasureRef = useRef(null);
@@ -665,6 +721,55 @@ const topRowRef = useRef(null);
 
 const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
 const activeCategory = categories[currentCategoryIndex] || "";
+const activeCategoryKeyRef = useRef("");
+useEffect(() => {
+  activeCategoryKeyRef.current = normalizeGroupKey(activeCategory);
+}, [activeCategory]);
+const categoriesRef = useRef(categories);
+useEffect(() => {
+  categoriesRef.current = categories;
+}, [categories]);
+useEffect(() => {
+  // Keep selection stable when categories change/reorder.
+  if (!Array.isArray(categories) || categories.length === 0) {
+    setCurrentCategoryIndex(0);
+    return;
+  }
+  const key = activeCategoryKeyRef.current;
+  const idx = key
+    ? categories.findIndex((cat) => normalizeGroupKey(cat) === key)
+    : -1;
+  if (idx >= 0) {
+    setCurrentCategoryIndex(idx);
+    return;
+  }
+  setCurrentCategoryIndex((prev) => Math.min(Math.max(0, prev), categories.length - 1));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [categories]);
+
+const [isReorderingCategories, setIsReorderingCategories] = useState(false);
+const [draggingCategoryKey, setDraggingCategoryKey] = useState("");
+const draggedCategoryKeyRef = useRef("");
+const reorderCategoryByKeyToIndex = useCallback((fromKey, toIdx) => {
+  const current = categoriesRef.current || [];
+  const key = normalizeGroupKey(fromKey);
+  if (!key) return;
+  const fromIdx = current.findIndex((cat) => normalizeGroupKey(cat) === key);
+  if (fromIdx < 0) return;
+  if (!Number.isFinite(toIdx) || toIdx < 0 || toIdx >= current.length) return;
+  if (fromIdx === toIdx) return;
+
+  const next = [...current];
+  const [moved] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, moved);
+
+  const nextKeys = next.map((cat) => normalizeGroupKey(cat)).filter(Boolean);
+  setCategoryOrderKeys(nextKeys);
+
+  const activeKey = activeCategoryKeyRef.current;
+  const nextActiveIdx = Math.max(0, nextKeys.indexOf(activeKey));
+  setCurrentCategoryIndex(nextActiveIdx);
+}, []);
 const [catalogSearch, setCatalogSearch] = useState("");
 const normalizedCatalogSearch = useMemo(() => normalizeGroupKey(catalogSearch), [catalogSearch]);
 const catalogSearchTokens = useMemo(() => {
@@ -1190,9 +1295,12 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const catSrc = categoryImages[slug] || "";
   const isActive = currentCategoryIndex === idx;
   const hasImg = !!catSrc;
+  const isDragEnabled = isReorderingCategories && normalizedVariant === "horizontal";
+  const key = normalizeGroupKey(cat);
+  const isDragging = !!key && key === draggingCategoryKey;
 
   const baseClasses =
-    "flex flex-col items-center justify-center gap-0.5 rounded-lg border bg-white/90 px-1 py-1.5 text-center shadow-[0_6px_14px_rgba(15,23,42,0.06)] transition-all duration-150 select-none touch-manipulation hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98]";
+    "flex flex-col items-center justify-center gap-1 rounded-2xl border bg-white/80 px-2 py-2 text-center shadow-[0_8px_20px_rgba(30,64,175,0.08)] transition-all duration-150 select-none touch-manipulation hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98] dark:bg-slate-900/60 dark:border-slate-700/70 dark:shadow-[0_8px_20px_rgba(0,0,0,0.35)]";
 
   const paddingClass =
     normalizedVariant === "mobile"
@@ -1207,46 +1315,125 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
 
   const widthClass =
     normalizedVariant === "mobile"
-      ? "min-w-[70px] max-w-[79px] snap-start"
+      ? "min-w-[86px] max-w-[96px] snap-start"
       : normalizedVariant === "grid"
-      ? "w-[70px]"
+      ? "w-[86px]"
       : normalizedVariant === "vertical"
-      ? "w-[70px]"
+      ? "w-[86px]"
       : normalizedVariant === "horizontal"
-      ? "w-[70px]"
+      ? "w-[86px]"
       : "w-full";
-  const activeClasses = "border-indigo-300 bg-white shadow-[0_12px_24px_rgba(99,102,241,0.18)]";
-  const inactiveClasses = "border-white/60 hover:border-indigo-200 hover:bg-white";
+  const activeClasses =
+    "border-indigo-300 bg-gradient-to-br from-white via-white to-indigo-50 shadow-[0_14px_26px_rgba(99,102,241,0.18)] ring-1 ring-indigo-200 dark:border-indigo-500/50 dark:from-indigo-950/35 dark:via-slate-900/50 dark:to-slate-950/30 dark:shadow-[0_14px_26px_rgba(0,0,0,0.4)] dark:ring-indigo-500/25";
+  const inactiveClasses =
+    "border-white/70 hover:border-indigo-200 hover:bg-white dark:border-slate-700/70 dark:hover:border-indigo-500/40 dark:hover:bg-slate-900/70";
 
   const imageClasses =
     normalizedVariant === "vertical"
-      ? "h-[55px] w-[55px] object-cover rounded-xl"
+      ? "h-[58px] w-[58px] object-cover rounded-2xl"
       : normalizedVariant === "horizontal"
-      ? "h-[55px] w-[55px] object-cover rounded-xl"
-      : "h-[55px] w-[55px] object-cover rounded-xl";
+      ? "h-[58px] w-[58px] object-cover rounded-2xl"
+      : "h-[58px] w-[58px] object-cover rounded-2xl";
   const iconClasses = "text-[16px] leading-tight";
 
   const labelClasses =
     normalizedVariant === "grid"
-      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[71px]"
+      ? "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[84px] dark:text-slate-200"
       : normalizedVariant === "vertical"
-      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[71px]"
+      ? "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[84px] dark:text-slate-200"
       : normalizedVariant === "horizontal"
-      ? "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[71px]"
-      : "text-[12px] font-semibold text-slate-800 text-center leading-tight truncate max-w-[70px]";
+      ? "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[84px] dark:text-slate-200"
+      : "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[80px] dark:text-slate-200";
 
   return (
     <button
       key={`${variant}-${cat}-${idx}`}
       type="button"
-      onClick={() => setCurrentCategoryIndex(idx)}
-      className={`${widthClass} ${baseClasses} ${paddingClass} ${isActive ? activeClasses : inactiveClasses}`}
+      data-cat-idx={idx}
+      onClick={() => {
+        if (isReorderingCategories) return;
+        setCurrentCategoryIndex(idx);
+      }}
+      draggable={isDragEnabled}
+      onDragStart={(e) => {
+        if (!isDragEnabled) return;
+        const dragKey = normalizeGroupKey(cat);
+        draggedCategoryKeyRef.current = dragKey;
+        setDraggingCategoryKey(dragKey);
+        try {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", dragKey);
+        } catch {}
+      }}
+      onDragOver={(e) => {
+        if (!isDragEnabled) return;
+        e.preventDefault();
+        try {
+          e.dataTransfer.dropEffect = "move";
+        } catch {}
+      }}
+      onDrop={(e) => {
+        if (!isDragEnabled) return;
+        e.preventDefault();
+        const fromKey =
+          draggedCategoryKeyRef.current ||
+          (() => {
+            try {
+              return e.dataTransfer.getData("text/plain");
+            } catch {
+              return "";
+            }
+          })();
+        reorderCategoryByKeyToIndex(fromKey, idx);
+        draggedCategoryKeyRef.current = "";
+        setDraggingCategoryKey("");
+      }}
+      onDragEnd={() => {
+        draggedCategoryKeyRef.current = "";
+        setDraggingCategoryKey("");
+      }}
+      onPointerDown={(e) => {
+        if (!isDragEnabled) return;
+        const dragKey = normalizeGroupKey(cat);
+        draggedCategoryKeyRef.current = dragKey;
+        setDraggingCategoryKey(dragKey);
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {}
+        e.preventDefault();
+      }}
+      onPointerMove={(e) => {
+        if (!isDragEnabled) return;
+        if (!draggedCategoryKeyRef.current) return;
+        const el =
+          typeof document !== "undefined"
+            ? document.elementFromPoint(e.clientX, e.clientY)
+            : null;
+        const target = el?.closest?.("[data-cat-idx]");
+        if (!target) return;
+        const toIdx = Number(target.getAttribute("data-cat-idx"));
+        if (!Number.isFinite(toIdx)) return;
+        reorderCategoryByKeyToIndex(draggedCategoryKeyRef.current, toIdx);
+      }}
+      onPointerUp={() => {
+        draggedCategoryKeyRef.current = "";
+        setDraggingCategoryKey("");
+      }}
+      onPointerCancel={() => {
+        draggedCategoryKeyRef.current = "";
+        setDraggingCategoryKey("");
+      }}
+      className={`${widthClass} ${baseClasses} ${paddingClass} ${
+        isActive ? activeClasses : inactiveClasses
+      } ${isDragEnabled ? "cursor-grab" : "cursor-pointer"} ${
+        isDragging ? "ring-2 ring-indigo-400/70" : ""
+      }`}
     >
       {hasImg ? (
         <img src={catSrc} alt={cat} className={imageClasses} />
       ) : (
-        <div className="flex h-[55px] w-[55px] items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-slate-100 to-slate-200">
-          <span className="text-sm font-semibold text-slate-500">
+        <div className="flex h-[58px] w-[58px] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700">
+          <span className="text-sm font-semibold text-slate-500 dark:text-slate-200">
             {(cat || "")
               .split(" ")
               .map((part) => part[0])
@@ -1290,6 +1477,9 @@ const lastVisibleCartItemRef = useRef(null);
 const [expandedCartItems, setExpandedCartItems] = useState(() => new Set());
 const [selectedCartItemIds, setSelectedCartItemIds] = useState(() => new Set());
 const [showPaidCartItems, setShowPaidCartItems] = useState(false);
+const latestOrderRef = useRef(null);
+const latestCartItemsRef = useRef([]);
+const phoneOrderCreatePromiseRef = useRef(null);
 const clearCartState = useCallback(() => {
   setCartItems([]);
   setReceiptItems([]);
@@ -2414,15 +2604,30 @@ useEffect(() => {
   return () => window.socket.off("orders_updated", refresh);
 }, [order?.id, order?.order_type]);
 
+useEffect(() => {
+  latestOrderRef.current = order || null;
+}, [order]);
+
+useEffect(() => {
+  latestCartItemsRef.current = Array.isArray(cartItems) ? cartItems : [];
+}, [cartItems]);
 
 useEffect(() => {
   return () => {
-    if (order?.id && cartItems.length === 0) {
-     secureFetch(`/orders/${order.id}/reset-if-empty${identifier}`, { method: "PATCH" });
+    const currentOrder = latestOrderRef.current;
+    const currentItems = latestCartItemsRef.current;
+    if (!currentOrder?.id) return;
+    if (currentItems.length > 0) return;
+
+    const orderType = String(currentOrder.order_type || "").toLowerCase();
+    if (orderType === "phone") {
+      secureFetch(`/orders/${currentOrder.id}/close${identifier}`, { method: "POST" });
+      return;
     }
+    secureFetch(`/orders/${currentOrder.id}/reset-if-empty${identifier}`, { method: "PATCH" });
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [order?.id]);
+}, [identifier]);
 
 useEffect(() => {
   if (!order) return;
@@ -2721,30 +2926,6 @@ useEffect(() => {
     if (!hasWarmOrder || String(initialOrder?.id) !== String(orderId)) {
       fetchPhoneOrder(orderId);
     }
-  } else if (String(orderId) === "new") {
-    if (!phoneOrderDraft || creatingPhoneOrderRef.current) return;
-    creatingPhoneOrderRef.current = true;
-    (async () => {
-      try {
-        const created = await secureFetch(`/orders${identifier}`, {
-          method: "POST",
-          body: JSON.stringify(phoneOrderDraft),
-        });
-
-        if (!created?.id) throw new Error(created?.error || "Failed to create order");
-
-        setOrder((prev) => (prev ? { ...prev, ...created } : created));
-        debugNavigate(`/transaction/phone/${created.id}`, {
-          replace: true,
-          state: { order: created, preserveCart: true },
-        });
-      } catch (err) {
-        console.error("❌ Failed to create phone order:", err);
-        showToast(err?.message || t("Failed to create phone order"));
-      } finally {
-        creatingPhoneOrderRef.current = false;
-      }
-    })();
   } else if (tableId) {
     createOrFetchTableOrder(tableId);
   } else if (
@@ -2760,11 +2941,53 @@ useEffect(() => {
     cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
 const updateOrderStatus = async (newStatus = null, total = null, method = null) => {
-  const targetId = order?.id || orderId || tableId;
+  let targetId = order?.id || (orderId && String(orderId) !== "new" ? orderId : null) || tableId;
   if (!targetId) {
-    console.error("❌ No order ID found.");
-    showToast("Invalid order ID");
-    return null;
+    if (orderType === "phone") {
+      try {
+        const payload = {
+          order_type: "phone",
+          status: "draft",
+          customer_name:
+            order?.customer_name ??
+            phoneOrderDraft?.customer_name ??
+            phoneOrderDraft?.customerName ??
+            "",
+          customer_phone:
+            order?.customer_phone ??
+            phoneOrderDraft?.customer_phone ??
+            phoneOrderDraft?.customerPhone ??
+            "",
+          customer_address:
+            order?.customer_address ??
+            phoneOrderDraft?.customer_address ??
+            phoneOrderDraft?.customerAddress ??
+            "",
+          payment_method:
+            order?.payment_method ??
+            phoneOrderDraft?.payment_method ??
+            phoneOrderDraft?.paymentMethod ??
+            selectedPaymentMethod ??
+            "",
+          total: 0,
+        };
+        const created = await secureFetch(`/orders${identifier}`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (!created?.id) throw new Error(created?.error || "Failed to create order");
+        setOrder((prev) => (prev ? { ...prev, ...created } : created));
+        targetId = created.id;
+      } catch (err) {
+        console.error("❌ Failed to create phone order:", err);
+        showToast(err?.message || t("Failed to create phone order"));
+        return null;
+      }
+    } else {
+      console.error("❌ No order ID found.");
+      showToast("Invalid order ID");
+      return null;
+    }
   }
 
   const prevOrderTotal = Number(order?.total || 0);
@@ -2933,6 +3156,10 @@ const handleMultifunction = async () => {
   // ✅ Allow phone orders to close even if empty
   if (cartItems.length === 0) {
     if (orderType === "phone") {
+      if (!order?.id) {
+        debugNavigate("/orders");
+        return;
+      }
       if (String(order?.status || "").toLowerCase() === "closed") {
         debugNavigate("/orders");
         return;
@@ -3411,9 +3638,72 @@ const selectedForPaymentTotal = cartItems
   .filter(i => selectedForPayment.includes(getPaymentItemKey(i)))
   .reduce((sum, i) => sum + i.price * i.quantity, 0);
 
+const ensurePhoneOrder = useCallback(async () => {
+  if (orderType !== "phone") return order;
+  if (order?.id) return order;
+  if (phoneOrderCreatePromiseRef.current) return phoneOrderCreatePromiseRef.current;
+
+  const payload = {
+    order_type: "phone",
+    status: "draft",
+    customer_name:
+      order?.customer_name ??
+      phoneOrderDraft?.customer_name ??
+      phoneOrderDraft?.customerName ??
+      "",
+    customer_phone:
+      order?.customer_phone ??
+      phoneOrderDraft?.customer_phone ??
+      phoneOrderDraft?.customerPhone ??
+      "",
+    customer_address:
+      order?.customer_address ??
+      phoneOrderDraft?.customer_address ??
+      phoneOrderDraft?.customerAddress ??
+      "",
+    payment_method:
+      order?.payment_method ??
+      phoneOrderDraft?.payment_method ??
+      phoneOrderDraft?.paymentMethod ??
+      selectedPaymentMethod ??
+      "",
+    total: 0,
+  };
+
+  const promise = (async () => {
+    const created = await secureFetch(`/orders${identifier}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (!created?.id) throw new Error(created?.error || "Failed to create order");
+    setOrder((prev) => (prev ? { ...prev, ...created } : created));
+    return created;
+  })();
+
+  phoneOrderCreatePromiseRef.current = promise;
+  promise.finally(() => {
+    phoneOrderCreatePromiseRef.current = null;
+  });
+  return promise;
+}, [
+  orderType,
+  order,
+  phoneOrderDraft,
+  selectedPaymentMethod,
+  identifier,
+  orderId,
+  debugNavigate,
+]);
+
 const finalizeCartItem = useCallback(
   ({ product, quantity = 1, extras = [], note = "", editingIndex = null }) => {
     if (!order || !product) return;
+    if (orderType === "phone" && !order?.id) {
+      ensurePhoneOrder().catch((err) => {
+        console.error("❌ Failed to create phone order:", err);
+        showToast(err?.message || t("Failed to create phone order"));
+      });
+    }
 
     const productQty = Math.max(1, Number(quantity) || 1);
     const trimmedNote = (note || "").trim();
@@ -3580,7 +3870,7 @@ const finalizeCartItem = useCallback(
       },
     ]);
   },
-  [order, setCartItems, setEditingCartItemIndex]
+  [order, orderType, ensurePhoneOrder, setCartItems, setEditingCartItemIndex, t]
 );
 
 const addToCart = async (product) => {
@@ -3922,7 +4212,7 @@ const renderCartContent = (variant = "desktop") => {
   const isDesktop = variant === "desktop";
   const containerClasses = isDesktop
     ? "flex h-full min-h-0 flex-col rounded-[28px] bg-transparent shadow-none ring-0 lg:sticky lg:top-4 lg:self-start lg:mb-[64px] lg:max-h-[calc(100vh-180px)] overflow-hidden"
-    : "flex w-full max-h-[calc(100vh-96px)] flex-col rounded-t-[28px] bg-slate-50/95 shadow-[0_20px_35px_rgba(15,23,42,0.25)] ring-1 ring-white/60 backdrop-blur-xl overflow-hidden";
+    : "flex w-full max-h-[calc(100vh-96px)] flex-col rounded-t-[28px] bg-slate-50/95 shadow-[0_20px_35px_rgba(15,23,42,0.25)] ring-1 ring-white/60 backdrop-blur-xl overflow-hidden dark:bg-slate-950/80 dark:shadow-[0_20px_35px_rgba(0,0,0,0.55)] dark:ring-slate-800/70";
   const headerPadding = isDesktop ? "px-5 pt-5 pb-3" : "px-5 pt-4 pb-3";
   const footerPadding = isDesktop
     ? "px-5 py-5"
@@ -3946,17 +4236,17 @@ const renderCartContent = (variant = "desktop") => {
   return (
    <aside className={containerClasses}>
   {/* === Header === */}
-  <header className={`flex-none items-start justify-between border-b border-slate-200 bg-transparent ${headerPadding}`}>
+  <header className={`flex-none items-start justify-between bg-transparent ${headerPadding}`}>
     <div className="flex min-w-0 flex-1 flex-col space-y-0.5">
       <div className="flex w-full flex-wrap items-center gap-2">
-        <h2 className="hidden text-lg font-semibold text-slate-800 lg:block">{t("Cart")}</h2>
+        <h2 className="hidden text-lg font-semibold text-slate-800 lg:block dark:text-slate-100">{t("Cart")}</h2>
         <div className="ml-auto flex items-center gap-1">
-          <div className="flex flex-wrap items-center gap-1 rounded-full bg-white/80 px-1.5 py-1 shadow-sm ring-1 ring-white/80">
+          <div className="flex flex-wrap items-center gap-1 rounded-full bg-white/80 px-1.5 py-1 shadow-sm ring-1 ring-white/80 dark:bg-slate-900/60 dark:ring-slate-700/70">
             {!orderId && (
               <button
                 type="button"
                 onClick={() => setShowMoveTableModal(true)}
-                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/90 px-2.5 py-1 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/90 px-2.5 py-1 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-slate-900/60 dark:text-emerald-200 dark:hover:bg-emerald-950/25"
                 title={t("Move Table")}
                 aria-label={t("Move Table")}
               >
@@ -3968,7 +4258,7 @@ const renderCartContent = (variant = "desktop") => {
               <button
                 type="button"
                 onClick={() => setShowMergeTableModal(true)}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white/90 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-50"
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white/90 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-50 dark:border-amber-500/30 dark:bg-slate-900/60 dark:text-amber-200 dark:hover:bg-amber-950/25"
                 title={t("Merge Table")}
                 aria-label={t("Merge Table")}
               >
@@ -3983,7 +4273,7 @@ const renderCartContent = (variant = "desktop") => {
                   handleOpenDebtModal();
                 }}
                 disabled={debtDisabled}
-              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200 dark:hover:bg-amber-950/30"
               title={t("Add to Debt")}
               aria-label={t("Add to Debt")}
             >
@@ -3995,18 +4285,18 @@ const renderCartContent = (variant = "desktop") => {
           </div>
         </div>
       </div>
-      <p className="text-[0.94rem] text-slate-500">
+      <p className="text-[0.94rem] text-slate-500 dark:text-slate-300">
         {orderId ? t("Phone Order") : `${tableLabelText} ${tableId}`}
       </p>
       {invoiceNumber && (
         <div className="flex items-center gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
             {t("Invoice")} #{invoiceNumber}
           </p>
           <button
             type="button"
             onClick={handleCartPrint}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-sm text-slate-700 shadow hover:bg-slate-200 transition"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-sm text-slate-700 shadow hover:bg-slate-200 transition dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
             title={t("Print Receipt")}
             aria-label={t("Print Receipt")}
           >
@@ -4018,7 +4308,7 @@ const renderCartContent = (variant = "desktop") => {
 
     <div className="flex flex-wrap items-center justify-end gap-1.5">
       {hasSelection && (
-        <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-600">
+        <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-600 dark:bg-indigo-950/35 dark:text-indigo-200 dark:ring-1 dark:ring-indigo-500/20">
           {selectedCartItemIds.size} {t("Selected")}
         </span>
       )}
@@ -4026,7 +4316,7 @@ const renderCartContent = (variant = "desktop") => {
         <button
           type="button"
           onClick={() => setIsFloatingCartOpen(false)}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200"
           aria-label={t("Close")}
         >
           ✕
@@ -4097,9 +4387,9 @@ const renderCartContent = (variant = "desktop") => {
     >
       <div>
         {cartItems.length === 0 ? (
-          <div className="h-full rounded-2xl border border-dashed border-slate-200 bg-white/70 py-8 text-center text-xs font-medium text-slate-500 shadow-inner grid place-items-center">
+          <div className="h-full rounded-2xl border border-dashed border-slate-200 bg-transparent py-8 text-center text-xs font-medium text-slate-500 grid place-items-center dark:border-slate-700 dark:text-slate-400">
             <div>
-              <div className="mx-auto mb-2 h-12 w-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 text-2xl leading-[48px]">
+              <div className="mx-auto mb-2 h-12 w-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 text-2xl leading-[48px] dark:from-slate-800 dark:to-slate-700">
                 🛒
               </div>
               {t("Cart is empty.")}
@@ -4356,6 +4646,14 @@ const cardGradient = item.paid
       </div>
     </div>
     <div className="flex items-center gap-1">
+      {item.paid && (
+        <span
+          className="mr-1 inline-flex items-center rounded-full bg-emerald-600/90 px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-white shadow-sm"
+          title={item.payment_method ? `${t("Paid")}: ${item.payment_method}` : t("Paid")}
+        >
+          ✓ {t("Paid")}
+        </span>
+      )}
       <button
         type="button"
         onClick={(e) => {
@@ -4665,16 +4963,16 @@ const cardGradient = item.paid
 
   {/* === Footer === */}
   {variant === "desktop" ? (
-    <footer className={`flex-none sticky bottom-0 z-10 space-y-2 border-t border-slate-200 bg-slate-50 ${footerPadding}`}>
-      <div className="flex justify-between text-xs font-medium text-slate-600">
+    <footer className={`flex-none sticky bottom-0 z-10 space-y-2 border-t border-slate-200 bg-slate-50 ${footerPadding} dark:border-slate-800 dark:bg-slate-950/70`}>
+      <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
         <span>{t("Subtotal")}:</span>
-        <span className="text-slate-900">
+        <span className="text-slate-900 dark:text-slate-100">
           {formatCurrency(calculateDiscountedTotal())}
         </span>
       </div>
 
       {discountValue > 0 && (
-        <div className="flex justify-between text-xs font-semibold text-indigo-600">
+        <div className="flex justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-300">
           <span>
             {t("Discount")}{" "}
             {discountType === "percent"
@@ -4686,8 +4984,8 @@ const cardGradient = item.paid
       )}
 
    <div
-  className={`flex justify-between items-center rounded-2xl bg-white/90 px-3 py-3 text-lg font-bold shadow-[0_10px_20px_rgba(99,102,241,0.18)] mb-[3px]
-  ${selectedCartItemIds.size > 0 ? "text-emerald-700 border border-emerald-200 bg-emerald-50/80" : "text-indigo-700 border border-indigo-100"}`}
+  className={`flex justify-between items-center rounded-2xl bg-white/90 px-3 py-3 text-lg font-bold shadow-[0_10px_20px_rgba(99,102,241,0.18)] mb-[3px] dark:bg-slate-900/60 dark:shadow-[0_10px_20px_rgba(0,0,0,0.45)]
+  ${selectedCartItemIds.size > 0 ? "text-emerald-700 border border-emerald-200 bg-emerald-50/80 dark:text-emerald-200 dark:border-emerald-500/30 dark:bg-emerald-950/25" : "text-indigo-700 border border-indigo-100 dark:text-indigo-200 dark:border-indigo-500/25"}`}
 >
   <span>
     {selectedCartItemIds.size > 0
@@ -4705,15 +5003,15 @@ const cardGradient = item.paid
     </footer>
   ) : (
     <div className="lg:hidden px-4 pb-3 pt-2">
-      <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-inner">
-        <div className="flex justify-between text-xs font-medium text-slate-600">
+      <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-inner dark:border-slate-700/70 dark:bg-slate-950/60">
+        <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
           <span>{t("Subtotal")}:</span>
-          <span className="text-slate-900">
+          <span className="text-slate-900 dark:text-slate-100">
             {formatCurrency(calculateDiscountedTotal())}
           </span>
         </div>
         {discountValue > 0 && (
-          <div className="flex justify-between text-xs font-semibold text-indigo-600">
+          <div className="flex justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-300">
             <span>
               {t("Discount")}{" "}
               {discountType === "percent"
@@ -4723,7 +5021,7 @@ const cardGradient = item.paid
             <span>-{formatCurrency(discountValue)}</span>
           </div>
         )}
-        <div className="flex items-center justify-between text-sm font-bold text-indigo-700 mt-2">
+        <div className="flex items-center justify-between text-sm font-bold text-indigo-700 mt-2 dark:text-indigo-200">
           <span>{selectedCartItemIds.size > 0 ? t("Selected Total") : t("Total")}:</span>
           <span>
             {selectedCartItemIds.size > 0
@@ -4743,7 +5041,7 @@ const cardGradient = item.paid
             setIsFloatingCartOpen(false);
             navigate("/tableoverview?tab=tables");
           }}
-          className="flex-1 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+          className="flex-1 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-900/80"
         >
           {showPayLaterInClearSlot ? payLaterLabel : t("Clear")}
         </button>
@@ -4780,7 +5078,7 @@ const cardGradient = item.paid
           type="button"
           onClick={openCancelModal}
           disabled={cartItems.length === 0 || normalizedStatus !== "confirmed" || cartItems.some((item) => item.confirmed && !isPaidItem(item))}
-          className="flex-1 min-w-[120px] rounded-full border border-rose-200 bg-rose-50/80 px-4 py-2 text-center text-xs font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 min-w-[120px] rounded-full border border-rose-200 bg-rose-50/80 px-4 py-2 text-center text-xs font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-950/25 dark:text-rose-200 dark:hover:bg-rose-950/35"
         >
           {t("Cancel")}
         </button>
@@ -4832,10 +5130,10 @@ const cardGradient = item.paid
   }
 
   return (
-    <div className="relative flex h-full min-h-[calc(100vh-80px)] w-full flex-col overflow-hidden">
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-slate-50" />
+    <div className="relative flex h-full min-h-[calc(100vh-80px)] w-full flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-50 to-indigo-50/40 dark:from-slate-950 dark:via-slate-950 dark:to-indigo-950/30" />
       <div className="flex h-full min-h-0 w-full flex-col gap-0 px-2 sm:px-3 lg:px-4 overflow-hidden">
-  <section className="flex flex-1 min-h-0 flex-row gap-3 pb-2 overflow-hidden bg-slate-50">
+  <section className="flex flex-1 min-h-0 flex-row gap-3 pb-2 overflow-hidden bg-slate-50 dark:bg-slate-950">
 
     {/* === LEFT: CART PANEL (desktop only) === */}
     <div className="hidden lg:block w-[30%] min-w-[320px] max-w-[380px] h-full overflow-hidden">
@@ -4848,18 +5146,18 @@ const cardGradient = item.paid
       aria-hidden="true"
     />
 
-    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-transparent shadow-none ring-0">
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-gradient-to-br from-slate-50 via-slate-50 to-indigo-50/60 shadow-[0_18px_40px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80 dark:from-slate-950 dark:via-slate-950 dark:to-indigo-950/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.5)] dark:ring-slate-800/70">
       {/* Header */}
-      <div className="border-b border-slate-200 bg-transparent px-4 py-3">
+      <div className="border-b border-slate-200/70 bg-white/50 px-4 py-3 backdrop-blur-sm dark:border-slate-800/70 dark:bg-slate-900/40">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <div className="relative w-full max-w-[360px]">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="relative min-w-0 flex-1 w-[calc(100%-1cm)] max-w-none sm:flex-none sm:w-full sm:max-w-[360px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={catalogSearch}
                 onChange={(e) => setCatalogSearch(e.target.value)}
                 placeholder={t("Search products or categories")}
-                className="w-full rounded-full border border-white/70 bg-white/90 px-9 py-2 text-sm text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)] outline-none transition placeholder:text-slate-400 focus:border-indigo-200 focus:ring-4 focus:ring-indigo-100"
+                className="w-full rounded-full border border-white/70 bg-white/90 px-9 py-2 text-sm text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)] outline-none transition placeholder:text-slate-400 focus:border-indigo-200 focus:ring-4 focus:ring-indigo-100 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-400 dark:shadow-[0_10px_24px_rgba(0,0,0,0.35)] dark:focus:border-indigo-500/60 dark:focus:ring-indigo-500/20"
               />
               {catalogSearch.trim() && (
                 <button
@@ -4872,13 +5170,31 @@ const cardGradient = item.paid
                 </button>
               )}
             </div>
-            <span className="rounded-full bg-indigo-50/80 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
+            <span className="shrink-0 rounded-full bg-indigo-50/90 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm dark:bg-indigo-950/35 dark:text-indigo-200 dark:ring-1 dark:ring-indigo-500/20">
               {visibleProducts.length} {t("Products")}
             </span>
           </div>
-          <h2 className="text-lg font-semibold text-slate-800 text-right min-w-[140px]">
-            {activeCategory ? t(activeCategory) : t("Products")}
-          </h2>
+          <div className="flex items-center justify-end gap-2 min-w-[140px]">
+            <button
+              type="button"
+              onClick={() => {
+                setIsReorderingCategories((prev) => !prev);
+                setDraggingCategoryKey("");
+                draggedCategoryKeyRef.current = "";
+              }}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                isReorderingCategories
+                  ? "bg-indigo-600 text-white shadow-[0_10px_20px_rgba(99,102,241,0.25)]"
+                  : "bg-white/70 text-slate-700 ring-1 ring-slate-200 hover:bg-white dark:bg-slate-900/60 dark:text-slate-200 dark:ring-slate-700/70 dark:hover:bg-slate-900/80"
+              }`}
+              aria-pressed={isReorderingCategories}
+            >
+              {isReorderingCategories ? t("Done") : t("Reorder")}
+            </button>
+            <h2 className="text-lg font-semibold text-slate-800 text-right dark:text-slate-100">
+              {activeCategory ? t(activeCategory) : t("Products")}
+            </h2>
+          </div>
         </div>
         {isCatalogSearching && matchingCategories.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -4905,14 +5221,14 @@ const cardGradient = item.paid
         }
       `}</style>
 
-      <div className="flex flex-col h-full min-h-0 overflow-hidden">
+        <div className="flex flex-col h-full min-h-0 overflow-hidden">
         {/* === TOP ROW (LEFT TO RIGHT) === */}
         {categoryColumns.top.length > 0 && (
-          <div className="flex flex-none border-b border-slate-200 bg-transparent p-1 relative">
+          <div className="relative mx-3 mt-2 mb-2 flex flex-none rounded-2xl border border-indigo-300 bg-gradient-to-br from-indigo-100 via-sky-100 to-white p-2 shadow-[0_6px_14px_rgba(15,23,42,0.06)] ring-1 ring-indigo-200 dark:border-indigo-500/40 dark:from-indigo-950/55 dark:via-slate-900/55 dark:to-slate-950/55 dark:shadow-none dark:ring-indigo-500/20">
             <div 
               ref={topRowRef}
               data-category-scroll
-              className="flex flex-row items-center gap-1.5 justify-start overflow-x-auto px-1.5 py-1 scroll-smooth"
+              className="flex flex-row items-center gap-2 justify-start overflow-x-auto px-2 py-1.5 scroll-smooth"
               style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {categoryColumns.top.map((entry) => (
@@ -4952,41 +5268,43 @@ const cardGradient = item.paid
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* === CENTER: PRODUCTS GRID === */}
-          <article className="flex min-w-0 flex-1 min-h-0 flex-col bg-transparent px-0 py-2 overflow-hidden">
-          <div className="h-[calc(100vh-260px)] overflow-y-scroll pr-1 pb-[120px] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-              <div className="flex items-start justify-start">
-                <div className="grid w-full grid-cols-2 gap-x-2 gap-y-2.5 sm:grid-cols-3 md:grid-cols-5 px-2 sm:px-2.5">
+          <article className="flex min-w-0 flex-1 min-h-0 flex-col bg-transparent px-0 py-3 overflow-hidden">
+          <div className="h-[calc(100vh-260px)] overflow-y-scroll px-3 sm:px-4 pb-[calc(170px+env(safe-area-inset-bottom))] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+              <div className="flex items-start justify-center">
+                <div className="grid w-[97%] grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                 {visibleProducts.map((product) => (
                   <button
                     key={product.id}
                     onClick={() => addToCart(product)}
                     className="
-                      flex w-full min-h-[110px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/90 text-center shadow-[0_10px_22px_rgba(15,23,42,0.08)]
-                      hover:border-indigo-200 hover:shadow-[0_14px_28px_rgba(99,102,241,0.18)] active:bg-indigo-50
+                      flex w-full min-h-[150px] flex-col overflow-hidden rounded-[22px] border border-white/70 bg-white/80 text-center shadow-[0_14px_28px_rgba(15,23,42,0.1)]
+                      hover:border-indigo-200 hover:shadow-[0_18px_34px_rgba(99,102,241,0.18)] active:bg-indigo-50
+                      dark:border-slate-700/70 dark:bg-slate-900/55 dark:shadow-[0_14px_28px_rgba(0,0,0,0.45)]
+                      dark:hover:border-indigo-500/40 dark:hover:shadow-[0_18px_34px_rgba(0,0,0,0.55)] dark:active:bg-indigo-950/35
                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60
                     "
                   >
-                    <div className="relative w-full overflow-hidden border-b border-white/70 bg-white/80 p-1.5">
-                      <div className="aspect-[1/1]">
-                        <div className="flex h-full w-full items-center justify-center overflow-hidden">
+                    <div className="relative w-full overflow-hidden border-b border-white/70 bg-white/80 p-1.5 dark:border-slate-800/70 dark:bg-slate-900/50">
+                      <div className="aspect-[4/3]">
+                        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-2xl bg-white dark:bg-slate-900">
                           {product.image ? (
                             <img
                               src={product.image}
                               alt={product.name}
-                              className="h-full w-full object-cover scale-90 rounded-xl"
+                              className="h-full w-full object-cover"
                               loading="lazy"
                             />
                           ) : (
-                            <div className="h-full w-full rounded-xl bg-gradient-to-br from-slate-100 to-slate-200" />
+                            <div className="h-full w-full rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700" />
                           )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex w-full flex-col items-center justify-center gap-0.5 bg-white/80 px-1.5 py-2">
-                      <p className="w-full text-[14px] font-semibold text-slate-700 leading-tight line-clamp-1">
+                    <div className="flex w-full flex-col items-center justify-center gap-0.5 bg-white/80 px-2 py-2 dark:bg-slate-900/40">
+                      <p className="w-full text-[14px] font-semibold text-slate-700 leading-[1.1] line-clamp-1 dark:text-slate-100">
                         {product.name}
                       </p>
-                      <span className="text-[12px] font-semibold text-indigo-600">
+                      <span className="text-[13px] font-semibold text-indigo-600 leading-none dark:text-indigo-300">
                         {formatCurrency(parseFloat(product.price))}
                       </span>
                     </div>
@@ -5003,7 +5321,7 @@ const cardGradient = item.paid
     </div>
   </section>
 
-      <div className="hidden lg:block fixed bottom-0 left-0 right-0 z-30 w-full border-t border-slate-200 bg-slate-50 px-3 py-3">
+      <div className="hidden lg:block fixed bottom-0 left-0 right-0 z-30 w-full border-t border-slate-200 bg-slate-50/95 px-3 py-3 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80">
         <div className="mx-auto flex w-full max-w-[1600px] flex-wrap gap-2">
           <button
             type="button"
@@ -5046,7 +5364,7 @@ const cardGradient = item.paid
               setIsFloatingCartOpen(false);
               navigate("/tableoverview?tab=tables");
             }}
-            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-2xl border border-white/70 bg-white/80 px-5 py-3 text-lg font-semibold text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.10)] backdrop-blur hover:bg-white"
+            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-2xl border border-white/70 bg-white/80 px-5 py-3 text-lg font-semibold text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.10)] backdrop-blur hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/55 dark:text-slate-100 dark:shadow-[0_8px_18px_rgba(0,0,0,0.45)] dark:hover:bg-slate-900/75"
           >
             <Trash2 className="h-5 w-5" aria-hidden="true" />
             {showPayLaterInFooter ? footerPayLaterLabel : t("Clear")}
@@ -5057,7 +5375,7 @@ const cardGradient = item.paid
               type="button"
               onClick={openCancelModal}
               disabled={footerCancelDisabled}
-              className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/80 px-5 py-3 text-lg font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/80 px-5 py-3 text-lg font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-950/25 dark:text-rose-200 dark:hover:bg-rose-950/35"
             >
               <CircleX className="h-5 w-5" aria-hidden="true" />
               {t("Cancel")}
@@ -5087,12 +5405,12 @@ const cardGradient = item.paid
     </div>
 
       <div
-        className={`lg:hidden fixed left-4 bottom-[45px] z-40 transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[140%]" : "translate-y-0"}`}
+        className={`lg:hidden fixed left-4 bottom-[calc(12px+env(safe-area-inset-bottom))] z-40 transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[140%]" : "translate-y-0"}`}
       >
         <button
           type="button"
           onClick={() => setIsFloatingCartOpen(true)}
-          className="flex h-[74px] w-[74px] items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 text-white shadow-xl shadow-indigo-700/25 ring-2 ring-white/50 backdrop-blur-sm active:scale-[0.97] transition"
+          className="flex h-[74px] w-[74px] items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 text-white shadow-xl shadow-indigo-700/25 ring-2 ring-white/50 backdrop-blur-sm active:scale-[0.97] transition dark:ring-slate-900/30"
           aria-label={t("View Cart")}
         >
           <div className="flex flex-col items-center leading-tight">

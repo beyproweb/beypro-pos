@@ -2189,10 +2189,9 @@ const totalGuests = React.useMemo(() => {
         <button
           type="button"
           onClick={() => handleTabSelect("packet")}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20 hover:brightness-110 active:scale-[0.98] transition"
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20 hover:brightness-110 active:scale-[0.98] transition"
           aria-label={t("Packet")}
         >
-          <span className="text-lg leading-none">🛵</span>
           <span className="font-semibold">{t("Packet")}</span>
           <span className="min-w-7 px-2 py-0.5 rounded-full bg-white/20 font-extrabold text-sm text-white text-center">
             {packetOrdersCount}
@@ -2202,8 +2201,7 @@ const totalGuests = React.useMemo(() => {
 
       {activeTab === "tables" &&
         !transactionSettings.disableTableOverviewGuestsFloatingButton && (
-        <div className="fixed bottom-6 left-6 z-40 flex items-center gap-3 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20">
-          <span className="text-lg leading-none">👥</span>
+        <div className="fixed bottom-6 left-6 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20">
           <span className="font-semibold">{t("Guests")}</span>
           <span className="min-w-7 px-2 py-0.5 rounded-full bg-white/20 font-extrabold text-sm text-white text-center">
             {totalSeats > 0 ? `${totalGuests}/${totalSeats}` : totalGuests}
