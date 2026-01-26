@@ -22,6 +22,30 @@ import {
 import { fetchOrderWithItems } from "../utils/orderPrinting";
 const API_URL = import.meta.env.VITE_API_URL || "";
 
+const ONLINE_SOURCE_DISPLAY_NAMES = {
+  yemeksepeti: "Yemeksepeti",
+  migros: "Migros",
+  trendyol: "Trendyol",
+  getir: "Getir",
+  glovo: "Glovo",
+};
+
+const formatOnlineSourceLabel = (source) => {
+  if (!source) return null;
+  const trimmed = String(source).trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.toLowerCase();
+  if (!normalized) return trimmed;
+  if (Object.prototype.hasOwnProperty.call(ONLINE_SOURCE_DISPLAY_NAMES, normalized)) {
+    return ONLINE_SOURCE_DISPLAY_NAMES[normalized];
+  }
+  const parts = normalized
+    .split(/[^a-z0-9]+/)
+    .filter((chunk) => chunk.length)
+    .map((chunk) => chunk[0].toUpperCase() + chunk.slice(1));
+  return parts.length ? parts.join(" ") : trimmed;
+};
+
 function DrinkSettingsModal({ open, onClose, fetchDrinks, summaryByDriver = [] }) {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -344,6 +368,7 @@ const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
 const [excludedKitchenCategories, setExcludedKitchenCategories] = useState([]);
 const [productPrepById, setProductPrepById] = useState({});
   const [autoConfirmOrders, setAutoConfirmOrders] = useState(false);
+  const [confirmingOnlineOrders, setConfirmingOnlineOrders] = useState({});
 const showDriverColumn = true;
 
 const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -1110,6 +1135,28 @@ else if (relevantItems.some(i => i.kitchen_status === "preparing"))
   setLoading(false);
 }
 
+};
+
+const confirmOnlineOrder = async (order) => {
+  const orderId = order?.id;
+  if (!orderId) return;
+  setConfirmingOnlineOrders((prev) => ({ ...prev, [orderId]: true }));
+  try {
+    const result = await secureFetch(`/orders/${orderId}/confirm-online`, {
+      method: "POST",
+    });
+    toast.success(t("Order confirmed"));
+    setOrders((prev) =>
+      prev.map((o) => (Number(o.id) === Number(orderId) ? { ...o, status: "confirmed" } : o))
+    );
+    if (!propOrders) await fetchOrders();
+    return result;
+  } catch (err) {
+    console.error("❌ Failed to confirm online order:", err);
+    toast.error(err?.message || t("Failed to confirm order"));
+  } finally {
+    setConfirmingOnlineOrders((prev) => ({ ...prev, [orderId]: false }));
+  }
 };
 
 
@@ -2554,6 +2601,7 @@ const totalDiscount = calcOrderDiscount(order);
         onlinePayments.some(type => order.payment_method.toLowerCase().includes(type));
       const isYemeksepeti = String(order?.external_source || "").toLowerCase() === "yemeksepeti";
       const isMigros = String(order?.external_source || "").toLowerCase() === "migros";
+      const onlineSourceLabel = formatOnlineSourceLabel(order?.external_source);
       const hasUnmatchedYsItems =
         isYemeksepeti &&
         Array.isArray(order.items) &&
@@ -2566,6 +2614,20 @@ const totalDiscount = calcOrderDiscount(order);
         order.order_code ||
         order.orderCode ||
         "";
+      const isExternalOnlineOrder =
+        ["packet", "phone"].includes(String(order?.order_type || "").toLowerCase()) &&
+        Boolean(
+          order?.external_source ||
+            order?.external_id ||
+            order?.externalId ||
+            order?.external_order_id ||
+            order?.externalOrderId
+        );
+      const normalizedOrderStatus = String(order?.status || "").toLowerCase().trim();
+      const shouldShowManualConfirm =
+        !autoConfirmOrders &&
+        isExternalOnlineOrder &&
+        !["confirmed", "closed", "cancelled"].includes(normalizedOrderStatus);
       const orderNote =
         order.takeaway_notes ||
         order.takeawayNotes ||
@@ -2855,7 +2917,7 @@ const totalDiscount = calcOrderDiscount(order);
     {order.order_type && (
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
         {order.order_type === "phone" ? t("Phone Order") : null}
-        {order.order_type === "packet" ? t("Packet") : null}
+        {order.order_type === "packet" ? (onlineSourceLabel || t("Packet")) : null}
         {order.order_type === "table" ? t("Table") : null}
         {order.order_type === "takeaway" ? t("Takeaway") : null}
       </span>
@@ -2925,6 +2987,19 @@ const totalDiscount = calcOrderDiscount(order);
         </option>
       ))}
     </select>
+    {shouldShowManualConfirm && (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          confirmOnlineOrder(order);
+        }}
+        disabled={Boolean(confirmingOnlineOrders?.[order.id])}
+        className="inline-flex items-center h-8 rounded-md bg-indigo-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-indigo-700 transition disabled:opacity-50 disabled:hover:bg-indigo-600"
+      >
+        {confirmingOnlineOrders?.[order.id] ? t("Confirming...") : t("Confirm")}
+      </button>
+    )}
     {autoConfirmOrders && order.status === "confirmed" ? (
       <>
         <span className="inline-flex items-center h-8 rounded-md bg-emerald-100 text-emerald-800 px-3 text-[13px] font-semibold leading-none border border-emerald-300">
@@ -3207,12 +3282,12 @@ const totalDiscount = calcOrderDiscount(order);
       <div className="flex flex-wrap items-center gap-2">
         {order.order_type && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100">
-            {order.order_type === "phone" ? t("Phone Order") : null}
-            {order.order_type === "packet" ? t("Packet") : null}
-            {order.order_type === "table" ? t("Table") : null}
-            {order.order_type === "takeaway" ? t("Takeaway") : null}
-          </span>
-        )}
+	            {order.order_type === "phone" ? t("Phone Order") : null}
+	            {order.order_type === "packet" ? (onlineSourceLabel || t("Packet")) : null}
+	            {order.order_type === "table" ? t("Table") : null}
+	            {order.order_type === "takeaway" ? t("Takeaway") : null}
+	          </span>
+	        )}
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold bg-white border border-slate-200 text-slate-700 shadow-sm dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100">
           👤 {order.customer_name || t("Customer")}
         </span>
@@ -3280,17 +3355,30 @@ const totalDiscount = calcOrderDiscount(order);
               className="appearance-none bg-white border border-slate-200 rounded-xl text-slate-900 text-[12px] font-semibold px-2 py-1 pr-6 shadow-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300 transition-all whitespace-nowrap max-w-[200px] dark:bg-slate-950/50 dark:border-slate-800 dark:text-slate-100"
             >
               <option value="">{t("Unassigned")}</option>
-              {drivers.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-            {autoConfirmOrders && order.status === "confirmed" && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 text-[12px] font-semibold border border-emerald-200 shadow-sm whitespace-nowrap dark:bg-emerald-950/25 dark:text-emerald-200 dark:border-emerald-500/30">
-                ✓ {t("Auto Confirmed")}
-              </span>
-            )}
+	              {drivers.map((d) => (
+	                <option key={d.id} value={d.id}>
+	                  {d.name}
+	                </option>
+	              ))}
+	            </select>
+              {shouldShowManualConfirm && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    confirmOnlineOrder(order);
+                  }}
+                  disabled={Boolean(confirmingOnlineOrders?.[order.id])}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 text-white px-3 py-1 text-[12px] font-semibold shadow-sm hover:bg-indigo-700 transition whitespace-nowrap disabled:opacity-50 disabled:hover:bg-indigo-600"
+                >
+                  {confirmingOnlineOrders?.[order.id] ? t("Confirming...") : t("Confirm")}
+                </button>
+              )}
+	            {autoConfirmOrders && order.status === "confirmed" && (
+	              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 text-[12px] font-semibold border border-emerald-200 shadow-sm whitespace-nowrap dark:bg-emerald-950/25 dark:text-emerald-200 dark:border-emerald-500/30">
+	                ✓ {t("Auto Confirmed")}
+	              </span>
+	            )}
             <button
               type="button"
               onClick={() => openCancelModalForOrder(order)}
