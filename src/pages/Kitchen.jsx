@@ -29,6 +29,17 @@ const formatOnlineSourceLabel = (source) => {
     .map((chunk) => chunk[0].toUpperCase() + chunk.slice(1));
   return parts.length ? parts.join(" ") : trimmed;
 };
+
+const resolveOnlineSourceLabelFromOrder = (order) => {
+  const direct = formatOnlineSourceLabel(order?.external_source);
+  if (direct) return direct;
+  const payment = String(order?.payment_method || "").toLowerCase();
+  if (!payment) return null;
+  const match = Object.keys(ONLINE_SOURCE_DISPLAY_NAMES).find((key) =>
+    payment.includes(key)
+  );
+  return match ? ONLINE_SOURCE_DISPLAY_NAMES[match] : null;
+};
 export default function Kitchen() {
   const [orders, setOrders] = useState([]);
   const [selectedIds, setSelectedIds] = useState(() => {
@@ -970,7 +981,7 @@ return (
           const ordersAreTakeaway = group.type === "takeaway";
           const sourceBadgeLabel = (() => {
             if (ordersArePacket) {
-              const onlineLabel = formatOnlineSourceLabel(first.external_source);
+              const onlineLabel = resolveOnlineSourceLabelFromOrder(first);
               return onlineLabel || t("Packet");
             }
             if (ordersArePhone) return t("Phone");
@@ -1459,20 +1470,20 @@ return (
     </div>
   ) : (
     <ul className="text-sm space-y-1 max-h-32 overflow-y-auto">
-      {orders
-        .filter(o => o.kitchen_status === "preparing")
-        .map((o, i) => (
+	      {orders
+	        .filter(o => o.kitchen_status === "preparing")
+	        .map((o, i) => (
           <li
             key={i}
             className="flex justify-between border-b border-slate-200/60 pb-0.5"
           >
-            <span>
-              {o.order_type === "table"
-                ? `🍽️ Table ${o.table_number}`
-                : o.order_type === "packet"
-                ? `🛵 Packet ${o.customer_name || o.customer_phone || ""}`
-                : `📞 Phone ${o.customer_name || ""}`}
-            </span>
+	            <span>
+	              {o.order_type === "table"
+	                ? `🍽️ Table ${o.table_number}`
+	                : o.order_type === "packet"
+	                ? `🛵 ${resolveOnlineSourceLabelFromOrder(o) || t("Packet")} ${o.customer_name || o.customer_phone || ""}`
+	                : `📞 Phone ${o.customer_name || ""}`}
+	            </span>
             <span className="text-slate-700 dark:text-slate-200 font-semibold text-xs uppercase">
               {t("PREPARING")}
             </span>

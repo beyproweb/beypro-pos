@@ -367,7 +367,7 @@ const [showDriverReport, setShowDriverReport] = useState(false);
 const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
 const [excludedKitchenCategories, setExcludedKitchenCategories] = useState([]);
 const [productPrepById, setProductPrepById] = useState({});
-  const [autoConfirmOrders, setAutoConfirmOrders] = useState(false);
+  const [integrationsSettings, setIntegrationsSettings] = useState({});
   const [confirmingOnlineOrders, setConfirmingOnlineOrders] = useState({});
 const showDriverColumn = true;
 
@@ -806,9 +806,21 @@ useEffect(() => {
 
 useEffect(() => {
   secureFetch("/settings/integrations")
-    .then((data) => setAutoConfirmOrders(!!data.auto_confirm_orders))
-    .catch(() => setAutoConfirmOrders(false));
+    .then((data) => setIntegrationsSettings(data || {}))
+    .catch(() => setIntegrationsSettings({}));
 }, []);
+
+const isAutoConfirmEnabledForOrder = useCallback(
+  (order) => {
+    const source = String(order?.external_source || "").toLowerCase().trim();
+    const bySource = source && integrationsSettings && typeof integrationsSettings === "object"
+      ? integrationsSettings?.[source]?.autoConfirmOrders
+      : undefined;
+    const legacy = integrationsSettings?.auto_confirm_orders;
+    return bySource === true || legacy === true;
+  },
+  [integrationsSettings]
+);
 
 const buildDateRange = (from, to) => {
   const start = new Date(`${from}T00:00:00`);
@@ -2602,6 +2614,7 @@ const totalDiscount = calcOrderDiscount(order);
       const isYemeksepeti = String(order?.external_source || "").toLowerCase() === "yemeksepeti";
       const isMigros = String(order?.external_source || "").toLowerCase() === "migros";
       const onlineSourceLabel = formatOnlineSourceLabel(order?.external_source);
+      const autoConfirmEnabledForOrder = isAutoConfirmEnabledForOrder(order);
       const hasUnmatchedYsItems =
         isYemeksepeti &&
         Array.isArray(order.items) &&
@@ -2616,16 +2629,10 @@ const totalDiscount = calcOrderDiscount(order);
         "";
       const isExternalOnlineOrder =
         ["packet", "phone"].includes(String(order?.order_type || "").toLowerCase()) &&
-        Boolean(
-          order?.external_source ||
-            order?.external_id ||
-            order?.externalId ||
-            order?.external_order_id ||
-            order?.externalOrderId
-        );
+        Boolean(onlineSourceLabel || externalOrderRef || isOnlinePayment);
       const normalizedOrderStatus = String(order?.status || "").toLowerCase().trim();
       const shouldShowManualConfirm =
-        !autoConfirmOrders &&
+        !autoConfirmEnabledForOrder &&
         isExternalOnlineOrder &&
         !["confirmed", "closed", "cancelled"].includes(normalizedOrderStatus);
       const orderNote =
@@ -3000,7 +3007,7 @@ const totalDiscount = calcOrderDiscount(order);
         {confirmingOnlineOrders?.[order.id] ? t("Confirming...") : t("Confirm")}
       </button>
     )}
-    {autoConfirmOrders && order.status === "confirmed" ? (
+    {autoConfirmEnabledForOrder && order.status === "confirmed" ? (
       <>
         <span className="inline-flex items-center h-8 rounded-md bg-emerald-100 text-emerald-800 px-3 text-[13px] font-semibold leading-none border border-emerald-300">
           ✓ {t("Auto Confirmed")}
@@ -3374,7 +3381,7 @@ const totalDiscount = calcOrderDiscount(order);
                   {confirmingOnlineOrders?.[order.id] ? t("Confirming...") : t("Confirm")}
                 </button>
               )}
-	            {autoConfirmOrders && order.status === "confirmed" && (
+	            {autoConfirmEnabledForOrder && order.status === "confirmed" && (
 	              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-1 text-[12px] font-semibold border border-emerald-200 shadow-sm whitespace-nowrap dark:bg-emerald-950/25 dark:text-emerald-200 dark:border-emerald-500/30">
 	                ✓ {t("Auto Confirmed")}
 	              </span>

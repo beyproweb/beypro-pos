@@ -553,6 +553,13 @@ function OrderCard({
 }) {
   const type = String(order.order_type || "").toLowerCase();
   const headerCheckboxRef = useRef(null);
+  const ONLINE_SOURCE_DISPLAY_NAMES = {
+    yemeksepeti: "Yemeksepeti",
+    migros: "Migros",
+    trendyol: "Trendyol",
+    getir: "Getir",
+    glovo: "Glovo",
+  };
 
   useEffect(() => {
     if (!headerCheckboxRef.current) return;
@@ -564,13 +571,6 @@ function OrderCard({
     const trimmed = String(source).trim();
     if (!trimmed) return null;
     const normalized = trimmed.toLowerCase();
-    const ONLINE_SOURCE_DISPLAY_NAMES = {
-      yemeksepeti: "Yemeksepeti",
-      migros: "Migros",
-      trendyol: "Trendyol",
-      getir: "Getir",
-      glovo: "Glovo",
-    };
     if (ONLINE_SOURCE_DISPLAY_NAMES[normalized]) {
       return ONLINE_SOURCE_DISPLAY_NAMES[normalized];
     }
@@ -581,10 +581,21 @@ function OrderCard({
     return parts.length ? parts.join(" ") : trimmed;
   };
 
+  const resolveOnlineSourceLabelFromOrder = (o) => {
+    const direct = formatOnlineSourceLabel(o?.external_source);
+    if (direct) return direct;
+    const payment = String(o?.payment_method || "").toLowerCase();
+    if (!payment) return null;
+    const match = Object.keys(ONLINE_SOURCE_DISPLAY_NAMES).find((key) =>
+      payment.includes(key)
+    );
+    return match ? ONLINE_SOURCE_DISPLAY_NAMES[match] : null;
+  };
+
   const orderLabel = (() => {
     if (type === "table") return `${t("Table")} ${order.table_number}`;
     if (type === "packet") {
-      const onlineLabel = formatOnlineSourceLabel(order.external_source);
+      const onlineLabel = resolveOnlineSourceLabelFromOrder(order);
       return onlineLabel || t("Packet");
     }
     if (type === "phone") return t("Phone Order");
