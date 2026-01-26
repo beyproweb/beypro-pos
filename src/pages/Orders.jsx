@@ -817,7 +817,8 @@ const isAutoConfirmEnabledForOrder = useCallback(
       ? integrationsSettings?.[source]?.autoConfirmOrders
       : undefined;
     const legacy = integrationsSettings?.auto_confirm_orders;
-    return bySource === true || legacy === true;
+    if (typeof bySource === "boolean") return bySource;
+    return legacy === true;
   },
   [integrationsSettings]
 );
@@ -2641,6 +2642,7 @@ const totalDiscount = calcOrderDiscount(order);
         order.notes ||
         order.note ||
         "";
+      const fullOrderNote = String(orderNote || "").trim();
       const sanitizedOrderNote = (() => {
         const noteRaw = String(orderNote || "").trim();
         if (!noteRaw) return "";
@@ -2655,6 +2657,7 @@ const totalDiscount = calcOrderDiscount(order);
           .replace(/[;,\-|–—\s]+$/g, "")
           .trim();
       })();
+      const displayOrderNote = isExternalOnlineOrder ? fullOrderNote : sanitizedOrderNote;
 
  const statusVisual = (() => {
   const isPacketOrder = order.order_type === "packet";
@@ -3096,38 +3099,78 @@ const totalDiscount = calcOrderDiscount(order);
         {t("Order Items")} <span className="text-slate-500">#{externalOrderRef || order.id}</span>
       </summary>
       <div className="mt-2 rounded-md border border-white/70 bg-white/50 px-2.5 py-2">
-        <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-sm text-slate-800">
-          {(order.items ?? []).map((item, idx) => {
-            const name =
-              item.product_name ||
-              item.external_product_name ||
-              item.order_item_name ||
-              t("Unnamed");
-            const qty = Number(item.quantity || 1);
-            const unit = Number(item.price || 0);
-            const lineTotal = unit * qty;
-            return (
-              <React.Fragment key={item.unique_id || item.id || idx}>
-              <div className="min-w-0">
-                <span className="font-mono font-bold text-slate-700">{qty}×</span>{" "}
-                <span className="font-semibold truncate inline-block align-bottom max-w-[30ch]">
-                  {name}
-                </span>
-              </div>
-              <div className="font-mono font-semibold text-slate-700 whitespace-nowrap text-right">
-                {formatCurrency(lineTotal)}
-              </div>
-              </React.Fragment>
-            );
-          })}
-        </div>
-        {sanitizedOrderNote && (
-          <div className="mt-1 text-xs text-slate-700 italic">
-            📝 {sanitizedOrderNote}
-          </div>
-        )}
-      </div>
-    </details>
+	        <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-sm text-slate-800">
+	          {(order.items ?? []).map((item, idx) => {
+	            const name =
+	              item.product_name ||
+	              item.external_product_name ||
+	              item.order_item_name ||
+	              t("Unnamed");
+	            const qty = Number(item.quantity || 1);
+	            const unit = Number(item.price || 0);
+	            const lineTotal = unit * qty;
+              const itemNote = String(
+                item.note || item.notes || item.item_note || item.special_instructions || ""
+              ).trim();
+              const extrasList = (() => {
+                const raw = item.extras;
+                if (!raw) return [];
+                if (Array.isArray(raw)) return raw;
+                if (typeof raw === "string") {
+                  try {
+                    const parsed = JSON.parse(raw);
+                    return Array.isArray(parsed) ? parsed : [];
+                  } catch {
+                    return [];
+                  }
+                }
+                return [];
+              })();
+              const extrasLabel = extrasList
+                .map((ex) => {
+                  const exName = ex?.name || ex?.extra_name || ex?.title || "";
+                  if (!exName) return "";
+                  const q = Number(ex?.quantity || ex?.qty || 1);
+                  return q > 1 ? `${exName} ×${q}` : exName;
+                })
+                .filter(Boolean)
+                .join(", ");
+	            return (
+	              <React.Fragment key={item.unique_id || item.id || idx}>
+	              <div className="min-w-0">
+	                <span className="font-mono font-bold text-slate-700">{qty}×</span>{" "}
+	                <span className="font-semibold truncate inline-block align-bottom max-w-[30ch]">
+	                  {name}
+	                </span>
+	              </div>
+	              <div className="font-mono font-semibold text-slate-700 whitespace-nowrap text-right">
+	                {formatCurrency(lineTotal)}
+	              </div>
+                {(extrasLabel || itemNote) && (
+                  <div className="col-span-2 pl-5 text-xs text-slate-700">
+                    {extrasLabel && (
+                      <div className="text-emerald-700 font-semibold">
+                        + {extrasLabel}
+                      </div>
+                    )}
+                    {itemNote && (
+                      <div className="italic text-slate-700">
+                        📝 {itemNote}
+                      </div>
+                    )}
+                  </div>
+                )}
+	              </React.Fragment>
+	            );
+	          })}
+	        </div>
+	        {displayOrderNote && (
+	          <div className="mt-1 text-xs text-slate-700 italic">
+	            📝 {displayOrderNote}
+	          </div>
+	        )}
+	      </div>
+	    </details>
 
 	    <div className="flex items-center gap-2 flex-shrink-0">
 	      {!normalizeDriverStatus(order.driver_status) && (
