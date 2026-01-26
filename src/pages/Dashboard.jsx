@@ -834,7 +834,7 @@ const fetchSummaryStats = useCallback(async () => {
   };
 
   return (
-    <div className="min-h-screen px-6 py-8 space-y-8">
+    <div className="min-h-screen px-3 md:px-6 py-8 space-y-8">
       {/* Quick Access Grid (Filtered by permissions) */}
       {allowedAccess.length > 0 ? (
         <div
@@ -845,7 +845,7 @@ const fetchSummaryStats = useCallback(async () => {
           }}
           onDrop={handleNavDrop}
         >
-          <div className="w-full max-w-7xl px-4 sm:px-6 py-5 rounded-[2rem] bg-transparent border border-transparent">
+          <div className="w-full max-w-7xl px-0 py-5 rounded-[2rem] bg-transparent border border-transparent">
             <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-x-6 sm:gap-x-8 gap-y-6 place-items-center">
               {allowedAccess.map((item) => {
                 const label = t(item.labelKey, {
@@ -899,18 +899,26 @@ const fetchSummaryStats = useCallback(async () => {
         </div>
       )}
 
-    {/* Live Cameras Section - Always show if permitted and has cameras or loading */}
-    {hasCameraAccess && (camerasLoading || cameras.length > 0) && (
-      <LiveCamerasSection cameras={cameras} loading={camerasLoading} onNavigate={() => navigate("/settings/cameras")} t={t} />
-    )}
+	    {/* Live Cameras Section - Always show if permitted and has cameras or loading */}
+	    {hasCameraAccess && (camerasLoading || cameras.length > 0) && (
+        <div className="w-full flex justify-center">
+          <div className="w-full max-w-7xl">
+	          <LiveCamerasSection cameras={cameras} loading={camerasLoading} onNavigate={() => navigate("/settings/cameras")} t={t} />
+          </div>
+        </div>
+	    )}
 
-    {/* Business Snapshot */}
-    {canSeeBusinessSnapshot && (
-      <BusinessSnapshot summary={summary} onRefresh={fetchSummaryStats} />
-    )}
+	    {/* Business Snapshot */}
+	    {canSeeBusinessSnapshot && (
+        <div className="w-full flex justify-center">
+          <div className="w-full max-w-7xl">
+	          <BusinessSnapshot summary={summary} onRefresh={fetchSummaryStats} />
+          </div>
+        </div>
+	    )}
 
-    </div>
-  );
+	    </div>
+	  );
 
 }
 

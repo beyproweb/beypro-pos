@@ -788,6 +788,16 @@ function makeTestOrder() {
   };
 }
 
+function makeTestKitchenOrder() {
+  return {
+    ...makeTestOrder(),
+    customer_name: "YS Customer",
+    customer_phone: "+905551112233",
+    customer_address: "Dede Korkut Sk. No:5, Esentepe Şişli / İstanbul",
+    takeaway_notes: "Please do not ring; baby is sleeping.",
+  };
+}
+
 export async function printTestReceipt({ printer, layout, customLines = [] } = {}) {
   const localBridge = typeof window !== "undefined" ? window.beypro : null;
   if (!printer || !layout) {
@@ -895,6 +905,125 @@ export async function printTestReceipt({ printer, layout, customLines = [] } = {
     if (printer?.meta?.baudRate) payload.baudRate = printer.meta.baudRate;
   } else {
     console.warn("⚠️ Unsupported printer type for test print:", printerType);
+    return false;
+  }
+
+  const response = await secureFetch("/printer-settings/print", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return response?.ok !== false;
+}
+
+export async function printTestKitchenTicket({ printer, layout, customLines = [] } = {}) {
+  const localBridge = typeof window !== "undefined" ? window.beypro : null;
+  if (!printer || !layout) {
+    console.warn("⚠️ printTestKitchenTicket requires printer + layout");
+    return false;
+  }
+
+  const jobKey = `kitchen-test:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+  const attemptId = uuidv4();
+  const composedLayout = {
+    ...(layout || {}),
+    customLines: Array.isArray(customLines) ? customLines : layout?.customLines,
+  };
+
+  const widthSetting = composedLayout?.receiptWidth || composedLayout?.paperWidth;
+  const paperWidthPx = receiptWidthToPx(widthSetting);
+
+  const testOrder = makeTestKitchenOrder();
+  const ticketText = sanitizeReceiptText(renderKitchenText(testOrder, composedLayout));
+
+  const textBytes = buildEscposBytes(ticketText, {
+    cut: false,
+    feedLines: 3,
+    alignment: composedLayout?.alignment || "left",
+    fontSize: composedLayout?.itemFontSize || composedLayout?.fontSize,
+    lineSpacing: composedLayout?.spacing ?? composedLayout?.lineHeight,
+    addressFontSize: composedLayout?.shopAddressFontSize,
+    addressLines: buildAddressLines(composedLayout),
+  });
+
+  const textBase64 = toBase64(textBytes);
+
+  let logoBase64 = null;
+  if (composedLayout?.showLogo && composedLayout?.logoUrl) {
+    try {
+      const logoBytesLocal = await imageUrlToEscposBytes(composedLayout.logoUrl, paperWidthPx);
+      if (logoBytesLocal?.length) {
+        logoBase64 = toBase64(logoBytesLocal);
+      }
+    } catch (err) {
+      console.warn(
+        "⚠️ Kitchen test print logo pre-render failed; main/backend may still attempt:",
+        err?.message || err
+      );
+    }
+  }
+
+  const printerType = String(printer?.type || "").toLowerCase();
+
+  if (printerType === "windows") {
+    if (!localBridge?.printWindows) {
+      console.warn("⚠️ Windows kitchen test print requires desktop bridge.");
+      return false;
+    }
+    const res = await localBridge.printWindows({
+      printerName: printer?.meta?.name,
+      dataBase64: textBase64,
+      layout: composedLayout,
+      logoBase64,
+      jobKey,
+      attemptId,
+    });
+    return !!res?.ok;
+  }
+
+  if (printerType === "lan") {
+    if (!localBridge?.printNet) {
+      console.warn("⚠️ LAN kitchen test print requires desktop bridge.");
+      return false;
+    }
+    const res = await localBridge.printNet({
+      host: printer?.meta?.host,
+      port: printer?.meta?.port || 9100,
+      dataBase64: textBase64,
+      layout: composedLayout,
+      logoBase64,
+      jobKey,
+      attemptId,
+    });
+    return !!res?.ok;
+  }
+
+  const shouldPulseDrawer = false;
+  const finalBytes = await composeFinalReceiptBytes({
+    textBytes,
+    layout: composedLayout,
+    paperWidthPx,
+    shouldPulseDrawer,
+  });
+
+  const payload = {
+    interface: printerType === "usb" ? "usb" : "serial",
+    content: ticketText,
+    encoding: "cp857",
+    align: toEscAlignment(composedLayout?.alignment),
+    cut: true,
+    cashdraw: shouldPulseDrawer,
+    dataBase64: toBase64(finalBytes),
+    jobKey,
+  };
+
+  if (printerType === "usb") {
+    payload.vendorId = printer?.meta?.vendorId;
+    payload.productId = printer?.meta?.productId;
+  } else if (printerType === "serial") {
+    payload.path = printer?.meta?.path;
+    if (printer?.meta?.baudRate) payload.baudRate = printer.meta.baudRate;
+  } else {
+    console.warn("⚠️ Unsupported printer type for kitchen test print:", printerType);
     return false;
   }
 
@@ -1362,7 +1491,202 @@ export function renderReceiptText(order, providedLayout) {
   return lines.join("\n");
 }
 
-export async function printViaBridge(text, orderObj) {
+export function renderKitchenText(order, providedLayout) {
+  const layout = providedLayout || {};
+  const summary = computeReceiptSummary(order);
+  const lineWidth = getReceiptLineWidth(layout);
+  const divider = "-".repeat(lineWidth);
+
+  const showHeader = layout?.showHeader !== false;
+  const showInvoiceNumber = layout?.showInvoiceNumber !== false;
+  const showTableNumber = layout?.showTableNumber !== false;
+  const showStaffName = layout?.showStaffName === true;
+  const showPacketCustomerInfo = layout?.showPacketCustomerInfo !== false;
+  const showNotes = layout?.showNotes !== false;
+  const showPrices = layout?.showPrices === true;
+  const showTotals = layout?.showTotals === true;
+
+  const customLines = Array.isArray(layout?.customLines)
+    ? layout.customLines.filter((line) => typeof line === "string" && line.trim().length > 0)
+    : [];
+
+  const invoiceRaw =
+    order?.external_id ??
+    order?.externalId ??
+    order?.external_order_id ??
+    order?.externalOrderId ??
+    order?.order_code ??
+    order?.orderCode ??
+    order?.invoice_number ??
+    order?.invoiceNumber ??
+    order?.receipt_number ??
+    order?.receiptNumber ??
+    order?.order_number ??
+    order?.orderNumber ??
+    order?.invoice_no ??
+    order?.invoiceNo ??
+    order?.id ??
+    order?.order_id ??
+    order?.orderId;
+  const invoiceValue =
+    invoiceRaw === null || invoiceRaw === undefined ? "" : String(invoiceRaw).trim();
+  const invoiceDisplay = invoiceValue
+    ? invoiceValue.startsWith("#")
+      ? invoiceValue
+      : `#${invoiceValue}`
+    : "";
+
+  const tableRaw =
+    order?.table_number ??
+    order?.tableNumber ??
+    order?.table_no ??
+    order?.tableNo ??
+    order?.table_id ??
+    order?.tableId;
+  const tableValue = tableRaw === null || tableRaw === undefined ? "" : String(tableRaw).trim();
+
+  const staffRaw =
+    order?.staff_name ??
+    order?.staffName ??
+    order?.cashier_name ??
+    order?.cashierName ??
+    order?.waiter_name ??
+    order?.waiterName ??
+    order?.employee_name ??
+    order?.employeeName ??
+    order?.created_by_name ??
+    order?.createdByName ??
+    order?.staff?.name ??
+    order?.cashier?.name ??
+    order?.user?.name ??
+    "";
+  const staffValue = staffRaw === null || staffRaw === undefined ? "" : String(staffRaw).trim();
+
+  const customerName =
+    order?.customer_name ??
+    order?.customerName ??
+    order?.customer?.name ??
+    "";
+  const customerPhone =
+    order?.customer_phone ??
+    order?.customerPhone ??
+    order?.customer?.phone ??
+    "";
+  const customerAddress =
+    order?.customer_address ??
+    order?.customerAddress ??
+    order?.address ??
+    "";
+  const orderNote =
+    order?.takeaway_notes ??
+    order?.takeawayNotes ??
+    order?.notes ??
+    order?.note ??
+    "";
+
+  const lines = [];
+  const add = (l = "") => lines.push(String(l));
+  let wroteMeta = false;
+
+  if (showHeader) {
+    add(layout.headerTitle || "KITCHEN");
+    if (layout.headerSubtitle) add(layout.headerSubtitle);
+    wroteMeta = true;
+  }
+  if (showInvoiceNumber && invoiceDisplay) {
+    add(formatLine("Invoice", invoiceDisplay, lineWidth));
+    wroteMeta = true;
+  }
+  if (showTableNumber && tableValue) {
+    add(formatLine("Table", tableValue, lineWidth));
+    wroteMeta = true;
+  }
+  if (showStaffName && staffValue) {
+    add(formatLine("Staff", staffValue, lineWidth));
+    wroteMeta = true;
+  }
+  if (showPacketCustomerInfo) {
+    const nameValue = String(customerName || "").trim();
+    const phoneValue = String(customerPhone || "").trim();
+    const addressValue = String(customerAddress || "").trim();
+    if (nameValue) {
+      add(formatLine("Customer", nameValue, lineWidth));
+      wroteMeta = true;
+    }
+    if (phoneValue) {
+      add(formatLine("Phone", phoneValue, lineWidth));
+      wroteMeta = true;
+    }
+    if (addressValue) {
+      add("Address:");
+      wrapText(addressValue, lineWidth).forEach((line) => add(line));
+      wroteMeta = true;
+    }
+  }
+  if (showNotes) {
+    const noteValue = String(orderNote || "").trim();
+    if (noteValue) {
+      add("Note:");
+      wrapText(noteValue, lineWidth).forEach((line) => add(line));
+      wroteMeta = true;
+    }
+  }
+  if (wroteMeta) add("");
+
+  add(divider);
+
+  for (const item of summary.items) {
+    const baseTotal = Number.isFinite(item.baseTotal)
+      ? item.baseTotal
+      : Number.isFinite(item.unitPrice) && Number.isFinite(item.qty)
+        ? item.unitPrice * item.qty
+        : 0;
+    const nameLine = `${formatQuantity(item.qty)}x ${item.name}`;
+
+    if (showPrices) {
+      add(formatLine(nameLine, formatReceiptMoney(baseTotal), lineWidth));
+    } else {
+      wrapText(nameLine, lineWidth).forEach((l, idx) => add(idx === 0 ? l : `  ${l}`));
+    }
+
+    for (const detail of item.extrasDetails) {
+      const extraLine = `+ ${formatQuantity(detail.qty)}x ${detail.name}`;
+      if (showPrices) {
+        add(formatLine(extraLine, formatReceiptMoney(detail.total), lineWidth));
+      } else {
+        wrapText(extraLine, lineWidth).forEach((l, idx) =>
+          add(idx === 0 ? `  ${l}` : `    ${l}`)
+        );
+      }
+    }
+
+    if (item.note) {
+      add(`  NOTE: ${item.note}`);
+    }
+  }
+
+  if (showTotals) {
+    add(divider);
+    add(formatLine("Total", formatReceiptMoney(summary.total), lineWidth));
+  }
+
+  if (customLines.length) {
+    add("");
+    customLines.forEach((line) => add(line));
+  }
+
+  if (layout.footerText) {
+    add("");
+    add(layout.footerText);
+  }
+
+  add("");
+  add("");
+  add("");
+  return lines.join("\n");
+}
+
+export async function printViaBridge(text, orderObj, options = {}) {
 
   let resolvedText = text;
   let logoBytes = null;
@@ -1404,36 +1728,73 @@ export async function printViaBridge(text, orderObj) {
     console.warn("⚠️ Could not read printer settings:", err?.message || err);
   }
 
+  const targetKind = String(options?.target || "receipt").toLowerCase();
+
   if (orderObj) {
     try {
-      const loaded = await ensureReceiptLayout();
-      if (!loaded) {
-        console.warn("⚠️ Receipt layout is null, will use defaults");
+      if (targetKind === "receipt") {
+        const loaded = await ensureReceiptLayout();
+        if (!loaded) {
+          console.warn("⚠️ Receipt layout is null, will use defaults");
+        }
       }
     } catch (err) {
       console.warn("⚠️ Failed to ensure receipt layout before printing:", err?.message || err);
     }
-    layout = getReceiptLayout();
-    const customLines =
-      printerSettings && Array.isArray(printerSettings.customLines)
-        ? printerSettings.customLines.filter((l) => typeof l === "string" && l.trim().length > 0)
-        : [];
-    layout = customLines.length ? { ...layout, customLines } : layout;
-    console.log("📝 Printing with layout:", {
-      alignment: layout.alignment,
-      showFooter: layout.showFooter,
-      showLogo: layout.showLogo,
-      logoUrl: layout.logoUrl,
-      showQr: layout.showQr,
-      qrUrl: layout.qrUrl,
-      receiptWidth: layout.receiptWidth,
-    });
-    resolvedText = renderReceiptText(orderObj, layout);
-    console.log("📝 Receipt text rendered with customizations (including custom lines)");
+    if (targetKind === "kitchen") {
+      const kitchenLayout =
+        printerSettings && printerSettings.kitchenLayout && typeof printerSettings.kitchenLayout === "object"
+          ? printerSettings.kitchenLayout
+          : {};
+      const fallbackLogoUrl = printerSettings?.layout?.logoUrl || "";
+      const kitchenLayoutResolvedLogo =
+        kitchenLayout?.showLogo && fallbackLogoUrl && !kitchenLayout?.logoUrl
+          ? { ...kitchenLayout, logoUrl: fallbackLogoUrl }
+          : kitchenLayout;
+      const kitchenLines =
+        printerSettings && Array.isArray(printerSettings.kitchenCustomLines)
+          ? printerSettings.kitchenCustomLines.filter((l) => typeof l === "string" && l.trim().length > 0)
+          : [];
+      layout = kitchenLines.length
+        ? { ...kitchenLayoutResolvedLogo, customLines: kitchenLines }
+        : kitchenLayoutResolvedLogo;
+      resolvedText = renderKitchenText(orderObj, layout);
+      console.log("📝 Kitchen ticket rendered with customizations");
+    } else {
+      layout = getReceiptLayout();
+      const customLines =
+        printerSettings && Array.isArray(printerSettings.customLines)
+          ? printerSettings.customLines.filter((l) => typeof l === "string" && l.trim().length > 0)
+          : [];
+      layout = customLines.length ? { ...layout, customLines } : layout;
+      console.log("📝 Printing with layout:", {
+        alignment: layout.alignment,
+        showFooter: layout.showFooter,
+        showLogo: layout.showLogo,
+        logoUrl: layout.logoUrl,
+        showQr: layout.showQr,
+        qrUrl: layout.qrUrl,
+        receiptWidth: layout.receiptWidth,
+      });
+      resolvedText = renderReceiptText(orderObj, layout);
+      console.log("📝 Receipt text rendered with customizations (including custom lines)");
+    }
   }
 
   if (!layout) {
-    layout = getReceiptLayout();
+    if (targetKind === "kitchen") {
+      const kitchenLayout =
+        printerSettings && printerSettings.kitchenLayout && typeof printerSettings.kitchenLayout === "object"
+          ? printerSettings.kitchenLayout
+          : {};
+      const fallbackLogoUrl = printerSettings?.layout?.logoUrl || "";
+      layout =
+        kitchenLayout?.showLogo && fallbackLogoUrl && !kitchenLayout?.logoUrl
+          ? { ...kitchenLayout, logoUrl: fallbackLogoUrl }
+          : kitchenLayout;
+    } else {
+      layout = getReceiptLayout();
+    }
   }
 
   resolvedText = sanitizeReceiptText(resolvedText);
@@ -1485,8 +1846,13 @@ export async function printViaBridge(text, orderObj) {
   // (Printing will continue after resolving the target below)
 
   const candidateIds = [];
-  if (printerSettings?.receiptPrinter) candidateIds.push(printerSettings.receiptPrinter);
-  if (printerSettings?.kitchenPrinter) candidateIds.push(printerSettings.kitchenPrinter);
+  if (targetKind === "kitchen") {
+    if (printerSettings?.kitchenPrinter) candidateIds.push(printerSettings.kitchenPrinter);
+    if (printerSettings?.receiptPrinter) candidateIds.push(printerSettings.receiptPrinter);
+  } else {
+    if (printerSettings?.receiptPrinter) candidateIds.push(printerSettings.receiptPrinter);
+    if (printerSettings?.kitchenPrinter) candidateIds.push(printerSettings.kitchenPrinter);
+  }
 
   let target = null;
   let discovery = null;
@@ -1520,7 +1886,7 @@ export async function printViaBridge(text, orderObj) {
     }
   }
 
-  if (!target) {
+  if (!target && targetKind !== "kitchen") {
     try {
       const register = await getRegisterSettings();
       target = resolvePrinterFromRegister(register?.cashDrawerPrinter);
@@ -1534,7 +1900,9 @@ export async function printViaBridge(text, orderObj) {
 
   if (!target) {
     console.warn(
-      "⚠️ No printer configured for receipts. Update Settings → Printers to select one."
+      targetKind === "kitchen"
+        ? "⚠️ No printer configured for kitchen tickets. Update Settings → Printers to select one."
+        : "⚠️ No printer configured for receipts. Update Settings → Printers to select one."
     );
     return false;
   }

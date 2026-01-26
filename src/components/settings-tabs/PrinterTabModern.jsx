@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import secureFetch from "../../utils/secureFetch";
 import { imageUrlToEscposBytes } from "../../utils/imageToEscpos";
 import { qrStringToEscposBytes } from "../../utils/qrToEscpos";
-import { printTestReceipt } from "../../utils/receiptPrinter";
+import { printTestKitchenTicket, printTestReceipt } from "../../utils/receiptPrinter";
 import { useTranslation } from "react-i18next";
 
 const DEFAULT_LAYOUT = {
@@ -36,12 +36,34 @@ const DEFAULT_LAYOUT = {
 };
 
 const createDefaultLayout = () => ({ ...DEFAULT_LAYOUT });
+const DEFAULT_KITCHEN_LAYOUT = {
+  headerTitle: "KITCHEN",
+  headerSubtitle: "",
+  alignment: "left",
+  paperWidth: "58mm",
+  spacing: 1.15,
+  itemFontSize: 15,
+  showLogo: false,
+  showHeader: true,
+  showInvoiceNumber: true,
+  showTableNumber: true,
+  showStaffName: false,
+  showPacketCustomerInfo: true,
+  showNotes: true,
+  showPrices: false,
+  showTotals: false,
+  footerText: "",
+};
+
+const createDefaultKitchenLayout = () => ({ ...DEFAULT_KITCHEN_LAYOUT });
 const createDefaultPrinterConfig = () => ({
   receiptPrinter: "",
   kitchenPrinter: "",
   layout: createDefaultLayout(),
+  kitchenLayout: createDefaultKitchenLayout(),
   defaults: { cut: true, cashDrawer: false },
   customLines: [],
+  kitchenCustomLines: [],
   lastSynced: null,
 });
 
@@ -218,9 +240,16 @@ function mergePrinterConfig(base, override) {
       ...base.layout,
       ...(override.layout || {}),
     },
+    kitchenLayout: {
+      ...base.kitchenLayout,
+      ...(override.kitchenLayout || {}),
+    },
   };
   if (Array.isArray(override.customLines)) {
     merged.customLines = override.customLines;
+  }
+  if (Array.isArray(override.kitchenCustomLines)) {
+    merged.kitchenCustomLines = override.kitchenCustomLines;
   }
   if (override.lastSynced) {
     merged.lastSynced = override.lastSynced;
@@ -522,6 +551,139 @@ function ReceiptPreview({ layout, order = SAMPLE_ORDER, customLines = [] }) {
   );
 }
 
+function KitchenPreview({ layout, order = SAMPLE_ORDER, customLines = [], fallbackLogoUrl = "" }) {
+  const { t } = useTranslation();
+  const items = order.items || [];
+  const subTotal = items.reduce((sum, item) => sum + item.qty * item.price, 0);
+
+  const invoiceRaw =
+    order?.invoice_number ??
+    order?.invoiceNumber ??
+    order?.receipt_number ??
+    order?.order_number ??
+    order?.id;
+  const invoiceValue =
+    invoiceRaw === null || invoiceRaw === undefined ? "" : String(invoiceRaw).trim();
+  const invoiceDisplay = invoiceValue
+    ? invoiceValue.startsWith("#")
+      ? invoiceValue
+      : `#${invoiceValue}`
+    : "";
+
+  const tableRaw = order?.table_number ?? order?.tableNumber;
+  const tableValue =
+    tableRaw === null || tableRaw === undefined ? "" : String(tableRaw).trim();
+
+  const customerName = order?.customer_name || "";
+  const customerPhone = order?.customer_phone || "";
+  const customerAddress = order?.customer_address || "";
+  const customerNote = order?.takeaway_notes || order?.note || "";
+  const resolvedLogoUrl = layout?.logoUrl || fallbackLogoUrl;
+
+  return (
+    <div
+      className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-inner"
+      style={{
+        width: 280,
+        lineHeight: layout.spacing,
+        textAlign: layout.alignment,
+        fontSize: layout.itemFontSize,
+      }}
+    >
+      {layout.showLogo && resolvedLogoUrl ? (
+        <img
+          src={resolvedLogoUrl}
+          alt={t("Logo")}
+          className="mx-auto mt-2 mb-1 h-10 w-auto object-contain object-bottom"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+        />
+      ) : null}
+      {layout.showHeader ? (
+        <div className="text-center">
+          <div className="font-semibold tracking-wide uppercase">
+            {layout.headerTitle || t("Kitchen")}
+          </div>
+          {layout.headerSubtitle ? (
+            <div className="text-xs text-slate-500">{layout.headerSubtitle}</div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-2 space-y-1 text-[12px]">
+        {layout.showInvoiceNumber && invoiceDisplay ? (
+          <div className="flex justify-between">
+            <span className="text-slate-500">{t("Invoice")}</span>
+            <span className="font-semibold">{invoiceDisplay}</span>
+          </div>
+        ) : null}
+        {layout.showTableNumber && tableValue ? (
+          <div className="flex justify-between">
+            <span className="text-slate-500">{t("Table")}</span>
+            <span className="font-semibold">{tableValue}</span>
+          </div>
+        ) : null}
+      </div>
+
+      {layout.showPacketCustomerInfo ? (
+        <div className="mt-2 text-[11px] text-slate-600">
+          {customerName ? <div>{customerName}</div> : null}
+          {customerPhone ? <div>{customerPhone}</div> : null}
+          {customerAddress ? (
+            <div className="mt-1 whitespace-pre-wrap">{customerAddress}</div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {layout.showNotes && customerNote ? (
+        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+            {t("Note")}
+          </div>
+          <div className="whitespace-pre-wrap">{customerNote}</div>
+        </div>
+      ) : null}
+
+      <div className="mt-3 border-y border-dashed border-slate-200 py-2">
+        <div className="space-y-1 text-[12px]">
+          {items.map((item, idx) => (
+            <div key={`${item.name}-${idx}`} className="flex justify-between gap-2">
+              <span className="font-semibold">
+                {item.qty}× {item.name}
+              </span>
+              {layout.showPrices ? (
+                <span className="text-slate-600">{formatCurrency(item.qty * item.price)}</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {layout.showTotals ? (
+        <div className="mt-2 flex justify-between text-[12px] font-semibold">
+          <span>{t("Total")}</span>
+          <span>{formatCurrency(subTotal)}</span>
+        </div>
+      ) : null}
+
+      {customLines?.length ? (
+        <div className="mt-3 space-y-1 text-[11px] text-slate-600">
+          {customLines.map((line, idx) => (
+            <div key={`${line}-${idx}`}>{line}</div>
+          ))}
+        </div>
+      ) : null}
+
+      {layout.footerText ? (
+        <div className="mt-3 text-center text-[10px] uppercase tracking-[0.2em] text-slate-500">
+          {layout.footerText}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function PrinterTab() {
   const { t } = useTranslation();
   const tenantId =
@@ -551,6 +713,7 @@ export default function PrinterTab() {
   const [testStatus, setTestStatus] = useState({ level: "idle", message: "" });
   const [lanConfig, setLanConfig] = useState({ ...DEFAULT_LAN_CONFIG });
   const [customLineInput, setCustomLineInput] = useState("");
+  const [kitchenCustomLineInput, setKitchenCustomLineInput] = useState("");
   const [detectedAt, setDetectedAt] = useState(null);
   const [saving, setSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
@@ -868,10 +1031,40 @@ export default function PrinterTab() {
     });
   }
 
+  async function handleKitchenLayoutUpdate(field, value) {
+    setPrinterConfig((prev) => {
+      const kitchenLayoutPatch = { ...prev.kitchenLayout, [field]: value };
+      const next = { ...prev, kitchenLayout: kitchenLayoutPatch };
+      (async () => {
+        setOperationStatus({ level: "idle", message: `Saving kitchen ${field}…` });
+        try {
+          const remote = await secureFetch("/printer-settings/sync", {
+            method: "POST",
+            body: JSON.stringify(next),
+          });
+          if (remote?.settings) {
+            setPrinterConfig((prev2) => mergePrinterConfig(prev2, remote.settings));
+          }
+          setOperationStatus({ level: "ok", message: `Kitchen ${field} saved.` });
+        } catch (err) {
+          setOperationStatus({ level: "error", message: `Failed to save kitchen ${field}.` });
+        }
+      })();
+      return next;
+    });
+  }
+
   function handleToggle(field) {
     setPrinterConfig((prev) => ({
       ...prev,
       layout: { ...prev.layout, [field]: !prev.layout[field] },
+    }));
+  }
+
+  function handleKitchenToggle(field) {
+    setPrinterConfig((prev) => ({
+      ...prev,
+      kitchenLayout: { ...prev.kitchenLayout, [field]: !prev.kitchenLayout?.[field] },
     }));
   }
 
@@ -885,12 +1078,30 @@ export default function PrinterTab() {
     setCustomLineInput("");
   }
 
+  function addKitchenCustomLine() {
+    const trimmed = kitchenCustomLineInput.trim();
+    if (!trimmed) return;
+    setPrinterConfig((prev) => ({
+      ...prev,
+      kitchenCustomLines: [...(prev.kitchenCustomLines || []), trimmed],
+    }));
+    setKitchenCustomLineInput("");
+  }
+
 
   function removeCustomLine(index) {
     setPrinterConfig((prev) => {
       const copy = [...prev.customLines];
       copy.splice(index, 1);
       return { ...prev, customLines: copy };
+    });
+  }
+
+  function removeKitchenCustomLine(index) {
+    setPrinterConfig((prev) => {
+      const copy = [...(prev.kitchenCustomLines || [])];
+      copy.splice(index, 1);
+      return { ...prev, kitchenCustomLines: copy };
     });
   }
 
@@ -986,6 +1197,44 @@ export default function PrinterTab() {
     } catch (err) {
       console.error("Test print error:", err);
       setTestStatus({ level: "error", message: err?.message || t("Test print failed") });
+    }
+  }
+
+  async function handleTestKitchenPrint() {
+    if (!hasBridge) {
+      openNativePrintPreview();
+      return;
+    }
+    const targetId = printerConfig.kitchenPrinter;
+    const target = allPrinters.find((printer) => printer.id === targetId);
+    if (!target) {
+      setTestStatus({ level: "error", message: t("Select a kitchen printer first.") });
+      return;
+    }
+
+    setTestStatus({ level: "idle", message: t("Sending kitchen test print…") });
+
+    try {
+      const layoutForPrint =
+        printerConfig.kitchenLayout?.showLogo && printerConfig.layout?.logoUrl
+          ? { ...printerConfig.kitchenLayout, logoUrl: printerConfig.layout.logoUrl }
+          : printerConfig.kitchenLayout;
+      const ok = await printTestKitchenTicket({
+        printer: target,
+        layout: layoutForPrint,
+        customLines: printerConfig.kitchenCustomLines,
+      });
+      if (!ok) throw new Error(t("Test print failed"));
+      setTestStatus({
+        level: "ok",
+        message: t("Test print uploaded to {{printer}}", { printer: target.label }),
+      });
+    } catch (err) {
+      console.error("Kitchen test print error:", err);
+      setTestStatus({
+        level: "error",
+        message: err?.message || t("Test print failed"),
+      });
     }
   }
 
@@ -1484,6 +1733,229 @@ export default function PrinterTab() {
                     <li className="text-slate-400">{t("No custom lines yet.")}</li>
                   )}
                 </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">{t("Kitchen receipt customization")}</h2>
+            <span className="text-xs text-slate-400">{t("Kitchen printer only")}</span>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-[1fr,1fr]">
+            <div className="flex justify-center">
+              <KitchenPreview
+                layout={printerConfig.kitchenLayout}
+                order={SAMPLE_ORDER}
+                customLines={printerConfig.kitchenCustomLines}
+                fallbackLogoUrl={printerConfig.layout?.logoUrl}
+              />
+            </div>
+            <div className="space-y-3 text-sm text-slate-600">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">
+                    {t("Header title")}
+                  </label>
+                  <input
+                    className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
+                    value={printerConfig.kitchenLayout.headerTitle}
+                    onChange={(event) =>
+                      handleKitchenLayoutUpdate("headerTitle", event.target.value)
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">
+                    {t("Header subtitle")}
+                  </label>
+                  <input
+                    className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
+                    value={printerConfig.kitchenLayout.headerSubtitle}
+                    onChange={(event) =>
+                      handleKitchenLayoutUpdate("headerSubtitle", event.target.value)
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">
+                    {t("Alignment")}
+                  </label>
+                  <select
+                    className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
+                    value={printerConfig.kitchenLayout.alignment}
+                    onChange={(event) =>
+                      handleKitchenLayoutUpdate("alignment", event.target.value)
+                    }
+                  >
+                    {ALIGNMENT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {t(opt.label)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">
+                    {t("Paper width")}
+                  </label>
+                  <select
+                    className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
+                    value={printerConfig.kitchenLayout.paperWidth}
+                    onChange={(event) =>
+                      handleKitchenLayoutUpdate("paperWidth", event.target.value)
+                    }
+                  >
+                    {PAPER_WIDTH_OPTIONS.map((width) => (
+                      <option key={width} value={width}>
+                        {width}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">
+                    {t("Font size")}
+                  </label>
+                  <input
+                    type="range"
+                    min={10}
+                    max={22}
+                    step={1}
+                    className="w-full"
+                    value={printerConfig.kitchenLayout.itemFontSize}
+                    onChange={(event) =>
+                      handleKitchenLayoutUpdate("itemFontSize", Number(event.target.value))
+                    }
+                  />
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    {printerConfig.kitchenLayout.itemFontSize}px
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wide text-slate-500">
+                    {t("Line spacing")}
+                  </label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={2}
+                    step={0.05}
+                    className="w-full"
+                    value={printerConfig.kitchenLayout.spacing}
+                    onChange={(event) =>
+                      handleKitchenLayoutUpdate("spacing", Number(event.target.value))
+                    }
+                  />
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    {printerConfig.kitchenLayout.spacing}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2 text-xs">
+                {[
+                  { label: "Show logo", key: "showLogo" },
+                  { label: "Show header", key: "showHeader" },
+                  { label: "Show invoice #", key: "showInvoiceNumber" },
+                  { label: "Show table #", key: "showTableNumber" },
+                  { label: "Show staff", key: "showStaffName" },
+                  { label: "Show customer info", key: "showPacketCustomerInfo" },
+                  { label: "Show notes", key: "showNotes" },
+                  { label: "Show prices", key: "showPrices" },
+                  { label: "Show totals", key: "showTotals" },
+                ].map((toggle) => (
+                  <label key={toggle.key} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={!!printerConfig.kitchenLayout?.[toggle.key]}
+                      onChange={() => handleKitchenToggle(toggle.key)}
+                    />
+                    {t(toggle.label)}
+                  </label>
+                ))}
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-wide text-slate-500">
+                  {t("Footer text")}
+                </label>
+                <textarea
+                  className="mt-1 w-full rounded-2xl border px-3 py-2 text-sm"
+                  rows={2}
+                  value={printerConfig.kitchenLayout.footerText}
+                  onChange={(event) =>
+                    handleKitchenLayoutUpdate("footerText", event.target.value)
+                  }
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">
+                    {t("Custom lines")}
+                  </span>
+                  <button
+                    className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 transition hover:text-slate-600"
+                    type="button"
+                    onClick={() =>
+                      setPrinterConfig((prev) => ({ ...prev, kitchenCustomLines: [] }))
+                    }
+                  >
+                    {t("Clear")}
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 rounded-2xl border px-3 py-2 text-sm"
+                    value={kitchenCustomLineInput}
+                    onChange={(event) => setKitchenCustomLineInput(event.target.value)}
+                    placeholder={t("Add kitchen note")}
+                  />
+                  <button
+                    className="rounded-2xl border px-3 py-2 text-xs font-semibold text-slate-600"
+                    type="button"
+                    onClick={addKitchenCustomLine}
+                  >
+                    {t("Add")}
+                  </button>
+                </div>
+                <ul className="max-h-32 space-y-1 overflow-auto text-[12px] text-slate-600">
+                  {printerConfig.kitchenCustomLines?.length ? (
+                    printerConfig.kitchenCustomLines.map((line, idx) => (
+                      <li
+                        key={`${line}-${idx}`}
+                        className="flex items-center justify-between rounded-2xl border border-slate-100 px-3 py-1"
+                      >
+                        <span>{line}</span>
+                        <button
+                          className="text-[11px] font-semibold tracking-wide text-red-500"
+                          onClick={() => removeKitchenCustomLine(idx)}
+                        >
+                          {t("Remove")}
+                        </button>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-slate-400">{t("No custom lines yet.")}</li>
+                  )}
+                </ul>
+              </div>
+
+              <div className="flex">
+                <button
+                  className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm"
+                  onClick={handleTestKitchenPrint}
+                >
+                  🍳 {t("Test kitchen print")}
+                </button>
               </div>
             </div>
           </div>

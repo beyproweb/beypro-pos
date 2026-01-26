@@ -12,6 +12,8 @@ import { useCurrency } from "../context/CurrencyContext";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { logCashRegisterEvent } from "../utils/cashDrawer";
+import { useSetting } from "../components/hooks/useSetting";
+import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
 import {
   renderReceiptText,
   printViaBridge,
@@ -354,6 +356,31 @@ const [cancelReason, setCancelReason] = useState("");
 const [cancelLoading, setCancelLoading] = useState(false);
 const [refundMethodId, setRefundMethodId] = useState("");
 
+const [transactionSettings, setTransactionSettings] = useState(
+  DEFAULT_TRANSACTION_SETTINGS
+);
+useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
+const autoClosingDeliveredRef = useRef(new Set());
+
+const [notificationSettings, setNotificationSettings] = useState({
+  enabled: true,
+  enableToasts: true,
+});
+useSetting("notifications", setNotificationSettings, {
+  enabled: true,
+  enableToasts: true,
+});
+
+const emitToast = useCallback(
+  (type, message) => {
+    const enableToasts = notificationSettings?.enableToasts ?? true;
+    if (!enableToasts) return;
+    const fn = toast?.[type];
+    if (typeof fn === "function") fn(message);
+  },
+  [notificationSettings?.enableToasts]
+);
+
 const getDefaultRefundMethod = useCallback(
   (order) => {
     if (!methodOptionSource.length) return "";
@@ -439,6 +466,194 @@ const isOrderPaid = useCallback((order) => {
   return onlinePayments.some((type) => normalizedPayment.includes(type));
 }, []);
 
+const normalizePaymentKey = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const resolveAutoClosePaymentMethod = useCallback(
+  (order) => {
+    const methodsSetting = transactionSettings.autoClosePacketAfterPayMethods;
+    const allowsAll = methodsSetting === null || typeof methodsSetting === "undefined";
+    const allowedIds = Array.isArray(methodsSetting) ? methodsSetting.filter(Boolean) : null;
+
+    const idToLabel = new Map(
+      methodOptionSource.map((m) => [String(m.id || ""), String(m.label || m.id || "")])
+    );
+
+    const raw = String(order?.payment_method || "").trim();
+    const tokens = raw
+      ? raw
+          .split(/[+,]/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+      : [];
+
+    const matchedIds = tokens
+      .map((token) => {
+        const norm = normalizePaymentKey(token);
+        const match = methodOptionSource.find((m) => {
+          const idNorm = normalizePaymentKey(m.id);
+          const labelNorm = normalizePaymentKey(m.label);
+          return idNorm === norm || labelNorm === norm;
+        });
+        return match?.id || null;
+      })
+      .filter(Boolean);
+
+    const pickId = () => {
+      if (allowsAll) return matchedIds[0] || "";
+      if (!Array.isArray(allowedIds)) return matchedIds[0] || "";
+      const allowedMatch = matchedIds.find((id) => allowedIds.includes(id));
+      if (allowedMatch) return allowedMatch;
+      return allowedIds[0] || "";
+    };
+
+    const id = pickId();
+    if (id) {
+      return { id, label: idToLabel.get(String(id)) || String(id) };
+    }
+
+    // Fallback to whatever label is already on the order (or the first method label)
+    return { id: "", label: tokens[0] || fallbackMethodLabel };
+  },
+  [
+    fallbackMethodLabel,
+    methodOptionSource,
+    transactionSettings.autoClosePacketAfterPayMethods,
+  ]
+);
+
+const shouldAutoClosePacketOnDelivered = useCallback(
+  (order) => {
+    if (!transactionSettings.autoClosePacketAfterPay) return false;
+    if (!order) return false;
+    const orderType = String(order?.order_type || "").trim().toLowerCase();
+    const isPacketType = ["packet", "phone", "online"].includes(orderType);
+    if (!isPacketType) return false;
+
+    const methodsSetting = transactionSettings.autoClosePacketAfterPayMethods;
+    const allowsAll = methodsSetting === null || typeof methodsSetting === "undefined";
+    if (allowsAll) return true;
+    if (!Array.isArray(methodsSetting)) return true;
+    if (methodsSetting.length === 0) return false;
+
+    const raw = String(order?.payment_method || "").trim();
+    const tokens = raw
+      ? raw
+          .split(/[+,]/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+      : [];
+
+    const usedIds = tokens
+      .map((token) => {
+        const norm = normalizePaymentKey(token);
+        const match = methodOptionSource.find((m) => {
+          const idNorm = normalizePaymentKey(m.id);
+          const labelNorm = normalizePaymentKey(m.label);
+          return idNorm === norm || labelNorm === norm;
+        });
+        return match?.id || null;
+      })
+      .filter(Boolean);
+
+    if (usedIds.length === 0) return true; // unknown method => keep legacy behavior
+    return usedIds.some((id) => methodsSetting.includes(id));
+  },
+  [
+    methodOptionSource,
+    transactionSettings.autoClosePacketAfterPay,
+    transactionSettings.autoClosePacketAfterPayMethods,
+  ]
+);
+
+const closeOrderInstantly = useCallback(
+  async (order) => {
+    const orderId = order?.id;
+    if (!orderId) return;
+
+    // If already paid online (or zero total), just close.
+    const totalWithExtras = calcOrderTotalWithExtras(order);
+    const discountedTotal = totalWithExtras - calcOrderDiscount(order);
+    const normalizedPayment = String(order?.payment_method || "").trim().toLowerCase();
+    const isOnline =
+      normalizedPayment.includes("online") ||
+      normalizedPayment.includes("yemeksepeti online");
+
+    if (!isOnline && discountedTotal > 0) {
+      const receiptId = order.receipt_id || uuidv4();
+      const method = resolveAutoClosePaymentMethod(order);
+
+      await secureFetch(`/orders/receipt-methods`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order_id: orderId,
+          receipt_id: receiptId,
+          methods: { [method.label]: Number(discountedTotal.toFixed(2)) },
+        }),
+      });
+
+      await secureFetch(`/orders/${orderId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          payment_method: method.label,
+          total: discountedTotal,
+          receipt_id: receiptId,
+        }),
+      });
+    }
+
+    try {
+      await secureFetch(`/orders/${orderId}/close`, { method: "POST" });
+    } catch (err) {
+      const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
+      const status = err?.details?.status;
+      if (status === 400 && message.includes("already closed")) {
+        // Treat as success (idempotent close).
+      } else {
+        throw err;
+      }
+    }
+    setOrders((prev) => prev.filter((o) => Number(o.id) !== Number(orderId)));
+  },
+  [resolveAutoClosePaymentMethod]
+);
+
+useEffect(() => {
+  if (!transactionSettings.autoClosePacketAfterPay) return;
+  if (!Array.isArray(orders) || orders.length === 0) return;
+
+  const deliveredCandidates = orders.filter((order) => {
+    const id = order?.id;
+    if (!id) return false;
+    if (autoClosingDeliveredRef.current.has(id)) return false;
+    if (normalizeDriverStatus(order?.driver_status) !== "delivered") return false;
+    return shouldAutoClosePacketOnDelivered(order);
+  });
+
+  if (deliveredCandidates.length === 0) return;
+
+  deliveredCandidates.forEach((order) => {
+    const id = order.id;
+    autoClosingDeliveredRef.current.add(id);
+    closeOrderInstantly(order).catch((err) => {
+      autoClosingDeliveredRef.current.delete(id);
+      console.error("❌ Failed to auto-close delivered order:", err);
+      emitToast("error", t("Failed to close order"));
+    });
+  });
+}, [
+  closeOrderInstantly,
+  orders,
+  shouldAutoClosePacketOnDelivered,
+  t,
+  transactionSettings.autoClosePacketAfterPay,
+  emitToast,
+]);
+
 const openCancelModalForOrder = useCallback(
   (order) => {
     if (!order) return;
@@ -517,7 +732,7 @@ useEffect(() => {
       try {
         if (editingPaymentOrder.receipt_id) {
           const split = await secureFetch(
-            `/receipt-methods/${editingPaymentOrder.receipt_id}`
+            `/orders/receipt-methods/${editingPaymentOrder.receipt_id}`
           );
 
           if (Array.isArray(split) && split.length) {
@@ -2270,24 +2485,25 @@ return (
     {showRoute && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm">
         <div className="relative w-full h-full max-w-7xl max-h-[95vh] mx-auto bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col dark:bg-slate-950">
-          {/* Close Button */}
-          <button
-            onClick={() => setShowRoute(false)}
-            className="absolute top-4 right-4 z-10 p-2 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition shadow-lg"
-            title="Close Map"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-
           {/* Map Container */}
-          <LiveRouteMap
-            stopsOverride={mapStops}
-            driverNameOverride={""}
-            driverId={""}
-            orders={mapOrders.length ? mapOrders : filteredOrders}
-          />
+          {(() => {
+            const selectedIdNum = Number(selectedDriverId);
+            const hasSelectedDriver =
+              String(selectedDriverId || "").trim() !== "" && Number.isFinite(selectedIdNum);
+            const selectedDriver = hasSelectedDriver
+              ? (drivers || []).find((d) => Number(d?.id) === selectedIdNum)
+              : null;
+
+            return (
+              <LiveRouteMap
+                stopsOverride={mapStops}
+                driverNameOverride={selectedDriver?.name || ""}
+                driverId={hasSelectedDriver ? String(selectedIdNum) : ""}
+                orders={mapOrders.length ? mapOrders : filteredOrders}
+                onClose={() => setShowRoute(false)}
+              />
+            );
+          })()}
         </div>
       </div>
     )}
@@ -2594,12 +2810,12 @@ const totalDiscount = calcOrderDiscount(order);
           target="_blank"
           rel="noopener noreferrer"
           title={order.customer_address}
-          className="block font-semibold text-base leading-snug text-slate-900 hover:text-blue-700 truncate"
+          className="block font-semibold text-[17px] leading-snug text-slate-900 hover:text-blue-700 truncate"
         >
           {order.customer_address}
         </a>
       ) : (
-        <div className="font-semibold text-base leading-snug text-slate-500 truncate">
+        <div className="font-semibold text-[17px] leading-snug text-slate-500 truncate">
           {t("No address available")}
         </div>
       )}
@@ -2637,20 +2853,20 @@ const totalDiscount = calcOrderDiscount(order);
   {/* MIDDLE ROW: Order Source + Customer + Phone + Status Badge */}
   <div className="flex items-center gap-2 px-4 py-2 bg-white/20 border-b border-slate-300/50">
     {order.order_type && (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
         {order.order_type === "phone" ? t("Phone Order") : null}
         {order.order_type === "packet" ? t("Packet") : null}
         {order.order_type === "table" ? t("Table") : null}
         {order.order_type === "takeaway" ? t("Takeaway") : null}
       </span>
     )}
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
       {order.customer_name || t("Customer")}
     </span>
     {order.customer_phone && (
       <a
         href={`tel:${order.customer_phone}`}
-        className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700 hover:bg-white transition"
+        className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700 hover:bg-white transition"
         title={t("Click to call")}
         style={{ textDecoration: "none" }}
       >
@@ -2658,13 +2874,13 @@ const totalDiscount = calcOrderDiscount(order);
       </a>
     )}
     {readyAtLabel && (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none bg-amber-100 text-amber-800 border border-amber-300">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-amber-100 text-amber-800 border border-amber-300">
         {t("Ready at")} {readyAtLabel}
       </span>
     )}
     {kitchenBadgeLabel && (
       <span
-        className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[13px] font-semibold leading-none ${kitchenBadgeClass}`}
+        className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none ${kitchenBadgeClass}`}
       >
         {kitchenBadgeLabel}
       </span>
@@ -2724,7 +2940,7 @@ const totalDiscount = calcOrderDiscount(order);
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => openPaymentModalForOrder(order)}
-            className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-[13px] font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
+	            className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
             title={t("Edit payment")}
             type="button"
           >
@@ -2754,7 +2970,7 @@ const totalDiscount = calcOrderDiscount(order);
         </button>
         <button
           onClick={() => openPaymentModalForOrder(order)}
-          className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-[13px] font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
+	          className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
           title={t("Edit payment")}
           type="button"
         >
@@ -2855,6 +3071,18 @@ const totalDiscount = calcOrderDiscount(order);
                 method: "PATCH",
                 body: JSON.stringify({ driver_status: nextStatus }),
               });
+              if (
+                nextStatus === "delivered" &&
+                shouldAutoClosePacketOnDelivered(order)
+              ) {
+                try {
+                  await closeOrderInstantly(order);
+                } catch (err) {
+                  console.error("❌ Failed to auto-close delivered order:", err);
+                  emitToast("error", t("Failed to close order"));
+                  if (!propOrders) await fetchOrders();
+                }
+              }
             }}
 	          >
 	            {isYemeksepetiPickupOrder(order) ? t("Picked up") : t("On Road")}
@@ -2877,6 +3105,15 @@ const totalDiscount = calcOrderDiscount(order);
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ driver_status: "delivered" }),
                 });
+	                if (shouldAutoClosePacketOnDelivered(order)) {
+	                  try {
+	                    await closeOrderInstantly(order);
+	                  } catch (err) {
+	                    console.error("❌ Failed to auto-close delivered order:", err);
+	                    emitToast("error", t("Failed to close order"));
+	                    if (!propOrders) await fetchOrders();
+	                  }
+	                }
               } catch (err) {
                 console.error("❌ Failed to mark delivered:", err);
                 if (!propOrders) await fetchOrders();

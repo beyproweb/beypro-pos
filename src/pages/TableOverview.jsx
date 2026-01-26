@@ -462,6 +462,33 @@ const safeParseJson = (raw) => {
   }
 };
 
+const getSettingsTenantKey = () => {
+  if (typeof window === "undefined") return "default";
+  return (
+    window?.localStorage?.getItem("restaurant_id") ||
+    window?.localStorage?.getItem("restaurant_slug") ||
+    "default"
+  );
+};
+
+const getSettingCacheKey = (section) => `beypro:settings:${getSettingsTenantKey()}:${section}`;
+
+const readInitialTableSettings = () => {
+  const defaults = {
+    tableLabelText: "",
+    showAreas: true,
+  };
+
+  try {
+    if (typeof window === "undefined") return defaults;
+    const cached = safeParseJson(window?.localStorage?.getItem(getSettingCacheKey("tables")));
+    if (!cached || typeof cached !== "object") return defaults;
+    return { ...defaults, ...cached };
+  } catch {
+    return defaults;
+  }
+};
+
 const readInitialTableConfigs = () => {
   // Prefer last known full configs (fastest + keeps areas/seats stable).
   const cachedConfigs = safeParseJson(
@@ -553,10 +580,7 @@ export default function TableOverview() {
     DEFAULT_TRANSACTION_SETTINGS
   );
   useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
-  const [tableSettings, setTableSettings] = useState({
-    tableLabelText: "",
-    showAreas: true,
-  });
+  const [tableSettings, setTableSettings] = useState(() => readInitialTableSettings());
   useSetting("tables", setTableSettings, {
     tableLabelText: "",
     showAreas: true,

@@ -10,7 +10,7 @@ const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v2";
 
 export default function KitchenNew() {
   const [orders, setOrders] = useState([]);
-  const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
+  const [selectedItemIds, setSelectedItemIds] = useState(new Set());
   const [activeTab, setActiveTab] = useState("all"); // all selected by default
   const [showCompileModal, setShowCompileModal] = useState(false);
   const [compiled, setCompiled] = useState(null);
@@ -243,6 +243,22 @@ export default function KitchenNew() {
     return Object.values(groups);
   }, [orders]);
 
+  // Keep selection in sync with live order refreshes
+  useEffect(() => {
+    setSelectedItemIds((prev) => {
+      if (prev.size === 0) return prev;
+      const existing = new Set();
+      groupedOrders.forEach((order) => {
+        order.items.forEach((item) => existing.add(item.item_id));
+      });
+      const next = new Set();
+      prev.forEach((id) => {
+        if (existing.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [groupedOrders]);
+
   // Filter orders by tab
   const filteredOrders = useMemo(() => {
     if (activeTab === "all") return groupedOrders;
@@ -287,30 +303,36 @@ export default function KitchenNew() {
     return "text-green-600";
   };
 
-  // Toggle order selection
-  const toggleOrderSelection = (orderId) => {
-    setSelectedOrderIds((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(orderId)) {
-        newSet.delete(orderId);
-      } else {
-        newSet.add(orderId);
-      }
-      return newSet;
+  const toggleItemSelection = useCallback((itemId) => {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
     });
-  };
+  }, []);
+
+  const toggleOrderSelection = useCallback((order) => {
+    const itemIds = (order?.items || []).map((item) => item.item_id);
+    if (itemIds.length === 0) return;
+    setSelectedItemIds((prev) => {
+      const allSelected = itemIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (allSelected) {
+        itemIds.forEach((id) => next.delete(id));
+      } else {
+        itemIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }, []);
 
   // Update kitchen status
   const updateKitchenStatus = async (status) => {
-    if (selectedOrderIds.size === 0) return;
+    if (selectedItemIds.size === 0) return;
 
     try {
-      const itemIds = [];
-      groupedOrders.forEach((order) => {
-        if (selectedOrderIds.has(order.order_id)) {
-          order.items.forEach((item) => itemIds.push(item.item_id));
-        }
-      });
+      const itemIds = Array.from(selectedItemIds);
 
       // Use the backend's expected endpoint and payload
       await secureFetch("/order-items/kitchen-status", {
@@ -321,7 +343,7 @@ export default function KitchenNew() {
       if (status === "preparing") {
         setActiveTab("cooking");
       } else {
-        setSelectedOrderIds(new Set());
+        setSelectedItemIds(new Set());
       }
 
       await fetchOrders();
@@ -332,13 +354,13 @@ export default function KitchenNew() {
 
   // Compile selected orders
   const openCompileModal = () => {
-    if (selectedOrderIds.size === 0) return;
+    if (selectedItemIds.size === 0) return;
 
     const selectedItems = [];
     groupedOrders.forEach((order) => {
-      if (selectedOrderIds.has(order.order_id)) {
-        selectedItems.push(...order.items);
-      }
+      order.items.forEach((item) => {
+        if (selectedItemIds.has(item.item_id)) selectedItems.push(item);
+      });
     });
 
     const compiled = compileTotals(selectedItems);
@@ -385,18 +407,27 @@ export default function KitchenNew() {
       {/* Order Grid */}
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-          {filteredOrders.map((order) => (
-            <OrderCard
-              key={order.order_id}
-              order={order}
-              selected={selectedOrderIds.has(order.order_id)}
-              onToggle={() => toggleOrderSelection(order.order_id)}
-              timer={formatTimer(order.order_id)}
-              timerClass={getTimerColorClass(order.order_id)}
-              safeParse={safeParse}
-              t={t}
-            />
-          ))}
+          {filteredOrders.map((order) => {
+            const itemIds = (order?.items || []).map((item) => item.item_id);
+            const anySelected = itemIds.some((id) => selectedItemIds.has(id));
+            const allSelected = itemIds.length > 0 && itemIds.every((id) => selectedItemIds.has(id));
+
+            return (
+              <OrderCard
+                key={order.order_id}
+                order={order}
+                anySelected={anySelected}
+                allSelected={allSelected}
+                selectedItemIds={selectedItemIds}
+                onToggleAll={() => toggleOrderSelection(order)}
+                onToggleItem={toggleItemSelection}
+                timer={formatTimer(order.order_id)}
+                timerClass={getTimerColorClass(order.order_id)}
+                safeParse={safeParse}
+                t={t}
+              />
+            );
+          })}
         </div>
 
         {filteredOrders.length === 0 && (
@@ -411,21 +442,21 @@ export default function KitchenNew() {
         <div className="flex gap-3 justify-center max-w-4xl mx-auto">
           <button
             onClick={() => updateKitchenStatus("preparing")}
-            disabled={selectedOrderIds.size === 0}
+            disabled={selectedItemIds.size === 0}
             className="flex-1 py-3 px-3 sm:py-4 sm:px-6 bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {t("PREPARING")}
           </button>
           <button
             onClick={() => updateKitchenStatus("delivered")}
-            disabled={selectedOrderIds.size === 0}
+            disabled={selectedItemIds.size === 0}
             className="flex-1 py-3 px-3 sm:py-4 sm:px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {t("DELIVERED")}
           </button>
           <button
             onClick={openCompileModal}
-            disabled={selectedOrderIds.size === 0}
+            disabled={selectedItemIds.size === 0}
             className="flex-1 py-3 px-3 sm:py-4 sm:px-6 bg-yellow-500 hover:bg-yellow-600 text-white font-bold text-sm sm:text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {t("COMPILE")}
@@ -508,8 +539,26 @@ export default function KitchenNew() {
 }
 
 // Order Card Component
-function OrderCard({ order, selected, onToggle, timer, timerClass, safeParse, t }) {
+function OrderCard({
+  order,
+  anySelected,
+  allSelected,
+  selectedItemIds,
+  onToggleAll,
+  onToggleItem,
+  timer,
+  timerClass,
+  safeParse,
+  t,
+}) {
   const type = String(order.order_type || "").toLowerCase();
+  const headerCheckboxRef = useRef(null);
+
+  useEffect(() => {
+    if (!headerCheckboxRef.current) return;
+    headerCheckboxRef.current.indeterminate = Boolean(anySelected && !allSelected);
+  }, [anySelected, allSelected]);
+
   const formatOnlineSourceLabel = (source) => {
     if (!source) return null;
     const trimmed = String(source).trim();
@@ -546,17 +595,18 @@ function OrderCard({ order, selected, onToggle, timer, timerClass, safeParse, t 
   return (
     <div
       className={`bg-white dark:bg-zinc-800 border-2 ${
-        selected ? "border-blue-500" : "border-gray-300 dark:border-zinc-600"
+        anySelected ? "border-blue-500" : "border-gray-300 dark:border-zinc-600"
       } rounded-lg p-4 shadow hover:shadow-lg transition cursor-pointer`}
-      onClick={onToggle}
+      onClick={onToggleAll}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={selected}
-            onChange={onToggle}
+            ref={headerCheckboxRef}
+            checked={allSelected}
+            onChange={onToggleAll}
             onClick={(e) => e.stopPropagation()}
             className="w-5 h-5 accent-blue-600 flex-shrink-0"
           />
@@ -574,15 +624,24 @@ function OrderCard({ order, selected, onToggle, timer, timerClass, safeParse, t 
 
       {/* Items */}
       <div className="space-y-0 divide-y divide-gray-200 dark:divide-zinc-700">
-        {order.items.map((item, idx) => {
+        {order.items.map((item) => {
           const parsedExtras = safeParse(item.extras);
+          const isSelected = selectedItemIds.has(item.item_id);
 
           return (
-            <div key={item.item_id} className="flex items-start gap-2 py-2 first:pt-0">
+            <div
+              key={item.item_id}
+              className="flex items-start gap-2 py-2 first:pt-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleItem(item.item_id);
+              }}
+            >
               <input
                 type="checkbox"
-                checked={selected}
-                readOnly
+                checked={isSelected}
+                onChange={() => onToggleItem(item.item_id)}
+                onClick={(e) => e.stopPropagation()}
                 className="mt-1 w-4 h-4 accent-blue-600 flex-shrink-0"
               />
               <div className="flex-1 min-w-0">

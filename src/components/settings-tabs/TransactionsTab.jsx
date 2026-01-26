@@ -2,12 +2,14 @@ import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSetting, saveSetting } from "../hooks/useSetting";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../../constants/transactionSettingsDefaults";
+import { usePaymentMethods } from "../../hooks/usePaymentMethods";
 
 export default function TransactionsTab() {
   const { t } = useTranslation();
   const [settings, setSettings] = useState(DEFAULT_TRANSACTION_SETTINGS);
   const [saving, setSaving] = useState(false);
   const [newNote, setNewNote] = useState("");
+  const paymentMethods = usePaymentMethods();
 
   useSetting("transactions", setSettings, DEFAULT_TRANSACTION_SETTINGS);
 
@@ -18,6 +20,65 @@ export default function TransactionsTab() {
         : DEFAULT_TRANSACTION_SETTINGS.presetNotes,
     [settings.presetNotes]
   );
+
+  const autoClosePacketMethods = useMemo(() => {
+    const raw = settings.autoClosePacketAfterPayMethods;
+    if (raw === null || typeof raw === "undefined") return null; // null => all
+    return Array.isArray(raw) ? raw.filter(Boolean) : null;
+  }, [settings.autoClosePacketAfterPayMethods]);
+
+  const autoClosePacketMethodsSet = useMemo(() => {
+    if (!Array.isArray(paymentMethods) || paymentMethods.length === 0) {
+      return {
+        isAll: true,
+        ids: [],
+        set: new Set(),
+      };
+    }
+
+    const allIds = paymentMethods.map((m) => m.id).filter(Boolean);
+    if (autoClosePacketMethods === null) {
+      return {
+        isAll: true,
+        ids: allIds,
+        set: new Set(allIds),
+      };
+    }
+
+    const filtered = autoClosePacketMethods.filter((id) => allIds.includes(id));
+    return {
+      isAll: filtered.length === allIds.length,
+      ids: filtered,
+      set: new Set(filtered),
+    };
+  }, [autoClosePacketMethods, paymentMethods]);
+
+  const setAutoClosePacketMethods = (nextIdsOrNull) => {
+    setSettings((prev) => ({
+      ...prev,
+      autoClosePacketAfterPayMethods: nextIdsOrNull,
+    }));
+  };
+
+  const toggleAutoClosePacketMethod = (id) => {
+    if (!id) return;
+    const allIds = (Array.isArray(paymentMethods) ? paymentMethods : [])
+      .map((m) => m.id)
+      .filter(Boolean);
+    if (allIds.length === 0) return;
+
+    const currentIds =
+      autoClosePacketMethods === null ? allIds : autoClosePacketMethods;
+    const next = new Set(currentIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+
+    if (next.size === allIds.length) {
+      setAutoClosePacketMethods(null);
+      return;
+    }
+    setAutoClosePacketMethods(Array.from(next));
+  };
 
   const toggle = (key) => {
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -102,6 +163,63 @@ export default function TransactionsTab() {
             </div>
           </div>
         </label>
+
+        {settings.autoClosePacketAfterPay && (
+          <div className="md:col-span-2 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">
+                  {t("Auto-close packet/phone orders only for selected payment methods")}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {t("If you select all methods, auto-close applies to any payment method.")}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAutoClosePacketMethods(null)}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                >
+                  {t("Select all")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAutoClosePacketMethods([])}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                >
+                  {t("Clear")}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {(Array.isArray(paymentMethods) ? paymentMethods : []).map((method) => (
+                <label
+                  key={method.id}
+                  className="flex items-center gap-3 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40"
+                >
+                  <input
+                    type="checkbox"
+                    checked={autoClosePacketMethodsSet.set.has(method.id)}
+                    onChange={() => toggleAutoClosePacketMethod(method.id)}
+                    className="h-4 w-4 accent-indigo-500"
+                  />
+                  <span className="text-sm font-semibold">
+                    {method.icon ? `${method.icon} ` : ""}
+                    {method.label || method.id}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {Array.isArray(autoClosePacketMethods) && autoClosePacketMethods.length === 0 && (
+              <div className="mt-3 text-xs text-amber-600 dark:text-amber-300">
+                {t("No payment methods selected. Auto-close will not run for packet/phone orders.")}
+              </div>
+            )}
+          </div>
+        )}
 
         <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
           <input

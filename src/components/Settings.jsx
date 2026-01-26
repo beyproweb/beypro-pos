@@ -134,10 +134,10 @@ export default function SettingsPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto text-base bg-transparent dark:bg-gray-900 text-gray-900 dark:text-white transition-colors">
-      <div className="flex flex-col md:flex-row rounded-2xl shadow-2xl overflow-hidden border border-accent/20 backdrop-blur-sm">
+      <div className="flex flex-col md:flex-row rounded-2xl shadow-2xl overflow-hidden border border-accent/20 backdrop-blur-sm min-h-0 md:h-[calc(100vh-140px)]">
         {/* Tabs rail */}
-        <div className="w-full md:w-72 bg-gradient-to-b from-indigo-100 to-white dark:from-gray-800 dark:to-gray-900 border-b md:border-b-0 md:border-r border-accent/20">
-          <div className="flex md:flex-col gap-2 md:gap-0 overflow-x-auto md:overflow-visible px-3 py-3 md:px-0 md:py-0">
+        <div className="w-full md:w-72 bg-gradient-to-b from-indigo-100 to-white dark:from-gray-800 dark:to-gray-900 border-b md:border-b-0 md:border-r border-accent/20 md:h-full min-h-0">
+          <div className="flex md:flex-col gap-2 md:gap-0 overflow-x-auto md:overflow-y-auto md:overflow-x-hidden px-3 py-3 md:px-0 md:py-2 md:h-full min-h-0">
             {permittedTabs.map(({ key, label, emoji }) => (
               <button
                 key={key}
@@ -158,7 +158,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Active Tab Content */}
-        <div className="flex-1 bg-transparent dark:bg-gray-950 p-4 md:p-8 min-h-[480px] transition-colors">
+        <div className="flex-1 bg-transparent dark:bg-gray-950 p-4 md:p-8 min-h-[480px] md:min-h-0 md:overflow-y-auto transition-colors">
           {permittedTabs.some((tab) => tab.key === activeTab) && ActiveComponent ? (
             <ActiveComponent />
           ) : (

@@ -2115,6 +2115,24 @@ const [splits, setSplits] = useState({});
       if (prev && paymentMethods.some((method) => method.id === prev)) {
         return prev;
       }
+
+      const desired =
+        String(
+          order?.payment_method ??
+            phoneOrderDraft?.payment_method ??
+            phoneOrderDraft?.paymentMethod ??
+            ""
+        ).trim();
+      if (desired) {
+        const desiredLower = desired.toLowerCase();
+        const match = paymentMethods.find((method) => {
+          const id = String(method?.id || "").trim().toLowerCase();
+          const label = String(method?.label || "").trim().toLowerCase();
+          return id === desiredLower || label === desiredLower;
+        });
+        if (match?.id) return match.id;
+      }
+
       return paymentMethods[0].id;
     });
     setSplits((prev) => {
@@ -2136,7 +2154,7 @@ const [splits, setSplits] = useState({});
       if (!changed) return prev;
       return next;
     });
-  }, [paymentMethods]);
+  }, [paymentMethods, order?.payment_method, phoneOrderDraft]);
 
   const getDefaultRefundMethod = useCallback(() => {
     if (!paymentMethods.length) return "";
@@ -2285,6 +2303,14 @@ const confirmPaymentWithSplits = async (splits) => {
   setShowPaymentModal(false);
 
   try {
+    const splitMethodIds = Object.entries(splits || {})
+      .filter(([, value]) => {
+        const parsed = parseFloat(value);
+        return !Number.isNaN(parsed) && parsed > 0;
+      })
+      .map(([methodId]) => methodId)
+      .filter(Boolean);
+
     // 1) Use the discounted total shown to the user
     const totalDue = calculateDiscountedTotal();
 
@@ -2389,7 +2415,7 @@ if (!rMethods) throw new Error("Failed to save receipt methods");
             }),
           });
           setOrder((prev) => ({ ...prev, status: "paid" }));
-          await runAutoCloseIfConfigured(true);
+          await runAutoCloseIfConfigured(true, splitMethodIds);
         }
       })(),
       (async () => {
@@ -2425,14 +2451,70 @@ const resetTableGuests = async (tableNumber) => {
 };
 
 const runAutoCloseIfConfigured = useCallback(
-  async (shouldClose) => {
+  async (shouldClose, paymentMethodIds = null) => {
     if (!shouldClose || !order?.id) return;
 
     const shouldAutoCloseTable =
       orderType === "table" && transactionSettings.autoCloseTableAfterPay;
     const isPacketType = ["packet", "phone", "online"].includes(orderType);
+
+    const packetMethodsSetting = transactionSettings.autoClosePacketAfterPayMethods;
+    const packetAllowsAll =
+      packetMethodsSetting === null || typeof packetMethodsSetting === "undefined";
+    const allowedPacketMethodIds = Array.isArray(packetMethodsSetting)
+      ? packetMethodsSetting.filter(Boolean)
+      : null;
+
+    const normalizePaymentKey = (value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, "_");
+
+    const deriveUsedPacketMethodIds = () => {
+      if (Array.isArray(paymentMethodIds) && paymentMethodIds.length > 0) {
+        return paymentMethodIds.filter(Boolean);
+      }
+
+      const raw = String(order?.payment_method || "").trim();
+      const tokens = raw
+        ? raw
+            .split(/[+,]/)
+            .map((part) => part.trim())
+            .filter(Boolean)
+        : [];
+
+      const derived = tokens
+        .map((token) => {
+          const norm = normalizePaymentKey(token);
+          const match = (Array.isArray(paymentMethods) ? paymentMethods : []).find((m) => {
+            const idNorm = normalizePaymentKey(m.id);
+            const labelNorm = normalizePaymentKey(m.label);
+            return idNorm === norm || labelNorm === norm;
+          });
+          return match?.id || null;
+        })
+        .filter(Boolean);
+
+      if (derived.length === 0 && selectedPaymentMethod) {
+        derived.push(selectedPaymentMethod);
+      }
+
+      return derived;
+    };
+
+    const packetMethodAllowed = (() => {
+      if (packetAllowsAll) return true;
+      if (!Array.isArray(allowedPacketMethodIds)) return true;
+      if (allowedPacketMethodIds.length === 0) return false; // explicit "none selected"
+
+      const usedIds = deriveUsedPacketMethodIds();
+      if (usedIds.length === 0) return true; // unknown method => keep legacy behavior
+      return usedIds.some((id) => allowedPacketMethodIds.includes(id));
+    })();
+
     const shouldAutoClosePacket =
-      isPacketType && transactionSettings.autoClosePacketAfterPay;
+      isPacketType && transactionSettings.autoClosePacketAfterPay && packetMethodAllowed;
 
     if (!shouldAutoCloseTable && !shouldAutoClosePacket) return;
 
@@ -2460,9 +2542,12 @@ const runAutoCloseIfConfigured = useCallback(
     existingReservation,
     order,
     orderType,
+    paymentMethods,
     requestReservationCloseConfirmation,
     transactionSettings.autoClosePacketAfterPay,
+    transactionSettings.autoClosePacketAfterPayMethods,
     transactionSettings.autoCloseTableAfterPay,
+    selectedPaymentMethod,
   ]
 );
 
@@ -2695,6 +2780,12 @@ const fetchTakeawayOrder = async (id) => {
 const fetchOrderItems = async (orderId, options = {}) => {
   const { orderTypeOverride, sourceOverride } = options;
   try {
+    const normalizedOrderId =
+      orderId === null || orderId === undefined ? "" : String(orderId).trim();
+    if (!normalizedOrderId || normalizedOrderId.toLowerCase() === "null") {
+      console.warn("⚠️ fetchOrderItems skipped (missing orderId):", orderId);
+      return [];
+    }
     const items = await secureFetch(`/orders/${orderId}/items${identifier}`);
 
     if (!Array.isArray(items)) {
@@ -2971,12 +3062,35 @@ const updateOrderStatus = async (newStatus = null, total = null, method = null) 
             "",
           total: 0,
         };
-        const created = await secureFetch(`/orders${identifier}`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
+
+        // Avoid creating duplicate phone orders:
+        // - `finalizeCartItem` may already be creating one via `ensurePhoneOrder()`
+        // - If that promise is in-flight, reuse it here.
+        let created = null;
+        if (phoneOrderCreatePromiseRef.current) {
+          created = await phoneOrderCreatePromiseRef.current;
+        } else {
+          const promise = (async () => {
+            const result = await secureFetch(`/orders${identifier}`, {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            if (!result?.id) {
+              throw new Error(result?.error || "Failed to create order");
+            }
+            setOrder((prev) => (prev ? { ...prev, ...result } : result));
+            return result;
+          })();
+          phoneOrderCreatePromiseRef.current = promise;
+          promise.finally(() => {
+            if (phoneOrderCreatePromiseRef.current === promise) {
+              phoneOrderCreatePromiseRef.current = null;
+            }
+          });
+          created = await promise;
+        }
+
         if (!created?.id) throw new Error(created?.error || "Failed to create order");
-        setOrder((prev) => (prev ? { ...prev, ...created } : created));
         targetId = created.id;
       } catch (err) {
         console.error("❌ Failed to create phone order:", err);
@@ -2999,8 +3113,8 @@ const updateOrderStatus = async (newStatus = null, total = null, method = null) 
       total: total ?? order?.total ?? undefined,
       payment_method:
         method ||
-        resolvePaymentLabel(selectedPaymentMethod) ||
         order?.payment_method ||
+        resolvePaymentLabel(selectedPaymentMethod) ||
         "Unknown",
     };
 
@@ -3235,7 +3349,7 @@ const handleMultifunction = async () => {
   await fetchOrderItems(updated.id);
 
 if ((orderId && orderType === "phone") && getButtonLabel() === "Confirm") {
-  await fetchOrderItems(order.id);
+  await fetchOrderItems(updated.id);
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
   setHeader(prev => ({ ...prev, subtitle: "" }));
   scheduleNavigate("/orders", 400);
@@ -3557,7 +3671,7 @@ const confirmPayment = async (method, payIds = null) => {
     if (isFullyPaid2) {
       await updateOrderStatus("paid", total, method);
       setOrder((prev) => ({ ...prev, status: "paid" }));
-      await runAutoCloseIfConfigured(true);
+      await runAutoCloseIfConfigured(true, [method]);
     }
   }
 
@@ -3574,7 +3688,7 @@ const confirmPayment = async (method, payIds = null) => {
     await openCashDrawer();
   }
   if (isFullyPaidAfter) {
-    await runAutoCloseIfConfigured(true);
+    await runAutoCloseIfConfigured(true, [method]);
   }
 };
 

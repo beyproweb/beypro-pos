@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppearance } from "../context/AppearanceContext";
-import socket from "../utils/socket"; // adjust path as needed!
+import socket from "../utils/socket";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import i18n from "i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import secureFetch from "../utils/secureFetch";
+
 export default function Task() {
   const { t } = useTranslation();
   const { darkMode, fontSize, fontFamily } = useAppearance();
@@ -15,7 +16,6 @@ export default function Task() {
   const [staffList, setStaffList] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
 
   // Manual add form state
   const [manualTitle, setManualTitle] = useState("");
@@ -30,311 +30,16 @@ export default function Task() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
-   // Only allow users with "settings" permission
-const hasDashboardAccess = useHasPermission("dashboard");
-if (!hasDashboardAccess) {
-  return (
-    <div className="p-12 text-2xl text-red-600 text-center">
-      {t("Access Denied: You do not have permission to view the Dashboard.")}
-    </div>
-  );
-}
 
-
-const getSpeechText = (key, lang = "en") => {
-  const phrases = {
-    start: {
-      en: "Hello, please assign a task.",
-      tr: "Merhaba, lütfen bir görev verin.",
-      de: "Hallo, bitte eine Aufgabe zuweisen.",
-      fr: "Bonjour, veuillez attribuer une tâche."
-    },
-    missing_fields: {
-      en: "Time and staff name are required to save the task",
-      tr: "Görevi kaydetmek için zaman ve personel adı gerekli",
-      de: "Zeit und Mitarbeitername sind erforderlich, um die Aufgabe zu speichern",
-      fr: "L’heure et le nom du personnel sont requis pour enregistrer la tâche"
-    },
-    missing_fields_example: {
-      en: "Example: 'Assign cleaning to Yusuf at 4 PM'",
-      tr: "Örnek: 'Yusuf mutfağı saat dörtte temizlesin'",
-      de: "Beispiel: 'Yusuf soll die Küche um 16 Uhr putzen'",
-      fr: "Exemple : « Assigner le nettoyage à Yusuf à 16h »"
-    },
-    saved: {
-      en: "✅ Task saved.",
-      tr: "✅ Görev kaydedildi.",
-      de: "✅ Aufgabe gespeichert.",
-      fr: "✅ Tâche enregistrée."
-    },
-    error: {
-      en: "Something went wrong.",
-      tr: "Bir şeyler ters gitti.",
-      de: "Etwas ist schiefgelaufen.",
-      fr: "Une erreur s’est produite."
-    }
-  };
-
-  return phrases[key]?.[lang] || phrases[key]?.en || "";
-};
-
-
-const getLangVoiceCode = (lang) => {
-  return lang === "tr" ? "tr-TR"
-       : lang === "de" ? "de-DE"
-       : lang === "fr" ? "fr-FR"
-       : "en-US";
-};
-
-
-const currentLang = i18n.language || "en";
-const langVoiceCode = getLangVoiceCode(currentLang);
-
-
-
-// Helper to pad numbers like 4 → "04"
-const pad = (n) => String(n).padStart(2, "0");
-
-const toLocalISOString = (date) => {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-};
-
-const extractTimeFromTurkish = (text) => {
-  const now = new Date();
-  let dayOffset = 0;
-
-  if (/yarın/i.test(text)) dayOffset = 1;
-
-  const isEvening = /akşam|gece/i.test(text);
-  const isMorning = /sabah|öğlen|öğle/i.test(text);
-
-  const match = text.match(/saat\s+(\d{1,2})(?:[:.](\d{1,2}))?/i);
-  if (!match) return null;
-
-  let hour = parseInt(match[1], 10);
-  let minute = match[2] ? parseInt(match[2], 10) : 0;
-
-  // 🔁 Guess PM if hour is 4-7 and no morning indicators
-  if (!isMorning && !isEvening && hour >= 4 && hour <= 7) {
-    hour += 12;
+  // Only allow users with "dashboard" permission
+  const hasDashboardAccess = useHasPermission("dashboard");
+  if (!hasDashboardAccess) {
+    return (
+      <div className="p-12 text-2xl text-red-600 text-center">
+        {t("Access Denied: You do not have permission to view the Dashboard.")}
+      </div>
+    );
   }
-
-  if (isEvening && hour < 12) hour += 12;
-  if (/gece/i.test(text) && hour <= 5) hour += 24;
-
-  now.setDate(now.getDate() + dayOffset);
-  now.setHours(hour % 24, minute, 0, 0);
-
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-};
-
-
-const extractTimeFromGerman = (text) => {
-  const now = new Date();
-  let dayOffset = 0;
-  if (/morgen/i.test(text)) dayOffset = 1;
-
-  const isEvening = /abend|nacht/i.test(text);
-  const isMorning = /morgen|vormittag/i.test(text);
-
-  const match = text.match(/(\d{1,2})(?::(\d{2}))?/);
-  if (!match) return null;
-
-  let hour = parseInt(match[1], 10);
-  let minute = match[2] ? parseInt(match[2], 10) : 0;
-
-  if (isEvening && hour < 12) hour += 12;
-
-  now.setDate(now.getDate() + dayOffset);
-  now.setHours(hour % 24, minute, 0, 0);
-const pad = (n) => String(n).padStart(2, "0");
-return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-};
-
-const extractTimeFromFrench = (text) => {
-  const now = new Date();
-  let dayOffset = 0;
-  if (/demain/i.test(text)) dayOffset = 1;
-
-  const isEvening = /soir|nuit/i.test(text);
-  const isMorning = /matin/i.test(text);
-
-  const match = text.match(/(\d{1,2})(?::(\d{2}))?/);
-  if (!match) return null;
-
-  let hour = parseInt(match[1], 10);
-  let minute = match[2] ? parseInt(match[2], 10) : 0;
-
-  if (isEvening && hour < 12) hour += 12;
-
-  now.setDate(now.getDate() + dayOffset);
-  now.setHours(hour % 24, minute, 0, 0);
-  return toLocalISOString(now);
-};
-
-const extractTimeFromText = (text, lang = "en") => {
-  const now = new Date();
-
-  if (lang === "tr") return extractTimeFromTurkish(text);
-  if (lang === "de") return extractTimeFromGerman(text);
-  if (lang === "fr") return extractTimeFromFrench(text);
-
-  // Default: English with AM/PM
-  const match = text.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-  if (!match) return null;
-
-  let hour = parseInt(match[1], 10);
-  let minute = match[2] ? parseInt(match[2], 10) : 0;
-  const suffix = match[3]?.toLowerCase();
-
-  if (suffix === "pm" && hour < 12) hour += 12;
-  if (suffix === "am" && hour === 12) hour = 0;
-
-  now.setHours(hour, minute, 0, 0);
-  return toLocalISOString(now);
-};
-
-  const recognitionRef = useRef(null);
-  const listeningRef = useRef(false);
-  const currentUtteranceRef = useRef(null);
-  const voiceRef = useRef(null);
-  const lastTranscriptRef = useRef("");
-
-  const cancelSpeech = useCallback(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    if (window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel();
-    }
-    currentUtteranceRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognitionRef.current = recognition;
-
-    return () => {
-      recognition.onresult = null;
-      recognition.onerror = null;
-      recognition.onstart = null;
-      recognition.onend = null;
-      try {
-        recognition.stop();
-      } catch (err) {
-        // ignore
-      }
-      recognitionRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    let mounted = true;
-
-    const assignVoice = () => {
-      if (!mounted) return;
-      const voices = window.speechSynthesis.getVoices();
-      if (!voices.length) return;
-      const exact = voices.find((v) => v.lang === langVoiceCode);
-      const baseMatch = voices.find((v) =>
-        v.lang.toLowerCase().startsWith(langVoiceCode.split("-")[0].toLowerCase())
-      );
-      voiceRef.current = exact || baseMatch || voices[0];
-    };
-
-    assignVoice();
-    window.speechSynthesis.addEventListener("voiceschanged", assignVoice);
-    return () => {
-      mounted = false;
-      window.speechSynthesis.removeEventListener("voiceschanged", assignVoice);
-    };
-  }, [langVoiceCode]);
-
-  const speakText = useCallback(
-    (text, { lang, rate = 0.9, onComplete } = {}) => {
-      if (!text) {
-        onComplete?.();
-        return;
-      }
-
-      if (typeof window === "undefined" || !window.speechSynthesis) {
-        onComplete?.();
-        return;
-      }
-
-      cancelSpeech();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang || langVoiceCode;
-      utterance.rate = rate;
-      utterance.pitch = 1;
-      utterance.volume = 1;
-
-      if (voiceRef.current) {
-        utterance.voice = voiceRef.current;
-      }
-
-      utterance.onend = () => {
-        currentUtteranceRef.current = null;
-        onComplete?.();
-      };
-      utterance.onerror = () => {
-        currentUtteranceRef.current = null;
-        onComplete?.();
-      };
-
-      currentUtteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
-    },
-    [cancelSpeech, langVoiceCode]
-  );
-
-  const stopListening = useCallback(() => {
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
-    try {
-      recognition.stop();
-    } catch (err) {
-      // ignore
-    }
-    listeningRef.current = false;
-  }, []);
-
-  const startListening = useCallback(() => {
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
-    try {
-      if (listeningRef.current && typeof recognition.abort === "function") {
-        recognition.abort();
-      }
-      recognition.lang = langVoiceCode;
-      recognition.start();
-    } catch (err) {
-      console.error("🎤 Could not start mic:", err);
-      setIsProcessingVoice(false);
-    }
-  }, [langVoiceCode]);
-
-  const promptAndListen = useCallback(
-    (text, lang = langVoiceCode) => {
-      setIsProcessingVoice(true);
-      speakText(text, {
-        lang,
-        onComplete: () => {
-          startListening();
-        },
-      });
-    },
-    [speakText, startListening, langVoiceCode, setIsProcessingVoice]
-  );
 
   // Initial load
   useEffect(() => {
@@ -381,12 +86,12 @@ const extractTimeFromText = (text, lang = "en") => {
     };
   }, []);
 
- useEffect(() => {
-  socket.on("tasks_cleared_completed", () => {
-    setTasks(t => t.filter(task => task.status !== "completed"));
-  });
-  return () => socket.off("tasks_cleared_completed");
-}, []);
+  useEffect(() => {
+    socket.on("tasks_cleared_completed", () => {
+      setTasks(t => t.filter(task => task.status !== "completed"));
+    });
+    return () => socket.off("tasks_cleared_completed");
+  }, []);
 
   useEffect(() => {
     if (!selectedTask) return;
@@ -397,175 +102,6 @@ const extractTimeFromText = (text, lang = "en") => {
       setSelectedTask(latest);
     }
   }, [tasks, selectedTask]);
-
-  // Handle initial speech result
-  const handleRecognition = useCallback(
-    async (event) => {
-      const transcript = event?.results?.[0]?.[0]?.transcript?.trim();
-      listeningRef.current = false;
-
-      if (!transcript) {
-        promptAndListen(getSpeechText("start", currentLang), langVoiceCode);
-        return;
-      }
-
-      if (lastTranscriptRef.current === transcript) {
-        startListening();
-        return;
-      }
-
-      lastTranscriptRef.current = transcript;
-      let handedOff = false;
-      setIsProcessingVoice(true);
-
-      try {
-        const res = await secureFetch("/voice-command", {
-          method: "POST",
-          headers: {
-            "x-client-lang": currentLang,
-          },
-          body: JSON.stringify({
-            message: transcript,
-            created_by: 425425,
-          }),
-        });
-
-        const { status, parsed } = res || {};
-
-        if (status === "saved") {
-          handedOff = true;
-          speakText(getSpeechText("saved", currentLang), {
-            lang: langVoiceCode,
-            onComplete: () => setIsProcessingVoice(false),
-          });
-          lastTranscriptRef.current = "";
-          return;
-        }
-
-        if (status === "missing_fields") {
-          const dueISO = extractTimeFromText(transcript, currentLang);
-          const staffGuess = staffList.find((s) =>
-            transcript.toLowerCase().includes(s.name.toLowerCase())
-          );
-          const assignedName = staffGuess?.name;
-
-          if (parsed?.title && dueISO && assignedName) {
-            try {
-              const created = await secureFetch("/tasks", {
-                method: "POST",
-                body: JSON.stringify({
-                  title: parsed.title,
-                  description: parsed.description || "",
-                  assigned_to_name: assignedName,
-                  due_at: dueISO,
-                  created_by: 425425,
-                  input_method: "voice",
-                  voice_response: true,
-                }),
-              });
-              setTasks((prev) => [created, ...prev]);
-              handedOff = true;
-              speakText(getSpeechText("saved", currentLang), {
-                lang: langVoiceCode,
-                onComplete: () => setIsProcessingVoice(false),
-              });
-              lastTranscriptRef.current = "";
-            } catch (manualErr) {
-              console.error("❌ Failed to save manually completed task", manualErr);
-              toast.error(t("Failed to save manually completed task."));
-              handedOff = true;
-              promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
-            }
-          } else {
-            handedOff = true;
-            promptAndListen(
-              `${getSpeechText("missing_fields", currentLang)}. ${getSpeechText(
-                "missing_fields_example",
-                currentLang
-              )}`,
-              langVoiceCode
-            );
-            lastTranscriptRef.current = "";
-          }
-          return;
-        }
-
-        handedOff = true;
-        promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
-      } catch (err) {
-        console.error("❌ Voice-task error:", err);
-        toast.error(t("Failed to process speech."));
-        handedOff = true;
-        promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
-      } finally {
-        if (!handedOff) {
-          setIsProcessingVoice(false);
-        }
-      }
-    },
-    [
-      langVoiceCode,
-      promptAndListen,
-      speakText,
-      staffList,
-      startListening,
-      setTasks,
-      secureFetch,
-    ]
-  );
-
-  useEffect(() => {
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
-
-    recognition.onresult = handleRecognition;
-    recognition.onstart = () => {
-      listeningRef.current = true;
-    };
-    recognition.onend = () => {
-      listeningRef.current = false;
-      setIsProcessingVoice(false);
-    };
-    recognition.onerror = (event) => {
-      listeningRef.current = false;
-      if (event?.error && event.error !== "aborted") {
-        console.error("🎤 Mic error:", event.error);
-        promptAndListen(getSpeechText("error", currentLang), langVoiceCode);
-      } else {
-        setIsProcessingVoice(false);
-      }
-    };
-
-    return () => {
-      recognition.onresult = null;
-      recognition.onstart = null;
-      recognition.onend = null;
-      recognition.onerror = null;
-    };
-  }, [handleRecognition, langVoiceCode, promptAndListen, currentLang]);
-
-
-  const startVoiceRecognition = useCallback(() => {
-    if (!recognitionRef.current) {
-      toast.warn("Speech recognition is not available on this device.");
-      return;
-    }
-
-    lastTranscriptRef.current = "";
-    setIsProcessingVoice(true);
-    stopListening();
-    cancelSpeech();
-    promptAndListen(getSpeechText("start", currentLang), langVoiceCode);
-  }, [
-    cancelSpeech,
-    currentLang,
-    langVoiceCode,
-    promptAndListen,
-    stopListening,
-  ]);
-
-
-
 
   // Manual submit
   const handleManualSubmit = async () => {
@@ -587,7 +123,6 @@ const extractTimeFromText = (text, lang = "en") => {
         }),
       });
 
-      // ✅ Let socket handle adding the task — no duplication
       toast.success(t("Task added"));
       setManualTitle("");
       setManualDescription("");
@@ -599,7 +134,6 @@ const extractTimeFromText = (text, lang = "en") => {
     }
   };
 
-
   const handleStartTask = async (id) => {
     try {
       const updated = await secureFetch(`/tasks/${id}/start`, { method: "PATCH" });
@@ -610,6 +144,7 @@ const extractTimeFromText = (text, lang = "en") => {
       toast.error(t("Failed to start task"));
     }
   };
+
   const handleCompleteTask = async (id) => {
     try {
       const updated = await secureFetch(`/tasks/${id}/complete`, { method: "PATCH" });
@@ -620,6 +155,7 @@ const extractTimeFromText = (text, lang = "en") => {
       toast.error(t("Failed to complete task"));
     }
   };
+
   const formatDuration = (s, e = new Date()) => {
     const ms = new Date(e) - new Date(s);
     return `${Math.floor(ms/60000)}m ${Math.floor((ms%60000)/1000)}s`;
@@ -645,45 +181,40 @@ const extractTimeFromText = (text, lang = "en") => {
     }
   };
 
-
-
-
-
   const handleSaveEdit = async (taskId) => {
-  try {
-    const payload = {
-      title: editedTask.title?.trim(),
-      description: editedTask.description?.trim() || "",
-      assigned_to: editedTask.assigned_to ? Number(editedTask.assigned_to) : null,
-      due_at: editedTask.due_at || null,
-      priority: editedTask.priority || "medium",
-      station: editedTask.station || null,
-    };
+    try {
+      const payload = {
+        title: editedTask.title?.trim(),
+        description: editedTask.description?.trim() || "",
+        assigned_to: editedTask.assigned_to ? Number(editedTask.assigned_to) : null,
+        due_at: editedTask.due_at || null,
+        priority: editedTask.priority || "medium",
+        station: editedTask.station || null,
+      };
 
-    // Ensure title exists before sending
-    if (!payload.title) {
-      toast.warning(t("Task title is required."));
-      return;
+      if (!payload.title) {
+        toast.warning(t("Task title is required."));
+        return;
+      }
+
+      const updatedTask = await secureFetch(`/tasks/${taskId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      const updated = tasks.map((t) =>
+        t.id === taskId ? updatedTask : t
+      );
+      setTasks(updated);
+      setSelectedTask((prev) => (prev?.id === taskId ? updatedTask : prev));
+      setEditingTaskId(null);
+      setEditedTask({});
+      toast.success(t("Task updated!"));
+    } catch (err) {
+      console.error("❌ Failed to update task", err);
+      toast.error(t("Failed to save task"));
     }
-
-    const updatedTask = await secureFetch(`/tasks/${taskId}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-
-    const updated = tasks.map((t) =>
-      t.id === taskId ? updatedTask : t
-    );
-    setTasks(updated);
-    setSelectedTask((prev) => (prev?.id === taskId ? updatedTask : prev));
-    setEditingTaskId(null);
-    setEditedTask({});
-    toast.success(t("Task updated!"));
-  } catch (err) {
-    console.error("❌ Failed to update task", err);
-    toast.error(t("Failed to save task"));
-  }
-};
+  };
 
   const now = new Date();
   const searchValue = searchTerm.trim().toLowerCase();
@@ -861,7 +392,6 @@ const extractTimeFromText = (text, lang = "en") => {
     setEditedTask({});
   };
 
-  const voiceButtonLabel = isProcessingVoice ? t("Listening...") : t("Speak Task");
   const isTaskSelectedEditing = selectedTask && editingTaskId === selectedTask.id;
   const selectedStaffMember = selectedTask
     ? staffList.find((s) => s.id === selectedTask.assigned_to)
@@ -898,6 +428,109 @@ const extractTimeFromText = (text, lang = "en") => {
         low: "bg-emerald-100 text-emerald-700",
       };
 
+  const renderTaskCard = (task) => {
+    const assigned = staffList.find((s) => s.id === task.assigned_to);
+    const priorityKey = (task.priority || "medium").toLowerCase();
+    const priorityClass = priorityPills[priorityKey] || priorityPills.medium;
+    const overdue = isOverdue(task);
+    const isSelected = selectedTask?.id === task.id;
+
+    return (
+      <button
+        type="button"
+        onClick={() => handleSelectTask(task)}
+        className={`w-full text-left rounded-2xl border p-4 transition-all ${
+          isSelected ? "ring-2 ring-sky-400 border-transparent" : "hover:-translate-y-0.5"
+        } ${
+          darkMode
+            ? "bg-slate-900/70 border-white/10 hover:bg-slate-900"
+            : "bg-white border-slate-200 hover:border-sky-200 hover:bg-sky-50/40"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold leading-tight">{task.title}</p>
+            {task.description && (
+              <p className="mt-1 text-xs opacity-70 line-clamp-2">{task.description}</p>
+            )}
+          </div>
+          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${priorityClass}`}>
+            {t(
+              (task.priority || "medium").charAt(0).toUpperCase() +
+                (task.priority || "medium").slice(1)
+            )}
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide opacity-70">
+          <span
+            className={`px-2 py-0.5 rounded-full ${
+              overdue
+                ? darkMode
+                  ? "bg-rose-500/20 text-rose-200"
+                  : "bg-rose-100 text-rose-600"
+                : darkMode
+                ? "bg-emerald-500/15 text-emerald-200"
+                : "bg-emerald-100 text-emerald-600"
+            }`}
+          >
+            {overdue ? t("Overdue") : t("On track")}
+          </span>
+          <span className={darkMode ? "text-slate-300" : "text-slate-600"}>
+            {formatDueDate(task.due_at)}
+          </span>
+          {assigned && (
+            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              {assigned.name}
+            </span>
+          )}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {task.status !== "completed" && task.status !== "in_progress" && (
+            <button
+              type="button"
+              onClick={async (event) => {
+                event.stopPropagation();
+                handleSelectTask(task);
+                await handleStartTask(task.id);
+              }}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-400/90 text-slate-900 hover:bg-amber-400"
+            >
+              ✅ {t("Start")}
+            </button>
+          )}
+          {task.status === "in_progress" && (
+            <button
+              type="button"
+              onClick={async (event) => {
+                event.stopPropagation();
+                handleSelectTask(task);
+                await handleCompleteTask(task.id);
+              }}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/90 text-white hover:bg-emerald-500"
+            >
+              ✔️ {t("Complete")}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleSelectTask(task);
+              beginEditTask(task);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
+              darkMode
+                ? "bg-white/10 text-slate-100 hover:bg-white/20"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            ✏️ {t("Edit")}
+          </button>
+        </div>
+      </button>
+    );
+  };
+
   return (
     <div
       className={`min-h-screen transition-colors duration-300 ${
@@ -921,17 +554,6 @@ const extractTimeFromText = (text, lang = "en") => {
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <button
-                onClick={startVoiceRecognition}
-                disabled={isProcessingVoice}
-                className={`px-4 py-2.5 rounded-2xl text-sm font-semibold shadow transition ${
-                  isProcessingVoice
-                    ? "opacity-70 cursor-not-allowed"
-                    : "hover:-translate-y-0.5 hover:shadow-md"
-                } ${darkMode ? "bg-indigo-500/90 text-white" : "bg-indigo-500 text-white"}`}
-              >
-                🎤 {voiceButtonLabel}
-              </button>
               <button
                 onClick={() => setShowManualModal(true)}
                 className={`px-4 py-2.5 rounded-2xl text-sm font-semibold shadow hover:-translate-y-0.5 hover:shadow-md transition ${
@@ -1084,8 +706,9 @@ const extractTimeFromText = (text, lang = "en") => {
               </div>
             </section>
 
-            <div className="grid gap-6 xl:grid-cols-[260px_1fr_320px]">
-              <aside className={`${panelBase} rounded-3xl p-5 shadow-sm space-y-5`}>
+            <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
+              <div className="space-y-6">
+              <section className={`${panelBase} rounded-3xl p-5 shadow-sm`}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold uppercase tracking-wide">{t("Team focus")}</h3>
                   {activeStaffId !== null && (
@@ -1097,10 +720,10 @@ const extractTimeFromText = (text, lang = "en") => {
                     </button>
                   )}
                 </div>
-                <div className="space-y-2">
+                <div className="mt-4 flex gap-3 overflow-x-auto pb-1 pr-1">
                   <button
                     onClick={() => setActiveStaffId(null)}
-                    className={`w-full text-left px-4 py-3 rounded-2xl border transition ${
+                    className={`shrink-0 w-[260px] text-left px-4 py-3 rounded-2xl border transition ${
                       activeStaffId === null
                         ? "border-sky-400 bg-sky-50 text-sky-700 shadow"
                         : darkMode
@@ -1133,7 +756,7 @@ const extractTimeFromText = (text, lang = "en") => {
                         onClick={() =>
                           setActiveStaffId((prev) => (prev === member.id ? null : member.id))
                         }
-                        className={`w-full text-left px-4 py-3 rounded-2xl border transition ${
+                        className={`shrink-0 w-[260px] text-left px-4 py-3 rounded-2xl border transition ${
                           isActive
                             ? "border-sky-400 bg-sky-50 text-sky-700 shadow"
                             : darkMode
@@ -1160,16 +783,16 @@ const extractTimeFromText = (text, lang = "en") => {
                     );
                   })}
                 </div>
-              </aside>
+              </section>
 
-              <section className="space-y-5 overflow-x-auto pb-2">
-                <div className="flex gap-5 min-w-[720px]">
+              <section className="space-y-6">
+                <div className="space-y-6">
                   {boardColumns.map((column) => {
                     const columnTasks = groupedTasks[column.key] || [];
                     return (
                       <div
                         key={column.key}
-                        className={`${panelBase} ${column.ring || ""} ring-1 rounded-3xl p-4 w-full max-w-[340px] flex-shrink-0 shadow-sm`}
+                        className={`${panelBase} ${column.ring || ""} ring-1 rounded-3xl p-5 shadow-sm`}
                       >
                         <div className={`flex items-center justify-between pb-3 border-b ${dividerClass}`}>
                           <div className="flex items-center gap-2">
@@ -1181,119 +804,17 @@ const extractTimeFromText = (text, lang = "en") => {
                             </span>
                           </div>
                         </div>
-                        <div className="pt-4 space-y-3">
+                        <div className="pt-4">
                           {columnTasks.length === 0 ? (
                             <p className="text-xs opacity-60 rounded-2xl border border-dashed border-slate-300/70 p-4 text-center">
                               {t("No tasks here yet.")}
                             </p>
                           ) : (
-                            columnTasks.map((task) => {
-                              const assigned = staffList.find((s) => s.id === task.assigned_to);
-                              const priorityKey = (task.priority || "medium").toLowerCase();
-                              const priorityClass = priorityPills[priorityKey] || priorityPills.medium;
-                              const overdue = isOverdue(task);
-                              const isSelected = selectedTask?.id === task.id;
-                              return (
-                                <button
-                                  key={task.id}
-                                  type="button"
-                                  onClick={() => handleSelectTask(task)}
-                                  className={`w-full text-left rounded-2xl border p-4 transition-all ${
-                                    isSelected
-                                      ? "ring-2 ring-sky-400 border-transparent"
-                                      : "hover:-translate-y-0.5"
-                                  } ${
-                                    darkMode
-                                      ? "bg-slate-900/70 border-white/10 hover:bg-slate-900"
-                                      : "bg-white border-slate-200 hover:border-sky-200 hover:bg-sky-50/40"
-                                  }`}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                      <p className="text-sm font-semibold leading-tight">{task.title}</p>
-                                      {task.description && (
-                                        <p className="mt-1 text-xs opacity-70 line-clamp-2">
-                                          {task.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${priorityClass}`}>
-                                      {t(
-                                        (task.priority || "medium")
-                                          .charAt(0)
-                                          .toUpperCase() + (task.priority || "medium").slice(1)
-                                      )}
-                                    </span>
-                                  </div>
-                                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide opacity-70">
-                                    <span
-                                      className={`px-2 py-0.5 rounded-full ${
-                                        overdue
-                                          ? darkMode
-                                            ? "bg-rose-500/20 text-rose-200"
-                                            : "bg-rose-100 text-rose-600"
-                                          : darkMode
-                                          ? "bg-emerald-500/15 text-emerald-200"
-                                          : "bg-emerald-100 text-emerald-600"
-                                      }`}
-                                    >
-                                      {overdue ? t("Overdue") : t("On track")}
-                                    </span>
-                                    <span className={darkMode ? "text-slate-300" : "text-slate-600"}>
-                                      {formatDueDate(task.due_at)}
-                                    </span>
-                                    {assigned && (
-                                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                                        {assigned.name}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    {task.status !== "completed" && task.status !== "in_progress" && (
-                                      <button
-                                        type="button"
-                                        onClick={async (event) => {
-                                          event.stopPropagation();
-                                          handleSelectTask(task);
-                                          await handleStartTask(task.id);
-                                        }}
-                                        className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-400/90 text-slate-900 hover:bg-amber-400"
-                                      >
-                                        ✅ {t("Start")}
-                                      </button>
-                                    )}
-                                    {task.status === "in_progress" && (
-                                      <button
-                                        type="button"
-                                        onClick={async (event) => {
-                                          event.stopPropagation();
-                                          handleSelectTask(task);
-                                          await handleCompleteTask(task.id);
-                                        }}
-                                        className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/90 text-white hover:bg-emerald-500"
-                                      >
-                                        ✔️ {t("Complete")}
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        handleSelectTask(task);
-                                        beginEditTask(task);
-                                      }}
-                                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
-                                        darkMode
-                                          ? "bg-white/10 text-slate-100 hover:bg-white/20"
-                                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                      }`}
-                                    >
-                                      ✏️ {t("Edit")}
-                                    </button>
-                                  </div>
-                                </button>
-                              );
-                            })
+                            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                              {columnTasks.map((task) => (
+                                <div key={task.id}>{renderTaskCard(task)}</div>
+                              ))}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1301,6 +822,8 @@ const extractTimeFromText = (text, lang = "en") => {
                   })}
                 </div>
               </section>
+
+              </div>
 
               <aside className={`${panelBase} rounded-3xl p-6 shadow-sm space-y-5`}>
                 {showDetailPanel ? (
@@ -1579,8 +1102,4 @@ const extractTimeFromText = (text, lang = "en") => {
       )}
     </div>
   );
-
-
-
-
 }

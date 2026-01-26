@@ -684,7 +684,7 @@ export default function GlobalOrderAlert() {
           // web: open native preview before printing
           openNativePrintPreview(order);
         }
-        const ok = await printViaBridge("", order);
+        const ok = await printViaBridge("", order, { target: "kitchen" });
         if (!ok) toast.warn("🖨️ Printer job could not be queued");
         else toast.success(`🧾 Printed order #${order.id}`);
         return true;
@@ -711,7 +711,7 @@ export default function GlobalOrderAlert() {
             items: printData.items || [],
           };
           console.log("🖨️ [RemotePrint] Printing directly with received data");
-          await printViaBridge("", order);
+          await printViaBridge("", order, { target: "kitchen" });
           toast.success(`🧾 Printed order #${printData.orderId} from phone app`);
         } else if (printData?.orderId) {
           // Fetch order with items

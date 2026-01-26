@@ -171,11 +171,30 @@ const DEFAULT_LOCAL_CONFIG = {
     margin: 12,
     includeTotals: true,
   },
+  kitchenLayout: {
+    headerTitle: "KITCHEN",
+    headerSubtitle: "",
+    alignment: "left",
+    paperWidth: "58mm",
+    spacing: 1.15,
+    itemFontSize: 15,
+    showLogo: false,
+    showHeader: true,
+    showInvoiceNumber: true,
+    showTableNumber: true,
+    showStaffName: false,
+    showPacketCustomerInfo: true,
+    showNotes: true,
+    showPrices: false,
+    showTotals: false,
+    footerText: "",
+  },
   defaults: {
     cut: true,
     cashDrawer: false,
   },
   customLines: [],
+  kitchenCustomLines: [],
   lastSynced: null,
 };
 
@@ -413,6 +432,10 @@ if ($ok) { Write-Output '{"ok":true}' } else { Write-Output '{"ok":false,"error"
 function normalizePrinterConfig(payload = {}, updateTimestamp = false) {
   const layoutOverride =
     payload.layout && typeof payload.layout === "object" ? payload.layout : {};
+  const kitchenLayoutOverride =
+    payload.kitchenLayout && typeof payload.kitchenLayout === "object"
+      ? payload.kitchenLayout
+      : {};
   const defaultsOverride =
     payload.defaults && typeof payload.defaults === "object" ? payload.defaults : {};
   const merged = {
@@ -426,10 +449,17 @@ function normalizePrinterConfig(payload = {}, updateTimestamp = false) {
       ...DEFAULT_LOCAL_CONFIG.layout,
       ...layoutOverride,
     },
+    kitchenLayout: {
+      ...DEFAULT_LOCAL_CONFIG.kitchenLayout,
+      ...kitchenLayoutOverride,
+    },
   };
   merged.customLines = Array.isArray(payload.customLines)
     ? payload.customLines
     : merged.customLines;
+  merged.kitchenCustomLines = Array.isArray(payload.kitchenCustomLines)
+    ? payload.kitchenCustomLines
+    : merged.kitchenCustomLines;
   if (updateTimestamp) {
     merged.lastSynced = new Date().toISOString();
   }
