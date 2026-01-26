@@ -85,9 +85,16 @@ const [orderTimers, setOrderTimers] = useState(() => {
     return {};
   }
 });
-const [drivers, setDrivers] = useState([]);
-const [recentlyAssigned, setRecentlyAssigned] = useState({});
-const [viewMode, setViewMode] = useState("grouped");
+  const [drivers, setDrivers] = useState([]);
+  const [recentlyAssigned, setRecentlyAssigned] = useState({});
+  const [viewMode, setViewMode] = useState("grouped");
+
+  useEffect(() => {
+    if (!import.meta?.env?.DEV) return;
+    if (typeof window === "undefined") return;
+    window.__kitchenOrders = orders;
+    window.__kitchenOrdersMeta = { page: "Kitchen", updatedAt: Date.now() };
+  }, [orders]);
 const audioCtxRef = useRef(null);
 const prevOrdersRef = useRef([]);
 

@@ -32,6 +32,13 @@ export default function KitchenNew() {
   const [excludedCategories, setExcludedCategories] = useState([]);
   const [excludedItems, setExcludedItems] = useState([]);
 
+  useEffect(() => {
+    if (!import.meta?.env?.DEV) return;
+    if (typeof window === "undefined") return;
+    window.__kitchenOrders = orders;
+    window.__kitchenOrdersMeta = { page: "KitchenNew", updatedAt: Date.now() };
+  }, [orders]);
+
   // Update timers every second
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
