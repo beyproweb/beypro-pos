@@ -31,7 +31,15 @@ const formatOnlineSourceLabel = (source) => {
 };
 
 const resolveOnlineSourceLabelFromOrder = (order) => {
-  const direct = formatOnlineSourceLabel(order?.external_source);
+  const sourceCandidate =
+    order?.external_source ??
+    order?.externalSource ??
+    order?.source ??
+    order?.platform ??
+    order?.provider ??
+    order?.integration_source ??
+    order?.integrationSource;
+  const direct = formatOnlineSourceLabel(sourceCandidate);
   if (direct) return direct;
   const payment = String(order?.payment_method || "").toLowerCase();
   if (!payment) return null;

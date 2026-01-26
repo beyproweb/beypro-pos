@@ -582,7 +582,15 @@ function OrderCard({
   };
 
   const resolveOnlineSourceLabelFromOrder = (o) => {
-    const direct = formatOnlineSourceLabel(o?.external_source);
+    const sourceCandidate =
+      o?.external_source ??
+      o?.externalSource ??
+      o?.source ??
+      o?.platform ??
+      o?.provider ??
+      o?.integration_source ??
+      o?.integrationSource;
+    const direct = formatOnlineSourceLabel(sourceCandidate);
     if (direct) return direct;
     const payment = String(o?.payment_method || "").toLowerCase();
     if (!payment) return null;

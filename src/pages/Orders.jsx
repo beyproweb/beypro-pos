@@ -380,6 +380,7 @@ const [cancelOrder, setCancelOrder] = useState(null);
 const [cancelReason, setCancelReason] = useState("");
 const [cancelLoading, setCancelLoading] = useState(false);
 const [refundMethodId, setRefundMethodId] = useState("");
+const [refundMode, setRefundMode] = useState("refund");
 
 const [transactionSettings, setTransactionSettings] = useState(
   DEFAULT_TRANSACTION_SETTINGS
@@ -685,6 +686,7 @@ const openCancelModalForOrder = useCallback(
     setCancelOrder(order);
     setCancelReason("");
     setCancelLoading(false);
+    setRefundMode("refund");
     setRefundMethodId(getDefaultRefundMethod(order));
     setShowCancelModal(true);
   },
@@ -696,6 +698,7 @@ const closeCancelModal = useCallback(() => {
   setCancelOrder(null);
   setCancelReason("");
   setCancelLoading(false);
+  setRefundMode("refund");
 }, []);
 
 
@@ -2168,15 +2171,16 @@ const renderCancelModal = () => {
 
   const totalWithExtras = calcOrderTotalWithExtras(cancelOrder);
   const totalDiscount = calcOrderDiscount(cancelOrder);
-  const discountedTotal = totalWithExtras - totalDiscount;
-  const refundAmount = isOrderPaid(cancelOrder) ? discountedTotal : 0;
-  const isUnpaidPaymentMethod =
-    (cancelOrder?.payment_method || "").toLowerCase().trim() === "unpaid";
-  const shouldShowRefundMethod = refundAmount > 0 && !isUnpaidPaymentMethod;
+	  const discountedTotal = totalWithExtras - totalDiscount;
+	  const refundAmount = isOrderPaid(cancelOrder) ? discountedTotal : 0;
+	  const isUnpaidPaymentMethod =
+	    (cancelOrder?.payment_method || "").toLowerCase().trim() === "unpaid";
+	  const shouldShowRefundMethod = refundAmount > 0 && !isUnpaidPaymentMethod;
+    const shouldProcessRefund = shouldShowRefundMethod && refundMode !== "no_refund";
 
-  const handleConfirm = async () => {
-    if (!cancelOrder?.id) {
-      toast.error(t("Select an order first"));
+	  const handleConfirm = async () => {
+	    if (!cancelOrder?.id) {
+	      toast.error(t("Select an order first"));
       return;
     }
     const trimmedReason = cancelReason.trim();
@@ -2185,23 +2189,23 @@ const renderCancelModal = () => {
       return;
     }
 
-    setCancelLoading(true);
-    try {
-      const payload = { reason: trimmedReason };
-      if (shouldShowRefundMethod && refundMethodId) {
-        payload.refund_method = refundMethodId;
-      }
+	    setCancelLoading(true);
+	    try {
+	      const payload = { reason: trimmedReason };
+	      if (shouldProcessRefund && refundMethodId) {
+	        payload.refund_method = refundMethodId;
+	      }
 
       const result = await secureFetch(`/orders/${cancelOrder.id}/cancel`, {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
 
-      if (refundAmount > 0 && shouldShowRefundMethod) {
-        const refundLabel =
-          getPaymentMethodLabel(methodOptionSource, refundMethodId) ||
-          refundMethodId ||
-          t("Unknown");
+	      if (refundAmount > 0 && shouldProcessRefund) {
+	        const refundLabel =
+	          getPaymentMethodLabel(methodOptionSource, refundMethodId) ||
+	          refundMethodId ||
+	          t("Unknown");
         const note = cancelOrder?.id
           ? `Refund for Order #${cancelOrder.id} (${refundLabel})`
           : t("Refund recorded");
@@ -2261,27 +2265,53 @@ const renderCancelModal = () => {
           {t("The cancellation reason will be recorded for auditing.")}
         </p>
 
-        {shouldShowRefundMethod ? (
-          <div className="space-y-3 rounded-2xl border border-dashed border-rose-100 bg-rose-50/60 p-4 mb-3 dark:border-rose-500/25 dark:bg-rose-950/20">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-rose-500">
-              {t("Refund Method")}
-              <select
-                className="mt-1 w-full rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm text-rose-600 focus:border-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-100 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-200 dark:focus:ring-rose-500/20"
-                value={refundMethodId}
-                onChange={(event) => setRefundMethodId(event.target.value)}
-              >
-                {methodOptionSource.map((method) => (
-                  <option key={method.id} value={method.id}>
-                    {method.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="text-xs text-rose-500 dark:text-rose-300">
-              {t("Refund amount")}: {formatCurrency(refundAmount)}
-            </p>
-          </div>
-        ) : (
+	        {shouldShowRefundMethod ? (
+	          <div className="space-y-3 rounded-2xl border border-dashed border-rose-100 bg-rose-50/60 p-4 mb-3 dark:border-rose-500/25 dark:bg-rose-950/20">
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="inline-flex items-center gap-2 text-xs font-semibold text-rose-600 dark:text-rose-200">
+                  <input
+                    type="radio"
+                    name="refund-mode"
+                    checked={refundMode === "refund"}
+                    onChange={() => setRefundMode("refund")}
+                  />
+                  {t("Refund")}
+                </label>
+                <label className="inline-flex items-center gap-2 text-xs font-semibold text-rose-600 dark:text-rose-200">
+                  <input
+                    type="radio"
+                    name="refund-mode"
+                    checked={refundMode === "no_refund"}
+                    onChange={() => setRefundMode("no_refund")}
+                  />
+                  {t("No refund")}
+                </label>
+              </div>
+	            <label className="block text-xs font-semibold uppercase tracking-wide text-rose-500">
+	              {t("Refund Method")}
+                {refundMode === "refund" ? (
+                  <select
+                    className="mt-1 w-full rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm text-rose-600 focus:border-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-100 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-200 dark:focus:ring-rose-500/20"
+                    value={refundMethodId}
+                    onChange={(event) => setRefundMethodId(event.target.value)}
+                  >
+                    {methodOptionSource.map((method) => (
+                      <option key={method.id} value={method.id}>
+                        {method.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="mt-1 rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-rose-500/30 dark:bg-slate-900 dark:text-slate-200">
+                    {t("No refund will be recorded for this cancellation.")}
+                  </div>
+                )}
+	            </label>
+	            <p className="text-xs text-rose-500 dark:text-rose-300">
+	              {t("Refund amount")}: {formatCurrency(refundAmount)}
+	            </p>
+	          </div>
+	        ) : (
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             {t("No paid items detected. This will simply cancel the order.")}
           </p>
@@ -2989,18 +3019,27 @@ const totalDiscount = calcOrderDiscount(order);
         );
       }}
       className="appearance-none bg-white border border-slate-300 rounded-md text-slate-900 text-sm font-semibold px-2.5 py-1 pr-6 focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 transition-all"
-    >
-      <option value="">{t("Unassigned")}</option>
-      {drivers.map((d) => (
-        <option key={d.id} value={d.id}>
-          {d.name}
-        </option>
-      ))}
-    </select>
-    {shouldShowManualConfirm && (
-      <button
-        type="button"
-        onClick={(e) => {
+	    >
+	      <option value="">{t("Unassigned")}</option>
+	      {drivers.map((d) => (
+	        <option key={d.id} value={d.id}>
+	          {d.name}
+	        </option>
+	      ))}
+	    </select>
+      {isExternalOnlineOrder && (
+        <button
+          type="button"
+          onClick={() => openCancelModalForOrder(order)}
+          className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
+        >
+          {t("Cancel")}
+        </button>
+      )}
+	    {shouldShowManualConfirm && (
+	      <button
+	        type="button"
+	        onClick={(e) => {
           e.stopPropagation();
           confirmOnlineOrder(order);
         }}
@@ -3010,22 +3049,24 @@ const totalDiscount = calcOrderDiscount(order);
         {confirmingOnlineOrders?.[order.id] ? t("Confirming...") : t("Confirm")}
       </button>
     )}
-    {autoConfirmEnabledForOrder && order.status === "confirmed" ? (
-      <>
-        <span className="inline-flex items-center h-8 rounded-md bg-emerald-100 text-emerald-800 px-3 text-[13px] font-semibold leading-none border border-emerald-300">
-          ✓ {t("Auto Confirmed")}
-        </span>
-        <button
-          type="button"
-          onClick={() => openCancelModalForOrder(order)}
-          className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
-        >
-          {t("Cancel")}
-        </button>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => openPaymentModalForOrder(order)}
-	            className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
+	    {autoConfirmEnabledForOrder && order.status === "confirmed" ? (
+	      <>
+	        <span className="inline-flex items-center h-8 rounded-md bg-emerald-100 text-emerald-800 px-3 text-[13px] font-semibold leading-none border border-emerald-300">
+	          ✓ {t("Auto Confirmed")}
+	        </span>
+          {!isExternalOnlineOrder && (
+            <button
+              type="button"
+              onClick={() => openCancelModalForOrder(order)}
+              className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
+            >
+              {t("Cancel")}
+            </button>
+          )}
+	        <div className="ml-auto flex items-center gap-2">
+	          <button
+	            onClick={() => openPaymentModalForOrder(order)}
+		            className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
             title={t("Edit payment")}
             type="button"
           >
@@ -3044,19 +3085,21 @@ const totalDiscount = calcOrderDiscount(order);
           </span>
         </div>
       </>
-    ) : (
-      <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => openCancelModalForOrder(order)}
-          className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
-        >
-          {t("Cancel")}
-        </button>
-        <button
-          onClick={() => openPaymentModalForOrder(order)}
-	          className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
-          title={t("Edit payment")}
+	    ) : (
+	      <div className="ml-auto flex items-center gap-2">
+          {!isExternalOnlineOrder && (
+            <button
+              type="button"
+              onClick={() => openCancelModalForOrder(order)}
+              className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
+            >
+              {t("Cancel")}
+            </button>
+          )}
+	        <button
+	          onClick={() => openPaymentModalForOrder(order)}
+		          className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
+	          title={t("Edit payment")}
           type="button"
         >
           {order.payment_method ? order.payment_method : "—"}
@@ -3107,25 +3150,44 @@ const totalDiscount = calcOrderDiscount(order);
 	              item.order_item_name ||
 	              t("Unnamed");
 	            const qty = Number(item.quantity || 1);
-	            const unit = Number(item.price || 0);
-	            const lineTotal = unit * qty;
-              const itemNote = String(
-                item.note || item.notes || item.item_note || item.special_instructions || ""
-              ).trim();
-              const extrasList = (() => {
-                const raw = item.extras;
-                if (!raw) return [];
-                if (Array.isArray(raw)) return raw;
-                if (typeof raw === "string") {
-                  try {
-                    const parsed = JSON.parse(raw);
-                    return Array.isArray(parsed) ? parsed : [];
-                  } catch {
-                    return [];
-                  }
-                }
-                return [];
-              })();
+	            const rawPrice = Number(item.price || 0);
+              const unitPrice =
+                Number(item?.unit_price) || (order?.external_id ? rawPrice / qty : rawPrice);
+	              const itemNote = String(
+	                item.note || item.notes || item.item_note || item.special_instructions || ""
+	              ).trim();
+	              const extrasList = (() => {
+	                const raw = item.extras;
+	                if (!raw) return [];
+	                if (Array.isArray(raw)) return raw;
+	                if (typeof raw === "string") {
+	                  try {
+	                    const parsed = JSON.parse(raw);
+	                    return Array.isArray(parsed) ? parsed : [];
+	                  } catch {
+	                    return [];
+	                  }
+	                }
+	                return [];
+	              })();
+              const extrasTotalPerUnit = extrasList.reduce((sum, ex) => {
+                const price = Number(ex?.price ?? ex?.extraPrice ?? 0) || 0;
+                const exQty = Number(ex?.quantity ?? ex?.qty ?? 1) || 1;
+                return sum + price * exQty;
+              }, 0);
+              const baseTotal = unitPrice * qty;
+              const extrasTotal = extrasTotalPerUnit * qty;
+              const discountValue = Number(item?.discount_value) || 0;
+              const discountType = String(item?.discount_type || "").toLowerCase().trim();
+              const lineDiscount =
+                discountValue > 0
+                  ? discountType === "percent"
+                    ? baseTotal * (discountValue / 100)
+                    : discountType === "fixed"
+                      ? discountValue
+                      : 0
+                  : 0;
+              const lineTotal = baseTotal + extrasTotal - lineDiscount;
               const extrasLabel = extrasList
                 .map((ex) => {
                   const exName = ex?.name || ex?.extra_name || ex?.title || "";
@@ -3146,6 +3208,21 @@ const totalDiscount = calcOrderDiscount(order);
 	              <div className="font-mono font-semibold text-slate-700 whitespace-nowrap text-right">
 	                {formatCurrency(lineTotal)}
 	              </div>
+                <div className="col-span-2 pl-5 text-[11px] text-slate-600">
+                  <span className="font-mono">
+                    {qty}× {formatCurrency(unitPrice)} = {formatCurrency(baseTotal)}
+                  </span>
+                  {extrasTotal > 0 && (
+                    <span className="ml-2 font-mono text-emerald-700 font-semibold">
+                      + {formatCurrency(extrasTotal)}
+                    </span>
+                  )}
+                  {lineDiscount > 0 && (
+                    <span className="ml-2 font-mono text-rose-700 font-semibold">
+                      − {formatCurrency(lineDiscount)}
+                    </span>
+                  )}
+                </div>
                 {(extrasLabel || itemNote) && (
                   <div className="col-span-2 pl-5 text-xs text-slate-700">
                     {extrasLabel && (
@@ -3164,6 +3241,50 @@ const totalDiscount = calcOrderDiscount(order);
 	            );
 	          })}
 	        </div>
+          <div className="mt-2 border-t border-white/80 pt-2 text-[12px] text-slate-700">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">{t("Items total")}</span>
+              <span className="font-mono font-semibold">
+                {formatCurrency(calcOrderTotalWithExtras(order))}
+              </span>
+            </div>
+            {calcOrderDiscount(order) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">{t("Discount")}</span>
+                <span className="font-mono font-semibold text-rose-700">
+                  − {formatCurrency(calcOrderDiscount(order))}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">{t("Total")}</span>
+              <span className="font-mono font-extrabold text-emerald-700">
+                {formatCurrency(discountedTotal)}
+              </span>
+            </div>
+            {Number.isFinite(Number(order?.total)) && (
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">{t("Order total (saved)")}</span>
+                <span className="font-mono font-semibold">
+                  {formatCurrency(Number(order.total))}
+                </span>
+              </div>
+            )}
+            {Number.isFinite(Number(order?.total)) && (
+              (() => {
+                const diff = Number(order.total) - Number(discountedTotal || 0);
+                if (Math.abs(diff) < 0.01) return null;
+                return (
+                  <div className="mt-1 rounded-md bg-amber-100/70 border border-amber-200 px-2 py-1 text-amber-900">
+                    ⚠️ {t("Price discrepancy")}:{" "}
+                    <span className="font-mono font-bold">
+                      {formatCurrency(diff)}
+                    </span>
+                  </div>
+                );
+              })()
+            )}
+          </div>
 	        {displayOrderNote && (
 	          <div className="mt-1 text-xs text-slate-700 italic">
 	            📝 {displayOrderNote}
