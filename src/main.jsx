@@ -4,6 +4,10 @@ import { BrowserRouter, HashRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
 
+// ✅ Global log silencer for production (MUST be early, before React renders)
+import { setupLogSilencer } from './utils/logSilencer';
+setupLogSilencer();
+
 // Robust Electron detection (works even if preload didn't expose window.beypro)
 const isElectron =
   (typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)) ||

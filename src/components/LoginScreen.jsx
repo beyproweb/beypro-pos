@@ -97,27 +97,34 @@ export default function LoginScreen() {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen w-screen bg-gray-50">
+    <div className="flex flex-col lg:flex-row min-h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
       {/* LEFT SIDE - BRAND */}
-      <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-500 text-white items-center justify-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_rgba(255,255,255,0.1),_transparent_70%)]"></div>
+      <div className="hidden lg:flex w-1/2 bg-slate-950 text-white items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.15),_transparent_50%)]"></div>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(59,130,246,0.25),_transparent_60%)]"></div>
 
-        <div className="relative z-10 text-center px-10">
-          <h1 className="text-6xl font-extrabold tracking-tight mb-4 drop-shadow-md">
-            Beypro
-          </h1>
-          <p className="text-lg font-light opacity-90">
-            {t("Level up your business — manage everything in one place.")}
-          </p>
-          <footer className="mt-16 text-sm opacity-80">
-            © {new Date().getFullYear()} Beypro
+        <div className="relative z-10 text-center px-6 py-6">
+          <div className="mx-auto w-[19.8rem] sm:w-[25.2rem]">
+            <img
+              src="/Beylogo.svg"
+              alt="Beypro"
+              className="w-full h-auto drop-shadow-2xl select-none block mx-auto transform lg:translate-x-3"
+              draggable="false"
+            />
+            <p className="mt-1 text-base font-light leading-snug text-white/90 text-center whitespace-nowrap w-full">
+              {t("Level up your business — manage everything in one place.")}
+            </p>
+          </div>
+          <footer className="text-xs tracking-wide uppercase text-white/70">
+            © 2026 Beypro
           </footer>
         </div>
       </div>
 
       {/* RIGHT SIDE - FORM */}
-      <div className="flex w-full lg:w-1/2 items-center justify-center p-6 sm:p-10 bg-white">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+      <div className="flex w-full lg:w-1/2 min-h-screen lg:min-h-0 items-center justify-center p-6 sm:p-10">
+        <div className="w-full max-w-md">
+          <div className="bg-white/95 rounded-3xl border border-white/30 shadow-2xl p-8 backdrop-blur-md">
           <div className="text-center mb-8">
             <h2 className="text-3xl font-extrabold text-gray-900">
               {t("Welcome Back")}
@@ -213,6 +220,7 @@ export default function LoginScreen() {
           <p className="text-center text-xs text-gray-400 mt-10">
             {t("Need help? contact@beypro.com")}
           </p>
+          </div>
         </div>
       </div>
     </div>
