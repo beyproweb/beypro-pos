@@ -292,6 +292,7 @@ const confirmSupplierCart = async (cartId) => {
   if (!cartId || !selectedSupplier?.id) return;
 
   try {
+    console.log('🔍 Confirming cart with autoOrder:', autoOrder);
     const res = await secureFetch(`/supplier-carts/${cartId}/confirm`, {
       method: "PUT",
       body: JSON.stringify({
@@ -301,20 +302,23 @@ const confirmSupplierCart = async (cartId) => {
         auto_confirm: autoOrder,
       }),
     });
+    console.log('✅ Cart confirmed, auto_confirm in response:', res.cart?.auto_confirm);
 
     if (!res.cart) return;
     const confirmedCart = res.cart;
 
-    // Reload using the confirmed cart id
-const latest = await secureFetch(
-     `/supplier-carts/scheduled?supplier_id=${selectedSupplier?.
-id}`
-   );
+    // ✅ Reload the latest scheduled cart data
+    const latest = await secureFetch(
+      `/supplier-carts/scheduled?supplier_id=${selectedSupplier?.id}`
+    );
 
-    if (latest.scheduled_at) setScheduledAt(latest.scheduled_at);
-    if (latest.repeat_type) setRepeatType(latest.repeat_type);
-    if (Array.isArray(latest.repeat_days)) setRepeatDays(latest.repeat_days);
-    if (typeof latest.auto_confirm === "boolean") setAutoOrder(latest.auto_confirm);
+    // ✅ Always update state, even if values are "none" or empty
+    console.log('📥 Fetched latest cart, auto_confirm:', latest.auto_confirm);
+    setScheduledAt(latest.scheduled_at || "");
+    setRepeatType(latest.repeat_type || "none");
+    setRepeatDays(Array.isArray(latest.repeat_days) ? latest.repeat_days : []);
+    setAutoOrder(latest.auto_confirm === true);
+    console.log('✅ Set autoOrder state to:', latest.auto_confirm === true);
     setCartItems(latest.items || []);
   } catch (err) {
     console.error("❌ Error confirming cart:", err);
@@ -386,11 +390,7 @@ const sendSupplierCart = async (cartId) => {
   };
 
   useEffect(() => {
-    secureFetch("/suppliers")
-      .then((data) => {
-        if (Array.isArray(data)) setSuppliers(data);
-      })
-      .catch((err) => console.error("❌ Error fetching suppliers:", err));
+    fetchSuppliers();
   }, []);
 
   // Calculate unit price for the new transaction
@@ -1195,7 +1195,7 @@ const handlePayment = async () => {
       setSupplierModalOpen(false);
     } catch (error) {
       console.error("❌ Error adding supplier:", error);
-      alert("Something went wrong. Please refresh and try again.");
+      toast.error("Something went wrong. Please refresh and try again.");
     }
   };
 
@@ -1225,7 +1225,7 @@ id}`, {
 
   const handleDownloadHistory = () => {
     if (!transactions.length) {
-      alert("No transactions to export.");
+      toast.warn("No transactions to export.");
       return;
     }
     const worksheet = XLSX.utils.json_to_sheet(transactions);
@@ -1241,7 +1241,7 @@ id}.xlsx`);
 
   const handleClearTransactions = async () => {
     if (!selectedSupplier?.id) return;
-    if (!window.confirm("Are you sure you want to clear all transactions?")) return;
+    if (!confirm(t("Are you sure you want to clear all transactions?"))) return;
     try {
       await secureFetch(`/suppliers/${selectedSupplier?.
 id}/transactions`, {
@@ -1450,134 +1450,112 @@ id}`, {
 
 		      <div className="mx-auto max-w-7xl space-y-10">
 	        {/* --- SUPPLIERS TAB --- */}
-	        {activeTab === "suppliers" && (
-	          <div className="space-y-10">
+		        {activeTab === "suppliers" && (
+		          <>
+		          <div className="space-y-10">
          
 <section
-  id="primary-supplier"  // ✅ ADD THIS
+  id="primary-supplier"
   className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
 >
-                  <div className="space-y-6">
-                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                        {t("Primary supplier")}
-                      </p>
- 
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {t("Choose which supplier you want to review or update.")}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-                      <button
-                        type="button"
-                        className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-                        onClick={() => setSupplierModalOpen(true)}
-                      >
-                        ➕ {t("Add Supplier")}
-                      </button>
-
-                      {selectedSupplier && (
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-                          onClick={() => handleEditSupplier(selectedSupplier)}
-                        >
-                          ✏️ {t("Edit Supplier")}
-                        </button>
-                      )}
-
-                      {selectedSupplier && (
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-md"
-                          onClick={() => {
-                            if (window.confirm(t("Are you sure you want to delete this supplier?"))) {
-                              handleDeleteSupplier();
-                            }
-                          }}
-                        >
-                          🗑️ {t("Delete Supplier")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  
-               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 w-full">
-  {/* === Supplier Select (Left on desktop) === */}
-  <div className="relative w-full sm:w-72 order-1 sm:order-none">
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-      <div className="relative flex-1">
-        <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M3 4h18M3 10h18M3 16h18"
-            />
-          </svg>
+  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-4 py-2.5 shadow-sm dark:border-slate-800 dark:bg-slate-950/40 sm:w-auto">
+        <div className="flex h-10 w-10 flex-none items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+          {selectedSupplier?.name
+            ? String(selectedSupplier.name).trim().slice(0, 1).toUpperCase()
+            : "S"}
         </div>
-        <select
-          className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-          value={selectedSupplier?.id || ""}
-          onChange={(e) => handleSelectSupplier(e.target.value)}
-        >
-          <option value="">{t("Select Supplier")}</option>
-          {suppliers.map((supplier) => (
-            <option key={supplier.id} value={supplier.id}>
-              {supplier.name}
-            </option>
-          ))}
-        </select>
-        <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            viewBox="0 0 24 24"
+
+        <div className="relative min-w-0 flex-1">
+          <select
+            className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2 pl-3 pr-10 text-sm font-semibold text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            value={selectedSupplier?.id || ""}
+            onChange={(e) => handleSelectSupplier(e.target.value)}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
+            <option value="">{t("Select Supplier")}</option>
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+              </option>
+            ))}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
         </div>
       </div>
 
       {selectedSupplier?.phone && (
-        <a href={`tel:${selectedSupplier.phone}`} className="sm:flex-none">
+        <a href={`tel:${selectedSupplier.phone}`} className="w-full sm:w-auto">
           <button
             type="button"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow transition hover:shadow-md"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md"
           >
             📞 {t("Call Supplier")}
           </button>
         </a>
       )}
     </div>
-  </div>
 
-                  </div>
+    <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+      <button
+        type="button"
+        className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md"
+        onClick={() => setSupplierModalOpen(true)}
+      >
+        ➕ {t("Add Supplier")}
+      </button>
+
+      {selectedSupplier && (
+        <button
+          type="button"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md"
+          onClick={() => handleEditSupplier(selectedSupplier)}
+        >
+          ✏️ {t("Edit Supplier")}
+        </button>
+      )}
+
+      {selectedSupplier && (
+        <button
+          type="button"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md"
+          onClick={() => {
+            if (confirm(t("Are you sure you want to delete this supplier?"))) {
+              handleDeleteSupplier();
+            }
+          }}
+        >
+          🗑️ {t("Delete Supplier")}
+        </button>
+      )}
+    </div>
+  </div>
+</section>
 
                   <div className="flex flex-col gap-6">
                   {selectedSupplier && (
                     <section
                       id="profile-balance"
-                      className="order-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                      className="order-2 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
                     >
-                      <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-                        <div className="space-y-6">
+                      <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
+                        <div className="space-y-5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
                                 {t("Supplier Profile & Balance")}
                               </h2>
-                              <p className="text-sm text-slate-500 dark:text-slate-400">
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
                                 {t(
                                   "Keep contacts, debt exposure, and account history aligned for your team."
                                 )}
@@ -1588,46 +1566,46 @@ id}`, {
                               {t("Open invoices")}: {supplierFinancials.openInvoices}
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                                 {t("Outstanding")}
                               </p>
-                              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                              <p className="mt-1.5 text-lg font-semibold text-slate-900 dark:text-white">
                                 {formatCurrency(supplierFinancials.outstanding)}
                               </p>
                             </div>
-                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                            <div className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                                 {t("Total purchases")}
                               </p>
-                              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                              <p className="mt-1.5 text-lg font-semibold text-slate-900 dark:text-white">
                                 {formatCurrency(supplierFinancials.totalPurchases)}
                               </p>
                             </div>
-                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                            <div className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                                 {t("Payments made")}
                               </p>
-                              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                              <p className="mt-1.5 text-lg font-semibold text-slate-900 dark:text-white">
                                 {formatCurrency(supplierFinancials.totalPaid)}
                               </p>
                             </div>
-                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                            <div className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+                              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                                 {t("Month spend")}
                               </p>
-                              <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                              <p className="mt-1.5 text-lg font-semibold text-slate-900 dark:text-white">
                                 {formatCurrency(supplierFinancials.monthPurchases)}
                               </p>
                             </div>
                           </div>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="rounded-xl border border-slate-200 bg-white/90 p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+                              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                                 {t("Primary contact")}
                               </p>
-                              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                              <div className="mt-2 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                                 <p>
                                   <strong className="font-semibold text-slate-700 dark:text-white">
                                     {t("Name")}:
@@ -1648,11 +1626,11 @@ id}`, {
                                 </p>
                               </div>
                             </div>
-                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-                              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                            <div className="rounded-xl border border-slate-200 bg-white/90 p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+                              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                                 {t("Business details")}
                               </p>
-                              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                              <div className="mt-2 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                                 <p>
                                   <strong className="font-semibold text-slate-700 dark:text-white">
                                     {t("Tax number")}:
@@ -1681,28 +1659,28 @@ id}`, {
                             </div>
                           </div>
                         </div>
-                        <div className="space-y-4">
-                          <div className="relative overflow-hidden rounded-3xl bg-slate-900 p-6 text-white shadow-lg">
+                        <div className="space-y-3">
+                          <div className="relative overflow-hidden rounded-2xl bg-slate-900 p-4 text-white shadow-lg">
                             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 via-slate-900 to-emerald-500/20" />
-                            <div className="relative z-10 space-y-5">
-                              <div className="flex items-start justify-between gap-3">
+                            <div className="relative z-10 space-y-3.5">
+                              <div className="flex items-start justify-between gap-2">
                                 <div>
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                                  <p className="text-[10px] font-semibold uppercase tracking-wide text-white/60">
                                     {t("Outstanding balance")}
                                   </p>
-                                  <p className="mt-2 text-3xl font-semibold">
+                                  <p className="mt-1.5 text-2xl font-semibold">
                                     {formatCurrency(supplierFinancials.outstanding)}
                                   </p>
                                 </div>
-                                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+                                <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
                                   {t("Coverage")}:{" "}
                                   {coveragePercent !== null
                                     ? `${coveragePercent.toFixed(0)}%`
                                     : "—"}
                                 </span>
                               </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-white/60">
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/60">
                                   <span>{t("Paid coverage")}</span>
                                   <span>
                                     {coveragePercent !== null
@@ -1710,7 +1688,7 @@ id}`, {
                                       : "—"}
                                   </span>
                                 </div>
-                                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                                   <div
                                     className="h-full rounded-full bg-emerald-300"
                                     style={{
@@ -1721,7 +1699,7 @@ id}`, {
                                   />
                                 </div>
                               </div>
-                              <ul className="space-y-1 text-sm text-white/70">
+                              <ul className="space-y-0.5 text-xs text-white/70">
                                 <li>
                                   <span className="font-semibold text-white">
                                     {t("Last invoice")}:
@@ -1739,17 +1717,17 @@ id}`, {
                                     : t("Not available")}
                                 </li>
                               </ul>
-                              <div className="flex flex-wrap gap-3">
+                              <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
-                                  className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:shadow-lg"
+                                  className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow transition hover:shadow-md"
                                   onClick={() => setPaymentModalOpen(true)}
                                 >
                                   ✅ {t("Settle now")}
                                 </button>
                                 <button
                                   type="button"
-                                  className="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-white/30 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/10"
                                   onClick={handleDownloadHistory}
                                 >
                                   📥 {t("Export statement")}
@@ -1757,11 +1735,11 @@ id}`, {
                               </div>
                             </div>
                           </div>
-                          <div className="rounded-2xl border border-slate-200 bg-white/95 p-5 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
-                            <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                          <div className="rounded-xl border border-slate-200 bg-white/95 p-3.5 text-xs shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
+                            <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">
                               {t("Month to date overview")}
                             </p>
-                            <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                            <div className="mt-2 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                               <div className="flex items-center justify-between">
                                 <span>{t("Spend this month")}</span>
                                 <strong className="text-slate-900 dark:text-white">
@@ -1787,19 +1765,19 @@ id}`, {
                                 </strong>
                               </div>
                             </div>
-                            <div className="mt-4 space-y-3">
-                              <p className="text-xs uppercase text-slate-400 dark:text-slate-500">
+                            <div className="mt-3 space-y-2">
+                              <p className="text-[10px] uppercase text-slate-400 dark:text-slate-500">
                                 {t("Recent receipts")}
                               </p>
                               {recentReceipts.length > 0 ? (
                                 recentReceipts.map((receiptTxn) => (
                                   <div
                                     key={receiptTxn.id || receiptTxn.receipt_url}
-                                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300"
+                                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300"
                                   >
-                                    <div className="flex flex-col">
-                                      <span>{receiptTxn.ingredient || t("Purchase")}</span>
-                                      <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500">
+                                    <div className="flex flex-col min-w-0">
+                                      <span className="truncate">{receiptTxn.ingredient || t("Purchase")}</span>
+                                      <span className="text-[9px] font-normal text-slate-400 dark:text-slate-500">
                                         {getLocalizedDate(resolveTxnDate(receiptTxn))}
                                       </span>
                                       {(() => {
@@ -1807,7 +1785,7 @@ id}`, {
                                           getReceiptExpirySummary(receiptTxn);
                                         return (
                                           expiryLabel && (
-                                            <span className="text-[11px] font-normal text-amber-600 dark:text-amber-300">
+                                            <span className="text-[9px] font-normal text-amber-600 dark:text-amber-300">
                                               {expiryLabel}
                                             </span>
                                           )
@@ -1816,7 +1794,7 @@ id}`, {
                                     </div>
                                     <button
                                       type="button"
-                                      className="text-indigo-600 underline hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-200"
+                                      className="text-[10px] text-indigo-600 underline hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-200 flex-shrink-0"
                                       onClick={() =>
                                         setPreviewImage(receiptTxn.receipt_url)
                                       }
@@ -1826,7 +1804,7 @@ id}`, {
                                   </div>
                                 ))
                               ) : (
-                                <p className="text-xs text-slate-400 dark:text-slate-500">
+                                <p className="text-[10px] text-slate-400 dark:text-slate-500">
                                   {t(
                                     "No receipts uploaded yet. Attach one with your next delivery."
                                   )}
@@ -1839,37 +1817,42 @@ id}`, {
                     </section>
                   )}
 
-                    <div
-                      id="purchasing-receipts"
-                      className="order-1 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/60"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <h2 className="text-lg	font-semibold text-slate-900 dark:text-white">
-                            {t("Purchasing & Receipts")}
-                          </h2>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                    <div>
+                      <div
+                        id="purchasing-receipts"
+                        className="rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/60"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                              {t("Purchasing & Receipts")}
+                            </h2>
+                            {selectedSupplier && (
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                  {selectedSupplier.name}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
                             {t(
-                              "Capture deliveries, attach receipts, and keep balances current."
+                              "Manage deliveries, attach receipts, and track balances."
                             )}
                           </p>
                         </div>
-                        {selectedSupplier?.name && (
-                          <div
-                            className="min-w-0 rounded-2xl border border-slate-200 bg-white/90 px-4 py-2 text-lg font-extrabold text-slate-900 shadow-sm truncate dark:border-slate-700 dark:bg-slate-900/60 dark:text-white"
-                            title={selectedSupplier.name}
-                          >
-                            {selectedSupplier.name}
+
+                        <div className="mt-4 border-t border-slate-200/80 dark:border-slate-800" />
+
+                        <form
+                          onSubmit={handleAddTransaction}
+                          className="mt-4 space-y-3"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                              {t("New delivery entry")}
+                            </h3>
                           </div>
-                        )}
-                      </div>
-                      <form
-                        onSubmit={handleAddTransaction}
-                        className="mt-6 space-y-4"
-                      >
-                        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                          {t("New delivery entry")}
-                        </p>
                         {/* --- Multi-ingredient input rows --- */}
 {/* --- Multi-ingredient input rows --- */}
 
@@ -1881,13 +1864,13 @@ id}`, {
   const ingredientSelectValue = row.ingredient_select || "__add_new__";
 
   return (
-    <div key={idx} className="relative mb-6">
+    <div key={idx} className="relative mb-4">
       {/* --- Separator line between rows --- */}
       {idx > 0 && (
-        <div className="my-4 border-t border-dashed border-slate-300 dark:border-slate-700"></div>
+        <div className="my-3 border-t border-dashed border-slate-300 dark:border-slate-700"></div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-8 items-end pl-6">
+      <div className="grid grid-cols-1 gap-1 md:grid-cols-2 xl:grid-cols-9 items-end">
         {/* Ingredient */}
         <label className="flex flex-col gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300 xl:col-span-2">
           {t("Ingredient")}
@@ -1926,7 +1909,7 @@ id}`, {
 
                 setNewTransaction({ ...newTransaction, rows: updated });
               }}
-              className={`min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 ${
+              className={`min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 ${
                 ingredientSelectValue === "__add_new__" ? "col-span-1" : "col-span-2"
               }`}
             >
@@ -1951,7 +1934,7 @@ id}`, {
                   setNewTransaction({ ...newTransaction, rows: updated });
                 }}
                 placeholder={t("New ingredient")}
-                className="min-w-0 col-span-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                className="min-w-0 col-span-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 required
               />
             )}
@@ -1971,7 +1954,7 @@ id}`, {
               updated[idx].quantity = e.target.value;
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             required
           />
         </label>
@@ -1986,7 +1969,7 @@ id}`, {
               updated[idx].unit = e.target.value;
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
           >
             <option value="kg">{t("kg")}</option>
             <option value="g">{t("g")}</option>
@@ -2007,7 +1990,7 @@ id}`, {
               updated[idx].expiry_date = e.target.value;
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
           />
         </label>
 
@@ -2024,7 +2007,7 @@ id}`, {
               updated[idx].tax = e.target.value;
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
           />
         </label>
 
@@ -2041,21 +2024,23 @@ id}`, {
               updated[idx].total_cost = e.target.value;
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base font-medium shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             required
           />
         </label>
 
-        {/* Computed Unit Price + Remove */}
-        <div className="flex items-end justify-between gap-3 h-full text-sm font-semibold text-indigo-600 dark:text-indigo-300">
-          <div className="flex flex-col justify-end min-w-0">
-            <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-              {t("Unit price")}
-            </p>
-            <p className="text-lg mt-1 truncate">
-              {formatCurrency(parseFloat(unitPrice || 0))}
-            </p>
+        {/* Unit Price - Display Only */}
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+            {t("Unit price")}
+          </p>
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 px-3 py-2.5 text-base font-bold text-indigo-600 dark:border-indigo-700/40 dark:bg-indigo-900/20 dark:text-indigo-300">
+            {formatCurrency(parseFloat(unitPrice || 0))}
           </div>
+        </div>
+
+        {/* Remove Button */}
+        <div className="flex items-end justify-end h-full">
           <button
             type="button"
             onClick={() => {
@@ -2073,7 +2058,7 @@ id}`, {
                 });
               setNewTransaction({ ...newTransaction, rows: updated });
             }}
-            className="inline-flex items-center justify-center rounded-full border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-600/40 dark:text-rose-300 dark:hover:bg-rose-900/30 transition"
+            className="inline-flex items-center justify-center rounded-full border border-rose-300 px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-600/40 dark:text-rose-300 dark:hover:bg-rose-900/30 transition"
             aria-label={t("Remove")}
             title={t("Remove")}
           >
@@ -2107,69 +2092,71 @@ id}`, {
       ],
     })
   }
-  className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+  className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-1.5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
 >
   ➕ {t("Add Row")}
 </button>
-	                       <div className="flex flex-wrap items-center gap-3">
-  <div className="flex flex-wrap items-center gap-3">
-  {/* ✅ Confirm Order (adds ingredients before payment) */}
-  <button
-    type="button"
-    onClick={handleAddTransaction}
-    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
-  >
-    ✅ {t("Confirm Order")}
-  </button>
 
-  {/* 💳 Pay Now */}
-  <button
-    type="button"
-    onClick={() => setPaymentModalOpen(true)}
-    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-  >
-    💳 {t("Pay Now")}
-  </button>
+                          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* ✅ Confirm Order (adds ingredients before payment) */}
+                              <button
+                                type="button"
+                                onClick={handleAddTransaction}
+                                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+                              >
+                                ✅ {t("Confirm Order")}
+                              </button>
 
-  {/* 📸 Upload Receipt */}
-  <button
-    type="button"
-    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-    onClick={() => setShowUploadOptions(true)}
-  >
-    📸 {t("Upload Receipt")}
-  </button>
-  </div>
+                              {/* 💳 Pay Now */}
+                              <button
+                                type="button"
+                                onClick={() => setPaymentModalOpen(true)}
+                                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                              >
+                                💳 {t("Pay Now")}
+                              </button>
 
-	  <div className="ml-auto w-full sm:w-auto rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-2.5 text-right text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
-	    {(() => {
-	      const totalOrder = newTransaction.rows?.reduce(
-	        (sum, r) => sum + (parseFloat(r.total_cost) || 0),
-	        0
-	      );
+                              {/* 📸 Upload Receipt */}
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                onClick={() => setShowUploadOptions(true)}
+                              >
+                                📸 {t("Upload Receipt")}
+                              </button>
+                            </div>
 
-	      return (
-	        <div className="flex items-baseline justify-end gap-2">
-	          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-	            {t("Total price")}
-	          </span>
-	          <span
-	            className={`text-lg font-semibold ${
-	              totalOrder >= 0
-	                ? "text-rose-600 dark:text-rose-400"
-	                : "text-emerald-600 dark:text-emerald-400"
-	            }`}
-	          >
-	            +{formatCurrency(totalOrder)}
-	          </span>
-	        </div>
-	      );
-	    })()}
-	  </div>
-</div>
+                            <div className="sm:ml-auto rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-2 text-right text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+                              {(() => {
+                                const totalOrder = newTransaction.rows?.reduce(
+                                  (sum, r) => sum + (parseFloat(r.total_cost) || 0),
+                                  0
+                                );
 
-                     </form>
-</div>
+                                return (
+                                  <div className="flex items-baseline justify-end gap-2">
+                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                      {t("Total price")}
+                                    </span>
+                                    <span
+                                      className={`text-lg font-semibold ${
+                                        totalOrder >= 0
+                                          ? "text-rose-600 dark:text-rose-400"
+                                          : "text-emerald-600 dark:text-emerald-400"
+                                      }`}
+                                    >
+                                      +{formatCurrency(totalOrder)}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+
                   </div>
 
 		   <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -2539,10 +2526,7 @@ id}`, {
                         )}
                       </div>
                     </div>
-
-                 
-	                  </div>
-	                </section>
+ 
 	{/* === SUPPLIER OVERVIEW SECTION === */}
 	<section id="supplier-overview" className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
 	  <div className="space-y-6">
@@ -2941,6 +2925,7 @@ id}`, {
               </div> 
             )}
           </div>
+		          </>
         )}
 
         {isSupplierModalOpen && (

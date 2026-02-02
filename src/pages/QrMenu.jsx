@@ -960,33 +960,37 @@ return (
         <p className="mt-3 text-lg font-light text-gray-600">{subtitle}</p>
         <p className="mt-3 text-base text-gray-500 max-w-xl">{tagline}</p>
 
-        {/* ORDER TYPE BUTTONS — moved under main title for mobile-first */}
-        <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl">
+        {/* ORDER TYPE BUTTONS */}
+        <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3 max-w-xl">
           <button
             onClick={() => onSelect("takeaway")}
-            className="py-5 rounded-2xl bg-gray-900 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
+            className="min-w-0 px-2 py-4 sm:py-5 rounded-2xl bg-gray-900 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
           >
-            <UtensilsCrossed className="w-6 h-6" />
-            <span className="text-xs font-semibold tracking-wide">{t("Pre Order")}</span>
+            <UtensilsCrossed className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
+              {t("Pre Order")}
+            </span>
           </button>
           <button
             onClick={() => onSelect("table")}
-            className="py-5 rounded-2xl bg-gray-800 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
+            className="min-w-0 px-2 py-4 sm:py-5 rounded-2xl bg-gray-800 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
           >
-            <Soup className="w-6 h-6" />
-            <span className="text-xs font-semibold tracking-wide">{t("Table Order")}</span>
+            <Soup className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
+              {t("Table Order")}
+            </span>
           </button>
           <button
             onClick={() => allowDelivery && onSelect("online")}
             disabled={!allowDelivery}
-            className={`py-5 rounded-2xl text-white shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
+            className={`min-w-0 px-2 py-4 sm:py-5 rounded-2xl shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
               allowDelivery
                 ? "bg-red-600 hover:shadow-lg hover:-translate-y-1"
                 : "bg-red-200 text-red-600 cursor-not-allowed"
             }`}
           >
-            <Bike className="w-6 h-6" />
-            <span className="text-xs font-semibold tracking-wide">
+            <Bike className={`w-5 h-5 sm:w-6 sm:h-6 ${allowDelivery ? "text-white" : "text-red-600"}`} />
+            <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
               {allowDelivery ? t("Delivery") : t("Delivery is closed")}
             </span>
           </button>
@@ -1257,8 +1261,8 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
     (!requiresAddress || (form.address || "").trim().length > 0);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md relative">
+    <div className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6">
+      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
         {/* Close */}
         <button
           onClick={onClose}
@@ -1612,8 +1616,8 @@ const showNewCard = !savedCard || !useSaved;
 
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md text-left relative">
+    <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6">
+      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md text-left relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
         {/* Close */}
         <button
           onClick={onClose}
@@ -3245,6 +3249,7 @@ const shareUrl = useMemo(() => {
   const [showTableScanner, setShowTableScanner] = useState(false);
   const [tableScanTarget, setTableScanTarget] = useState(null);
   const [tableScanError, setTableScanError] = useState("");
+  const deliveredResetRef = useRef({ orderId: null, timeoutId: null });
 
   const safeProducts = useMemo(() => toArray(products), [products]);
   const safeCategories = useMemo(() => toArray(categories), [categories]);
@@ -3782,6 +3787,54 @@ if (savedTable) {
       }
       setOrderScreenStatus(s);
 
+      // ✅ If all items are delivered/served, return QR menu to the home flow (non-table only)
+      // This is for customer screens so the next scan/customer starts fresh.
+      const orderTypeRaw = String(data?.order_type || "").toLowerCase();
+      const isTableOrder = orderTypeRaw === "table";
+      if (!isTableOrder && orderId) {
+        try {
+          const itemsPayload = await secureFetch(
+            appendIdentifier(`/orders/${orderId}/items`),
+            opts
+          );
+          const items = Array.isArray(itemsPayload)
+            ? itemsPayload
+            : Array.isArray(itemsPayload?.data)
+            ? itemsPayload.data
+            : Array.isArray(itemsPayload?.items)
+            ? itemsPayload.items
+            : [];
+          const hasItems = Array.isArray(items) && items.length > 0;
+          const allDelivered =
+            hasItems &&
+            items.every((it) => {
+              const ks = String(it?.kitchen_status || "").toLowerCase();
+              return ks === "delivered" || ks === "served";
+            });
+
+          if (allDelivered && deliveredResetRef.current.orderId !== orderId) {
+            deliveredResetRef.current.orderId = orderId;
+            if (deliveredResetRef.current.timeoutId) {
+              window.clearTimeout(deliveredResetRef.current.timeoutId);
+            }
+            deliveredResetRef.current.timeoutId = window.setTimeout(() => {
+              try {
+                storage.removeItem("qr_active_order");
+                storage.removeItem("qr_active_order_id");
+                storage.removeItem("qr_show_status");
+                storage.removeItem("qr_cart");
+                storage.removeItem("qr_orderType");
+              } catch {}
+              resetToTypePicker();
+              deliveredResetRef.current.orderId = null;
+              deliveredResetRef.current.timeoutId = null;
+            }, 1200);
+          }
+        } catch (err) {
+          // If items endpoint fails, don't block status refresh.
+        }
+      }
+
       if (["closed", "completed", "canceled", "cancelled"].includes(s)) {
         // Backend closed the order – mark it inactive for the floating cart
         setActiveOrder(null);
@@ -3798,6 +3851,14 @@ if (savedTable) {
   useEffect(() => {
     refreshOrderScreenStatus();
   }, [refreshOrderScreenStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (deliveredResetRef.current.timeoutId) {
+        window.clearTimeout(deliveredResetRef.current.timeoutId);
+      }
+    };
+  }, []);
 
 
   // QrMenu.jsx

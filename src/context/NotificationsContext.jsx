@@ -471,6 +471,14 @@ export function NotificationsProvider({ children }) {
 
   // Register open/close notifications
   useEffect(() => {
+    const isStandalone =
+      typeof window !== "undefined" &&
+      typeof window.location?.pathname === "string" &&
+      window.location.pathname.startsWith("/standalone");
+    if (isStandalone) {
+      return () => {};
+    }
+
     let isActive = true;
     let timeoutId = null;
     let pollMs = 20000;
@@ -491,7 +499,10 @@ export function NotificationsProvider({ children }) {
     const tick = async () => {
       try {
         const rid = getRestaurantId();
-        if (!rid) {
+        const hasToken =
+          typeof window !== "undefined" &&
+          !!(localStorage.getItem("token") || sessionStorage.getItem("token"));
+        if (!rid || !hasToken) {
           schedule(pollMs);
           return;
         }

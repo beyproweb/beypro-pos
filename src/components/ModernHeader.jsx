@@ -1,11 +1,12 @@
 // src/components/ModernHeader.jsx
 import React from "react";
-import { Menu } from "lucide-react";
+import { Menu, Lock } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useSetting } from "./hooks/useSetting";
 import { useHasPermission } from "./hooks/useHasPermission";
 import { checkRegisterOpen } from "../utils/checkRegisterOpen";
+import { useAuth } from "../context/AuthContext";
 
 /**
  * Prevents flicker of customer name / address (subtitle)
@@ -58,10 +59,12 @@ export default function ModernHeader({
   rightContent,
   previousRoute,
   tableStats = null,
+  onLockClick, // New prop for manual lock
 }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
 
   const isTableOverviewRoute =
     location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
@@ -273,7 +276,7 @@ export default function ModernHeader({
 
   return (
     <header className="sticky top-0 z-40 w-full px-3 md:px-6 h-auto md:h-16 py-2 md:py-0 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
-      {/* Left: Drawer toggle + Back arrow */}
+      {/* Left: Drawer toggle + Lock button */}
       <div className="flex items-center min-w-0 flex-shrink-0 gap-3">
         {onSidebarToggle && (
           <button
@@ -283,6 +286,18 @@ export default function ModernHeader({
             aria-label="Toggle navigation"
           >
             <Menu className="w-5 h-5" />
+          </button>
+        )}
+        {/* Manual Lock Button - Show for all authenticated users */}
+        {currentUser && onLockClick && (
+          <button
+            type="button"
+            onClick={onLockClick}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 focus:outline-none focus:ring-2 focus:ring-orange-400 dark:text-orange-300 dark:hover:bg-orange-500/20 transition"
+            aria-label={t("Lock Session")}
+            title={t("Lock Session")}
+          >
+            <Lock className="w-5 h-5" />
           </button>
         )}
       </div>
@@ -431,7 +446,7 @@ export default function ModernHeader({
         )}
       </div>
 
-      {/* Right: Title + bell + other right content */}
+      {/* Right: Title + bell + lock + other right content */}
       <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
         {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
 

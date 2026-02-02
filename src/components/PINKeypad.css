@@ -1,0 +1,103 @@
+/* src/components/PINKeypad.css */
+
+.pin-keypad {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.pin-keypad-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.pin-key {
+  flex: 1;
+  min-width: 80px;
+  height: 72px;
+  font-size: 28px;
+  font-weight: 600;
+  color: #1e293b;
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.pin-key:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.pin-key:active:not(:disabled) {
+  background: #e2e8f0;
+  border-color: #64748b;
+  transform: translateY(0);
+}
+
+.pin-key:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pin-key-submit {
+  background: #6366f1;
+  color: #ffffff;
+  border-color: #6366f1;
+}
+
+.pin-key-submit:hover:not(:disabled) {
+  background: #4f46e5;
+  border-color: #4f46e5;
+}
+
+.pin-key-submit:active:not(:disabled) {
+  background: #4338ca;
+  border-color: #4338ca;
+}
+
+.pin-key-clear {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #cbd5e1;
+}
+
+.pin-key-clear:hover:not(:disabled) {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.pin-key-clear:active:not(:disabled) {
+  background: #cbd5e1;
+  border-color: #64748b;
+}
+
+/* Touch-friendly sizing for tablets */
+@media (min-width: 768px) {
+  .pin-key {
+    min-width: 100px;
+    height: 84px;
+    font-size: 32px;
+  }
+}
+
+/* Extra large for large touchscreens */
+@media (min-width: 1024px) {
+  .pin-keypad {
+    max-width: 420px;
+  }
+
+  .pin-key {
+    min-width: 110px;
+    height: 92px;
+    font-size: 34px;
+  }
+}

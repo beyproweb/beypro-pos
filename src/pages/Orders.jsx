@@ -1,8 +1,11 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback  } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback, useReducer  } from "react";
 import { geocodeAddress } from '../utils/geocode';
 import LiveRouteMap from "../components/LiveRouteMap";
 import socket from "../utils/socket";
 import PhoneOrderModal from "../modals/PhoneOrderModal";
+import OrdersHeader from "../components/orders/OrdersHeader";
+import DriverReportPanel from "../components/orders/DriverReportPanel";
+import OrdersList from "../components/orders/OrdersList";
 import { useTranslation } from "react-i18next";
 import { v4 as uuidv4 } from "uuid";
 import secureFetch from "../utils/secureFetch";
@@ -20,7 +23,13 @@ import {
   getReceiptLayout,
 } from "../utils/receiptPrinter";
 import { fetchOrderWithItems } from "../utils/orderPrinting";
-const API_URL = import.meta.env.VITE_API_URL || "";
+
+// Shared helper to load drinks once (used by page + modal)
+const fetchDrinksFromApi = async () => {
+  const data = await secureFetch("/drinks");
+  if (!Array.isArray(data)) return [];
+  return data;
+};
 
 const ONLINE_SOURCE_DISPLAY_NAMES = {
   yemeksepeti: "Yemeksepeti",
@@ -81,11 +90,11 @@ function calcOrderTotalWithExtras(order) {
 useEffect(() => {
   if (!open) return;
 
-  const fetchDrinks = async () => {
+  const load = async () => {
     setLoading(true);
     try {
-      const data = await secureFetch("/drinks");
-      setDrinks(Array.isArray(data) ? data : []);
+      const data = await fetchDrinksFromApi();
+      setDrinks(data);
       setError("");
     } catch (err) {
       console.error("❌ Failed to fetch drinks in modal:", err);
@@ -96,7 +105,7 @@ useEffect(() => {
     }
   };
 
-  fetchDrinks();
+  load();
 }, [open]);
 
 
@@ -116,7 +125,7 @@ const addDrink = async () => {
     setInput("");
     setError("");
     // ✅ Fix here
-    const updated = await secureFetch("/drinks");
+    const updated = await fetchDrinksFromApi();
     setDrinks(updated);
     if (fetchDrinks) fetchDrinks();
   } catch {
@@ -132,7 +141,7 @@ const removeDrink = async (id) => {
     await secureFetch(`/drinks/${id}`, { method: "DELETE" });
     setError("");
     // ✅ Fix here
-    const updated = await secureFetch("/drinks");
+    const updated = await fetchDrinksFromApi();
     setDrinks(updated);
     if (fetchDrinks) fetchDrinks();
   } catch {
@@ -310,11 +319,49 @@ const removeDrink = async (id) => {
 
 
 // Restaurant as the first stop
-const RESTAURANT = {
+const DEFAULT_RESTAURANT_COORDS = {
   label: "Restaurant",
   lat: 38.099579,
   lng: 27.718065
 };
+
+function calcOrderTotalWithExtras(order) {
+  if (!order?.items) return 0;
+  return order.items.reduce((sum, item) => {
+    const qty = Number(item?.quantity) || 1;
+    const rawPrice = Number(item?.price) || 0;
+    const unitPrice =
+      Number(item?.unit_price) || (order?.external_id ? rawPrice / qty : rawPrice);
+    const base = unitPrice * qty;
+    const extras = (item.extras || []).reduce(
+      (s, ex) => s + (Number(ex.price || ex.extraPrice || 0) * (Number(ex.quantity) || 1)),
+      0
+    ) * qty;
+    return sum + base + extras;
+  }, 0);
+}
+
+const initialUIState = {
+  showRoute: false,
+  showPhoneOrderModal: false,
+  showDrinkModal: false,
+  showDriverReport: false,
+  showPaymentModal: false,
+  showCancelModal: false,
+};
+
+function uiReducer(state, action) {
+  switch (action.type) {
+    case "open":
+      return { ...state, [action.key]: true };
+    case "close":
+      return { ...state, [action.key]: false };
+    case "toggle":
+      return { ...state, [action.key]: !state[action.key] };
+    default:
+      return state;
+  }
+}
 
 export default function Orders({ orders: propOrders, hideModal = false }) {
   const paymentMethods = usePaymentMethods();
@@ -333,20 +380,17 @@ export default function Orders({ orders: propOrders, hideModal = false }) {
   const [updating, setUpdating] = useState({});
   const [editingPayment, setEditingPayment] = useState({});
   const [highlightedOrderId, setHighlightedOrderId] = useState(null);
-  const [now, setNow] = useState(Date.now());
   const [mapStops, setMapStops] = useState([]);
-  const [mapOrders, setMapOrders] = useState([]);
-  const [showRoute, setShowRoute] = useState(false);
+  const [ui, dispatchUI] = useReducer(uiReducer, initialUIState);
+  const { showRoute, showPhoneOrderModal, showDrinkModal, showDriverReport, showPaymentModal, showCancelModal } = ui;
   const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [drivers, setDrivers] = useState([]);
-  const [editingDriver, setEditingDriver] = useState({});
   const [restaurantCoords, setRestaurantCoords] = useState({ lat: 38.099579, lng: 27.718065, label: "Restaurant", address: "" }); // Fetch from /api/me
   const socketRef = useRef();
-  const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
   const [activeTab, setActiveTab] = useState("phone");
   const { t } = useTranslation();
   const { formatCurrency, config } = useCurrency();
-  const [showDrinkModal, setShowDrinkModal] = useState(false);
 const [drinksList, setDrinksList] = useState([]);
 const normalizedDrinkNames = useMemo(
   () =>
@@ -363,7 +407,6 @@ const [reportToDate, setReportToDate] = useState(
   () => new Date().toISOString().slice(0, 10)
 );
 const [reportLoading, setReportLoading] = useState(false);
-const [showDriverReport, setShowDriverReport] = useState(false);
 const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
 const [excludedKitchenCategories, setExcludedKitchenCategories] = useState([]);
 const [productPrepById, setProductPrepById] = useState({});
@@ -371,11 +414,9 @@ const [productPrepById, setProductPrepById] = useState({});
   const [confirmingOnlineOrders, setConfirmingOnlineOrders] = useState({});
 const showDriverColumn = true;
 
-const [showPaymentModal, setShowPaymentModal] = useState(false);
 const [editingPaymentOrder, setEditingPaymentOrder] = useState(null);
 const [splitPayments, setSplitPayments] = useState([{ method: "", amount: "" }]);
 const [pendingCloseOrderId, setPendingCloseOrderId] = useState(null);
-const [showCancelModal, setShowCancelModal] = useState(false);
 const [cancelOrder, setCancelOrder] = useState(null);
 const [cancelReason, setCancelReason] = useState("");
 const [cancelLoading, setCancelLoading] = useState(false);
@@ -454,13 +495,13 @@ const openPaymentModalForOrder = useCallback(
         amount: total > 0 && closeAfterSave ? total.toFixed(2) : "",
       },
     ]);
-    setShowPaymentModal(true);
+    dispatchUI({ type: "open", key: "showPaymentModal" });
   },
   [fallbackMethodLabel]
 );
 
 const closePaymentModal = useCallback(() => {
-  setShowPaymentModal(false);
+  dispatchUI({ type: "close", key: "showPaymentModal" });
   setEditingPaymentOrder(null);
   setPendingCloseOrderId(null);
 }, []);
@@ -688,35 +729,18 @@ const openCancelModalForOrder = useCallback(
     setCancelLoading(false);
     setRefundMode("refund");
     setRefundMethodId(getDefaultRefundMethod(order));
-    setShowCancelModal(true);
+  dispatchUI({ type: "open", key: "showCancelModal" });
   },
   [getDefaultRefundMethod]
 );
 
 const closeCancelModal = useCallback(() => {
-  setShowCancelModal(false);
+  dispatchUI({ type: "close", key: "showCancelModal" });
   setCancelOrder(null);
   setCancelReason("");
   setCancelLoading(false);
   setRefundMode("refund");
 }, []);
-
-
-function calcOrderTotalWithExtras(order) {
-  if (!order?.items) return 0;
-  return order.items.reduce((sum, item) => {
-    const qty = Number(item?.quantity) || 1;
-    const rawPrice = Number(item?.price) || 0;
-    const unitPrice =
-      Number(item?.unit_price) || (order?.external_id ? rawPrice / qty : rawPrice);
-    const base = unitPrice * qty;
-    const extras = (item.extras || []).reduce(
-      (s, ex) => s + (Number(ex.price || ex.extraPrice || 0) * (Number(ex.quantity) || 1)),
-      0
-    ) * qty;
-    return sum + base + extras;
-  }, 0);
-}
 
 function calcOrderDiscount(order) {
   if (!order?.items) return 0;
@@ -960,15 +984,13 @@ async function fetchDriverReport() {
 }
 
 const handleToggleDriverReport = () => {
-  setShowDriverReport((prev) => {
-    const next = !prev;
-    if (!prev) {
-      setTimeout(() => {
-        fetchDriverReport();
-      }, 0);
-    }
-    return next;
-  });
+  dispatchUI({ type: "toggle", key: "showDriverReport" });
+  const willOpen = !showDriverReport;
+  if (willOpen) {
+    setTimeout(() => {
+      fetchDriverReport();
+    }, 0);
+  }
 };
 
 useEffect(() => {
@@ -1272,10 +1294,9 @@ const openRouteForSelectedDriver = async () => {
     ? (orders || []).filter((order) => Number(order?.driver_id) === selectedId)
     : (orders || []);
 
-  setMapOrders(scopedOrders);
   const stops = await fetchOrderStops(scopedOrders);
   setMapStops(stops);
-  setShowRoute(true);
+  dispatchUI({ type: "open", key: "showRoute" });
 };
 
 
@@ -1483,14 +1504,13 @@ useEffect(() => {
 
 const fetchDrinks = async () => {
   try {
-    const data = await secureFetch("/drinks"); // returns JSON directly
-    setDrinksList(data.map(d => d.name));
+    const data = await fetchDrinksFromApi(); // returns JSON directly
+    setDrinksList(data.map((d) => d.name));
   } catch (err) {
     console.error("❌ Failed to fetch drinks:", err);
     setDrinksList([]);
   }
 };
-
 
 useEffect(() => {
   fetchDrinks();
@@ -1723,7 +1743,7 @@ function driverButtonDisabled(order) {
     };
     if (!order.kitchen_delivered_at) return 0;
     const start = toMs(order.kitchen_delivered_at);
-    return Math.max(0, Math.floor((now - start) / 1000));
+    return Math.max(0, Math.floor((Date.now() - start) / 1000));
   }
   function getWaitingSeconds(order) {
     const toMs = (val) => {
@@ -1770,7 +1790,30 @@ function countDrinksForDriver(orders, drinksList, driverId) {
 }
 
 
-const filteredOrders = orders;
+const filteredOrders = orders.filter((order) => {
+  if (statusFilter === "all") return true;
+  const driverStatus = (order.driver_status || "").toLowerCase();
+  if (statusFilter === "new") {
+    // New orders are preparing (no driver status or not on road yet)
+    return !driverStatus || driverStatus === "arrived_restaurant";
+  }
+  if (statusFilter === "on_road") {
+    return driverStatus === "on_road" || driverStatus === "picked_up" || driverStatus === "arrived_customer" || driverStatus === "arrived";
+  }
+  if (statusFilter === "delivered") {
+    return driverStatus === "delivered" || order.status === "closed";
+  }
+  return true;
+});
+
+// Orders scoped for live route view (re-computed on driver selection)
+const routeOrders = useMemo(() => {
+  const selectedId = Number(selectedDriverId);
+  const hasSelected = String(selectedDriverId || "").trim() !== "" && Number.isFinite(selectedId);
+  if (!hasSelected) return orders;
+  return (orders || []).filter((order) => Number(order?.driver_id) === selectedId);
+}, [orders, selectedDriverId]);
+
 const totalByMethod = useMemo(() => {
   return paymentMethodLabels.reduce((obj, label) => {
     obj[label] = filteredOrders
@@ -2354,222 +2397,69 @@ const renderCancelModal = () => {
 return (
   <div className="min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
 
-{/* --- HEADER & ACTIONS, Always Centered --- */}
-<div className="w-full flex flex-col items-center justify-center py-2 min-h-[44px]">
+{/* --- HEADER & ACTIONS, Single Row --- */}
+<OrdersHeader
+  t={t}
+  drivers={drivers}
+  selectedDriverId={selectedDriverId}
+  onSelectDriver={(e) => setSelectedDriverId(e.target.value)}
+  onOpenRoute={openRouteForSelectedDriver}
+  onOpenChecklist={() => dispatchUI({ type: "open", key: "showDrinkModal" })}
+  onToggleDriverReport={handleToggleDriverReport}
+  assignedCount={assignedOrderCountForSelectedDriver}
+/>
 
-  <div className="flex flex-col items-center justify-center w-full max-w-6xl">
-    <div className="flex flex-col gap-2 w-full">
-      <div className="flex flex-col md:flex-row md:flex-nowrap items-center justify-center gap-2 w-full">
-        <div className="w-full md:w-auto flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3">
+    {/* --- FILTER BAR --- */}
+    <div className="w-full py-2 overflow-x-auto">
+      <div className="flex items-center gap-2 min-w-max px-4">
+        {[
+          { id: "all", label: t("All") },
+          { id: "new", label: t("New Order") },
+          { id: "on_road", label: t("On Road") },
+          { id: "delivered", label: t("Delivered") },
+        ].map((filter) => (
           <button
-            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap h-10 px-4 sm:px-5 rounded-md bg-white/80 text-slate-800 border border-slate-200 text-sm sm:text-base font-semibold shadow-sm hover:bg-white hover:border-slate-300 active:bg-slate-50 disabled:opacity-40 transition inline-flex items-center justify-center gap-2"
-            disabled={!drivers.length}
-            onClick={openRouteForSelectedDriver}
+            key={filter.id}
+            onClick={() => setStatusFilter(filter.id)}
+            className={`shrink-0 h-[42px] px-3 text-xs font-semibold rounded-md border shadow-sm transition ${
+              statusFilter === filter.id
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "bg-white/80 text-slate-800 border-slate-200 hover:bg-white hover:border-slate-300 active:bg-slate-50"
+            }`}
           >
-            <span className="inline-flex items-center gap-2 sm:whitespace-nowrap">
-              <span className="inline-flex h-4 w-4 items-center justify-center text-slate-600" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
-                  <path d="M5 16a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z" />
-                  <path d="M15 16a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z" />
-                  <path d="M7 16h6l2-7h4" />
-                  <path d="M9 16l-1-5H5" />
-                  <path d="M6 11h2" />
-                </svg>
-              </span>
-              <span className="shrink-0 bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-md border border-emerald-300 font-semibold leading-none">
-                LIVE
-              </span>
-              <span className="sm:whitespace-nowrap">{t("Route")}</span>
-            </span>
+            {filter.label}
           </button>
+        ))}
 
-          <button
-            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap h-10 px-4 sm:px-5 rounded-md bg-white/80 text-slate-800 border border-slate-200 text-sm sm:text-base font-semibold shadow-sm hover:bg-white hover:border-slate-300 active:bg-slate-50 disabled:opacity-40 transition inline-flex items-center justify-center gap-2"
-            disabled={!drivers.length}
-            onClick={() => setShowDrinkModal(true)}
-          >
-            <span className="inline-flex items-center gap-2 sm:whitespace-nowrap">
-              <span className="sm:whitespace-nowrap">{t("Checklist")}</span>
-            </span>
-          </button>
-
-          <button
-            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap h-10 px-4 sm:px-5 rounded-md bg-white/80 text-slate-800 border border-slate-200 text-sm sm:text-base font-semibold shadow-sm hover:bg-white hover:border-slate-300 active:bg-slate-50 disabled:opacity-40 transition inline-flex items-center justify-center gap-2"
-            disabled={!drivers.length}
-            onClick={handleToggleDriverReport}
-          >
-            <span className="inline-flex items-center gap-2 sm:whitespace-nowrap">
-              <span className="inline-flex h-4 w-4 items-center justify-center text-slate-600" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
-                  <path d="M4 19V5" />
-                  <path d="M4 19h16" />
-                  <path d="M8 17v-6" />
-                  <path d="M12 17V9" />
-                  <path d="M16 17v-4" />
-                </svg>
-              </span>
-              <span className="sm:whitespace-nowrap">{t("Driver Report")}</span>
-            </span>
-          </button>
-        </div>
-
-        <div className="w-full md:w-auto flex items-center justify-center gap-2">
-          <select
-            value={selectedDriverId}
-            onChange={(e) => setSelectedDriverId(e.target.value)}
-            className="w-full sm:w-auto md:shrink-0 sm:whitespace-nowrap h-10 px-3 pr-8 rounded-md bg-white/80 text-slate-800 border border-slate-200 text-sm sm:text-base font-semibold shadow-sm hover:bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
-            disabled={!drivers.length}
-          >
-            <option value="">{t("All Drivers")}</option>
-            {drivers.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          <span className="h-10 inline-flex items-center rounded-md bg-white/80 border border-slate-200 px-3 text-sm sm:text-base font-semibold text-slate-700 shadow-sm whitespace-nowrap">
-            Assigned: {assignedOrderCountForSelectedDriver}
-          </span>
-        </div>
-
-        {/* Date range sits next to Driver Report on big screens */}
-        <div className="hidden md:flex md:w-auto items-center gap-2 flex-nowrap whitespace-nowrap bg-white/80 rounded-md h-10 px-2 border border-slate-200 shadow-sm">
-          <input
-            type="date"
-            className="shrink-0 h-10 border border-slate-200 rounded-md px-4 text-slate-800 bg-white shadow-sm text-sm sm:text-base font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
-            value={reportFromDate}
-            max={reportToDate || new Date().toISOString().slice(0, 10)}
-            onChange={(e) => setReportFromDate(e.target.value)}
-            disabled={reportLoading}
-          />
-          <input
-            type="date"
-            className="shrink-0 h-10 border border-slate-200 rounded-md px-4 text-slate-800 bg-white shadow-sm text-sm sm:text-base font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
-            value={reportToDate}
-            min={reportFromDate || undefined}
-            max={new Date().toISOString().slice(0, 10)}
-            onChange={(e) => setReportToDate(e.target.value)}
-            disabled={reportLoading}
-          />
-        </div>
-      </div>
-
-      {/* On small screens keep date range on its own row */}
-      <div className="w-full flex items-center justify-center md:hidden">
-        <div className="w-full md:w-auto flex items-center gap-2 flex-nowrap overflow-x-auto whitespace-nowrap bg-white/80 rounded-md h-10 px-2 border border-slate-200 shadow-sm">
-          <input
-            type="date"
-            className="shrink-0 h-10 border border-slate-200 rounded-md px-4 text-slate-800 bg-white shadow-sm text-sm sm:text-base font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
-            value={reportFromDate}
-            max={reportToDate || new Date().toISOString().slice(0, 10)}
-            onChange={(e) => setReportFromDate(e.target.value)}
-            disabled={reportLoading}
-          />
-          <input
-            type="date"
-            className="shrink-0 h-10 border border-slate-200 rounded-md px-4 text-slate-800 bg-white shadow-sm text-sm sm:text-base font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
-            value={reportToDate}
-            min={reportFromDate || undefined}
-            max={new Date().toISOString().slice(0, 10)}
-            onChange={(e) => setReportToDate(e.target.value)}
-            disabled={reportLoading}
-          />
-        </div>
+        {/* Date range */}
+        <input
+          type="date"
+          className="shrink-0 h-[42px] border border-slate-200 rounded-md px-2 text-slate-800 bg-white shadow-sm text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
+          value={reportFromDate}
+          max={reportToDate || new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setReportFromDate(e.target.value)}
+          disabled={reportLoading}
+        />
+        <input
+          type="date"
+          className="shrink-0 h-[42px] border border-slate-200 rounded-md px-2 text-slate-800 bg-white shadow-sm text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
+          value={reportToDate}
+          min={reportFromDate || undefined}
+          max={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setReportToDate(e.target.value)}
+          disabled={reportLoading}
+        />
       </div>
     </div>
-  </div>
-</div>
 
-
-    {/* --- DRIVER REPORT --- */}
-    {showDriverReport && (
-      <div className="mt-2">
-        {reportLoading ? (
-          <div className="animate-pulse text-lg sm:text-xl">{t("Loading driver report...")}</div>
-        ) : driverReport?.error ? (
-          <div className="text-red-600 font-bold">{driverReport.error}</div>
-        ) : driverReport ? (
-          <div className="rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] p-8 bg-white border border-slate-200 space-y-5 dark:bg-slate-950/60 dark:border-slate-800 dark:shadow-[0_30px_60px_-35px_rgba(0,0,0,0.6)]">
-            <div className="flex flex-wrap gap-10 items-center mb-3">
-              <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] dark:text-slate-400">{t("Packets Delivered")}</div>
-                <div className="text-xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-100">{driverReport.packets_delivered}</div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] dark:text-slate-400">{t("Total Sales")}</div>
-                <div className="text-xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-100">
-                  {driverReport.total_sales != null
-                    ? formatCurrency(driverReport.total_sales)
-                    : "-"}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] dark:text-slate-400">{t("By Payment Method")}</div>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(driverReport.sales_by_method).map(
-                    ([method, amt]) => (
-                      <span
-                        key={method}
-                        className="bg-slate-100 border border-slate-200 shadow-sm px-3 py-1 rounded-lg font-semibold text-sm text-slate-700 dark:bg-slate-900/60 dark:border-slate-700 dark:text-slate-200"
-                      >
-                        {method}: {formatCurrency(amt)}
-                      </span>
-                    )
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden dark:bg-slate-950/40 dark:border-slate-800">
-                <thead>
-	  <tr>
-	    {showDriverColumn && (
-	      <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Driver")}</th>
-	    )}
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Customer")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Address")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Total")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Payment")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Delivered")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Pickup→Delivery")}</th>
-	    <th className="p-3 text-left font-semibold text-slate-500 uppercase tracking-[0.15em] bg-slate-50 dark:bg-slate-900/50 dark:text-slate-300">{t("Kitchen→Delivery")}</th>
-	  </tr>
-</thead>
-<tbody>
-  {driverReport.orders.map(ord => (
-    <tr key={ord.id} className="border-t border-slate-100 hover:bg-slate-50 transition-colors dark:border-slate-800 dark:hover:bg-slate-900/30">
-      {showDriverColumn && (
-        <td className="p-3 text-slate-700 dark:text-slate-200">{ord.driver_name || "-"}</td>
-      )}
-      <td className="p-3 text-slate-700 dark:text-slate-200">{ord.customer_name || "-"}</td>
-      <td className="p-3 text-slate-500 dark:text-slate-400">{ord.customer_address || "-"}</td>
-      <td className="p-3 text-slate-900 font-semibold dark:text-slate-100">
-        {formatCurrency(parseFloat(ord.total || 0))}
-      </td>
-      <td className="p-3 text-slate-600 dark:text-slate-300">{ord.payment_method}</td>
-      <td className="p-3 text-slate-500 dark:text-slate-400">{ord.delivered_at ? new Date(ord.delivered_at).toLocaleTimeString() : "-"}</td>
-      <td className="p-3 text-slate-500 dark:text-slate-400">
-        {ord.delivery_time_seconds
-          ? (ord.delivery_time_seconds / 60).toFixed(1) + ` ${t("min")}`
-          : "-"}
-      </td>
-      <td className="p-3 text-slate-500 dark:text-slate-400">
-        {ord.kitchen_to_delivery_seconds
-          ? (ord.kitchen_to_delivery_seconds / 60).toFixed(1) + ` ${t("min")}`
-          : "-"}
-      </td>
-    </tr>
-  ))}
-</tbody>
-
-              </table>
-            </div>
-          </div>
-        ) : (
-          <div className="text-slate-500 text-sm">{t("Select a driver and date to see the report.")}</div>
-        )}
-      </div>
-    )}
+    <DriverReportPanel
+      t={t}
+      showDriverReport={showDriverReport}
+      reportLoading={reportLoading}
+      driverReport={driverReport}
+      showDriverColumn={showDriverColumn}
+      formatCurrency={formatCurrency}
+    />
 
     {/* --- LIVE ROUTE MODAL (FULL SCREEN) --- */}
     {showRoute && (
@@ -2589,8 +2479,8 @@ return (
                 stopsOverride={mapStops}
                 driverNameOverride={selectedDriver?.name || ""}
                 driverId={hasSelectedDriver ? String(selectedIdNum) : ""}
-                orders={mapOrders.length ? mapOrders : filteredOrders}
-                onClose={() => setShowRoute(false)}
+                orders={routeOrders.length ? routeOrders : filteredOrders}
+                onClose={() => dispatchUI({ type: "close", key: "showRoute" })}
               />
             );
           })()}
@@ -2602,32 +2492,17 @@ return (
     {/* --- DRINK SETTINGS MODAL --- */}
     <DrinkSettingsModal
       open={showDrinkModal}
-      onClose={() => setShowDrinkModal(false)}
+      onClose={() => dispatchUI({ type: "close", key: "showDrinkModal" })}
       fetchDrinks={fetchDrinks}
       summaryByDriver={filteredDrinkSummaryByDriver}
     />
 
 {/* --- ORDERS LIST --- */}
-<div className="min-h-screen px-4 sm:px-6 lg:px-8 py-6 w-full mx-auto relative bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-<div
-  className={`
-    grid
-    gap-6
-    w-full
-    py-6
-    auto-rows-fr
-    ${orders.length === 1 ? "grid-cols-1 justify-items-center" : "grid-cols-1"}
-    sm:grid-cols-1
-    md:grid-cols-1
-    lg:grid-cols-1
-  `}
->
-
-
-
-{safeOrders.map((order, i) => {
-const totalWithExtras = calcOrderTotalWithExtras(order);
-const totalDiscount = calcOrderDiscount(order);
+<OrdersList
+  orders={safeOrders}
+  renderOrder={(order, i) => {
+ const totalWithExtras = calcOrderTotalWithExtras(order);
+ const totalDiscount = calcOrderDiscount(order);
   const discountedTotal = totalWithExtras - totalDiscount; // ✅ includes extras now
   // shown on the card
       const driverStatus = normalizeDriverStatus(order.driver_status);
@@ -2890,7 +2765,7 @@ const totalDiscount = calcOrderDiscount(order);
       return (
         <div
           key={order.id}
-          className="relative group flex flex-col items-stretch w-full h-full"
+          className="relative group flex flex-col items-stretch w-full"
           style={{
             minWidth: 0,
             width: "100%",
@@ -2987,6 +2862,105 @@ const totalDiscount = calcOrderDiscount(order);
         {kitchenBadgeLabel}
       </span>
     )}
+    {!normalizeDriverStatus(order.driver_status) && (
+      <button
+        type="button"
+        disabled={driverButtonDisabled(order)}
+        className={`ml-auto inline-flex items-center justify-center rounded-md px-5 py-1.5 text-base font-bold text-white transition disabled:opacity-50 h-8 shadow-md ${
+          kitchenStatus === "new"
+            ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/50"
+            : kitchenStatus === "preparing"
+            ? "bg-amber-600 hover:bg-amber-700 shadow-amber-500/50"
+            : kitchenStatus === "ready" || kitchenStatus === "delivered"
+            ? "bg-red-600 hover:bg-red-700 shadow-red-500/50"
+            : "bg-teal-600 hover:bg-teal-700 shadow-teal-500/50"
+        }`}
+        onClick={async () => {
+          if (driverButtonDisabled(order)) return;
+          const nextStatus = isYemeksepetiPickupOrder(order) ? "delivered" : "on_road";
+          setOrders((prev) =>
+            prev.map((o) => (o.id === order.id ? { ...o, driver_status: nextStatus } : o))
+          );
+          await secureFetch(`/orders/${order.id}/driver-status`, {
+            method: "PATCH",
+            body: JSON.stringify({ driver_status: nextStatus }),
+          });
+          if (
+            nextStatus === "delivered" &&
+            shouldAutoClosePacketOnDelivered(order)
+          ) {
+            try {
+              await closeOrderInstantly(order);
+            } catch (err) {
+              console.error("❌ Failed to auto-close delivered order:", err);
+              emitToast("error", t("Failed to close order"));
+              if (!propOrders) await fetchOrders();
+            }
+          }
+        }}
+      >
+        {isYemeksepetiPickupOrder(order) ? t("Picked up") : t("On Road")}
+      </button>
+    )}
+    {normalizeDriverStatus(order.driver_status) === "on_road" && (
+      <button
+        type="button"
+        disabled={driverButtonDisabled(order)}
+        className="ml-auto inline-flex items-center justify-center rounded-md bg-sky-800 hover:bg-sky-900 px-5 py-1.5 text-base font-bold text-white transition disabled:opacity-50 h-8 shadow-md shadow-sky-500/50"
+        onClick={async () => {
+          if (driverButtonDisabled(order)) return;
+          setUpdating((prev) => ({ ...prev, [order.id]: true }));
+          setOrders((prev) =>
+            prev.map((o) => (o.id === order.id ? { ...o, driver_status: "delivered" } : o))
+          );
+          try {
+            await secureFetch(`/orders/${order.id}/driver-status`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ driver_status: "delivered" }),
+            });
+              if (shouldAutoClosePacketOnDelivered(order)) {
+                try {
+                  await closeOrderInstantly(order);
+                } catch (err) {
+                  console.error("❌ Failed to auto-close delivered order:", err);
+                  emitToast("error", t("Failed to close order"));
+                  if (!propOrders) await fetchOrders();
+                }
+              }
+          } catch (err) {
+            console.error("❌ Failed to mark delivered:", err);
+            if (!propOrders) await fetchOrders();
+          } finally {
+            setUpdating((prev) => ({ ...prev, [order.id]: false }));
+          }
+        }}
+      >
+        {isYemeksepetiPickupOrder(order) ? t("Completed") : t("Delivered")}
+      </button>
+    )}
+    {normalizeDriverStatus(order.driver_status) === "delivered" && (
+      <button
+        type="button"
+        className="ml-auto inline-flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 px-5 py-1.5 text-base font-bold text-white transition h-8 shadow-md shadow-emerald-500/50"
+        onClick={async () => {
+          if (isOnlinePayment) {
+            try {
+              await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
+              setOrders((prev) => prev.filter((o) => Number(o.id) !== Number(order.id)));
+            } catch (err) {
+              console.error("❌ Failed to close online-paid order:", err);
+              toast.error(t("Failed to close order"));
+              if (!propOrders) await fetchOrders();
+            }
+            return;
+          }
+          openPaymentModalForOrder(order, { closeAfterSave: true });
+        }}
+      >
+        {t("Close")}
+      </button>
+    )}
   </div>
 
   {/* DRIVER ROW: Avatar + Name + Auto Confirmed + Cancel */}
@@ -3063,7 +3037,7 @@ const totalDiscount = calcOrderDiscount(order);
               {t("Cancel")}
             </button>
           )}
-	        <div className="ml-auto flex items-center gap-2">
+	        <div className="ml-auto flex flex-wrap items-center gap-2 justify-end md:flex-nowrap">
 	          <button
 	            onClick={() => openPaymentModalForOrder(order)}
 		            className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
@@ -3080,13 +3054,13 @@ const totalDiscount = calcOrderDiscount(order);
               </span>
             )}
           </button>
-          <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700">
+          <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700 whitespace-nowrap">
             {formatCurrency(discountedTotal)}
           </span>
         </div>
       </>
 	    ) : (
-	      <div className="ml-auto flex items-center gap-2">
+	      <div className="ml-auto flex flex-wrap items-center gap-2 justify-end md:flex-nowrap">
           {!isExternalOnlineOrder && (
             <button
               type="button"
@@ -3112,7 +3086,7 @@ const totalDiscount = calcOrderDiscount(order);
             </span>
           )}
         </button>
-        <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700">
+        <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700 whitespace-nowrap">
           {formatCurrency(discountedTotal)}
         </span>
       </div>
@@ -3120,7 +3094,8 @@ const totalDiscount = calcOrderDiscount(order);
   </div>
 
 	  {/* BOTTOM ROW: Order Items (left) + On Road (right) */}
-	  <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white/10">
+	  <div className="flex flex-col gap-3 px-4 py-2.5 bg-white/10">
+    <div className="flex items-center justify-between gap-3">
     <details
       open={openDetails[order.id] || false}
       onToggle={(e) => {
@@ -3136,7 +3111,7 @@ const totalDiscount = calcOrderDiscount(order);
           })
         );
       }}
-      className="min-w-0"
+      className="min-w-0 flex-1"
     >
       <summary className="cursor-pointer text-sm font-semibold text-slate-700 select-none hover:text-slate-900">
         {t("Order Items")} <span className="text-slate-500">#{externalOrderRef || order.id}</span>
@@ -3292,107 +3267,9 @@ const totalDiscount = calcOrderDiscount(order);
 	        )}
 	      </div>
 	    </details>
+    </div>
 
 	    <div className="flex items-center gap-2 flex-shrink-0">
-	      {!normalizeDriverStatus(order.driver_status) && (
-	          <button
-	            type="button"
-	            disabled={driverButtonDisabled(order)}
-	            className={`inline-flex items-center justify-center rounded-md px-3 py-1.5 text-base font-bold text-white transition disabled:opacity-50 ${
-	              kitchenStatus === "new"
-                ? "bg-blue-600 hover:bg-blue-700"
-                : kitchenStatus === "preparing"
-                ? "bg-amber-600 hover:bg-amber-700"
-                : kitchenStatus === "ready" || kitchenStatus === "delivered"
-                ? "bg-red-600 hover:bg-red-700"
-                : "bg-teal-600 hover:bg-teal-700"
-            }`}
-            onClick={async () => {
-              if (driverButtonDisabled(order)) return;
-              const nextStatus = isYemeksepetiPickupOrder(order) ? "delivered" : "on_road";
-              setOrders((prev) =>
-                prev.map((o) => (o.id === order.id ? { ...o, driver_status: nextStatus } : o))
-              );
-              await secureFetch(`/orders/${order.id}/driver-status`, {
-                method: "PATCH",
-                body: JSON.stringify({ driver_status: nextStatus }),
-              });
-              if (
-                nextStatus === "delivered" &&
-                shouldAutoClosePacketOnDelivered(order)
-              ) {
-                try {
-                  await closeOrderInstantly(order);
-                } catch (err) {
-                  console.error("❌ Failed to auto-close delivered order:", err);
-                  emitToast("error", t("Failed to close order"));
-                  if (!propOrders) await fetchOrders();
-                }
-              }
-            }}
-	          >
-	            {isYemeksepetiPickupOrder(order) ? t("Picked up") : t("On Road")}
-	          </button>
-	      )}
-	        {normalizeDriverStatus(order.driver_status) === "on_road" && (
-	          <button
-	            type="button"
-	            disabled={driverButtonDisabled(order)}
-            className="inline-flex items-center justify-center rounded-md bg-sky-800 hover:bg-sky-900 px-3 py-1.5 text-base font-bold text-white transition disabled:opacity-50"
-            onClick={async () => {
-              if (driverButtonDisabled(order)) return;
-              setUpdating((prev) => ({ ...prev, [order.id]: true }));
-              setOrders((prev) =>
-                prev.map((o) => (o.id === order.id ? { ...o, driver_status: "delivered" } : o))
-              );
-              try {
-                await secureFetch(`/orders/${order.id}/driver-status`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ driver_status: "delivered" }),
-                });
-	                if (shouldAutoClosePacketOnDelivered(order)) {
-	                  try {
-	                    await closeOrderInstantly(order);
-	                  } catch (err) {
-	                    console.error("❌ Failed to auto-close delivered order:", err);
-	                    emitToast("error", t("Failed to close order"));
-	                    if (!propOrders) await fetchOrders();
-	                  }
-	                }
-              } catch (err) {
-                console.error("❌ Failed to mark delivered:", err);
-                if (!propOrders) await fetchOrders();
-              } finally {
-                setUpdating((prev) => ({ ...prev, [order.id]: false }));
-              }
-            }}
-	          >
-	            {isYemeksepetiPickupOrder(order) ? t("Completed") : t("Delivered")}
-	          </button>
-	        )}
-	        {normalizeDriverStatus(order.driver_status) === "delivered" && (
-          <button
-            type="button"
-            className="inline-flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-base font-bold text-white transition"
-            onClick={async () => {
-              if (isOnlinePayment) {
-                try {
-                  await secureFetch(`/orders/${order.id}/close`, { method: "POST" });
-                  setOrders((prev) => prev.filter((o) => Number(o.id) !== Number(order.id)));
-                } catch (err) {
-                  console.error("❌ Failed to close online-paid order:", err);
-                  toast.error(t("Failed to close order"));
-                  if (!propOrders) await fetchOrders();
-                }
-                return;
-              }
-              openPaymentModalForOrder(order, { closeAfterSave: true });
-            }}
-          >
-            {t("Close")}
-          </button>
-	        )}
 	    </div>
 	  </div>
 </div>
@@ -3603,23 +3480,22 @@ const totalDiscount = calcOrderDiscount(order);
           </div>
         </div>
       </div>
+      </div>
+      </div>
     </div>
-  </div>
-</div>
 
-      );
-    })}
+    );
+  }}>
+</OrdersList>
 
-  </div>
-  {renderPaymentModal()}
-  {renderCancelModal()}
-  <style>{`
-    @keyframes pulseGlow {
-      0% { filter: brightness(1.12) blur(0.8px);}
-      100% { filter: brightness(1.24) blur(2.5px);}
-    }
-  `}</style>
-</div>
+{renderPaymentModal()}
+{renderCancelModal()}
+<style>{`
+  @keyframes pulseGlow {
+    0% { filter: brightness(1.12) blur(0.8px);}
+    100% { filter: brightness(1.24) blur(2.5px);}
+  }
+`}</style>
   </div>
 );
 

@@ -150,6 +150,23 @@ export default function TransactionsTab() {
         <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
           <input
             type="checkbox"
+            checked={!!settings.autoNavigateTableAfterConfirm}
+            onChange={() => toggle("autoNavigateTableAfterConfirm")}
+            className="mt-1 h-5 w-5 accent-indigo-500"
+          />
+          <div>
+            <div className="font-semibold text-sm">
+              {t("Return to Table Overview after confirming")}
+            </div>
+            <div className="text-xs text-slate-500">
+              {t("When table items are confirmed, leave the Transaction screen and show Table Overview.")}
+            </div>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+          <input
+            type="checkbox"
             checked={!!settings.autoClosePacketAfterPay}
             onChange={() => toggle("autoClosePacketAfterPay")}
             className="mt-1 h-5 w-5 accent-indigo-500"

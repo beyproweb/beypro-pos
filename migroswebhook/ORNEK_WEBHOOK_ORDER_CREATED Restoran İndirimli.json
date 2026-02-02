@@ -1,0 +1,149 @@
+{
+  "id": 100069765,
+  "description": "1 x Öteki Pizza (Orta)",
+  "status": "NEW_PENDING",
+  "deliveryProvider": "RESTAURANT",
+  "store": {
+    "id": 23000000101013,
+    "name": "Öteki Pizza, (Ataşehir, Kayışdağı)",
+    "group": {
+      "id": 115,
+      "name": "Öteki Pizza "
+    }
+  },
+  "customer": {
+    "id": 23002000015693,
+    "firstName": "Test",
+    "lastName": "Tester",
+    "fullName": "Test Tester",
+    "phoneNumber": "5050542356",
+    "deliveryAddress": {
+      "id": 23000000041217,
+      "direction": "Test",
+      "detail": "Atatürk Mh. Ataşehir Atatürk, Ataşehir Blv. No:27, 34758 Ataşehir/İstanbul, Türkiye No: 12 Daire: 3 Kat: 2 Ataşehir/İstanbul",
+      "city": {
+        "id": 34,
+        "name": "İstanbul"
+      },
+      "town": {
+        "id": 34033,
+        "name": "Ataşehir"
+      },
+      "district": {
+        "id": 34033002,
+        "name": "Atatürk Mh."
+      },
+      "geoLocation": {
+        "latitude": 40.992629703208586,
+        "longitude": 29.124896004796028
+      }
+    }
+  },
+  "prices": {
+    "total": {
+      "amountAsPenny": 14200,
+      "text": "142,00 TL"
+    },
+    "discounted": {
+      "amountAsPenny": 12200,
+      "text": "122,00 TL"
+    },
+    "restaurantDiscounted": {
+      "amountAsPenny": 12200,
+      "text": "122,00 TL"
+    },
+    "migrosDiscounted": {
+      "amountAsPenny": 14200,
+      "text": "142,00 TL"
+    }
+  },
+  "items": [
+    {
+      "id": 1166353612,
+      "productId": 23000000005231,
+      "name": "Öteki Pizza (Orta)",
+      "price": 12200,
+      "priceText": "122,00 TL",
+      "amount": 1,
+      "note": "",
+      "options": [
+        {
+          "optionHeaderId": 8825,
+          "objectOptionItemId": 644879,
+          "optionItemId": 27089,
+          "productId": 0,
+          "parentObjectOptionItemId": -1,
+          "headerName": "Ekstra Malzeme",
+          "itemNames": "Dana Jambon",
+          "primaryDiscountedPrice": 1500,
+          "primaryPrice": 1500,
+          "primaryDiscountedPriceText": "15,00 TL",
+          "primaryPriceText": "15,00 TL",
+          "quantity": 1,
+          "excluded": false,
+          "subOptions": [],
+          "objectOptionHeaderPriority": 0,
+          "objectOptionItemPriority": 4,
+          "optionType": "NONE"
+        },
+        {
+          "optionHeaderId": 8824,
+          "objectOptionItemId": 644888,
+          "optionItemId": 27135,
+          "productId": 0,
+          "parentObjectOptionItemId": -1,
+          "headerName": "Ekstra Sos",
+          "itemNames": "Ketçap",
+          "primaryDiscountedPrice": 500,
+          "primaryPrice": 500,
+          "primaryDiscountedPriceText": "5,00 TL",
+          "primaryPriceText": "5,00 TL",
+          "quantity": 1,
+          "excluded": false,
+          "subOptions": [],
+          "objectOptionHeaderPriority": 1,
+          "objectOptionItemPriority": 1,
+          "optionType": "NONE"
+        },
+        {
+          "optionHeaderId": 8827,
+          "objectOptionItemId": 644895,
+          "optionItemId": 27143,
+          "productId": 0,
+          "parentObjectOptionItemId": -1,
+          "headerName": "Hamur Seçimi",
+          "itemNames": "Normal Hamur (220 Gr.)",
+          "primaryDiscountedPrice": 0,
+          "primaryPrice": 0,
+          "primaryDiscountedPriceText": "0,00 TL",
+          "primaryPriceText": "0,00 TL",
+          "quantity": 1,
+          "excluded": false,
+          "subOptions": [],
+          "objectOptionHeaderPriority": 2,
+          "objectOptionItemPriority": 1,
+          "optionType": "NONE"
+        }
+      ]
+    }
+  ],
+  "payment": {
+    "type": {
+      "hashedNameId": 6,
+      "name": "CASH_ON_DELIVERY",
+      "description": "Kapıda Ödeme - Nakit",
+      "isOnlinePayment": false,
+      "simplifiedName": "CASH_ON_DELIVERY",
+      "simplifiedHashedNameId": 6
+    }
+  },
+  "extendedProperties": {
+    "orderNote": "",
+    "saveGreen": false,
+    "contactlessDelivery": false,
+    "ringDoorBell": true
+  },
+  "log": {
+    "createdAsMs": 1679651590407
+  }
+}

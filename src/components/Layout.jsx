@@ -7,6 +7,7 @@ import ModernHeader from "./ModernHeader";
 import NotificationBell from "./NotificationBell";
 import { ToastContainer } from "react-toastify";
 import { useHeader } from "../context/HeaderContext";
+import { useSessionLock } from "../context/SessionLockContext";
 import "react-toastify/dist/ReactToastify.css";
 import { ArrowUpDown, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -186,6 +187,7 @@ export default function Layout({
   notificationsLastSeenAtMs = 0,
 }) {
   const { t } = useTranslation();
+  const { lock } = useSessionLock();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -420,7 +422,7 @@ export default function Layout({
             onClick={() => setIsSidebarOpen(false)}
             aria-hidden="true"
           />
-          <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
+          <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} onLockClick={() => lock('manual')} />
         </>
       )}
 
@@ -435,6 +437,7 @@ export default function Layout({
           centerNav={centerNav}
           tableNav={tableNav}
           onSidebarToggle={() => setIsSidebarOpen((v) => !v)}
+          onLockClick={() => lock('manual')}
           rightContent={rightContent}
           userName={username}
           tableStats={tableStats}

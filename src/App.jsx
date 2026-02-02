@@ -4,6 +4,8 @@ import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "re
 import React, { useEffect } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
+import { SessionLockProvider } from "./context/SessionLockContext";
+import SessionLockOverlay from "./components/SessionLockOverlay";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
@@ -20,6 +22,7 @@ import LiveRouteMap from "./components/LiveRouteMap";
 import SettingsPage from "./components/Settings";
 import Production from "./components/Production";
 import LoginScreenWrapper from "./components/LoginScreen";
+import StaffPINLogin from "./components/StaffPINLogin";
 import SubscriptionTab from "./components/settings-tabs/SubscriptionTab";
 import AppearanceProvider from "./components/AppearanceProvider";
 import Task from "./pages/Task";
@@ -41,6 +44,9 @@ import UserManagementPage from "./pages/UserManagementPage";
 import PrintersPage from "./pages/PrintersPage";
 import CamerasPage from "./pages/CamerasPage";
 import TakeawayOverview from "./pages/TakeawayOverview";
+import StandaloneLogin from "./pages/standalone/StandaloneLogin";
+import StandaloneRegister from "./pages/standalone/StandaloneRegister";
+import StandaloneApp from "./pages/standalone/StandaloneApp";
 import { setNavigator } from "./utils/navigation";
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
 import { PlanModulesProvider } from "./context/PlanModulesContext";
@@ -147,15 +153,18 @@ function TableOverviewRouteWrapper() {
 export default function App() {
   return (
     <AuthProvider>
-      <CurrencyProvider>
-        <AppearanceProvider>
-          <NotificationsProvider>
-            <PlanModulesProvider>
-              <AppShell />
-            </PlanModulesProvider>
-          </NotificationsProvider>
-        </AppearanceProvider>
-      </CurrencyProvider>
+      <SessionLockProvider>
+        <CurrencyProvider>
+          <AppearanceProvider>
+            <NotificationsProvider>
+              <PlanModulesProvider>
+                <AppShell />
+                <SessionLockOverlay />
+              </PlanModulesProvider>
+            </NotificationsProvider>
+          </AppearanceProvider>
+        </CurrencyProvider>
+      </SessionLockProvider>
     </AuthProvider>
   );
 }
@@ -208,8 +217,20 @@ function AppShell() {
   }, []);
 
   return (
-    <div className="flex h-screen">
-      <Routes>
+    <div className="h-screen w-full">
+      <div className="h-full w-full">
+        <Routes>
+            {/* STANDALONE: QR Menu + Kitchen */}
+            <Route path="/standalone" element={<Navigate to="/standalone/app" replace />} />
+            <Route path="/standalone-register" element={<Navigate to="/standalone/register" replace />} />
+            <Route path="/standalone/login" element={<StandaloneLogin />} />
+            <Route path="/standalone/register" element={<StandaloneRegister />} />
+            <Route path="/standalone/app" element={<StandaloneApp />}>
+              <Route index element={<Navigate to="qr-menu-settings" replace />} />
+              <Route path="qr-menu-settings" element={<QrMenuSettings />} />
+              <Route path="kitchen" element={<Kitchen />} />
+            </Route>
+
             {/* PUBLIC: QR Menu (legacy slug-based link) */}
             <Route path="/qr-menu/:slug/:id" element={<QrMenu />} />
             {/* PUBLIC: Dual QR entry points */}
@@ -222,6 +243,12 @@ function AppShell() {
             <Route
               path="/login"
               element={isAuthenticated() ? <Navigate to="/" /> : <LoginScreenWrapper />}
+            />
+
+            {/* PUBLIC: Staff PIN Login */}
+            <Route
+              path="/staff-login"
+              element={isAuthenticated() ? <Navigate to="/" /> : <StaffPINLogin />}
             />
 
             {/* PROTECTED: All POS routes */}
@@ -352,7 +379,8 @@ function AppShell() {
               />
               <Route path="unauthorized" element={<div className="p-10 text-red-600 text-xl">❌ Access Denied</div>} />
             </Route>
-      </Routes>
+        </Routes>
+      </div>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleX,
+  Edit2,
   GitMerge,
   HandCoins,
   Search,
@@ -48,6 +49,9 @@ import { useSetting } from "../components/hooks/useSetting";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
 import { getReservationSchedule, isEarlyReservationClose } from "../utils/reservationSchedule";
 import { loadRegisterSummary } from "../utils/registerSummaryCache";
+import CategoryBar from "../components/transaction/CategoryBar";
+import ProductGrid from "../components/transaction/ProductGrid";
+import CartPanel from "../components/transaction/CartPanel";
 const normalizeGroupKey = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim().toLowerCase().replace(/\s+/g, " ");
@@ -458,6 +462,8 @@ export default function TransactionScreen() {
     return () => {
       navTimeoutsRef.current.forEach((id) => window.clearTimeout(id));
       navTimeoutsRef.current = [];
+      // Cleanup phone order promise ref to prevent memory leak
+      phoneOrderCreatePromiseRef.current = null;
     };
   }, []);
   const initialOrderFromState = location.state?.order || null;
@@ -483,7 +489,6 @@ export default function TransactionScreen() {
     : null;
   const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
   const [products, setProducts] = useState(() => readCachedProducts());
- const [selectedForPayment, setSelectedForPayment] = useState([]);
 const [showDiscountModal, setShowDiscountModal] = useState(false);
 const [discountType, setDiscountType] = useState("percent"); // "percent" or "fixed"
 const [discountValue, setDiscountValue] = useState(10);
@@ -524,8 +529,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelLoading, setCancelLoading] = useState(false);
-  const [cancelQuantities, setCancelQuantities] = useState({});
-  const [payQuantities, setPayQuantities] = useState({});
+  const [selectionQuantities, setSelectionQuantities] = useState({});
   const [disablePayForReopenedOnlineOrder, setDisablePayForReopenedOnlineOrder] = useState(false);
 
   const updateSelectionQuantity = useCallback(
@@ -536,12 +540,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
         Math.max(1, Number(qty) || 1),
         limit
       );
-      setCancelQuantities((prev) => {
-        const next = { ...(prev || {}) };
-        next[key] = normalizedQty;
-        return next;
-      });
-      setPayQuantities((prev) => {
+      setSelectionQuantities((prev) => {
         const next = { ...(prev || {}) };
         next[key] = normalizedQty;
         return next;
@@ -552,14 +551,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
 
   const removeSelectionQuantity = useCallback((key) => {
     if (!key) return;
-    setCancelQuantities((prev) => {
-      const next = { ...(prev || {}) };
-      if (next[key] !== undefined) {
-        delete next[key];
-      }
-      return next;
-    });
-    setPayQuantities((prev) => {
+    setSelectionQuantities((prev) => {
       const next = { ...(prev || {}) };
       if (next[key] !== undefined) {
         delete next[key];
@@ -595,7 +587,7 @@ const [showMergeTableModal, setShowMergeTableModal] = useState(false);
   const [debtError, setDebtError] = useState("");
   const [debtLookupLoading, setDebtLookupLoading] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
-  const [reservationDate, setReservationDate] = useState("");
+  const [reservationDate, setReservationDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [reservationTime, setReservationTime] = useState("");
   const [reservationClients, setReservationClients] = useState("2");
   const [reservationNotes, setReservationNotes] = useState("");
@@ -1080,7 +1072,6 @@ const handleAddToDebt = async () => {
     setOrder(updatedOrder);
     setCartItems([]);
     setReceiptItems([]);
-    setSelectedForPayment([]);
     setSelectedCartItemIds(new Set());
     showToast(t("Order added to customer debt"));
     setShowDebtModal(false);
@@ -1162,7 +1153,7 @@ const handleSaveReservation = async () => {
       setOrder((prev) => ({ ...(prev || {}), ...fallback }));
     }
 
-    // 2️⃣ If it's a new reservation (not existing), confirm unconfirmed items like confirm order button
+    // 2️⃣ If it's a new reservation (not existing), confirm unconfirmed items OR set status to reserved
     if (!existingReservation) {
       // Confirm any unconfirmed items and send to kitchen
       if (hasUnconfirmedCartItems) {
@@ -1207,6 +1198,29 @@ const handleSaveReservation = async () => {
 
         setOrder((prev) => ({ ...prev, status: "reserved" }));
         await fetchOrderItems(updated.id);
+      } else {
+        // ✅ No items to confirm - just update order status to "reserved" and navigate
+        if (order?.id) {
+          await updateOrderStatus("reserved", 0);
+          setOrder((prev) => ({ ...prev, status: "reserved" }));
+          
+          // 🎯 Clear table orders cache so TableOverview fetches fresh data
+          try {
+            const cacheKey = `table_orders_${restaurantId}_v1`;
+            window?.localStorage?.removeItem(cacheKey);
+            window?.localStorage?.removeItem(`${cacheKey}_ts`);
+          } catch {
+            // ignore cache errors
+          }
+          
+          // 🎯 Navigate to tableoverview to show reserved table with orange status
+          showToast(t("✅ Table reserved successfully"));
+          setShowReservationModal(false);
+          resetReservationForm();
+          setReservationLoading(false);
+          debugNavigate("/tableoverview?tab=tables");
+          return;
+        }
       }
     }
 
@@ -1257,7 +1271,9 @@ const handleDeleteReservation = async () => {
 };
 
 const resetReservationForm = () => {
-  setReservationDate("");
+  // Set today's date as default
+  const today = new Date().toISOString().split('T')[0];
+  setReservationDate(today);
   setReservationTime("");
   setReservationClients("2");
   setReservationNotes("");
@@ -1299,8 +1315,70 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const key = normalizeGroupKey(cat);
   const isDragging = !!key && key === draggingCategoryKey;
 
+  if (normalizedVariant === "sidebar") {
+    return (
+      <button
+        key={`${variant}-${cat}-${idx}`}
+        type="button"
+        data-cat-idx={idx}
+        onClick={() => {
+          if (isReorderingCategories) return;
+          setCurrentCategoryIndex(idx);
+        }}
+        className={[
+          "group relative flex w-full flex-col overflow-hidden rounded-2xl",
+          "ring-1 ring-slate-200/70 bg-white/70 shadow-[0_12px_28px_rgba(15,23,42,0.08)]",
+          "backdrop-blur-sm transition-all duration-150 select-none",
+          "hover:ring-slate-300/80 hover:shadow-[0_18px_36px_rgba(15,23,42,0.10)]",
+          "active:scale-[0.985]",
+          "dark:bg-slate-950/35 dark:ring-slate-800/70 dark:hover:ring-slate-700/80",
+          isActive ? "ring-2 ring-indigo-400/80" : "",
+        ].join(" ")}
+      >
+        <div className="relative h-[62px] w-full overflow-hidden">
+          {hasImg ? (
+            <img
+              src={catSrc}
+              alt={cat}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="h-full w-full bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+          {!hasImg && (
+            <div className="absolute inset-0 grid place-items-center">
+              <span className="text-sm font-extrabold tracking-wide text-white/90 drop-shadow">
+                {(cat || "")
+                  .split(" ")
+                  .map((part) => part[0])
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase()}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+          <span className="flex-1 text-[11px] font-semibold text-slate-800 dark:text-slate-100 leading-tight">
+            {t(cat)}
+          </span>
+          <span
+            className={[
+              "h-1.5 w-1.5 rounded-full",
+              isActive ? "bg-indigo-500" : "bg-slate-300/70 dark:bg-slate-600/70",
+            ].join(" ")}
+            aria-hidden="true"
+          />
+        </div>
+      </button>
+    );
+  }
+
   const baseClasses =
-    "flex flex-col items-center justify-center gap-1 rounded-2xl border bg-white/80 px-2 py-2 text-center shadow-[0_8px_20px_rgba(30,64,175,0.08)] transition-all duration-150 select-none touch-manipulation hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98] dark:bg-slate-900/60 dark:border-slate-700/70 dark:shadow-[0_8px_20px_rgba(0,0,0,0.35)]";
+    "flex flex-col items-center justify-center gap-0.5 rounded-lg border bg-white/70 px-1.5 py-1 text-center shadow-xs transition-all duration-100 select-none touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98] dark:bg-slate-900/50 dark:border-slate-700/50 dark:shadow-xs";
 
   const paddingClass =
     normalizedVariant === "mobile"
@@ -1310,40 +1388,40 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
       : normalizedVariant === "vertical"
       ? "px-1 py-1"
       : normalizedVariant === "horizontal"
-      ? "px-1 py-1"
+      ? "px-1 py-0.5"
       : "px-1.5 py-1.5";
 
   const widthClass =
     normalizedVariant === "mobile"
-      ? "min-w-[86px] max-w-[96px] snap-start"
+      ? "min-w-[80px] max-w-[90px] snap-start"
       : normalizedVariant === "grid"
-      ? "w-[86px]"
+      ? "w-[80px]"
       : normalizedVariant === "vertical"
-      ? "w-[86px]"
+      ? "w-[80px]"
       : normalizedVariant === "horizontal"
-      ? "w-[86px]"
+      ? "w-[80px]"
       : "w-full";
   const activeClasses =
-    "border-indigo-300 bg-gradient-to-br from-white via-white to-indigo-50 shadow-[0_14px_26px_rgba(99,102,241,0.18)] ring-1 ring-indigo-200 dark:border-indigo-500/50 dark:from-indigo-950/35 dark:via-slate-900/50 dark:to-slate-950/30 dark:shadow-[0_14px_26px_rgba(0,0,0,0.4)] dark:ring-indigo-500/25";
+    "border-indigo-400/80 bg-indigo-50 shadow-sm dark:border-indigo-500/40 dark:bg-indigo-950/30";
   const inactiveClasses =
-    "border-white/70 hover:border-indigo-200 hover:bg-white dark:border-slate-700/70 dark:hover:border-indigo-500/40 dark:hover:bg-slate-900/70";
+    "border-slate-200/60 hover:border-slate-300 dark:border-slate-700/40 dark:hover:border-slate-600";
 
   const imageClasses =
     normalizedVariant === "vertical"
-      ? "h-[58px] w-[58px] object-cover rounded-2xl"
+      ? "h-[48px] w-[48px] object-cover rounded-lg"
       : normalizedVariant === "horizontal"
-      ? "h-[58px] w-[58px] object-cover rounded-2xl"
-      : "h-[58px] w-[58px] object-cover rounded-2xl";
-  const iconClasses = "text-[16px] leading-tight";
+      ? "h-[48px] w-[48px] object-cover rounded-lg"
+      : "h-[48px] w-[48px] object-cover rounded-lg";
+  const iconClasses = "text-[14px] leading-tight";
 
   const labelClasses =
     normalizedVariant === "grid"
-      ? "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[84px] dark:text-slate-200"
+      ? "text-[10px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[78px] dark:text-slate-200"
       : normalizedVariant === "vertical"
-      ? "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[84px] dark:text-slate-200"
+      ? "text-[10px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[78px] dark:text-slate-200"
       : normalizedVariant === "horizontal"
-      ? "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[84px] dark:text-slate-200"
-      : "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[80px] dark:text-slate-200";
+      ? "text-[10px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[78px] dark:text-slate-200"
+      : "text-[11px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[76px] dark:text-slate-200";
 
   return (
     <button
@@ -1432,8 +1510,8 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
       {hasImg ? (
         <img src={catSrc} alt={cat} className={imageClasses} />
       ) : (
-        <div className="flex h-[58px] w-[58px] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700">
-          <span className="text-sm font-semibold text-slate-500 dark:text-slate-200">
+        <div className="flex h-[48px] w-[48px] items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-slate-150 to-slate-250 dark:from-slate-750 dark:to-slate-800">
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-300">
             {(cat || "")
               .split(" ")
               .map((part) => part[0])
@@ -1483,7 +1561,6 @@ const phoneOrderCreatePromiseRef = useRef(null);
 const clearCartState = useCallback(() => {
   setCartItems([]);
   setReceiptItems([]);
-  setSelectedForPayment([]);
   setSelectedCartItemIds(new Set());
   setShowPaymentModal(false);
   setExpandedCartItems(new Set());
@@ -1496,7 +1573,7 @@ const clearCartState = useCallback(() => {
   setIsSplitMode(false);
   setShowExtrasModal(false);
   setSelectedPaymentMethod("");
-  setPayQuantities({});
+  setSelectionQuantities({});
   setIsFloatingCartOpen(false);
 }, []);
 
@@ -1756,7 +1833,6 @@ const clearSelectedCartItems = useCallback(() => {
   );
 
   setSelectedCartItemIds(new Set());
-  setSelectedForPayment((prev) => prev.filter((id) => !selectedKeys.has(id)));
 }, [cartItems, selectedCartItemIds]);
 
 useEffect(() => {
@@ -2043,17 +2119,22 @@ useEffect(() => {
   );
 
   // 💡 Compute total of selected cart items (supports partial quantity selection)
+  // Only count unpaid items toward payment totals so paid-item selections (for refunds)
+  // don’t inflate the pay modal.
   const selectedItemsTotal = cartItems.reduce((sum, item) => {
+    if (isPaidItem(item)) return sum;
     const key = String(item.unique_id || item.id);
     if (!selectedCartItemIds.has(key)) return sum;
     const maxQty = Math.max(1, Number(item.quantity) || 1);
     const selectedQty = Math.min(
       maxQty,
-      Number(payQuantities?.[key] || maxQty)
+      Number(selectionQuantities?.[key] || maxQty)
     );
     const perUnit = computeItemLineTotal(item) / maxQty;
     return sum + perUnit * selectedQty;
   }, 0);
+
+  const hasSelection = selectedCartItemIds.size > 0;
 
   const totalPaidAmount = useMemo(() => {
     return cartItems.reduce((sum, item) => {
@@ -2069,12 +2150,12 @@ useEffect(() => {
       const key = String(item.unique_id || item.id);
       if (!keys.has(key) || !item.paid) return sum;
       const maxQty = Math.max(1, Number(item.quantity) || 1);
-      const requested = Number(cancelQuantities[key]) || 1;
+      const requested = Number(selectionQuantities[key]) || 1;
       const cancelQty = Math.min(Math.max(1, requested), maxQty);
       const perUnit = computeItemLineTotal(item) / maxQty;
       return sum + perUnit * cancelQty;
     }, 0);
-  }, [cancelQuantities, cartItems, selectedCartItemIds, computeItemLineTotal]);
+  }, [selectionQuantities, cartItems, selectedCartItemIds, computeItemLineTotal]);
 
   const refundAmount = selectedPaidRefundAmount > 0 ? selectedPaidRefundAmount : totalPaidAmount;
   const hasPaidItems = refundAmount > 0;
@@ -2182,8 +2263,9 @@ const [splits, setSplits] = useState({});
 
   const openCancelModal = useCallback(() => {
     if (!order?.id) return;
-    if (normalizedStatus !== "confirmed") {
-      showToast(t("Order must be confirmed before cancelling."));
+    const canCancelStatus = normalizedStatus === "confirmed" || normalizedStatus === "paid";
+    if (!canCancelStatus) {
+      showToast(t("Order must be confirmed or paid before cancelling."));
       return;
     }
     if (selectedCartItems.length === 0) {
@@ -2191,7 +2273,7 @@ const [splits, setSplits] = useState({});
       return;
     }
     setCancelReason("");
-    setCancelQuantities({});
+    setSelectionQuantities({});
     setRefundMethodId(getDefaultRefundMethod());
     setShowCancelModal(true);
   }, [getDefaultRefundMethod, order?.id, normalizedStatus, selectedCartItems.length, t]);
@@ -2199,7 +2281,7 @@ const [splits, setSplits] = useState({});
   const closeCancelModal = useCallback(() => {
     setShowCancelModal(false);
     setCancelReason("");
-    setCancelQuantities({});
+    setSelectionQuantities({});
   }, []);
 
   const handleCancelConfirm = async () => {
@@ -2217,7 +2299,7 @@ const [splits, setSplits] = useState({});
         const uniqueId = item.unique_id || item.id;
         if (!uniqueId) return null;
         const maxQty = Math.max(1, Number(item.quantity) || 1);
-        const requested = Number(cancelQuantities[String(uniqueId)]) || 1;
+        const requested = Number(selectionQuantities[String(uniqueId)]) || 1;
         const qty = Math.min(Math.max(1, requested), maxQty);
         return { unique_id: String(uniqueId), quantity: qty };
       })
@@ -2311,31 +2393,69 @@ const confirmPaymentWithSplits = async (splits) => {
       .map(([methodId]) => methodId)
       .filter(Boolean);
 
-    // 1) Use the discounted total shown to the user
-    const totalDue = calculateDiscountedTotal();
+    // 1) Map of selected IDs to desired quantity (defaults to full qty)
+    const selectionQty = new Map(
+      Array.from(selectedCartItemIds).map((id) => {
+        const key = String(id);
+        const item = cartItems.find((i) => getPaymentItemKey(i) === key);
+        const maxQty = Math.max(1, Number(item?.quantity) || 1);
+        const desired = Number(selectionQuantities?.[key]) || maxQty;
+        return [key, Math.min(Math.max(1, desired), maxQty)];
+      })
+    );
+
+    // Determine which items to pay: either selected items or all unpaid items
+    let itemsToPay = [];
+    if (selectedCartItemIds.size > 0) {
+      // Only pay selected items
+      itemsToPay = cartItems.filter((i) => {
+        const key = String(getPaymentItemKey(i));
+        return selectedCartItemIds.has(key);
+      });
+    } else {
+      // Pay all items
+      itemsToPay = cartItems;
+    }
+
+    // Calculate total from items to pay with selection quantities and discount
+    let totalDue = itemsToPay.reduce((sum, i) => {
+      const maxQty = Math.max(1, Number(i.quantity) || 1);
+      const qty = selectionQty.get(getPaymentItemKey(i)) || maxQty;
+      const perUnit = computeItemLineTotal(i) / maxQty;
+      return sum + perUnit * qty;
+    }, 0);
+
+    // Apply discount
+    if (discountValue > 0) {
+      if (discountType === "percent") totalDue -= totalDue * (discountValue / 100);
+      if (discountType === "fixed") totalDue = Math.max(0, totalDue - discountValue);
+    }
 
     // 2) Generate a receipt id once (backend can also create one if omitted)
     const receiptId = uuidv4();
 
     // 3) Prepare items (include unique_id so backend can mark them paid)
-    const enhancedItems = cartItems.map((i) => ({
-      ...i,
-      product_id: i.product_id || i.id,
-      quantity: i.quantity,
-      price: i.price,
-      ingredients: i.ingredients,
-      extras: (i.extras || []).map(ex => ({
+    const enhancedItems = itemsToPay.map((i) => {
+      const qty = selectionQty.get(getPaymentItemKey(i)) || Number(i.quantity) || 1;
+      return {
+        ...i,
+        product_id: i.product_id || i.id,
+        quantity: qty,
+        price: i.price,
+        ingredients: i.ingredients,
+        extras: (i.extras || []).map(ex => ({
    ...ex,
    amount: Number(ex.amount) || 1,
    unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase()
  })),
-      unique_id: i.unique_id,
-      payment_method: null,
-      receipt_id: receiptId,
-      confirmed: true,
-      discountType: discountValue > 0 ? discountType : null,
-      discountValue: discountValue > 0 ? discountValue : 0,
-    }));
+        unique_id: i.unique_id,
+        payment_method: null,
+        receipt_id: receiptId,
+        confirmed: true,
+        discountType: discountValue > 0 ? discountType : null,
+        discountValue: discountValue > 0 ? discountValue : 0,
+      };
+    });
 
     // 4) Create the sub-order and mark items paid (server’s default mark_paid = true)
 const rSub = await secureFetch(`/orders/sub-orders${identifier}`, {
@@ -2391,9 +2511,8 @@ const rMethods = await secureFetch(`/orders/receipt-methods${identifier}`, {
 if (!rMethods) throw new Error("Failed to save receipt methods");
 
     // ⚡ INSTANT: Update UI + dispatch refresh (don't block on background)
-    setSelectedForPayment([]);
-    setShowPaymentModal(false);
     setSelectedCartItemIds(new Set());
+    setShowPaymentModal(false);
     dispatchOrdersLocalRefresh();
     if (window && typeof window.playPaidSound === "function") window.playPaidSound();
 
@@ -2599,9 +2718,6 @@ function allItemsDelivered(items) {
 
 
 
-
-  const calculateSubTotal = () =>
-    cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
 useEffect(() => {
   const fetchProducts = async () => {
@@ -3028,9 +3144,6 @@ useEffect(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [tableId, orderId]);
 
-  const calculateTotal = () =>
-    cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
 const updateOrderStatus = async (newStatus = null, total = null, method = null) => {
   let targetId = order?.id || (orderId && String(orderId) !== "new" ? orderId : null) || tableId;
   if (!targetId) {
@@ -3215,6 +3328,13 @@ const handleMultifunction = async () => {
    console.log("ENTERED handleMultifunction()");
   console.log("order before any checks →", order);
 
+  // 🔍 DEV profiling for confirm flow
+  const isDev = import.meta.env.DEV;
+  const perfLog = isDev ? (label, startTime) => {
+    const elapsed = performance.now() - startTime;
+    console.log(`⏱️ [PERF] ${label}: ${elapsed.toFixed(1)}ms`);
+  } : () => {};
+
   if (!order || !order.status) return;
   
 
@@ -3228,44 +3348,7 @@ const handleMultifunction = async () => {
     return;
   }
 
-  let paymentIds =
-    selectionKeys.size > 0
-      ? cartItems
-          .filter(
-            (item) =>
-              !item.paid && selectionKeys.has(getPaymentItemKey(item))
-          )
-          .map((item) => getPaymentItemKey(item))
-          .filter(Boolean)
-      : selectedForPayment.length > 0
-      ? [...selectedForPayment]
-      : cartItems
-          .filter((item) => !item.paid && item.confirmed)
-          .map((item) => getPaymentItemKey(item))
-          .filter(Boolean);
-
-  if (selectionKeys.size > 0 && paymentIds.length === 0) {
-    showToast(t("Selected items are already paid"));
-    return;
-  }
-
-  if (
-    paymentIds.length === 0 &&
-    cartItems.some((item) => !item.paid && item.confirmed)
-  ) {
-    paymentIds = cartItems
-      .filter((item) => !item.paid && item.confirmed)
-      .map((item) => getPaymentItemKey(item))
-      .filter(Boolean);
-  }
-
-  if (paymentIds.length > 0) {
-    setSelectedForPayment(paymentIds);
-  }
-
-  const total = cartItems
-    .filter((i) => paymentIds.includes(getPaymentItemKey(i)))
-    .reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const confirmTotal = calculateDiscountedTotal();
 
   // ✅ Allow phone orders to close even if empty
   if (cartItems.length === 0) {
@@ -3301,7 +3384,7 @@ const handleMultifunction = async () => {
 
   // 1️⃣ If closing, block if any item is preparing
   if (
-    getButtonLabel() === "Close" &&
+    getPrimaryActionLabel() === "Close" &&
     hasPreparingItems(receiptItems.concat(cartItems))
   ) {
     showToast(t("Table cannot be closed: preparing"));
@@ -3309,79 +3392,114 @@ const handleMultifunction = async () => {
   }
 
   // 2️⃣ Confirm unconfirmed items first
-  if (hasUnconfirmedCartItems) {
-  const updated = await updateOrderStatus("confirmed", total);
-  if (!updated) return;
+if (hasUnconfirmedCartItems) {
+// ✅ STEP 1: Server operations (keep awaits)
+const t0 = isDev ? performance.now() : 0;
+  let updated;
+  try {
+    updated = await updateOrderStatus("confirmed", confirmTotal);
+    if (isDev) perfLog("updateOrderStatus", t0);
+    if (!updated) return;
+  } catch (err) {
+    console.error("❌ Failed to confirm order:", err);
+    showToast(t("Failed to confirm order"));
+    return;
+  }
 
   if (window && window.playNewOrderSound) window.playNewOrderSound();
 
   const unconfirmedItems = safeCartItems.filter(i => !i.confirmed);
   if (unconfirmedItems.length > 0) {
-    await secureFetch(`/orders/order-items${identifier}`, {
-      method: "POST",
-      body: JSON.stringify({
-        order_id: updated.id,
-        receipt_id: null,
-        items: unconfirmedItems.map((i) => ({
-          product_id: i.id,
-          quantity: i.quantity,
-          price: i.price,
-          ingredients: i.ingredients,
-          extras: (i.extras || []).map(ex => ({
-            ...ex,
-            amount: Number(ex.amount) || 1,
-            unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase()
-          })),
-          unique_id: i.unique_id,
-          note: i.note || null,
-          confirmed: true,
-          kitchen_status: "new",
-          payment_method: null,
+    const t1 = isDev ? performance.now() : 0;
+    try {
+      await secureFetch(`/orders/order-items${identifier}`, {
+        method: "POST",
+        body: JSON.stringify({
+          order_id: updated.id,
           receipt_id: null,
-          discountType: discountValue > 0 ? discountType : null,
-          discountValue: discountValue > 0 ? discountValue : 0,
-        }))
-      }),
-    });
+          items: unconfirmedItems.map((i) => ({
+            product_id: i.id,
+            quantity: i.quantity,
+            price: i.price,
+            ingredients: i.ingredients,
+            extras: (i.extras || []).map(ex => ({
+              ...ex,
+              amount: Number(ex.amount) || 1,
+              unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase()
+            })),
+            unique_id: i.unique_id,
+            note: i.note || null,
+            confirmed: true,
+            kitchen_status: "new",
+            payment_method: null,
+            receipt_id: null,
+            discountType: discountValue > 0 ? discountType : null,
+            discountValue: discountValue > 0 ? discountValue : 0,
+          }))
+        }),
+      });
+      if (isDev) perfLog("order-items POST", t1);
+    } catch (err) {
+      console.error("❌ Failed to send items to kitchen:", err);
+      showToast(t("Failed to send items to kitchen"));
+      // Don't return here - UI is already updated optimistically
+    }
   }
 
+  // ✅ STEP 2: Instant UI update → Pay button appears immediately
   setOrder((prev) => ({ ...prev, status: "confirmed" }));
-  await fetchOrderItems(updated.id);
+  setCartItems(prev => prev.map(i => i.confirmed ? i : ({ ...i, confirmed: true })));
+  if (isDev) console.log("⚡ Optimistic UI applied - Pay button now visible");
 
-if ((orderId && orderType === "phone") && getButtonLabel() === "Confirm") {
-  await fetchOrderItems(updated.id);
-  setOrder((prev) => ({ ...prev, status: "confirmed" }));
+  // ✅ STEP 3: Background reconciliation (don't block UI)
+  const t2 = isDev ? performance.now() : 0;
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => {
+      fetchOrderItems(updated.id).then(() => {
+        if (isDev) perfLog("fetchOrderItems (background)", t2);
+      }).catch((err) => {
+        console.warn("⚠️ Background refresh failed:", err);
+      });
+    });
+  } else {
+    setTimeout(() => {
+      fetchOrderItems(updated.id).then(() => {
+        if (isDev) perfLog("fetchOrderItems (background)", t2);
+      }).catch((err) => {
+        console.warn("⚠️ Background refresh failed:", err);
+      });
+    }, 0);
+  }
+
+  // 🚪 Optionally leave Transaction screen after confirm (table only)
+  if (orderType === "table" && transactionSettings.autoNavigateTableAfterConfirm) {
+    setIsFloatingCartOpen(false);
+    scheduleNavigate("/tableoverview?tab=tables", 200);
+  }
+
+if ((orderId && orderType === "phone") && getPrimaryActionLabel() === "Confirm") {
   setHeader(prev => ({ ...prev, subtitle: "" }));
   scheduleNavigate("/orders", 400);
   return;
 }
 
 // 🥡 TAKEAWAY — confirm but STAY here (no navigate, no payment modal)
-if (orderType === "takeaway" && getButtonLabel() === "Confirm") {
-  await fetchOrderItems(order.id);
-  setOrder((prev) => ({ ...prev, status: "confirmed" }));
+if (orderType === "takeaway" && getPrimaryActionLabel() === "Confirm") {
   setHeader(prev => ({ ...prev, subtitle: "" }));
   // 🚫 Do NOT open pay modal or navigate
   return;
 }
 
+  // ✅ Do NOT auto-open payment modal; user must tap Pay
   return;
 }
 
-
- // 3️⃣ Open payment modal for table OR takeaway orders
-if (
-  order.status === "confirmed" &&
-  (orderType === "table" || orderType === "takeaway") &&
-  (hasConfirmedCartUnpaid || hasSuborderUnpaid)
-) {
-  if (paymentIds.length === 0) {
-    showToast(t("No items available to pay"));
+  // If there are unpaid items after confirmation, this button acts as Pay Later (leave unpaid)
+  if (hasConfirmedCartUnpaid || hasSuborderUnpaid) {
+    setIsFloatingCartOpen(false);
+    navigate("/tableoverview?tab=tables");
     return;
   }
-  setShowPaymentModal(true);
-  return;
-}
 
 if (orderType === "phone" && order.status !== "closed") {
   // ✅ Allow phone orders to close after payment
@@ -3398,7 +3516,7 @@ if (orderType === "phone" && order.status !== "closed") {
 
 // 🧠 For table orders → close ONLY when user manually presses “Close”
 // 🧠 For table orders → close ONLY when all items are delivered
-if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncludingSuborders)) {
+if (getPrimaryActionLabel() === "Close" && (order.status === "paid" || allPaidIncludingSuborders)) {
   const reservationSource = existingReservation ?? order;
   const schedule = getReservationSchedule(reservationSource);
   if (schedule && isEarlyReservationClose(reservationSource)) {
@@ -3426,8 +3544,8 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncluding
 
   // ❌ Not all delivered → don’t close; show message and bounce to TableOverview after 3s
   if (!allDelivered) {
-    showToast(t("Not delivered yet"));
-    scheduleNavigate("/tableoverview?tab=tables", 2000);
+    showToast("⚠️ " + t("Cannot close: some kitchen items not yet delivered!"));
+    scheduleNavigate("/tableoverview?tab=tables", 800);
     return;
   }
 
@@ -3447,6 +3565,53 @@ if (getButtonLabel() === "Close" && (order.status === "paid" || allPaidIncluding
 
 
 };
+
+const handlePayClick = useCallback(() => {
+  if (!order) return;
+  if (orderType === "phone") {
+    showToast(t("Payments are handled through the Orders screen"));
+    return;
+  }
+  if (hasUnconfirmedCartItems) {
+    showToast(t("Confirm the order before paying"));
+    return;
+  }
+
+  const selectionKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
+  const hasUnconfirmedSelected = cartItems.some(
+    (item) => selectionKeys.has(String(item.unique_id || item.id)) && !item.confirmed
+  );
+  if (hasUnconfirmedSelected) {
+    showToast(t("Selected items must be confirmed before payment"));
+    return;
+  }
+
+  let paymentIds =
+    selectionKeys.size > 0
+      ? cartItems
+          .filter((item) => !item.paid && item.confirmed && selectionKeys.has(getPaymentItemKey(item)))
+          .map((item) => getPaymentItemKey(item))
+          .filter(Boolean)
+      : cartItems
+          .filter((item) => !item.paid && item.confirmed)
+          .map((item) => getPaymentItemKey(item))
+          .filter(Boolean);
+
+  if (paymentIds.length === 0) {
+    showToast(t("No items available to pay"));
+    return;
+  }
+
+  setShowPaymentModal(true);
+}, [
+  cartItems,
+  hasUnconfirmedCartItems,
+  order,
+  orderType,
+  selectedCartItemIds,
+  setShowPaymentModal,
+  t,
+]);
 
 
 
@@ -3528,7 +3693,7 @@ const confirmPayment = async (method, payIds = null) => {
       const key = String(id);
       const item = cartItems.find((i) => getPaymentItemKey(i) === key);
       const maxQty = Math.max(1, Number(item?.quantity) || 1);
-      const desired = Number(payQuantities?.[key]) || maxQty;
+      const desired = Number(selectionQuantities?.[key]) || maxQty;
       return [key, Math.min(Math.max(1, desired), maxQty)];
     })
   );
@@ -3678,9 +3843,8 @@ const confirmPayment = async (method, payIds = null) => {
   await refreshReceiptAfterPayment();
   await fetchOrderItems(order.id);
   await fetchSubOrders();
-  setSelectedForPayment([]);
-  setShowPaymentModal(false);
   setSelectedCartItemIds(new Set());
+  setShowPaymentModal(false);
 
   if (methodIsCash && paidTotal > 0) {
     const note = order?.id ? `Order #${order.id} (${methodLabel})` : `Sale (${methodLabel})`;
@@ -3693,16 +3857,11 @@ const confirmPayment = async (method, payIds = null) => {
 };
 
 
-const getButtonLabel = () => {
+const getPrimaryActionLabel = () => {
   if (!order) return "Preparing..";
-
-  // 🔑 Force Close if already paid online
-  if (order.payment_method === "Online") {
-    return "Close";
-  }
-
+  if (order.payment_method === "Online") return "Close";
   if (hasUnconfirmedCartItems) return "Confirm";
-  if (hasConfirmedCartUnpaid || hasSuborderUnpaid) return "Pay";
+  if (hasConfirmedCartUnpaid || hasSuborderUnpaid) return "Pay Later";
   return "Close";
 };
 
@@ -3747,10 +3906,6 @@ useEffect(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [normalizedStatus, orderType, tableId, navigate, clearCartState]);
 
-
-const selectedForPaymentTotal = cartItems
-  .filter(i => selectedForPayment.includes(getPaymentItemKey(i)))
-  .reduce((sum, i) => sum + i.price * i.quantity, 0);
 
 const ensurePhoneOrder = useCallback(async () => {
   if (orderType !== "phone") return order;
@@ -4083,7 +4238,6 @@ const removeItem = (uniqueId) => {
   setCartItems((prev) =>
     prev.filter((item) => item.unique_id !== uniqueId || item.confirmed)
   );
-  setSelectedForPayment((prev) => prev.filter((id) => id !== uniqueId));
   setSelectedCartItemIds((prev) => {
     if (!prev.has(String(uniqueId))) return prev;
     const next = new Set(prev);
@@ -4108,7 +4262,6 @@ const clearUnconfirmedCartItems = useCallback(() => {
 
 
   setSelectedCartItemIds(new Set());
-  setSelectedForPayment([]);
 }, [cartItems]);
 
 const clearCartFromClearButton = useCallback(() => {
@@ -4333,902 +4486,462 @@ const renderCartContent = (variant = "desktop") => {
     : "px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]";
 
   const hasSelection = selectedCartItemIds.size > 0;
-  const primaryActionLabel = getButtonLabel();
+  const primaryActionLabel = getPrimaryActionLabel();
   const showPayLaterInClearSlot =
     !orderId &&
     cartItems.length > 0 &&
     !hasUnconfirmedCartItems &&
-    ["confirmed", "unpaid", "paid"].includes(normalizedStatus);
+    ["confirmed", "unpaid", "paid", "reserved"].includes(normalizedStatus);
   const payLaterLabel =
     showPayLaterInClearSlot && (normalizedStatus === "paid" || allPaidIncludingSuborders)
       ? t("Close Later")
       : t("Pay Later");
   const debtDisabled = !isDebtEligible || isDebtSaving;
+  const hasUnpaidConfirmed = cartItems.some((item) => item.confirmed && !isPaidItem(item));
 
-  // Action buttons rendered in the full-page footer.
+  const buildUnpaidGroups = () =>
+    Object.values(
+      unpaidCartItems.reduce((acc, item) => {
+        const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
+        const noteKey =
+          typeof item.note === "string" ? item.note.trim() : JSON.stringify(item.note || "");
+        const pricingKey = [
+          Number(item.price) || 0,
+          Number(item.original_price ?? item.originalPrice ?? 0) || 0,
+          String(item.discount_type ?? item.discountType ?? ""),
+          Number(item.discount_value ?? item.discountValue ?? 0) || 0,
+          normalizeYmd(item.promo_start ?? item.promoStart ?? ""),
+          normalizeYmd(item.promo_end ?? item.promoEnd ?? ""),
+        ].join("|");
+        const statusSlice = item.paid
+          ? `paid:${item.receipt_id || "yes"}`
+          : item.confirmed
+          ? "confirmed"
+          : "unconfirmed";
+        const key = item.confirmed
+          ? `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}__uid:${item.unique_id}`
+          : `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
+        if (!acc[key]) acc[key] = { ...item, quantity: 0, items: [] };
+        acc[key].quantity += Number(item.quantity) || 1;
+        acc[key].items.push(item);
+        return acc;
+      }, {})
+    ).map((item, idx) => {
+      const extrasList = safeParseExtras(item.extras);
+      const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
+      const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
+        const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+        const qty = Number(ex.quantity) || 1;
+        return sum + price * qty;
+      }, 0);
+      const basePrice = parseFloat(item.price) || 0;
+      const originalUnitPrice = Number(item.original_price ?? item.originalPrice ?? 0);
+      const discountType = String(item.discount_type ?? item.discountType ?? "none");
+      const discountValue = Number(item.discount_value ?? item.discountValue ?? 0);
+      const hasProductDiscountMeta =
+        discountType !== "none" && Number.isFinite(discountValue) && discountValue > 0;
+      const isDiscountApplied =
+        Boolean(item.discount_applied) ||
+        (Number.isFinite(originalUnitPrice) && Math.abs(originalUnitPrice - basePrice) > 0.0001);
+      const quantity = Number(item.quantity) || 1;
+      const baseTotal = basePrice * quantity;
+      const extrasTotal = perItemExtrasTotal * quantity;
+      const showNote = typeof item.note === "string" ? item.note.trim() !== "" : !!item.note;
+      const isEditable = !item.confirmed && !item.paid;
+      const cardGradient = item.paid
+        ? "bg-gradient-to-br from-green-200 via-green-100 to-green-50 border-green-300"
+        : item.confirmed
+        ? "bg-gradient-to-br from-blue-200 via-blue-100 to-blue-50 border-blue-300"
+        : "bg-gradient-to-br from-amber-200 via-amber-100 to-yellow-50 border-amber-300";
+
+      const itemKey = item.unique_id || `${item.id}-${idx}`;
+      const isExpanded = expandedCartItems.has(itemKey);
+      const selectionKey = String(item.unique_id || item.id);
+      const isSelected = selectedCartItemIds.has(selectionKey);
+
+      const openEditExtrasModal = async () => {
+        if (!isEditable) return;
+        const parsedExtras = safeParseExtras(item.extras);
+        const selection = normalizeExtrasGroupSelection([
+          item.extrasGroupRefs,
+          item.selectedExtrasGroup,
+          item.selected_extras_group,
+          item.selectedExtrasGroupNames,
+        ]);
+        if (selection.ids.length === 0 && selection.names.length === 0) {
+          setSelectedProduct({
+            ...item,
+            modalExtrasGroups: [],
+            extrasGroupRefs: { ids: [], names: [] },
+            selectedExtrasGroup: [],
+            selected_extras_group: [],
+            selectedExtrasGroupNames: [],
+          });
+          setSelectedExtras(parsedExtras || []);
+          setEditingCartItemIndex(idx);
+          setShowExtrasModal(true);
+          return;
+        }
+        let modalGroups = [];
+        let selectionForModal = selection;
+        try {
+          const match = await getMatchedExtrasGroups(selection);
+          if (match) {
+            modalGroups = match.matchedGroups || [];
+            const ids = match.matchedIds?.length ? match.matchedIds : selection.ids;
+            const names = match.matchedNames?.length ? match.matchedNames : selection.names;
+            selectionForModal = { ids, names };
+          } else {
+            const groupsData = await ensureExtrasGroups();
+            modalGroups = Array.isArray(groupsData) ? groupsData : [];
+          }
+        } catch (err) {
+          console.error("❌ Failed to resolve extras groups for edit:", err);
+          const fallbackGroups = await ensureExtrasGroups();
+          modalGroups = Array.isArray(fallbackGroups) ? fallbackGroups : [];
+        }
+        setSelectedProduct({
+          ...item,
+          modalExtrasGroups: modalGroups,
+          extrasGroupRefs: selectionForModal,
+          selectedExtrasGroup: selectionForModal.ids,
+          selected_extras_group: selectionForModal.ids,
+          selectedExtrasGroupNames: selectionForModal.names,
+        });
+        setSelectedExtras(parsedExtras || []);
+        setEditingCartItemIndex(idx);
+        setShowExtrasModal(true);
+      };
+
+      const availableQuantities = Array.from({ length: quantity }, (_, qIdx) => qIdx + 1);
+      const selectedQuantityValue = String(
+        Math.min(
+          Math.max(1, Number(selectionQuantities?.[selectionKey] ?? Number(item.quantity)) || 1),
+          Math.max(1, quantity)
+        )
+      );
+
+      return {
+        itemKey,
+        name: item.name,
+        basePriceLabel: formatCurrency(basePrice),
+        quantity,
+        baseTotalLabel: formatCurrency(baseTotal),
+        extrasTotalLabel: formatCurrency(extrasTotal),
+        totalWithExtrasLabel: formatCurrency(baseTotal + extrasTotal),
+        hasExtrasTotal: extrasTotal > 0,
+        extrasDetails: normalizedExtras.map((ex, i2) => {
+          const extraQtyPerItem = Number(ex.quantity) || 1;
+          const unit = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+          const totalQty = extraQtyPerItem * quantity;
+          const lineTotal = unit * totalQty;
+          return {
+            key: `${item.unique_id}-extra-${i2}`,
+            label: `+ ${totalQty}x ${formatCurrency(unit)} ${ex.name}`,
+            totalLabel: formatCurrency(lineTotal),
+          };
+        }),
+        showNote,
+        note: item.note,
+        hasProductDiscountMeta,
+        discountLabel:
+          discountType === "percentage" ? `-${discountValue}%` : `-${formatCurrency(discountValue)}`,
+        discountBadgeClass: isDiscountApplied
+          ? "rounded-full border px-2 py-0.5 font-semibold border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700"
+          : "rounded-full border px-2 py-0.5 font-semibold border-slate-200 bg-slate-50 text-slate-500",
+        isDiscountApplied,
+        originalUnitPriceLabel:
+          Number.isFinite(originalUnitPrice) && Math.abs(originalUnitPrice - basePrice) > 0.0001
+            ? formatCurrency(originalUnitPrice)
+            : "",
+        cardGradient,
+        borderLeftColor: item.paid ? "#059669" : item.confirmed ? "#2563eb" : "#d97706",
+        isExpanded,
+        isSelected,
+        isEditable,
+        isPaid: !!item.paid,
+        paidBadge: item.payment_method ? `${t("Paid")}: ${item.payment_method}` : t("Paid"),
+        availableQuantities,
+        selectedQuantityValue,
+        onCardClick: () => openEditExtrasModal(),
+        onToggleExpand: (e) => {
+          if (e) e.stopPropagation();
+          toggleCartItemExpansion(itemKey);
+        },
+        onSelectToggle: () => {
+          if (item.paid) return;
+          toggleCartItemSelection(selectionKey);
+          const maxQty = Math.max(1, Number(item.quantity) || 1);
+          if (!isSelected) {
+            updateSelectionQuantity(selectionKey, maxQty, maxQty);
+          } else {
+            removeSelectionQuantity(selectionKey);
+          }
+        },
+        onQuantityChange: (e) => {
+          const nextVal = Math.min(
+            Math.max(1, Number(e.target.value) || 1),
+            Math.max(1, Number(item.quantity) || 1)
+          );
+          updateSelectionQuantity(selectionKey, nextVal, Math.max(1, Number(item.quantity) || 1));
+        },
+        onNameClick: (e) => {
+          e.stopPropagation();
+          if (isEditable) {
+            openEditExtrasModal();
+            return;
+          }
+          toggleCartItemExpansion(itemKey);
+        },
+        onDecrement: (e) => {
+          e.stopPropagation();
+          decrementCartItem(item.unique_id);
+        },
+        onIncrement: (e) => {
+          e.stopPropagation();
+          incrementCartItem(item.unique_id);
+        },
+        onEdit: (e) => {
+          e.stopPropagation();
+          openEditExtrasModal();
+        },
+        onRemove: (e) => {
+          e.stopPropagation();
+          removeItem(item.unique_id);
+        },
+      };
+    });
+
+  const buildPaidGroups = () =>
+    Object.values(
+      paidCartItems.reduce((acc, item) => {
+        const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
+        const noteKey =
+          typeof item.note === "string" ? item.note.trim() : JSON.stringify(item.note || "");
+        const pricingKey = [
+          Number(item.price) || 0,
+          Number(item.original_price ?? item.originalPrice ?? 0) || 0,
+          String(item.discount_type ?? item.discountType ?? ""),
+          Number(item.discount_value ?? item.discountValue ?? 0) || 0,
+          normalizeYmd(item.promo_start ?? item.promoStart ?? ""),
+          normalizeYmd(item.promo_end ?? item.promoEnd ?? ""),
+        ].join("|");
+        const statusSlice = item.paid
+          ? `paid:${item.receipt_id || "yes"}`
+          : item.confirmed
+          ? "confirmed"
+          : "unconfirmed";
+        const key = item.confirmed
+          ? `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}__uid:${item.unique_id}`
+          : `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
+        if (!acc[key]) acc[key] = { ...item, quantity: 0, items: [] };
+        acc[key].quantity += Number(item.quantity) || 1;
+        acc[key].items.push(item);
+        return acc;
+      }, {})
+    ).map((item, idx) => {
+      const extrasList = safeParseExtras(item.extras);
+      const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
+      const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
+        const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+        const qty = Number(ex.quantity) || 1;
+        return sum + price * qty;
+      }, 0);
+      const basePrice = parseFloat(item.price) || 0;
+      const originalUnitPrice = Number(item.original_price ?? item.originalPrice ?? 0);
+      const discountType = String(item.discount_type ?? item.discountType ?? "none");
+      const discountValue = Number(item.discount_value ?? item.discountValue ?? 0);
+      const hasProductDiscountMeta =
+        discountType !== "none" && Number.isFinite(discountValue) && discountValue > 0;
+      const isDiscountApplied =
+        Boolean(item.discount_applied) ||
+        (Number.isFinite(originalUnitPrice) && Math.abs(originalUnitPrice - basePrice) > 0.0001);
+      const quantity = Number(item.quantity) || 1;
+      const baseTotal = basePrice * quantity;
+      const extrasTotal = perItemExtrasTotal * quantity;
+      const showNote = typeof item.note === "string" ? item.note.trim() !== "" : !!item.note;
+      const paidMethod = resolveItemPaymentMethod(order, item);
+      const itemKey = item.unique_id || `${item.id}-${idx}`;
+      const selectionKey = String(item.unique_id || item.id);
+      const isExpanded = expandedCartItems.has(itemKey);
+      const isSelected = selectedCartItemIds.has(selectionKey);
+      const availableQuantities = Array.from({ length: quantity }, (_, qIdx) => qIdx + 1);
+      const selectedQuantityValue = String(
+        Math.min(
+          Math.max(1, Number(selectionQuantities?.[selectionKey] ?? Number(item.quantity)) || 1),
+          Math.max(1, quantity)
+        )
+      );
+      return {
+        itemKey,
+        name: item.name,
+        basePriceLabel: formatCurrency(basePrice),
+        quantity,
+        cardGradient: "bg-gradient-to-br from-green-200 via-green-100 to-green-50 border-green-300",
+        hasProductDiscountMeta,
+        discountLabel:
+          discountType === "percentage" ? `-${discountValue}%` : `-${formatCurrency(discountValue)}`,
+        discountBadgeClass: isDiscountApplied
+          ? "rounded-full border px-2 py-0.5 font-semibold border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700"
+          : "rounded-full border px-2 py-0.5 font-semibold border-slate-200 bg-slate-50 text-slate-500",
+        paidMethod,
+        totalPaidLabel: formatCurrency(baseTotal + extrasTotal),
+        extrasTotalLabel: formatCurrency(extrasTotal),
+        hasExtrasTotal: extrasTotal > 0,
+        isExpanded,
+        isSelected,
+        availableQuantities,
+        selectedQuantityValue,
+        showNote,
+        note: typeof item.note === "string" ? item.note : "",
+        extrasSummary: normalizedExtras.map((ex) => ex.name || ex.label).filter(Boolean).join(", "),
+        onToggleExpand: () => toggleCartItemExpansion(itemKey),
+        onSelectToggle: (e) => {
+          if (e) e.stopPropagation();
+          toggleCartItemSelection(selectionKey);
+          const maxQty = Math.max(1, Number(item.quantity) || 1);
+          if (!isSelected) {
+            updateSelectionQuantity(selectionKey, maxQty, maxQty);
+          } else {
+            removeSelectionQuantity(selectionKey);
+          }
+        },
+        onQuantityChange: (e) => {
+          const nextVal = Math.min(
+            Math.max(1, Number(e.target.value) || 1),
+            Math.max(1, Number(item.quantity) || 1)
+          );
+          updateSelectionQuantity(selectionKey, nextVal, Math.max(1, Number(item.quantity) || 1));
+        },
+      };
+    });
+
+  const cartData = {
+    t,
+    containerClasses,
+    headerPadding,
+    footerPadding,
+    orderId,
+    tableLabelText,
+    tableId,
+    invoiceNumber,
+    existingReservation,
+    unpaidGroups: buildUnpaidGroups(),
+    paidGroups: buildPaidGroups(),
+    showPaidCartItems,
+    cartItemsLength: cartItems.length,
+    cartScrollRef,
+  };
+
+  const totals = {
+    subtotalLabel: formatCurrency(calculateDiscountedTotal()),
+    discountLabel:
+      discountValue > 0
+        ? `${t("Discount")} ${
+            discountType === "percent"
+              ? `(${discountValue}%)`
+              : `(-${formatCurrency(discountValue)})`
+          }`
+        : "",
+    discountValueLabel: discountValue > 0 ? `-${formatCurrency(discountValue)}` : "",
+    totalLabel: formatCurrency(calculateDiscountedTotal()),
+    selectedTotalLabel: formatCurrency(selectedItemsTotal),
+    hasDiscount: discountValue > 0,
+    showPayLaterInClearSlot,
+    payLaterLabel,
+    primaryActionLabel,
+    showPayLaterInFooter:
+      !orderId &&
+      cartItems.length > 0 &&
+      !hasUnconfirmedCartItems &&
+      ["confirmed", "unpaid", "paid", "reserved"].includes(normalizedStatus),
+    footerPayLaterLabel:
+      !orderId &&
+      cartItems.length > 0 &&
+      !hasUnconfirmedCartItems &&
+      ["confirmed", "unpaid", "paid", "reserved"].includes(normalizedStatus) &&
+      (normalizedStatus === "paid" || allPaidIncludingSuborders)
+        ? t("Close Later")
+        : t("Pay Later"),
+    footerCancelDisabled:
+      normalizedStatus !== "confirmed" || hasUnconfirmedCartItems || cartItems.length === 0,
+    footerCanShowCancel: orderType === "table",
+    footerPrimaryActionLabel: primaryActionLabel,
+  };
+
+  const uiState = {
+    isDesktop,
+    hasSelection,
+    selectedCount: selectedCartItemIds.size,
+    isPhoneOrder,
+    hasConfirmedCartUnpaid,
+    allCartItemsPaid,
+    normalizedStatus,
+    isFloatingCartOpen,
+  };
+
+  const actions = {
+    setShowMoveTableModal,
+    setShowMergeTableModal,
+    handleOpenDebtModal,
+    debtDisabled,
+    isDebtSaving,
+    handleCartPrint,
+    toggleCartItemSelection,
+    updateSelectionQuantity,
+    removeSelectionQuantity,
+    toggleCartItemExpansion,
+    setShowPaidCartItems,
+    decrementCartItem,
+    incrementCartItem,
+    removeItem,
+    openReservationModal,
+    openCancelModal,
+    setShowDiscountModal,
+    handleOpenCashRegister,
+    clearCartFromClearButton,
+    navigate,
+    setIsFloatingCartOpen,
+    handleMultifunction,
+    hasUnpaidConfirmed,
+  };
+
+  const setUiState = { setIsFloatingCartOpen };
 
   return (
-   <aside className={containerClasses}>
-  {/* === Header === */}
-  <header className={`flex-none items-start justify-between bg-transparent ${headerPadding}`}>
-    <div className="flex min-w-0 flex-1 flex-col space-y-0.5">
-      <div className="flex w-full flex-wrap items-center gap-2">
-        <h2 className="hidden text-lg font-semibold text-slate-800 lg:block dark:text-slate-100">{t("Cart")}</h2>
-        <div className="ml-auto flex items-center gap-1">
-          <div className="flex flex-wrap items-center gap-1 rounded-full bg-white/80 px-1.5 py-1 shadow-sm ring-1 ring-white/80 dark:bg-slate-900/60 dark:ring-slate-700/70">
-            {!orderId && (
-              <button
-                type="button"
-                onClick={() => setShowMoveTableModal(true)}
-                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/90 px-2.5 py-1 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-slate-900/60 dark:text-emerald-200 dark:hover:bg-emerald-950/25"
-                title={t("Move Table")}
-                aria-label={t("Move Table")}
-              >
-                <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">{t("Move")}</span>
-              </button>
-            )}
-            {!orderId && (
-              <button
-                type="button"
-                onClick={() => setShowMergeTableModal(true)}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white/90 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-50 dark:border-amber-500/30 dark:bg-slate-900/60 dark:text-amber-200 dark:hover:bg-amber-950/25"
-                title={t("Merge Table")}
-                aria-label={t("Merge Table")}
-              >
-                <GitMerge className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">{t("Merge")}</span>
-              </button>
-            )}
-              <button
-                type="button"
-                onClick={() => {
-                  if (debtDisabled) return;
-                  handleOpenDebtModal();
-                }}
-                disabled={debtDisabled}
-              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200 dark:hover:bg-amber-950/30"
-              title={t("Add to Debt")}
-              aria-label={t("Add to Debt")}
-            >
-              <HandCoins className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">
-                {isDebtSaving ? t("Saving...") : t("Debt")}
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
-      <p className="text-[0.94rem] text-slate-500 dark:text-slate-300">
-        {orderId ? t("Phone Order") : `${tableLabelText} ${tableId}`}
-      </p>
-      {invoiceNumber && (
-        <div className="flex items-center gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
-            {t("Invoice")} #{invoiceNumber}
-          </p>
-          <button
-            type="button"
-            onClick={handleCartPrint}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-sm text-slate-700 shadow hover:bg-slate-200 transition dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-            title={t("Print Receipt")}
-            aria-label={t("Print Receipt")}
-          >
-            🖨️
-          </button>
-        </div>
-      )}
-    </div>
-
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
-      {hasSelection && (
-        <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-600 dark:bg-indigo-950/35 dark:text-indigo-200 dark:ring-1 dark:ring-indigo-500/20">
-          {selectedCartItemIds.size} {t("Selected")}
-        </span>
-      )}
-      {!isDesktop && (
-        <button
-          type="button"
-          onClick={() => setIsFloatingCartOpen(false)}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200"
-          aria-label={t("Close")}
-        >
-          ✕
-        </button>
-      )}
-    </div>
-  </header>
-
-  {/* === Reservation === */}
-  {existingReservation && existingReservation.reservation_date && (
-    <div className="mx-3 mb-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200">
-              {t("Reserved")}
-            </span>
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">
-              {existingReservation.reservation_date || "—"}
-            </span>
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-slate-700 dark:text-slate-200">
-            <div className="min-w-0">
-              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                {t("Time")}
-              </div>
-              <div className="truncate font-bold">
-                {existingReservation.reservation_time || "—"}
-              </div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                {t("Guests")}
-              </div>
-              <div className="truncate font-bold">
-                {existingReservation.reservation_clients || 0}
-              </div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                {t("Date")}
-              </div>
-              <div className="truncate font-bold">
-                {existingReservation.reservation_date || "—"}
-              </div>
-            </div>
-          </div>
-          {existingReservation.reservation_notes && (
-            <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:bg-zinc-800 dark:text-slate-200">
-              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                {t("Notes")}
-              </div>
-              <div className="line-clamp-2 break-words">
-                {existingReservation.reservation_notes}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )}
-
-  {/* === Body === */}
-  <div ref={cartScrollRef} className="min-h-0 flex-1 overflow-y-auto">
-    <div
-      className="min-h-full px-3 pb-2 grid grid-rows-[auto_1fr] gap-1.5 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
-      style={{ WebkitOverflowScrolling: "touch" }}
-    >
-      <div>
-        {cartItems.length === 0 ? (
-          <div className="h-full rounded-2xl border border-dashed border-slate-200 bg-transparent py-8 text-center text-xs font-medium text-slate-500 grid place-items-center dark:border-slate-700 dark:text-slate-400">
-            <div>
-              <div className="mx-auto mb-2 h-12 w-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 text-2xl leading-[48px] dark:from-slate-800 dark:to-slate-700">
-                🛒
-              </div>
-              {t("Cart is empty.")}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {unpaidCartItems.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-xs font-medium text-slate-400">
-                {t("No unpaid items")}
-              </div>
-            ) : (
-              <ul className="flex flex-col gap-1.5">
-              {/* === Group unpaid items by product name + extras + note === */}
-              {Object.values(
-                unpaidCartItems.reduce((acc, item) => {
-    const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
-    const noteKey =
-      typeof item.note === "string" ? item.note.trim() : JSON.stringify(item.note || "");
-    const pricingKey = [
-      Number(item.price) || 0,
-      Number(item.original_price ?? item.originalPrice ?? 0) || 0,
-      String(item.discount_type ?? item.discountType ?? ""),
-      Number(item.discount_value ?? item.discountValue ?? 0) || 0,
-      normalizeYmd(item.promo_start ?? item.promoStart ?? ""),
-      normalizeYmd(item.promo_end ?? item.promoEnd ?? ""),
-    ].join("|");
-
-    // ➕ Add a status slice to the key so paid/confirmed/unconfirmed never merge together
-    const statusSlice = item.paid
-      ? `paid:${item.receipt_id || "yes"}`
-      : (item.confirmed ? "confirmed" : "unconfirmed");
-
-    // 🔑 Grouping key.
-    // NOTE: confirmed items must not merge, otherwise you can't select/cancel just one of two identical items.
-    const key = item.confirmed
-      ? `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}__uid:${item.unique_id}`
-      : `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
-
-    if (!acc[key]) acc[key] = { ...item, quantity: 0, items: [] };
-
-    acc[key].quantity += Number(item.quantity) || 1;
-    acc[key].items.push(item);
-    return acc;
-                }, {})
-              ).map((item, idx) => {
-            const extrasList = safeParseExtras(item.extras);
-            const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
-            const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
-              const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-              const qty = Number(ex.quantity) || 1;
-              return sum + price * qty;
-            }, 0);
-            const basePrice = parseFloat(item.price) || 0;
-            const originalUnitPrice = Number(
-              item.original_price ?? item.originalPrice ?? 0
-            );
-            const discountType = String(item.discount_type ?? item.discountType ?? "none");
-            const discountValue = Number(item.discount_value ?? item.discountValue ?? 0);
-            const promoStart = normalizeYmd(item.promo_start ?? item.promoStart);
-            const promoEnd = normalizeYmd(item.promo_end ?? item.promoEnd);
-            const hasProductDiscountMeta =
-              discountType !== "none" && Number.isFinite(discountValue) && discountValue > 0;
-            const isDiscountApplied =
-              Boolean(item.discount_applied) ||
-              (Number.isFinite(originalUnitPrice) &&
-                Math.abs(originalUnitPrice - basePrice) > 0.0001);
-            const quantity = Number(item.quantity) || 1;
-            const baseTotal = basePrice * quantity;
-            const extrasTotal = perItemExtrasTotal * quantity;
-            const showNote =
-              typeof item.note === "string" ? item.note.trim() !== "" : !!item.note;
-            const isEditable = !item.confirmed && !item.paid;
-            // 💡 More vibrant, clearly distinct colors
-const cardGradient = item.paid
-  ? "bg-gradient-to-br from-green-200 via-green-100 to-green-50 border-green-300" // Paid = green
-  : item.confirmed
-  ? "bg-gradient-to-br from-blue-200 via-blue-100 to-blue-50 border-blue-300"     // Confirmed = blue
-  : "bg-gradient-to-br from-amber-200 via-amber-100 to-yellow-50 border-amber-300"; // Unpaid (not confirmed) = yellow
-
-
-            const itemKey = item.unique_id || `${item.id}-${idx}`;
-            const isExpanded = expandedCartItems.has(itemKey);
-            const selectionKey = String(item.unique_id || item.id);
-            const isSelected = selectedCartItemIds.has(selectionKey);
-            const openEditExtrasModal = async () => {
-              if (!isEditable) return;
-              const parsedExtras = safeParseExtras(item.extras);
-              const selection = normalizeExtrasGroupSelection([
-                item.extrasGroupRefs,
-                item.selectedExtrasGroup,
-                item.selected_extras_group,
-                item.selectedExtrasGroupNames,
-              ]);
-              if (selection.ids.length === 0 && selection.names.length === 0) {
-                setSelectedProduct({
-                  ...item,
-                  modalExtrasGroups: [],
-                  extrasGroupRefs: { ids: [], names: [] },
-                  selectedExtrasGroup: [],
-                  selected_extras_group: [],
-                  selectedExtrasGroupNames: [],
-                });
-                setSelectedExtras(parsedExtras || []);
-                setEditingCartItemIndex(idx);
-                setShowExtrasModal(true);
-                return;
-              }
-              let modalGroups = [];
-              let selectionForModal = selection;
-              try {
-                const match = await getMatchedExtrasGroups(selection);
-                if (match) {
-                  modalGroups = match.matchedGroups || [];
-                  const ids = match.matchedIds?.length
-                    ? match.matchedIds
-                    : selection.ids;
-                  const names = match.matchedNames?.length
-                    ? match.matchedNames
-                    : selection.names;
-                  selectionForModal = {
-                    ids,
-                    names,
-                  };
-                } else {
-                  const groupsData = await ensureExtrasGroups();
-                  modalGroups = Array.isArray(groupsData) ? groupsData : [];
-                }
-              } catch (err) {
-                console.error("❌ Failed to resolve extras groups for edit:", err);
-                const fallbackGroups = await ensureExtrasGroups();
-                modalGroups = Array.isArray(fallbackGroups) ? fallbackGroups : [];
-              }
-              setSelectedProduct({
-                ...item,
-                modalExtrasGroups: modalGroups,
-                extrasGroupRefs: selectionForModal,
-                selectedExtrasGroup: selectionForModal.ids,
-                selected_extras_group: selectionForModal.ids,
-                selectedExtrasGroupNames: selectionForModal.names,
-              });
-              setSelectedExtras(parsedExtras || []);
-              setEditingCartItemIndex(idx);
-              setShowExtrasModal(true);
-            };
-
-            return (
-            <li
-  data-cart-item="true"
-  key={itemKey}
-  className={`relative flex flex-col gap-1 overflow-hidden rounded-lg border border-slate-200 p-2 text-[13px] shadow-sm transition ${cardGradient}`}
-  onClick={() => openEditExtrasModal()}
->
-  <div className="flex items-center justify-between gap-1">
-    <div className="flex items-center gap-1 flex-1">
-            <div className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                checked={isSelected}
-                disabled={!!item.paid}
-                onChange={() => {
-                  if (item.paid) return;
-                  toggleCartItemSelection(selectionKey);
-                  const maxQty = Math.max(1, Number(item.quantity) || 1);
-                  if (!isSelected) {
-                    updateSelectionQuantity(selectionKey, maxQty, maxQty);
-                  } else {
-                    removeSelectionQuantity(selectionKey);
-                  }
-                }}
-                onClick={(e) => e.stopPropagation()}
-              />
-              {isSelected && !item.paid && (Number(item.quantity) || 1) > 1 && (
-                <select
-                  className="h-7 rounded-md border border-slate-300 bg-white px-1 text-xs font-semibold text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                  value={String(
-                    Math.min(
-                      Math.max(
-                        1,
-                        Number(
-                          payQuantities?.[selectionKey] ??
-                            cancelQuantities?.[selectionKey] ??
-                            Number(item.quantity)
-                        ) || 1
-                      ),
-                      Math.max(1, Number(item.quantity) || 1)
-                    )
-                  )}
-                  onChange={(e) => {
-                    const nextVal = Math.min(
-                      Math.max(1, Number(e.target.value) || 1),
-                      Math.max(1, Number(item.quantity) || 1)
-                    );
-                    updateSelectionQuantity(selectionKey, nextVal, Math.max(1, Number(item.quantity) || 1));
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  title={t("Select quantity to pay")}
-                >
-                  {Array.from({ length: Number(item.quantity) || 1 }, (_, idx) => idx + 1).map(
-                    (n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    )
-                  )}
-                </select>
-              )}
-            </div>
-      <div className="min-w-0 flex-1">
-        <span
-          className="truncate font-semibold text-slate-800 block"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (isEditable) {
-              openEditExtrasModal();
-              return;
-            }
-            toggleCartItemExpansion(itemKey);
-          }}
-        >
-          {item.name}
-          <span className="ml-2 text-[11px] font-medium text-slate-600">
-            {formatCurrency(basePrice)} ×{quantity}
-          </span>
-        </span>
-        {hasProductDiscountMeta && (
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
-            <span
-              className={`rounded-full border px-2 py-0.5 font-semibold ${
-                isDiscountApplied
-                  ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700"
-                  : "border-slate-200 bg-slate-50 text-slate-500"
-              }`}
-            >
-              {discountType === "percentage"
-                ? `-${discountValue}%`
-                : `-${formatCurrency(discountValue)}`}
-            </span>
-            {isDiscountApplied &&
-              Number.isFinite(originalUnitPrice) &&
-              Math.abs(originalUnitPrice - basePrice) > 0.0001 && (
-                <span className="whitespace-nowrap">
-                  <span className="line-through text-slate-400">
-                    {formatCurrency(originalUnitPrice)}
-                  </span>{" "}
-                  <span className="font-semibold text-fuchsia-700">
-                    {formatCurrency(basePrice)}
-                  </span>
-                </span>
-              )}
-          </div>
-        )}
-      </div>
-    </div>
-    <div className="flex items-center gap-1">
-      {item.paid && (
-        <span
-          className="mr-1 inline-flex items-center rounded-full bg-emerald-600/90 px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-white shadow-sm"
-          title={item.payment_method ? `${t("Paid")}: ${item.payment_method}` : t("Paid")}
-        >
-          ✓ {t("Paid")}
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleCartItemExpansion(itemKey);
-        }}
-        className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-xs text-slate-500 hover:border-slate-300"
-        title={isExpanded ? t("Hide details") : t("Show details")}
-      >
-        {isExpanded ? "▲" : "▼"}
-      </button>
-      <span className="font-semibold text-indigo-600 whitespace-nowrap">
-        {formatCurrency(baseTotal)}
-      </span>
-    </div>
-  </div>
-
-
-  {!isExpanded && extrasTotal > 0 && (
-    <div className="flex flex-col gap-1 pl-6 pr-1 text-xs text-slate-600">
-      <div className="flex items-center justify-between">
-        <span>{t("Extras total")}</span>
-        <span className="font-semibold text-slate-700">{formatCurrency(extrasTotal)}</span>
-      </div>
-      <div className="h-px bg-slate-200" />
-      <div className="flex items-center justify-between text-sm font-semibold text-indigo-900">
-        <span>{t("Total with extras")}</span>
-        <span>{formatCurrency(baseTotal + extrasTotal)}</span>
-      </div>
-    </div>
-  )}
-
-  {/* Expanded Details */}
-  {isExpanded && (
-    <div className="mt-1 rounded-lg bg-white/60 p-2 text-[12px] text-slate-600 space-y-2">
-      {/* === Extras List === */}
-          {normalizedExtras.length > 0 && (
-            <div className="space-y-0.5">
-              <ul className="space-y-0.5 text-xs text-slate-600">
-                {normalizedExtras.map((ex, i2) => {
-                  const extraQtyPerItem = Number(ex.quantity) || 1;
-                  const unit =
-                    parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                  const totalQty = extraQtyPerItem * quantity;
-                  const lineTotal = unit * totalQty;
-                  return (
-                <li key={`${item.unique_id}-extra-${i2}`} className="flex justify-between">
-                  <span>
-                    + {totalQty}x {formatCurrency(unit)} {ex.name}
-                  </span>
-                  <span className="font-semibold text-slate-700">
-                    {formatCurrency(lineTotal)}
-                  </span>
-                </li>
-                  );
-                })}
-              </ul>
-              <div className="flex items-center justify-between pt-1 text-xs font-semibold text-slate-700">
-                <span>{t("Extras total")}</span>
-                <span>{formatCurrency(extrasTotal)}</span>
-              </div>
-            </div>
-          )}
-
-      {/* === Notes === */}
-      {showNote && (
-        <div className="rounded border border-yellow-200 bg-yellow-50 px-2 py-1 text-[11px] text-yellow-800">
-          {item.note}
-        </div>
-      )}
-
-      {/* === Qty / Edit / Remove === */}
-      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200">
-        {/* Qty Control */}
-        <div className="flex items-center gap-1">
-          <span>{t("Qty")}:</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              decrementCartItem(item.unique_id);
-            }}
-            className="h-5 w-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-            disabled={!isEditable}
-          >
-            –
-          </button>
-          <span className="min-w-[18px] text-center">{quantity}</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              incrementCartItem(item.unique_id);
-            }}
-            className="h-5 w-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-            disabled={!isEditable}
-          >
-            +
-          </button>
-        </div>
-
-        {/* Edit / Remove */}
-        {isEditable && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                openEditExtrasModal();
-              }}
-              className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-100"
-              title={t("Edit item")}
-            >
-              {t("Edit")}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                removeItem(item.unique_id);
-              }}
-              className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100"
-              title={t("Remove item")}
-            >
-              {t("Remove")}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )}
-</li>
-
-            );
-              })}
-              </ul>
-            )}
-
-            {paidCartItems.length > 0 && (
-              <div className="rounded-xl border border-slate-200 bg-white/70">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-700"
-                onClick={() => setShowPaidCartItems((prev) => !prev)}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-                    {t("Paid")}
-                  </span>
-                  <span className="text-slate-500">
-                    {paidCartItems.length} {t("items")}
-                  </span>
-                </span>
-                <span className="text-slate-400">{showPaidCartItems ? "▲" : "▼"}</span>
-              </button>
-              {showPaidCartItems && (
-                <ul className="flex flex-col gap-1.5 px-2 pb-2">
-                  {/* === Group paid items by product name + extras + note === */}
-                  {Object.values(
-                    paidCartItems.reduce((acc, item) => {
-                      const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
-                      const noteKey =
-                        typeof item.note === "string"
-                          ? item.note.trim()
-                          : JSON.stringify(item.note || "");
-                      const pricingKey = [
-                        Number(item.price) || 0,
-                        Number(item.original_price ?? item.originalPrice ?? 0) || 0,
-                        String(item.discount_type ?? item.discountType ?? ""),
-                        Number(item.discount_value ?? item.discountValue ?? 0) || 0,
-                        normalizeYmd(item.promo_start ?? item.promoStart ?? ""),
-                        normalizeYmd(item.promo_end ?? item.promoEnd ?? ""),
-                      ].join("|");
-
-                      const statusSlice = item.paid
-                        ? `paid:${item.receipt_id || "yes"}`
-                        : item.confirmed
-                          ? "confirmed"
-                          : "unconfirmed";
-
-                      const key = item.confirmed
-                        ? `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}__uid:${item.unique_id}`
-                        : `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
-
-                      if (!acc[key]) acc[key] = { ...item, quantity: 0, items: [] };
-                      acc[key].quantity += Number(item.quantity) || 1;
-                      acc[key].items.push(item);
-                      return acc;
-                    }, {})
-                  ).map((item, idx) => {
-                    const extrasList = safeParseExtras(item.extras);
-                    const normalizedExtras = Array.isArray(extrasList) ? extrasList : [];
-                    const perItemExtrasTotal = normalizedExtras.reduce((sum, ex) => {
-                      const price = parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                      const qty = Number(ex.quantity) || 1;
-                      return sum + price * qty;
-                    }, 0);
-                    const basePrice = parseFloat(item.price) || 0;
-                    const originalUnitPrice = Number(item.original_price ?? item.originalPrice ?? 0);
-                    const discountType = String(item.discount_type ?? item.discountType ?? "none");
-                    const discountValue = Number(item.discount_value ?? item.discountValue ?? 0);
-                    const hasProductDiscountMeta =
-                      discountType !== "none" &&
-                      Number.isFinite(discountValue) &&
-                      discountValue > 0;
-                    const isDiscountApplied =
-                      Boolean(item.discount_applied) ||
-                      (Number.isFinite(originalUnitPrice) &&
-                        Math.abs(originalUnitPrice - basePrice) > 0.0001);
-                    const quantity = Number(item.quantity) || 1;
-                    const baseTotal = basePrice * quantity;
-                    const extrasTotal = perItemExtrasTotal * quantity;
-                    const showNote =
-                      typeof item.note === "string" ? item.note.trim() !== "" : !!item.note;
-                    const paidMethod = resolveItemPaymentMethod(order, item);
-
-                    const cardGradient =
-                      "bg-gradient-to-br from-green-200 via-green-100 to-green-50 border-green-300";
-
-                    const itemKey = item.unique_id || `${item.id}-${idx}`;
-                    const isExpanded = expandedCartItems.has(itemKey);
-
-                    return (
-                      <li
-                        data-cart-item="true"
-                        key={`paid-${itemKey}`}
-                        className={`relative flex flex-col gap-1 overflow-hidden rounded-lg border border-slate-200 p-2 text-[13px] shadow-sm transition ${cardGradient}`}
-                        onClick={() => toggleCartItemExpansion(itemKey)}
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="min-w-0 flex-1">
-                            <span className="truncate font-semibold text-slate-800 block">
-                              {item.name}
-                              <span className="ml-2 text-[11px] font-medium text-slate-600">
-                                {formatCurrency(basePrice)} ×{quantity}
-                              </span>
-                            </span>
-                            {hasProductDiscountMeta && (
-                              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
-                                <span
-                                  className={`rounded-full border px-2 py-0.5 font-semibold ${
-                                    isDiscountApplied
-                                      ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700"
-                                      : "border-slate-200 bg-slate-50 text-slate-500"
-                                  }`}
-                                >
-                                  {discountType === "percentage"
-                                    ? `-${discountValue}%`
-                                    : `-${formatCurrency(discountValue)}`}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-                            {t("paid")}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex flex-col gap-1 text-xs text-slate-600">
-                          {!!paidMethod && (
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold">{t("Paid via")}:</span>
-                              <span className="font-semibold text-indigo-700">
-                                {paidMethod}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between border-t border-slate-200 pt-1 text-[12px] text-slate-500">
-                            <span>{t("Amount paid")}</span>
-                            <span className="font-semibold text-slate-900">
-                              {formatCurrency(baseTotal + extrasTotal)}
-                            </span>
-                          </div>
-                          {extrasTotal > 0 && (
-                            <div className="flex items-center justify-between text-[12px] text-slate-500">
-                              <span>{t("Extras paid")}</span>
-                              <span className="font-semibold text-slate-800">
-                                {formatCurrency(extrasTotal)}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {isExpanded && (
-                          <div className="mt-1 rounded-md bg-white/70 px-2 py-1 text-[11px] text-slate-700">
-                            {showNote && (
-                              <div className="break-words">
-                                <span className="font-semibold">{t("Note")}:</span>{" "}
-                                {typeof item.note === "string" ? item.note : ""}
-                              </div>
-                            )}
-                            {normalizedExtras.length > 0 && (
-                              <div className="mt-1">
-                                <span className="font-semibold">{t("Extras")}:</span>{" "}
-                                {normalizedExtras.map((ex) => ex.name || ex.label).filter(Boolean).join(", ")}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-            )}
-          </div>
-        )}
-      </div>
-      <div aria-hidden className="min-h-0" />
-    </div>
-  </div>
-
-  {/* === Footer === */}
-  {variant === "desktop" ? (
-    <footer className={`flex-none sticky bottom-0 z-10 space-y-2 border-t border-slate-200 bg-slate-50 ${footerPadding} dark:border-slate-800 dark:bg-slate-950/70`}>
-      <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-        <span>{t("Subtotal")}:</span>
-        <span className="text-slate-900 dark:text-slate-100">
-          {formatCurrency(calculateDiscountedTotal())}
-        </span>
-      </div>
-
-      {discountValue > 0 && (
-        <div className="flex justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-300">
-          <span>
-            {t("Discount")}{" "}
-            {discountType === "percent"
-              ? `(${discountValue}%)`
-              : `(-${formatCurrency(discountValue)})`}
-          </span>
-          <span>-{formatCurrency(discountValue)}</span>
-        </div>
-      )}
-
-   <div
-  className={`flex justify-between items-center rounded-2xl bg-white/90 px-3 py-3 text-lg font-bold shadow-[0_10px_20px_rgba(99,102,241,0.18)] mb-[3px] dark:bg-slate-900/60 dark:shadow-[0_10px_20px_rgba(0,0,0,0.45)]
-  ${selectedCartItemIds.size > 0 ? "text-emerald-700 border border-emerald-200 bg-emerald-50/80 dark:text-emerald-200 dark:border-emerald-500/30 dark:bg-emerald-950/25" : "text-indigo-700 border border-indigo-100 dark:text-indigo-200 dark:border-indigo-500/25"}`}
->
-  <span>
-    {selectedCartItemIds.size > 0
-      ? t("Selected Total")
-      : t("Total")}
-    :
-  </span>
-  <span>
-    {selectedCartItemIds.size > 0
-      ? formatCurrency(selectedItemsTotal)
-      : formatCurrency(calculateDiscountedTotal())}
-  </span>
-</div>
-
-    </footer>
-  ) : (
-    <div className="lg:hidden px-4 pb-3 pt-2">
-      <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-inner dark:border-slate-700/70 dark:bg-slate-950/60">
-        <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-          <span>{t("Subtotal")}:</span>
-          <span className="text-slate-900 dark:text-slate-100">
-            {formatCurrency(calculateDiscountedTotal())}
-          </span>
-        </div>
-        {discountValue > 0 && (
-          <div className="flex justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-300">
-            <span>
-              {t("Discount")}{" "}
-              {discountType === "percent"
-                ? `(${discountValue}%)`
-                : `(-${formatCurrency(discountValue)})`}
-            </span>
-            <span>-{formatCurrency(discountValue)}</span>
-          </div>
-        )}
-        <div className="flex items-center justify-between text-sm font-bold text-indigo-700 mt-2 dark:text-indigo-200">
-          <span>{selectedCartItemIds.size > 0 ? t("Selected Total") : t("Total")}:</span>
-          <span>
-            {selectedCartItemIds.size > 0
-              ? formatCurrency(selectedItemsTotal)
-              : formatCurrency(calculateDiscountedTotal())}
-          </span>
-        </div>
-      </div>
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            if (!showPayLaterInClearSlot) {
-              clearCartFromClearButton();
-              return;
-            }
-            setIsFloatingCartOpen(false);
-            navigate("/tableoverview?tab=tables");
-          }}
-          className="flex-1 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-900/80"
-        >
-          {showPayLaterInClearSlot ? payLaterLabel : t("Clear")}
-        </button>
-        <button
-          type="button"
-          onClick={handleMultifunction}
-          disabled={isPhoneOrder && primaryActionLabel === "Pay"}
-          title={
-            isPhoneOrder && primaryActionLabel === "Pay"
-              ? t("Payments are handled through the Orders screen")
-              : undefined
-          }
-          className="flex-1 rounded-full bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(99,102,241,0.35)]"
-        >
-          {t(primaryActionLabel)}
-        </button>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            openReservationModal();
-          }}
-          disabled={cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)}
-          className={`flex-1 min-w-[120px] rounded-full px-4 py-2 text-center text-xs font-semibold text-white shadow-[0_10px_20px_rgba(99,102,241,0.3)] transition ${
-            cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)
-              ? "bg-indigo-300 cursor-not-allowed"
-              : "bg-gradient-to-br from-indigo-400 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-600"
-          }`}
-        >
-          {t("Reservation")}
-        </button>
-        <button
-          type="button"
-          onClick={openCancelModal}
-          disabled={cartItems.length === 0 || normalizedStatus !== "confirmed" || cartItems.some((item) => item.confirmed && !isPaidItem(item))}
-          className="flex-1 min-w-[120px] rounded-full border border-rose-200 bg-rose-50/80 px-4 py-2 text-center text-xs font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-950/25 dark:text-rose-200 dark:hover:bg-rose-950/35"
-        >
-          {t("Cancel")}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowDiscountModal(true)}
-          className="flex-1 min-w-[120px] rounded-full bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 px-4 py-2 text-center text-xs font-semibold text-white shadow-[0_10px_22px_rgba(245,158,11,0.35)] hover:from-amber-500 hover:to-orange-600"
-        >
-          {t("Discount")}
-        </button>
-        <button
-          type="button"
-          onClick={handleOpenCashRegister}
-          className="flex-1 min-w-[120px] rounded-full bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 px-4 py-2 text-center text-xs font-semibold text-white shadow-[0_10px_22px_rgba(16,185,129,0.35)] hover:from-emerald-600 hover:to-teal-700"
-        >
-          {t("Register")}
-        </button>
-      </div>
-    </div>
-  )}
-</aside>
-
+    <CartPanel
+      cartData={cartData}
+      totals={totals}
+      actions={actions}
+      uiState={uiState}
+      setUiState={setUiState}
+      variant={variant}
+    />
   );
 };
-  const footerPrimaryActionLabel = getButtonLabel();
+
+  const footerPrimaryActionLabel = getPrimaryActionLabel();
   const showPayLaterInFooter =
     !orderId &&
     cartItems.length > 0 &&
     !hasUnconfirmedCartItems &&
-    ["confirmed", "unpaid", "paid"].includes(normalizedStatus);
+    ["confirmed", "unpaid", "paid", "reserved"].includes(normalizedStatus);
   const footerPayLaterLabel =
     showPayLaterInFooter && (normalizedStatus === "paid" || allPaidIncludingSuborders)
       ? t("Close Later")
       : t("Pay Later");
+  const footerClearDisabledAfterConfirmOrPaid =
+    showPayLaterInFooter &&
+    (normalizedStatus === "confirmed" || normalizedStatus === "paid") &&
+    !hasUnconfirmedCartItems;
+  const payDisabled =
+    isPhoneOrder ||
+    hasUnconfirmedCartItems ||
+    (!hasConfirmedCartUnpaid && !hasSuborderUnpaid);
   const footerCancelDisabled =
-    normalizedStatus !== "confirmed" || hasUnconfirmedCartItems || cartItems.length === 0;
+    !["confirmed", "paid"].includes(normalizedStatus) ||
+    hasUnconfirmedCartItems ||
+    cartItems.length === 0;
   const footerCanShowCancel = orderType === "table";
   const shouldBlockUi = deferHeavyUi || (loading && !tableId);
   if (shouldBlockUi) {
@@ -5311,7 +5024,8 @@ const cardGradient = item.paid
           </div>
         </div>
         {isCatalogSearching && matchingCategories.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2 pb-1">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t("Results")}:</span>
             {matchingCategories.map((entry) => (
               <button
                 key={`catmatch-${entry.idx}`}
@@ -5320,7 +5034,7 @@ const cardGradient = item.paid
                   setCurrentCategoryIndex(entry.idx);
                   setCatalogSearch("");
                 }}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                className="rounded-full border border-slate-300/60 bg-slate-100/60 px-2.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-200/80 transition-colors dark:border-slate-600/40 dark:bg-slate-800/40 dark:text-slate-300 dark:hover:bg-slate-700/60"
               >
                 {t(entry.cat)}
               </button>
@@ -5329,127 +5043,68 @@ const cardGradient = item.paid
         )}
       </div>
 
-      <style>{`
-        [data-category-scroll]::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
-
         <div className="flex flex-col h-full min-h-0 overflow-hidden">
-        {/* === TOP ROW (LEFT TO RIGHT) === */}
-        {categoryColumns.top.length > 0 && (
-          <div className="relative mx-3 mt-2 mb-2 flex flex-none rounded-2xl border border-indigo-300 bg-gradient-to-br from-indigo-100 via-sky-100 to-white p-2 shadow-[0_6px_14px_rgba(15,23,42,0.06)] ring-1 ring-indigo-200 dark:border-indigo-500/40 dark:from-indigo-950/55 dark:via-slate-900/55 dark:to-slate-950/55 dark:shadow-none dark:ring-indigo-500/20">
-            <div 
-              ref={topRowRef}
-              data-category-scroll
-              className="flex flex-row items-center gap-2 justify-start overflow-x-auto px-2 py-1.5 scroll-smooth"
-              style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-            >
-              {categoryColumns.top.map((entry) => (
-                <div key={`top-${entry.cat}-${entry.index}`}>
-                  {renderCategoryButton(entry.cat, entry.index, "horizontal")}
-                </div>
-              ))}
+          <div className="flex min-h-0 flex-1 overflow-hidden gap-0">
+            {/* === CENTER: PRODUCTS GRID === */}
+            <ProductGrid
+              products={visibleProducts}
+              onAddProduct={addToCart}
+              onOpenExtras={null}
+              t={t}
+              formatCurrency={formatCurrency}
+            />
+
+            {/* === RIGHT: CATEGORY BAR === */}
+            <div className="flex w-[92px] sm:w-[110px] lg:w-[120px] xl:w-[180px] flex-none min-h-0 h-[calc(100vh-260px)] pt-2">
+              <CategoryBar
+                placement="right"
+                categoryColumns={categoryColumns}
+                renderCategoryButton={renderCategoryButton}
+                topRowRef={topRowRef}
+                topRowScroll={topRowScroll}
+                onScrollLeft={() => {
+                  if (topRowRef.current) {
+                    topRowRef.current.scrollBy({ top: -80, behavior: "smooth" });
+                  }
+                }}
+                onScrollRight={() => {
+                  if (topRowRef.current) {
+                    topRowRef.current.scrollBy({ top: 80, behavior: "smooth" });
+                  }
+                }}
+                disabled={isCatalogSearching}
+              />
             </div>
-            {topRowScroll.canScrollLeft && (
-              <button
-                onClick={() => {
-                  if (topRowRef.current) {
-                    topRowRef.current.scrollBy({ left: -60, behavior: 'smooth' });
-                  }
-                }}
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-6 w-6 rounded-full bg-indigo-500 text-white shadow-lg flex items-center justify-center hover:bg-indigo-600 transition"
-                aria-label="Scroll left"
-              >
-                ‹
-              </button>
-            )}
-            {topRowScroll.canScrollRight && (
-              <button
-                onClick={() => {
-                  if (topRowRef.current) {
-                    topRowRef.current.scrollBy({ left: 60, behavior: 'smooth' });
-                  }
-                }}
-                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-6 w-6 rounded-full bg-indigo-500 text-white shadow-lg flex items-center justify-center hover:bg-indigo-600 transition"
-                aria-label="Scroll right"
-              >
-                ›
-              </button>
-            )}
           </div>
-        )}
-
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* === CENTER: PRODUCTS GRID === */}
-          <article className="flex min-w-0 flex-1 min-h-0 flex-col bg-transparent px-0 py-3 overflow-hidden">
-          <div className="h-[calc(100vh-260px)] overflow-y-scroll px-3 sm:px-4 pb-[calc(170px+env(safe-area-inset-bottom))] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-              <div className="flex items-start justify-center">
-                <div className="grid w-[97%] grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                {visibleProducts.map((product) => (
-                  <button
-                    key={product.id}
-                    onClick={() => addToCart(product)}
-                    className="
-                      flex w-full min-h-[150px] flex-col overflow-hidden rounded-[22px] border border-white/70 bg-white/80 text-center shadow-[0_14px_28px_rgba(15,23,42,0.1)]
-                      hover:border-indigo-200 hover:shadow-[0_18px_34px_rgba(99,102,241,0.18)] active:bg-indigo-50
-                      dark:border-slate-700/70 dark:bg-slate-900/55 dark:shadow-[0_14px_28px_rgba(0,0,0,0.45)]
-                      dark:hover:border-indigo-500/40 dark:hover:shadow-[0_18px_34px_rgba(0,0,0,0.55)] dark:active:bg-indigo-950/35
-                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60
-                    "
-                  >
-                    <div className="relative w-full overflow-hidden border-b border-white/70 bg-white/80 p-1.5 dark:border-slate-800/70 dark:bg-slate-900/50">
-                      <div className="aspect-[4/3]">
-                        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-2xl bg-white dark:bg-slate-900">
-                          {product.image ? (
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                              className="h-full w-full object-cover"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="h-full w-full rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700" />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex w-full flex-col items-center justify-center gap-0.5 bg-white/80 px-2 py-2 dark:bg-slate-900/40">
-                      <p className="w-full text-[14px] font-semibold text-slate-700 leading-[1.1] line-clamp-1 dark:text-slate-100">
-                        {product.name}
-                      </p>
-                      <span className="text-[13px] font-semibold text-indigo-600 leading-none dark:text-indigo-300">
-                        {formatCurrency(parseFloat(product.price))}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-                </div>
-              </div>
-            </div>
-          </article>
-
-          {/* Right category column removed */}
         </div>
-      </div>
     </div>
   </section>
 
-      <div className="hidden lg:block fixed bottom-0 left-0 right-0 z-30 w-full border-t border-slate-200 bg-slate-50/95 px-3 py-3 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80">
+      <div className="hidden lg:block fixed bottom-0 left-0 right-0 z-30 w-full border-t border-slate-200/70 bg-slate-50/90 px-3 py-2.5 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-950/75">
         <div className="mx-auto flex w-full max-w-[1600px] flex-wrap gap-2">
           <button
             type="button"
             onClick={handleMultifunction}
-            disabled={isPhoneOrder && footerPrimaryActionLabel === "Pay"}
-            title={
-              isPhoneOrder && footerPrimaryActionLabel === "Pay"
-                ? t("Payments are handled through the Orders screen")
-                : undefined
-            }
-            className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 px-5 py-3 text-lg font-semibold text-white shadow-[0_10px_24px_rgba(99,102,241,0.35)] transition hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={undefined}
+            className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 px-5 py-2.5 text-base font-semibold text-white shadow-md transition hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
           >
             <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
             {t(footerPrimaryActionLabel)}
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePayClick}
+            disabled={payDisabled}
+            title={
+              payDisabled && hasUnconfirmedCartItems
+                ? t("Confirm the order before paying")
+                : undefined
+            }
+            className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-500 px-5 py-2.5 text-base font-semibold text-white shadow-md transition hover:from-emerald-500 hover:via-emerald-600 hover:to-teal-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+          >
+            <HandCoins className="h-5 w-5" aria-hidden="true" />
+            {t("Pay")}
           </button>
 
           {footerCanShowCancel && (
@@ -5457,10 +5112,10 @@ const cardGradient = item.paid
               type="button"
               onClick={() => openReservationModal()}
               disabled={cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)}
-              className={`flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-lg font-semibold text-white shadow-[0_10px_22px_rgba(99,102,241,0.3)] transition ${
+              className={`flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-base font-semibold text-white shadow-md transition ${
                 cartItems.length > 0 && (hasConfirmedCartUnpaid || allCartItemsPaid)
                   ? "bg-indigo-300 cursor-not-allowed"
-                  : "bg-gradient-to-br from-indigo-400 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-600"
+                  : "bg-gradient-to-br from-indigo-400 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-600 active:scale-[0.98]"
               }`}
             >
               <CalendarClock className="h-5 w-5" aria-hidden="true" />
@@ -5471,6 +5126,7 @@ const cardGradient = item.paid
           <button
             type="button"
             onClick={() => {
+              if (footerClearDisabledAfterConfirmOrPaid) return;
               if (!showPayLaterInFooter) {
                 clearCartFromClearButton();
                 return;
@@ -5478,10 +5134,15 @@ const cardGradient = item.paid
               setIsFloatingCartOpen(false);
               navigate("/tableoverview?tab=tables");
             }}
-            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-2xl border border-white/70 bg-white/80 px-5 py-3 text-lg font-semibold text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.10)] backdrop-blur hover:bg-white dark:border-slate-700/70 dark:bg-slate-900/55 dark:text-slate-100 dark:shadow-[0_8px_18px_rgba(0,0,0,0.45)] dark:hover:bg-slate-900/75"
+            disabled={footerClearDisabledAfterConfirmOrPaid}
+            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300/60 bg-white/80 px-5 py-2.5 text-base font-semibold text-slate-800 shadow-md backdrop-blur hover:bg-white active:scale-[0.98] transition disabled:opacity-60 disabled:cursor-not-allowed dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
           >
             <Trash2 className="h-5 w-5" aria-hidden="true" />
-            {showPayLaterInFooter ? footerPayLaterLabel : t("Clear")}
+            {footerClearDisabledAfterConfirmOrPaid
+              ? t("Clear")
+              : showPayLaterInFooter
+              ? footerPayLaterLabel
+              : t("Clear")}
           </button>
 
           {footerCanShowCancel && (
@@ -5489,7 +5150,7 @@ const cardGradient = item.paid
               type="button"
               onClick={openCancelModal}
               disabled={footerCancelDisabled}
-              className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/80 px-5 py-3 text-lg font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-950/25 dark:text-rose-200 dark:hover:bg-rose-950/35"
+              className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-xl border border-rose-300/60 bg-rose-50/80 px-5 py-2.5 text-base font-semibold text-rose-600 shadow-md transition hover:bg-rose-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-200 dark:hover:bg-rose-950/30"
             >
               <CircleX className="h-5 w-5" aria-hidden="true" />
               {t("Cancel")}
@@ -5499,7 +5160,7 @@ const cardGradient = item.paid
           <button
             type="button"
             onClick={() => setShowDiscountModal(true)}
-            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 px-5 py-3 text-lg font-semibold text-white shadow-[0_10px_22px_rgba(245,158,11,0.35)] hover:from-amber-500 hover:to-orange-600"
+            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 px-5 py-2.5 text-base font-semibold text-white shadow-md hover:from-amber-500 hover:to-orange-600 active:scale-[0.98]"
           >
             <BadgePercent className="h-5 w-5" aria-hidden="true" />
             {t("Discount")}
@@ -5519,22 +5180,24 @@ const cardGradient = item.paid
     </div>
 
       <div
-        className={`lg:hidden fixed left-4 bottom-[calc(12px+env(safe-area-inset-bottom))] z-40 transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[140%]" : "translate-y-0"}`}
+        className={`lg:hidden fixed left-1/2 -translate-x-1/2 bottom-[calc(12px+env(safe-area-inset-bottom))] z-40 transition-transform duration-300 ${isFloatingCartOpen ? "translate-y-[140%]" : "translate-y-0"}`}
       >
         <button
           type="button"
           onClick={() => setIsFloatingCartOpen(true)}
-          className="flex h-[74px] w-[74px] items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 text-white shadow-xl shadow-indigo-700/25 ring-2 ring-white/50 backdrop-blur-sm active:scale-[0.97] transition dark:ring-slate-900/30"
+          className="flex h-[64px] min-w-[190px] items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 px-4 text-white shadow-lg shadow-indigo-600/30 ring-2 ring-white/40 backdrop-blur-sm active:scale-[0.97] transition dark:ring-slate-900/30"
           aria-label={t("View Cart")}
         >
-          <div className="flex flex-col items-center leading-tight">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-indigo-100">
+          <div className="flex flex-col items-start leading-tight">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-indigo-50">
               {t("Cart")}
             </span>
-            <span className="text-[13px] font-bold">
+            <span className="text-[15px] font-bold">
               {formatCurrency(calculateDiscountedTotal())}
             </span>
-            <span className="text-[12px] font-semibold text-indigo-100/90">
+          </div>
+          <div className="rounded-xl bg-white/15 px-3 py-1 text-center">
+            <span className="text-[12px] font-semibold text-indigo-50">
               {cartItems.filter((i) => !i.paid).length} {t("Items")}
             </span>
           </div>
@@ -5609,7 +5272,6 @@ const cardGradient = item.paid
   setIsSplitMode={setIsSplitMode}
   discountType={discountType}
   discountValue={discountValue}
-  selectedForPayment={selectedForPayment}
   cartItems={cartItems}
   t={t}
   paymentMethods={paymentMethods}
@@ -5618,8 +5280,9 @@ const cardGradient = item.paid
   confirmPayment={confirmPayment}
   splits={splits}
   setSplits={setSplits}
-  totalDue={totalDue}
-  cancelQuantities={cancelQuantities}
+  totalDue={hasSelection ? selectedItemsTotal : totalDue}
+  selectionQuantities={selectionQuantities}
+  selectedCartItemIds={selectedCartItemIds}
   activeSplitMethod={activeSplitMethod}
   setActiveSplitMethod={setActiveSplitMethod}
   confirmPaymentWithSplits={confirmPaymentWithSplits}
@@ -5670,7 +5333,7 @@ const cardGradient = item.paid
             {selectedCartItems.map((item) => {
               const itemQty = Math.max(1, Number(item.quantity) || 1);
               const key = String(item.unique_id || item.id);
-              const requested = Number(cancelQuantities[key]) || 1;
+              const requested = Number(selectionQuantities[key]) || 1;
               const cancelQty = Math.min(Math.max(1, requested), itemQty);
               const perUnit = computeItemLineTotal(item) / itemQty;
               const totalPrice = perUnit * cancelQty;
@@ -5683,10 +5346,10 @@ const cardGradient = item.paid
                   {itemQty > 1 && (
                     <select
                       className="ml-2 rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-bold text-amber-700"
-                      value={cancelQuantities[key] || 1}
+                      value={selectionQuantities[key] || 1}
                       onChange={(e) => {
                         const next = Number(e.target.value) || 1;
-                        setCancelQuantities((prev) => ({ ...prev, [key]: next }));
+                        setSelectionQuantities((prev) => ({ ...prev, [key]: next }));
                       }}
                       onClick={(e) => e.stopPropagation()}
                       aria-label={t("Qty")}

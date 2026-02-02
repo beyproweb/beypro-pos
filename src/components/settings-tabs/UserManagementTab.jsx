@@ -52,6 +52,14 @@ export default function UserManagementTab() {
               typeof res.staffCheckinGeoRadiusMeters === "number"
                 ? res.staffCheckinGeoRadiusMeters
                 : prev.staffCheckinGeoRadiusMeters,
+            sessionTimeoutEnabled:
+              typeof res.sessionTimeoutEnabled === "boolean"
+                ? res.sessionTimeoutEnabled
+                : prev.sessionTimeoutEnabled,
+            sessionTimeoutMinutes:
+              typeof res.sessionTimeoutMinutes === "number"
+                ? res.sessionTimeoutMinutes
+                : prev.sessionTimeoutMinutes,
           }));
 
           if (res.roles) {
@@ -102,6 +110,8 @@ export default function UserManagementTab() {
     allowedWifiIps: [],
     staffCheckinGeoEnabled: false,
     staffCheckinGeoRadiusMeters: 150,
+    sessionTimeoutEnabled: true,
+    sessionTimeoutMinutes: 5,
   });
   const [allowedIpInput, setAllowedIpInput] = useState("");
   const [newAvatarFileName, setNewAvatarFileName] = useState("");
@@ -388,6 +398,69 @@ export default function UserManagementTab() {
           />
           <div className="w-12 h-7 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
         </label>
+      </div>
+
+      {/* Session Timeout Settings */}
+      <div className="mb-12 border-b pb-6 border-indigo-100 dark:border-indigo-800">
+        <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+          ⏱️ {t("Session Timeout & Auto-Lock")}
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
+          {t("Automatically lock the POS after a period of inactivity to protect sensitive data.")}
+        </p>
+
+        {/* Enable Session Timeout Toggle */}
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-base font-medium text-gray-700 dark:text-gray-200">
+            {t("Enable Session Timeout")}
+          </span>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={usersConfig.sessionTimeoutEnabled !== false}
+              onChange={() =>
+                setUsersConfig((prev) => ({
+                  ...prev,
+                  sessionTimeoutEnabled: prev.sessionTimeoutEnabled === false ? true : false,
+                }))
+              }
+              className="sr-only peer"
+            />
+            <div className="w-12 h-7 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+          </label>
+        </div>
+
+        {/* Auto-lock timeout dropdown */}
+        <div className="flex items-center justify-between">
+          <span className="text-base font-medium text-gray-700 dark:text-gray-200">
+            {t("Auto-lock after")}
+          </span>
+          <select
+            className="p-2 px-4 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white font-medium"
+            value={usersConfig.sessionTimeoutMinutes || 5}
+            onChange={(e) =>
+              setUsersConfig((prev) => ({
+                ...prev,
+                sessionTimeoutMinutes: parseFloat(e.target.value),
+              }))
+            }
+            disabled={usersConfig.sessionTimeoutEnabled === false}
+          >
+            <option value={0.1667}>10 {t("seconds")} ({t("testing")})</option>
+            <option value={1}>1 {t("minute")}</option>
+            <option value={3}>3 {t("minutes")}</option>
+            <option value={5}>5 {t("minutes")} ({t("default")})</option>
+            <option value={10}>10 {t("minutes")}</option>
+            <option value={15}>15 {t("minutes")}</option>
+            <option value={999999}>{t("Never")}</option>
+          </select>
+        </div>
+
+        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            💡 {t("Staff will need to re-enter their PIN after the timeout period. Manual lock button will also be available in the header.")}
+          </p>
+        </div>
       </div>
 
       <div className="mb-12 border-b pb-6 border-indigo-100 dark:border-indigo-800">

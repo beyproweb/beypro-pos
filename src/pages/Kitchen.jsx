@@ -1124,6 +1124,24 @@ return (
                             {first.customer_phone}
                           </a>
                         )}
+                        {first.customer_address && (
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(first.customer_address)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1 text-sm text-slate-700 dark:text-slate-200 font-semibold leading-snug break-words whitespace-normal underline decoration-emerald-300 decoration-2 underline-offset-2 hover:decoration-emerald-500 transition-colors"
+                            style={{
+                              wordBreak: "break-word",
+                              overflowWrap: "break-word",
+                              whiteSpace: "pre-line",
+                              display: "block",
+                            }}
+                          >
+                            <span className="mr-1">📍</span>
+                            {first.customer_address}
+                          </a>
+                        )}
                         {first.pickup_time && (
                           (() => {
                             const raw = String(first.pickup_time);

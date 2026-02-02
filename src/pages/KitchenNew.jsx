@@ -14,6 +14,8 @@ export default function KitchenNew() {
   const [activeTab, setActiveTab] = useState("all"); // all selected by default
   const [showCompileModal, setShowCompileModal] = useState(false);
   const [compiled, setCompiled] = useState(null);
+  const [maxCardHeight, setMaxCardHeight] = useState(0);
+  const cardContainerRef = useRef(null);
   const [orderTimers, setOrderTimers] = useState(() => {
     try {
       const raw = localStorage.getItem(KITCHEN_ORDER_TIMERS_KEY);
@@ -31,6 +33,17 @@ export default function KitchenNew() {
   const [excludedIngredients, setExcludedIngredients] = useState([]);
   const [excludedCategories, setExcludedCategories] = useState([]);
   const [excludedItems, setExcludedItems] = useState([]);
+
+  // Calculate max card height
+  useEffect(() => {
+    if (!cardContainerRef.current) return;
+    const cards = cardContainerRef.current.querySelectorAll('[data-card]');
+    if (cards.length === 0) return;
+    
+    const heights = Array.from(cards).map(card => card.offsetHeight);
+    const max = Math.max(...heights);
+    setMaxCardHeight(max);
+  }, [orders]);
 
   useEffect(() => {
     if (!import.meta?.env?.DEV) return;
@@ -412,27 +425,37 @@ export default function KitchenNew() {
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-zinc-900">
       {/* Order Grid */}
-      <div className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+      <div className="p-6 pb-32">
+        <div 
+          ref={cardContainerRef}
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4"
+        >
           {filteredOrders.map((order) => {
             const itemIds = (order?.items || []).map((item) => item.item_id);
             const anySelected = itemIds.some((id) => selectedItemIds.has(id));
             const allSelected = itemIds.length > 0 && itemIds.every((id) => selectedItemIds.has(id));
+            const isTwoColumn = order.items.length > 8;
 
             return (
-              <OrderCard
-                key={order.order_id}
-                order={order}
-                anySelected={anySelected}
-                allSelected={allSelected}
-                selectedItemIds={selectedItemIds}
-                onToggleAll={() => toggleOrderSelection(order)}
-                onToggleItem={toggleItemSelection}
-                timer={formatTimer(order.order_id)}
-                timerClass={getTimerColorClass(order.order_id)}
-                safeParse={safeParse}
-                t={t}
-              />
+              <div 
+                key={order.order_id} 
+                data-card
+                className={isTwoColumn ? "md:col-span-2 lg:col-span-2 xl:col-span-2 2xl:col-span-2" : ""}
+                style={maxCardHeight > 0 ? { minHeight: `${maxCardHeight}px` } : {}}
+              >
+                <OrderCard
+                  order={order}
+                  anySelected={anySelected}
+                  allSelected={allSelected}
+                  selectedItemIds={selectedItemIds}
+                  onToggleAll={() => toggleOrderSelection(order)}
+                  onToggleItem={toggleItemSelection}
+                  timer={formatTimer(order.order_id)}
+                  timerClass={getTimerColorClass(order.order_id)}
+                  safeParse={safeParse}
+                  t={t}
+                />
+              </div>
             );
           })}
         </div>
@@ -622,7 +645,7 @@ function OrderCard({
     <div
       className={`bg-white dark:bg-zinc-800 border-2 ${
         anySelected ? "border-blue-500" : "border-gray-300 dark:border-zinc-600"
-      } rounded-lg p-4 shadow hover:shadow-lg transition cursor-pointer`}
+      } rounded-lg p-4 shadow hover:shadow-lg transition cursor-pointer h-full flex flex-col`}
       onClick={onToggleAll}
     >
       {/* Header */}
@@ -648,54 +671,124 @@ function OrderCard({
         {t("Order ID")} #{order.order_id}
       </div>
 
-      {/* Items */}
-      <div className="space-y-0 divide-y divide-gray-200 dark:divide-zinc-700">
-        {order.items.map((item) => {
-          const parsedExtras = safeParse(item.extras);
-          const isSelected = selectedItemIds.has(item.item_id);
-
-          return (
-            <div
-              key={item.item_id}
-              className="flex items-start gap-2 py-2 first:pt-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleItem(item.item_id);
+      {/* Client Info (delivery / takeaway / phone) */}
+      {type !== "table" && (order.customer_name || order.customer_phone || order.customer_address) && (
+        <div className="mb-3 text-xs text-gray-700 dark:text-gray-200 space-y-1">
+          {order.customer_name && (
+            <div className="font-semibold truncate">👤 {order.customer_name}</div>
+          )}
+          {order.customer_phone && (
+            <a
+              href={`tel:${order.customer_phone}`}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-block text-xs text-slate-600 dark:text-slate-200 underline decoration-slate-300 hover:decoration-slate-500"
+              style={{ textDecorationThickness: "1px" }}
+            >
+              📞 {order.customer_phone}
+            </a>
+          )}
+          {order.customer_address && (
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.customer_address)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="block text-xs text-slate-700 dark:text-slate-200 font-semibold leading-snug break-words whitespace-normal underline decoration-emerald-300 decoration-2 underline-offset-2 hover:decoration-emerald-500 transition-colors"
+              style={{
+                wordBreak: "break-word",
+                overflowWrap: "break-word",
+                whiteSpace: "pre-line",
               }}
             >
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => onToggleItem(item.item_id)}
-                onClick={(e) => e.stopPropagation()}
-                className="mt-1 w-4 h-4 accent-blue-600 flex-shrink-0"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="text-gray-900 dark:text-white font-medium">
-                  {item.quantity}x {item.product_name}
+              📍 {order.customer_address}
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Items - Dynamic Columns (Max 5 items per column) */}
+      <div className="border-t border-gray-200 dark:border-zinc-700 pt-2 -mx-4 px-4 flex-1 overflow-y-auto">
+        {(() => {
+          const itemsPerColumn = 5;
+          const numColumns = Math.ceil(order.items.length / itemsPerColumn);
+          const gridClass = 
+            numColumns === 1 ? "grid-cols-1" :
+            numColumns === 2 ? "grid-cols-2" :
+            numColumns === 3 ? "grid-cols-3" :
+            "grid-cols-4";
+          
+          return (
+            <div className={`grid ${gridClass} gap-4`}>
+              {Array.from({ length: numColumns }).map((_, colIndex) => (
+                <div 
+                  key={colIndex}
+                  className={`space-y-2 ${colIndex < numColumns - 1 ? 'border-r border-gray-300 dark:border-zinc-600 pr-3' : ''}`}
+                >
+                  {order.items
+                    .slice(colIndex * itemsPerColumn, (colIndex + 1) * itemsPerColumn)
+                    .map((item) => {
+                      const parsedExtras = safeParse(item.extras);
+                      const isSelected = selectedItemIds.has(item.item_id);
+
+                      return (
+                        <div
+                          key={item.item_id}
+                          className="flex items-start gap-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleItem(item.item_id);
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => onToggleItem(item.item_id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1 w-4 h-4 accent-blue-600 flex-shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-gray-900 dark:text-white font-medium text-sm">
+                              {item.quantity}x {item.product_name}
+                            </div>
+
+                            {/* Note in brown/gold color */}
+                            {item.note && (
+                              <div className="text-xs text-amber-700 dark:text-amber-500 font-medium mt-0.5">
+                                – {item.note}
+                              </div>
+                            )}
+
+                            {/* Extras in green/olive color */}
+                            {parsedExtras.length > 0 && (
+                              <div className="text-xs text-green-700 dark:text-green-500 font-medium mt-0.5">
+                                {parsedExtras.map((ex, idx) => (
+                                  <div key={idx}>
+                                    – {ex.name} {ex.quantity > 1 ? `×${ex.quantity}` : ""}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
-
-                {/* Note in brown/gold color */}
-                {item.note && (
-                  <div className="text-sm text-amber-700 dark:text-amber-500 font-medium mt-1">
-                    – {item.note}
-                  </div>
-                )}
-
-                {/* Extras in green/olive color */}
-                {parsedExtras.length > 0 && (
-                  <div className="text-sm text-green-700 dark:text-green-500 font-medium mt-1">
-                    {parsedExtras.map((ex, idx) => (
-                      <div key={idx}>
-                        – {ex.name} {ex.quantity > 1 ? `×${ex.quantity}` : ""}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              ))}
             </div>
           );
-        })}
+        })()}
+      </div>
+      
+      {/* Bottom Design Accent */}
+      <div className="mt-auto pt-3 -mx-4 px-4">
+        <div className="h-1 bg-gradient-to-r from-transparent via-gray-300 dark:via-zinc-600 to-transparent rounded-full"></div>
+        <div className="mt-2 flex justify-between items-center text-xs text-gray-400 dark:text-gray-600">
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600"></span>
+            {order.items.length} items
+          </span>
+          <span className="italic">Kitchen</span>
+        </div>
       </div>
     </div>
   );

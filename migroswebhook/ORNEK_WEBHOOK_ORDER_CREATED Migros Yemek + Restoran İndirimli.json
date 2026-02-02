@@ -1,0 +1,91 @@
+{
+  "id": 100069761,
+  "description": "2 x Öteki Tatlı",
+  "status": "NEW_PENDING",
+  "deliveryProvider": "RESTAURANT",
+  "store": {
+    "id": 23000000101013,
+    "name": "Öteki Pizza, (Ataşehir, Kayışdağı)",
+    "group": {
+      "id": 115,
+      "name": "Öteki Pizza "
+    }
+  },
+  "customer": {
+    "id": 23002000015693,
+    "firstName": "Test",
+    "lastName": "Tester",
+    "fullName": "Test Tester",
+    "phoneNumber": "5050542356",
+    "deliveryAddress": {
+      "id": 23000000041217,
+      "direction": "Test",
+      "detail": "Atatürk Mh. Ataşehir Atatürk, Ataşehir Blv. No:27, 34758 Ataşehir/İstanbul, Türkiye No: 12 Daire: 3 Kat: 2 Ataşehir/İstanbul",
+      "city": {
+        "id": 34,
+        "name": "İstanbul"
+      },
+      "town": {
+        "id": 34033,
+        "name": "Ataşehir"
+      },
+      "district": {
+        "id": 34033002,
+        "name": "Atatürk Mh."
+      },
+      "geoLocation": {
+        "latitude": 40.992629703208586,
+        "longitude": 29.124896004796028
+      }
+    }
+  },
+  "prices": {
+    "total": {
+      "amountAsPenny": 11000,
+      "text": "110,00 TL"
+    },
+    "discounted": {
+      "amountAsPenny": 8000,
+      "text": "80,00 TL"
+    },
+    "restaurantDiscounted": {
+      "amountAsPenny": 10000,
+      "text": "100,00 TL"
+    },
+    "migrosDiscounted": {
+      "amountAsPenny": 9000,
+      "text": "90,00 TL"
+    }
+  },
+  "items": [
+    {
+      "id": 1166353608,
+      "productId": 23000000032056,
+      "name": "Öteki Tatlı",
+      "price": 11000,
+      "priceText": "110,00 TL",
+      "amount": 2,
+      "note": "",
+      "options": null
+    }
+  ],
+  "payment": {
+    "type": {
+      "hashedNameId": 6,
+      "name": "CASH_ON_DELIVERY",
+      "description": "Kapıda Ödeme - Nakit",
+      "isOnlinePayment": false,
+      "simplifiedName": "CASH_ON_DELIVERY",
+      "simplifiedHashedNameId": 6
+    }
+  },
+  "extendedProperties": {
+    "orderNote": "",
+    "saveGreen": false,
+    "contactlessDelivery": true,
+    "ringDoorBell": true
+  },
+  "log": {
+    "createdAsMs": 1679651340711
+  }
+}

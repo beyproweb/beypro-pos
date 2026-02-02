@@ -96,14 +96,15 @@ const getTableColor = (order) => {
   // instead of waiting (avoids the 2-3s gray flash).
   if (!items) {
     // Empty orders (0 total) should look free immediately.
+    // 🐛 FIX: Don't show confirmed status for empty tables
     if (total <= 0) return "bg-gray-400 text-black";
     if (status === "confirmed") return "bg-red-500 text-white";
     return "bg-gray-400 text-black";
   }
 
-  // 🧹 No items at all → treat as Free (neutral), not yellow (unless status says otherwise)
+  // 🧹 No items at all → treat as Free (neutral), not yellow
+  // 🐛 FIX: Empty tables should always be grey, never show as confirmed/occupied
   if (items.length === 0) {
-    if (status === "confirmed") return "bg-red-500 text-white";
     return "bg-gray-400 text-black";
   }
 
@@ -590,12 +591,10 @@ export default function TableOverview() {
   const didInitialOrdersLoadRef = useRef(false);
   const isMountedRef = useRef(true);
   const [now, setNow] = useState(new Date());
-  const [kitchenOrders, setKitchenOrders] = useState([]); // used for kitchen
   const [kitchenOpenOrders, setKitchenOpenOrders] = useState([]);
   const [kitchenOpenOrdersLoading, setKitchenOpenOrdersLoading] = useState(false);
   const [productPrepById, setProductPrepById] = useState({});
   const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
-  const [phoneOrders, setPhoneOrders] = useState([]); // For active phone orders if you want to display/manage them
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [actualCash, setActualCash] = useState("");
   const [expectedCash, setExpectedCash] = useState(0);
@@ -1259,9 +1258,20 @@ useEffect(() => {
 }, []);
 
 const fetchOrders = useCallback(async () => {
+  const isDev = import.meta.env.DEV;
+  const t0 = isDev ? performance.now() : 0;
+  
   try {
     const seq = ++ordersFetchSeqRef.current;
     const isInitialLoad = !didInitialOrdersLoadRef.current;
+    
+    // ⚡ INSTANT: Use cached orders for Phase 1 if available
+    const cachedOrders = readInitialTableOrders();
+    if (cachedOrders.length > 0 && isInitialLoad) {
+      setOrders(cachedOrders);
+      if (isDev) console.log(`⚡ [TableOverview] Rendered from cache in ${(performance.now() - t0).toFixed(1)}ms`);
+    }
+    
     // Always use secureFetch → tenant_id + auth included
     const [ordersRes, reservationsRes] = await Promise.allSettled([
       secureFetch("/orders"),
@@ -1270,6 +1280,8 @@ const fetchOrders = useCallback(async () => {
         return secureFetch(`/orders/reservations?start_date=${today}&end_date=${today}`);
       })(),
     ]);
+
+    if (isDev) console.log(`⏱️ [TableOverview] Phase 1 fetch completed in ${(performance.now() - t0).toFixed(1)}ms`);
 
     const data = ordersRes.status === "fulfilled" ? ordersRes.value : null;
 
@@ -1281,11 +1293,10 @@ const fetchOrders = useCallback(async () => {
 
     const normalizeReservationList = (value) => {
       const list = Array.isArray(value?.reservations) ? value.reservations : Array.isArray(value) ? value : [];
-      return list.filter((row) => {
-        const status = normalizeOrderStatus(row?.status);
-        if (!status) return true;
-        return status !== "closed" && status !== "cancelled" && status !== "canceled";
-      });
+      // Include all reservations - they may have status='closed' but still have reservation_date set
+      // We don't filter by status here; the backend handles that
+      if (isDev) console.log(`📋 [TableOverview] Fetched ${list.length} total reservations:`, list.map(r => ({ id: r.id, table: r.table_number, date: r.reservation_date, status: r.status })));
+      return list;
     };
 
     if (reservationsRes.status === "fulfilled") {
@@ -1294,7 +1305,69 @@ const fetchOrders = useCallback(async () => {
       setReservationsToday([]);
     }
 
-    const openTableOrders = data
+    // ✅ Build a Set of order IDs we already have
+    const existingOrderIds = new Set(data.map(o => o.id).filter(Boolean));
+    
+    // ✅ Get normalized reservations list
+    const reservationsList = reservationsRes.status === "fulfilled" 
+      ? normalizeReservationList(reservationsRes.value) 
+      : [];
+
+    // ✅ Merge reservations into orders so empty reserved tables appear
+    const existingTableNumbers = new Set(data.map((o) => Number(o.table_number)).filter(Number.isFinite));
+    
+    // Build a map of reservations by order_id for quick lookup
+    const reservationsByOrderId = new Map();
+    const reservationsByTableNumber = new Map();
+    reservationsList.forEach((res) => {
+      if (res.order_id) reservationsByOrderId.set(Number(res.order_id), res);
+      if (res.table_number != null) reservationsByTableNumber.set(Number(res.table_number), res);
+    });
+
+    // Enrich existing orders with reservation data if they're missing it
+    const enrichedOrders = data.map((order) => {
+      const reservation = reservationsByOrderId.get(Number(order.id));
+      if (reservation && !order.reservation_date) {
+        if (isDev) console.log(`🔗 [TableOverview] Enriching order ${order.id} (table ${order.table_number}) with reservation from map`);
+        return {
+          ...order,
+          status: order.status === "reserved" ? "reserved" : order.status,
+          order_type: order.order_type === "reservation" ? "reservation" : order.order_type,
+          reservation_date: reservation.reservation_date,
+          reservation_time: reservation.reservation_time,
+          reservation_clients: reservation.reservation_clients,
+          reservation_notes: reservation.reservation_notes,
+        };
+      }
+      if (order.reservation_date && isDev) {
+        console.log(`✅ [TableOverview] Order ${order.id} (table ${order.table_number}) already has reservation_date: ${order.reservation_date}`);
+      }
+      return order;
+    });
+
+    const reservationOrders = reservationsList
+      .filter((res) => {
+        // include reservations that either reference an order_id not returned,
+        // or reservations without order_id for a table that has no order yet
+        if (res.table_number == null) return false;
+        if (res.order_id && !existingOrderIds.has(res.order_id)) return true;
+        if (!res.order_id && !existingTableNumbers.has(Number(res.table_number))) return true;
+        return false;
+      })
+      .map((res) => ({
+        id: res.order_id || null,
+        table_number: Number(res.table_number),
+        status: "reserved",
+        order_type: "reservation",
+        total: 0,
+        items: [],
+        reservation_date: res.reservation_date,
+        reservation_time: res.reservation_time,
+        reservation_clients: res.reservation_clients,
+        reservation_notes: res.reservation_notes,
+      }));
+
+    const openTableOrders = [...enrichedOrders, ...reservationOrders]
       .filter((o) => {
         const status = normalizeOrderStatus(o.status);
         if (status === "closed") return false;
@@ -1315,6 +1388,7 @@ const fetchOrders = useCallback(async () => {
 
 	    // Phase 1: render table statuses/colors immediately from order rows.
 	    // Preserve any previously-hydrated items to avoid UI flicker while refreshing.
+		    if (import.meta.env.DEV) console.time('[Phase1] setOrders');
 		    setOrders((prev) => {
 		      const prevByTable = new Map();
 		      (Array.isArray(prev) ? prev : []).forEach((o) => {
@@ -1399,8 +1473,9 @@ const fetchOrders = useCallback(async () => {
 		      );
 		      writeTableOverviewConfirmedTimers(nextTimers);
           writeTableOrdersCache(sorted);
-		      return sorted;
-		    });
+      if (import.meta.env.DEV) console.timeEnd('[Phase1] setOrders');
+      return sorted;
+    });
 
     const runWithConcurrency = async (arr, limit, task) => {
       const list = Array.isArray(arr) ? arr : [];
@@ -1425,51 +1500,82 @@ const fetchOrders = useCallback(async () => {
       return results.filter(Boolean);
     };
 
-    // Phase 2: hydrate items/reservations (slower) and update.
-    const hydrated = await runWithConcurrency(visibleTableOrders, 6, async (order) => {
-      const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
-      const itemsArr = Array.isArray(itemsRaw) ? itemsRaw : [];
-
-      let items = itemsArr.map((item) => ({
-        ...item,
-        discount_type: item.discount_type || item.discountType || null,
-        discount_value:
-          item.discount_value != null
-            ? parseFloat(item.discount_value)
-            : item.discountValue != null
-            ? parseFloat(item.discountValue)
-            : 0,
-      }));
-
-      const isOrderPaid =
-        order.status === "paid" ||
-        String(order.payment_status || "").toLowerCase() === "paid" ||
-        order.is_paid === true;
-      if (isOrderPaid) {
-        const hasAnyPaidMarker = items.some(
-          (i) => i?.paid_at != null || typeof i?.paid === "boolean"
-        );
-        if (!hasAnyPaidMarker) {
-          items = items.map((i) => ({ ...i, paid: true }));
+    // Phase 2: hydrate items/reservations (slower) and update IN BATCH.
+    if (isDev) console.log(`🔄 [TableOverview] Starting Phase 2 hydration...`);
+    const t1 = isDev ? performance.now() : 0;
+    
+    // 🚀 Schedule hydration when idle to avoid blocking UI
+    const scheduleHydration = (task) => {
+      return new Promise((resolve) => {
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(() => resolve(task()));
+        } else {
+          setTimeout(() => resolve(task()), 0);
         }
-      }
+      });
+    };
 
-      let reservation = null;
-      try {
-        if (order.status === "reserved" || order.reservation_date) {
-          const resData = await secureFetch(`/orders/reservations/${order.id}`);
-          if (resData?.success && resData?.reservation) {
-            reservation = resData.reservation;
+    const hydrated = await scheduleHydration(async () => {
+      return await runWithConcurrency(visibleTableOrders, 6, async (order) => {
+        // If this is a synthetic reservation we created (no backend order id),
+        // skip the items fetch and return as-is so it won't be dropped later.
+        if (!order.id) {
+          const itemsArr = [];
+          const reservationObj = order.reservation || (order.reservation_date ? {
+            reservation_date: order.reservation_date,
+            reservation_time: order.reservation_time ?? null,
+            reservation_clients: order.reservation_clients ?? 0,
+            reservation_notes: order.reservation_notes ?? "",
+          } : null);
+          return { ...order, items: itemsArr, reservation: reservationObj };
+        }
+
+        const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+        const itemsArr = Array.isArray(itemsRaw) ? itemsRaw : [];
+
+        let items = itemsArr.map((item) => ({
+          ...item,
+          discount_type: item.discount_type || item.discountType || null,
+          discount_value:
+            item.discount_value != null
+              ? parseFloat(item.discount_value)
+              : item.discountValue != null
+              ? parseFloat(item.discountValue)
+              : 0,
+        }));
+
+        const isOrderPaid =
+          order.status === "paid" ||
+          String(order.payment_status || "").toLowerCase() === "paid" ||
+          order.is_paid === true;
+        if (isOrderPaid) {
+          const hasAnyPaidMarker = items.some(
+            (i) => i?.paid_at != null || typeof i?.paid === "boolean"
+          );
+          if (!hasAnyPaidMarker) {
+            items = items.map((i) => ({ ...i, paid: true }));
           }
         }
-      } catch (err) {
-        console.warn(`Failed to fetch reservation for order ${order.id}:`, err);
-      }
 
-      return { ...order, items, reservation };
+        let reservation = null;
+        try {
+          if (order.status === "reserved" || order.reservation_date) {
+            const resData = await secureFetch(`/orders/reservations/${order.id}`);
+            if (resData?.success && resData?.reservation) {
+              reservation = resData.reservation;
+            }
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch reservation for order ${order.id}:`, err);
+        }
+
+        return { ...order, items, reservation };
+      });
     });
 
     if (ordersFetchSeqRef.current !== seq) return;
+
+    if (isDev) console.log(`✅ [TableOverview] Phase 2 hydration completed in ${(performance.now() - t1).toFixed(1)}ms`);
 
 	    const mergedByTable = Object.values(
 	      hydrated.reduce((acc, order) => {
@@ -1517,6 +1623,8 @@ const fetchOrders = useCallback(async () => {
 	      }, {})
 	    ).sort((a, b) => Number(a.table_number) - Number(b.table_number));
 
+    // 🎯 BATCHED UPDATE with shallow diff to preserve references
+    if (isDev) console.time('⚡ Phase 2 setState');
 		    setOrders((prev) => {
 		      const prevByTable = new Map();
 		      (Array.isArray(prev) ? prev : []).forEach((o) => {
@@ -1535,6 +1643,17 @@ const fetchOrders = useCallback(async () => {
 		      const nextOrders = mergedByTable.map((o) => {
 		        const tableKey = String(Number(o.table_number));
 		        const prevMerged = prevByTable.get(Number(o.table_number));
+		        
+		        // 🔍 Shallow diff: preserve reference if items haven't changed
+		        const prevItemsJson = JSON.stringify(prevMerged?.items || []);
+		        const nextItemsJson = JSON.stringify(o.items || []);
+		        const itemsChanged = prevItemsJson !== nextItemsJson;
+		        
+		        // Only create new object if something actually changed
+		        if (!itemsChanged && prevMerged?.status === o.status && prevMerged?.total === o.total) {
+		          return prevMerged; // ✅ Keep same reference = no re-render
+		        }
+		        
 		        return {
 		          ...o,
 		          confirmedSinceMs: resolveConfirmedSinceMs(prevMerged, o, {
@@ -1546,6 +1665,13 @@ const fetchOrders = useCallback(async () => {
 		      });
 		      writeTableOverviewConfirmedTimers(nextTimers);
           writeTableOrdersCache(nextOrders);
+          
+          if (isDev) {
+            const changedCount = nextOrders.filter((o, i) => o !== prev[i]).length;
+            console.log(`🔄 Phase 2 updated ${changedCount}/${nextOrders.length} tables`);
+            console.timeEnd('⚡ Phase 2 setState');
+          }
+          
 		      return nextOrders;
 		    });
 
@@ -1665,25 +1791,6 @@ useEffect(() => {
     lastDayKeyRef.current = dayKey;
     if (activeTab === "tables") fetchOrders();
   }, [now, activeTab, fetchOrders]);
-
-const fetchPhoneOrders = useCallback(async () => {
-  try {
-    const data = await secureFetch("/orders?type=phone");
-
-    // Filter for open phone orders (not closed/cancelled)
-    setPhoneOrders(
-      data.filter((o) => {
-        if (o?.order_type !== "phone") return false;
-        const status = normalizeOrderStatus(o?.status);
-        if (status === "closed") return false;
-        if (isOrderCancelledOrCanceled(status)) return false;
-        return true;
-      })
-    );
-  } catch (err) {
-    console.error("Fetch phone orders failed:", err);
-  }
-}, []);
 
 const fetchKitchenOpenOrders = useCallback(async () => {
   try {
@@ -1850,10 +1957,6 @@ const handleGuestsChange = useCallback(
         fetchPacketOrders();
         return;
       }
-      if (tab === "phone") {
-        fetchPhoneOrders();
-        return;
-      }
       if (tab === "takeaway") {
         fetchTakeawayOrders();
       }
@@ -1862,7 +1965,6 @@ const handleGuestsChange = useCallback(
       fetchKitchenOpenOrders,
       fetchOrders,
       fetchPacketOrders,
-      fetchPhoneOrders,
       fetchTableConfigs,
       fetchTakeawayOrders,
     ]
@@ -1942,22 +2044,28 @@ const isReservationOrder = (order) =>
     order.order_type === "reservation" ||
     Boolean(order.reservation_date));
 
-const tables = tableConfigs
-  .map((cfg) => {
-    const parsedCfgNumber = Number(cfg.number);
-    const orderRaw = orders.find((o) => {
-      if (o?.table_number == null) return false;
-      if (isOrderCancelledOrCanceled(o.status)) return false;
-      return Number(o.table_number) === parsedCfgNumber;
-    });
-    const reservationFallback = reservationsToday.find(
-      (res) => Number(res.table_number) === parsedCfgNumber
-    );
-    const order =
-      orderRaw && isReservationOrder(orderRaw)
-        ? orderRaw
-        : isEffectivelyFreeOrder(orderRaw)
-        ? reservationFallback
+const tables = React.useMemo(() => {
+  return tableConfigs
+    .map((cfg) => {
+      const parsedCfgNumber = Number(cfg.number);
+      const orderRaw = orders.find((o) => {
+        if (o?.table_number == null) return false;
+        if (isOrderCancelledOrCanceled(o.status)) return false;
+        return Number(o.table_number) === parsedCfgNumber;
+      });
+      const reservationFallback = reservationsToday.find(
+        (res) => Number(res.table_number) === parsedCfgNumber
+      );
+      
+      // ✅ Priority logic:
+      // 1. If orderRaw exists and is a reservation → use it
+      // 2. If orderRaw doesn't exist but reservation exists → create synthetic order
+      // 3. If orderRaw is effectively free but reservation exists → use reservation
+      // 4. Otherwise use orderRaw
+      const order =
+        orderRaw && isReservationOrder(orderRaw)
+          ? orderRaw
+          : !orderRaw && reservationFallback
           ? {
               ...reservationFallback,
               status: "reserved",
@@ -1966,8 +2074,16 @@ const tables = tableConfigs
               total: 0,
               items: [],
             }
-          : null
-        : orderRaw;
+          : isEffectivelyFreeOrder(orderRaw) && reservationFallback
+          ? {
+              ...reservationFallback,
+              status: "reserved",
+              order_type: "reservation",
+              table_number: parsedCfgNumber,
+              total: 0,
+              items: [],
+            }
+          : orderRaw;
 
 	    return {
       tableNumber: cfg.number,
@@ -1983,8 +2099,9 @@ const tables = tableConfigs
       color: cfg.color || null,
       order,
     };
-  })
-  .sort((a, b) => a.tableNumber - b.tableNumber);
+    })
+    .sort((a, b) => a.tableNumber - b.tableNumber);
+}, [tableConfigs, orders, reservationsToday]);
 
 const freeTablesCount = React.useMemo(() => {
   if (!Array.isArray(tables)) return 0;
@@ -2064,7 +2181,7 @@ const handlePrintOrder = async (orderId) => {
 };
 
 
-const navigateToOrder = (order) => {
+const navigateToOrder = useCallback((order) => {
   if (!order) return;
   const tableNumber =
     order.table_number ?? order.tableNumber ?? order?.table_number;
@@ -2073,9 +2190,9 @@ const navigateToOrder = (order) => {
     return;
   }
   navigate(`/transaction/phone/${order.id}`, { state: { order } });
-};
+}, [navigate]);
 
-const handleTableClick = (table) => {
+const handleTableClick = useCallback((table) => {
   // Use the already-loaded register state to avoid a blocking network request on click.
   // useRegisterGuard on TransactionScreen will still enforce access if the register is closed.
   if (registerState === "closed" || registerState === "unopened") {
@@ -2122,11 +2239,20 @@ const handleTableClick = (table) => {
   } else {
     navigate(`/transaction/${table.tableNumber}`, { state: { order: table.order } });
   }
-};
+}, [registerState, transactionSettings.requireGuestsBeforeOpen, t, navigate]);
+
+// 📊 Memoize ordersByTable to avoid recomputing on every render
+const ordersByTable = React.useMemo(() => {
+  return orders.reduce((acc, item) => {
+    const table = item.table_number;
+    if (!acc[table]) acc[table] = [];
+    acc[table].push(item);
+    return acc;
+  }, {});
+}, [orders]);
 
 
-
-const getTimeElapsed = (order) => {
+const getTimeElapsed = useCallback((order) => {
   if (!order || order.status !== "confirmed") return null;
   const startMs =
     (Number.isFinite(order.confirmedSinceMs) ? order.confirmedSinceMs : null) ??
@@ -2136,8 +2262,9 @@ const getTimeElapsed = (order) => {
   const mins = Math.floor(Math.max(0, diffMs) / 60000);
   const secs = Math.floor((Math.max(0, diffMs) % 60000) / 1000);
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-};
- const markMultipleAsDelivered = async (itemIds) => {
+}, [now]);
+
+const markMultipleAsDelivered = useCallback(async (itemIds) => {
   try {
     new Audio("/sound-ready.mp3").play(); // 🔊 Play instantly
 await secureFetch("/orders/order-items/kitchen-status", {
@@ -2152,31 +2279,22 @@ await secureFetch("/orders/order-items/kitchen-status", {
   } catch (err) {
     console.error("❌ Failed to mark as delivered:", err);
   }
-};
+}, []);
 
-  const groupedByTable = orders.reduce((acc, item) => {
-  const table = item.table_number;
-  if (!acc[table]) acc[table] = [];
-  acc[table].push(item);
-  return acc;
-}, {});
+  // Remove duplicate groupedByTable (already have ordersByTable memoized above)
+  // const groupedByTable = orders.reduce(...) // ❌ REMOVED DUPLICATE
 
-  function safeParse(data) {
-  try {
-    return typeof data === "string" ? JSON.parse(data) : data || [];
-  } catch {
-    return [];
-  }
-}
+// Group tables by area (memoized)
+const groupedTables = React.useMemo(() => {
+  return tables.reduce((acc, tbl) => {
+    const area = tbl.area || "Main Hall";
+    if (!acc[area]) acc[area] = [];
+    acc[area].push(tbl);
+    return acc;
+  }, {});
+}, [tables]);
 
-// Group tables by area
-const groupedTables = tables.reduce((acc, tbl) => {
-  const area = tbl.area || "Main Hall";
-  if (!acc[area]) acc[area] = [];
-  acc[area].push(tbl);
-  return acc;
-}, {});
-const areaKeys = Object.keys(groupedTables);
+const areaKeys = React.useMemo(() => Object.keys(groupedTables), [groupedTables]);
 const showAreaTabs = tableSettings.showAreas !== false && areaKeys.length > 1;
 
 const formatAreaLabel = (area) => {
@@ -2325,17 +2443,31 @@ const totalGuests = React.useMemo(() => {
             (hasPreparingItems ||
               !!table.order?.estimated_ready_at ||
               !!table.order?.prep_started_at);
-          const reservationInfo =
-            table.order?.reservation && table.order.reservation.reservation_date
-              ? table.order.reservation
-              : table.order?.reservation_date
-              ? {
-                  reservation_date: table.order.reservation_date,
-                  reservation_time: table.order.reservation_time ?? null,
-                  reservation_clients: table.order.reservation_clients ?? 0,
-                  reservation_notes: table.order.reservation_notes ?? "",
-                }
-              : null;
+          // Resolve reservation info from order first, fallback to reservationsToday list
+          let reservationInfo = null;
+          if (table.order?.reservation && table.order.reservation.reservation_date) {
+            reservationInfo = table.order.reservation;
+          } else if (table.order?.reservation_date) {
+            reservationInfo = {
+              reservation_date: table.order.reservation_date,
+              reservation_time: table.order.reservation_time ?? null,
+              reservation_clients: table.order.reservation_clients ?? 0,
+              reservation_notes: table.order.reservation_notes ?? "",
+            };
+          } else {
+            // Fallback: if there's a reservation record for this table today, use it
+            const fallback = (Array.isArray(reservationsToday) ? reservationsToday : []).find(
+              (r) => Number(r.table_number) === Number(table.tableNumber)
+            );
+            if (fallback && (fallback.reservation_date || fallback.reservation_time)) {
+              reservationInfo = {
+                reservation_date: fallback.reservation_date || null,
+                reservation_time: fallback.reservation_time || null,
+                reservation_clients: fallback.reservation_clients ?? 0,
+                reservation_notes: fallback.reservation_notes ?? "",
+              };
+            }
+          }
 
           return (
           <div
@@ -2471,7 +2603,10 @@ const totalGuests = React.useMemo(() => {
 	            <div className="flex flex-col gap-2 flex-grow">
 	              {(!table.order ||
 	                (normalizeOrderStatus(table.order.status) === "draft" &&
-	                  (!Array.isArray(table.order.items) || table.order.items.length === 0))) ? (
+	                  (!Array.isArray(table.order.items) || table.order.items.length === 0)) ||
+	                (normalizeOrderStatus(table.order.status) === "confirmed" &&
+	                  (!Array.isArray(table.order.items) || table.order.items.length === 0) &&
+	                  Number(table.order.total || 0) <= 0)) ? (
 	                <div className="flex items-center justify-between gap-2">
 	                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-900 border border-green-200 font-extrabold text-sm shadow-sm whitespace-nowrap">
 	                    {t("Free")}
@@ -2900,9 +3035,6 @@ const totalGuests = React.useMemo(() => {
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm transition-all">
     <div
       className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-[0_20px_70px_rgba(15,23,42,0.35)] border border-slate-200 dark:border-slate-800 mx-3 w-full max-w-[520px] max-h-[90vh] overflow-y-auto p-8 animate-fade-in"
-      style={{
-        boxShadow: "0 20px 70px 0 rgba(15,23,42,0.28)",
-      }}
     >
       {/* Close Button */}
       <button

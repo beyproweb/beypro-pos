@@ -1,0 +1,3569 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Gourmet",
+    "version": "v1"
+  },
+  "paths": {
+    "/Mapping/GetOrderStatusList": {
+      "get": {
+        "tags": [
+          "Mapping"
+        ],
+        "summary": "Sipariş Durum Tiplerini getiren servis.Şifreleme yapılmayacaktır.",
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/MappingDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Mapping/GetStoreStatusList": {
+      "get": {
+        "tags": [
+          "Mapping"
+        ],
+        "summary": "Restoran durum tiplerini getiren servis.",
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/MappingDtoListIDataResult"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/ProblemDetails"
+            }
+          },
+          "500": {
+            "description": "Server Error"
+          }
+        }
+      }
+    },
+    "/Mapping/v2/GetCancelReasons": {
+      "get": {
+        "tags": [
+          "Mapping"
+        ],
+        "summary": "Sipariş İptal Sebeplerini getiren servis.Şifreleme yapılmayacaktır.",
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/CancelReasonV2DtoListIDataResult"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/ProblemDetails"
+            }
+          },
+          "500": {
+            "description": "Server Error"
+          }
+        }
+      }
+    },
+    "/Menu/MenuByStoreGroupId": {
+      "post": {
+        "tags": [
+          "Menu"
+        ],
+        "summary": "StoreGroupId bilgisine göre Menüleri getirir.",
+        "description": "Örnek request:\r\n            \r\n    POST Menu/MenuByStoreGroupId\r\n    {\r\n        \"storeGroupId\":80\r\n    }",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreGroupId:Zincir Restoran/Markaya ait Id bilgisi | Long",
+            "schema": {
+              "$ref": "#/definitions/MenuByStoreGroupIdQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/MenuStoreGroupDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Menu/MenuDetails": {
+      "post": {
+        "tags": [
+          "Menu"
+        ],
+        "summary": "Menü detayını getirir. Gönderilen Menü Id bilgisi, Id bilgisi iletilen StoreGroup'a ait bir menü olmak zorundadır.",
+        "description": "Örnek request:\r\n            \r\n    POST Menu/MenuDetails\r\n    {\r\n        \"id\":79,\r\n        \"storeGroupId\":80\r\n    }",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "id:Menüye ait Id bilgisi | Long\r\nstoreGroupId:Zincir Restoran/Markaya ait Id bilgisi | Long",
+            "schema": {
+              "$ref": "#/definitions/MenuDetailsQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/MenuDetailsDtoIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Menu/GetMenuItems": {
+      "post": {
+        "tags": [
+          "Menu"
+        ],
+        "summary": "Menüdeki ürünlerin listesini getirmek için kullanılır.",
+        "description": "POST  Menu/GetMenuItems\r\n{\r\n    \"menuId\":80\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "menuId:Ürünleri istenen menüye ait Id bilgisi",
+            "schema": {
+              "$ref": "#/definitions/GetMenuItemsQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/MenuItemDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Menu/GetStoreMenusByStoreIds": {
+      "post": {
+        "tags": [
+          "Menu"
+        ],
+        "summary": "Şube Id ile, şubeye atanmış menüleri getirmek için kullanılır. Birden fazla şube id bilgisi gönderilebilir.",
+        "description": "POST  Menu/GetStoreMenusByStoreIds\r\n{\r\n    \"storeIds\":[\r\n        23000000100252,23000000100476\r\n    ]\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Şube (Store) Id listesi",
+            "schema": {
+              "$ref": "#/definitions/GetStoreMenusByStoreIdsQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/StoreMenuDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Menu/GetMenuDetailsByStoreAndStoreGroupId": {
+      "post": {
+        "tags": [
+          "Menu"
+        ],
+        "summary": "Restorandaki menü detayını getirir.\r\nÜrün durumları, restorana bağlı gelmektedir.",
+        "description": "Örnek request:\r\n            \r\n    POST Menu/GetMenuDetailsByStoreAndStoreGroupId\r\n    {\r\n        \"storeId\":230000001032001,\r\n        \"storeGroupId\":102\r\n    }",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "storeId:Restoranın Id bilgisi | Long\r\nstoreGroupId:Zincir Restoran/Markaya ait Id bilgisi | Long",
+            "schema": {
+              "$ref": "#/definitions/GetMenuDetailsByStoreAndStoreGroupIdQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/MenuDetailsDtoIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Menu/UpdateBatchPrice": {
+      "post": {
+        "tags": [
+          "Menu"
+        ],
+        "summary": "Bir menü altındaki ürünler için toplu fiyat değiştirmek için kullanılır.",
+        "description": "POST Menu/UpdateBatchPrice\r\n{\r\n \"storeId\": 23000000100358,\r\n \"storeGroupId\": 213,\r\n \"menuId\": 79,\r\n \"prices\": [\r\n   {\r\n     \"menuItemId\": 1551,\r\n     \"productId\": 455,\r\n     \"defaultPrimaryPrice\": 100,\r\n     \"defaultPrimaryDiscountedPrice\": 90\r\n   }\r\n ]\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Restoran Şube Id bilgisi,\r\nStoreGroupId: Zincir Restoran/Marka Id Bilgisi,\r\nMenuId: Menu Id Bilgisi,\r\nPrices: Menu altındaki ürünlere ait Id ve fiyat bilgilerini içerir.\r\n    MenuItemId: Menu altındaki Item'ın Id bilgisi\r\n    ProductId: Ürün Id bilgisi\r\n    DefaultPrimaryPrice: Ürün Fiyat bilgisi\r\n    DefaultPrimaryDiscountedPrice: Ürünün indirimli fiyat bilgisi",
+            "schema": {
+              "$ref": "#/definitions/UpdateBatchPriceCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Menu/GetAllOptionsByMenuId": {
+      "post": {
+        "tags": [
+          "Menu"
+        ],
+        "summary": "Belirli bir Menü'ye ait tüm opsiyon bilgilerini getiren servis.",
+        "description": "    POST  Menu/GetAllOptionsByMenuId\r\n    {\r\n        \"menuId\":80,\r\n    }\r\nOwnerId bilgisi, ilgili opsiyon bilgilerinin Menü'deki hangi ProductId'ye ait olduğunun bilgisini içermektedir.\r\nObjectOptionItemInfosV2 listelerinin içerisindeki kayıtlarda, objectType=\"PRODUCT\" ise, bu aynı zamanda menüdeki başka bir ürüne tekabul etmektedir.\r\nObject tip bilgisi PRODUCT olan kayıtlarda, objectId bilgisi de Menü içerisindeki ilgili ürünün ID'sine tekabül etmektedir.\r\nBu yapının kurulmasının sebebi, Menü'deki bir ürün aynı zamanda başka bir ürünün alt opsiyonu olarak atanmış olabilmesidir.",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Long tipinde menü id içermektedir.",
+            "schema": {
+              "$ref": "#/definitions/GetAllOptionsByMenuIdQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/OwnerOptionItemDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Menu/UpdateProductStatusByStoreId": {
+      "post": {
+        "tags": [
+          "Menu"
+        ],
+        "summary": "Ürünlerin durumunu, şubelere (storelara) göre açmak yada kapamak için kullanılır.",
+        "description": "POST  Menu/UpdateProductStatusByStoreId\r\n{\r\n    \"storeId\":23000000100358,\r\n    \"productId\":23000000010194,\r\n    \"status\":\"ACTIVE\"\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Şube (Store) Id, Ürün (Product) Id, Durum (Statu) Bilgisi \"ACTIVE\",\"PASSIVE\"",
+            "schema": {
+              "$ref": "#/definitions/UpdateProductStatusByStoreIdCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/OptionItem/ActivateOptionItemStatusByStore": {
+      "post": {
+        "tags": [
+          "OptionItem"
+        ],
+        "summary": "Belirli bir Opsiyonu, belirli bir restorandaki durumunu aktifleştirmek için kullanılır",
+        "description": "POST  OptionItem/ActivateOptionItemStatusByStore\r\n{\r\n    \"storeId\":23000000100358,\r\n    \"optionItemId\":5542336,\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Şube (Store) Id, Opsiyon (OptionItem) Id",
+            "schema": {
+              "$ref": "#/definitions/ActivateOptionItemStatusByStoreCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/OptionItem/DeActivateOptionItemStatusByStore": {
+      "post": {
+        "tags": [
+          "OptionItem"
+        ],
+        "summary": "Belirli bir Opsiyonu, belirli bir restorandaki durumunu pasifleştirmek için kullanılır",
+        "description": "POST  OptionItem/DeActivateOptionItemStatusByStore\r\n{\r\n    \"storeId\":23000000100358,\r\n    \"optionItemId\":5542336,\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Şube (Store) Id, Opsiyon (OptionItem) Id",
+            "schema": {
+              "$ref": "#/definitions/DeActivateOptionItemStatusByStoreCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Order/PendingOrdersWithStores": {
+      "post": {
+        "tags": [
+          "Order"
+        ],
+        "summary": "Şube bazlı bekleyen siparişlerin listelemnesi için kullanılır.",
+        "description": "POST Order/PendingOrdersWithStores\r\n{\r\n    \"storeIds\": [230002123,230002124],\r\n    \"limit\":20,\r\n    \"offset\":0\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreIds: List yada array tipinde Restoran Şube Id(StoreId)-LONG,\r\nLimit: Pagination İçin eklenmiştir. Kaç adet sipariş döneceği bilgisi verilir. - Long,\r\nOffset:Pagination için eklenmiştir. offset:0 limit:20 ilk 20 siparişi, offset:20, limit:20 ikinci 20 siparişi getirir. - Long,",
+            "schema": {
+              "$ref": "#/definitions/PendingOrdersWithStoresQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/PendingOrdersWithStoresDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Order/ActiveOrdersWithStores": {
+      "post": {
+        "tags": [
+          "Order"
+        ],
+        "summary": "Şube bazlı aktif siparişlerin listelemnesi için kullanılır.",
+        "description": "POST Order/ActiveOrdersWithStores\r\n{\r\n    \"storeIds\": [230002123,230002124],\r\n    \"limit\":20,\r\n    \"offset\":0\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreIds: List yada array tipinde Restoran Şube Id(StoreId)-LONG,\r\nLimit: Pagination İçin eklenmiştir. Kaç adet sipariş döneceği bilgisi verilir. - Long,\r\nOffset:Pagination için eklenmiştir. offset:0 limit:20 ilk 20 siparişi, offset:20, limit:20 ikinci 20 siparişi getirir. - Long,",
+            "schema": {
+              "$ref": "#/definitions/ActiveOrdersWithStoresQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/ActiveOrdersWithStoresDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Order/GetPassiveOrders": {
+      "post": {
+        "tags": [
+          "Order"
+        ],
+        "summary": "Verilen tip bilgisine göre Geçmiş siparişleri getirir.",
+        "description": "POST Order/GetPassiveOrders\r\n{\r\n    \"storeId\":1231,\r\n    \"limit\":20,\r\n    \"offset\":0\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "storeId:Restoran Şube Id bilgisi - Long\r\nlimit:Pagination İçin eklenmiştir. Kaç adet sipariş döneceği bilgisi verilir. - Long \r\noffset:Pagination için eklenmiştir. offset:0 limit:20 ilk 20 siparişi, offset:20, limit:20 ikinci 20 siparişi getirir. - Long",
+            "schema": {
+              "$ref": "#/definitions/GetPassiveOrdersQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/StoreOrderDetailDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Order/GetSummarizedOrder": {
+      "post": {
+        "tags": [
+          "Order"
+        ],
+        "summary": "SİPARİŞİN VE KURYENİN DURUM BİLGİSİNİ DÖNEN SERVİS",
+        "description": "POST Order/GetSummarizedOrder\r\n{\r\n    \"orderId\": 155121,\r\n    \"userId\":2820000\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "orderId: Sipariş Id bilgisi - Long,\r\nuserId: Sipariş içerinde gelen userId bilgisi- long",
+            "schema": {
+              "$ref": "#/definitions/GetSummarizedOrderQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/SummarizedOrderResponseDtoIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Order/v2/UpdateOrderStatus": {
+      "post": {
+        "tags": [
+          "Order"
+        ],
+        "summary": "Siparişin durumunu güncellemek için kullanılır.",
+        "description": "POST Order/v2/UpdateOrderStatus\r\n{\r\n    \"orderId\": 455221,\r\n    \"orderStatus\": \"Approved\",\r\n    \"storeId\":230000214522,\r\n    \"cancelReasonId\":23\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "OrderId: Sipariş Id bilgisi - Long,\r\nOrderStatus: Siparişin değiştirmek istediğimiz durum bilgisi Approved/Rejected/Prepared/Delivery/Completed - String,\r\nStoreId: Siparişe ait restoran Id bilgisi - Long,\r\nCancelReasonId: CancelReasonId - Long: OrderStatus:Rejected olarak gönderildiğinde iletilmesi beklenmektedir. Bu alan, v2/GetCancelReasons servisinden dönen listedeki \"reasonId\" alanından beslenmelidir.",
+            "schema": {
+              "$ref": "#/definitions/UpdateOrderStatusV2Command"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Order/v2/CancelOrder": {
+      "post": {
+        "tags": [
+          "Order"
+        ],
+        "summary": "Onaylanmış bir siparişi iptal etmek için kullanılır.",
+        "description": "POST Order/CancelOrder\r\n{\r\n    \"orderId\": 155121,\r\n    \"notifyUser\":true,\r\n    \"cancelReasonId\":23,\r\n    \"userId\":2820000\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "orderId: Sipariş Id bilgisi - Long,\r\nnotifyUser: Müşteriye bildirim gönderilsin mi? - Boolean,\r\nCancelReasonId: CancelReasonId - Long: Bu alan, v2/GetCancelReasons servisinden dönen listedeki \"reasonId\" alanından beslenmelidir.\r\nuserId: Sipariş içerinde gelen userId bilgisi- long",
+            "schema": {
+              "$ref": "#/definitions/CancelOrderV2Command"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Order/UpdateOrderStatus": {
+      "post": {
+        "tags": [
+          "Order"
+        ],
+        "summary": "Bu servis, 3 Mart 2024 tarihi itibariyle kaldırılmıştır.Bu metod yerine Order/v2/UpdateOrderStatus servisi kullanılmalıdır.",
+        "description": "POST Order/UpdateOrderStatus\r\n{\r\n    \"orderId\": 455221,\r\n    \"orderStatus\": \"Approved\",\r\n    \"storeId\":230000214522,\r\n    \"cancelReason\":null // CancelReason alanı, orderStatus:Rejected olarak gönderildiğinde iletilmesi beklenmektedir.\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "OrderId: Sipariş Id bilgisi - Long,\r\nOrderStatus: Siparişin değiştirmek istediğimiz durum bilgisi Approved/Rejected/Prepared/Delivery/Completed - String,\r\nStoreId: Siparişe ait restoran Id bilgisi - Long,\r\nCancelReason: Sipariş iptal sebebi olarak gönderilmesi gereken bilgidir. İptal sebepleri listesindeki \"Name\" alanı buraya iletilmelidir.",
+            "schema": {
+              "$ref": "#/definitions/UpdateOrderStatusCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        },
+        "deprecated": true
+      }
+    },
+    "/Order/CancelOrder": {
+      "post": {
+        "tags": [
+          "Order"
+        ],
+        "summary": "Bu servis, 3 Mart 2024 tarihi itibariyle kaldırılmıştır. Bu metod yerine Order/v2/CancelOrder servisi kullanılmalıdır.",
+        "description": "POST Order/CancelOrder\r\n{\r\n    \"orderId\": 155121,\r\n    \"notifyUser\":true,\r\n    \"cancelReason\":\"Müşteriye İletilecek Sebep\",\r\n    \"userId\":2820000\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "orderId: Sipariş Id bilgisi - Long,\r\nnotifyUser: Müşteriye bildirim gönderilsin mi? - Boolean,\r\ncancelReason:İptal Sebebi - String,\r\nuserId: Sipariş içerinde gelen userId bilgisi- long",
+            "schema": {
+              "$ref": "#/definitions/CancelOrderCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        },
+        "deprecated": true
+      }
+    },
+    "/PaymentMethod/GetPaymentMethodsByStoreId": {
+      "post": {
+        "tags": [
+          "PaymentMethod"
+        ],
+        "summary": "Şubedeki ödeme yöntemleri bilgilerini getiren servis.",
+        "description": "POST PaymentMethod/GetPaymentMethodsByStoreId\r\n{\r\n\"storeId\":23000000100358\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "storeId:Şube Id bilgisi-LONG",
+            "schema": {
+              "$ref": "#/definitions/GetPaymentMethodsByStoreIdQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/GetPaymentMethodsResponseDtoIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/PaymentMethod/UpdatePaymentMethodStatus": {
+      "post": {
+        "tags": [
+          "PaymentMethod"
+        ],
+        "summary": "Şubedeki ödeme yöntemleri bilgilerini getiren servis.",
+        "description": "POST PaymentMethod/UpdatePaymentMethodStatus\r\n{\r\n    \"storeId\":23000000100358,\r\n    \"updatePaymentStatus\":[\r\n             {\r\n                 \"name\":\"CASH_ON_DELIVERY\",\r\n                 \"status\":true\r\n             },\r\n             {\r\n                 \"name\":\"TICKET_ON_DELIVERY\",\r\n                 \"status\":false\r\n             }\r\n    ]\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "storeId:Şube Id bilgisi -LONG,\r\nupdatePaymentStatus: Güncellenmek istenen ödeme yöntemleri Listesi\r\nupdatePaymentStatus.name: Güncellenmek istenen ödeme yöntemi adı - STRING,\r\nupdatePaymentStatus.status: Ödeme yöntemini açık olarak güncellemek için true, kapalı olarak güncellemek için false,-BOOLEAN",
+            "schema": {
+              "$ref": "#/definitions/UpdatePaymentMethodStatusCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Receipt/AddOrderReceipt": {
+      "post": {
+        "tags": [
+          "Receipt"
+        ],
+        "summary": "Siparişe ait fiş/fatura görselini yüklemek için kullanılacak api. \r\nContent-Type: multipart/form-data olarak gönderilmelidir.",
+        "description": "    POST Receipt/AddOrderReceipt\r\n          curl -X 'POST' \\\r\n         'https://test.gourmet.migrosonline.com/Receipt/AddOrderReceipt' \\\r\n         -H 'accept: application/json' \\\r\n         -H 'XApiKey: RESTORAN_API_KEY' \\\r\n         -H 'Content-Type: multipart/form-data' \\\r\n         -F 'value=SIFRELENMIS_BODY' \\\r\n         -F 'file=@fis_gorseli.jpeg;type=image/jpeg'\r\n         \r\nvalue: string olarak şifrelenmiş body. Şifresiz hali şu şekilde olmalıdır\r\n{\r\n    \"orderId\": 111111111,\r\n    \"storeId\": 23000000111111,\r\n    \"receiptDate\": \"2024-07-30\"\r\n}\r\norderId: Sipariş Id bilgisi - long,\r\nstoreId: Restoran Id bilgisi - long,\r\nreceiptDate:Fatura/fişe ait tarih bilgisi. yyyy-MM-dd formatında olmalıdır - string,\r\nfile: Fiş görseli. Kabul edilen uzantılar: jpeg,jpg,png,pdf",
+        "consumes": [
+          "multipart/form-data"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "formData",
+            "name": "value",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "formData",
+            "name": "file",
+            "required": true,
+            "type": "file"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Receipt/GetReceipts": {
+      "post": {
+        "tags": [
+          "Receipt"
+        ],
+        "summary": "Gönderilen sipariş id'lerine ait fatura/fiş bilgilerine erişmek için kullanılacak api",
+        "description": "POST Receipt/GetReceipts\r\n{\r\n    \"storeId\":1231,\r\n    \"orderIds\":[300112, 300113,300114]\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "storeId:Restoran Şube Id bilgisi - Long\r\norderIds: Sipariş id bilgilerinini içeren dizi - Long Array",
+            "schema": {
+              "$ref": "#/definitions/GetReceiptsQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/OrderReceiptDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/GetDefinedActiveRestaurantApiKeys": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Pos Firmasına Tanımlı Api Key bilgilerini ve bağlı olduğu restoran Id'lerini getiren servis. ŞİFRELEME YAPILMAYACAK.",
+        "description": "POST Store/GetDefinedActiveRestaurantApiKeys\r\n{\r\n\"SecretKey\":\"Size Verilen SECRETKEY Bilgisi\"\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "schema": {
+              "$ref": "#/definitions/GetDefinedActiveRestaurantApiKeysQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/RestaurantApiKeyDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/GetStoreDetail": {
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Api Key ile restoran detay bilgilerine erişmek için kullanılan metod.",
+        "description": "GET Store/GetStoreDetail",
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/StoreDetailDtoIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/GetStoreGroups": {
+      "get": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Sistemde kullanıcınıza tanımlı Zincir Restoran (Marka) bilgilerini getirir.",
+        "description": "GET Store/GetStoreGroups",
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/StoreGroupDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/GetStores": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Bir Zincir Restoran/Marka'ya ait store/şube listesini getirir.",
+        "description": "POST Store/GetStores\r\n{\r\n    \"storeGroupId\":80\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "schema": {
+              "$ref": "#/definitions/GetStoresQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/StoreDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/ActivateStore": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "StoreId bilgisi ile şubedeki geçici kapatmayı kaldırmak için kullanılır.",
+        "description": "POST Store/ActivateStore\r\n{\r\n    \"storeId\":80,\r\n    \"warehouseId\":5412\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Şube Id bilgisi,\r\nWarehouseId: Şube ile eşleşen, şubenin depo Id bilgisi.",
+            "schema": {
+              "$ref": "#/definitions/ActivateStoreCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/DeActivateStore": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "StoreId bilgisi ile şubeyi geçici olarak kapalı duruma getirmek için kullanılır.",
+        "description": "POST Store/ActivateStore\r\n{\r\n    \"storeId\":80,\r\n    \"warehouseId\":5412\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Şube Id bilgisi,\r\nWarehouseId: Şube ile eşleşen, şubenin depo Id bilgisi.",
+            "schema": {
+              "$ref": "#/definitions/DeActivateStoreCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/GetStoreViewStatus": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Restoranın geçici kapalılık durumunu getiren servis.",
+        "description": "POST Store/GetStoreViewStatus\r\n{\r\n    \"storeId\":23000000112222,\r\n    \"storeGroupId\":5412\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Şube Id bilgisi,\r\nStoreGroupId: Zincir Id bilgisi.",
+            "schema": {
+              "$ref": "#/definitions/GetStoreViewStatusQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/GetStoreViewStatusResponseDtoIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/AddStoreOffDate": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Restoranı geçici kapatmak için çağırılacak servis.",
+        "description": "POST Store/AddStoreOffDate\r\n{\r\n    \"storeId\":23000000112222,\r\n    \"storeGroupId\":5412,\r\n    \"storeOffDateOption\": \"FOUR_HOUR\"\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Şube Id bilgisi,\r\nStoreGroupId: Zincir Id bilgisi.\r\nStoreOffDateOption: Restoranın 1 Saatlik mi, 4 saatlik mi yoksa sonraki mesai saati başlangıcına kadar kapalı olup olmayacağı bilgisini barındırır.",
+            "schema": {
+              "$ref": "#/definitions/AddStoreOffDateCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/Store/RemoveStoreOffDate": {
+      "post": {
+        "tags": [
+          "Store"
+        ],
+        "summary": "Restoranda var ise geçici kapamayı kaldırmak için çağırılan servis.",
+        "description": "POST Store/RemoveStoreOffDate\r\n{\r\n    \"storeId\":23000000112222,\r\n    \"storeGroupId\":5412\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Şube Id bilgisi,\r\nStoreGroupId: Zincir Id bilgisi.",
+            "schema": {
+              "$ref": "#/definitions/RemoveStoreOffDateCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/StoreArea/ActivateArea": {
+      "post": {
+        "tags": [
+          "StoreArea"
+        ],
+        "summary": "HexapolygonId ve StoreId bilgisi ile şubenin belirli bir bölgesini satışa açmak için kullanılır.",
+        "description": "POST StoreArea/ActivateArea\r\n{\r\n    \"storeId\":2300000111111,\r\n    \"hexapolygonId\":5412\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Şube Id bilgisi,\r\nHexapolygonId: Şubeye ait bölgelerden birine ait bölge Id bilgisi.",
+            "schema": {
+              "$ref": "#/definitions/ActivateStoreAreaCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/StoreArea/DeActivateArea": {
+      "post": {
+        "tags": [
+          "StoreArea"
+        ],
+        "summary": "HexapolygonId ve StoreId bilgisi ile şubenin belirli bir bölgesini satışa kapatmak için kullanılır.",
+        "description": "POST StoreArea/DeActivateArea\r\n{\r\n    \"storeId\":2300000111111,\r\n    \"hexapolygonId\":5412\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Şube Id bilgisi,\r\nHexapolygonId: Şubeye ait bölgelerden birine ait bölge Id bilgisi.",
+            "schema": {
+              "$ref": "#/definitions/DeActivateStoreAreaCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/StoreArea/GetStoreAreas": {
+      "post": {
+        "tags": [
+          "StoreArea"
+        ],
+        "summary": "SgoreGroupId ve StoreId bilgisi ile şubenin bölgelerini getiren apidir.",
+        "description": "POST StoreArea/GetStoreAreas\r\n{\r\n    \"storeId\":2300000111111,\r\n    \"storeGroupId\":1234\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "StoreId: Şube Id bilgisi,\r\nStoreGroupId:Şubenin bağlı olduğu Zincir/Marka Id bilgisi.",
+            "schema": {
+              "$ref": "#/definitions/GetStoreAreasQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/HexapolygonDtoListIDataResult"
+            }
+          }
+        }
+      }
+    },
+    "/Test/EncryptJson": {
+      "post": {
+        "tags": [
+          "Test"
+        ],
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "schema": {
+              "$ref": "#/definitions/EncrtypDectyptModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/ValueObjectDto"
+            }
+          }
+        }
+      }
+    },
+    "/Test/DecryptJson": {
+      "post": {
+        "tags": [
+          "Test"
+        ],
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "schema": {
+              "$ref": "#/definitions/EncrtypDectyptModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/ValueObjectDto"
+            }
+          }
+        }
+      }
+    },
+    "/WorkingHour/UpsertStoreTimeSlot": {
+      "post": {
+        "tags": [
+          "WorkingHour"
+        ],
+        "summary": "Çalışma Saatlerini eklemek ve güncelleştirmek için kullanılır.",
+        "description": "POST WorkingHour/UpsertStoreTimeSlot\r\n{\r\n  \"storeId\": 80,\r\n  \"timeSlotIds\": [\r\n    {\r\n      \"startDay\": \"PAZARTESİ\",\r\n      \"startHour\": \"11:00\",\r\n      \"endHour\": \"20:00\",\r\n      \"active\": true\r\n    },\r\n    {\r\n      \"startDay\": \"SALI\",\r\n      \"startHour\": \"11:00\",\r\n      \"endHour\": \"20:00\",\r\n      \"active\": true\r\n    }\r\n  ]\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/UpsertStoreTimeSlotCommand"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IResult"
+            }
+          }
+        }
+      }
+    },
+    "/WorkingHour/GetStoreTimeSlot": {
+      "post": {
+        "tags": [
+          "WorkingHour"
+        ],
+        "summary": "Şubeye ait haftalık açılış-kapanış saatlerini getirir.",
+        "description": "POST WorkingHour/GetStoreTimeSlot\r\n{\r\n    \"storeId\":800\r\n}",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/*+json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "schema": {
+              "$ref": "#/definitions/GetStoreTimeSlotQuery"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/WorkingHoursDtoListIDataResult"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "ActivateOptionItemStatusByStoreCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "optionItemId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "ActivateStoreAreaCommand": {
+      "type": "object",
+      "properties": {
+        "hexapolygonId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "ActivateStoreCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "ActiveOrdersWithStoresDto": {
+      "type": "object",
+      "properties": {
+        "storeId": { },
+        "activeOrderDetailsDTOS": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreOrderDetailDto"
+          }
+        }
+      }
+    },
+    "ActiveOrdersWithStoresDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ActiveOrdersWithStoresDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "ActiveOrdersWithStoresQuery": {
+      "type": "object",
+      "properties": {
+        "storeIds": {
+          "type": "array",
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "offset": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "limit": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "AddStoreOffDateCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeOffDateOption": {
+          "type": "string"
+        }
+      }
+    },
+    "CancelOrderCommand": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "userId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "updaterId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "notifyUser": {
+          "type": "boolean"
+        },
+        "ip": {
+          "type": "string"
+        },
+        "cancelReason": {
+          "type": "string"
+        }
+      }
+    },
+    "CancelOrderV2Command": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "notifyUser": {
+          "type": "boolean"
+        },
+        "cancelReasonId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "userId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "CancelReasonV2Dto": {
+      "type": "object",
+      "properties": {
+        "reasonId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "CancelReasonV2DtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CancelReasonV2Dto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "CourierDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "DeActivateOptionItemStatusByStoreCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "optionItemId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "DeActivateStoreAreaCommand": {
+      "type": "object",
+      "properties": {
+        "hexapolygonId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "DeActivateStoreCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "DeliveryLocationDto": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "format": "double",
+          "type": "number"
+        },
+        "longitude": {
+          "format": "double",
+          "type": "number"
+        }
+      }
+    },
+    "EncrtypDectyptModel": {
+      "type": "object",
+      "properties": {
+        "json": {
+          "type": "string"
+        },
+        "secretKey": {
+          "type": "string"
+        }
+      }
+    },
+    "ErrorMessage": {
+      "type": "object",
+      "properties": {
+        "errorCode": {
+          "type": "string"
+        },
+        "errorTitle": {
+          "type": "string"
+        },
+        "errorDetail": {
+          "type": "string"
+        },
+        "isSystemError": {
+          "type": "boolean"
+        }
+      }
+    },
+    "GetAllOptionsByMenuIdQuery": {
+      "type": "object",
+      "properties": {
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetDefinedActiveRestaurantApiKeysQuery": {
+      "type": "object",
+      "properties": {
+        "secretKey": {
+          "type": "string"
+        }
+      }
+    },
+    "GetMenuDetailsByStoreAndStoreGroupIdQuery": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetMenuItemsQuery": {
+      "type": "object",
+      "properties": {
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetPassiveOrdersQuery": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "limit": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "offset": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetPaymentMethodsByStoreIdQuery": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetPaymentMethodsResponseDto": {
+      "type": "object",
+      "properties": {
+        "onlinePayments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PaymentTypeDto"
+          }
+        },
+        "onDeliveryPayments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PaymentTypeDto"
+          }
+        }
+      }
+    },
+    "GetPaymentMethodsResponseDtoIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/GetPaymentMethodsResponseDto"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "GetReceiptsQuery": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "orderIds": {
+          "type": "array",
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "GetStoreAreasQuery": {
+      "type": "object",
+      "properties": {
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetStoreMenusByStoreIdsQuery": {
+      "type": "object",
+      "properties": {
+        "storeIds": {
+          "type": "array",
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "GetStoreTimeSlotQuery": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetStoreViewStatusQuery": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetStoreViewStatusResponseDto": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "openingTime": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetStoreViewStatusResponseDtoIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/GetStoreViewStatusResponseDto"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "GetStoresQuery": {
+      "type": "object",
+      "properties": {
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "GetSummarizedOrderQuery": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "userId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "HexapolygonDto": {
+      "type": "object",
+      "properties": {
+        "hexapolygonId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "activeness": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HexapolygonDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/HexapolygonDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "IResult": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "ImageUrlDto": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "$ref": "#/definitions/UrlDto"
+        },
+        "productId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "MappingDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "parameterKey": {
+          "type": "string"
+        },
+        "parameterValue": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "MappingDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MappingDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "MenuByStoreGroupIdQuery": {
+      "type": "object",
+      "properties": {
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "MenuDetailsDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "totalProductCount": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productCountWithImage": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "creatorId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdatedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdaterId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "menuHeaderInfos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MenuHeaderInfoDto"
+          }
+        }
+      }
+    },
+    "MenuDetailsDtoIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/MenuDetailsDto"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "MenuDetailsQuery": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "MenuHeaderInfoDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "priority": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "createdAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "creatorId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdatedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdaterId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "foodMenuItemDetailsDTOs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MenuHeaderItemDto"
+          }
+        }
+      }
+    },
+    "MenuHeaderItemDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productName": {
+          "type": "string"
+        },
+        "productDescription": {
+          "type": "string"
+        },
+        "imageUrls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ImageUrlDto"
+          }
+        },
+        "priority": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "defaultPrimaryPrice": {
+          "format": "double",
+          "type": "number"
+        },
+        "defaultPrimaryDiscountedPrice": {
+          "format": "double",
+          "type": "number"
+        },
+        "createdAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "creatorId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdatedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdaterId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "MenuHeaderItemPriceDto": {
+      "type": "object",
+      "properties": {
+        "menuItemId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "defaultPrimaryPrice": {
+          "format": "double",
+          "type": "number"
+        },
+        "defaultPrimaryDiscountedPrice": {
+          "format": "double",
+          "type": "number"
+        }
+      }
+    },
+    "MenuItemDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productName": {
+          "type": "string"
+        },
+        "defaultPrimaryPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "defaultPrimaryDiscountedPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "MenuItemDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MenuItemDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "MenuStoreGroupDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "MenuStoreGroupDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MenuStoreGroupDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "ObjectOptionHeaderInfoDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "optionHeaderDTO": {
+          "$ref": "#/definitions/OptionHeaderDto"
+        },
+        "ownerId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "isOwnerProduct": {
+          "type": "boolean"
+        },
+        "priority": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "minItemChoiceQuantity": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "maxItemChoiceQuantity": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "isMultipleChoice": {
+          "type": "boolean"
+        },
+        "objectOptionItemInfosV2": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ObjectOptionItemInfoDto"
+          }
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "ObjectOptionItemInfoDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "optionItemDTO": {
+          "$ref": "#/definitions/OptionItemDto"
+        },
+        "primaryPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "primaryLoyaltyPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "priority": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "isExcludable": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "OptionHeaderDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "isInclude": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "OptionInfoDto": {
+      "type": "object",
+      "properties": {
+        "objectOptionHeaderInfosV2": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ObjectOptionHeaderInfoDto"
+          }
+        }
+      }
+    },
+    "OptionItemDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "defaultPrimaryPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "defaultPrimaryLoyaltyPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "objectId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "objectType": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "OrderApprovalDto": {
+      "type": "object",
+      "properties": {
+        "createdAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "expireAt": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "OrderReceiptDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "orderId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        },
+        "receiptDate": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "OrderReceiptDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OrderReceiptDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "OwnerOptionItemDto": {
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "optionsInfo": {
+          "$ref": "#/definitions/OptionInfoDto"
+        }
+      }
+    },
+    "OwnerOptionItemDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OwnerOptionItemDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "PaymentStatusDto": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PaymentTypeDto": {
+      "type": "object",
+      "properties": {
+        "hashedNameId": {
+          "format": "int32",
+          "type": "integer",
+          "readOnly": true
+        },
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PendingOrdersWithStoresDto": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "pendingOrderDetailsDTOS": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreOrderDetailDto"
+          }
+        }
+      }
+    },
+    "PendingOrdersWithStoresDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PendingOrdersWithStoresDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "PendingOrdersWithStoresQuery": {
+      "type": "object",
+      "properties": {
+        "storeIds": {
+          "type": "array",
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "offset": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "limit": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "PhoneNumberWithCodeDto": {
+      "type": "object",
+      "properties": {
+        "phoneNumber": {
+          "type": "string"
+        },
+        "pinCode": {
+          "type": "string"
+        },
+        "expireAt": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "ProblemDetails": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "instance": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": { }
+    },
+    "RemoveStoreOffDateCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "RestaurantApiKeyDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "apiKey": {
+          "type": "string"
+        },
+        "posFirmId": {
+          "type": "string"
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "isPosFirmActive": {
+          "type": "boolean"
+        },
+        "restaurantStoreGroups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RestaurantStoreGroupDto"
+          }
+        }
+      }
+    },
+    "RestaurantApiKeyDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RestaurantApiKeyDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "RestaurantStoreDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "restaurantStoreGroupId": {
+          "type": "string"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "isActive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RestaurantStoreGroupDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "restaurantApiKeyId": {
+          "type": "string"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "restaurantStores": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RestaurantStoreDto"
+          }
+        }
+      }
+    },
+    "StoreDetailDto": {
+      "type": "object",
+      "properties": {
+        "integrationIsActive": {
+          "type": "boolean"
+        },
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "warehouseId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "prepareDuration": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "embeddedCuisine": {
+          "type": "string"
+        },
+        "inWorkingHours": {
+          "type": "boolean"
+        },
+        "storeName": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        }
+      }
+    },
+    "StoreDetailDtoIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/StoreDetailDto"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "StoreDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "cityId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "warehouseId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "prepareDuration": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "embeddedCuisine": {
+          "type": "string"
+        },
+        "inWorkingHours": {
+          "type": "boolean"
+        },
+        "storeName": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "showActivateButton": {
+          "type": "boolean"
+        }
+      }
+    },
+    "StoreDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "StoreGroupDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "logoPath": {
+          "type": "string"
+        },
+        "coverPhotoPath": {
+          "type": "string"
+        }
+      }
+    },
+    "StoreGroupDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreGroupDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "StoreMenuDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "createdAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "creatorId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdatedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdaterId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "StoreMenuDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreMenuDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "StoreOrderDetailDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "userId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeName": {
+          "type": "string"
+        },
+        "storeGroupName": {
+          "type": "string"
+        },
+        "phoneNumber": {
+          "type": "string"
+        },
+        "phoneNumberWithCode": {
+          "$ref": "#/definitions/PhoneNumberWithCodeDto"
+        },
+        "description": {
+          "type": "string"
+        },
+        "totalPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "totalPriceText": {
+          "type": "string"
+        },
+        "discountedPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "discountedPriceText": {
+          "type": "string"
+        },
+        "restaurantDiscountedPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "restaurantDiscountedPriceText": {
+          "type": "string"
+        },
+        "migrosDiscountedPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "migrosDiscountedPriceText": {
+          "type": "string"
+        },
+        "products": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreOrderItemDto"
+          }
+        },
+        "contactlessDelivery": {
+          "type": "boolean"
+        },
+        "ringDoorbell": {
+          "type": "boolean"
+        },
+        "saveGreen": {
+          "type": "boolean"
+        },
+        "orderNote": {
+          "type": "string"
+        },
+        "customerFullName": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "addressDirection": {
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "cancelled": {
+          "type": "boolean"
+        },
+        "paymentType": {
+          "type": "string"
+        },
+        "paymentTypeDescription": {
+          "type": "string"
+        },
+        "orderApproval": {
+          "$ref": "#/definitions/OrderApprovalDto"
+        },
+        "deliveryLocation": {
+          "$ref": "#/definitions/DeliveryLocationDto"
+        },
+        "deliveryProvider": {
+          "type": "string"
+        },
+        "courierName": {
+          "type": "string"
+        }
+      }
+    },
+    "StoreOrderDetailDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreOrderDetailDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "StoreOrderItemDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "price": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "priceText": {
+          "type": "string"
+        },
+        "amount": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "note": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreOrderOptionDto"
+          }
+        }
+      }
+    },
+    "StoreOrderOptionDto": {
+      "type": "object",
+      "properties": {
+        "headerName": {
+          "type": "string"
+        },
+        "itemNames": {
+          "type": "string"
+        },
+        "objectOptionHeaderPriority": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "objectOptionItemPriority": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "objectOptionItemId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "optionItemId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "parentObjectOptionItemId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "primaryDiscountedPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "primaryPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "primaryDiscountedPriceText": {
+          "type": "string"
+        },
+        "primaryPriceText": {
+          "type": "string"
+        },
+        "quantity": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "excluded": {
+          "type": "boolean"
+        },
+        "subOptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreOrderSubOptionDto"
+          }
+        },
+        "optionType": {
+          "type": "string"
+        }
+      }
+    },
+    "StoreOrderSubOptionDto": {
+      "type": "object",
+      "properties": {
+        "headerName": {
+          "type": "string"
+        },
+        "itemNames": {
+          "type": "string"
+        },
+        "objectOptionHeaderPriority": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "objectOptionItemPriority": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "objectOptionItemId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "optionItemId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "parentObjectOptionItemId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "primaryDiscountedPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "primaryPrice": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "primaryDiscountedPriceText": {
+          "type": "string"
+        },
+        "primaryPriceText": {
+          "type": "string"
+        },
+        "quantity": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "excluded": {
+          "type": "boolean"
+        },
+        "subOptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreOrderSubOptionDto"
+          }
+        },
+        "optionType": {
+          "type": "string"
+        }
+      }
+    },
+    "SummarizedOrderResponseDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "isCancelled": {
+          "type": "boolean"
+        },
+        "deliveryProvider": {
+          "type": "string"
+        },
+        "courier": {
+          "$ref": "#/definitions/CourierDto"
+        },
+        "courierAssigned": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SummarizedOrderResponseDtoIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/SummarizedOrderResponseDto"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    },
+    "UpdateBatchPriceCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeGroupId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "menuId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "updaterId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "prices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MenuHeaderItemPriceDto"
+          }
+        }
+      }
+    },
+    "UpdateOrderStatusCommand": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "orderStatus": {
+          "type": "string"
+        },
+        "cancelReason": {
+          "type": "string"
+        }
+      }
+    },
+    "UpdateOrderStatusV2Command": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "orderStatus": {
+          "type": "string"
+        },
+        "cancelReasonId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "UpdatePaymentMethodStatusCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "updatePaymentStatus": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PaymentStatusDto"
+          }
+        }
+      }
+    },
+    "UpdateProductStatusByStoreIdCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "productId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "UpsertStoreTimeSlotCommand": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "timeSlotIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkingHourDto"
+          }
+        }
+      }
+    },
+    "UrlDto": {
+      "type": "object",
+      "properties": {
+        "PRODUCT_LIST": {
+          "type": "string"
+        },
+        "PRODUCT_DETAIL": {
+          "type": "string"
+        },
+        "PRODUCT_HD": {
+          "type": "string"
+        },
+        "CART": {
+          "type": "string"
+        }
+      }
+    },
+    "ValidationMessage": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "cause": {
+          "type": "string"
+        },
+        "errorDetail": {
+          "type": "string"
+        }
+      }
+    },
+    "ValueObjectDto": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "WorkingHourDto": {
+      "type": "object",
+      "properties": {
+        "startDay": {
+          "type": "string"
+        },
+        "startHour": {
+          "type": "string"
+        },
+        "endHour": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        }
+      }
+    },
+    "WorkingHoursDto": {
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "startDay": {
+          "type": "string"
+        },
+        "startHour": {
+          "type": "string"
+        },
+        "endHour": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "lastUpdatedAt": {
+          "format": "int64",
+          "type": "integer"
+        }
+      }
+    },
+    "WorkingHoursDtoListIDataResult": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkingHoursDto"
+          }
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "errorMessage": {
+          "$ref": "#/definitions/ErrorMessage"
+        },
+        "validatonErrorMessages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValidationMessage"
+          }
+        }
+      }
+    }
+  },
+  "securityDefinitions": {
+    "XApiKey": {
+      "type": "apiKey",
+      "name": "XApiKey",
+      "in": "header",
+      "description": "XApiKey <YOUR RESTAURANT API KEY>"
+    }
+  },
+  "security": [
+    {
+      "XApiKey": [ ]
+    }
+  ]
+}

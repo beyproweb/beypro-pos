@@ -10,6 +10,7 @@ import {
   Grid2x2,
   LogIn,
   LogOut,
+  Lock,
   Package,
   Users,
   ShoppingBag,
@@ -208,7 +209,7 @@ function readOrder(storageKey) {
   }
 }
 
-export default function Sidebar({ isOpen, setIsOpen }) {
+export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
   const location = useLocation();
   const { currentUser } = useAuth();
   const { isModuleAllowed } = usePlanModules();
@@ -394,6 +395,8 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
   function handleLogout() {
     setIsOpen?.(false);
+    // ✅ Preserve restaurant_id for staff PIN login
+    const restaurantId = localStorage.getItem("restaurant_id");
     try {
       localStorage.removeItem("token");
       localStorage.removeItem("beyproUser");
@@ -402,6 +405,12 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       sessionStorage.removeItem("token");
       sessionStorage.removeItem("beyproUser");
     } catch {}
+    // ✅ Restore restaurant_id after clearing storage
+    if (restaurantId) {
+      try {
+        localStorage.setItem("restaurant_id", restaurantId);
+      } catch {}
+    }
     safeNavigate("/login");
   }
 
@@ -635,17 +644,38 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     const isDragOver = canDrag && dragOverKey === item.labelKey && dragKey !== item.labelKey;
 
     return item.action === "logout" ? (
-      <button
-        key={item.labelKey}
-        onClick={handleLogout}
-        className={`group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1
-          text-white hover:bg-white/10 hover:text-fuchsia-300 transition shadow-lg relative
-          ${active ? "bg-white/20 shadow-2xl" : ""}
-        `}
-      >
-        <Icon size={24} />
-        {isOpen && <span className="font-medium truncate">{label}</span>}
-      </button>
+      <>
+        {/* Lock Button - above logout */}
+        {onLockClick && (
+          <button
+            onClick={() => {
+              onLockClick();
+              setIsOpen(false);
+            }}
+            className="group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-orange-500/20 hover:text-orange-300 transition shadow-lg relative"
+            title={t("Lock Session", { defaultValue: "Lock Session" })}
+          >
+            <Lock size={24} />
+            {isOpen && <span className="font-medium truncate">{t("Lock Session", { defaultValue: "Lock Session" })}</span>}
+            {!isOpen && (
+              <span className="absolute left-[110%] bg-black/70 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition">
+                {t("Lock Session", { defaultValue: "Lock Session" })}
+              </span>
+            )}
+          </button>
+        )}
+        <button
+          key={item.labelKey}
+          onClick={handleLogout}
+          className={`group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1
+            text-white hover:bg-white/10 hover:text-fuchsia-300 transition shadow-lg relative
+            ${active ? "bg-white/20 shadow-2xl" : ""}
+          `}
+        >
+          <Icon size={24} />
+          {isOpen && <span className="font-medium truncate">{label}</span>}
+        </button>
+      </>
     ) : (
       <NavLink
         key={item.labelKey}

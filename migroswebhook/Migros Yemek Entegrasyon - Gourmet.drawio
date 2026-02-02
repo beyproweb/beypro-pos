@@ -1,0 +1,494 @@
+<mxfile host="app.diagrams.net" modified="2023-05-18T07:06:28.697Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0" etag="Tw6koRN57avqpGh0Gv3X" version="21.2.3" type="google" pages="3">
+  <diagram id="XM-1HmyLlTlVuy0b1bv7" name="Periyodik Sorgulama">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-1" value="Migros Yemek Entegrasyon - Periyodik Sorgulama Akışı" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="225" y="20" width="340" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-3" target="56Uq0ZhsCfzMCR6e6KlZ-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-3" value="Migros Yemek restoran paneli üzerinden api key alma akışı tamamlanmış olup, &quot;İşlem&quot; anahtarı aktif durumda olmalıdır " style="rounded=0;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="240" y="80" width="320" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-5">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="400" y="290" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-5" value="/Order/PendingOrderWithStores metodu Periyodik olarak restoran bazında 20 saniyede bir olacak şekilde ile sorgulama yapılır. Limit bilgisi maksimum 20 olabilir." style="rounded=0;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="240" y="190" width="320" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-8">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="345" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-8" target="56Uq0ZhsCfzMCR6e6KlZ-5">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="345" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="700" y="345" />
+              <mxPoint x="700" y="220" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-8" value="Yeni Sipariş Var mı?" style="rhombus;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="340" y="290" width="120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-10" target="56Uq0ZhsCfzMCR6e6KlZ-15">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="180" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-10" value="PendingOrdersWithStores metodunda gelen siparişler, onaylanmadığı sürece bu servis sonucunda gelmeye devam edecektir. Siparişler, aynı sipariş numarası ile (OrderId) tekrar alınmamalıdır.&lt;br&gt;Onaylanmamış siparişler, 10 dakika sonra otomatik iptal edilir." style="rounded=0;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="60" y="280" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-11" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="455" y="315" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-12" value="Evet" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="295" y="305" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-15" target="56Uq0ZhsCfzMCR6e6KlZ-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-15" target="56Uq0ZhsCfzMCR6e6KlZ-21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-15" value="Sipariş Kabul Edilecek mi?" style="rhombus;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="202.5" y="470" width="185" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-17">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="810" y="535" />
+              <mxPoint x="810" y="1340" />
+            </Array>
+            <mxPoint x="355" y="1340" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-17" value="Siparişin reddedilmesi gerekmektedir. siparişi reddetmek için Order/UpdateOrderStatus metoduna status bilgisi &quot;Rejected&quot; olarak istek atılır ve sipariş reddedilir." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="425" y="467.5" width="210" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-18" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="375" y="505" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-19" value="Evet" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="195" y="575" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-21" target="56Uq0ZhsCfzMCR6e6KlZ-24">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-21" value="Siparişi onaylamak için, Order/UpdateOrderStatus metoduna &quot;Approved&quot; parametresi ile istek atılır ve sipariş onaylanarak &quot;Hazırlanıyor&quot; durumuna geçer" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="175" y="650" width="240" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-24" target="56Uq0ZhsCfzMCR6e6KlZ-26">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-24" target="56Uq0ZhsCfzMCR6e6KlZ-30">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-24" value="Onaylandı ancak bir sebepten ötürü iptal edilmek isteniyor mu?" style="rhombus;whiteSpace=wrap;html=1;fontSize=12;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="110" y="810" width="370" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-26" target="ECOzUlo0V12oEbAurunY-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="355" y="1340" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="780" y="890" />
+              <mxPoint x="780" y="1340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-26" value="Teknik aksaklıklar, stok yetersizlikleri vb. sebepler ile, onaylanan siparişin iptal işlemi için &quot;Order/CancelOrders&quot; metoduna, iptal sebebi ile birlikte istek atılır ve sipariş iptal edilir." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="540" y="830" width="180" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-27" value="&lt;div&gt;Evet&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="480" y="860" width="50" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-28" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="325" y="955" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-29" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-30" target="56Uq0ZhsCfzMCR6e6KlZ-32">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-30" value="Sipariş iptal edilmeyecek ve Hazırlandı ise, Order/UpdateOrderStatus metoduna &quot;Prepared&quot; statu bilgisi ile istek atılır ve sipariş &quot;Kuryeye Verilecek&quot; durumuna getirilir" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="110" y="1010" width="370" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-32" target="56Uq0ZhsCfzMCR6e6KlZ-34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-32" value="Sipariş kuryeye teslim edildiğinde, Order/UpdateOrderStatus metoduna &quot;Delivery&quot; statu bilgisi geçilerek istek atılır ve sipariş &quot;Kuryeye Verildi-Yolda&quot; statüsüne geçirilir." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="110" y="1090" width="370" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;" edge="1" parent="1" source="56Uq0ZhsCfzMCR6e6KlZ-34" target="ECOzUlo0V12oEbAurunY-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="295" y="1300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="56Uq0ZhsCfzMCR6e6KlZ-34" value="Sipariş teslim edildiğinde ise, Order/UpdateOrderStatus metoduna &quot;Completed&quot; statü bilgisi gönderilir ve sipariş &quot;Tamamlandı&quot; statüsüne geçirilir." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="110" y="1170" width="370" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ECOzUlo0V12oEbAurunY-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ECOzUlo0V12oEbAurunY-1" target="56Uq0ZhsCfzMCR6e6KlZ-5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="20" y="1340" />
+              <mxPoint x="20" y="220" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ECOzUlo0V12oEbAurunY-1" value="" style="triangle;whiteSpace=wrap;html=1;rotation=-181;" vertex="1" parent="1">
+          <mxGeometry x="185" y="1300" width="60" height="80" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="EnuEcke83SUTbslN4MB6" name="Webhook Yöntemi">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="vlR92UIM1-6KSkPDaMZR-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="410" y="180" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-1" value="Sipariş Oluşturuldu" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="350" y="60" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="vlR92UIM1-6KSkPDaMZR-5" target="vlR92UIM1-6KSkPDaMZR-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-5" value="Sipariş Oluşturuldu Webhook isteği atılır" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="350" y="370" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-38" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="vlR92UIM1-6KSkPDaMZR-6" target="0Tz7QYDIMDsIIMEJ8X0f-15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-44" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="vlR92UIM1-6KSkPDaMZR-6" target="vlR92UIM1-6KSkPDaMZR-8">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="260" y="565" />
+              <mxPoint x="260" y="235" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-6" value="Response olarak 200 OK Döndü mü?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="490" width="140" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="vlR92UIM1-6KSkPDaMZR-8" target="vlR92UIM1-6KSkPDaMZR-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-69" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="vlR92UIM1-6KSkPDaMZR-8" target="0Tz7QYDIMDsIIMEJ8X0f-68">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-8" value="Sipariş İletilimi 3 kez denendi mi?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="160" width="180" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-10" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="410" y="320" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-16" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="285" y="530" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="vlR92UIM1-6KSkPDaMZR-17" value="Evet" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="335" y="605" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-1" value="Sipariş Oluşturuldu Webhook Akışı" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#d6b656;fillColor=#fff2cc;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="300" y="10" width="220" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-15" target="0Tz7QYDIMDsIIMEJ8X0f-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-15" target="0Tz7QYDIMDsIIMEJ8X0f-21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-15" value="Sipariş Kabul Edilecek mi?" style="rhombus;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="317.5" y="720" width="185" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-53" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-17" target="0Tz7QYDIMDsIIMEJ8X0f-55">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1010" y="530" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-17" value="Siparişin reddedilmesi gerekmektedir. siparişi reddetmek için Order/UpdateOrderStatus metoduna status bilgisi &quot;Rejected&quot; olarak istek atılır ve sipariş reddedilir." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="670" y="717.5" width="210" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-18" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="490" y="750" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-19" value="Evet" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="360" y="850" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-21" target="0Tz7QYDIMDsIIMEJ8X0f-24">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-21" value="Siparişi onaylamak için, Order/UpdateOrderStatus metoduna &quot;Approved&quot; parametresi ile istek atılır ve sipariş onaylanarak &quot;Hazırlanıyor&quot; durumuna geçer" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="290" y="900" width="240" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-40" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-24" target="0Tz7QYDIMDsIIMEJ8X0f-26">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-24" target="0Tz7QYDIMDsIIMEJ8X0f-30">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-24" value="Onaylandı ancak bir sebepten ötürü iptal edilmek isteniyor mu?" style="rhombus;whiteSpace=wrap;html=1;fontSize=12;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="225" y="1050" width="370" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-71" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-26" target="0Tz7QYDIMDsIIMEJ8X0f-55">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1150" y="1130" />
+              <mxPoint x="1150" y="80" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-26" value="Teknik aksaklıklar, stok yetersizlikleri vb. sebepler ile, onaylanan siparişin iptal işlemi için &quot;Order/CancelOrders&quot; metoduna, iptal sebebi ile birlikte istek atılır ve sipariş iptal edilir." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="685" y="1070" width="180" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-27" value="&lt;div&gt;Evet&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="595" y="1080" width="50" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-28" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="350" y="1200" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-30" target="cU2vJMrxSFeehQJEkmPH-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-30" value="Sipariş iptal edilmeyecek ve Hazırlandı ise, Order/UpdateOrderStatus metoduna &quot;Prepared&quot; statu bilgisi ile istek atılır ve sipariş &quot;Kuryeye Verilecek&quot; durumuna getirilir" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="225" y="1240" width="370" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-32" target="0Tz7QYDIMDsIIMEJ8X0f-34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-32" value="Sipariş kuryeye teslim edildiğinde, Order/UpdateOrderStatus metoduna &quot;Delivery&quot; statu bilgisi geçilerek istek atılır ve sipariş &quot;Kuryeye Verildi-Yolda&quot; statüsüne geçirilir." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="225" y="1540" width="370" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-34" target="0Tz7QYDIMDsIIMEJ8X0f-51">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-34" value="Sipariş teslim edildiğinde ise, Order/UpdateOrderStatus metoduna &quot;Completed&quot; statü bilgisi gönderilir ve sipariş &quot;Tamamlandı&quot; statüsüne geçirilir." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="225" y="1630" width="370" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-37" value="&lt;h1&gt;Not&lt;/h1&gt;&lt;p&gt;Siparişler &quot;Onay Bekliyor&quot; statüsünde aktarılır ve 10 dakika içerisinde onaylanmamış siparişler otomatik iptal edilir.&lt;br&gt;&lt;/p&gt;" style="text;html=1;strokeColor=none;fillColor=none;spacing=5;spacingTop=-20;whiteSpace=wrap;overflow=hidden;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="450" width="190" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-47" value="Evet" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="502.5" y="200" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-51" value="İlgili Sipariş için akış sonlanır" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="310" y="1730" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-54" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-55">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1390.0000000000002" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-55" value="Sipariş İptal edildi" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="40" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-56" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-57" target="0Tz7QYDIMDsIIMEJ8X0f-59">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-57" value="Sipariş İptal Edildi Webhook isteği atılır" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="350" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-58" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-59" target="0Tz7QYDIMDsIIMEJ8X0f-62">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1240" y="545" />
+              <mxPoint x="1240" y="215" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-73" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-59" target="0Tz7QYDIMDsIIMEJ8X0f-72">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-59" value="Response olarak 200 OK Döndü mü?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="470" width="140" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-60" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-62" target="0Tz7QYDIMDsIIMEJ8X0f-57">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-61" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-62" target="0Tz7QYDIMDsIIMEJ8X0f-72">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1590" y="215" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="1540" y="215" />
+              <mxPoint x="1540" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-62" value="Sipariş iptali İletilimi 3 kez denendi mi?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="140" width="180" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-63" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="300" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-64" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1265" y="510" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-65" value="Evet" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1315" y="585" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-66" value="Evet" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1482.5" y="180" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-70" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-68" target="0Tz7QYDIMDsIIMEJ8X0f-55">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1060" y="235" />
+              <mxPoint x="1060" y="80" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-68" value="Sipariş iletimi gerçekleştirilemediği için sipariş panel üzerinden işlem görmediği taktirde 10 dakika sonunda iptal eidlir ve iptal akışını tetikler" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="630" y="182.5" width="290" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-72" value="Bilgi iletimi sonlanır" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="680" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-76" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="0Tz7QYDIMDsIIMEJ8X0f-75" target="0Tz7QYDIMDsIIMEJ8X0f-55">
+          <mxGeometry x="1" y="95" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1390" y="10" />
+            </Array>
+            <mxPoint x="30" y="5" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-75" value="Migros Yemek Paneli üzerinden Çağrı merkezi aracılığı ile gerçekleştirilecek iptallerde de bu servis tetiklenecektir." style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;" vertex="1" parent="1">
+          <mxGeometry x="670" y="30" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="0Tz7QYDIMDsIIMEJ8X0f-77" value="Sipariş İptal edildi Webhook Akışı" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#d6b656;fillColor=#fff2cc;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1465" y="20" width="210" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="cU2vJMrxSFeehQJEkmPH-2" target="cU2vJMrxSFeehQJEkmPH-10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cU2vJMrxSFeehQJEkmPH-2" target="0Tz7QYDIMDsIIMEJ8X0f-32">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-2" value="&lt;div&gt;Siparişi MİGROS Kuryesi mi teslim edecek?&lt;/div&gt;" style="rhombus;whiteSpace=wrap;html=1;fontSize=12;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="225" y="1350" width="370" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-5" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="360" y="1510" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-6" value="&lt;div&gt;Evet&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="600" y="1400" width="50" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="cU2vJMrxSFeehQJEkmPH-10" target="cU2vJMrxSFeehQJEkmPH-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-10" value="Migros Yemek Teslimatı Kuryesi" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="745" y="1370" width="180" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="cU2vJMrxSFeehQJEkmPH-17" target="cU2vJMrxSFeehQJEkmPH-18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-17" value="&lt;div&gt;Migros Yemek Kuryesi, ürünü teslim aldığında sipariş otomatikl olarak &quot;Kuryeye Verildi-Yolda&quot; durumuna geçirilir ve DeliveryStatusChanged Webhook&#39;u aracılığı ile aktarımı sağlanır.&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="650" y="1540" width="370" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="cU2vJMrxSFeehQJEkmPH-18" target="0Tz7QYDIMDsIIMEJ8X0f-51">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="840" y="1795" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-18" value="Migros Yemek Kuryesi, ürünü müşteriye teslim ettiği taktirde, sipariş otomatik olarak &quot;Delivered&quot; durumuna geçer ve bu bilgi entegratöre &lt;b&gt;DeliveryStatusChanged &lt;/b&gt;Webhook&#39;u aracılığı ile aktarımı sağlanır." style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="650" y="1630" width="370" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cU2vJMrxSFeehQJEkmPH-21" value="Migros Yemek Teslimatı Durum Değişikliği &lt;br&gt;Webhook Akışı" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=#d6b656;fillColor=#fff2cc;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="705" y="1315" width="260" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="C5RBs43oDa-KdzZeNtuy" name="Restorandan Api Key Alma">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="WIyWlLk6GJQsqaUBKTNV-0" />
+        <mxCell id="WIyWlLk6GJQsqaUBKTNV-1" parent="WIyWlLk6GJQsqaUBKTNV-0" />
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-21" value="Migros Yemek Paneli Üzerinden Api Key Alma Akışı" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="174" y="30" width="500" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-23" target="DMvjHSNNMfcXyTZvC1Mi-25">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-23" value="&lt;div&gt;Restoran Sahibi rolündeki kullanıcı, Migros Yemek Restoran panelindeki&amp;nbsp; &quot;Pos Entegrasyonu&quot; ekranından ilgili entegratörü seçerek, &quot;Oluştur &quot; butonuna tıklar ve yeni bir api key oluşturur.&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="290" y="80" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-25" target="DMvjHSNNMfcXyTZvC1Mi-27">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-25" value="&quot;Pos Entegrasyonu&quot; sayfasındakj api key bilgisine ek olarak, zincir id ve restoran id ilgili entegratöre iletilir." style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="290" y="210" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-26" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-27" target="DMvjHSNNMfcXyTZvC1Mi-30">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-27" value="&lt;div&gt;İlgili entegratör, restorana ait tanımlamaları gerçekleştirir&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="290" y="330" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-28" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-30" target="DMvjHSNNMfcXyTZvC1Mi-32">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-29" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-30" target="DMvjHSNNMfcXyTZvC1Mi-36">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-30" value="Ürün Eşleştirme yapılmakta mıdır?" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.decision;whiteSpace=wrap;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="340" y="490" width="180" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-32">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="145" y="680" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-32" value="Entegrasyon aktif olduğu süreçte, panelden işlem yapılamadığından, ürün eşleştirmesi yapıldığı süreçte, restoran pasif hale getirilir ve entegrasyon &quot;İşlem&quot; anahtarı açık hale getirilerek ürün eşleştirme süreci başlatılır" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="30" y="510" width="230" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-33" value="&lt;div&gt;Evet&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="285" y="520" width="50" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-34" value="Hayır" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="515" y="525" width="50" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-35" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-36">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="430" y="800" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="725" y="710" />
+              <mxPoint x="430" y="710" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-36" value="Pos Entegrasyonu ekranındaki &quot;İşlem&quot; anahtarı açık hale getirilerek entegrasyon aktif edilir" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="620" y="515" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-37" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-38">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="430" y="800" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-38" value="Ürün Eştirmesi bittiğinde, restoran aktif hale getirilerek satışa açılır" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="40" y="680" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-39" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="WIyWlLk6GJQsqaUBKTNV-1" source="DMvjHSNNMfcXyTZvC1Mi-40" target="DMvjHSNNMfcXyTZvC1Mi-41">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-40" value="Eşleştirme sürecinde bir hata/eksik olmasından kaynaklı hataların giderilmesi esnasında restoran durumu pasif hale getirilmelidir." style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="225" y="800" width="410" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="DMvjHSNNMfcXyTZvC1Mi-41" value="Sipariş onay süreçlerinde entegrasyon tarafında hatalar ile karşılaşılması durumunda, &quot;Pos Entegrasyonu&quot; ekranından &quot;İşlem&quot; anahtarı pasif hale getirilerek panel üzerinden işlem yapılmaya devam edilebilinir. Birden fazla sekme üzerinde işlem yapılıyor ise, sipariş sekmelerinin yenilenmesi gerekmektedir." style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="WIyWlLk6GJQsqaUBKTNV-1">
+          <mxGeometry x="225" y="880" width="410" height="80" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

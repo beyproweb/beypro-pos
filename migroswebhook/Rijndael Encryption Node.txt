@@ -1,0 +1,36 @@
+const crypto = require('crypto');
+const padder = require('pkcs7-padding'); //npm install pkcs7-padding --save
+
+//Store/GetStores metodunda kullanılacak request body'nin stringe dönüştürülmüş halidir.
+var text = "{\"storeGroupId\":511}"; 
+//skey: entegratör bazında kullanılacak secretkey bilgisidir.
+var skey = "4t7w9z$C&F)J@NcRfUjXn2r5u8x/A%D*";
+
+function encode(text, skey) {
+    const padded = padder.pad(text, 16);  // 16 byte = 128 bit Block Size
+    var cipher = crypto.createCipheriv('aes-256-ecb', skey, ''); // 256 bit Key Size
+    cipher.setAutoPadding(false);
+    var encrypted = cipher.update(padded, 'utf8', 'base64');
+    encrypted += cipher.final('base64');
+    return encrypted;
+}
+
+var requestBody={}; 
+requestBody.value = encode(text, skey);
+console.log(requestBody);
+
+
+/*
+Metoda indirgenmiş versiyonu.
+const crypto = require('crypto');
+const padder = require('pkcs7-padding'); //npm install pkcs7-padding --save
+function encode(postData,secretKey) {
+      const padded = padder.pad(JSON.stringify(postData), 16); // 16 byte = 128 bit Block Size
+      var cipher = crypto.createCipheriv('aes-256-ecb', secretKey, ''); // 256 bit Key Size
+      cipher.setAutoPadding(false);
+      var encrypted = cipher.update(padded, 'utf8', 'base64');
+      encrypted += cipher.final('base64');
+     return encrypted;
+}
+
+*/

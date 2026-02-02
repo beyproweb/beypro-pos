@@ -60,6 +60,17 @@ export const useSetting = (section, setState, defaults = {}) => {
       setState(cachedMerged);
     }
 
+    const isStandalone =
+      typeof window !== "undefined" &&
+      typeof window.location?.pathname === "string" &&
+      window.location.pathname.startsWith("/standalone");
+    if (isStandalone) {
+      setState(defaults);
+      return () => {
+        mounted = false;
+      };
+    }
+
     secureFetch(`/settings/${section}`)
       .then((data) => {
         if (!mounted) return;

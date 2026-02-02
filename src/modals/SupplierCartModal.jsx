@@ -71,19 +71,13 @@ useEffect(() => {
       // ✅ Update items
       setCartItems(data.items || []);
 
-      // ✅ Sync scheduling + repeat state from backend
-      if (data.scheduled_at) setScheduledAt(data.scheduled_at);
-      if (data.repeat_type) setRepeatType(data.repeat_type);
-
-      if (Array.isArray(data.repeat_days) && data.repeat_days.length > 0) {
-        setRepeatDays(data.repeat_days);
-      } else {
-        console.log("⚠️ Keeping existing repeatDays, backend sent empty:", data.repeat_days);
-      }
-
-      if (typeof data.auto_confirm === "boolean") {
-        setAutoOrder(data.auto_confirm);
-      }
+      // ✅ Sync scheduling + repeat state from backend (always update, even if "none" or empty)
+      console.log('📥 Modal fetched cart, auto_confirm:', data.auto_confirm, 'type:', typeof data.auto_confirm);
+      setScheduledAt(data.scheduled_at || "");
+      setRepeatType(data.repeat_type || "none");
+      setRepeatDays(Array.isArray(data.repeat_days) ? data.repeat_days : []);
+      setAutoOrder(data.auto_confirm === true);
+      console.log('✅ Modal set autoOrder to:', data.auto_confirm === true);
     } catch (err) {
       console.error("❌ Failed to fetch cart items:", err);
       setCartItems([]);

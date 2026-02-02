@@ -15,7 +15,8 @@ export default function PaymentModal({
   setIsSplitMode,
   discountType,
   discountValue,
-  selectedForPayment,
+  selectionQuantities = {},
+  selectedCartItemIds,
   cartItems,
   t,
   paymentMethods,
@@ -25,7 +26,6 @@ export default function PaymentModal({
   splits,
   setSplits,
   totalDue,
-  cancelQuantities = {},
   activeSplitMethod,
   setActiveSplitMethod,
   confirmPaymentWithSplits,
@@ -106,6 +106,25 @@ export default function PaymentModal({
     });
   }, [paymentMethods]);
 
+  // Calculate discount amount for display (must be before early return)
+  const discountAmount = useMemo(() => {
+    if (discountValue === 0) return 0;
+    
+    const hasSelection = selectedCartItemIds && selectedCartItemIds.size > 0;
+    const targetItems = hasSelection
+      ? cartItems.filter((i) => {
+          const key = String(i.unique_id || i.id);
+          return selectedCartItemIds.has(key) && !i.paid;
+        })
+      : cartItems.filter((i) => !i.paid);
+    
+    const subtotal = targetItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    
+    return discountType === "percent"
+      ? subtotal * (discountValue / 100)
+      : discountValue;
+  }, [discountValue, discountType, selectedCartItemIds, cartItems]);
+
   if (!show) return null;
 
   // Helper for calculating sum of split amounts
@@ -115,11 +134,13 @@ export default function PaymentModal({
 
   // Discounted subtotal for selected or all unpaid
   const getDiscountedTotal = () => {
-    const items =
-      selectedForPayment.length > 0
+    const hasSelection = selectedCartItemIds && selectedCartItemIds.size > 0;
+    const items = hasSelection
         ? cartItems.filter(
-            (i) =>
-              selectedForPayment.includes(getPaymentItemKey(i)) && !i.paid
+            (i) => {
+              const key = String(i.unique_id || i.id);
+              return selectedCartItemIds.has(key) && !i.paid;
+            }
           )
         : cartItems.filter((i) => !i.paid);
 
@@ -129,7 +150,7 @@ export default function PaymentModal({
         1,
         Math.min(
           Number(i.quantity) || 1,
-          Number(cancelQuantities?.[key]) ||
+          Number(selectionQuantities?.[key]) ||
             Number(i.quantity) ||
             1
         )
@@ -195,23 +216,7 @@ export default function PaymentModal({
                 : ` (-₺${discountValue})`}
             </span>
             <span className="text-base font-extrabold text-pink-700">
-              -
-              {discountType === "percent"
-                ? `₺${(
-                    (selectedForPayment.length > 0
-                      ? cartItems.filter(
-                          (i) =>
-                            selectedForPayment.includes(getPaymentItemKey(i)) &&
-                            !i.paid
-                        )
-                      : cartItems.filter((i) => !i.paid)
-                    ).reduce(
-                      (sum, i) => sum + i.price * i.quantity,
-                      0
-                    ) *
-                    (discountValue / 100)
-                  ).toFixed(2)}`
-                : `₺${discountValue}`}
+              -₺{discountAmount.toFixed(2)}
             </span>
           </div>
         )}
@@ -300,9 +305,9 @@ export default function PaymentModal({
                   setSelectedPaymentMethod(method.id);
                   // Close instantly for snappier UX
                   onClose();
-                  const idsToPay =
-                    selectedForPayment.length > 0
-                      ? selectedForPayment
+                  const hasSelection = selectedCartItemIds && selectedCartItemIds.size > 0;
+                  const idsToPay = hasSelection
+                      ? Array.from(selectedCartItemIds)
                       : cartItems
                           .filter((i) => !i.paid && i.confirmed)
                           .map((i) => getPaymentItemKey(i));
@@ -340,6 +345,16 @@ export default function PaymentModal({
               {t("Pay")} ₺{totalDue.toFixed(2)}
             </button>
           )}
+          
+          <button
+            onClick={() => {
+              onClose();
+              navigate("/tableoverview?tab=tables");
+            }}
+            className="block w-full py-3 rounded-xl text-center bg-amber-500 text-white font-semibold hover:bg-amber-600 transition"
+          >
+            ⏰ {t("Pay Later")}
+          </button>
           
           <button
             onClick={onClose}

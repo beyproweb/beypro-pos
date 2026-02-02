@@ -38,6 +38,36 @@ const hasLocalStorage = () =>
 const hasSessionStorage = () =>
   typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
 
+const isStandalonePath = () =>
+  typeof window !== "undefined" &&
+  typeof window.location?.pathname === "string" &&
+  window.location.pathname.startsWith("/standalone");
+
+const rewriteStandaloneEndpoint = (endpoint) => {
+  if (!isStandalonePath()) return endpoint;
+  const path = String(endpoint || "");
+  if (path.startsWith("/settings/qr-")) {
+    return path.replace(/^\/settings\//, "/standalone/qr/");
+  }
+  if (
+    path.startsWith("/kitchen") ||
+    path.startsWith("/kitchen-") ||
+    path.startsWith("/order-items/kitchen-status") ||
+    path.startsWith("/kitchen-timers")
+  ) {
+    const cleaned = path.replace(/^\/+/, "");
+    return `/standalone/kitchen/${cleaned}`;
+  }
+  if (path.startsWith("/tables")) {
+    const tail = path.replace(/^\/tables\/?/, "");
+    return `/standalone/tables/${tail}`.replace(/\/+$/, "").replace(/\/{2,}/g, "/");
+  }
+  if (path.startsWith("/orders/reservations/")) {
+    return `/standalone/kitchen${path}`;
+  }
+  return endpoint;
+};
+
 const cleanToken = (value) => {
   if (!value) return "";
   let normalized = String(value).trim();
@@ -54,6 +84,19 @@ const cleanToken = (value) => {
 // Read token properly
 export function getAuthToken() {
   if (!hasLocalStorage() && !hasSessionStorage()) return "";
+
+  // Standalone pages: only accept standalone-scoped token.
+  if (isStandalonePath()) {
+    const standaloneSession = cleanToken(
+      hasSessionStorage() ? sessionStorage.getItem("standaloneToken") : ""
+    );
+    if (standaloneSession) return standaloneSession;
+    const standaloneLocal = cleanToken(
+      hasLocalStorage() ? localStorage.getItem("standaloneToken") : ""
+    );
+    if (standaloneLocal) return standaloneLocal;
+    return "";
+  }
 
   if (hasSessionStorage()) {
     const directSession = cleanToken(sessionStorage.getItem("token"));
@@ -98,7 +141,9 @@ export default async function secureFetch(endpoint, options = {}) {
   // Allow callers to pass endpoints with or without a leading `/api` prefix.
   // `BASE_URL` already ends with `/api`, so we strip a single leading `/api`
   // to avoid requests like `/api/api/...`.
-  const normalizedEndpoint = String(endpoint || "").replace(/^\/api(\/|$)/i, "/");
+  const normalizedEndpoint = rewriteStandaloneEndpoint(
+    String(endpoint || "").replace(/^\/api(\/|$)/i, "/")
+  );
 
   const lower = normalizedEndpoint.toLowerCase();
   const lowerPath = lower.replace(/[?#].*$/, "");

@@ -16,6 +16,15 @@ export default function QrMenuSettings() {
   const [savingDelivery, setSavingDelivery] = useState(false);
   const [tables, setTables] = useState([]);
   const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
+  const [tableCount, setTableCount] = useState("");
+  const [savingTableCount, setSavingTableCount] = useState(false);
+  const [newProduct, setNewProduct] = useState({
+    name: "",
+    price: "",
+    category: "",
+    description: "",
+  });
+  const [savingProduct, setSavingProduct] = useState(false);
   const [settings, setSettings] = useState({
   main_title: "",
   subtitle: "",
@@ -165,15 +174,72 @@ async function saveAllCustomization() {
   useEffect(() => {
     const loadTables = async () => {
       try {
-        const data = await secureFetch("/tables");
+        const data = await secureFetch("/tables?active=true");
         const arr = Array.isArray(data) ? data : data?.data || [];
         setTables(arr);
+        const activeTables = arr.filter((t) => t.active !== false);
+        setTableCount(String(activeTables.length || 0));
       } catch (err) {
         console.error("❌ Failed to load tables for QR:", err);
       }
     };
     loadTables();
   }, []);
+
+  const saveTableCount = async () => {
+    const total = Number(tableCount);
+    if (!Number.isFinite(total) || total < 0) {
+      toast.error(t("Invalid table count"));
+      return;
+    }
+    setSavingTableCount(true);
+    try {
+      await secureFetch("/tables/count", {
+        method: "PUT",
+        body: JSON.stringify({ total }),
+      });
+      toast.success(t("Saved successfully!"));
+      const data = await secureFetch("/tables?active=true");
+      const arr = Array.isArray(data) ? data : data?.data || [];
+      setTables(arr);
+      const activeTables = arr.filter((t) => t.active !== false);
+      setTableCount(String(activeTables.length || total));
+    } catch (err) {
+      console.error("❌ Failed to save table count:", err);
+      toast.error(t("Failed to save changes"));
+    } finally {
+      setSavingTableCount(false);
+    }
+  };
+
+  const saveNewProduct = async () => {
+    if (!newProduct.name || !newProduct.price) {
+      toast.error(t("Please fill required fields"));
+      return;
+    }
+    setSavingProduct(true);
+    try {
+      await secureFetch("/products", {
+        method: "POST",
+        body: JSON.stringify({
+          name: newProduct.name,
+          price: Number(newProduct.price) || 0,
+          category: newProduct.category || "",
+          description: newProduct.description || "",
+          visible: true,
+        }),
+      });
+      toast.success(t("Saved successfully!"));
+      setNewProduct({ name: "", price: "", category: "", description: "" });
+      const prodData = await secureFetch("/products");
+      setProducts(Array.isArray(prodData) ? prodData : prodData?.data || []);
+    } catch (err) {
+      console.error("❌ Failed to add product:", err);
+      toast.error(t("Failed to save changes"));
+    } finally {
+      setSavingProduct(false);
+    }
+  };
 
 
   const toggleDisable = async (productId) => {
@@ -685,6 +751,79 @@ async function saveAllCustomization() {
               <option value="light">{t("Light")}</option>
               <option value="dark">{t("Dark")}</option>
             </select>
+          </div>
+        </div>
+
+        {/* QUICK SETUP */}
+        <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+            <h3 className="text-xl font-bold mb-3 text-indigo-600">
+              {t("Tables")}
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+              {t("Set the total number of tables for QR codes.")}
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min="0"
+                value={tableCount}
+                onChange={(e) => setTableCount(e.target.value)}
+                className="w-32 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+              <button
+                type="button"
+                onClick={saveTableCount}
+                disabled={savingTableCount}
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
+              >
+                {savingTableCount ? t("Please wait...") : t("Save")}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+            <h3 className="text-xl font-bold mb-3 text-indigo-600">
+              {t("Add Product")}
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                value={newProduct.name}
+                onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
+                placeholder={t("Product Name")}
+                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={newProduct.price}
+                onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
+                placeholder={t("Price")}
+                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+              <input
+                value={newProduct.category}
+                onChange={(e) => setNewProduct((p) => ({ ...p, category: e.target.value }))}
+                placeholder={t("Category")}
+                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
+              />
+              <textarea
+                value={newProduct.description}
+                onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))}
+                placeholder={t("Description")}
+                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
+                rows={3}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={saveNewProduct}
+              disabled={savingProduct}
+              className="mt-3 px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
+            >
+              {savingProduct ? t("Please wait...") : t("Save")}
+            </button>
           </div>
         </div>
 

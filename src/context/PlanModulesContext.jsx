@@ -55,6 +55,18 @@ export function PlanModulesProvider({ children }) {
       return;
     }
 
+    const isStandalone =
+      typeof window !== "undefined" &&
+      typeof window.location?.pathname === "string" &&
+      window.location.pathname.startsWith("/standalone");
+    if (isStandalone) {
+      setPlan(null);
+      setAllowedKeys(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -136,4 +148,3 @@ export function usePlanModules() {
   }
   return ctx;
 }
-

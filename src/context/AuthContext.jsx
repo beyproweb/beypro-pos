@@ -78,6 +78,8 @@ useEffect(() => {
       .then((res) => {
         if (res.status === 401) {
           console.warn("🔒 Token expired or invalid — logging out");
+          // ✅ Preserve restaurant_id for staff PIN login
+          const restaurantId = localStorage.getItem("restaurant_id");
           try {
             localStorage.removeItem("token");
             localStorage.removeItem("beyproUser");
@@ -86,9 +88,17 @@ useEffect(() => {
             sessionStorage.removeItem("token");
             sessionStorage.removeItem("beyproUser");
           } catch {}
+          // ✅ Restore restaurant_id after clearing storage
+          if (restaurantId) {
+            try {
+              localStorage.setItem("restaurant_id", restaurantId);
+            } catch {}
+          }
           setCurrentUser(null);
-          if (!window.location.pathname.includes("/login")) {
-           safeNavigate("/login");
+          const isStandalone = window.location.pathname.startsWith("/standalone");
+          const loginPath = isStandalone ? "/standalone/login" : "/login";
+          if (!window.location.pathname.includes(loginPath)) {
+            safeNavigate(loginPath);
           }
           return null;
         }
@@ -159,7 +169,8 @@ useEffect(() => {
   console.warn("⚠️ No valid user returned from /me");
   setCurrentUser(null);
   localStorage.removeItem("beyproUser");
-  safeNavigate("/login");   // ✅ FIX
+  const isStandalone = window.location.pathname.startsWith("/standalone");
+  safeNavigate(isStandalone ? "/standalone/login" : "/login");
 }
 
       })
