@@ -605,7 +605,7 @@ function TableQrScannerModal({ open, tableNumber, onClose, error, t }) {
           ) : null}
         </div>
         <div className="p-4 pt-0">
-          <button
+		        <button
             type="button"
             onClick={onClose}
             className="w-full rounded-xl border border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
@@ -644,20 +644,20 @@ function QrHeader({
   }, [restaurantName]);
 
   return (
-    <header className="w-full sticky top-0 z-50 flex items-center justify-between gap-3 bg-white/85 backdrop-blur-md border-b border-gray-200 px-4 md:px-6 py-3 shadow-sm">
-      <span className="text-[18px] md:text-[20px] font-serif font-bold text-gray-900 tracking-tight">
+    <header className="w-full sticky top-0 z-50 flex items-center justify-between gap-3 bg-white/85 dark:bg-neutral-900/85 backdrop-blur-md border-b border-gray-200 dark:border-neutral-800 px-4 md:px-6 py-3 shadow-sm">
+      <span className="text-[18px] md:text-[20px] font-serif font-bold text-gray-900 dark:text-neutral-100 tracking-tight">
         {displayRestaurantName}
       </span>
       <div className="flex-1 min-w-0">
         <div className="relative w-full max-w-[520px] mx-auto">
-          <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
+          <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-neutral-500">
             <span className="text-base leading-none">⌕</span>
           </div>
           <input
             value={searchValue || ""}
             onChange={(e) => onSearchChange?.(e.target.value)}
             placeholder={searchPlaceholder || t("Search")}
-            className="w-full h-10 pl-9 pr-3 rounded-full border border-gray-200 bg-white text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300"
+            className="w-full h-10 pl-9 pr-3 rounded-full border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-sm text-gray-800 dark:text-neutral-100 placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 dark:focus:ring-white/10 focus:border-gray-300 dark:focus:border-neutral-700"
             aria-label={t("Search")}
           />
         </div>
@@ -673,7 +673,7 @@ function QrHeader({
         <button
           onClick={onClose}
           aria-label={t("Close")}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 transition-all"
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-neutral-800 hover:bg-red-50 dark:hover:bg-rose-950/40 text-gray-500 dark:text-neutral-300 hover:text-red-600 transition-all"
         >
           ×
         </button>
@@ -1039,9 +1039,9 @@ async function load() {
      4) Render the UI (same structure, now dynamic)
      ============================================================ */
 
-return (
-  <div className={`${isDark ? 'dark ' : ''}flex-1`}>
-  <div className="min-h-screen w-full bg-gradient-to-b from-white via-[#fafafa] to-[#f5f5f7] text-gray-900 dark:from-neutral-900 dark:via-neutral-900 dark:to-black dark:text-neutral-100 relative overflow-x-hidden">
+	return (
+	  <div className={`${isDark ? 'dark ' : ''}flex-1`}>
+	  <div className="min-h-screen w-full bg-gradient-to-b from-white via-[#fafafa] to-[#f5f5f7] text-gray-900 dark:from-neutral-900 dark:via-neutral-900 dark:to-black dark:text-neutral-100 relative overflow-x-hidden">
 
     {/* === HERO BACKGROUND === */}
     <div
@@ -1054,7 +1054,7 @@ return (
         filter: "brightness(0.6)",
       }}
     />
-    <div className="absolute inset-x-0 top-0 h-[420px] sm:h-[480px] -z-10 bg-gradient-to-b from-white/70 via-white/80 to-white" />
+	    <div className="absolute inset-x-0 top-0 h-[420px] sm:h-[480px] -z-10 bg-gradient-to-b from-white/70 via-white/80 to-white dark:from-neutral-950/40 dark:via-neutral-950/70 dark:to-black/90" />
 
 	    {/* === TOP BAR === */}
 	    <header className="max-w-6xl mx-auto px-4 pt-3 flex items-center justify-between gap-3">
@@ -1065,23 +1065,23 @@ return (
 	    </header>
 	
 	    {/* === HERO SECTION === */}
-	    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-4 pb-24 space-y-10">
+		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-4 pb-14 space-y-10">
 	
 	      {/* TITLE & TAGLINE */}
 	      <div className="max-w-3xl">
 	        <div className="flex items-center justify-between gap-3">
-	          <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 border border-gray-200 shadow-sm text-[11px] font-medium text-gray-700">
-	            <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
-	            {isOpen ? "Open now • Order anytime" : "Currently closed"}
-	          </p>
+		          <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 dark:bg-neutral-900/60 border border-gray-200 dark:border-neutral-700 shadow-sm text-[11px] font-medium text-gray-700 dark:text-neutral-200">
+		            <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
+		            {isOpen ? "Open now • Order anytime" : "Currently closed"}
+		          </p>
 	          <div className="shrink-0">
 	            <LanguageSwitcher lang={lang} setLang={setLang} t={t} />
 	          </div>
 	        </div>
 
-	        <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-tight tracking-tight text-gray-900">
-	          {displayRestaurantName}
-	        </h1>
+		        <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-tight tracking-tight text-gray-900 dark:text-neutral-50">
+		          {displayRestaurantName}
+		        </h1>
 
 	        {/* Featured products */}
 	        <div className="mt-5 space-y-4 max-w-3xl">
@@ -1092,8 +1092,8 @@ return (
 	          />
 	        </div>
 
-	        <p className="mt-3 text-lg font-light text-gray-600">{subtitle}</p>
-	        <p className="mt-3 text-base text-gray-500 max-w-xl">{tagline}</p>
+		        <p className="mt-3 text-lg font-light text-gray-600 dark:text-neutral-200/80">{subtitle}</p>
+		        <p className="mt-3 text-base text-gray-500 dark:text-neutral-400 max-w-xl">{tagline}</p>
 
         {/* ORDER TYPE BUTTONS */}
         <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3 max-w-xl">
@@ -1135,57 +1135,57 @@ return (
       {/* CATEGORIES (scrollable 1 row) */}
       {homeCategories.length > 0 && (
         <div className="mt-5 max-w-3xl">
-          {/* INFO BOXES */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <div className="rounded-2xl bg-white border border-gray-200 px-2 py-2 shadow-sm min-w-0">
-              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 leading-tight truncate">Delivery</p>
-              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-emerald-600 leading-tight truncate">⏱️ {deliveryTime}</p>
-              <p className="mt-1 text-[10px] text-gray-500 leading-tight truncate hidden sm:block">Fast doorstep service</p>
-            </div>
+	          {/* INFO BOXES */}
+	          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+	            <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 px-2 py-2 shadow-sm min-w-0">
+	              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 dark:text-neutral-400 leading-tight truncate">Delivery</p>
+	              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-emerald-600 leading-tight truncate">⏱️ {deliveryTime}</p>
+	              <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400 leading-tight truncate hidden sm:block">Fast doorstep service</p>
+	            </div>
+	
+	            <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 px-2 py-2 shadow-sm min-w-0">
+	              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 dark:text-neutral-400 leading-tight truncate">Pickup</p>
+	              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-sky-600 leading-tight truncate">🛍️ {pickupTime}</p>
+	              <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400 leading-tight truncate hidden sm:block">Ready on arrival</p>
+	            </div>
+	
+	            <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 px-2 py-2 shadow-sm min-w-0">
+	              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 dark:text-neutral-400 leading-tight truncate">Rating</p>
+	              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-amber-600 leading-tight truncate">★★★★★</p>
+	              <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400 leading-tight truncate hidden sm:block">Guest favorites</p>
+	            </div>
+	          </div>
 
-            <div className="rounded-2xl bg-white border border-gray-200 px-2 py-2 shadow-sm min-w-0">
-              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 leading-tight truncate">Pickup</p>
-              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-sky-600 leading-tight truncate">🛍️ {pickupTime}</p>
-              <p className="mt-1 text-[10px] text-gray-500 leading-tight truncate hidden sm:block">Ready on arrival</p>
-            </div>
+	          {/* Search */}
+	          <div className="mt-3 mb-4">
+	            <div className="relative">
+	              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
+	              <input
+	                value={homeSearch}
+	                onChange={(e) => setHomeSearch(e.target.value)}
+	                placeholder={t("Search")}
+	                className="w-full rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 shadow-sm pl-11 pr-10 py-3 text-sm text-gray-800 dark:text-neutral-100 placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-gray-300/60 dark:focus:ring-white/10"
+	                autoComplete="off"
+	                inputMode="search"
+	              />
+	              {homeSearch ? (
+	                <button
+	                  type="button"
+	                  onClick={() => setHomeSearch("")}
+	                  className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-200 hover:bg-gray-200 dark:hover:bg-neutral-700 transition flex items-center justify-center"
+	                  aria-label={t("Clear")}
+	                >
+	                  ×
+	                </button>
+	              ) : null}
+	            </div>
+	          </div>
 
-            <div className="rounded-2xl bg-white border border-gray-200 px-2 py-2 shadow-sm min-w-0">
-              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 leading-tight truncate">Rating</p>
-              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-amber-600 leading-tight truncate">★★★★★</p>
-              <p className="mt-1 text-[10px] text-gray-500 leading-tight truncate hidden sm:block">Guest favorites</p>
-            </div>
-          </div>
-
-          {/* Search */}
-          <div className="mt-3 mb-4">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                value={homeSearch}
-                onChange={(e) => setHomeSearch(e.target.value)}
-                placeholder={t("Search")}
-                className="w-full rounded-2xl border border-gray-200 bg-white/80 shadow-sm pl-11 pr-10 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                autoComplete="off"
-                inputMode="search"
-              />
-              {homeSearch ? (
-                <button
-                  type="button"
-                  onClick={() => setHomeSearch("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition flex items-center justify-center"
-                  aria-label={t("Clear")}
-                >
-                  ×
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="flex items-end justify-between">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-gray-500">
-              Categories
-            </div>
-          </div>
+	          <div className="flex items-end justify-between">
+	            <div className="text-[11px] uppercase tracking-[0.18em] text-gray-500 dark:text-neutral-400">
+	              Categories
+	            </div>
+	          </div>
 
           <div className="mt-3 flex gap-3 overflow-x-auto pb-2 scroll-smooth scrollbar-hide">
             {homeCategories.map((cat) => {
@@ -1199,35 +1199,35 @@ return (
                 : "";
 
               return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setActiveHomeCategory(cat)}
-                  className={`flex-none w-[calc((100%-2.25rem)/4)] sm:w-32 rounded-2xl border bg-white/80 shadow-sm hover:shadow-md transition text-left ${
-                    active ? "border-gray-900" : "border-gray-200"
-                  }`}
-                  aria-label={`Category ${cat}`}
-                >
-                  <div className="p-2">
-                    <div className="w-full aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-                      {resolvedSrc ? (
-                        <img
-                          src={resolvedSrc}
-                          alt={cat}
+	                <button
+	                  key={cat}
+	                  type="button"
+	                  onClick={() => setActiveHomeCategory(cat)}
+	                  className={`flex-none w-[calc((100%-2.25rem)/4)] sm:w-32 rounded-2xl border bg-white/80 dark:bg-neutral-900/70 shadow-sm hover:shadow-md transition text-left ${
+	                    active ? "border-gray-900 dark:border-white" : "border-gray-200 dark:border-neutral-800"
+	                  }`}
+	                  aria-label={`Category ${cat}`}
+	                >
+	                  <div className="p-2">
+	                    <div className="w-full aspect-square rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
+	                      {resolvedSrc ? (
+	                        <img
+	                          src={resolvedSrc}
+	                          alt={cat}
                           className="w-full h-full object-cover"
                           loading="lazy"
                         />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm font-semibold">
-                          {String(cat || "?").slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-2 text-[11px] sm:text-xs font-semibold text-gray-800 text-center line-clamp-1">
-                      {cat}
-                    </div>
-                  </div>
-                </button>
+	                      ) : (
+	                        <div className="w-full h-full flex items-center justify-center text-neutral-400 dark:text-neutral-500 text-sm font-semibold">
+	                          {String(cat || "?").slice(0, 2).toUpperCase()}
+	                        </div>
+	                      )}
+	                    </div>
+	                    <div className="mt-2 text-[11px] sm:text-xs font-semibold text-neutral-800 dark:text-neutral-100 text-center line-clamp-1">
+	                      {cat}
+	                    </div>
+	                  </div>
+	                </button>
               );
             })}
           </div>
@@ -1250,47 +1250,47 @@ return (
                 <button
                   key={product?.id ?? `${product?.name}-${product?.price}`}
                   type="button"
-                  onClick={() =>
-                    onPopularClick?.(product, {
-                      source: "home-products",
-                      returnToHomeAfterAdd: true,
-                    })
-                  }
-                  className="group text-left rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md hover:-translate-y-[1px] transition"
-                >
-                  <div className="p-2">
-                    <div className="w-full aspect-[4/5] rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-                      {src ? (
-                        <img
-                          src={src}
-                          alt={product?.name || "Product"}
+	                  onClick={() =>
+	                    onPopularClick?.(product, {
+	                      source: "home-products",
+	                      returnToHomeAfterAdd: true,
+	                    })
+	                  }
+	                  className="group text-left rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 shadow-sm hover:shadow-md hover:-translate-y-[1px] transition"
+	                >
+	                  <div className="p-2">
+	                    <div className="w-full aspect-[4/5] rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
+	                      {src ? (
+	                        <img
+	                          src={src}
+	                          alt={product?.name || "Product"}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           loading="lazy"
                         />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900" />
-                      )}
-                    </div>
-                    <div className="mt-2 text-xs font-semibold text-gray-800 line-clamp-2 text-center">
-                      {product?.name || "—"}
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-gray-900 text-center">
-                      {formatCurrency(parseFloat(product?.price || 0))}
-                    </div>
-                  </div>
-                </button>
+	                      )}
+	                    </div>
+	                    <div className="mt-2 text-xs font-semibold text-neutral-800 dark:text-neutral-100 line-clamp-2 text-center">
+	                      {product?.name || "—"}
+	                    </div>
+	                    <div className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100 text-center">
+	                      {formatCurrency(parseFloat(product?.price || 0))}
+	                    </div>
+	                  </div>
+	                </button>
               );
             })}
           </div>
         </div>
       )}
-      {homeVisibleProducts.length === 0 && homeSearch.trim() !== "" && (
-        <div className="mt-5 max-w-3xl">
-          <div className="rounded-2xl border border-gray-200 bg-white/70 px-4 py-4 text-sm text-gray-600">
-            {t("No products available.")}
-          </div>
-        </div>
-      )}
+	      {homeVisibleProducts.length === 0 && homeSearch.trim() !== "" && (
+	        <div className="mt-5 max-w-3xl">
+	          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/70 px-4 py-4 text-sm text-neutral-600 dark:text-neutral-300">
+	            {t("No products available.")}
+	          </div>
+	        </div>
+	      )}
 
       {/* LOYALTY CARD (optional) */}
       {loyalty.enabled && (
@@ -1344,11 +1344,11 @@ return (
 	              alert(t("Link copied."));
 	            }
 	          }}
-	          className="flex-1 py-4 rounded-2xl bg-white border border-gray-300 text-gray-900 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 hover:-translate-y-1 transition-all"
-	        >
-	          <Share2 className="w-5 h-5" />
-	          {t("Share")}
-	        </button>
+		          className="flex-1 py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
+		        >
+		          <Share2 className="w-5 h-5" />
+		          {t("Share")}
+		        </button>
 	      </div>
 
 	      {/* Popular This Week (below Share button) */}
@@ -1364,36 +1364,36 @@ return (
 	    </section>
 
     {/* === STORY SECTION (B: TEXT LEFT — IMAGE RIGHT) === */}
-    <section id="story-section" className="max-w-6xl mx-auto px-4 pt-4 pb-14">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
+	    <section id="story-section" className="max-w-6xl mx-auto px-4 pt-4 pb-14">
+	      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
         
-        {/* TEXT LEFT */}
-        <div>
-          <h2 className="text-3xl font-serif font-bold text-gray-900 mb-3">
-            {storyTitle}
-          </h2>
-          <p className="text-base text-gray-600 leading-relaxed whitespace-pre-line">
-            {storyText}
-          </p>
-        </div>
+	        {/* TEXT LEFT */}
+	        <div>
+	          <h2 className="text-3xl font-serif font-bold text-gray-900 dark:text-neutral-50 mb-3">
+	            {storyTitle}
+	          </h2>
+	          <p className="text-base text-gray-600 dark:text-neutral-300 leading-relaxed whitespace-pre-line">
+	            {storyText}
+	          </p>
+	        </div>
 
         {/* IMAGE RIGHT */}
-        {storyImage && (
-          <div className="flex justify-center">
-            <div
-              className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-lg border border-gray-200 bg-white"
-              style={{
-                backgroundImage: storyImage
-                  ? `linear-gradient(135deg, rgba(255,255,255,0.9), rgba(229,231,235,0.8)), url(${storyImage})`
-                  : undefined,
+	        {storyImage && (
+	          <div className="flex justify-center">
+	            <div
+	              className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-sm border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
+	              style={{
+	                backgroundImage: storyImage
+	                  ? `linear-gradient(135deg, rgba(255,255,255,0.9), rgba(229,231,235,0.8)), url(${storyImage})`
+	                  : undefined,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
               }}
-            >
-              <div className="relative w-full h-48 flex items-center justify-center bg-white/70 backdrop-blur-sm">
-                <img
-                  src={storyImage}
-                  alt={storyTitle}
+	            >
+	              <div className="relative w-full h-48 flex items-center justify-center bg-white/70 dark:bg-neutral-950/40 backdrop-blur-sm">
+	                <img
+	                  src={storyImage}
+	                  alt={storyTitle}
                   className="h-full w-full max-w-full object-contain"
                   style={{ objectPosition: "center" }}
                 />
@@ -1404,78 +1404,78 @@ return (
       </div>
     </section>
 
-    {/* === REVIEWS === */}
-    <section id="reviews-section" className="max-w-6xl mx-auto px-4 pt-2 pb-16">
-      <h2 className="text-3xl font-serif font-bold text-gray-900 mb-4">
-        What our guests say
-      </h2>
+	    {/* === REVIEWS === */}
+	    <section id="reviews-section" className="max-w-6xl mx-auto px-4 pt-2 pb-16">
+	      <h2 className="text-3xl font-serif font-bold text-gray-900 dark:text-neutral-50 mb-4">
+	        What our guests say
+	      </h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {reviews.length === 0 && (
-          <p className="text-gray-500 text-sm">No reviews yet.</p>
-        )}
+	      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+	        {reviews.length === 0 && (
+	          <p className="text-neutral-500 dark:text-neutral-400 text-sm">No reviews yet.</p>
+	        )}
 
-        {reviews.map((r, idx) => (
-          <div
-            key={idx}
-            className="rounded-2xl bg-white shadow-md border border-gray-200 p-4 flex flex-col gap-2"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
-                {(r.name || "?")[0]}
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">{r.name}</p>
-                <p className="text-xs text-amber-500">★★★★★</p>
-              </div>
-            </div>
-            <p className="text-sm text-gray-600 mt-1">{r.text}</p>
-          </div>
-        ))}
-      </div>
-    </section>
+	        {reviews.map((r, idx) => (
+	          <div
+	            key={idx}
+	            className="rounded-2xl bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 p-4 flex flex-col gap-2"
+	          >
+	            <div className="flex items-center gap-2">
+	              <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-xs font-semibold text-neutral-700 dark:text-neutral-200">
+	                {(r.name || "?")[0]}
+	              </div>
+	              <div>
+	                <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{r.name}</p>
+	                <p className="text-xs text-amber-500">★★★★★</p>
+	              </div>
+	            </div>
+	            <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{r.text}</p>
+	          </div>
+	        ))}
+	      </div>
+	    </section>
 
-    {/* === SOCIAL ICONS === */}
-    <div className="flex items-center justify-center gap-6 pb-10">
-      {c.social_instagram && (
-        <a
-          href={c.social_instagram}
-          target="_blank"
-          rel="noreferrer"
-          className="w-10 h-10 rounded-full bg-white shadow-md border border-gray-200 
-                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
-                     transition-all"
-        >
-          <Instagram className="w-5 h-5 text-gray-700" />
-        </a>
-      )}
+	    {/* === SOCIAL ICONS === */}
+	    <div className="flex items-center justify-center gap-6 pb-10">
+	      {c.social_instagram && (
+	        <a
+	          href={c.social_instagram}
+	          target="_blank"
+	          rel="noreferrer"
+	          className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
+	                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+	                     transition-all"
+	        >
+	          <Instagram className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
+	        </a>
+	      )}
 
-      {c.social_tiktok && (
-        <a
-          href={c.social_tiktok}
-          target="_blank"
-          rel="noreferrer"
-          className="w-10 h-10 rounded-full bg-white shadow-md border border-gray-200 
-                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
-                     transition-all"
-        >
-          <Music2 className="w-5 h-5 text-gray-700" />
-        </a>
-      )}
+	      {c.social_tiktok && (
+	        <a
+	          href={c.social_tiktok}
+	          target="_blank"
+	          rel="noreferrer"
+	          className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
+	                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+	                     transition-all"
+	        >
+	          <Music2 className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
+	        </a>
+	      )}
 
-      {c.social_website && (
-        <a
-          href={c.social_website}
-          target="_blank"
-          rel="noreferrer"
-          className="w-10 h-10 rounded-full bg-white shadow-md border border-gray-200 
-                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
-                     transition-all"
-        >
-          <Globe className="w-5 h-5 text-gray-700" />
-        </a>
-      )}
-    </div>
+	      {c.social_website && (
+	        <a
+	          href={c.social_website}
+	          target="_blank"
+	          rel="noreferrer"
+	          className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
+	                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+	                     transition-all"
+	        >
+	          <Globe className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
+	        </a>
+	      )}
+	    </div>
 
 	  </div>
 	  </div>
@@ -2054,17 +2054,17 @@ function OrderTypePromptModal({
   if (!product) return null;
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4 py-6">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5">
+      <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.25em] text-gray-400">{t("Order Type")}</p>
-            <h3 className="mt-1 text-2xl font-semibold text-gray-900">{product.name}</h3>
-            <p className="text-xs text-gray-500">Select how you'd like to order this item.</p>
+            <p className="text-[11px] uppercase tracking-[0.25em] text-neutral-400 dark:text-neutral-400">{t("Order Type")}</p>
+            <h3 className="mt-1 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{product.name}</h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-300">Select how you'd like to order this item.</p>
           </div>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-2xl leading-none text-gray-400 hover:text-gray-700"
+            className="text-2xl leading-none text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
           >
             ×
           </button>
@@ -2073,14 +2073,14 @@ function OrderTypePromptModal({
         <div className="space-y-3">
           <button
             onClick={() => onSelect?.("takeaway")}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:border-neutral-900 hover:text-gray-900 shadow-sm transition"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-4 py-3 text-sm font-semibold text-neutral-700 dark:text-neutral-100 hover:border-neutral-900 dark:hover:border-white hover:text-neutral-900 shadow-sm transition"
           >
             <UtensilsCrossed className="w-5 h-5" />
             {t("Pre Order")}
           </button>
           <button
             onClick={() => onSelect?.("table")}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-gradient-to-r from-neutral-900 to-neutral-700 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-gradient-to-r from-neutral-900 to-neutral-700 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95"
           >
             <Soup className="w-5 h-5" />
             {t("Table Order")}
@@ -2088,13 +2088,13 @@ function OrderTypePromptModal({
           {deliveryEnabled ? (
             <button
               onClick={() => onSelect?.("online")}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-red-500"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-red-500"
             >
               <Bike className="w-5 h-5" />
               {t("Delivery")}
             </button>
           ) : (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">
+            <div className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm font-semibold text-rose-600 dark:text-rose-300">
               {t("Delivery is closed")}
             </div>
           )}
@@ -2259,7 +2259,7 @@ function CategoryTopBar({
   };
 
   return (
-    <div className="w-full rounded-xl border border-neutral-200 bg-white/90 backdrop-blur-sm shadow-sm px-2 py-1">
+    <div className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-sm px-2 py-1">
       <div
         ref={scrollRef}
         className="flex items-center gap-1.5 overflow-x-auto no-scrollbar px-0.5"
@@ -2281,12 +2281,12 @@ function CategoryTopBar({
               className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[13px] font-medium transition-all whitespace-nowrap border
                 ${
                   active
-                    ? "bg-neutral-900 text-white border-neutral-900"
-                    : "bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-200 hover:text-neutral-900"
+                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white"
+                    : "bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-200 hover:text-neutral-900 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700 dark:hover:bg-neutral-700 dark:hover:text-white"
                 }`}
             >
               {imgSrc ? (
-                <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300">
+                <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300 dark:border-neutral-700">
                   <img
                     src={
                       /^https?:\/\//.test(imgSrc)
@@ -2299,7 +2299,7 @@ function CategoryTopBar({
                   />
                 </div>
               ) : (
-                <span className="w-2 h-2 rounded-full bg-neutral-400" />
+                <span className="w-2 h-2 rounded-full bg-neutral-400 dark:bg-neutral-500" />
               )}
               <span className="tracking-wide">{cat}</span>
             </button>
@@ -2463,7 +2463,7 @@ function FeaturedCard({ slides, currentSlide, setCurrentSlide }) {
   if (!Array.isArray(slides) || slides.length === 0) return null;
   return (
     <div className="flex items-stretch">
-      <div className="w-full rounded-3xl overflow-hidden border border-gray-200 bg-white shadow-lg">
+      <div className="w-full rounded-3xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm">
         <div className="w-full h-64 sm:h-72 overflow-hidden">
           <img
             src={slides[currentSlide].src}
@@ -2473,11 +2473,13 @@ function FeaturedCard({ slides, currentSlide, setCurrentSlide }) {
         </div>
 
         <div className="px-5 py-4">
-          <p className="text-[10px] uppercase tracking-[0.22em] text-gray-500">Featured</p>
-          <h3 className="text-lg font-semibold text-gray-900 mt-1">
+          <p className="text-[10px] uppercase tracking-[0.22em] text-neutral-500 dark:text-neutral-400">
+            Featured
+          </p>
+          <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mt-1">
             {slides[currentSlide].title}
           </h3>
-          <p className="text-sm text-gray-500 mt-1 line-clamp-2">
+          <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-1 line-clamp-2">
             {slides[currentSlide].subtitle}
           </p>
         </div>
@@ -2489,8 +2491,8 @@ function FeaturedCard({ slides, currentSlide, setCurrentSlide }) {
               onClick={() => setCurrentSlide(i)}
               className={`transition-all ${
                 i === currentSlide
-                  ? "w-5 h-1.5 bg-gray-900 rounded-full"
-                  : "w-1.5 h-1.5 bg-gray-300 rounded-full"
+                  ? "w-5 h-1.5 bg-neutral-900 dark:bg-white rounded-full"
+                  : "w-1.5 h-1.5 bg-neutral-300 dark:bg-neutral-700 rounded-full"
               }`}
               aria-label={`Go to slide ${i + 1}`}
             />
@@ -2520,9 +2522,9 @@ function ProductGrid({ products, onProductClick, t }) {
         <div
           key={product.id}
           onClick={() => onProductClick(product)}
-          className="group relative bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[2px] transition-all duration-300 cursor-pointer"
+          className="group relative bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[2px] transition-all duration-300 cursor-pointer"
         >
-          <div className="aspect-[4/5] w-full overflow-hidden bg-neutral-50">
+          <div className="aspect-[4/5] w-full overflow-hidden bg-neutral-50 dark:bg-neutral-950">
             {product.image ? (
               <img
                 src={
@@ -2540,16 +2542,16 @@ function ProductGrid({ products, onProductClick, t }) {
           </div>
 
           <div className="p-3 flex flex-col items-center text-center space-y-1.5">
-            <h3 className="text-sm font-medium text-neutral-800 tracking-wide group-hover:text-black transition-colors line-clamp-2">
+            <h3 className="text-sm font-medium text-neutral-800 dark:text-neutral-100 tracking-wide group-hover:text-black dark:group-hover:text-white transition-colors line-clamp-2">
               {product.name}
             </h3>
-            <p className="text-[15px] font-semibold text-neutral-700 group-hover:text-neutral-900 transition-colors">
+            <p className="text-[15px] font-semibold text-neutral-700 dark:text-neutral-200 group-hover:text-neutral-900 dark:group-hover:text-white transition-colors">
               {formatCurrency(parseFloat(product.price || 0))}
             </p>
           </div>
 
           {/* Subtle highlight border */}
-          <span className="absolute inset-0 rounded-2xl ring-0 ring-neutral-400/0 group-hover:ring-1 group-hover:ring-neutral-300 transition-all duration-300"></span>
+          <span className="absolute inset-0 rounded-2xl ring-0 ring-neutral-400/0 group-hover:ring-1 group-hover:ring-neutral-300 dark:group-hover:ring-neutral-700 transition-all duration-300"></span>
         </div>
       ))}
     </main>
@@ -3225,10 +3227,10 @@ function CartDrawer({
               setShow(true);
             }
 	          }}
-	          className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-5 py-3 rounded-full font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
+	          className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-full min-w-[260px] font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
 	            hasActiveOrder
 	              ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
-	              : "bg-neutral-900 text-white hover:scale-105"
+	              : "bg-sky-700 text-white hover:bg-sky-800 hover:scale-105"
 	          }`}
 	        >
           <span className="text-xl">🛒</span>
@@ -3297,7 +3299,7 @@ async function startOnlinePaymentSession(id) {
 
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier, errorMessage, cancelReason, orderScreenStatus }) {
+function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier, errorMessage, cancelReason, orderScreenStatus, forceDark }) {
   if (!open) return null;
 
   const uiStatus = (status || "").toLowerCase(); // pending | success | fail
@@ -3341,17 +3343,18 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
         {/* Scrollable content */}
        <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
   {orderId ? (
-<OrderStatusScreen
-  orderId={orderId}
-  table={orderType === "table" ? table : null}   // now safe
-   onOrderAnother={onOrderAnother}   
-  onClose={onClose}
-  onFinished={onFinished}
+	<OrderStatusScreen
+	  orderId={orderId}
+	  table={orderType === "table" ? table : null}   // now safe
+	   onOrderAnother={onOrderAnother}   
+	  onClose={onClose}
+	  onFinished={onFinished}
+	  forceDark={forceDark}
 
-  t={t}
-  buildUrl={(path) => apiUrl(path)}
-  appendIdentifier={appendIdentifier}
-/>
+	  t={t}
+	  buildUrl={(path) => apiUrl(path)}
+	  appendIdentifier={appendIdentifier}
+	/>
 
   ) : null}
 </div>
@@ -3538,6 +3541,10 @@ const shareUrl = useMemo(() => {
         const c = res?.customization || {};
         setBrandName(c.title || c.main_title || "");
         setOrderSelectCustomization((prev) => ({ ...prev, ...c }));
+        try {
+          const mode = String(c.qr_theme || "auto").toLowerCase();
+          storage.setItem("qr_theme", mode);
+        } catch {}
       } catch (err) {
         // ignore, fallback handled in QrHeader
       }
@@ -3588,6 +3595,28 @@ const shareUrl = useMemo(() => {
     table_geo_enabled: false,
     table_geo_radius_meters: 150,
   });
+
+  // Apply QR theme to the transaction/menu (mobile-first) area.
+  useEffect(() => {
+    const mode = String(orderSelectCustomization?.qr_theme || storage.getItem("qr_theme") || "auto")
+      .trim()
+      .toLowerCase();
+    if (mode === "dark") {
+      setIsDarkMain(true);
+      return;
+    }
+    if (mode === "light") {
+      setIsDarkMain(false);
+      return;
+    }
+    // auto
+    try {
+      const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+      setIsDarkMain(!!mq?.matches);
+    } catch {
+      setIsDarkMain(false);
+    }
+  }, [orderSelectCustomization?.qr_theme]);
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
 	const [pendingPopularProduct, setPendingPopularProduct] = useState(null);
 	const [returnHomeAfterAdd, setReturnHomeAfterAdd] = useState(false);
@@ -3867,26 +3896,29 @@ useEffect(() => {
 
 
 // === Always-mounted Order Status (portal) ===
-const statusPortal = showStatus
-  ? createPortal(
-        <OrderStatusModal
-        open={true}
-        status={orderStatus}
-        orderId={orderId}
-        orderType={orderType} 
-        table={orderType === "table" ? table : null}
-        onOrderAnother={handleOrderAnother}
-        onClose={handleReset}
-        onFinished={resetToTypePicker}
-        t={t}
-	        appendIdentifier={appendIdentifier}
-	        errorMessage={lastError}
-	        cancelReason={orderCancelReason}
-	        orderScreenStatus={orderScreenStatus}
-	      />,
-      document.body
-    )
-  : null;
+const statusPortalOrderId =
+  orderId || Number(storage.getItem("qr_active_order_id")) || null;
+const statusPortal = showStatus && statusPortalOrderId
+	  ? createPortal(
+		        <OrderStatusModal
+		        open={true}
+		        status={orderStatus}
+		        orderId={statusPortalOrderId}
+		        orderType={orderType} 
+		        table={orderType === "table" ? table : null}
+		        onOrderAnother={handleOrderAnother}
+		        onClose={handleReset}
+		        onFinished={resetToTypePicker}
+	        t={t}
+		        appendIdentifier={appendIdentifier}
+		        errorMessage={lastError}
+		        cancelReason={orderCancelReason}
+		        orderScreenStatus={orderScreenStatus}
+		        forceDark={isDarkMain}
+		      />,
+	      document.body
+	    )
+	  : null;
   // show Delivery Info form first, every time Delivery is chosen
 useEffect(() => {
   const hasActive = !!(orderId || storage.getItem("qr_active_order_id"));
@@ -3964,10 +3996,11 @@ useEffect(() => {
   (async () => {
     try {
       const activeId = storage.getItem("qr_active_order_id");
+      const wantsStatusOpen = storage.getItem("qr_show_status") === "1";
 
       // helper: true if ALL items are delivered
      // helper: true if ALL items are delivered
-async function allItemsDelivered(id) {
+	async function allItemsDelivered(id) {
   try {
     const token = getStoredToken();
     if (!token) return false;
@@ -4026,9 +4059,9 @@ if (token && activeId) {
       order.payment_status === "paid" ||
       order.payment_state === "paid";
 
-    // 🚫 Do NOT auto reset; show status even if cancelled/closed
+    // Restore the active order, but don't pop "Order Sent" on refresh unless user had it open.
     setOrderStatus("success");
-    setShowStatus(true);
+    setShowStatus(wantsStatusOpen);
 
     setActiveOrder(order);
     setOrderScreenStatus(status);
@@ -4071,34 +4104,33 @@ if (savedTable) {
 
         const openOrder = list.find((o) => o?.status);
 
-        if (openOrder) {
-          const status = (openOrder?.status || "").toLowerCase();
-          const paid =
-            status === "paid" ||
-            openOrder.payment_status === "paid" ||
-            openOrder.payment_state === "paid";
+	        if (openOrder) {
+	          const status = (openOrder?.status || "").toLowerCase();
+	          const paid =
+	            status === "paid" ||
+	            openOrder.payment_status === "paid" ||
+	            openOrder.payment_state === "paid";
 
-          // ✅ Keep showing OrderStatusScreen for any status (including cancelled/closed)
-          setOrderType("table");
-          setTable(savedTable);
-          setOrderId(openOrder.id);
-          setOrderStatus("success");
-          setShowStatus(true);
+	          // Restore the active order, but don't pop "Order Sent" on refresh unless user had it open.
+	          setOrderType("table");
+	          setTable(savedTable);
+	          setOrderId(openOrder.id);
+	          setOrderStatus("success");
+	          setShowStatus(wantsStatusOpen);
 
-        setActiveOrder(openOrder);
-          setOrderScreenStatus(status);
+	        setActiveOrder(openOrder);
+	          setOrderScreenStatus(status);
           setOrderCancelReason(
             status === "canceled" || status === "cancelled"
               ? openOrder?.cancellation_reason || openOrder?.cancel_reason || openOrder?.cancelReason || ""
               : ""
           );
 
-          storage.setItem("qr_active_order_id", String(openOrder.id));
-          storage.setItem("qr_orderType", "table");
-          storage.setItem("qr_show_status", "1");
-          return;
-      }
-    } catch (err) {
+	          storage.setItem("qr_active_order_id", String(openOrder.id));
+	          storage.setItem("qr_orderType", "table");
+	          return;
+	      }
+	    } catch (err) {
       console.warn("⚠️ Failed to restore table order:", err);
     }
   }
@@ -4106,9 +4138,13 @@ if (savedTable) {
 
 
       // 3️⃣ Nothing to restore
+      setShowStatus(false);
+      storage.setItem("qr_show_status", "0");
       resetToTypePicker();
     } catch (err) {
       console.error("❌ QRMenu restore failed:", err);
+      setShowStatus(false);
+      storage.setItem("qr_show_status", "0");
       resetToTypePicker();
     }
   })();
