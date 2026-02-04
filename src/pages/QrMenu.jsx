@@ -5,10 +5,10 @@ import OrderStatusScreen, { useSocketIO as useOrderSocket } from "../components/
 import ModernTableSelector from "../components/ModernTableSelector";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
-import secureFetch from "../utils/secureFetch";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
-import { UtensilsCrossed, Soup, Bike, Phone, Share2 } from "lucide-react";
+import { UtensilsCrossed, Soup, Bike, Phone, Share2, Search } from "lucide-react";
 import { Instagram, Music2, Globe } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
@@ -621,21 +621,55 @@ function TableQrScannerModal({ open, tableNumber, onClose, error, t }) {
 
 
 /* ====================== HEADER ====================== */
-function QrHeader({ orderType, table, onClose, t, restaurantName, lang, setLang }) {
+function QrHeader({
+  orderType,
+  table,
+  onClose,
+  t,
+  restaurantName,
+  searchValue,
+  onSearchChange,
+  searchPlaceholder,
+}) {
+  const displayRestaurantName = React.useMemo(() => {
+    const raw = String(restaurantName || "").trim();
+    if (!raw) return "Restaurant";
+    // Some tenants store names like "Brand+username" — hide the "+username" in the UI.
+    if (raw.includes("+")) {
+      const [head] = raw.split("+");
+      const trimmed = String(head || "").trim();
+      return trimmed || raw;
+    }
+    return raw;
+  }, [restaurantName]);
+
   return (
     <header className="w-full sticky top-0 z-50 flex items-center justify-between gap-3 bg-white/85 backdrop-blur-md border-b border-gray-200 px-4 md:px-6 py-3 shadow-sm">
       <span className="text-[18px] md:text-[20px] font-serif font-bold text-gray-900 tracking-tight">
-        {restaurantName || "Restaurant"}
+        {displayRestaurantName}
       </span>
-      <span className="text-base md:text-lg font-medium text-gray-700 italic">
-        {orderType === "table"
-          ? table
-            ? `${t("Table")} ${table}`
-            : t("Table Order (short)")
-          : t("Online Order")}
-      </span>
+      <div className="flex-1 min-w-0">
+        <div className="relative w-full max-w-[520px] mx-auto">
+          <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
+            <span className="text-base leading-none">⌕</span>
+          </div>
+          <input
+            value={searchValue || ""}
+            onChange={(e) => onSearchChange?.(e.target.value)}
+            placeholder={searchPlaceholder || t("Search")}
+            className="w-full h-10 pl-9 pr-3 rounded-full border border-gray-200 bg-white text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300"
+            aria-label={t("Search")}
+          />
+        </div>
+        <div className="hidden md:block text-xs text-gray-500 mt-1 text-center">
+          {orderType === "table"
+            ? table
+              ? `${t("Table")} ${table}`
+              : t("Table Order (short)")
+            : t("Online Order")}
+        </div>
+      </div>
       <div className="flex items-center gap-2">
-        <LanguageSwitcher lang={lang} setLang={setLang} t={t} />
         <button
           onClick={onClose}
           aria-label={t("Close")}
@@ -668,6 +702,10 @@ function OrderTypeSelect({
      1) Load Custom QR Menu Website Settings from Backend
      ============================================================ */
   const [custom, setCustom] = React.useState(null);
+  const onCustomizationLoadedRef = React.useRef(onCustomizationLoaded);
+  React.useEffect(() => {
+    onCustomizationLoadedRef.current = onCustomizationLoaded;
+  }, [onCustomizationLoaded]);
 
   React.useEffect(() => {
     if (!identifier) return;
@@ -681,16 +719,16 @@ async function load() {
       throw new Error(`HTTP ${res.status}`);
     }
 
-    const raw = await res.text();
-    const data = raw ? JSON.parse(raw) : {};
-    setCustom(data.customization || {});
-    onCustomizationLoaded?.(data.customization || {});
-  } catch (err) {
-    console.error("❌ Failed to load QR customization:", err);
-    setCustom({}); // allow component to render with defaults
-    onCustomizationLoaded?.({});
-  }
-}
+	    const raw = await res.text();
+	    const data = raw ? JSON.parse(raw) : {};
+	    setCustom(data.customization || {});
+	    onCustomizationLoadedRef.current?.(data.customization || {});
+	  } catch (err) {
+	    console.error("❌ Failed to load QR customization:", err);
+	    setCustom({}); // allow component to render with defaults
+	    onCustomizationLoadedRef.current?.({});
+	  }
+	}
 
 
     load();
@@ -703,9 +741,19 @@ async function load() {
      ============================================================ */
   const c = custom || {};
   React.useEffect(() => {
-    onCustomizationLoaded?.(custom || {});
-  }, [custom, onCustomizationLoaded]);
+    onCustomizationLoadedRef.current?.(custom || {});
+  }, [custom]);
   const restaurantName = c.title || c.main_title || "Restaurant";
+  const displayRestaurantName = React.useMemo(() => {
+    const raw = String(restaurantName || "").trim();
+    if (!raw) return "Restaurant";
+    if (raw.includes("+")) {
+      const [head] = raw.split("+");
+      const trimmed = String(head || "").trim();
+      return trimmed || raw;
+    }
+    return raw;
+  }, [restaurantName]);
   const subtitle = c.subtitle || "Welcome";
   const tagline = c.tagline || "Fresh • Crafted • Delicious";
   const phoneNumber = c.phone || "";
@@ -764,6 +812,110 @@ async function load() {
     loadPopular();
     return () => { cancelled = true; };
   }, [identifier, c.enable_popular]);
+
+  // ===== Categories strip (always) =====
+  const { formatCurrency } = useCurrency();
+  const [homeCategories, setHomeCategories] = React.useState([]);
+  const [homeCategoryImages, setHomeCategoryImages] = React.useState({});
+  const [activeHomeCategory, setActiveHomeCategory] = React.useState(
+    () => storage.getItem("qr_home_active_category") || ""
+  );
+  const [homeProducts, setHomeProducts] = React.useState([]);
+  const [homeSearch, setHomeSearch] = React.useState(
+    () => storage.getItem("qr_home_search") || ""
+  );
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadHomeCategories() {
+      try {
+        if (!identifier) {
+          setHomeCategories([]);
+          setHomeCategoryImages({});
+          setActiveHomeCategory("");
+          setHomeProducts([]);
+          return;
+        }
+
+        const [productsRes, imagesRes] = await Promise.all([
+          fetch(`${API_URL}/public/products/${encodeURIComponent(identifier)}`),
+          fetch(`${API_URL}/public/category-images/${encodeURIComponent(identifier)}`),
+        ]);
+
+        if (cancelled) return;
+
+        if (productsRes.ok) {
+          const productsPayload = await productsRes.json();
+          const list = Array.isArray(productsPayload)
+            ? productsPayload
+            : Array.isArray(productsPayload?.data)
+              ? productsPayload.data
+              : [];
+          setHomeProducts(list);
+          const cats = [...new Set(list.map((p) => p?.category).filter(Boolean))];
+          setHomeCategories(cats);
+          setActiveHomeCategory((prev) => {
+            const stored = storage.getItem("qr_home_active_category") || "";
+            const candidate = prev || stored;
+            if (candidate && cats.includes(candidate)) return candidate;
+            return cats[0] || "";
+          });
+        } else {
+          setHomeCategories([]);
+          setActiveHomeCategory("");
+          setHomeProducts([]);
+        }
+
+        if (imagesRes.ok) {
+          const data = await imagesRes.json();
+          const dict = {};
+          (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
+            const key = (category || "").trim().toLowerCase();
+            if (!key || !image) return;
+            dict[key] = image;
+          });
+          setHomeCategoryImages(dict);
+        } else {
+          setHomeCategoryImages({});
+        }
+      } catch {
+        if (cancelled) return;
+        setHomeCategories([]);
+        setHomeCategoryImages({});
+        setActiveHomeCategory("");
+        setHomeProducts([]);
+      }
+    }
+
+    loadHomeCategories();
+    return () => {
+      cancelled = true;
+    };
+  }, [identifier]);
+
+  React.useEffect(() => {
+    if (!activeHomeCategory) return;
+    storage.setItem("qr_home_active_category", activeHomeCategory);
+  }, [activeHomeCategory]);
+
+  React.useEffect(() => {
+    storage.setItem("qr_home_search", homeSearch || "");
+  }, [homeSearch]);
+
+  const homeVisibleProducts = React.useMemo(() => {
+    const list = Array.isArray(homeProducts) ? homeProducts : [];
+    const q = (homeSearch || "").trim().toLowerCase();
+    if (q) {
+      return list.filter((p) => {
+        const haystack = `${p?.name || ""} ${p?.category || ""}`.toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+    const active = (activeHomeCategory || "").trim().toLowerCase();
+    if (!active) return list;
+    return list.filter((p) => (p?.category || "").trim().toLowerCase() === active);
+  }, [homeProducts, activeHomeCategory, homeSearch]);
 
   // ===== Loyalty (optional) =====
   const [deviceId, setDeviceId] = React.useState(() => {
@@ -904,61 +1056,44 @@ return (
     />
     <div className="absolute inset-x-0 top-0 h-[420px] sm:h-[480px] -z-10 bg-gradient-to-b from-white/70 via-white/80 to-white" />
 
-    {/* === TOP BAR === */}
-    <header className="max-w-6xl mx-auto px-4 pt-5 flex items-center justify-between gap-3">
-      {/* Mini brand */}
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-xs font-serif">
-          ✦
-        </div>
-        <div className="leading-tight">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
-            Signature Dining
-          </p>
-          <p className="text-sm font-medium text-gray-900 line-clamp-1">
-            {restaurantName}
-          </p>
-        </div>
-      </div>
+	    {/* === TOP BAR === */}
+	    <header className="max-w-6xl mx-auto px-4 pt-3 flex items-center justify-between gap-3">
+	      {/* Left spacer (keep layout balanced) */}
+	      <div className="w-10" />
 
-      {/* Dot nav */}
-      <nav className="hidden sm:flex items-center gap-5 text-xs font-medium text-gray-600">
-        <button onClick={() => scrollToId("order-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
-          <span className="w-1.5 h-1.5 rounded-full bg-gray-900" />
-          Order
-        </button>
-        <button onClick={() => scrollToId("story-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
-          <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
-          Story
-        </button>
-        <button onClick={() => scrollToId("reviews-section")} className="flex items-center gap-1 hover:text-gray-900 transition">
-          <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
-          Reviews
-        </button>
-      </nav>
+	      {/* Dot nav removed */}
+	    </header>
+	
+	    {/* === HERO SECTION === */}
+	    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-4 pb-24 space-y-10">
+	
+	      {/* TITLE & TAGLINE */}
+	      <div className="max-w-3xl">
+	        <div className="flex items-center justify-between gap-3">
+	          <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 border border-gray-200 shadow-sm text-[11px] font-medium text-gray-700">
+	            <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
+	            {isOpen ? "Open now • Order anytime" : "Currently closed"}
+	          </p>
+	          <div className="shrink-0">
+	            <LanguageSwitcher lang={lang} setLang={setLang} t={t} />
+	          </div>
+	        </div>
 
-      {/* Language Switcher */}
-      <div className="shrink-0">
-        <LanguageSwitcher lang={lang} setLang={setLang} t={t} />
-      </div>
-    </header>
+	        <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-tight tracking-tight text-gray-900">
+	          {displayRestaurantName}
+	        </h1>
 
-    {/* === HERO SECTION === */}
-    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-10 pb-24 space-y-10">
+	        {/* Featured products */}
+	        <div className="mt-5 space-y-4 max-w-3xl">
+	          <FeaturedCard
+	            slides={slides}
+	            currentSlide={currentSlide}
+	            setCurrentSlide={setCurrentSlide}
+	          />
+	        </div>
 
-      {/* TITLE & TAGLINE */}
-      <div className="max-w-3xl">
-        <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 border border-gray-200 shadow-sm text-[11px] font-medium text-gray-700">
-          <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
-          {isOpen ? "Open now • Order anytime" : "Currently closed"}
-        </p>
-
-        <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-tight tracking-tight text-gray-900">
-          {restaurantName}
-        </h1>
-
-        <p className="mt-3 text-lg font-light text-gray-600">{subtitle}</p>
-        <p className="mt-3 text-base text-gray-500 max-w-xl">{tagline}</p>
+	        <p className="mt-3 text-lg font-light text-gray-600">{subtitle}</p>
+	        <p className="mt-3 text-base text-gray-500 max-w-xl">{tagline}</p>
 
         {/* ORDER TYPE BUTTONS */}
         <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3 max-w-xl">
@@ -997,6 +1132,166 @@ return (
         </div>
       </div>
 
+      {/* CATEGORIES (scrollable 1 row) */}
+      {homeCategories.length > 0 && (
+        <div className="mt-5 max-w-3xl">
+          {/* INFO BOXES */}
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="rounded-2xl bg-white border border-gray-200 px-2 py-2 shadow-sm min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 leading-tight truncate">Delivery</p>
+              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-emerald-600 leading-tight truncate">⏱️ {deliveryTime}</p>
+              <p className="mt-1 text-[10px] text-gray-500 leading-tight truncate hidden sm:block">Fast doorstep service</p>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-gray-200 px-2 py-2 shadow-sm min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 leading-tight truncate">Pickup</p>
+              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-sky-600 leading-tight truncate">🛍️ {pickupTime}</p>
+              <p className="mt-1 text-[10px] text-gray-500 leading-tight truncate hidden sm:block">Ready on arrival</p>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-gray-200 px-2 py-2 shadow-sm min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 leading-tight truncate">Rating</p>
+              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-amber-600 leading-tight truncate">★★★★★</p>
+              <p className="mt-1 text-[10px] text-gray-500 leading-tight truncate hidden sm:block">Guest favorites</p>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div className="mt-3 mb-4">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                value={homeSearch}
+                onChange={(e) => setHomeSearch(e.target.value)}
+                placeholder={t("Search")}
+                className="w-full rounded-2xl border border-gray-200 bg-white/80 shadow-sm pl-11 pr-10 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                autoComplete="off"
+                inputMode="search"
+              />
+              {homeSearch ? (
+                <button
+                  type="button"
+                  onClick={() => setHomeSearch("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition flex items-center justify-center"
+                  aria-label={t("Clear")}
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex items-end justify-between">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-gray-500">
+              Categories
+            </div>
+          </div>
+
+          <div className="mt-3 flex gap-3 overflow-x-auto pb-2 scroll-smooth scrollbar-hide">
+            {homeCategories.map((cat) => {
+              const key = (cat || "").trim().toLowerCase();
+              const imgSrc = homeCategoryImages?.[key];
+              const active = activeHomeCategory === cat;
+              const resolvedSrc = imgSrc
+                ? /^https?:\/\//.test(String(imgSrc))
+                  ? String(imgSrc)
+                  : `${API_URL}/uploads/${String(imgSrc).replace(/^\/?uploads\//, "")}`
+                : "";
+
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setActiveHomeCategory(cat)}
+                  className={`flex-none w-[calc((100%-2.25rem)/4)] sm:w-32 rounded-2xl border bg-white/80 shadow-sm hover:shadow-md transition text-left ${
+                    active ? "border-gray-900" : "border-gray-200"
+                  }`}
+                  aria-label={`Category ${cat}`}
+                >
+                  <div className="p-2">
+                    <div className="w-full aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
+                      {resolvedSrc ? (
+                        <img
+                          src={resolvedSrc}
+                          alt={cat}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm font-semibold">
+                          {String(cat || "?").slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-2 text-[11px] sm:text-xs font-semibold text-gray-800 text-center line-clamp-1">
+                      {cat}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* PRODUCTS (2 columns) */}
+      {homeVisibleProducts.length > 0 && (
+        <div className="mt-5 max-w-3xl">
+          <div className="grid grid-cols-2 gap-3">
+            {homeVisibleProducts.map((product) => {
+              const img = product?.image;
+              const src = img
+                ? /^https?:\/\//.test(String(img))
+                  ? String(img)
+                  : `${API_URL}/uploads/${String(img).replace(/^\/+/, "")}`
+                : "";
+
+              return (
+                <button
+                  key={product?.id ?? `${product?.name}-${product?.price}`}
+                  type="button"
+                  onClick={() =>
+                    onPopularClick?.(product, {
+                      source: "home-products",
+                      returnToHomeAfterAdd: true,
+                    })
+                  }
+                  className="group text-left rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md hover:-translate-y-[1px] transition"
+                >
+                  <div className="p-2">
+                    <div className="w-full aspect-[4/5] rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
+                      {src ? (
+                        <img
+                          src={src}
+                          alt={product?.name || "Product"}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900" />
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs font-semibold text-gray-800 line-clamp-2 text-center">
+                      {product?.name || "—"}
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900 text-center">
+                      {formatCurrency(parseFloat(product?.price || 0))}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {homeVisibleProducts.length === 0 && homeSearch.trim() !== "" && (
+        <div className="mt-5 max-w-3xl">
+          <div className="rounded-2xl border border-gray-200 bg-white/70 px-4 py-4 text-sm text-gray-600">
+            {t("No products available.")}
+          </div>
+        </div>
+      )}
+
       {/* LOYALTY CARD (optional) */}
       {loyalty.enabled && (
         <div className="mt-2 rounded-3xl border border-amber-200/70 dark:border-amber-800/50 bg-white/80 dark:bg-amber-950/20 p-5 shadow-sm max-w-3xl">
@@ -1023,84 +1318,50 @@ return (
         </div>
       )}
 
-      {/* FEATURED CARD + BUTTON GRID (now single-column; featured moved below Popular) */}
-      <div className="grid grid-cols-1 gap-8 items-stretch">
+	      {/* CALL + SHARE */}
+	      <div className="mt-6 flex flex-col sm:flex-row gap-4 max-w-3xl">
+	        {phoneNumber && (
+	          <a
+	            href={`tel:${phoneNumber}`}
+	            className="flex-1 py-4 rounded-2xl bg-black text-white font-semibold shadow-md flex items-center justify-center gap-2 hover:shadow-lg hover:-translate-y-1 transition-all"
+	            style={{ backgroundColor: accent }}
+	          >
+	            <Phone className="w-5 h-5" />
+	            {t("Call Us")}
+	          </a>
+	        )}
 
-        {/* LEFT — DELIVERY / PICKUP / CTA */}
-        <div className="space-y-5">
+	        <button
+	          onClick={() => {
+	            if (navigator.share) {
+	              navigator.share({
+	                title: restaurantName,
+	                text: "Check out our menu!",
+	                url: window.location.href,
+	              });
+	            } else {
+	              navigator.clipboard.writeText(window.location.href);
+	              alert(t("Link copied."));
+	            }
+	          }}
+	          className="flex-1 py-4 rounded-2xl bg-white border border-gray-300 text-gray-900 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 hover:-translate-y-1 transition-all"
+	        >
+	          <Share2 className="w-5 h-5" />
+	          {t("Share")}
+	        </button>
+	      </div>
 
-          {/* INFO BOXES */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="rounded-2xl bg-white border border-gray-200 px-3 py-3 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400">Delivery</p>
-              <p className="mt-1 text-sm font-semibold text-emerald-600">⏱️ {deliveryTime}</p>
-              <p className="mt-1 text-[11px] text-gray-500">Fast doorstep service</p>
-            </div>
-
-            <div className="rounded-2xl bg-white border border-gray-200 px-3 py-3 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400">Pickup</p>
-              <p className="mt-1 text-sm font-semibold text-sky-600">🛍️ {pickupTime}</p>
-              <p className="mt-1 text-[11px] text-gray-500">Ready on arrival</p>
-            </div>
-
-            <div className="rounded-2xl bg-white border border-gray-200 px-3 py-3 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-gray-400">Rating</p>
-              <p className="mt-1 text-sm font-semibold text-amber-600">★★★★★</p>
-              <p className="mt-1 text-[11px] text-gray-500">Guest favorites</p>
-            </div>
-          </div>
-
-          {/* ORDER BUTTONS moved under main title (removed here for cleaner mobile layout) */}
-
-          {/* Popular This Week — turned into a simple carousel */}
-          {c.enable_popular && popularProducts.length > 0 && (
-            <PopularCarousel
-              title="⭐ Popular This Week"
-              items={popularProducts}
-              onProductClick={onPopularClick}
-            />
-          )}
-
-          {/* Featured card moved below Popular */}
-          <FeaturedCard slides={slides} currentSlide={currentSlide} setCurrentSlide={setCurrentSlide} />
-
-          {/* CALL + SHARE */}
-          <div className="mt-5 flex flex-col sm:flex-row gap-4">
-            {phoneNumber && (
-              <a
-                href={`tel:${phoneNumber}`}
-                className="flex-1 py-4 rounded-2xl bg-black text-white font-semibold shadow-md flex items-center justify-center gap-2 hover:shadow-lg hover:-translate-y-1 transition-all"
-                style={{ backgroundColor: accent }}
-              >
-                <Phone className="w-5 h-5" />
-                {t("Call Us")}
-              </a>
-            )}
-
-            <button
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: restaurantName,
-                    text: "Check out our menu!",
-                    url: window.location.href,
-                  });
-                } else {
-                  navigator.clipboard.writeText(window.location.href);
-                  alert(t("Link copied."));
-                }
-              }}
-              className="flex-1 py-4 rounded-2xl bg-white border border-gray-300 text-gray-900 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 hover:-translate-y-1 transition-all"
-            >
-              <Share2 className="w-5 h-5" />
-              {t("Share")}
-            </button>
-          </div>
-        </div>
-
-        {/* Featured card moved above; right column removed */}
-      </div>
-    </section>
+	      {/* Popular This Week (below Share button) */}
+	      {c.enable_popular && popularProducts.length > 0 && (
+	        <div className="mt-6 max-w-3xl">
+	          <PopularCarousel
+	            title="⭐ Popular This Week"
+	            items={popularProducts}
+	            onProductClick={onPopularClick}
+	          />
+	        </div>
+	      )}
+	    </section>
 
     {/* === STORY SECTION (B: TEXT LEFT — IMAGE RIGHT) === */}
     <section id="story-section" className="max-w-6xl mx-auto px-4 pt-4 pb-14">
@@ -1216,16 +1477,9 @@ return (
       )}
     </div>
 
-    {/* === MINI CART (unchanged logic) === */}
-    <div className="fixed bottom-6 right-6 bg-white shadow-xl px-4 py-2.5 rounded-full border border-gray-200 flex items-center gap-2 text-xs font-medium text-gray-800">
-      🛒 Cart
-      <span className="bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
-        0
-      </span>
-    </div>
-  </div>
-  </div>
-  );
+	  </div>
+	  </div>
+	  );
 
 
 
@@ -1304,15 +1558,15 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
           />
 
           {/* Phone */}
-          <input
-            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 ${
-              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300"
-            }`}
-            placeholder={t("Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)")}
-            value={form.phone}
-            onChange={(e) => {
-              const clean = e.target.value.replace(/[^\d]/g, ""); // allow only digits
-              // Decide max length based on first digit
+	          <input
+	            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 ${
+	              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300"
+	            }`}
+	            placeholder={t("Phone")}
+	            value={form.phone}
+	            onChange={(e) => {
+	              const clean = e.target.value.replace(/[^\d]/g, ""); // allow only digits
+	              // Decide max length based on first digit
               let maxLen = 10;
               if (/^[78]/.test(clean)) maxLen = 8; // Mauritius landline/mobile
               const trimmed = clean.slice(0, maxLen);
@@ -1412,33 +1666,19 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
             }
           />
 
-      {/* Submit */}
-<button
-  type="submit"
-  disabled={submitting}
-  className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
->
-  {submitting ? t("Please wait...") : t("Continue")}
-</button>
+	{/* Submit */}
+	<button
+	  type="submit"
+	  disabled={submitting}
+	  className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
+	>
+	  {submitting ? t("Please wait...") : t("Continue")}
+	</button>
 
-{/* Skip button */}
-<button
-  type="button"
-  onClick={() => {
-    onSubmit(null);    // << SKIP
-  }}
-className="w-full py-3 rounded-full bg-yellow-100 text-yellow-800 
-           font-medium text-lg hover:bg-yellow-200 transition mt-2"
-
-
->
-  Fast Order
-</button>
-
-        </form>
-      </div>
-    </div>
-  );
+	        </form>
+	      </div>
+	    </div>
+	  );
 }
 
 /* ====================== ONLINE ORDER FORM (Luxury Fine Dining Style) ====================== */
@@ -1494,66 +1734,69 @@ useEffect(() => {
 }, [form.phone]);
 
 /* ====================== SAVE DELIVERY INFO ====================== */
-async function saveDelivery() {
-  const name = form.name.trim();
-  const phone = form.phone.trim();
-  const address = form.address.trim();
+  async function saveDelivery() {
+    const name = form.name.trim();
+    const phone = form.phone.trim();
+    const address = form.address.trim();
 
-  if (!name || !/^5\d{9}$/.test(phone) || !address) return;
+    if (!name || !/^5\d{9}$/.test(phone) || !address) return;
 
-  setSaving(true);
-  try {
-    // 1️⃣ Save locally
-    storage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
-
-    // 2️⃣ Sync with backend
+    setSaving(true);
     try {
-      // Fetch existing customer by phone
-      let customer = await secureFetch(appendIdentifier(`/customers?phone=${phone}`), {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
+      // 1️⃣ Always save locally (even for guest/QR users)
+      storage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
 
-      // If not found, create new
-      if (!customer || !customer.id) {
-        customer = await secureFetch(appendIdentifier("/customers"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, phone }),
-        });
-      }
+      // 2️⃣ Sync with backend only if authenticated
+      const token = getAuthToken();
+      if (token) {
+        try {
+          // Fetch existing customer by phone
+          let customer = await secureFetch(appendIdentifier(`/customers?phone=${phone}`), {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+          });
 
-      // Handle addresses
-      if (customer && (customer.id || customer.customer_id)) {
-        const cid = customer.id ?? customer.customer_id;
-        const addrs = Array.isArray(customer.addresses) ? customer.addresses : [];
-
-        const existing = addrs.find((a) => (a.address || "").trim() === address);
-        if (existing) {
-          if (!existing.is_default) {
-            await secureFetch(appendIdentifier(`/customer-addresses/${existing.id}`), {
-              method: "PATCH",
+          // If not found, create new
+          if (!customer || !customer.id) {
+            customer = await secureFetch(appendIdentifier("/customers"), {
+              method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ is_default: true }),
+              body: JSON.stringify({ name, phone }),
             });
           }
-        } else {
-          await secureFetch(appendIdentifier(`/customers/${cid}/addresses`), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ label: "Default", address, is_default: true }),
-          });
+
+          // Handle addresses
+          if (customer && (customer.id || customer.customer_id)) {
+            const cid = customer.id ?? customer.customer_id;
+            const addrs = Array.isArray(customer.addresses) ? customer.addresses : [];
+
+            const existing = addrs.find((a) => (a.address || "").trim() === address);
+            if (existing) {
+              if (!existing.is_default) {
+                await secureFetch(appendIdentifier(`/customer-addresses/${existing.id}`), {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ is_default: true }),
+                });
+              }
+            } else {
+              await secureFetch(appendIdentifier(`/customers/${cid}/addresses`), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ label: "Default", address, is_default: true }),
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("⚠️ Backend sync failed:", err);
         }
       }
-    } catch (err) {
-      console.warn("⚠️ Backend sync failed:", err);
-    }
 
-    setSavedOnce(true);
-  } finally {
-    setSaving(false);
+      setSavedOnce(true);
+    } finally {
+      setSaving(false);
+    }
   }
-}
 
 /* ====================== PREFILL FROM BACKEND ====================== */
 useEffect(() => {
@@ -1658,17 +1901,17 @@ const showNewCard = !savedCard || !useSaved;
           />
 
           {/* Phone */}
-        <input
-  className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
-    touched.phone && !/^(5\d{9}|[578]\d{7})$/.test(form.phone)
-      ? "border-red-500"
-      : "border-neutral-300"
-  }`}
-  placeholder={t("Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)")}
-  value={form.phone}
-  onChange={(e) => {
-    // Keep digits only, drop leading 0 (e.g., 05XXXXXXXXX → 5XXXXXXXXX), then cap at 10
-    const onlyDigits = e.target.value.replace(/[^\d]/g, "");
+	        <input
+	  className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
+	    touched.phone && !/^(5\d{9}|[578]\d{7})$/.test(form.phone)
+	      ? "border-red-500"
+	      : "border-neutral-300"
+	  }`}
+	  placeholder={t("Phone")}
+	  value={form.phone}
+	  onChange={(e) => {
+	    // Keep digits only, drop leading 0 (e.g., 05XXXXXXXXX → 5XXXXXXXXX), then cap at 10
+	    const onlyDigits = e.target.value.replace(/[^\d]/g, "");
     const normalized = onlyDigits.startsWith("0") ? onlyDigits.slice(1) : onlyDigits;
     setForm((f) => ({ ...f, phone: normalized.slice(0, 10) }));
   }}
@@ -1986,6 +2229,84 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
         </div>
       </div>
     </nav>
+  );
+}
+
+/* ====================== TOP CATEGORY ROW (transaction page) ====================== */
+function CategoryTopBar({
+  categories,
+  activeCategory,
+  setActiveCategory,
+  categoryImages,
+  onCategoryClick,
+}) {
+  const categoryList = Array.isArray(categories) ? categories : [];
+  const scrollRef = React.useRef(null);
+
+  const scrollToCategory = (index) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const button = el.children[index];
+    if (!button) return;
+    const buttonRect = button.getBoundingClientRect();
+    const containerRect = el.getBoundingClientRect();
+    const offset =
+      buttonRect.left -
+      containerRect.left -
+      containerRect.width / 2 +
+      buttonRect.width / 2;
+    el.scrollBy({ left: offset, behavior: "smooth" });
+  };
+
+  return (
+    <div className="w-full rounded-xl border border-neutral-200 bg-white/90 backdrop-blur-sm shadow-sm px-2 py-1">
+      <div
+        ref={scrollRef}
+        className="flex items-center gap-1.5 overflow-x-auto no-scrollbar px-0.5"
+        style={{ scrollBehavior: "smooth" }}
+      >
+        {categoryList.map((cat, idx) => {
+          const key = cat?.toLowerCase?.();
+          const imgSrc = categoryImages?.[key];
+          const active = activeCategory === cat;
+          return (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => {
+                setActiveCategory(cat);
+                onCategoryClick?.(cat);
+                scrollToCategory(idx);
+              }}
+              className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[13px] font-medium transition-all whitespace-nowrap border
+                ${
+                  active
+                    ? "bg-neutral-900 text-white border-neutral-900"
+                    : "bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-200 hover:text-neutral-900"
+                }`}
+            >
+              {imgSrc ? (
+                <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300">
+                  <img
+                    src={
+                      /^https?:\/\//.test(imgSrc)
+                        ? imgSrc
+                        : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
+                    }
+                    alt={cat}
+                    className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-300"
+                    loading="lazy"
+                  />
+                </div>
+              ) : (
+                <span className="w-2 h-2 rounded-full bg-neutral-400" />
+              )}
+              <span className="tracking-wide">{cat}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -2890,8 +3211,8 @@ function CartDrawer({
   return (
     <>
       {/* Floating cart button */}
-      {!isPanel && !show && (cartLength > 0 || hasActiveOrder) && (
-        <button
+	      {!isPanel && !show && (cartLength > 0 || hasActiveOrder) && (
+	        <button
           onClick={() => {
             if (hasNewItems) {
               onOpenCart?.();
@@ -2903,13 +3224,13 @@ function CartDrawer({
               onOpenCart?.();
               setShow(true);
             }
-          }}
-          className={`fixed bottom-16 left-4 md:left-6 flex items-center gap-3 px-5 py-3 rounded-full font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
-            hasActiveOrder
-              ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
-              : "bg-neutral-900 text-white hover:scale-105"
-          }`}
-        >
+	          }}
+	          className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-5 py-3 rounded-full font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
+	            hasActiveOrder
+	              ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
+	              : "bg-neutral-900 text-white hover:scale-105"
+	          }`}
+	        >
           <span className="text-xl">🛒</span>
           <div className="flex flex-col items-start">
             <span className="text-sm">
@@ -2976,18 +3297,29 @@ async function startOnlinePaymentSession(id) {
 
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier, errorMessage }) {
+function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier, errorMessage, cancelReason, orderScreenStatus }) {
   if (!open) return null;
 
+  const uiStatus = (status || "").toLowerCase(); // pending | success | fail
+  const backendStatus = (orderScreenStatus || "").toLowerCase(); // confirmed | cancelled | closed | ...
+  const isCancelled = backendStatus === "canceled" || backendStatus === "cancelled";
+  const isSending = uiStatus === "pending";
+  const isFailed = uiStatus === "fail";
+
   const title =
-    status === "success" ? t("Order Sent!")
-    : status === "pending" ? t("Sending Order...")
-    : t("Order Failed");
+    isCancelled ? t("Your order has been cancelled!")
+    : isSending ? t("Sending Order...")
+    : isFailed ? t("Order Failed")
+    : t("Order Sent!");
 
   const message =
-    status === "success" ? t("Thank you! Your order has been received.")
-    : status === "pending" ? t("Please wait...")
-    : errorMessage || t("Something went wrong. Please try again.");
+    isCancelled
+      ? cancelReason || t("The restaurant cancelled this order.")
+      : isSending
+        ? t("Please wait...")
+        : isFailed
+          ? errorMessage || t("Something went wrong. Please try again.")
+          : t("Thank you! Your order has been received.");
 
   return (
     <div
@@ -3013,6 +3345,7 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
   orderId={orderId}
   table={orderType === "table" ? table : null}   // now safe
    onOrderAnother={onOrderAnother}   
+  onClose={onClose}
   onFinished={onFinished}
 
   t={t}
@@ -3173,6 +3506,20 @@ const shareUrl = useMemo(() => {
   const [products, setProducts] = useState([]);
   const [extrasGroups, setExtrasGroups] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
+  const getSavedDeliveryInfo = useCallback(() => {
+    try {
+      const saved = JSON.parse(storage.getItem("qr_delivery_info") || "null");
+      if (saved && typeof saved === "object" && saved.address) {
+        return {
+          name: saved.name || "",
+          phone: saved.phone || "",
+          address: saved.address || "",
+          payment_method: saved.payment_method || "",
+        };
+      }
+    } catch {}
+    return null;
+  }, []);
   const [cart, setCart] = useState(() => {
     try {
       const parsed = JSON.parse(storage.getItem("qr_cart") || "[]");
@@ -3204,6 +3551,7 @@ const shareUrl = useMemo(() => {
   const [orderId, setOrderId] = useState(null);
   const [tables, setTables] = useState([]);
   const [isDarkMain, setIsDarkMain] = React.useState(false);
+  const [orderCancelReason, setOrderCancelReason] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
@@ -3241,12 +3589,14 @@ const shareUrl = useMemo(() => {
     table_geo_radius_meters: 150,
   });
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
-  const [pendingPopularProduct, setPendingPopularProduct] = useState(null);
-  const [showOrderTypePrompt, setShowOrderTypePrompt] = useState(false);
-  const [suppressMenuFlash, setSuppressMenuFlash] = useState(true);
-  const tableScannerRef = useRef(null);
-  const tableScanInFlight = useRef(false);
-  const [showTableScanner, setShowTableScanner] = useState(false);
+	const [pendingPopularProduct, setPendingPopularProduct] = useState(null);
+	const [returnHomeAfterAdd, setReturnHomeAfterAdd] = useState(false);
+	const [forceHome, setForceHome] = useState(false);
+	const [showOrderTypePrompt, setShowOrderTypePrompt] = useState(false);
+	const [suppressMenuFlash, setSuppressMenuFlash] = useState(true);
+	const tableScannerRef = useRef(null);
+	const tableScanInFlight = useRef(false);
+	const [showTableScanner, setShowTableScanner] = useState(false);
   const [tableScanTarget, setTableScanTarget] = useState(null);
   const [tableScanError, setTableScanError] = useState("");
   const deliveredResetRef = useRef({ orderId: null, timeoutId: null });
@@ -3270,6 +3620,15 @@ const shareUrl = useMemo(() => {
       ),
     [safeProducts, activeCategory]
   );
+  const [menuSearch, setMenuSearch] = useState("");
+  const productsForGrid = useMemo(() => {
+    const q = String(menuSearch || "").trim().toLowerCase();
+    if (!q) return productsInActiveCategory;
+    return safeProducts.filter((p) => {
+      const name = String(p?.name || "").toLowerCase();
+      return name.includes(q);
+    });
+  }, [menuSearch, productsInActiveCategory, safeProducts]);
 
   // 🥡 Pre-order (takeaway) fields
 const [takeaway, setTakeaway] = useState({
@@ -3520,9 +3879,11 @@ const statusPortal = showStatus
         onClose={handleReset}
         onFinished={resetToTypePicker}
         t={t}
-        appendIdentifier={appendIdentifier}
-        errorMessage={lastError}
-      />,
+	        appendIdentifier={appendIdentifier}
+	        errorMessage={lastError}
+	        cancelReason={orderCancelReason}
+	        orderScreenStatus={orderScreenStatus}
+	      />,
       document.body
     )
   : null;
@@ -3658,34 +4019,32 @@ if (token && activeId) {
 }
 
 
-if (order) {
-  const status = (order?.status || "").toLowerCase();
-  const paid =
-    status === "paid" ||
-    order.payment_status === "paid" ||
-    order.payment_state === "paid";
+  if (order) {
+    const status = (order?.status || "").toLowerCase();
+    const paid =
+      status === "paid" ||
+      order.payment_status === "paid" ||
+      order.payment_state === "paid";
 
-  // ✅ Only reset when POS explicitly closes it
-  if (["closed", "completed", "canceled"].includes(status)) {
-    resetToTypePicker();
+    // 🚫 Do NOT auto reset; show status even if cancelled/closed
+    setOrderStatus("success");
+    setShowStatus(true);
+
+    setActiveOrder(order);
+    setOrderScreenStatus(status);
+    setOrderCancelReason(
+      status === "canceled" || status === "cancelled"
+        ? order?.cancellation_reason || order?.cancel_reason || order?.cancelReason || ""
+        : ""
+    );
+
+    const type = order.order_type === "table" ? "table" : "online";
+    setOrderType(type);
+    setTable(type === "table" ? Number(order.table_number) || null : null);
+    setOrderId(order.id);
+
     return;
   }
-
-  // 🚫 Do NOT reset just because it’s paid or delivered
-  // Keep showing until table is actually closed
-  setOrderStatus("success");
-  setShowStatus(true);
-
-  setActiveOrder(order);
-  setOrderScreenStatus(status);
-
-  const type = order.order_type === "table" ? "table" : "online";
-  setOrderType(type);
-  setTable(type === "table" ? Number(order.table_number) || null : null);
-  setOrderId(order.id);
-
-  return;
-}
 
 
       // 2️⃣ Fallback: see if a saved table has an open (non-closed) order
@@ -3710,45 +4069,34 @@ if (savedTable) {
         ? raw.data
         : [];
 
-        const openOrder = list.find(
-          (o) => !["closed", "completed", "canceled", "cancelled"].includes((o?.status || "").toLowerCase())
-        );
+        const openOrder = list.find((o) => o?.status);
 
-      if (openOrder) {
-        const status = (openOrder?.status || "").toLowerCase();
-        const paid =
-          status === "paid" ||
-          openOrder.payment_status === "paid" ||
-          openOrder.payment_state === "paid";
+        if (openOrder) {
+          const status = (openOrder?.status || "").toLowerCase();
+          const paid =
+            status === "paid" ||
+            openOrder.payment_status === "paid" ||
+            openOrder.payment_state === "paid";
 
-        // 🚫 DO NOT close for paid orders
-        if (["closed", "completed", "canceled", "cancelled"].includes(status)) {
-          resetToTypePicker();
-          return;
-        }
-
-        // 🚫 DO NOT reset for delivered-only orders
-        // Only auto-reset for online (delivery) orders that are fully done
-        const allDelivered = await allItemsDelivered(openOrder.id);
-        if (openOrder.order_type === "online" && allDelivered && !paid) {
-          resetToTypePicker();
-          return;
-        }
-
-        // ✅ Keep showing OrderStatusScreen until table is closed
-        setOrderType("table");
-        setTable(savedTable);
-        setOrderId(openOrder.id);
-        setOrderStatus("success");
-        setShowStatus(true);
+          // ✅ Keep showing OrderStatusScreen for any status (including cancelled/closed)
+          setOrderType("table");
+          setTable(savedTable);
+          setOrderId(openOrder.id);
+          setOrderStatus("success");
+          setShowStatus(true);
 
         setActiveOrder(openOrder);
-        setOrderScreenStatus(status);
+          setOrderScreenStatus(status);
+          setOrderCancelReason(
+            status === "canceled" || status === "cancelled"
+              ? openOrder?.cancellation_reason || openOrder?.cancel_reason || openOrder?.cancelReason || ""
+              : ""
+          );
 
-        storage.setItem("qr_active_order_id", String(openOrder.id));
-        storage.setItem("qr_orderType", "table");
-        storage.setItem("qr_show_status", "1");
-        return;
+          storage.setItem("qr_active_order_id", String(openOrder.id));
+          storage.setItem("qr_orderType", "table");
+          storage.setItem("qr_show_status", "1");
+          return;
       }
     } catch (err) {
       console.warn("⚠️ Failed to restore table order:", err);
@@ -3786,58 +4134,25 @@ if (savedTable) {
         return;
       }
       setOrderScreenStatus(s);
+      setOrderCancelReason(
+        s === "canceled" || s === "cancelled"
+          ? data?.cancellation_reason || data?.cancel_reason || data?.cancelReason || ""
+          : ""
+      );
 
-      // ✅ If all items are delivered/served, return QR menu to the home flow (non-table only)
-      // This is for customer screens so the next scan/customer starts fresh.
-      const orderTypeRaw = String(data?.order_type || "").toLowerCase();
-      const isTableOrder = orderTypeRaw === "table";
-      if (!isTableOrder && orderId) {
-        try {
-          const itemsPayload = await secureFetch(
-            appendIdentifier(`/orders/${orderId}/items`),
-            opts
-          );
-          const items = Array.isArray(itemsPayload)
-            ? itemsPayload
-            : Array.isArray(itemsPayload?.data)
-            ? itemsPayload.data
-            : Array.isArray(itemsPayload?.items)
-            ? itemsPayload.items
-            : [];
-          const hasItems = Array.isArray(items) && items.length > 0;
-          const allDelivered =
-            hasItems &&
-            items.every((it) => {
-              const ks = String(it?.kitchen_status || "").toLowerCase();
-              return ks === "delivered" || ks === "served";
-            });
-
-          if (allDelivered && deliveredResetRef.current.orderId !== orderId) {
-            deliveredResetRef.current.orderId = orderId;
-            if (deliveredResetRef.current.timeoutId) {
-              window.clearTimeout(deliveredResetRef.current.timeoutId);
-            }
-            deliveredResetRef.current.timeoutId = window.setTimeout(() => {
-              try {
-                storage.removeItem("qr_active_order");
-                storage.removeItem("qr_active_order_id");
-                storage.removeItem("qr_show_status");
-                storage.removeItem("qr_cart");
-                storage.removeItem("qr_orderType");
-              } catch {}
-              resetToTypePicker();
-              deliveredResetRef.current.orderId = null;
-              deliveredResetRef.current.timeoutId = null;
-            }, 1200);
-          }
-        } catch (err) {
-          // If items endpoint fails, don't block status refresh.
-        }
+      // Keep the status modal visible when order is cancelled/closed
+      if (s === "canceled" || s === "cancelled" || s === "closed") {
+        setShowStatus(true);
+        setOrderStatus("success");
       }
 
-      if (["closed", "completed", "canceled", "cancelled"].includes(s)) {
-        // Backend closed the order – mark it inactive for the floating cart
-        setActiveOrder(null);
+      if (import.meta.env.DEV) {
+        console.info("[QR] refreshOrderScreenStatus", {
+          orderId,
+          status: s,
+          cancel_reason:
+            data?.cancellation_reason || data?.cancel_reason || data?.cancelReason || null,
+        });
       }
     } catch (err) {
       console.warn("⚠️ Failed to refresh QR order status:", err);
@@ -4022,6 +4337,7 @@ payload = await res.json();
 
 const triggerOrderType = useCallback(
   (type) => {
+    setForceHome(false);
     setOrderType(type);
     if (type === "online") {
       setShowDeliveryForm(true);
@@ -4030,72 +4346,34 @@ const triggerOrderType = useCallback(
       setShowTakeawayForm(true);
     }
   },
-  [setOrderType, setShowDeliveryForm, setShowTakeawayForm]
+  [setForceHome, setOrderType, setShowDeliveryForm, setShowTakeawayForm]
 );
 
 const handlePopularProductClick = useCallback(
-  (product) => {
+  (product, meta) => {
     if (!product) return;
     setPendingPopularProduct(product);
+    setReturnHomeAfterAdd(!!meta?.returnToHomeAfterAdd);
     setShowOrderTypePrompt(true);
   },
-  [setPendingPopularProduct, setShowOrderTypePrompt]
+  [setPendingPopularProduct, setReturnHomeAfterAdd, setShowOrderTypePrompt]
 );
 
-useEffect(() => {
-  if (!orderType || !pendingPopularProduct) return;
-  const targetCategory = (pendingPopularProduct.category || "").trim();
-  if (targetCategory) {
-    setActiveCategory(targetCategory);
-  }
-  setSelectedProduct(pendingPopularProduct);
-  setShowAddModal(true);
-  setPendingPopularProduct(null);
-}, [orderType, pendingPopularProduct, setActiveCategory, setSelectedProduct, setShowAddModal]);
+		useEffect(() => {
+		  if (!orderType || !pendingPopularProduct) return;
+		  const targetCategory = (pendingPopularProduct.category || "").trim();
+		  if (targetCategory) {
+		    setActiveCategory(targetCategory);
+		  }
+		  setSelectedProduct(pendingPopularProduct);
+		  setShowAddModal(true);
+		  setPendingPopularProduct(null);
+		}, [orderType, pendingPopularProduct, setActiveCategory, setSelectedProduct, setShowAddModal]);
 
-// --- Order type select (show modal here too if needed) ---
-if (!orderType)
-  return (
-    <>
-      <OrderTypeSelect
-        identifier={restaurantIdentifier}
-        onSelect={triggerOrderType}
-        lang={lang}
-        setLang={setLang}
-        t={t}
-        onInstallClick={handleInstallClick}
-        canInstall={canInstall}
-        showHelp={showHelp}
-        setShowHelp={setShowHelp}
-        platform={platform}
-        onPopularClick={handlePopularProductClick}
-        onCustomizationLoaded={(next) =>
-          setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
-        }
-      />
-
-      {showOrderTypePrompt && pendingPopularProduct && (
-        <OrderTypePromptModal
-          product={pendingPopularProduct}
-          t={t}
-          onClose={() => {
-            setShowOrderTypePrompt(false);
-            setPendingPopularProduct(null);
-          }}
-          onSelect={(type) => {
-            triggerOrderType(type);
-            setShowOrderTypePrompt(false);
-          }}
-          deliveryEnabled={orderSelectCustomization.delivery_enabled !== false}
-        />
-      )}
-
-      {statusPortal}
-    </>
-  );
+		const showHome = !orderType || forceHome;
 
 // --- Table select (let THIS device re-open its own occupied table) ---
-if (orderType === "table" && !table) {
+if (!forceHome && orderType === "table" && !table) {
 function safeNumber(v) {
   if (!v) return null;
   if (v === "null" || v === "undefined") return null;
@@ -4197,6 +4475,32 @@ async function handleOrderAnother() {
     // resolve existing order
     let id = orderId || Number(storage.getItem("qr_active_order_id")) || null;
     let type = orderType || storage.getItem("qr_orderType") || (table ? "table" : null);
+
+    // Check if current order is cancelled - if so, clear everything for fresh start
+    if (id) {
+      try {
+        const token = getStoredToken();
+        const res = await secureFetch(appendIdentifier(`/orders/${id}`), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res) {
+          const orderStatus = (res.status || "").toLowerCase();
+          if (orderStatus === "cancelled" || orderStatus === "canceled") {
+            // Clear everything for a fresh start
+            setCart([]);
+            storage.removeItem("qr_cart");
+            storage.removeItem("qr_active_order_id");
+            storage.removeItem("qr_orderType");
+            storage.setItem("qr_show_status", "0");
+            setOrderId(null);
+            setOrderType(null);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to check order status:", err);
+      }
+    }
 
     // If table known but no id, fetch open order for that table
     if (!id && (type === "table" || table)) {
@@ -4347,36 +4651,54 @@ function buildOrderPayload({ orderType, table, items, total, customer, takeaway,
     notes: isTakeaway
       ? takeaway?.notes || null
       : null,
-    payment_method: paymentMethod || null,
+    // Only set payment method for delivery orders; avoid leaking "Online" into takeaway/table.
+    payment_method: isOnline ? (paymentMethod || null) : null,
   };
 }
 
 
 async function handleSubmitOrder() {
   try {
-    setSubmitting(true);
     setLastError(null);
 
-    setOrderStatus("pending");
-    setShowStatus(true);
-
-    // Require delivery details only when starting a brand-new ONLINE order
-    const hasActiveOnline =
-      orderType === "online" &&
-      (orderId || storage.getItem("qr_active_order_id"));
-    if (orderType === "online" && !hasActiveOnline && !customerInfo) {
-      setShowDeliveryForm(true);
+    const type = orderType || storage.getItem("qr_orderType");
+    if (!type) {
+      window.dispatchEvent(new Event("qr:cart-close"));
+      alert(t("Please choose an order type first."));
       return;
+    }
+    if (!orderType) {
+      setOrderType(type);
+    }
+
+    // Require delivery details for ONLINE orders (always)
+    const hasActiveOnline =
+      type === "online" &&
+      (orderId || storage.getItem("qr_active_order_id"));
+    let deliveryInfo = customerInfo;
+    if (type === "online") {
+      if (!deliveryInfo || !deliveryInfo.address) {
+        const savedDelivery = getSavedDeliveryInfo();
+        if (savedDelivery && savedDelivery.address) {
+          deliveryInfo = savedDelivery;
+          setCustomerInfo(savedDelivery);
+        } else {
+          window.dispatchEvent(new Event("qr:cart-close"));
+          setShowDeliveryForm(true);
+          return;
+        }
+      }
     }
 
     // 🔒 Require payment method ONLY for delivery orders
-    if (orderType === "online" && !paymentMethod) {
+    if (type === "online" && !paymentMethod) {
       alert(t("Please select a payment method before continuing."));
-      setSubmitting(false);
-      setOrderStatus("pending");
-      setShowStatus(false);
       return;
     }
+
+    setSubmitting(true);
+    setOrderStatus("pending");
+    setShowStatus(true);
 
     const newItems = toArray(cart).filter((i) => !i.locked);
     if (newItems.length === 0) {
@@ -4385,13 +4707,13 @@ async function handleSubmitOrder() {
       return;
     }
 
-    if (orderType === "table" && !table) {
+    if (type === "table" && !table) {
       throw new Error("Please select a table.");
     }
 
     // Prevent creating a new table order if that table is already occupied by another session
     // (allow if appending to existing orderId; below branch handles append)
-    if (!orderId && orderType === "table") {
+    if (!orderId && type === "table") {
       const nTable = Number(table);
       if (safeOccupiedTables.includes(nTable)) {
         throw new Error("This table is currently occupied. Please contact staff.");
@@ -4399,7 +4721,7 @@ async function handleSubmitOrder() {
     }
 
     let tableGeo = null;
-    if (orderType === "table" && orderSelectCustomization.table_geo_enabled) {
+    if (type === "table" && orderSelectCustomization.table_geo_enabled) {
       if (!navigator?.geolocation) {
         throw new Error("Location is required for table orders. Please rescan at the restaurant.");
       }
@@ -4424,6 +4746,23 @@ async function handleSubmitOrder() {
 
     // ---------- APPEND to existing order ----------
     if (orderId) {
+      // First, fetch the current order to check its payment status
+      let existingOrder = activeOrder;
+      if (!existingOrder) {
+        try {
+          const res = await secureFetch(appendIdentifier(`/orders/${orderId}`));
+          existingOrder = res;
+        } catch (err) {
+          console.warn("Could not fetch existing order:", err);
+        }
+      }
+      
+      const isOrderAlreadyPaid = existingOrder && (
+        existingOrder.is_paid === true ||
+        (existingOrder.status || "").toLowerCase() === "paid" ||
+        (existingOrder.payment_status || "").toLowerCase() === "paid"
+      );
+
       const itemsPayload = newItems.map((i) => ({
         product_id: i.id,
         quantity: i.quantity,
@@ -4433,7 +4772,7 @@ async function handleSubmitOrder() {
         unique_id: i.unique_id,
         note: i.note || null,
         confirmed: true,
-        payment_method: null,
+        payment_method: paymentMethod === "online" ? "Online" : paymentMethod,
         receipt_id: null,
       }));
 
@@ -4459,30 +4798,38 @@ await postJSON(appendIdentifier("/orders/order-items"), {
       // If user chose Online, create/refresh a checkout session
       if (paymentMethod === "online") {
         await startOnlinePaymentSession(orderId);
+        
+        // For sub-orders, we need to create a proper payment receipt for these items
         try {
-         await secureFetch(appendIdentifier(`/orders/${orderId}/status`) , {
-           method: "PUT",
-           headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({
-             status: "paid",
-             payment_method: "Online",
-             total: newItems.reduce(
-               (sum, i) =>
-                 sum +
-                 (parseFloat(i.price) +
-                   (i.extras || []).reduce(
-                     (s, ex) =>
-                     s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
-                     0
-                   )) *
-                   (i.quantity || 1),
-               0
-             ),
-           }),
-         });
-       } catch (err) {
-         console.error("❌ Failed to mark existing online order as paid:", err);
-       }
+          const subOrderTotal = newItems.reduce(
+            (sum, i) =>
+              sum +
+              (parseFloat(i.price) +
+                (i.extras || []).reduce(
+                  (s, ex) =>
+                  s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+                  0
+                )) *
+                (i.quantity || 1),
+            0
+          );
+          
+          // Create a receipt for these specific items
+          console.log("📝 Creating receipt for sub-order items with online payment");
+          const receiptData = await postJSON(appendIdentifier("/receipts"), {
+            order_id: orderId,
+            payment_method: "Online",
+            amount: subOrderTotal,
+            items: itemsPayload.map(item => ({
+              ...item,
+              payment_method: "Online",
+            })),
+          });
+          
+          console.log("✅ Receipt created for sub-order:", receiptData);
+        } catch (err) {
+          console.error("❌ Failed to create receipt for sub-order:", err);
+        }
       }
 
       // clear only NEW items
@@ -4492,14 +4839,14 @@ await postJSON(appendIdentifier("/orders/order-items"), {
         "qr_active_order",
         JSON.stringify({
           orderId,
-          orderType,
-          table: orderType === "table" ? table : null,
+          orderType: type,
+          table: type === "table" ? table : null,
         })
       );
       storage.setItem("qr_active_order_id", String(orderId));
-      if (orderType === "table" && table)
+      if (type === "table" && table)
         storage.setItem("qr_table", String(table));
-      storage.setItem("qr_orderType", orderType);
+      storage.setItem("qr_orderType", type);
       storage.setItem("qr_payment_method", paymentMethod);
       storage.setItem("qr_show_status", "1");
 
@@ -4526,12 +4873,12 @@ await postJSON(appendIdentifier("/orders/order-items"), {
 const created = await postJSON(
   appendIdentifier("/orders"),
   buildOrderPayload({
-    orderType,
+    orderType: type,
     table,
     items: newItems,
     total,
-    customer: orderType === "online" ? customerInfo : null,
-    takeaway: orderType === "takeaway" ? takeaway : null,
+    customer: type === "online" ? deliveryInfo || customerInfo : null,
+    takeaway: type === "takeaway" ? takeaway : null,
     paymentMethod,
     tableGeo,
   })
@@ -4566,14 +4913,14 @@ const created = await postJSON(
       "qr_active_order",
       JSON.stringify({
         orderId: newId,
-        orderType,
-        table: orderType === "table" ? table : null,
+        orderType: type,
+        table: type === "table" ? table : null,
       })
     );
     storage.setItem("qr_active_order_id", String(newId));
-    if (orderType === "table" && table)
+    if (type === "table" && table)
       storage.setItem("qr_table", String(table));
-    storage.setItem("qr_orderType", orderType);
+    storage.setItem("qr_orderType", type);
     storage.setItem("qr_payment_method", paymentMethod);
     storage.setItem("qr_show_status", "1");
 
@@ -4590,117 +4937,144 @@ const created = await postJSON(
   }
 }
 
-function handleReset() {
-  setShowStatus(false);
-  setOrderStatus("pending");
-  setCart([]);
-  storage.removeItem("qr_cart");
-  storage.setItem("qr_show_status", "0");
-
-  if (orderType === "table") {
-    // Stay on same table & keep orderId for sub-orders
-    // Do NOT remove qr_active_order
-    return;
-  }
-
-  // Online flow: clear session
-  setOrderId(null);
-  setOrderType(null);
-  setCustomerInfo(null);
-  setActiveOrder(null);
-  setOrderScreenStatus(null);
-  storage.removeItem("qr_active_order");
-}
+		function handleReset() {
+		  // Check if order is delivered or cancelled - if so, navigate to home
+		  const status = (orderScreenStatus || "").toLowerCase();
+		  const isFinished = ["delivered", "served", "cancelled", "canceled", "closed", "completed"].includes(status);
+		  
+		  if (isFinished) {
+		    // Order is complete - navigate to home and clear everything
+		    resetToTypePicker();
+		  } else {
+		    // Order still active - just hide status to return to menu
+		    setShowStatus(false);
+		    storage.setItem("qr_show_status", "0");
+		  }
+		}
 
 
   
 
-return (
-  <>
-    <div
-      className={`${isDarkMain ? "dark " : ""}flex-1`}
-      style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
-    >
-      <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-50 dark:bg-neutral-900 flex flex-col">
-        <QrHeader
-          orderType={orderType}
-          table={table}
-          onClose={handleCloseOrderPage}
-          t={t}
-          restaurantName={brandName}
-          lang={lang}
-          setLang={setLang}
-        />
+	return (
+	  <>
+	    {showHome ? (
+	      <>
+	        <OrderTypeSelect
+	          identifier={restaurantIdentifier}
+	          onSelect={triggerOrderType}
+	          lang={lang}
+	          setLang={setLang}
+	          t={t}
+	          onInstallClick={handleInstallClick}
+	          canInstall={canInstall}
+	          showHelp={showHelp}
+	          setShowHelp={setShowHelp}
+	          platform={platform}
+	          onPopularClick={handlePopularProductClick}
+	          onCustomizationLoaded={(next) =>
+	            setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
+	          }
+	        />
 
-        <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-24">
-          <div className="grid grid-cols-1 xl:grid-cols-[320px,1fr,220px] gap-4 lg:gap-5 xl:gap-6 items-start">
-            {isDesktopLayout && (
-              <aside className="hidden xl:block sticky top-[76px] h-[calc(100vh-140px)]">
-                <CartDrawer
-                  cart={safeCart}
-                  setCart={setCart}
-                  onSubmitOrder={handleSubmitOrder}
-                  orderType={orderType}
-                  paymentMethod={paymentMethod}
-                  setPaymentMethod={setPaymentMethod}
-                  submitting={submitting}
-                  onOrderAnother={handleOrderAnother}
-                  t={t}
-                  hasActiveOrder={hasActiveOrder}
-                  orderScreenStatus={orderScreenStatus}
-                  onShowStatus={() => {
-                    window.dispatchEvent(new Event("qr:cart-close"));
-                    const savedId = Number(storage.getItem("qr_active_order_id")) || null;
-                    if (!orderId && savedId) {
-                      setOrderId(savedId);
-                    }
-                    setOrderStatus("success");
-                    setShowStatus(true);
-                    storage.setItem("qr_show_status", "1");
-                  }}
-                  isOrderStatusOpen={showStatus}
-                  onOpenCart={() => {
-                    setShowStatus(false);
-                    storage.setItem("qr_show_status", "0");
-                  }}
-                  layout="panel"
-                />
-              </aside>
-            )}
+	        {!orderType && showOrderTypePrompt && pendingPopularProduct && (
+	          <OrderTypePromptModal
+	            product={pendingPopularProduct}
+	            t={t}
+	            onClose={() => {
+	              setShowOrderTypePrompt(false);
+	              setPendingPopularProduct(null);
+	              setReturnHomeAfterAdd(false);
+	            }}
+	            onSelect={(type) => {
+	              triggerOrderType(type);
+	              setShowOrderTypePrompt(false);
+	            }}
+	            deliveryEnabled={orderSelectCustomization.delivery_enabled !== false}
+	          />
+	        )}
+	      </>
+	    ) : (
+	      <div
+	        className={`${isDarkMain ? "dark " : ""}flex-1`}
+	        style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
+	      >
+		        <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-50 dark:bg-neutral-900 flex flex-col">
+		          <QrHeader
+		            orderType={orderType}
+		            table={table}
+		            onClose={handleCloseOrderPage}
+		            t={t}
+		            restaurantName={brandName}
+		            searchValue={menuSearch}
+		            onSearchChange={setMenuSearch}
+		            searchPlaceholder={t("Search products")}
+		          />
 
-            <section className="order-2 xl:order-none">
-              <ProductGrid
-                products={productsInActiveCategory}
-                onProductClick={(product) => {
-                  setSelectedProduct(product);
-                  setShowAddModal(true);
-                }}
-                t={t}
-              />
-            </section>
+		          <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-24">
+		            <div className="grid grid-cols-1 xl:grid-cols-[320px,1fr] gap-4 lg:gap-5 xl:gap-6 items-start">
+		              {isDesktopLayout && (
+		                <aside className="hidden xl:block sticky top-[76px] h-[calc(100vh-140px)]">
+		                  <CartDrawer
+	                    cart={safeCart}
+	                    setCart={setCart}
+	                    onSubmitOrder={handleSubmitOrder}
+	                    orderType={orderType}
+	                    paymentMethod={paymentMethod}
+	                    setPaymentMethod={setPaymentMethod}
+	                    submitting={submitting}
+	                    onOrderAnother={handleOrderAnother}
+	                    t={t}
+	                    hasActiveOrder={hasActiveOrder}
+	                    orderScreenStatus={orderScreenStatus}
+	                    onShowStatus={() => {
+	                      window.dispatchEvent(new Event("qr:cart-close"));
+	                      const savedId = Number(storage.getItem("qr_active_order_id")) || null;
+	                      if (!orderId && savedId) {
+	                        setOrderId(savedId);
+	                      }
+	                      setOrderStatus("success");
+	                      setShowStatus(true);
+	                      storage.setItem("qr_show_status", "1");
+	                    }}
+	                    isOrderStatusOpen={showStatus}
+	                    onOpenCart={() => {
+	                      setShowStatus(false);
+	                      storage.setItem("qr_show_status", "0");
+	                    }}
+	                    layout="panel"
+	                  />
+	                </aside>
+		              )}
 
-            <aside className="hidden lg:block sticky top-[76px] h-[calc(100vh-140px)]">
-              <CategoryRail
-                categories={categories}
-                activeCategory={activeCategory}
-                setActiveCategory={setActiveCategory}
-                categoryImages={categoryImages}
-              />
-            </aside>
-          </div>
-        </div>
+		              <section className="order-2 xl:order-none">
+		                <div className="mb-4">
+		                  <CategoryTopBar
+		                    categories={categories}
+		                    activeCategory={activeCategory}
+		                    setActiveCategory={(cat) => {
+		                      setActiveCategory(cat);
+		                    }}
+		                    categoryImages={categoryImages}
+		                    onCategoryClick={() => {
+		                      setMenuSearch("");
+		                    }}
+		                  />
+		                </div>
+		                <ProductGrid
+		                  products={productsForGrid}
+		                  onProductClick={(product) => {
+		                    setSelectedProduct(product);
+		                    setShowAddModal(true);
+		                  }}
+		                  t={t}
+		                />
+		              </section>
+		            </div>
+		          </div>
 
-        {/* ✅ Hide category bar when any modal (status, delivery, or takeaway) is open */}
-        {!showStatus && !showDeliveryForm && !showTakeawayForm && (
-          <CategoryBar
-            categories={categories}
-            activeCategory={activeCategory}
-            setActiveCategory={setActiveCategory}
-            categoryImages={categoryImages}
-          />
-        )}
-      </div>
-    </div>
+		        </div>
+		      </div>
+		    )}
 
     {!isDesktopLayout && (
       <CartDrawer
@@ -4733,16 +5107,25 @@ return (
       />
     )}
 
-    <AddToCartModal
-      open={showAddModal}
-      product={selectedProduct}
-      extrasGroups={safeExtrasGroups}
-      onClose={() => setShowAddModal(false)}
-      onAddToCart={(item) => {
-  storage.setItem("qr_cart_auto_open", "1");
-  setCart((prev) => [...prev, item]);   // always append new line
-  setShowAddModal(false);
-}}
+	    <AddToCartModal
+	      open={showAddModal}
+	      product={selectedProduct}
+	      extrasGroups={safeExtrasGroups}
+	      onClose={() => {
+	        setShowAddModal(false);
+	        setReturnHomeAfterAdd(false);
+	      }}
+	      onAddToCart={(item) => {
+	  storage.setItem("qr_cart_auto_open", "0");
+	  setCart((prev) => [...prev, item]);   // always append new line
+	  setShowAddModal(false);
+	  if (returnHomeAfterAdd) {
+	    setReturnHomeAfterAdd(false);
+	    setForceHome(true);
+	    setShowDeliveryForm(false);
+	    setShowTakeawayForm(false);
+	  }
+	}}
 
 
       t={t}

@@ -2458,17 +2458,18 @@ const confirmPaymentWithSplits = async (splits) => {
     });
 
     // 4) Create the sub-order and mark items paid (server’s default mark_paid = true)
-const rSub = await secureFetch(`/orders/sub-orders${identifier}`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    order_id: order.id,
-    total: totalDue,
-    payment_method: "Split",
-    receipt_id: receiptId,
-    items: enhancedItems,
-  }),
-});
+	const rSub = await secureFetch(`/orders/sub-orders${identifier}`, {
+	  method: "POST",
+	  headers: { "Content-Type": "application/json" },
+	  body: JSON.stringify({
+	    order_id: order.id,
+	    total: totalDue,
+	    payment_method: "Split",
+	    receipt_id: receiptId,
+	    mark_paid: true,
+	    items: enhancedItems,
+	  }),
+	});
 
 // ✅ secureFetch already throws if not OK — no need to recheck
 if (!rSub?.sub_order_id) {
@@ -3009,9 +3010,17 @@ const fetchPhoneOrder = async (id) => {
     const reopened = await reopenOrderIfNeeded(newOrder);
     if (reopened) newOrder = reopened;
 
-    let correctedStatus = newOrder.status;
-
-    if (newOrder.payment_method === "Online") correctedStatus = "paid";
+    const normalizePaidFlag = (value) => {
+      if (value === true) return true;
+      if (value === false) return false;
+      if (value === 1 || value === "1") return true;
+      if (value === 0 || value === "0") return false;
+      const s = String(value ?? "").trim().toLowerCase();
+      return s === "t" || s === "true" || s === "yes";
+    };
+    const statusLower = String(newOrder?.status ?? "").trim().toLowerCase();
+    const looksPaid = statusLower === "paid" || normalizePaidFlag(newOrder?.is_paid);
+    const correctedStatus = looksPaid ? "paid" : newOrder.status;
 
     setOrder({ ...newOrder, status: correctedStatus });
     await fetchOrderItems(newOrder.id);
@@ -3064,8 +3073,17 @@ const createOrFetchTableOrder = async (tableNumber) => {
       });
     }
 
-    let correctedStatus = newOrder.status;
-    if (newOrder.payment_method === "Online") correctedStatus = "paid";
+    const normalizePaidFlag = (value) => {
+      if (value === true) return true;
+      if (value === false) return false;
+      if (value === 1 || value === "1") return true;
+      if (value === 0 || value === "0") return false;
+      const s = String(value ?? "").trim().toLowerCase();
+      return s === "t" || s === "true" || s === "yes";
+    };
+    const statusLower = String(newOrder?.status ?? "").trim().toLowerCase();
+    const looksPaid = statusLower === "paid" || normalizePaidFlag(newOrder?.is_paid);
+    const correctedStatus = looksPaid ? "paid" : newOrder.status;
 
     setOrder({ ...newOrder, status: correctedStatus });
     // Render the screen immediately; hydrate items in the background.
@@ -3713,11 +3731,15 @@ const confirmPayment = async (method, payIds = null) => {
   let paidTotal = 0;
   let isFullyPaidAfter = false;
 
-  if (order.status !== "paid") {
-    const unpaidItems = cartItems.filter(
-      (i) => idsSet.has(getPaymentItemKey(i)) && !i.paid
-    );
-    let total = unpaidItems
+  const unpaidItems = cartItems.filter(
+    (i) => idsSet.has(getPaymentItemKey(i)) && !i.paid && i.confirmed
+  );
+  if (unpaidItems.length === 0) {
+    showToast(t("No unpaid items to pay."));
+    return;
+  }
+
+  let total = unpaidItems
       .reduce((sum, i) => {
         const maxQty = Math.max(1, Number(i.quantity) || 1);
         const qty = selectionQty.get(getPaymentItemKey(i)) || maxQty;
@@ -3725,69 +3747,86 @@ const confirmPayment = async (method, payIds = null) => {
         return sum + perUnit * qty;
       }, 0);
 
-    if (discountValue > 0) {
-      if (discountType === "percent") total -= total * (discountValue / 100);
-      if (discountType === "fixed") total = Math.max(0, total - discountValue);
-    }
+  if (discountValue > 0) {
+    if (discountType === "percent") total -= total * (discountValue / 100);
+    if (discountType === "fixed") total = Math.max(0, total - discountValue);
+  }
 
-    paidTotal = total;
+  paidTotal = total;
 
-    const enhancedItems = unpaidItems
-      .map((i) => {
-        const qty =
-          selectionQty.get(getPaymentItemKey(i)) || Number(i.quantity) || 1;
-        return {
-          product_id: i.product_id || i.id,
-          quantity: qty,
-          price: i.price,
-          ingredients: i.ingredients,
-          extras: i.extras,
-          unique_id: i.unique_id,
-          payment_method: methodLabel,
-          receipt_id: receiptId,
-          note: i.note || null,
-          discountType: discountValue > 0 ? discountType : null,
-          discountValue: discountValue > 0 ? discountValue : 0,
-          confirmed: true,
-        };
-      });
+  const enhancedItems = unpaidItems.map((i) => {
+    const qty = selectionQty.get(getPaymentItemKey(i)) || Number(i.quantity) || 1;
+    return {
+      product_id: i.product_id || i.id,
+      quantity: qty,
+      price: i.price,
+      ingredients: i.ingredients,
+      extras: i.extras,
+      unique_id: i.unique_id,
+      payment_method: methodLabel,
+      receipt_id: receiptId,
+      note: i.note || null,
+      discountType: discountValue > 0 ? discountType : null,
+      discountValue: discountValue > 0 ? discountValue : 0,
+      confirmed: true,
+    };
+  });
 
-    await secureFetch(`/orders/sub-orders${identifier}`, {
+  await secureFetch(`/orders/sub-orders${identifier}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      order_id: order.id,
+      total,
+      payment_method: methodLabel,
+      receipt_id: receiptId,
+      mark_paid: true,
+      items: enhancedItems,
+    }),
+  });
+
+  // Also create a receipt for the sub-order to ensure items are marked as paid
+  try {
+    await secureFetch(`/receipts${identifier}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         order_id: order.id,
-        total,
         payment_method: methodLabel,
+        amount: total,
         receipt_id: receiptId,
         items: enhancedItems,
       }),
     });
+    console.log("✅ Receipt created for sub-order payment");
+  } catch (receiptErr) {
+    console.error("⚠️ Failed to create receipt for sub-order:", receiptErr);
+  }
 
-    // ⚡ INSTANT: Update UI immediately + dispatch refresh (don't wait for everything)
-    setCartItems((prev) => {
-      const next = [];
-      (Array.isArray(prev) ? prev : []).forEach((item) => {
-        const key = getPaymentItemKey(item);
-        if (!idsSet.has(key) || item.paid) {
-          next.push(item);
-          return;
-        }
-        const originalQty = Math.max(1, Number(item.quantity) || 1);
-        const payQty = selectionQty.get(key) || originalQty;
-        const remainingQty = Math.max(0, originalQty - payQty);
-        if (remainingQty > 0) {
-          next.push({ ...item, quantity: remainingQty, paid: false, paid_at: null });
-        }
-        next.push({
-          ...item,
-          quantity: payQty,
-          paid: true,
-          paid_at: new Date().toISOString(),
-        });
+  // ⚡ INSTANT: Update UI immediately + dispatch refresh (don't wait for everything)
+  setCartItems((prev) => {
+    const next = [];
+    (Array.isArray(prev) ? prev : []).forEach((item) => {
+      const key = getPaymentItemKey(item);
+      if (!idsSet.has(key) || item.paid) {
+        next.push(item);
+        return;
+      }
+      const originalQty = Math.max(1, Number(item.quantity) || 1);
+      const payQty = selectionQty.get(key) || originalQty;
+      const remainingQty = Math.max(0, originalQty - payQty);
+      if (remainingQty > 0) {
+        next.push({ ...item, quantity: remainingQty, paid: false, paid_at: null });
+      }
+      next.push({
+        ...item,
+        quantity: payQty,
+        paid: true,
+        paid_at: new Date().toISOString(),
       });
-      return next;
     });
+    return next;
+  });
 
     // ⚡ Fire table update IMMEDIATELY (don't block on receipt methods)
     dispatchOrdersLocalRefresh();
@@ -3833,11 +3872,10 @@ const confirmPayment = async (method, payIds = null) => {
     const isFullyPaid2 = allItems2.every((item) => item.paid_at);
     isFullyPaidAfter = isFullyPaid2;
 
-    if (isFullyPaid2) {
-      await updateOrderStatus("paid", total, method);
-      setOrder((prev) => ({ ...prev, status: "paid" }));
-      await runAutoCloseIfConfigured(true, [method]);
-    }
+  if (isFullyPaid2) {
+    await updateOrderStatus("paid", total, method);
+    setOrder((prev) => ({ ...prev, status: "paid" }));
+    await runAutoCloseIfConfigured(true, [method]);
   }
 
   await refreshReceiptAfterPayment();
@@ -3859,9 +3897,10 @@ const confirmPayment = async (method, payIds = null) => {
 
 const getPrimaryActionLabel = () => {
   if (!order) return "Preparing..";
-  if (order.payment_method === "Online") return "Close";
   if (hasUnconfirmedCartItems) return "Confirm";
   if (hasConfirmedCartUnpaid || hasSuborderUnpaid) return "Pay Later";
+  if (String(order?.status ?? "").trim().toLowerCase() === "paid" || !!order?.is_paid)
+    return "Close";
   return "Close";
 };
 
@@ -4865,7 +4904,7 @@ const renderCartContent = (variant = "desktop") => {
         : t("Pay Later"),
     footerCancelDisabled:
       normalizedStatus !== "confirmed" || hasUnconfirmedCartItems || cartItems.length === 0,
-    footerCanShowCancel: orderType === "table",
+    footerCanShowCancel: orderType === "table" || orderType === "takeaway",
     footerPrimaryActionLabel: primaryActionLabel,
   };
 
@@ -4942,7 +4981,7 @@ const renderCartContent = (variant = "desktop") => {
     !["confirmed", "paid"].includes(normalizedStatus) ||
     hasUnconfirmedCartItems ||
     cartItems.length === 0;
-  const footerCanShowCancel = orderType === "table";
+  const footerCanShowCancel = orderType === "table" || orderType === "takeaway";
   const shouldBlockUi = deferHeavyUi || (loading && !tableId);
   if (shouldBlockUi) {
     return (
