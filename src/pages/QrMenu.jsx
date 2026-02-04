@@ -4578,17 +4578,13 @@ async function handleOrderAnother() {
 // ---- helpers ----
 async function postJSON(url, body) {
   try {
-    // Try to include Authorization explicitly for protected endpoints
-    const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get("token");
-    const storedToken = getStoredToken();
-    const token = urlToken || storedToken || null;
-
+    // IMPORTANT: QRMenu order placement should use the backend's public QR POST flow (identifier-based).
+    // Do not send an Authorization header here, otherwise some tokens can hit MODULE_NOT_ALLOWED.
     const json = await secureFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Authorization: "",
       },
       body: JSON.stringify(body),
     });
