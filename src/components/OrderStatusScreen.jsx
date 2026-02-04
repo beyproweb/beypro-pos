@@ -724,8 +724,14 @@ const OrderStatusScreen = ({
 
   const paymentLabel = pmLabel(order?.payment_method || "");
 
-  const titleLine = (() => {
-    const tableLine = tableNo ? `${t("Table")} ${tableNo}` : null;
+	  const titleLine = (() => {
+	    const tableLine = tableNo ? `${t("Table")} ${tableNo}` : null;
+	    const ot = String(order?.order_type || "")
+	      .trim()
+	      .toLowerCase();
+	    if (ot === "table") {
+	      return tableLine || t("Table");
+    }
     return [orderTypeLabel, tableLine].filter(Boolean).join(" • ");
   })();
 
