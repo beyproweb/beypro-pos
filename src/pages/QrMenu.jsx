@@ -11,6 +11,7 @@ import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { UtensilsCrossed, Soup, Bike, Phone, Share2, Search } from "lucide-react";
 import { Instagram, Music2, Globe } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
+import { io } from "socket.io-client";
 
 const RAW_API = import.meta.env.VITE_API_URL || "";
 const API_ROOT = RAW_API.replace(/\/+$/, "");
@@ -21,6 +22,7 @@ const API_URL = API_BASE ? `${API_BASE}/api` : "/api";
 const apiUrl = (path) =>
   `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
 const QR_PREFIX = "qr_";
+const QR_TOKEN_KEY = "qr_token";
 
 function computeTenantSuffix() {
   if (typeof window === "undefined") return "";
@@ -70,6 +72,27 @@ function getQrKeyVariants(key) {
   const scoped = resolveQrKey(key);
   if (scoped === key) return [key];
   return [scoped, key];
+}
+
+function boolish(value, defaultValue = true) {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  if (typeof value === "boolean") return value;
+  const s = String(value).trim().toLowerCase();
+  if (["false", "0", "no", "off"].includes(s)) return false;
+  if (["true", "1", "yes", "on"].includes(s)) return true;
+  return defaultValue;
+}
+
+function parseRestaurantIdFromIdentifier(identifier) {
+  const raw = String(identifier || "").trim();
+  if (!raw) return null;
+  // patterns: "hurrybey:1", "tenant_1", "1"
+  const colon = raw.split(":");
+  const last = colon[colon.length - 1];
+  const match = String(last).match(/(\d+)$/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 const storage = {
@@ -166,7 +189,7 @@ function normalizeToken(raw) {
 
 function getStoredToken() {
   try {
-    const direct = storage.getItem("token");
+    const direct = storage.getItem(QR_TOKEN_KEY);
     let candidate = null;
 
     if (direct && direct !== "null" && direct !== "undefined") {
@@ -563,13 +586,13 @@ const LANGS = [
 function LanguageSwitcher({ lang, setLang, t }) {
   return (
     <div className="flex items-center gap-2">
-      <label className="hidden sm:block text-[11px] uppercase tracking-[0.15em] text-gray-500">
+      <label className="hidden sm:block text-[11px] uppercase tracking-[0.15em] text-gray-500 dark:text-neutral-400">
         {t("Language")}
       </label>
       <select
         value={lang}
         onChange={(e) => setLang(e.target.value)}
-        className="appearance-none rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 shadow-sm hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300"
+        className="appearance-none rounded-full border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs text-gray-700 dark:text-neutral-100 shadow-sm hover:border-gray-400 dark:hover:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-gray-300/60 dark:focus:ring-white/10"
         aria-label={t("Language")}
       >
         {LANGS.map((l) => (
@@ -586,29 +609,32 @@ function TableQrScannerModal({ open, tableNumber, onClose, error, t }) {
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden">
-        <div className="p-5 border-b border-gray-100">
-          <div className="text-lg font-semibold text-gray-900">{t("Scan Table QR")}</div>
-          <div className="text-sm text-gray-600 mt-1">
+      <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+        <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
+          <div className="text-lg font-semibold text-gray-900 dark:text-neutral-100">{t("Scan Table QR")}</div>
+          <div className="text-sm text-gray-600 dark:text-neutral-300 mt-1">
             {t("Scan the QR code on your table to continue.")}
           </div>
           {tableNumber ? (
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-500 dark:text-neutral-400">
               {t("Table")} {String(tableNumber).padStart(2, "0")}
             </div>
           ) : null}
         </div>
         <div className="p-5">
-          <div id="qr-table-reader" className="w-full rounded-2xl overflow-hidden bg-gray-100" />
+          <div
+            id="qr-table-reader"
+            className="w-full rounded-2xl overflow-hidden bg-gray-100 dark:bg-neutral-950"
+          />
           {error ? (
             <div className="mt-3 text-sm text-red-600">{error}</div>
           ) : null}
         </div>
         <div className="p-4 pt-0">
-		        <button
+			        <button
             type="button"
             onClick={onClose}
-            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            className="w-full rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 py-2.5 text-sm font-semibold text-gray-700 dark:text-neutral-100 hover:bg-gray-50 dark:hover:bg-neutral-800"
           >
             {t("Cancel")}
           </button>
@@ -757,7 +783,7 @@ async function load() {
   const subtitle = c.subtitle || "Welcome";
   const tagline = c.tagline || "Fresh • Crafted • Delicious";
   const phoneNumber = c.phone || "";
-  const allowDelivery = c.delivery_enabled !== false;
+  const allowDelivery = boolish(c.delivery_enabled, true);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
   const logoUrl = c.logo || "/logo192.png";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
@@ -1492,7 +1518,7 @@ async function load() {
 
 
 /* ====================== TAKEAWAY ORDER FORM ====================== */
-function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
+function TakeawayOrderForm({ submitting, t, onClose, onSubmit, deliveryEnabled = true }) {
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
     name: "",
@@ -1504,6 +1530,14 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
     notes: "",
   });
   const [touched, setTouched] = useState({});
+
+  useEffect(() => {
+    if (deliveryEnabled) return;
+    setForm((f) => {
+      if (f.mode !== "delivery") return f;
+      return { ...f, mode: "pickup", address: "" };
+    });
+  }, [deliveryEnabled]);
 
   const requiresAddress = form.mode === "delivery";
   const phoneValid = /^(5\d{9}|[578]\d{7})$/.test(form.phone);
@@ -1611,36 +1645,45 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit }) {
             />
           </div>
 
-          {/* Pickup / Delivery toggle */}
-          <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1">
-              {t("Pickup / Delivery")}
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, mode: "pickup" }))}
-                className={`py-2.5 rounded-xl text-sm font-semibold border ${
-                  form.mode === "pickup"
-                    ? "bg-neutral-900 text-white border-neutral-900"
-                    : "bg-white text-neutral-700 border-neutral-300"
-                }`}
-              >
-                🛍️ {t("Pickup")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, mode: "delivery" }))}
-                className={`py-2.5 rounded-xl text-sm font-semibold border ${
-                  form.mode === "delivery"
-                    ? "bg-neutral-900 text-white border-neutral-900"
-                    : "bg-white text-neutral-700 border-neutral-300"
-                }`}
-              >
-                🛵 {t("Delivery")}
-              </button>
-            </div>
-          </div>
+	          {/* Pickup / Delivery toggle */}
+	          <div>
+	            <label className="block text-sm font-medium text-neutral-700 mb-1">
+	              {t("Pickup / Delivery")}
+	            </label>
+	            <div className="grid grid-cols-2 gap-2">
+	              <button
+	                type="button"
+	                onClick={() => setForm((f) => ({ ...f, mode: "pickup" }))}
+	                className={`py-2.5 rounded-xl text-sm font-semibold border ${
+	                  form.mode === "pickup"
+	                    ? "bg-neutral-900 text-white border-neutral-900"
+	                    : "bg-white text-neutral-700 border-neutral-300"
+	                }`}
+	              >
+	                🛍️ {t("Pickup")}
+	              </button>
+	              <button
+	                type="button"
+	                onClick={() => {
+	                  if (!deliveryEnabled) return;
+	                  setForm((f) => ({ ...f, mode: "delivery" }));
+	                }}
+	                disabled={!deliveryEnabled}
+	                className={`py-2.5 rounded-xl text-sm font-semibold border ${
+	                  form.mode === "delivery"
+	                    ? "bg-neutral-900 text-white border-neutral-900"
+	                    : "bg-white text-neutral-700 border-neutral-300"
+	                }`}
+	              >
+	                🛵 {t("Delivery")}
+	              </button>
+	            </div>
+	            {!deliveryEnabled ? (
+	              <div className="mt-2 text-xs font-medium text-rose-600">
+	                {t("Delivery is closed")}
+	              </div>
+	            ) : null}
+	          </div>
 
           {/* Address (only for delivery) */}
           {form.mode === "delivery" && (
@@ -2183,10 +2226,10 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
         )}
 
         {/* Scrollable Categories */}
-        <div
-          ref={scrollRef}
-          className="flex flex-nowrap gap-2 md:gap-3 px-10 sm:px-12 py-2 md:py-3 overflow-x-auto scrollbar-none scroll-smooth"
-        >
+	        <div
+	          ref={scrollRef}
+	          className="flex flex-nowrap gap-2 md:gap-3 px-10 sm:px-12 py-2 md:py-3 overflow-x-auto scrollbar-hide scroll-smooth"
+	        >
           {categoryList.map((cat, idx) => {
             const key = cat?.toLowerCase?.();
             const imgSrc = categoryImages?.[key];
@@ -2260,11 +2303,11 @@ function CategoryTopBar({
 
   return (
     <div className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-sm px-2 py-1">
-      <div
-        ref={scrollRef}
-        className="flex items-center gap-1.5 overflow-x-auto no-scrollbar px-0.5"
-        style={{ scrollBehavior: "smooth" }}
-      >
+	      <div
+	        ref={scrollRef}
+	        className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide px-0.5"
+	        style={{ scrollBehavior: "smooth" }}
+	      >
         {categoryList.map((cat, idx) => {
           const key = cat?.toLowerCase?.();
           const imgSrc = categoryImages?.[key];
@@ -3227,12 +3270,12 @@ function CartDrawer({
               setShow(true);
             }
 	          }}
-	          className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-full min-w-[260px] font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
-	            hasActiveOrder
-	              ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
-	              : "bg-sky-700 text-white hover:bg-sky-800 hover:scale-105"
-	          }`}
-	        >
+		          className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-full min-w-[260px] font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
+		            hasActiveOrder
+		              ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
+		              : "bg-sky-700 dark:bg-sky-600 text-white hover:bg-sky-800 dark:hover:bg-sky-500 hover:scale-105"
+		          }`}
+		        >
           <span className="text-xl">🛒</span>
           <div className="flex flex-col items-start">
             <span className="text-sm">
@@ -3420,7 +3463,7 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const urlToken = params.get("token");
       if (urlToken) {
-        storage.setItem("token", urlToken);
+        storage.setItem(QR_TOKEN_KEY, urlToken);
         return;
       }
     } catch {}
@@ -3437,7 +3480,7 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
         if (!res.ok) return;
         const data = await res.json();
         if (data && data.qr_token) {
-          storage.setItem("token", data.qr_token);
+          storage.setItem(QR_TOKEN_KEY, data.qr_token);
         }
       } catch {}
     })();
@@ -3478,6 +3521,16 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
   const sFetch = useCallback((path, options) => {
     return secureFetch(appendIdentifier(path), options);
   }, [appendIdentifier]);
+
+  const socketRestaurantId = useMemo(() => {
+    // Prefer explicit numeric id if present.
+    try {
+      const stored = window?.localStorage?.getItem("restaurant_id");
+      const n = stored ? Number(stored) : NaN;
+      if (Number.isFinite(n) && n > 0) return n;
+    } catch {}
+    return parseRestaurantIdFromIdentifier(restaurantIdentifier);
+  }, [restaurantIdentifier]);
 
 const shareUrl = useMemo(() => {
   const origin = window.location.origin;
@@ -3559,6 +3612,7 @@ const shareUrl = useMemo(() => {
   const [tables, setTables] = useState([]);
   const [isDarkMain, setIsDarkMain] = React.useState(false);
   const [orderCancelReason, setOrderCancelReason] = useState("");
+  const orderIdToTableRef = useRef(new Map());
 
   const [submitting, setSubmitting] = useState(false);
   const [categoryImages, setCategoryImages] = useState({});
@@ -4199,7 +4253,7 @@ if (savedTable) {
   useOrderSocket(refreshOrderScreenStatus, orderId);
 
   // Also refresh once whenever orderId changes (e.g. after first submit)
-  useEffect(() => {
+	useEffect(() => {
     refreshOrderScreenStatus();
   }, [refreshOrderScreenStatus]);
 
@@ -4242,7 +4296,142 @@ useEffect(() => {
       setCategoryImages({});
     }
   })();
-}, [restaurantIdentifier]);
+	}, [restaurantIdentifier]);
+
+  const refreshOccupiedTables = useCallback(async () => {
+    const token = getStoredToken();
+    if (!token) return;
+    try {
+      const orders = await sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } });
+      const list = parseArray(orders);
+      try {
+        const nextMap = new Map();
+        toArray(list).forEach((o) => {
+          const oid = Number(o?.id);
+          const tno = Number(o?.table_number);
+          if (Number.isFinite(oid) && Number.isFinite(tno) && tno > 0) nextMap.set(oid, tno);
+        });
+        orderIdToTableRef.current = nextMap;
+      } catch {}
+      const occupied = toArray(list)
+        .filter((order) => {
+          if (!order?.table_number) return false;
+          const status = String(order?.status || "").toLowerCase();
+          return !["closed", "completed", "canceled", "cancelled"].includes(status);
+        })
+        .map((order) => Number(order.table_number))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      setOccupiedTables(occupied);
+    } catch (err) {
+      console.warn("⚠️ Failed to refresh occupied tables:", err);
+    }
+  }, [sFetch]);
+
+  // Realtime table occupancy: join restaurant room and refresh on order events.
+  useEffect(() => {
+    if (!socketRestaurantId) return;
+    const SOCKET_URL =
+      import.meta.env.VITE_SOCKET_URL ||
+      (API_BASE ? String(API_BASE) : "") ||
+      (typeof window !== "undefined" ? window.location.origin : "");
+
+    const s = io(SOCKET_URL, {
+      path: "/socket.io",
+      transports: ["polling", "websocket"],
+      upgrade: true,
+      withCredentials: true,
+      timeout: 20000,
+      auth: { restaurantId: socketRestaurantId },
+    });
+
+    let refreshTimer = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        refreshOccupiedTables();
+      }, 50);
+    };
+
+    try {
+      s.emit("join_restaurant", socketRestaurantId);
+    } catch {}
+
+    const upsertOccupied = (tableNo) => {
+      const n = Number(tableNo);
+      if (!Number.isFinite(n) || n <= 0) return;
+      setOccupiedTables((prev) => {
+        const next = new Set(toArray(prev).map(Number));
+        next.add(n);
+        return Array.from(next);
+      });
+    };
+
+    const removeOccupied = (tableNo) => {
+      const n = Number(tableNo);
+      if (!Number.isFinite(n) || n <= 0) return;
+      setOccupiedTables((prev) => toArray(prev).map(Number).filter((x) => x !== n));
+    };
+
+    const onConfirmed = (payload) => {
+      const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
+      const tableNo =
+        payload?.table_number ??
+        payload?.order?.table_number ??
+        payload?.tableNumber ??
+        null;
+      if (Number.isFinite(orderId)) {
+        const tno = Number(tableNo);
+        if (Number.isFinite(tno) && tno > 0) orderIdToTableRef.current.set(orderId, tno);
+      }
+      if (tableNo) upsertOccupied(tableNo);
+      scheduleRefresh();
+    };
+
+    const onCancelled = (payload) => {
+      const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
+      const tableNo = payload?.table_number ?? payload?.order?.table_number ?? null;
+      if (tableNo) removeOccupied(tableNo);
+      else if (Number.isFinite(orderId)) {
+        const cached = orderIdToTableRef.current.get(orderId);
+        if (cached) removeOccupied(cached);
+      }
+      if (Number.isFinite(orderId)) orderIdToTableRef.current.delete(orderId);
+      scheduleRefresh();
+    };
+
+    const onClosed = (payload) => {
+      const orderId = Number(payload?.orderId ?? payload?.id);
+      if (Number.isFinite(orderId)) {
+        const cached = orderIdToTableRef.current.get(orderId);
+        if (cached) removeOccupied(cached);
+        orderIdToTableRef.current.delete(orderId);
+      }
+      scheduleRefresh();
+    };
+
+    const onAny = () => scheduleRefresh();
+    s.on("order_confirmed", onConfirmed);
+    s.on("orders_updated", onAny);
+    s.on("order_cancelled", onCancelled);
+    s.on("order_closed", onClosed);
+
+    // Initial refresh on connect
+    s.on("connect", () => scheduleRefresh());
+
+    return () => {
+      try {
+        if (refreshTimer) window.clearTimeout(refreshTimer);
+      } catch {}
+      try {
+        s.off("order_confirmed", onConfirmed);
+        s.off("orders_updated", onAny);
+        s.off("order_cancelled", onCancelled);
+        s.off("order_closed", onClosed);
+        s.disconnect();
+      } catch {}
+    };
+  }, [socketRestaurantId, refreshOccupiedTables]);
 
 
 
@@ -4429,25 +4618,27 @@ const myTable =
 
   return (
     <>
-<ModernTableSelector
-  tables={tables}
-  occupiedNumbers={filteredOccupied}
-  occupiedLabel={t("Occupied")}
-  onSelect={(tbl) => {
-    openTableScanner(tbl?.tableNumber);
-  }}
-  onBack={() => {
-    setOrderType(null);
-  }}
-/>
+      <div className={isDarkMain ? "dark" : ""}>
+        <ModernTableSelector
+          tables={tables}
+          occupiedNumbers={filteredOccupied}
+          occupiedLabel={t("Occupied")}
+          onSelect={(tbl) => {
+            openTableScanner(tbl?.tableNumber);
+          }}
+          onBack={() => {
+            setOrderType(null);
+          }}
+        />
 
-      <TableQrScannerModal
-        open={showTableScanner}
-        tableNumber={tableScanTarget}
-        onClose={closeTableScanner}
-        error={tableScanError}
-        t={t}
-      />
+        <TableQrScannerModal
+          open={showTableScanner}
+          tableNumber={tableScanTarget}
+          onClose={closeTableScanner}
+          error={tableScanError}
+          t={t}
+        />
+      </div>
 
 
 
@@ -4941,6 +5132,17 @@ const created = await postJSON(
     }
 
     setOrderId(newId);
+    // Optimistically mark table as occupied immediately for other sessions on this device.
+    if (type === "table" && table) {
+      const nTable = Number(table);
+      if (Number.isFinite(nTable) && nTable > 0) {
+        setOccupiedTables((prev) => {
+          const next = new Set(toArray(prev).map(Number));
+          next.add(nTable);
+          return Array.from(next);
+        });
+      }
+    }
     storage.setItem(
       "qr_active_order",
       JSON.stringify({
@@ -5008,22 +5210,22 @@ const created = await postJSON(
 	          }
 	        />
 
-	        {!orderType && showOrderTypePrompt && pendingPopularProduct && (
-	          <OrderTypePromptModal
-	            product={pendingPopularProduct}
-	            t={t}
-	            onClose={() => {
-	              setShowOrderTypePrompt(false);
-	              setPendingPopularProduct(null);
-	              setReturnHomeAfterAdd(false);
-	            }}
-	            onSelect={(type) => {
-	              triggerOrderType(type);
-	              setShowOrderTypePrompt(false);
-	            }}
-	            deliveryEnabled={orderSelectCustomization.delivery_enabled !== false}
-	          />
-	        )}
+		        {!orderType && showOrderTypePrompt && pendingPopularProduct && (
+		          <OrderTypePromptModal
+		            product={pendingPopularProduct}
+		            t={t}
+		            onClose={() => {
+		              setShowOrderTypePrompt(false);
+		              setPendingPopularProduct(null);
+		              setReturnHomeAfterAdd(false);
+		            }}
+		            onSelect={(type) => {
+		              triggerOrderType(type);
+		              setShowOrderTypePrompt(false);
+		            }}
+		            deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}
+		          />
+		        )}
 	      </>
 	    ) : (
 	      <div
@@ -5193,6 +5395,7 @@ const created = await postJSON(
   <TakeawayOrderForm
     submitting={submitting}
     t={t}
+    deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true)}
     onClose={() => {
       setShowTakeawayForm(false);
       setOrderType(null); // 👈 return to order type picker

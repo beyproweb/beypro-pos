@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import secureFetch from "../utils/secureFetch";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import socket from "../utils/socket";
 import { useCurrency } from "./CurrencyContext";
 
@@ -499,9 +499,7 @@ export function NotificationsProvider({ children }) {
     const tick = async () => {
       try {
         const rid = getRestaurantId();
-        const hasToken =
-          typeof window !== "undefined" &&
-          !!(localStorage.getItem("token") || sessionStorage.getItem("token"));
+        const hasToken = !!getAuthToken();
         if (!rid || !hasToken) {
           schedule(pollMs);
           return;

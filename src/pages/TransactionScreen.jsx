@@ -4914,6 +4914,7 @@ const renderCartContent = (variant = "desktop") => {
     selectedCount: selectedCartItemIds.size,
     isPhoneOrder,
     hasConfirmedCartUnpaid,
+    hasSuborderUnpaid,
     allCartItemsPaid,
     normalizedStatus,
     isFloatingCartOpen,
@@ -4942,6 +4943,7 @@ const renderCartContent = (variant = "desktop") => {
     navigate,
     setIsFloatingCartOpen,
     handleMultifunction,
+    handlePayClick,
     hasUnpaidConfirmed,
   };
 

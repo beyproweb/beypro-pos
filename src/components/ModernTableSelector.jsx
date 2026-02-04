@@ -18,21 +18,21 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack, occ
   const occupiedSet = useMemo(() => new Set((occupiedNumbers || []).map((n) => Number(n))), [occupiedNumbers]);
 
   return (
-    <div className="min-h-screen w-full px-4 py-6 bg-gradient-to-br from-[#fafafa] to-[#f0f2f5]">
+    <div className="min-h-screen w-full px-4 py-6 bg-gradient-to-br from-[#fafafa] to-[#f0f2f5] dark:from-neutral-950 dark:to-neutral-900 text-neutral-900 dark:text-neutral-100">
       {/* HEADER */}
       <div className="flex items-center gap-4 mb-6">
         <button
           onClick={onBack}
           className="
             w-10 h-10 flex items-center justify-center rounded-full 
-            bg-white/80 backdrop-blur-md border border-gray-200 
-            shadow-sm hover:bg-gray-100 transition
+            bg-white/80 dark:bg-neutral-900/70 backdrop-blur-md border border-gray-200 dark:border-neutral-800 
+            shadow-sm hover:bg-gray-100 dark:hover:bg-neutral-800 transition
           "
         >
-          <ChevronLeft size={22} className="text-gray-700" />
+          <ChevronLeft size={22} className="text-gray-700 dark:text-neutral-200" />
         </button>
 
-        <h1 className="flex-1 text-center text-3xl font-serif font-bold tracking-tight text-gray-900">
+        <h1 className="flex-1 text-center text-3xl font-serif font-bold tracking-tight text-gray-900 dark:text-neutral-50">
           Select Your Table
         </h1>
 
@@ -50,8 +50,8 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack, occ
               whitespace-nowrap px-6 py-2.5 rounded-full text-sm font-medium transition-all
               ${
                 activeArea === area
-                  ? "bg-black text-white shadow-md"
-                  : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-100"
+                  ? "bg-black text-white shadow-md dark:bg-white dark:text-neutral-900"
+                  : "bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-800 hover:bg-gray-100 dark:hover:bg-neutral-800"
               }
             `}
           >
@@ -70,16 +70,16 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack, occ
             onClick={() => { if (!isOcc) onSelect(tbl); }}
             disabled={isOcc}
             className={`
-              w-full p-5 rounded-3xl bg-white/70 backdrop-blur-xl border border-gray-200 
+              w-full p-5 rounded-3xl bg-white/70 dark:bg-neutral-900/70 backdrop-blur-xl border border-gray-200 dark:border-neutral-800 
               shadow-[0_3px_12px_rgba(0,0,0,0.06)] hover:shadow-xl
               hover:-translate-y-1 transition-all duration-300
               text-left flex flex-col gap-3
-              ${isOcc ? 'opacity-60 cursor-not-allowed ring-1 ring-red-200 hover:translate-y-0 hover:shadow-[0_3px_12px_rgba(0,0,0,0.06)]' : ''}
+              ${isOcc ? 'opacity-60 cursor-not-allowed ring-1 ring-red-200 dark:ring-rose-900 hover:translate-y-0 hover:shadow-[0_3px_12px_rgba(0,0,0,0.06)]' : ''}
             `}
           >
             {/* TABLE TITLE */}
             <div className="flex justify-between items-center">
-              <span className="text-2xl font-serif font-bold text-gray-900 tracking-wide">
+              <span className="text-2xl font-serif font-bold text-gray-900 dark:text-neutral-50 tracking-wide">
                 Table {String(tbl.tableNumber).padStart(2, "0")}
               </span>
 
@@ -92,7 +92,7 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack, occ
                 return lbl && lbl.toLowerCase() !== "standard";
               })() ? (
                 <span
-                  className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-900 text-white"
+                  className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-900 text-white dark:bg-white dark:text-neutral-900"
                 >
                   {(tbl.label ?? "").toString().trim()}
                 </span>
@@ -100,12 +100,12 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack, occ
             </div>
 
             {/* AREA LABEL */}
-            <div className="text-sm text-gray-600 flex items-center gap-2">
+            <div className="text-sm text-gray-600 dark:text-neutral-300 flex items-center gap-2">
               📍 <span className="font-medium">{tbl.area}</span>
             </div>
 
             {/* SEATS */}
-            <div className="text-sm text-gray-700 bg-gray-100 rounded-full px-3 py-1 inline-block">
+            <div className="text-sm text-gray-700 dark:text-neutral-200 bg-gray-100 dark:bg-neutral-800 rounded-full px-3 py-1 inline-block">
               🪑 {tbl.seats || tbl.chairs || "?"} Seats
             </div>
 

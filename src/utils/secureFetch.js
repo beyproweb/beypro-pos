@@ -116,21 +116,23 @@ export function getAuthToken() {
     }
   }
 
-  const direct = cleanToken(localStorage.getItem("token"));
-  if (direct) return direct;
-
   try {
     const stored = JSON.parse(localStorage.getItem("beyproUser") || "{}");
-    return (
+    const userToken =
       cleanToken(stored?.token) ||
       cleanToken(stored?.accessToken) ||
       cleanToken(stored?.user?.token) ||
       cleanToken(stored?.user?.accessToken) ||
-      cleanToken(stored?.user?.user?.token)
-    );
+      cleanToken(stored?.user?.user?.token);
+    if (userToken) return userToken;
   } catch {
-    return "";
+    // ignore
   }
+
+  const direct = cleanToken(localStorage.getItem("token"));
+  if (direct) return direct;
+
+  return "";
 }
 
 export default async function secureFetch(endpoint, options = {}) {

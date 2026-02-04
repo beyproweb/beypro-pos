@@ -36,6 +36,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     selectedCount,
     isPhoneOrder,
     hasConfirmedCartUnpaid,
+    hasSuborderUnpaid,
     allCartItemsPaid,
     normalizedStatus,
     isFloatingCartOpen,
@@ -81,8 +82,11 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     navigate,
     setIsFloatingCartOpen,
     handleMultifunction,
+    handlePayClick,
     hasUnpaidConfirmed,
   } = actions;
+
+  const shouldShowPayButton = hasConfirmedCartUnpaid || hasSuborderUnpaid;
 
   return (
     <aside className={containerClasses}>
@@ -603,16 +607,16 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
             </button>
             <button
               type="button"
-              onClick={handleMultifunction}
-              disabled={isPhoneOrder && primaryActionLabel === "Pay"}
+              onClick={shouldShowPayButton ? handlePayClick : handleMultifunction}
+              disabled={isPhoneOrder && shouldShowPayButton}
               title={
-                isPhoneOrder && primaryActionLabel === "Pay"
+                isPhoneOrder && shouldShowPayButton
                   ? t("Payments are handled through the Orders screen")
                   : undefined
               }
               className="flex-1 rounded-full bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(99,102,241,0.35)]"
             >
-              {t(primaryActionLabel)}
+              {shouldShowPayButton ? t("Pay") : t(primaryActionLabel)}
             </button>
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
