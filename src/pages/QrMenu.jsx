@@ -3953,19 +3953,19 @@ useEffect(() => {
 const statusPortalOrderId =
   orderId || Number(storage.getItem("qr_active_order_id")) || null;
 const statusPortal = showStatus && statusPortalOrderId
-	  ? createPortal(
-		        <OrderStatusModal
-		        open={true}
-		        status={orderStatus}
-		        orderId={statusPortalOrderId}
-		        orderType={orderType} 
-		        table={orderType === "table" ? table : null}
-		        onOrderAnother={handleOrderAnother}
-		        onClose={handleReset}
-		        onFinished={resetToTypePicker}
-	        t={t}
-		        appendIdentifier={appendIdentifier}
-		        errorMessage={lastError}
+		  ? createPortal(
+			        <OrderStatusModal
+			        open={true}
+			        status={orderStatus}
+			        orderId={statusPortalOrderId}
+			        orderType={orderType} 
+			        table={orderType === "table" ? table : null}
+			        onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+			        onClose={handleReset}
+			        onFinished={resetToTypePicker}
+		        t={t}
+			        appendIdentifier={appendIdentifier}
+			        errorMessage={lastError}
 		        cancelReason={orderCancelReason}
 		        orderScreenStatus={orderScreenStatus}
 		        forceDark={isDarkMain}
@@ -5248,20 +5248,20 @@ const created = await postJSON(
 		            <div className="grid grid-cols-1 xl:grid-cols-[320px,1fr] gap-4 lg:gap-5 xl:gap-6 items-start">
 		              {isDesktopLayout && (
 		                <aside className="hidden xl:block sticky top-[76px] h-[calc(100vh-140px)]">
-		                  <CartDrawer
-	                    cart={safeCart}
-	                    setCart={setCart}
-	                    onSubmitOrder={handleSubmitOrder}
-	                    orderType={orderType}
-	                    paymentMethod={paymentMethod}
-	                    setPaymentMethod={setPaymentMethod}
-	                    submitting={submitting}
-	                    onOrderAnother={handleOrderAnother}
-	                    t={t}
-	                    hasActiveOrder={hasActiveOrder}
-	                    orderScreenStatus={orderScreenStatus}
-	                    onShowStatus={() => {
-	                      window.dispatchEvent(new Event("qr:cart-close"));
+			                  <CartDrawer
+		                    cart={safeCart}
+		                    setCart={setCart}
+		                    onSubmitOrder={handleSubmitOrder}
+		                    orderType={orderType}
+		                    paymentMethod={paymentMethod}
+		                    setPaymentMethod={setPaymentMethod}
+		                    submitting={submitting}
+		                    onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+		                    t={t}
+		                    hasActiveOrder={hasActiveOrder}
+		                    orderScreenStatus={orderScreenStatus}
+		                    onShowStatus={() => {
+		                      window.dispatchEvent(new Event("qr:cart-close"));
 	                      const savedId = Number(storage.getItem("qr_active_order_id")) || null;
 	                      if (!orderId && savedId) {
 	                        setOrderId(savedId);
@@ -5311,20 +5311,20 @@ const created = await postJSON(
 		    )}
 
     {!isDesktopLayout && (
-      <CartDrawer
-        cart={safeCart}
-        setCart={setCart}
-        onSubmitOrder={handleSubmitOrder}
-        orderType={orderType}
-        paymentMethod={paymentMethod}
-        setPaymentMethod={setPaymentMethod}
-        submitting={submitting}
-        onOrderAnother={handleOrderAnother}
-        t={t}
-        hasActiveOrder={hasActiveOrder}
-        orderScreenStatus={orderScreenStatus}
-        onShowStatus={() => {
-          window.dispatchEvent(new Event("qr:cart-close"));
+	      <CartDrawer
+	        cart={safeCart}
+	        setCart={setCart}
+	        onSubmitOrder={handleSubmitOrder}
+	        orderType={orderType}
+	        paymentMethod={paymentMethod}
+	        setPaymentMethod={setPaymentMethod}
+	        submitting={submitting}
+	        onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+	        t={t}
+	        hasActiveOrder={hasActiveOrder}
+	        orderScreenStatus={orderScreenStatus}
+	        onShowStatus={() => {
+	          window.dispatchEvent(new Event("qr:cart-close"));
           const savedId = Number(storage.getItem("qr_active_order_id")) || null;
           if (!orderId && savedId) {
             setOrderId(savedId);
