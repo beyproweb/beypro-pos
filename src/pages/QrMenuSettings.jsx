@@ -587,6 +587,17 @@ async function saveAllCustomization() {
         </button>
 
         <button
+          onClick={() => {
+            if (!qrUrl) return;
+            window.open(qrUrl, "_blank", "noopener,noreferrer");
+          }}
+          disabled={!qrUrl}
+          className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg hover:scale-105 transition"
+        >
+          <Eye className="w-4 h-4" /> {t("Navigate")}
+        </button>
+
+        <button
           onClick={downloadQR}
           disabled={!qrUrl}
           className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-lg hover:scale-105 transition"

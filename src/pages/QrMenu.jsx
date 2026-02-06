@@ -8,7 +8,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
-import { UtensilsCrossed, Soup, Bike, Phone, Share2, Search } from "lucide-react";
+import { UtensilsCrossed, Soup, Bike, Phone, Share2, Search, Download } from "lucide-react";
 import { Instagram, Music2, Globe } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import { io } from "socket.io-client";
@@ -430,6 +430,7 @@ const DICT = {
     "Save QR Menu to Phone": "Save QR Menu to Phone",
     "Tap here to install the menu as an app": "Tap here to install the menu as an app",
     "Add to Home Screen": "Add to Home Screen",
+    "Download Qr": "Download Qr",
     "Scan Table QR": "Scan Table QR",
     "Scan the QR code on your table to continue.": "Scan the QR code on your table to continue.",
     "Invalid table QR code.": "Invalid table QR code.",
@@ -532,6 +533,7 @@ const DICT = {
     "Save QR Menu to Phone": "QR Menüyü Telefona Kaydet",
     "Tap here to install the menu as an app": "Menüyü uygulama olarak yüklemek için buraya dokunun",
     "Add to Home Screen": "Ana Ekrana Ekle",
+    "Download Qr": "QR İndir",
     "Scan Table QR": "Masa QR'ını Tara",
     "Scan the QR code on your table to continue.": "Devam etmek için masanızdaki QR kodunu tarayın.",
     "Invalid table QR code.": "Geçersiz masa QR kodu.",
@@ -545,6 +547,7 @@ const DICT = {
     "Save QR Menu to Phone": "QR-Menü auf dem Handy speichern",
     "Tap here to install the menu as an app": "Tippen Sie hier, um das Menü als App zu installieren",
     "Add to Home Screen": "Zum Startbildschirm hinzufügen",
+    "Download Qr": "QR herunterladen",
     "Scan Table QR": "Tisch-QR scannen",
     "Scan the QR code on your table to continue.": "Scannen Sie den QR-Code auf Ihrem Tisch, um fortzufahren.",
     "Invalid table QR code.": "Ungültiger Tisch-QR-Code.",
@@ -558,6 +561,7 @@ const DICT = {
     "Save QR Menu to Phone": "Enregistrer le menu QR sur le téléphone",
     "Tap here to install the menu as an app": "Appuyez ici pour installer le menu comme une application",
     "Add to Home Screen": "Ajouter à l'écran d'accueil",
+    "Download Qr": "Télécharger QR",
     "Scan Table QR": "Scanner le QR de la table",
     "Scan the QR code on your table to continue.": "Scannez le code QR sur votre table pour continuer.",
     "Invalid table QR code.": "Code QR de table invalide.",
@@ -716,6 +720,7 @@ function OrderTypeSelect({
   setLang,
   t,
   onInstallClick,
+  onDownloadQr,
   canInstall,
   showHelp,
   setShowHelp,
@@ -1357,24 +1362,35 @@ async function load() {
 	          </a>
 	        )}
 
-	        <button
-	          onClick={() => {
-	            if (navigator.share) {
-	              navigator.share({
-	                title: restaurantName,
-	                text: "Check out our menu!",
-	                url: window.location.href,
-	              });
-	            } else {
-	              navigator.clipboard.writeText(window.location.href);
-	              alert(t("Link copied."));
-	            }
-	          }}
-		          className="flex-1 py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
+          <div className="flex-1 flex flex-col gap-3">
+	          <button
+	            onClick={() => {
+	              if (navigator.share) {
+	                navigator.share({
+	                  title: restaurantName,
+	                  text: "Check out our menu!",
+	                  url: window.location.href,
+	                });
+	              } else {
+	                navigator.clipboard.writeText(window.location.href);
+	                alert(t("Link copied."));
+	              }
+	            }}
+		          className="w-full py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
 		        >
 		          <Share2 className="w-5 h-5" />
 		          {t("Share")}
 		        </button>
+
+            <button
+              type="button"
+              onClick={() => onDownloadQr?.()}
+              className="w-full py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
+            >
+              <Download className="w-5 h-5" />
+              {t("Download Qr")}
+            </button>
+          </div>
 	      </div>
 
 	      {/* Popular This Week (below Share button) */}
@@ -3736,6 +3752,7 @@ const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
 const [showQrPrompt, setShowQrPrompt] = useState(() => {
   return !storage.getItem("qr_saved");
 });
+const [qrPromptMode, setQrPromptMode] = useState("default"); // "default" | "hint"
 // === PWA INSTALL HANDLER ===
 const [deferredPrompt, setDeferredPrompt] = useState(null);
 const [canInstall, setCanInstall] = useState(false);
@@ -3868,6 +3885,17 @@ useEffect(() => {
 }, [appendIdentifier]);
 
 useEffect(() => {
+  const isStandalone =
+    (typeof window !== "undefined" &&
+      (window.matchMedia?.("(display-mode: standalone)")?.matches ||
+        window.navigator?.standalone)) ||
+    false;
+  if (!isStandalone) return;
+  storage.setItem("qr_saved", "1");
+  setShowQrPrompt(false);
+}, [storage]);
+
+useEffect(() => {
   if (!showTableScanner) return;
   let active = true;
   const start = async () => {
@@ -3910,14 +3938,36 @@ function handleInstallClick() {
 }
 
 function handleDownloadQr() {
-  
-// fallback: open QR Menu page so user can add it manually
-window.location.href = shareUrl;
+  const isStandalone =
+    (typeof window !== "undefined" &&
+      (window.matchMedia?.("(display-mode: standalone)")?.matches ||
+        window.navigator?.standalone)) ||
+    false;
 
+  if (isStandalone) {
+    storage.setItem("qr_saved", "1");
+    setShowQrPrompt(false);
+    return;
+  }
 
-  // Remember that user saved it
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.finally(() => {
+      setDeferredPrompt(null);
+      setCanInstall(false);
+      storage.setItem("qr_saved", "1");
+      setShowQrPrompt(false);
+    });
+    return;
+  }
+
+  // No native install prompt (e.g., iOS Safari). Keep prompt visible and show a hint.
+  setQrPromptMode("hint");
   storage.setItem("qr_saved", "1");
-  setShowQrPrompt(false);
+  setTimeout(() => {
+    setShowQrPrompt(false);
+    setQrPromptMode("default");
+  }, 6500);
 }
 
 useEffect(() => {
@@ -5197,6 +5247,46 @@ const created = await postJSON(
 
 	return (
 	  <>
+      {showQrPrompt && (
+        <div className="fixed bottom-5 left-1/2 z-[999] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-2">
+          <div className="pointer-events-auto rounded-2xl border border-neutral-200/80 bg-white/95 shadow-[0_18px_50px_rgba(0,0,0,0.12)] backdrop-blur-md dark:border-neutral-800/70 dark:bg-neutral-950/85">
+            <div className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                    {t("Save QR Menu to Phone")}
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                    {qrPromptMode === "hint"
+                      ? t("Add to Home Screen")
+                      : t("Tap here to install the menu as an app")}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    storage.setItem("qr_saved", "1");
+                    setShowQrPrompt(false);
+                    setQrPromptMode("default");
+                  }}
+                  className="shrink-0 rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-xs font-bold text-neutral-700 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                >
+                  {t("Close")}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDownloadQr}
+                className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 transition dark:border-neutral-800"
+              >
+                <Download className="h-5 w-5" />
+                {t("Download Qr")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 	    {showHome ? (
 	      <>
 	        <OrderTypeSelect
@@ -5206,6 +5296,7 @@ const created = await postJSON(
 	          setLang={setLang}
 	          t={t}
 	          onInstallClick={handleInstallClick}
+            onDownloadQr={handleDownloadQr}
 	          canInstall={canInstall}
 	          showHelp={showHelp}
 	          setShowHelp={setShowHelp}
