@@ -851,7 +851,7 @@ async function load() {
   const phoneNumber = c.phone || "";
   const allowDelivery = boolish(c.delivery_enabled, true);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
-  const logoUrl = c.logo || "/logo192.png";
+  const logoUrl = c.logo || "/Beylogo.svg";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
   const [isDark, setIsDark] = React.useState(() =>
     themeMode === "dark" || (themeMode === "auto" && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -3536,6 +3536,28 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
     restaurantIdentifier = null;
   }
 }
+
+  const restaurantIdentifierResolved = restaurantIdentifier;
+
+  // Persist last opened restaurant identifier so the installed PWA can reopen the same menu.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (restaurantIdentifierResolved) {
+        window.localStorage.setItem("qr_last_identifier", String(restaurantIdentifierResolved));
+        return;
+      }
+
+      // If app was launched from PWA start_url (/menu), redirect to last known menu.
+      const path = window.location.pathname || "";
+      if (path === "/menu") {
+        const last = window.localStorage.getItem("qr_last_identifier");
+        if (last && last !== "null" && last !== "undefined") {
+          window.location.replace(`/qr-menu/${encodeURIComponent(last)}/scan`);
+        }
+      }
+    } catch {}
+  }, [restaurantIdentifierResolved]);
 
   const tokenResolveIdentifier = id || restaurantIdentifier;
 

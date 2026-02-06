@@ -61,7 +61,7 @@ export default function QrLinkGenerator() {
             size={180}
             quietZone={10}
             fgColor="#000000"
-            logoImage="/logo192.png" // optional logo in center
+            logoImage="/Beylogo.svg" // optional logo in center
             logoWidth={40}
             logoHeight={40}
           />
