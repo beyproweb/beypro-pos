@@ -967,17 +967,22 @@ const handleRenameCategory = async (original, value) => {
 
                 <div>
                   <div className="flex items-center gap-3 mb-1 pr-20">
-                    {product.image && (
-                      <img
-                        src={
-                          product.image?.startsWith("http")
+                    <img
+                      src={
+                        product.image
+                          ? product.image?.startsWith("http")
                             ? product.image
                             : `${API_URL}/uploads/${product.image}`
-                        }
-                        alt=""
-                        className="w-12 h-12 rounded-xl object-cover border shadow"
-                      />
-                    )}
+                          : "/Productsfallback.jpg"
+                      }
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = "/Productsfallback.jpg";
+                      }}
+                      alt=""
+                      className="w-12 h-12 rounded-xl object-cover border shadow"
+                      loading="lazy"
+                    />
 
                     <div>
                       <h3 className="text-lg font-bold text-gray-900 dark:text-white">

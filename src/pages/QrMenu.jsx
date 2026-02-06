@@ -1215,6 +1215,7 @@ async function load() {
 
           <div className="mt-3 flex gap-3 overflow-x-auto pb-2 scroll-smooth scrollbar-hide">
             {homeCategories.map((cat) => {
+              const categoryFallbackSrc = "/Beylogo.svg";
               const key = (cat || "").trim().toLowerCase();
               const imgSrc = homeCategoryImages?.[key];
               const active = activeHomeCategory === cat;
@@ -1236,18 +1237,16 @@ async function load() {
 	                >
 	                  <div className="p-2">
 	                    <div className="w-full aspect-square rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
-	                      {resolvedSrc ? (
-	                        <img
-	                          src={resolvedSrc}
-	                          alt={cat}
+                        <img
+                          src={resolvedSrc || categoryFallbackSrc}
+                          alt={cat}
                           className="w-full h-full object-cover"
                           loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = categoryFallbackSrc;
+                          }}
                         />
-	                      ) : (
-	                        <div className="w-full h-full flex items-center justify-center text-neutral-400 dark:text-neutral-500 text-sm font-semibold">
-	                          {String(cat || "?").slice(0, 2).toUpperCase()}
-	                        </div>
-	                      )}
 	                    </div>
 	                    <div className="mt-2 text-[11px] sm:text-xs font-semibold text-neutral-800 dark:text-neutral-100 text-center line-clamp-1">
 	                      {cat}
@@ -1265,6 +1264,7 @@ async function load() {
         <div className="mt-5 max-w-3xl">
           <div className="grid grid-cols-2 gap-3">
             {homeVisibleProducts.map((product) => {
+              const fallbackSrc = "/Productsfallback.jpg";
               const img = product?.image;
               const src = img
                 ? /^https?:\/\//.test(String(img))
@@ -1286,16 +1286,16 @@ async function load() {
 	                >
 	                  <div className="p-2">
 	                    <div className="w-full aspect-[4/5] rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
-	                      {src ? (
-	                        <img
-	                          src={src}
-	                          alt={product?.name || "Product"}
+                        <img
+                          src={src || fallbackSrc}
+                          alt={product?.name || "Product"}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = fallbackSrc;
+                          }}
                         />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900" />
-	                      )}
 	                    </div>
 	                    <div className="mt-2 text-xs font-semibold text-neutral-800 dark:text-neutral-100 line-clamp-2 text-center">
 	                      {product?.name || "—"}
@@ -2157,6 +2157,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
   const scrollRef = React.useRef(null);
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
+  const categoryFallbackSrc = "/Beylogo.svg";
 
   const checkScroll = () => {
     const el = scrollRef.current;
@@ -2234,6 +2235,11 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
             const key = cat?.toLowerCase?.();
             const imgSrc = categoryImages?.[key];
             const active = activeCategory === cat;
+            const resolvedSrc = imgSrc
+              ? /^https?:\/\//.test(imgSrc)
+                ? imgSrc
+                : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
+              : "";
 
             return (
               <button
@@ -2249,22 +2255,18 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
                       : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 hover:text-neutral-900"
                   }`}
               >
-                {imgSrc ? (
-                  <div className="relative w-7 h-7 rounded-full overflow-hidden border border-neutral-300">
-                    <img
-                      src={
-                        /^https?:\/\//.test(imgSrc)
-                          ? imgSrc
-                          : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
-                      }
-                      alt={cat}
-                      className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-300"
-                      loading="lazy"
-                    />
-                  </div>
-                ) : (
-                  <span className="w-2 h-2 rounded-full bg-neutral-400"></span>
-                )}
+                <div className="relative w-7 h-7 rounded-full overflow-hidden border border-neutral-300 bg-white/70">
+                  <img
+                    src={resolvedSrc || categoryFallbackSrc}
+                    alt={cat}
+                    className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-300"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = categoryFallbackSrc;
+                    }}
+                  />
+                </div>
                 <span className="tracking-wide">{cat}</span>
               </button>
             );
@@ -2285,6 +2287,7 @@ function CategoryTopBar({
 }) {
   const categoryList = Array.isArray(categories) ? categories : [];
   const scrollRef = React.useRef(null);
+  const categoryFallbackSrc = "/Beylogo.svg";
 
   const scrollToCategory = (index) => {
     const el = scrollRef.current;
@@ -2312,6 +2315,11 @@ function CategoryTopBar({
           const key = cat?.toLowerCase?.();
           const imgSrc = categoryImages?.[key];
           const active = activeCategory === cat;
+          const resolvedSrc = imgSrc
+            ? /^https?:\/\//.test(imgSrc)
+              ? imgSrc
+              : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
+            : "";
           return (
             <button
               key={cat}
@@ -2328,22 +2336,18 @@ function CategoryTopBar({
                     : "bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-200 hover:text-neutral-900 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700 dark:hover:bg-neutral-700 dark:hover:text-white"
                 }`}
             >
-              {imgSrc ? (
-                <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300 dark:border-neutral-700">
-                  <img
-                    src={
-                      /^https?:\/\//.test(imgSrc)
-                        ? imgSrc
-                        : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
-                    }
-                    alt={cat}
-                    className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-300"
-                    loading="lazy"
-                  />
-                </div>
-              ) : (
-                <span className="w-2 h-2 rounded-full bg-neutral-400 dark:bg-neutral-500" />
-              )}
+              <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300 dark:border-neutral-700 bg-white/70">
+                <img
+                  src={resolvedSrc || categoryFallbackSrc}
+                  alt={cat}
+                  className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-300"
+                  loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = categoryFallbackSrc;
+                  }}
+                />
+              </div>
               <span className="tracking-wide">{cat}</span>
             </button>
           );
@@ -2356,6 +2360,7 @@ function CategoryTopBar({
 /* ====================== RIGHT CATEGORY RAIL ====================== */
 function CategoryRail({ categories, activeCategory, setActiveCategory, categoryImages }) {
   const categoryList = Array.isArray(categories) ? categories : [];
+  const categoryFallbackSrc = "/Beylogo.svg";
 
   return (
     <aside className="w-full h-full">
@@ -2368,6 +2373,11 @@ function CategoryRail({ categories, activeCategory, setActiveCategory, categoryI
             const key = cat?.toLowerCase?.();
             const imgSrc = categoryImages?.[key];
             const active = activeCategory === cat;
+            const resolvedSrc = imgSrc
+              ? /^https?:\/\//.test(imgSrc)
+                ? imgSrc
+                : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
+              : "";
 
             return (
               <button
@@ -2380,22 +2390,18 @@ function CategoryRail({ categories, activeCategory, setActiveCategory, categoryI
                       : "bg-white text-neutral-700 border-neutral-200 hover:border-neutral-300"
                   }`}
               >
-                {imgSrc ? (
-                  <div className="relative w-8 h-8 rounded-xl overflow-hidden border border-neutral-200">
-                    <img
-                      src={
-                        /^https?:\/\//.test(imgSrc)
-                          ? imgSrc
-                          : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
-                      }
-                      alt={cat}
-                      className="object-cover w-full h-full"
-                      loading="lazy"
-                    />
-                  </div>
-                ) : (
-                  <span className="w-2 h-2 rounded-full bg-neutral-300" />
-                )}
+                <div className="relative w-8 h-8 rounded-xl overflow-hidden border border-neutral-200 bg-white/70">
+                  <img
+                    src={resolvedSrc || categoryFallbackSrc}
+                    alt={cat}
+                    className="object-cover w-full h-full"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = categoryFallbackSrc;
+                    }}
+                  />
+                </div>
                 <span className="truncate">{cat}</span>
               </button>
             );

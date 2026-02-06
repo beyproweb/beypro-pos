@@ -52,6 +52,8 @@ import { loadRegisterSummary } from "../utils/registerSummaryCache";
 import CategoryBar from "../components/transaction/CategoryBar";
 import ProductGrid from "../components/transaction/ProductGrid";
 import CartPanel from "../components/transaction/CartPanel";
+
+const CATEGORY_FALLBACK_IMAGE = "/Beylogo.svg";
 const normalizeGroupKey = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim().toLowerCase().replace(/\s+/g, " ");
@@ -1309,8 +1311,8 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
   const normalizedVariant = variant === "bar" ? "vertical" : variant;
   const slug = (cat || "").trim().toLowerCase();
   const catSrc = categoryImages[slug] || "";
+  const resolvedCatSrc = catSrc || CATEGORY_FALLBACK_IMAGE;
   const isActive = currentCategoryIndex === idx;
-  const hasImg = !!catSrc;
   const isDragEnabled = isReorderingCategories && normalizedVariant === "horizontal";
   const key = normalizeGroupKey(cat);
   const isDragging = !!key && key === draggingCategoryKey;
@@ -1323,6 +1325,7 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
         data-cat-idx={idx}
         onClick={() => {
           if (isReorderingCategories) return;
+          if (catalogSearch.trim()) setCatalogSearch("");
           setCurrentCategoryIndex(idx);
         }}
         className={[
@@ -1336,30 +1339,20 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
         ].join(" ")}
       >
         <div className="relative h-[62px] w-full overflow-hidden">
-          {hasImg ? (
-            <img
-              src={catSrc}
-              alt={cat}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
-          ) : (
-            <div className="h-full w-full bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800" />
-          )}
+          <img
+            src={resolvedCatSrc}
+            alt={cat}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = CATEGORY_FALLBACK_IMAGE;
+              e.currentTarget.style.objectFit = "contain";
+              e.currentTarget.style.padding = "10px";
+              e.currentTarget.style.background = "rgba(255,255,255,0.8)";
+            }}
+          />
           <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
-          {!hasImg && (
-            <div className="absolute inset-0 grid place-items-center">
-              <span className="text-sm font-extrabold tracking-wide text-white/90 drop-shadow">
-                {(cat || "")
-                  .split(" ")
-                  .map((part) => part[0])
-                  .filter(Boolean)
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase()}
-              </span>
-            </div>
-          )}
         </div>
         <div className="flex items-center justify-between gap-2 px-2 py-1.5">
           <span className="flex-1 text-[11px] font-semibold text-slate-800 dark:text-slate-100 leading-tight">
@@ -1430,6 +1423,7 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
       data-cat-idx={idx}
       onClick={() => {
         if (isReorderingCategories) return;
+        if (catalogSearch.trim()) setCatalogSearch("");
         setCurrentCategoryIndex(idx);
       }}
       draggable={isDragEnabled}
@@ -1507,21 +1501,20 @@ const renderCategoryButton = (cat, idx, variant = "desktop") => {
         isDragging ? "ring-2 ring-indigo-400/70" : ""
       }`}
     >
-      {hasImg ? (
-        <img src={catSrc} alt={cat} className={imageClasses} />
-      ) : (
-        <div className="flex h-[48px] w-[48px] items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-slate-150 to-slate-250 dark:from-slate-750 dark:to-slate-800">
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-300">
-            {(cat || "")
-              .split(" ")
-              .map((part) => part[0])
-              .filter(Boolean)
-              .slice(0, 2)
-              .join("")
-              .toUpperCase()}
-          </span>
-        </div>
-      )}
+      <img
+        src={resolvedCatSrc}
+        alt={cat}
+        className={imageClasses}
+        loading="lazy"
+        onError={(e) => {
+          e.currentTarget.onerror = null;
+          e.currentTarget.src = CATEGORY_FALLBACK_IMAGE;
+          e.currentTarget.style.objectFit = "contain";
+          e.currentTarget.style.padding = "6px";
+          e.currentTarget.style.background = "rgba(255,255,255,0.75)";
+          e.currentTarget.style.borderRadius = "10px";
+        }}
+      />
       <span className={labelClasses}>{t(cat)}</span>
     </button>
   );
@@ -5113,7 +5106,7 @@ const renderCartContent = (variant = "desktop") => {
                     topRowRef.current.scrollBy({ top: 80, behavior: "smooth" });
                   }
                 }}
-                disabled={isCatalogSearching}
+                disabled={false}
               />
             </div>
           </div>

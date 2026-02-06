@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { toast } from "react-toastify";
 import secureFetch from "../utils/secureFetch";
-import { Eye, EyeOff, Search, Copy, Download, Printer, QrCode } from "lucide-react";
+import { Eye, EyeOff, Search, Copy, Download, Printer, QrCode, Trash2 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 
@@ -24,7 +24,18 @@ export default function QrMenuSettings() {
     category: "",
     description: "",
   });
+  const productImageInputRef = useRef(null);
+  const [newProductImageFile, setNewProductImageFile] = useState(null);
+  const [newProductImagePreview, setNewProductImagePreview] = useState("");
+  const [uploadingNewProductImage, setUploadingNewProductImage] = useState(false);
+
+  const categoryImageInputRef = useRef(null);
+  const [categoryImageFileName, setCategoryImageFileName] = useState("");
+  const [categoryImagePreview, setCategoryImagePreview] = useState("");
+  const [uploadingCategoryImage, setUploadingCategoryImage] = useState(false);
+
   const [savingProduct, setSavingProduct] = useState(false);
+  const [deletingProductId, setDeletingProductId] = useState(null);
   const [settings, setSettings] = useState({
   main_title: "",
   subtitle: "",
@@ -50,6 +61,16 @@ export default function QrMenuSettings() {
   table_geo_enabled: false,
   table_geo_radius_meters: 150,
 });
+
+  const uploadsBaseUrl =
+    import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000";
+
+  const resolveUploadSrc = (raw) => {
+    const value = String(raw || "").trim();
+    if (!value) return "";
+    if (value.startsWith("http")) return value;
+    return `${uploadsBaseUrl}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+  };
 
 function updateField(key, value) {
   setSettings((prev) => ({ ...prev, [key]: value }));
@@ -219,6 +240,26 @@ async function saveAllCustomization() {
     }
     setSavingProduct(true);
     try {
+      let imageUrl = "";
+      if (newProductImageFile) {
+        setUploadingNewProductImage(true);
+        try {
+          const formData = new FormData();
+          formData.append("file", newProductImageFile);
+          const res = await secureFetch("/upload", {
+            method: "POST",
+            body: formData,
+          });
+          if (!res?.url) {
+            toast.error(t("Image upload failed!"));
+            return;
+          }
+          imageUrl = res.url;
+        } finally {
+          setUploadingNewProductImage(false);
+        }
+      }
+
       await secureFetch("/products", {
         method: "POST",
         body: JSON.stringify({
@@ -226,11 +267,16 @@ async function saveAllCustomization() {
           price: Number(newProduct.price) || 0,
           category: newProduct.category || "",
           description: newProduct.description || "",
+          image: imageUrl || "",
           visible: true,
         }),
       });
       toast.success(t("Saved successfully!"));
       setNewProduct({ name: "", price: "", category: "", description: "" });
+      setNewProductImageFile(null);
+      setNewProductImagePreview("");
+      setCategoryImageFileName("");
+      setCategoryImagePreview("");
       const prodData = await secureFetch("/products");
       setProducts(Array.isArray(prodData) ? prodData : prodData?.data || []);
     } catch (err) {
@@ -238,6 +284,47 @@ async function saveAllCustomization() {
       toast.error(t("Failed to save changes"));
     } finally {
       setSavingProduct(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!newProductImageFile) {
+      setNewProductImagePreview("");
+      return undefined;
+    }
+    const url = URL.createObjectURL(newProductImageFile);
+    setNewProductImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [newProductImageFile]);
+
+  const uploadCategoryImage = async (file) => {
+    const category = String(newProduct.category || "").trim();
+    if (!category) {
+      toast.error(t("Category required first!"));
+      return;
+    }
+    setUploadingCategoryImage(true);
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      fd.append("category", category.toLowerCase());
+      const res = await secureFetch("/category-images", { method: "POST", body: fd });
+      if (!res || res?.error) {
+        toast.error(t("Upload failed"));
+        return;
+      }
+      toast.success(t("Category image uploaded!"));
+      const data = await secureFetch(
+        `/category-images?category=${encodeURIComponent(category.toLowerCase())}`
+      );
+      if (Array.isArray(data) && data.length > 0 && data[0]?.image) {
+        setCategoryImagePreview(resolveUploadSrc(data[0].image));
+      }
+    } catch (err) {
+      console.error("❌ Category upload failed:", err);
+      toast.error(t("Category upload failed!"));
+    } finally {
+      setUploadingCategoryImage(false);
     }
   };
 
@@ -255,6 +342,43 @@ async function saveAllCustomization() {
       toast.success(t("Saved successfully!"));
     } catch {
       toast.error(t("Failed to save changes"));
+    }
+  };
+
+  const deleteProduct = async (product) => {
+    const productId = product?.id;
+    if (!productId) return;
+
+    const label = String(product?.name || "").trim() || `#${productId}`;
+    const ok = window.confirm(
+      t("Delete product?") + `\n\n${label}\n\n` + t("This cannot be undone.")
+    );
+    if (!ok) return;
+
+    setDeletingProductId(productId);
+    try {
+      await secureFetch(`/products/${productId}`, { method: "DELETE" });
+      setProducts((prev) => (Array.isArray(prev) ? prev.filter((p) => p?.id !== productId) : prev));
+
+      if (disabledIds.includes(productId)) {
+        const updatedDisabled = disabledIds.filter((id) => id !== productId);
+        setDisabledIds(updatedDisabled);
+        try {
+          await secureFetch(`/settings/qr-menu-disabled`, {
+            method: "POST",
+            body: JSON.stringify({ disabled: updatedDisabled }),
+          });
+        } catch {
+          // ignore; list is already cleaned locally
+        }
+      }
+
+      toast.success(t("Saved successfully!"));
+    } catch (err) {
+      console.error("❌ Failed to delete product:", err);
+      toast.error(t("Failed to save changes"));
+    } finally {
+      setDeletingProductId(null);
     }
   };
 
@@ -504,54 +628,72 @@ async function saveAllCustomization() {
           </div>
         ) : (
           <ul className="divide-y divide-blue-50 dark:divide-zinc-900">
-            {filteredProducts.map((p) => (
-              <li key={p.id} className="flex items-center justify-between py-2 px-1">
-                <span
-                  className={`flex items-center gap-2 font-medium ${
-                    disabledIds.includes(p.id)
-                      ? "line-through text-gray-400"
-                      : "text-blue-900 dark:text-blue-100"
-                  }`}
-                >
-                  {p.image && (
-                    <img
-                      src={
-                        p.image.startsWith("http")
+	            {filteredProducts.map((p) => (
+	              <li key={p.id} className="flex items-center justify-between py-2 px-1">
+	                <span
+	                  className={`flex items-center gap-2 font-medium ${
+	                    disabledIds.includes(p.id)
+	                      ? "line-through text-gray-400"
+	                      : "text-blue-900 dark:text-blue-100"
+	                  }`}
+	                >
+                  <img
+                    src={
+                      p.image
+                        ? p.image.startsWith("http")
                           ? p.image
                           : `${window.location.origin.replace(":5173", ":5000")}/uploads/${p.image}`
-                      }
-                      alt={p.name}
-                      className="w-7 h-7 rounded-lg object-cover border"
-                    />
-                  )}
-                  {p.name}
-                </span>
+                        : "/Productsfallback.jpg"
+                    }
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = "/Productsfallback.jpg";
+                    }}
+                    alt={p.name}
+                    className="w-7 h-7 rounded-lg object-cover border"
+                    loading="lazy"
+                  />
+	                  {p.name}
+	                </span>
 
-                <button
-                  className={`ml-4 w-14 h-8 rounded-full flex items-center px-1 transition-all ${
-                    disabledIds.includes(p.id)
-                      ? "bg-gray-300"
-                      : "bg-gradient-to-r from-blue-400 to-indigo-500 shadow-lg"
-                  }`}
-                  onClick={() => toggleDisable(p.id)}
-                >
-                  <span
-                    className={`w-6 h-6 rounded-full bg-white shadow transition-all flex items-center justify-center ${
-                      disabledIds.includes(p.id) ? "translate-x-6" : "translate-x-0"
-                    }`}
-                  >
-                    {disabledIds.includes(p.id) ? (
-                      <EyeOff className="w-4 h-4 text-gray-400" />
-                    ) : (
-                      <Eye className="w-4 h-4 text-blue-500" />
-                    )}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+	                <div className="ml-4 flex items-center gap-2">
+	                  <button
+	                    type="button"
+	                    onClick={() => deleteProduct(p)}
+	                    disabled={deletingProductId === p.id}
+	                    className="h-8 w-8 inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition disabled:opacity-60 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200 dark:hover:bg-rose-950/60"
+	                    title={t("Delete")}
+	                  >
+	                    <Trash2 className="w-4 h-4" />
+	                  </button>
+
+	                  <button
+	                    type="button"
+	                    className={`w-14 h-8 rounded-full flex items-center px-1 transition-all ${
+	                      disabledIds.includes(p.id)
+	                        ? "bg-gray-300"
+	                        : "bg-gradient-to-r from-blue-400 to-indigo-500 shadow-lg"
+	                    }`}
+	                    onClick={() => toggleDisable(p.id)}
+	                  >
+	                    <span
+	                      className={`w-6 h-6 rounded-full bg-white shadow transition-all flex items-center justify-center ${
+	                        disabledIds.includes(p.id) ? "translate-x-6" : "translate-x-0"
+	                      }`}
+	                    >
+	                      {disabledIds.includes(p.id) ? (
+	                        <EyeOff className="w-4 h-4 text-gray-400" />
+	                      ) : (
+	                        <Eye className="w-4 h-4 text-blue-500" />
+	                      )}
+	                    </span>
+	                  </button>
+	                </div>
+	              </li>
+	            ))}
+	          </ul>
+	        )}
+	      </div>
 
       {/* --------------------------------------------------------------------------------
          QR MENU WEBSITE BUILDER 
@@ -782,49 +924,134 @@ async function saveAllCustomization() {
             </div>
           </div>
 
-          <div className="bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
-            <h3 className="text-xl font-bold mb-3 text-indigo-600">
-              {t("Add Product")}
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input
-                value={newProduct.name}
-                onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
-                placeholder={t("Product Name")}
-                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
-              />
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={newProduct.price}
-                onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
-                placeholder={t("Price")}
-                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
-              />
-              <input
-                value={newProduct.category}
-                onChange={(e) => setNewProduct((p) => ({ ...p, category: e.target.value }))}
-                placeholder={t("Category")}
-                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
-              />
-              <textarea
-                value={newProduct.description}
-                onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))}
-                placeholder={t("Description")}
-                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
-                rows={3}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={saveNewProduct}
-              disabled={savingProduct}
-              className="mt-3 px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
-            >
-              {savingProduct ? t("Please wait...") : t("Save")}
-            </button>
-          </div>
+	          <div className="bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+	            <h3 className="text-xl font-bold mb-3 text-indigo-600">
+	              {t("Add Product")}
+	            </h3>
+	            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+	              <input
+	                value={newProduct.name}
+	                onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
+	                placeholder={t("Product Name")}
+	                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
+	              />
+	              <input
+	                type="number"
+	                min="0"
+	                step="0.01"
+	                value={newProduct.price}
+	                onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
+	                placeholder={t("Price")}
+	                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
+	              />
+	              <input
+	                value={newProduct.category}
+	                onChange={(e) => setNewProduct((p) => ({ ...p, category: e.target.value }))}
+	                placeholder={t("Category")}
+	                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
+	              />
+
+	              {/* Category Image (same flow as ProductForm modal) */}
+	              <div className="sm:col-span-2">
+	                <label className="font-semibold block mb-2">{t("Category Image")}</label>
+	                <div className="flex items-center gap-3">
+	                  <input
+	                    ref={categoryImageInputRef}
+	                    type="file"
+	                    accept="image/*"
+	                    className="hidden"
+	                    onChange={async (e) => {
+	                      const file = e.target.files?.[0] || null;
+	                      setCategoryImageFileName(file?.name || "");
+	                      if (!file) return;
+	                      await uploadCategoryImage(file);
+	                      try {
+	                        e.target.value = "";
+	                      } catch {}
+	                    }}
+	                  />
+	                  <button
+	                    type="button"
+	                    onClick={() => categoryImageInputRef.current?.click()}
+	                    disabled={uploadingCategoryImage}
+	                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+	                  >
+	                    {uploadingCategoryImage ? t("Please wait...") : t("Choose file")}
+	                  </button>
+	                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+	                    {categoryImageFileName ? categoryImageFileName : t("No file chosen")}
+	                  </span>
+	                </div>
+	                {categoryImagePreview ? (
+	                  <div className="mt-2 flex items-center gap-3">
+	                    <img
+	                      src={categoryImagePreview}
+	                      alt={t("Category")}
+	                      className="w-16 h-16 rounded-xl object-cover border bg-white"
+	                    />
+	                    <span className="text-sm text-gray-500 dark:text-gray-300">
+	                      {t("Category Preview")}
+	                    </span>
+	                  </div>
+	                ) : null}
+	              </div>
+
+	              {/* Product Image (same flow as ProductForm modal) */}
+	              <div className="sm:col-span-2">
+	                <label className="font-semibold block mb-2">{t("Product Image")}</label>
+	                <div className="flex items-center gap-3">
+	                  <input
+	                    ref={productImageInputRef}
+	                    type="file"
+	                    accept="image/*"
+	                    className="hidden"
+	                    onChange={(e) => {
+	                      const file = e.target.files?.[0] || null;
+	                      if (!file) return;
+	                      setNewProductImageFile(file);
+	                      try {
+	                        e.target.value = "";
+	                      } catch {}
+	                    }}
+	                  />
+	                  <button
+	                    type="button"
+	                    onClick={() => productImageInputRef.current?.click()}
+	                    disabled={uploadingNewProductImage}
+	                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+	                  >
+	                    {uploadingNewProductImage ? t("Please wait...") : t("Choose file")}
+	                  </button>
+	                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+	                    {newProductImageFile?.name ? newProductImageFile.name : t("No file chosen")}
+	                  </span>
+	                </div>
+	                {newProductImagePreview ? (
+	                  <img
+	                    src={newProductImagePreview}
+	                    alt={t("Product Image")}
+	                    className="mt-2 w-24 h-24 rounded-xl object-cover border bg-white"
+	                  />
+	                ) : null}
+	              </div>
+
+	              <textarea
+	                value={newProduct.description}
+	                onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))}
+	                placeholder={t("Description")}
+	                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
+	                rows={3}
+	              />
+	            </div>
+	            <button
+	              type="button"
+	              onClick={saveNewProduct}
+	              disabled={savingProduct || uploadingNewProductImage || uploadingCategoryImage}
+	              className="mt-3 px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
+	            >
+	              {savingProduct ? t("Please wait...") : t("Save")}
+	            </button>
+	          </div>
         </div>
 
         {/* TABLE-SPECIFIC QR CODES */}

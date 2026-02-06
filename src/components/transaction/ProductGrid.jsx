@@ -2,6 +2,7 @@ import React from "react";
 
 const ProductGrid = ({ products, onAddProduct, onOpenExtras, t, formatCurrency }) => {
   if (!Array.isArray(products)) return null;
+  const fallbackSrc = "/Productsfallback.jpg";
 
   return (
     <article className="flex min-w-0 flex-1 min-h-0 flex-col bg-transparent px-0 py-2 overflow-hidden">
@@ -26,16 +27,16 @@ const ProductGrid = ({ products, onAddProduct, onOpenExtras, t, formatCurrency }
               <div className="relative w-full overflow-hidden border-b border-white/50 bg-white/80 p-0.5 dark:border-slate-800/50 dark:bg-slate-900/50">
                 <div className="aspect-[4/3]">
                   <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
-                    {product.image ? (
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="h-full w-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700" />
-                    )}
+                    <img
+                      src={product.image || fallbackSrc}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = fallbackSrc;
+                      }}
+                    />
                   </div>
                 </div>
               </div>

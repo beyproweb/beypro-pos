@@ -407,6 +407,27 @@ const [reportToDate, setReportToDate] = useState(
   () => new Date().toISOString().slice(0, 10)
 );
 const [reportLoading, setReportLoading] = useState(false);
+const reportFromInputRef = useRef(null);
+const reportToInputRef = useRef(null);
+const formatUsDate = useCallback((dateStr) => {
+  if (!dateStr) return "";
+  const [year, month, day] = String(dateStr).split("-");
+  if (!year || !month || !day) return String(dateStr);
+  return `${month}/${day}/${year}`;
+}, []);
+const openReportDatePicker = useCallback((which) => {
+  const input = which === "to" ? reportToInputRef.current : reportFromInputRef.current;
+  if (!input) return;
+  if (typeof input.showPicker === "function") {
+    try {
+      input.showPicker();
+      return;
+    } catch (e) {
+      // fallthrough to focus()
+    }
+  }
+  input.focus();
+}, []);
 const [excludedKitchenIds, setExcludedKitchenIds] = useState([]);
 const [excludedKitchenCategories, setExcludedKitchenCategories] = useState([]);
 const [productPrepById, setProductPrepById] = useState({});
@@ -2410,45 +2431,99 @@ return (
 />
 
     {/* --- FILTER BAR --- */}
-    <div className="w-full py-2 overflow-x-auto">
-      <div className="flex items-center gap-2 min-w-max px-4">
-        {[
-          { id: "all", label: t("All") },
-          { id: "new", label: t("New Order") },
-          { id: "on_road", label: t("On Road") },
-          { id: "delivered", label: t("Delivered") },
-        ].map((filter) => (
-          <button
-            key={filter.id}
-            onClick={() => setStatusFilter(filter.id)}
-            className={`shrink-0 h-[42px] px-3 text-xs font-semibold rounded-md border shadow-sm transition ${
-              statusFilter === filter.id
-                ? "bg-indigo-600 text-white border-indigo-600"
-                : "bg-white/80 text-slate-800 border-slate-200 hover:bg-white hover:border-slate-300 active:bg-slate-50"
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
+    <div className="w-full px-4 pt-3">
+      <div className="mx-auto w-full max-w-6xl overflow-x-auto lg:overflow-visible">
+        <div className="min-w-max rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {[
+                { id: "all", label: t("All") },
+                { id: "new", label: t("New Order") },
+                { id: "on_road", label: t("On Road") },
+                { id: "delivered", label: t("Delivered") },
+              ].map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setStatusFilter(filter.id)}
+                  className={`shrink-0 h-[40px] px-7 text-base font-semibold rounded-xl border shadow-sm transition ${
+                    statusFilter === filter.id
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-white hover:border-slate-300 active:bg-slate-50 dark:bg-slate-900/50 dark:text-slate-200 dark:border-slate-800 dark:hover:bg-slate-900"
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
 
-        {/* Date range */}
-        <input
-          type="date"
-          className="shrink-0 h-[42px] border border-slate-200 rounded-md px-2 text-slate-800 bg-white shadow-sm text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
-          value={reportFromDate}
-          max={reportToDate || new Date().toISOString().slice(0, 10)}
-          onChange={(e) => setReportFromDate(e.target.value)}
-          disabled={reportLoading}
-        />
-        <input
-          type="date"
-          className="shrink-0 h-[42px] border border-slate-200 rounded-md px-2 text-slate-800 bg-white shadow-sm text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition"
-          value={reportToDate}
-          min={reportFromDate || undefined}
-          max={new Date().toISOString().slice(0, 10)}
-          onChange={(e) => setReportToDate(e.target.value)}
-          disabled={reportLoading}
-        />
+            {/* Date range (visual) */}
+            <div className="shrink-0">
+              <div className="relative h-[40px] w-[340px] sm:w-[420px] lg:w-[520px] rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden flex items-stretch dark:border-slate-800 dark:bg-slate-950/40">
+                <button
+                  type="button"
+                  onClick={() => openReportDatePicker("from")}
+                  disabled={reportLoading}
+                  className="w-[52px] inline-flex items-center justify-center border-r border-slate-200 text-slate-600 hover:bg-slate-50 transition disabled:opacity-40 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900/40"
+                  aria-label="From date"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+                    <path d="M8 3v2" />
+                    <path d="M16 3v2" />
+                    <path d="M4 8h16" />
+                    <path d="M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
+                  </svg>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openReportDatePicker("from")}
+                  disabled={reportLoading}
+                  className="flex-1 px-5 text-left text-base font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-40 dark:text-slate-200 dark:hover:bg-slate-900/40"
+                >
+                  {formatUsDate(reportFromDate) || "--/--/----"} - {formatUsDate(reportToDate) || "--/--/----"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openReportDatePicker("to")}
+                  disabled={reportLoading}
+                  className="w-[52px] inline-flex items-center justify-center border-l border-slate-200 text-slate-600 hover:bg-slate-50 transition disabled:opacity-40 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900/40"
+                  aria-label="To date"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+                    <path d="M8 3v2" />
+                    <path d="M16 3v2" />
+                    <path d="M4 8h16" />
+                    <path d="M5 6h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" />
+                  </svg>
+                </button>
+
+                {/* Hidden real inputs to preserve existing logic */}
+                <input
+                  ref={reportFromInputRef}
+                  type="date"
+                  className="absolute left-0 top-0 h-px w-px opacity-0"
+                  value={reportFromDate}
+                  max={reportToDate || new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setReportFromDate(e.target.value)}
+                  disabled={reportLoading}
+                  tabIndex={-1}
+                />
+                <input
+                  ref={reportToInputRef}
+                  type="date"
+                  className="absolute left-0 top-0 h-px w-px opacity-0"
+                  value={reportToDate}
+                  min={reportFromDate || undefined}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setReportToDate(e.target.value)}
+                  disabled={reportLoading}
+                  tabIndex={-1}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2863,9 +2938,22 @@ return (
       </span>
     )}
     {!normalizeDriverStatus(order.driver_status) && (
+      (() => {
+        const hasKitchenExcludedItem = Array.isArray(order?.items)
+          ? order.items.some((item) => isKitchenExcludedItem(item))
+          : false;
+        const onRoadAllowed = isKitchenDelivered || hasKitchenExcludedItem;
+        const disabled = driverButtonDisabled(order) || !onRoadAllowed;
+
+        return (
       <button
         type="button"
-        disabled={driverButtonDisabled(order)}
+        disabled={disabled}
+        title={
+          !onRoadAllowed
+            ? "Available after kitchen delivered or excluded items"
+            : undefined
+        }
         className={`ml-auto inline-flex items-center justify-center rounded-md px-5 py-1.5 text-base font-bold text-white transition disabled:opacity-50 h-8 shadow-md ${
           kitchenStatus === "new"
             ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/50"
@@ -2876,7 +2964,7 @@ return (
             : "bg-teal-600 hover:bg-teal-700 shadow-teal-500/50"
         }`}
         onClick={async () => {
-          if (driverButtonDisabled(order)) return;
+          if (disabled) return;
           const nextStatus = isYemeksepetiPickupOrder(order) ? "delivered" : "on_road";
           setOrders((prev) =>
             prev.map((o) => (o.id === order.id ? { ...o, driver_status: nextStatus } : o))
@@ -2901,6 +2989,8 @@ return (
       >
         {isYemeksepetiPickupOrder(order) ? t("Picked up") : t("On Road")}
       </button>
+        );
+      })()
     )}
     {normalizeDriverStatus(order.driver_status) === "on_road" && (
       <button
