@@ -23,6 +23,8 @@ const apiUrl = (path) =>
   `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
 const QR_PREFIX = "qr_";
 const QR_TOKEN_KEY = "qr_token";
+const BEYPRO_APP_STORE_URL = import.meta.env.VITE_BEYPRO_APPSTORE_URL || "";
+const BEYPRO_PLAY_STORE_URL = import.meta.env.VITE_BEYPRO_PLAYSTORE_URL || "";
 
 function computeTenantSuffix() {
   if (typeof window === "undefined") return "";
@@ -4021,6 +4023,21 @@ function handleInstallClick() {
 }
 
 function handleDownloadQr() {
+  // If store links are configured, prefer taking users to the native app stores.
+  // (Useful when you want the QR menu experience inside the Beypro mobile app.)
+  if (platform === "ios" && BEYPRO_APP_STORE_URL) {
+    window.open(BEYPRO_APP_STORE_URL, "_blank", "noopener,noreferrer");
+    storage.setItem("qr_saved", "1");
+    setShowQrPrompt(false);
+    return;
+  }
+  if (platform === "android" && BEYPRO_PLAY_STORE_URL) {
+    window.open(BEYPRO_PLAY_STORE_URL, "_blank", "noopener,noreferrer");
+    storage.setItem("qr_saved", "1");
+    setShowQrPrompt(false);
+    return;
+  }
+
   const isStandalone =
     (typeof window !== "undefined" &&
       (window.matchMedia?.("(display-mode: standalone)")?.matches ||
