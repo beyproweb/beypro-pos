@@ -649,6 +649,67 @@ function TableQrScannerModal({ open, tableNumber, onClose, error, t }) {
   );
 }
 
+function InstallHelpModal({ open, onClose, t, platform, onShare, onCopy }) {
+  if (!open) return null;
+  const isIos = platform === "ios";
+  return createPortal(
+    <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+        <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
+          <div className="text-lg font-semibold text-gray-900 dark:text-neutral-100">
+            {t("Add to Home Screen")}
+          </div>
+          <div className="text-sm text-gray-600 dark:text-neutral-300 mt-1">
+            {t("Tap here to install the menu as an app")}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-3 text-sm text-gray-700 dark:text-neutral-200">
+          {isIos ? (
+            <ol className="list-decimal pl-5 space-y-1">
+              <li>{t("Share QR Menu")}</li>
+              <li>{t("Add to Home Screen")}</li>
+            </ol>
+          ) : (
+            <ol className="list-decimal pl-5 space-y-1">
+              <li>{t("Share QR Menu")}</li>
+              <li>{t("Add to Home Screen")}</li>
+            </ol>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onShare}
+              className="flex-1 py-3 rounded-2xl bg-neutral-900 text-white font-semibold shadow-sm hover:bg-neutral-800 transition"
+            >
+              {t("Share")}
+            </button>
+            <button
+              type="button"
+              onClick={onCopy}
+              className="flex-1 py-3 rounded-2xl bg-white dark:bg-neutral-950 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
+            >
+              {t("Copy Link")}
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-gray-100 dark:border-neutral-800 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl px-4 py-2 text-sm font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-100 hover:bg-gray-200 dark:hover:bg-neutral-700 transition"
+          >
+            {t("Close")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 
 /* ====================== HEADER ====================== */
 function QrHeader({
@@ -3961,13 +4022,10 @@ function handleDownloadQr() {
     return;
   }
 
-  // No native install prompt (e.g., iOS Safari). Keep prompt visible and show a hint.
-  setQrPromptMode("hint");
+  // No native install prompt (e.g., iOS Safari). Show "Add to Home Screen" instructions.
   storage.setItem("qr_saved", "1");
-  setTimeout(() => {
-    setShowQrPrompt(false);
-    setQrPromptMode("default");
-  }, 6500);
+  setShowQrPrompt(false);
+  setShowHelp(true);
 }
 
 useEffect(() => {
@@ -5247,6 +5305,38 @@ const created = await postJSON(
 
 	return (
 	  <>
+      <InstallHelpModal
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+        t={t}
+        platform={platform}
+        onShare={() => {
+          const url = window.location.href;
+          if (navigator.share) {
+            navigator.share({
+              title: restaurantName,
+              text: "Check out our menu!",
+              url,
+            });
+          } else {
+            try {
+              navigator.clipboard.writeText(url);
+              alert(t("Link copied."));
+            } catch {
+              alert(url);
+            }
+          }
+        }}
+        onCopy={() => {
+          const url = window.location.href;
+          try {
+            navigator.clipboard.writeText(url);
+            alert(t("Link copied."));
+          } catch {
+            alert(url);
+          }
+        }}
+      />
       {showQrPrompt && (
         <div className="fixed bottom-5 left-1/2 z-[999] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-2">
           <div className="pointer-events-auto rounded-2xl border border-neutral-200/80 bg-white/95 shadow-[0_18px_50px_rgba(0,0,0,0.12)] backdrop-blur-md dark:border-neutral-800/70 dark:bg-neutral-950/85">
