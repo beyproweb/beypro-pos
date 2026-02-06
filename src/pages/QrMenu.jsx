@@ -4722,6 +4722,10 @@ const handlePopularProductClick = useCallback(
 
 		useEffect(() => {
 		  if (!orderType || !pendingPopularProduct) return;
+      // If the chosen order type requires an info modal (delivery / pre-order),
+      // wait until the modal is completed/closed before opening the add-to-cart flow.
+      if (orderType === "online" && showDeliveryForm) return;
+      if (orderType === "takeaway" && showTakeawayForm) return;
 		  const targetCategory = (pendingPopularProduct.category || "").trim();
 		  if (targetCategory) {
 		    setActiveCategory(targetCategory);
@@ -4729,7 +4733,15 @@ const handlePopularProductClick = useCallback(
 		  setSelectedProduct(pendingPopularProduct);
 		  setShowAddModal(true);
 		  setPendingPopularProduct(null);
-		}, [orderType, pendingPopularProduct, setActiveCategory, setSelectedProduct, setShowAddModal]);
+		}, [
+      orderType,
+      pendingPopularProduct,
+      showDeliveryForm,
+      showTakeawayForm,
+      setActiveCategory,
+      setSelectedProduct,
+      setShowAddModal,
+    ]);
 
 		const showHome = !orderType || forceHome;
 
