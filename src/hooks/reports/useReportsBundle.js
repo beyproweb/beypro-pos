@@ -8,6 +8,8 @@ const initialState = {
   productSalesData: [],
   cashRegisterData: [],
   expensesData: [],
+  staffPayments: [],
+  supplierPayments: [],
   closedOrders: [],
   orderItems: [],
   summary: null,
@@ -16,7 +18,7 @@ const initialState = {
   onlinePlatforms: {},
 };
 
-const CACHE_VERSION = "reports.cache.v1";
+const CACHE_VERSION = "reports.cache.v2";
 
 function getCacheKey(from, to) {
   return `${CACHE_VERSION}:bundle:${from}:${to}`;
@@ -28,7 +30,8 @@ function readCache(key) {
     const raw = window.localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed?.data || null;
+    if (!parsed?.data) return null;
+    return { data: parsed.data, cachedAt: parsed.cachedAt || 0 };
   } catch {
     return null;
   }
@@ -49,8 +52,10 @@ function writeCache(key, data) {
 export default function useReportsBundle({ from, to }) {
   const [state, setState] = useState(() => {
     if (!from || !to) return initialState;
-    const cached = readCache(getCacheKey(from, to));
-    return cached ? { ...cached, loading: false, error: null } : initialState;
+    const cachedEntry = readCache(getCacheKey(from, to));
+    return cachedEntry?.data
+      ? { ...cachedEntry.data, loading: false, error: null }
+      : initialState;
   });
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -61,15 +66,18 @@ export default function useReportsBundle({ from, to }) {
 
     let cancelled = false;
     const cacheKey = getCacheKey(from, to);
-    const cached = readCache(cacheKey);
+    const cachedEntry = readCache(cacheKey);
+    const cached = cachedEntry?.data || null;
 
-    if (reloadToken === 0 && cached) {
-      setState({ ...cached, loading: false, error: null });
-      return undefined;
-    }
+    const canUseCache = reloadToken === 0 && !!cached;
+    if (canUseCache) setState({ ...cached, loading: false, error: null });
 
-    async function load() {
-      setState((prev) => ({ ...prev, loading: true, error: null }));
+    async function load({ silent = false } = {}) {
+      if (!silent) {
+        setState((prev) => ({ ...prev, loading: true, error: null }));
+      } else {
+        setState((prev) => ({ ...prev, error: null }));
+      }
 
       try {
         const [
@@ -77,6 +85,8 @@ export default function useReportsBundle({ from, to }) {
           categories,
           cashTrends,
           expenses,
+          staffPayments,
+          supplierPayments,
           history,
           items,
           summary,
@@ -87,6 +97,8 @@ export default function useReportsBundle({ from, to }) {
           secureFetch(`/reports/sales-by-category?from=${from}&to=${to}`),
           secureFetch(`/reports/cash-register-trends`),
           secureFetch(`/reports/expenses?from=${from}&to=${to}`),
+          secureFetch(`/reports/staff-payments?from=${from}&to=${to}`),
+          secureFetch(`/reports/supplier-payments?from=${from}&to=${to}`),
           secureFetch(`/reports/history?from=${from}&to=${to}`),
           secureFetch(`/reports/order-items?from=${from}&to=${to}`),
           secureFetch(`/reports/summary?from=${from}&to=${to}`),
@@ -144,6 +156,8 @@ export default function useReportsBundle({ from, to }) {
           productSalesData: Array.isArray(categories) ? categories : [],
           cashRegisterData: Array.isArray(cashTrends) ? cashTrends : [],
           expensesData: Array.isArray(expenses) ? expenses : [],
+          staffPayments: Array.isArray(staffPayments) ? staffPayments : [],
+          supplierPayments: Array.isArray(supplierPayments) ? supplierPayments : [],
           closedOrders: filteredOrders,
           orderItems: Array.isArray(items) ? items : [],
           summary: summary ?? null,
@@ -164,7 +178,7 @@ export default function useReportsBundle({ from, to }) {
       }
     }
 
-    load();
+    load({ silent: canUseCache });
 
     return () => {
       cancelled = true;

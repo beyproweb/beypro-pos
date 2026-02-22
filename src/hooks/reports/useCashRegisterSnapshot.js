@@ -4,12 +4,14 @@ import secureFetch from "../../utils/secureFetch";
 const initialState = {
   loading: false,
   error: null,
+  registerState: "closed",
+  lastOpenAt: null,
   opening: 0,
   expenses: 0,
   available: 0,
 };
 
-const CACHE_VERSION = "reports.cache.v1";
+const CACHE_VERSION = "reports.cache.v2";
 const CACHE_KEY = `${CACHE_VERSION}:cashSnapshot`;
 
 function readCache() {
@@ -18,7 +20,8 @@ function readCache() {
     const raw = window.localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed?.data || null;
+    if (!parsed?.data) return null;
+    return { data: parsed.data, cachedAt: parsed.cachedAt || 0 };
   } catch {
     return null;
   }
@@ -38,8 +41,10 @@ function writeCache(data) {
 
 export default function useCashRegisterSnapshot() {
   const [state, setState] = useState(() => {
-    const cached = readCache();
-    return cached ? { ...cached, loading: false, error: null } : initialState;
+    const cachedEntry = readCache();
+    return cachedEntry?.data
+      ? { ...cachedEntry.data, loading: false, error: null }
+      : initialState;
   });
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -47,24 +52,28 @@ export default function useCashRegisterSnapshot() {
 
   useEffect(() => {
     let cancelled = false;
-    const cached = readCache();
+    const cachedEntry = readCache();
+    const cached = cachedEntry?.data || null;
+    const canUseCache = reloadToken === 0 && !!cached;
+    if (canUseCache) setState({ ...cached, loading: false, error: null });
 
-    if (reloadToken === 0 && cached) {
-      setState({ ...cached, loading: false, error: null });
-      return undefined;
-    }
-
-    async function load() {
-      setState((prev) => ({ ...prev, loading: true, error: null }));
+    async function load({ silent = false } = {}) {
+      if (!silent) {
+        setState((prev) => ({ ...prev, loading: true, error: null }));
+      } else {
+        setState((prev) => ({ ...prev, error: null }));
+      }
       try {
         const statusData = await secureFetch(`/reports/cash-register-status`);
         if (cancelled) return;
 
+        const registerState = String(statusData?.status || "closed").toLowerCase();
+        const lastOpenAt = statusData?.last_open_at || null;
         const openingCash = parseFloat(statusData?.opening_cash || 0);
         let cashExpenses = 0;
         let cashAvailable = openingCash;
 
-        const openTime = statusData?.last_open_at;
+        const openTime = lastOpenAt;
         if (openTime) {
           const encoded = encodeURIComponent(openTime);
           const [salesData, expenseData] = await Promise.all([
@@ -81,6 +90,8 @@ export default function useCashRegisterSnapshot() {
         const nextState = {
           loading: false,
           error: null,
+          registerState,
+          lastOpenAt,
           opening: openingCash,
           expenses: cashExpenses,
           available: cashAvailable,
@@ -97,7 +108,7 @@ export default function useCashRegisterSnapshot() {
       }
     }
 
-    load();
+    load({ silent: canUseCache });
     return () => {
       cancelled = true;
     };

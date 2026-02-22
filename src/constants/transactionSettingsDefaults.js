@@ -10,4 +10,8 @@ export const DEFAULT_TRANSACTION_SETTINGS = {
   disableTableOverviewOrdersFloatingButton: false,
   disableTableOverviewGuestsFloatingButton: false,
   requireGuestsBeforeOpen: true,
+  enableProductGridVirtualization: false,
+  enableCartVirtualization: false,
+  virtualizationProductOverscan: 6,
+  virtualizationCartOverscan: 8,
 };

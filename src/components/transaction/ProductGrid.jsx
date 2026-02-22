@@ -1,17 +1,97 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const ProductGrid = ({ products, onAddProduct, onOpenExtras, t, formatCurrency }) => {
+const PRODUCT_WINDOW_INITIAL_COUNT = 60;
+const PRODUCT_WINDOW_STEP = 60;
+
+const ProductGrid = ({
+  products,
+  onAddProduct,
+  onOpenExtras,
+  t,
+  formatCurrency,
+  enableVirtualization = false,
+  virtualizationOverscan = 6,
+}) => {
   if (!Array.isArray(products)) return null;
   const fallbackSrc = "/Productsfallback.jpg";
+  const scrollRef = useRef(null);
+  const [windowingFallback, setWindowingFallback] = useState(false);
+  const overscan = Number.isFinite(Number(virtualizationOverscan))
+    ? Math.max(0, Number(virtualizationOverscan))
+    : 0;
+  const thresholdPx = useMemo(() => Math.max(120, overscan * 24), [overscan]);
+  const shouldWindowProducts =
+    enableVirtualization &&
+    !windowingFallback &&
+    products.length > PRODUCT_WINDOW_INITIAL_COUNT;
+  const [renderCount, setRenderCount] = useState(() =>
+    shouldWindowProducts
+      ? Math.min(products.length, PRODUCT_WINDOW_INITIAL_COUNT)
+      : products.length
+  );
+
+  useEffect(() => {
+    if (!enableVirtualization) {
+      setWindowingFallback(false);
+      return;
+    }
+    let rafId = 0;
+    rafId = window.requestAnimationFrame(() => {
+      if (scrollRef.current) return;
+      setWindowingFallback(true);
+      if (import.meta.env.DEV) {
+        console.warn("[TX_VIRTUAL] Product windowing fallback: missing scroll container ref.");
+      }
+    });
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [enableVirtualization]);
+
+  useEffect(() => {
+    if (!shouldWindowProducts) {
+      setRenderCount(products.length);
+      return;
+    }
+    setRenderCount(Math.min(products.length, PRODUCT_WINDOW_INITIAL_COUNT));
+  }, [products, products.length, shouldWindowProducts]);
+
+  const handleScroll = useCallback(
+    (event) => {
+      if (!shouldWindowProducts) return;
+      const node = event?.currentTarget;
+      if (!node) {
+        setWindowingFallback(true);
+        if (import.meta.env.DEV) {
+          console.warn("[TX_VIRTUAL] Product windowing fallback: invalid scroll node.");
+        }
+        return;
+      }
+      const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
+      if (remaining > thresholdPx) return;
+      setRenderCount((prev) => {
+        if (prev >= products.length) return prev;
+        return Math.min(products.length, prev + PRODUCT_WINDOW_STEP + overscan);
+      });
+    },
+    [overscan, products.length, shouldWindowProducts, thresholdPx]
+  );
+
+  const renderedProducts = useMemo(() => {
+    if (!shouldWindowProducts) return products;
+    return products.slice(0, renderCount);
+  }, [products, renderCount, shouldWindowProducts]);
 
   return (
     <article className="flex min-w-0 flex-1 min-h-0 flex-col bg-transparent px-0 py-2 overflow-hidden">
       <div
+        ref={scrollRef}
+        onScroll={shouldWindowProducts ? handleScroll : undefined}
         className="h-[calc(100vh-260px)] overflow-y-auto px-3 sm:px-4 pb-[calc(150px+env(safe-area-inset-bottom))] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
         style={{ scrollbarGutter: "stable" }}
       >
         <div className="grid w-full grid-cols-3 gap-x-2 gap-y-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {products.map((product) => (
+          {renderedProducts.map((product) => (
             <button
               key={product.id}
               onClick={() => onAddProduct(product)}
@@ -56,4 +136,4 @@ const ProductGrid = ({ products, onAddProduct, onOpenExtras, t, formatCurrency }
   );
 };
 
-export default ProductGrid;
+export default React.memo(ProductGrid);

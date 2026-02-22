@@ -1,0 +1,2903 @@
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import PhoneOrderModal from "../modals/PhoneOrderModal";
+import RegisterModal from "../features/register/RegisterModal";
+import Orders from "../pages/Orders"; // adjust path as needed!
+import { useLocation } from "react-router-dom";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { useTranslation } from "react-i18next";
+import { useHasPermission } from "../components/hooks/useHasPermission";
+import { useAuth } from "../context/AuthContext";
+import { checkRegisterOpen } from "../utils/checkRegisterOpen";
+import { useRegisterGuard } from "../hooks/useRegisterGuard";
+import OrderHistory from "../components/OrderHistory";
+import { useHeader } from "../context/HeaderContext";
+import { useSetting } from "../components/hooks/useSetting";
+import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
+import { getReservationSchedule, isEarlyReservationClose } from "../utils/reservationSchedule";
+
+import secureFetch from "../utils/secureFetch";
+import {
+  renderReceiptText,
+  printViaBridge,
+  getReceiptLayout,
+} from "../utils/receiptPrinter";
+import { fetchOrderWithItems } from "../utils/orderPrinting";
+import { openCashDrawer, logCashRegisterEvent } from "../utils/cashDrawer";
+import { useCurrency } from "../context/CurrencyContext";
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.MODE === "development"
+    ? "http://localhost:5000/api"
+    : "https://api.beypro.com/api");
+const isDelayed = (order) => {
+  if (!order || normalizeOrderStatus(order.status) !== "confirmed" || !order.created_at) return false;
+  // Only treat as delayed if there is at least one item
+  if (!Array.isArray(order.items) || order.items.length === 0) return false;
+  const created = new Date(order.created_at);
+  const now = new Date();
+  const diffMins = (now - created) / 1000 / 60;
+  return diffMins > 1;
+};
+
+const isEffectivelyFreeOrder = (order) => {
+  if (!order) return true;
+
+  const status = normalizeOrderStatus(order.status);
+  if (status === "closed") return true;
+
+  // Reservations should be visible even if they have no items yet.
+  if (status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
+    return false;
+  }
+
+  if (status === "draft") return true;
+
+  const total = Number(order.total || 0);
+  const items = Array.isArray(order.items) ? order.items : null;
+
+  // If items are hydrated, empty items + zero total should look like a free table.
+  if (items) return items.length === 0 && total <= 0;
+
+  // If items are not hydrated yet, use total as a fast proxy.
+  // This prevents a brief "confirmed/occupied" flash for empty orders.
+  return total <= 0;
+};
+
+// ✅ Improved color logic for moved/paid tables
+// ✅ FIXED: show red if any suborder has unpaid items
+// ✅ NEW: show orange if table is reserved
+const getTableColor = (order) => {
+  if (!order) return "bg-gray-400 text-black";
+
+  const status = normalizeOrderStatus(order.status);
+
+  // 🟠 CHECK FOR RESERVATION - if reserved
+  if (status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
+    // 🟢 If reserved AND paid, show green
+    if (isOrderFullyPaid(order)) {
+      return "bg-green-500 text-white";
+    }
+    // 🟠 If reserved but not paid, show orange
+    return "bg-orange-500 text-white";
+  }
+
+  // Paid is always green, even if items haven't been hydrated yet.
+  if (isOrderFullyPaid(order)) {
+    return "bg-green-500 text-white";
+  }
+
+  const suborders = Array.isArray(order.suborders) ? order.suborders : [];
+  const items = Array.isArray(order.items) ? order.items : null;
+  const total = Number(order.total || 0);
+
+  // If items aren't loaded yet, still show an "occupied" color based on status
+  // instead of waiting (avoids the 2-3s gray flash).
+  if (!items) {
+    // Empty orders (0 total) should look free immediately.
+    // 🐛 FIX: Don't show confirmed status for empty tables
+    if (total <= 0) return "bg-gray-400 text-black";
+    if (status === "confirmed") return "bg-red-500 text-white";
+    return "bg-gray-400 text-black";
+  }
+
+  // 🧹 No items at all → treat as Free (neutral), not yellow
+  // 🐛 FIX: Empty tables should always be grey, never show as confirmed/occupied
+  if (items.length === 0) {
+    return "bg-gray-400 text-black";
+  }
+
+  // 🔍 Check unpaid in suborders
+  const hasUnpaidSubOrder = suborders.some((sub) =>
+    Array.isArray(sub.items)
+      ? sub.items.some((i) => !i.paid_at && !i.paid)
+      : false
+  );
+
+  // 🔍 Check unpaid items in main order
+  const hasUnpaidMainItem = items.some((i) => !i.paid_at && !i.paid);
+
+  // 🟥 if any unpaid anywhere (main or sub)
+  if (hasUnpaidSubOrder || hasUnpaidMainItem) {
+    return "bg-red-500 text-white";
+  }
+
+  // 🟡 confirmed but unpaid (fallback)
+  if (status === "confirmed") {
+    return "bg-yellow-400 text-black";
+  }
+
+  return "bg-gray-400 text-black";
+};
+
+// ✅ Helper: true if any suborder or item unpaid
+const hasUnpaidAnywhere = (order) => {
+  if (!order) return false;
+
+  const suborders = Array.isArray(order.suborders) ? order.suborders : [];
+  const items = Array.isArray(order.items) ? order.items : [];
+
+  const unpaidSub = suborders.some((sub) =>
+    Array.isArray(sub.items)
+      ? sub.items.some((i) => !i.paid_at && !i.paid)
+      : false
+  );
+
+  const unpaidMain = items.some((i) => !i.paid_at && !i.paid);
+
+  return unpaidSub || unpaidMain;
+};
+
+
+const normalizeOrderStatus = (status) => {
+  if (!status) return "";
+  const normalized = String(status).toLowerCase();
+  return normalized === "occupied" ? "confirmed" : normalized;
+};
+
+const formatLocalYmd = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const normalizeDateToYmd = (value) => {
+  if (!value) return "";
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return formatLocalYmd(value);
+  }
+  const raw = String(value).trim();
+  if (!raw) return "";
+  // Fast-path for YYYY-MM-DD strings
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (Number.isFinite(parsed.getTime())) return formatLocalYmd(parsed);
+  return raw.slice(0, 10);
+};
+
+const isOrderCancelledOrCanceled = (status) => {
+  const normalized = normalizeOrderStatus(status);
+  return normalized === "cancelled" || normalized === "canceled";
+};
+
+const isOrderPaid = (order) => {
+  const status = normalizeOrderStatus(order?.status);
+  const paymentStatus = String(order?.payment_status || "").toLowerCase();
+  return status === "paid" || paymentStatus === "paid" || order?.is_paid === true;
+};
+
+const isOrderFullyPaid = (order) => isOrderPaid(order) && !hasUnpaidAnywhere(order);
+
+const parseLooseDateToMs = (val) => {
+  if (!val) return NaN;
+  const a = new Date(val).getTime();
+  const bStr = String(val).replace(/([Zz]|[+-]\d{2}:?\d{2})$/, "");
+  const b = new Date(bStr).getTime();
+  if (Number.isFinite(a) && Number.isFinite(b)) {
+    return Math.abs(Date.now() - a) <= Math.abs(Date.now() - b) ? a : b;
+  }
+  return Number.isFinite(a) ? a : b;
+};
+
+const getOrderPrepMinutes = (order, productPrepById = {}) => {
+  const direct = Number(order?.preparation_time ?? order?.prep_time ?? order?.prepTime);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+  let maxMinutes = 0;
+  items.forEach((item) => {
+    const raw =
+      item?.preparation_time ??
+      item?.prep_time ??
+      item?.prepTime ??
+      item?.product_preparation_time ??
+      item?.product?.preparation_time ??
+      productPrepById?.[Number(item?.product_id ?? item?.productId)];
+    const minutes = Number(raw);
+    if (!Number.isFinite(minutes) || minutes <= 0) return;
+    const qty = Number(item?.quantity ?? item?.qty ?? 1);
+    const total = minutes * Math.max(1, qty);
+    if (total > maxMinutes) maxMinutes = total;
+  });
+  return maxMinutes;
+};
+
+const getPrepStartMs = (order) => {
+  const direct = parseLooseDateToMs(order?.prep_started_at ?? order?.prepStartedAt);
+  if (Number.isFinite(direct)) return direct;
+
+  const updated = parseLooseDateToMs(order?.kitchen_status_updated_at);
+  if (Number.isFinite(updated)) return updated;
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+  for (const item of items) {
+    const ms = parseLooseDateToMs(item?.prep_started_at ?? item?.prepStartedAt);
+    if (Number.isFinite(ms)) return ms;
+  }
+  for (const item of items) {
+    const itemUpdated = parseLooseDateToMs(item?.kitchen_status_updated_at);
+    if (Number.isFinite(itemUpdated)) return itemUpdated;
+  }
+  return NaN;
+};
+
+const getReadyAtLabel = (order, productPrepById = {}) => {
+  const directReadyMs = parseLooseDateToMs(
+    order?.estimated_ready_at ??
+      order?.ready_at ??
+      order?.readyAt ??
+      order?.estimatedReadyAt
+  );
+  if (Number.isFinite(directReadyMs)) {
+    return new Date(directReadyMs).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
+  const startMs = getPrepStartMs(order);
+  const prepMinutes = getOrderPrepMinutes(order, productPrepById);
+  if (!Number.isFinite(startMs) || !prepMinutes) return "";
+  const readyMs = startMs + prepMinutes * 60 * 1000;
+  return new Date(readyMs).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+};
+
+const pickLatestTimestampValue = (existingValue, nextValue) => {
+  if (!existingValue) return nextValue;
+  if (!nextValue) return existingValue;
+  const existingMs = parseLooseDateToMs(existingValue);
+  const nextMs = parseLooseDateToMs(nextValue);
+  if (!Number.isFinite(existingMs)) return nextValue;
+  if (!Number.isFinite(nextMs)) return existingValue;
+  return nextMs >= existingMs ? nextValue : existingValue;
+};
+
+const getTableOverviewConfirmedTimersCacheKey = () => {
+  const restaurantId =
+    (typeof window !== "undefined" && window?.localStorage?.getItem("restaurant_id")) ||
+    "global";
+  return `hurrypos:${restaurantId}:tableOverview.confirmedTimers.v1`;
+};
+
+const readTableOverviewConfirmedTimers = () => {
+  try {
+    if (typeof window === "undefined") return {};
+    const raw = window?.localStorage?.getItem(getTableOverviewConfirmedTimersCacheKey());
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeTableOverviewConfirmedTimers = (timers) => {
+  try {
+    if (typeof window === "undefined") return;
+    window?.localStorage?.setItem(
+      getTableOverviewConfirmedTimersCacheKey(),
+      JSON.stringify(timers || {})
+    );
+  } catch {
+    // ignore
+  }
+};
+
+const resolveConfirmedSinceMs = (prevOrder, nextOrder, ctx) => {
+  const tableKey = ctx?.tableKey != null ? String(ctx.tableKey) : null;
+  const timers = ctx?.timers;
+  const isInitialLoad = Boolean(ctx?.isInitialLoad);
+
+  if (!nextOrder || nextOrder.status !== "confirmed") {
+    if (timers && tableKey) delete timers[tableKey];
+    return null;
+  }
+
+  const storedMs =
+    timers && tableKey != null ? Number.parseInt(timers[tableKey], 10) : NaN;
+  if (Number.isFinite(storedMs)) return storedMs;
+
+  // Only treat an order as "free" for timer purposes when items are actually hydrated.
+  // The /orders list can have total=0 and no items, which is ambiguous until hydration completes.
+  if (Array.isArray(nextOrder.items) && isEffectivelyFreeOrder(nextOrder)) {
+    if (timers && tableKey) delete timers[tableKey];
+    return null;
+  }
+
+  // When the page first loads after a refresh, there is no previous in-memory state,
+  // so we must NOT treat "missing prev" as a free→confirmed transition (or we'd reset to 00:00).
+  // After the initial load, a missing prev indicates a new order appeared → start from 00:00.
+  if (!isInitialLoad && prevOrder === undefined) {
+    const now = Date.now();
+    if (timers && tableKey) timers[tableKey] = now;
+    return now;
+  }
+
+  const prevIsEffectivelyFree =
+    prevOrder === undefined
+      ? false
+      : Array.isArray(prevOrder.items) && isEffectivelyFreeOrder(prevOrder);
+  if (prevIsEffectivelyFree) {
+    const now = Date.now();
+    if (timers && tableKey) timers[tableKey] = now;
+    return now;
+  }
+
+  const prevMs = prevOrder?.status === "confirmed" ? prevOrder?.confirmedSinceMs : null;
+  if (Number.isFinite(prevMs)) {
+    if (timers && tableKey) timers[tableKey] = prevMs;
+    return prevMs;
+  }
+
+  const nextMs = parseLooseDateToMs(nextOrder.updated_at || nextOrder.created_at);
+  const resolved = Number.isFinite(nextMs) ? nextMs : Date.now();
+  if (timers && tableKey) timers[tableKey] = resolved;
+  return resolved;
+};
+
+const getDisplayTotal = (order) => {
+  if (!order) return 0;
+
+  const computeLineTotal = (item) => {
+    if (!item || typeof item !== "object") return 0;
+    const qty = Math.max(1, Math.trunc(Number(item?.quantity ?? item?.qty ?? 1) || 1));
+
+    const rawTotal =
+      item?.total_price ?? item?.totalPrice ?? item?.line_total ?? item?.lineTotal ?? null;
+    const parsedTotal = Number(rawTotal);
+    if (Number.isFinite(parsedTotal) && parsedTotal > 0) return parsedTotal;
+
+    const unitPrice = Number(item?.price ?? item?.unit_price ?? item?.unitPrice ?? 0) || 0;
+    const base = unitPrice * qty;
+
+    const extrasTotal = Array.isArray(item?.extras)
+      ? item.extras.reduce((sum, ex) => {
+          const exQty = Math.max(1, Math.trunc(Number(ex?.quantity ?? 1) || 1));
+          const exPrice = Number(ex?.price ?? 0) || 0;
+          return sum + exQty * exPrice;
+        }, 0) * qty
+      : 0;
+
+    return base + extrasTotal;
+  };
+
+  if (hasUnpaidAnywhere(order)) {
+    const items = Array.isArray(order.items) ? order.items : [];
+    const suborders = Array.isArray(order.suborders) ? order.suborders : [];
+    const unpaidMainTotal = items
+      .filter((i) => !i?.paid_at && !i?.paid)
+      .reduce((sum, i) => sum + computeLineTotal(i), 0);
+    const unpaidSubTotal = suborders
+      .flatMap((sub) => (Array.isArray(sub?.items) ? sub.items : []))
+      .filter((i) => !i?.paid_at && !i?.paid)
+      .reduce((sum, i) => sum + computeLineTotal(i), 0);
+    return unpaidMainTotal + unpaidSubTotal;
+  }
+
+  if (order.receiptMethods?.length > 0) {
+    return order.receiptMethods.reduce((sum, m) => sum + parseFloat(m.amount || 0), 0);
+  }
+
+  return parseFloat(order.total || 0);
+};
+
+const TAB_LIST = [
+  { id: "takeaway", label: "Pre Order", icon: "⚡" },
+  { id: "tables", label: "Tables", icon: "🍽️" },
+  { id: "kitchen", label: "All Orders", icon: "👨‍🍳" },
+  { id: "history", label: "History", icon: "📘" },
+  { id: "packet", label: "Packet", icon: "🛵" },
+  { id: "phone", label: "Phone", icon: "📞" },
+  { id: "register", label: "Register", icon: "💵" },
+];
+
+const getRestaurantScopedCacheKey = (suffix) => {
+  const restaurantId =
+    (typeof window !== "undefined" && window?.localStorage?.getItem("restaurant_id")) ||
+    "global";
+  return `hurrypos:${restaurantId}:${suffix}`;
+};
+
+const getTableConfigsCacheKey = () => getRestaurantScopedCacheKey("tableConfigs.v1");
+const getTableCountCacheKey = () => getRestaurantScopedCacheKey("tableCount.v1");
+const getTableOrdersCacheKey = () => getRestaurantScopedCacheKey("tableOverview.orders.v1");
+const getTableOrdersCacheTsKey = () => getRestaurantScopedCacheKey("tableOverview.orders.ts");
+
+const safeParseJson = (raw) => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+const getSettingsTenantKey = () => {
+  if (typeof window === "undefined") return "default";
+  return (
+    window?.localStorage?.getItem("restaurant_id") ||
+    window?.localStorage?.getItem("restaurant_slug") ||
+    "default"
+  );
+};
+
+const getSettingCacheKey = (section) => `beypro:settings:${getSettingsTenantKey()}:${section}`;
+
+const readInitialTableSettings = () => {
+  const defaults = {
+    tableLabelText: "",
+    showAreas: true,
+  };
+
+  try {
+    if (typeof window === "undefined") return defaults;
+    const cached = safeParseJson(window?.localStorage?.getItem(getSettingCacheKey("tables")));
+    if (!cached || typeof cached !== "object") return defaults;
+    return { ...defaults, ...cached };
+  } catch {
+    return defaults;
+  }
+};
+
+const readInitialTableConfigs = () => {
+  // Prefer last known full configs (fastest + keeps areas/seats stable).
+  const cachedConfigs = safeParseJson(
+    typeof window !== "undefined" ? window?.localStorage?.getItem(getTableConfigsCacheKey()) : null
+  );
+  if (Array.isArray(cachedConfigs) && cachedConfigs.length > 0) {
+    return cachedConfigs
+      .filter((t) => t && typeof t === "object" && t.number != null && t.active !== false)
+      .sort((a, b) => Number(a.number) - Number(b.number));
+  }
+
+  // Fallback to last known count → render placeholder cards immediately.
+  const cachedCountRaw =
+    typeof window !== "undefined" ? window?.localStorage?.getItem(getTableCountCacheKey()) : null;
+  const cachedCount = Number.parseInt(cachedCountRaw || "", 10);
+  if (Number.isFinite(cachedCount) && cachedCount > 0 && cachedCount <= 500) {
+    return Array.from({ length: cachedCount }, (_, idx) => ({
+      number: idx + 1,
+      active: true,
+    }));
+  }
+
+  return [];
+};
+
+const readInitialTableOrders = () => {
+  const cachedOrders = safeParseJson(
+    typeof window !== "undefined" ? window?.localStorage?.getItem(getTableOrdersCacheKey()) : null
+  );
+  if (!Array.isArray(cachedOrders) || cachedOrders.length === 0) return [];
+  return cachedOrders.filter((o) => o && typeof o === "object" && o.table_number != null);
+};
+
+const writeTableOrdersCache = (orders) => {
+  try {
+    if (typeof window === "undefined") return;
+    if (!Array.isArray(orders)) return;
+    window?.localStorage?.setItem(getTableOrdersCacheKey(), JSON.stringify(orders));
+    window?.localStorage?.setItem(getTableOrdersCacheTsKey(), String(Date.now()));
+  } catch {
+    // ignore cache errors
+  }
+};
+
+const mergeTableConfigsByNumber = (prev, next) => {
+  const map = new Map();
+  (Array.isArray(prev) ? prev : []).forEach((t) => {
+    if (!t || typeof t !== "object") return;
+    if (t.number == null) return;
+    map.set(Number(t.number), t);
+  });
+  (Array.isArray(next) ? next : []).forEach((t) => {
+    if (!t || typeof t !== "object") return;
+    if (t.number == null) return;
+    const num = Number(t.number);
+    map.set(num, { ...(map.get(num) || {}), ...t });
+  });
+  return Array.from(map.values()).sort((a, b) => Number(a.number) - Number(b.number));
+};
+
+
+
+
+
+export default function TableOverview() {
+  useRegisterGuard();
+  const { formatCurrency, config } = useCurrency();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const didResetGuestsOnEntryRef = useRef(false);
+  const lastDayKeyRef = useRef(formatLocalYmd(new Date()));
+  const tabFromUrl = React.useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return String(params.get("tab") || "tables").toLowerCase();
+  }, [location.search]);
+
+  const activeTab = tabFromUrl;
+  const [orders, setOrders] = useState(() => readInitialTableOrders());
+  const [tableConfigs, setTableConfigs] = useState(() => readInitialTableConfigs());
+  const [paymentFilter, setPaymentFilter] = useState("All");
+  const [orderTypeFilter, setOrderTypeFilter] = useState("All");
+  const [fromDate, setFromDate] = useState(() => {
+    return new Date().toISOString().slice(0, 10);
+  });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reservationsToday, setReservationsToday] = useState([]);
+  const [transactionSettings, setTransactionSettings] = useState(
+    DEFAULT_TRANSACTION_SETTINGS
+  );
+  useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
+  const [tableSettings, setTableSettings] = useState(() => readInitialTableSettings());
+  useSetting("tables", setTableSettings, {
+    tableLabelText: "",
+    showAreas: true,
+  });
+  const alertIntervalRef = useRef(null);
+  const ordersFetchSeqRef = useRef(0);
+  const didInitialOrdersLoadRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const [now, setNow] = useState(new Date());
+  const [kitchenOpenOrders, setKitchenOpenOrders] = useState([]);
+  const [kitchenOpenOrdersLoading, setKitchenOpenOrdersLoading] = useState(false);
+  const [productPrepById, setProductPrepById] = useState({});
+  const [showPhoneOrderModal, setShowPhoneOrderModal] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [packetOrders, setPacketOrders] = useState([]);
+  const { currentUser, loading: authLoading } = useAuth();
+  const { t } = useTranslation();
+  const { setHeader } = useHeader();
+  const hasPermission = useHasPermission;
+  // compute permissions once at top level (avoid calling hooks inside loops)
+  const canSeeTablesTab = useHasPermission("tables");
+  const canSeeKitchenTab = useHasPermission("kitchen");
+  const canSeeHistoryTab = useHasPermission("history");
+  const canSeePacketTab = useHasPermission("packet-orders");
+  const canSeePhoneTab = useHasPermission("phone-orders");
+  const canSeeRegisterTab = useHasPermission("register");
+  const canSeeTakeawayTab = useHasPermission("takeaway");
+const [activeArea, setActiveArea] = useState("ALL");
+
+  // Avoid tab flicker while auth/permissions are still loading by caching the last allowed tabs
+  const lastPermissionsRef = useRef({
+    tables: true,
+    kitchen: true,
+    history: true,
+    packet: true,
+    phone: true,
+    register: true,
+    takeaway: true,
+  });
+
+  const effectivePermissions = React.useMemo(() => {
+    if (authLoading) return lastPermissionsRef.current;
+    const next = {
+      tables: canSeeTablesTab,
+      kitchen: canSeeKitchenTab,
+      history: canSeeHistoryTab,
+      packet: canSeePacketTab,
+      phone: canSeePhoneTab,
+      register: canSeeRegisterTab,
+      takeaway: canSeeTakeawayTab,
+    };
+    lastPermissionsRef.current = next;
+    return next;
+  }, [
+    authLoading,
+    canSeeTablesTab,
+    canSeeKitchenTab,
+    canSeeHistoryTab,
+    canSeePacketTab,
+    canSeePhoneTab,
+    canSeeRegisterTab,
+    canSeeTakeawayTab,
+  ]);
+
+  const [packetOrdersCount, setPacketOrdersCount] = useState(0);
+
+useEffect(() => {
+  let mounted = true;
+  (async () => {
+    try {
+      const data = await secureFetch("/products");
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.products)
+        ? data.products
+        : data?.product
+        ? [data.product]
+        : [];
+      const next = {};
+      for (const p of list) {
+        const id = Number(p?.id);
+        const prep = parseFloat(p?.preparation_time ?? p?.prep_time ?? p?.prepTime);
+        if (!Number.isFinite(id) || !Number.isFinite(prep) || prep <= 0) continue;
+        next[id] = prep;
+      }
+      if (mounted) setProductPrepById(next);
+    } catch {
+      if (mounted) setProductPrepById({});
+    }
+  })();
+  return () => {
+    mounted = false;
+  };
+}, []);
+
+const confirmEarlyReservationClose = (schedule, t) =>
+  new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const dateLabel = schedule?.date || "—";
+    const timeLabel = schedule?.time || "—";
+
+    let toastId = null;
+    toastId = toast(
+      () => (
+        <div className="flex flex-col gap-3">
+          <div className="font-extrabold text-red-700">
+            {t("Reservation time has not yet arrived.")}
+          </div>
+          <div className="text-sm text-slate-800">
+            {t(
+              "This table is reserved for {{date}} {{time}}. The reservation time has not yet arrived. Close the table anyway?",
+              { date: dateLabel, time: timeLabel }
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-200"
+              onClick={() => {
+                finish(false);
+                if (toastId) toast.dismiss(toastId);
+              }}
+            >
+              {t("Cancel")}
+            </button>
+            <button
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-700"
+              onClick={() => {
+                finish(true);
+                if (toastId) toast.dismiss(toastId);
+              }}
+            >
+              {t("Close anyway")}
+            </button>
+          </div>
+        </div>
+      ),
+      {
+        autoClose: false,
+        closeOnClick: false,
+        closeButton: false,
+        draggable: false,
+        onClose: () => finish(false),
+      }
+    );
+  });
+
+const handleCloseTable = async (orderOrId) => {
+  const order = orderOrId && typeof orderOrId === "object" ? orderOrId : null;
+  const orderId = order?.id ?? orderOrId;
+  const schedule = getReservationSchedule(order);
+
+  if (order && isEarlyReservationClose(order) && schedule) {
+    const confirmed = await confirmEarlyReservationClose(schedule, t);
+    if (!confirmed) return;
+  }
+
+  try {
+    const items = await secureFetch(`/orders/${orderId}/items`);
+    if (!Array.isArray(items)) {
+      toast.error("Failed to verify kitchen items");
+      return;
+    }
+
+    // ✅ Fetch current kitchen exclusion settings (same as TransactionScreen)
+    const { excludedItems = [], excludedCategories = [] } =
+      (await secureFetch("kitchen/compile-settings")) || {};
+
+    // ✅ Allow closing if all items are delivered OR excluded
+    const allDeliveredOrExcluded = items.every(
+      (i) =>
+        i.kitchen_status === "delivered" ||
+        !i.kitchen_status ||
+        excludedItems.includes(i.product_id) ||
+        excludedCategories.includes(i.category)
+    );
+
+    if (!allDeliveredOrExcluded) {
+      toast.warning(`⚠️ ${t("Cannot close: some kitchen items not yet delivered!")}`, {
+        style: { background: "#dc2626", color: "#fff" }, // red-600
+      });
+      return;
+    }
+
+    // ✅ Proceed to close
+    await secureFetch(`/orders/${orderId}/close`, { method: "POST" });
+    toast.success("✅ Table closed successfully!");
+
+    // Reset guest count ("seats") for the table once it's closed.
+    const tableNumber = Number(order?.table_number);
+    if (Number.isFinite(tableNumber)) {
+      upsertTableConfigLocal(tableNumber, { guests: null });
+      try {
+        await secureFetch(`/tables/${tableNumber}`, {
+          method: "PATCH",
+          body: JSON.stringify({ guests: null }),
+        });
+      } catch (err) {
+        console.error("❌ Failed to reset table guests after close:", err);
+      }
+    }
+
+    // optional: return to overview
+    setTimeout(() => {
+      fetchOrders();
+    }, 800);
+  } catch (err) {
+    console.error("❌ Failed to close table:", err);
+    toast.error("Failed to close table");
+  }
+};
+
+const groupByDate = (orders) => {
+  return orders.reduce((acc, order) => {
+    const dateKey = order.created_at?.slice(0, 10) || "Unknown";
+    if (!acc[dateKey]) acc[dateKey] = [];
+    acc[dateKey].push(order);
+    return acc;
+  }, {});
+};
+
+  const visibleTabs = React.useMemo(() => {
+    return TAB_LIST.filter((tab) => {
+      if (tab.id === "takeaway") return effectivePermissions.takeaway;
+      if (tab.id === "tables") return effectivePermissions.tables;
+      if (tab.id === "kitchen") return effectivePermissions.kitchen;
+      if (tab.id === "history") return effectivePermissions.history;
+      if (tab.id === "packet") return effectivePermissions.packet;
+      if (tab.id === "phone") return effectivePermissions.phone;
+      if (tab.id === "register") return effectivePermissions.register;
+      return true;
+    });
+  }, [effectivePermissions]);
+
+  const handleTabSelect = useCallback(
+    (tabId, options = {}) => {
+      if (!tabId) return;
+      const basePath = "/tableoverview";
+      const replace = options?.replace === true;
+      const params = new URLSearchParams(location.search);
+      params.set("tab", tabId);
+      navigate(`${basePath}?${params.toString()}`, { replace });
+    },
+    [location.search, navigate]
+  );
+
+  useEffect(() => {
+    if (!location.pathname.includes("tableoverview")) return;
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.some((tab) => tab.id === activeTab)) {
+      handleTabSelect(visibleTabs[0].id, { replace: true });
+    }
+  }, [visibleTabs, activeTab, handleTabSelect, location.pathname]);
+
+
+
+
+  useEffect(() => {
+    setShowPhoneOrderModal(activeTab === "phone");
+    if (activeTab === "register") setShowRegisterModal(true);
+  }, [activeTab]);
+
+useEffect(() => () => setHeader({}), [setHeader]);
+
+useEffect(() => () => {
+  isMountedRef.current = false;
+}, []);
+
+const fetchPacketOrders = useCallback(async () => {
+  try {
+    const [packet, phone] = await Promise.all([
+      secureFetch(`/orders?type=packet`),
+      secureFetch(`/orders?type=phone`),
+    ]);
+
+    const packetArray = Array.isArray(packet) ? packet : [];
+    const phoneArray = Array.isArray(phone) ? phone : [];
+
+    const data = [...packetArray, ...phoneArray];
+
+    const ordersWithItems = await Promise.all(
+      data
+        .filter((o) => {
+          const status = normalizeOrderStatus(o?.status);
+          if (status === "closed") return false;
+          if (isOrderCancelledOrCanceled(status)) return false;
+          return true;
+        })
+        .map(async (order) => {
+          const items = (await secureFetch(`/orders/${order.id}/items`)).map((item) => ({
+            ...item,
+            discount_type: item.discount_type || item.discountType || null,
+            discount_value:
+              item.discount_value != null
+                ? parseFloat(item.discount_value)
+                : item.discountValue != null
+                ? parseFloat(item.discountValue)
+                : 0,
+          }));
+
+          let receiptMethods = [];
+          if (order.receipt_id) {
+            try {
+              receiptMethods = await secureFetch(`/orders/receipt-methods/${order.receipt_id}`);
+            } catch (e) {
+              console.warn("⚠️ Failed to fetch receipt methods for order", order.id, e);
+            }
+          }
+
+          return { ...order, items, receiptMethods };
+        })
+    );
+
+    setPacketOrders(ordersWithItems);
+  } catch (err) {
+    console.error("❌ Fetch packet orders failed:", err);
+    toast.error(t("Could not load packet orders"));
+  }
+}, [t]);
+
+const fetchPacketOrdersCount = useCallback(async () => {
+  if (!canSeePacketTab) return;
+  try {
+    const [packet, phone] = await Promise.all([
+      secureFetch(`/orders?type=packet`),
+      secureFetch(`/orders?type=phone`),
+    ]);
+
+    const packetArray = Array.isArray(packet) ? packet : [];
+    const phoneArray = Array.isArray(phone) ? phone : [];
+    const filtered = [...packetArray, ...phoneArray].filter(
+      (o) => {
+        if (!o) return false;
+        const status = normalizeOrderStatus(o?.status);
+        if (status === "closed") return false;
+        if (isOrderCancelledOrCanceled(status)) return false;
+        return true;
+      }
+    );
+    setPacketOrdersCount(filtered.length);
+  } catch (err) {
+    console.warn("⚠️ Failed to fetch packet orders count:", err);
+    setPacketOrdersCount(0);
+  }
+}, [canSeePacketTab]);
+
+useEffect(() => {
+  fetchPacketOrdersCount();
+}, [fetchPacketOrdersCount]);
+
+useEffect(() => {
+  setPacketOrdersCount(Array.isArray(packetOrders) ? packetOrders.length : 0);
+}, [packetOrders]);
+
+const [takeawayOrders, setTakeawayOrders] = useState([]);
+
+const fetchTakeawayOrders = useCallback(async () => {
+  try {
+    const data = await secureFetch("/orders?type=takeaway");
+    const filtered = Array.isArray(data)
+      ? data.filter((o) => {
+          const status = normalizeOrderStatus(o?.status);
+          if (status === "closed") return false;
+          if (isOrderCancelledOrCanceled(status)) return false;
+          return true;
+        })
+      : [];
+
+    // Fetch items and receipt methods for accurate total display (like tables/packet)
+    const ordersWithItems = await Promise.all(
+      filtered.map(async (order) => {
+        try {
+          let items = (await secureFetch(`/orders/${order.id}/items`)).map((item) => ({
+            ...item,
+            discount_type: item.discount_type || item.discountType || null,
+            discount_value:
+              item.discount_value != null
+                ? parseFloat(item.discount_value)
+                : item.discountValue != null
+                ? parseFloat(item.discountValue)
+                : 0,
+          }));
+
+          // ✅ Fallback for online-paid orders missing item paid flags
+          // Only do this if the backend doesn't provide per-item paid markers at all.
+          if (isOrderPaid(order)) {
+            const hasAnyPaidMarker = items.some(
+              (i) => i?.paid_at != null || typeof i?.paid === "boolean"
+            );
+            if (!hasAnyPaidMarker) {
+              items = items.map((i) => ({ ...i, paid: true }));
+            }
+          }
+
+          let receiptMethods = [];
+          if (order.receipt_id) {
+            try {
+              receiptMethods = await secureFetch(`/orders/receipt-methods/${order.receipt_id}`);
+            } catch (e) {
+              console.warn("⚠️ Failed to fetch receipt methods for takeaway order", order.id, e);
+            }
+          }
+
+          return { ...order, items, receiptMethods };
+        } catch (e) {
+          console.warn("⚠️ Failed to enrich takeaway order", order.id, e);
+          return { ...order, items: [], receiptMethods: [] };
+        }
+      })
+    );
+
+    setTakeawayOrders(ordersWithItems);
+  } catch (err) {
+    console.error("❌ Fetch takeaway orders failed:", err);
+    toast.error("Could not load takeaway orders");
+  }
+}, []);
+
+/* moved below loadDataForTab to avoid TDZ */
+
+
+
+
+
+
+
+
+
+
+
+
+// (location + handleTabSelect declared above)
+
+
+
+
+
+useEffect(() => {
+  const today = formatLocalYmd(new Date());
+  setFromDate(today);
+  setToDate(today);
+}, []);
+
+const fetchOrders = useCallback(async () => {
+  const isDev = import.meta.env.DEV;
+  const t0 = isDev ? performance.now() : 0;
+  
+  try {
+    const seq = ++ordersFetchSeqRef.current;
+    const isInitialLoad = !didInitialOrdersLoadRef.current;
+    
+    // ⚡ INSTANT: Use cached orders for Phase 1 if available
+    const cachedOrders = readInitialTableOrders();
+    if (cachedOrders.length > 0 && isInitialLoad) {
+      setOrders(cachedOrders);
+      if (isDev) console.log(`⚡ [TableOverview] Rendered from cache in ${(performance.now() - t0).toFixed(1)}ms`);
+    }
+    
+    // Always use secureFetch → tenant_id + auth included
+    const [ordersRes, reservationsRes] = await Promise.allSettled([
+      secureFetch("/orders"),
+      (async () => {
+        const today = formatLocalYmd(new Date());
+        return secureFetch(`/orders/reservations?start_date=${today}&end_date=${today}`);
+      })(),
+    ]);
+
+    if (isDev) console.log(`⏱️ [TableOverview] Phase 1 fetch completed in ${(performance.now() - t0).toFixed(1)}ms`);
+
+    const data = ordersRes.status === "fulfilled" ? ordersRes.value : null;
+
+    if (!Array.isArray(data)) {
+      console.error("❌ Unexpected orders response:", data);
+      toast.error("Failed to load orders");
+      return;
+    }
+
+    const normalizeReservationList = (value) => {
+      const list = Array.isArray(value?.reservations) ? value.reservations : Array.isArray(value) ? value : [];
+      // Include all reservations - they may have status='closed' but still have reservation_date set
+      // We don't filter by status here; the backend handles that
+      if (isDev) console.log(`📋 [TableOverview] Fetched ${list.length} total reservations:`, list.map(r => ({ id: r.id, table: r.table_number, date: r.reservation_date, status: r.status })));
+      return list;
+    };
+
+    if (reservationsRes.status === "fulfilled") {
+      setReservationsToday(normalizeReservationList(reservationsRes.value));
+    } else {
+      setReservationsToday([]);
+    }
+
+    // ✅ Build a Set of order IDs we already have
+    const existingOrderIds = new Set(data.map(o => o.id).filter(Boolean));
+    
+    // ✅ Get normalized reservations list
+    const reservationsList = reservationsRes.status === "fulfilled" 
+      ? normalizeReservationList(reservationsRes.value) 
+      : [];
+
+    // ✅ Merge reservations into orders so empty reserved tables appear
+    const existingTableNumbers = new Set(data.map((o) => Number(o.table_number)).filter(Number.isFinite));
+    
+    // Build a map of reservations by order_id for quick lookup
+    const reservationsByOrderId = new Map();
+    const reservationsByTableNumber = new Map();
+    reservationsList.forEach((res) => {
+      if (res.order_id) reservationsByOrderId.set(Number(res.order_id), res);
+      if (res.table_number != null) reservationsByTableNumber.set(Number(res.table_number), res);
+    });
+
+    // Enrich existing orders with reservation data if they're missing it
+    const enrichedOrders = data.map((order) => {
+      const reservation = reservationsByOrderId.get(Number(order.id));
+      if (reservation && !order.reservation_date) {
+        if (isDev) console.log(`🔗 [TableOverview] Enriching order ${order.id} (table ${order.table_number}) with reservation from map`);
+        return {
+          ...order,
+          status: order.status === "reserved" ? "reserved" : order.status,
+          order_type: order.order_type === "reservation" ? "reservation" : order.order_type,
+          reservation_date: reservation.reservation_date,
+          reservation_time: reservation.reservation_time,
+          reservation_clients: reservation.reservation_clients,
+          reservation_notes: reservation.reservation_notes,
+        };
+      }
+      if (order.reservation_date && isDev) {
+        console.log(`✅ [TableOverview] Order ${order.id} (table ${order.table_number}) already has reservation_date: ${order.reservation_date}`);
+      }
+      return order;
+    });
+
+    const reservationOrders = reservationsList
+      .filter((res) => {
+        // include reservations that either reference an order_id not returned,
+        // or reservations without order_id for a table that has no order yet
+        if (res.table_number == null) return false;
+        if (res.order_id && !existingOrderIds.has(res.order_id)) return true;
+        if (!res.order_id && !existingTableNumbers.has(Number(res.table_number))) return true;
+        return false;
+      })
+      .map((res) => ({
+        id: res.order_id || null,
+        table_number: Number(res.table_number),
+        status: "reserved",
+        order_type: "reservation",
+        total: 0,
+        items: [],
+        reservation_date: res.reservation_date,
+        reservation_time: res.reservation_time,
+        reservation_clients: res.reservation_clients,
+        reservation_notes: res.reservation_notes,
+      }));
+
+    const openTableOrders = [...enrichedOrders, ...reservationOrders]
+      .filter((o) => {
+        const status = normalizeOrderStatus(o.status);
+        if (status === "closed") return false;
+        if (isOrderCancelledOrCanceled(status)) return false;
+        return o.table_number != null;
+      })
+      .map((order) => {
+        const status = normalizeOrderStatus(order.status);
+        return {
+          ...order,
+          status,
+          total: status === "paid" ? 0 : parseFloat(order.total || 0),
+        };
+      });
+
+    // Show all reservations (badge already carries the date/time).
+    const visibleTableOrders = openTableOrders;
+
+	    // Phase 1: render table statuses/colors immediately from order rows.
+	    // Preserve any previously-hydrated items to avoid UI flicker while refreshing.
+		    setOrders((prev) => {
+		      if (import.meta.env.DEV) console.time('[Phase1] setOrders');
+		      const prevByTable = new Map();
+		      (Array.isArray(prev) ? prev : []).forEach((o) => {
+		        if (o?.table_number != null) prevByTable.set(Number(o.table_number), o);
+		      });
+
+		      const storedTimers = readTableOverviewConfirmedTimers();
+		      const nextTimers = { ...storedTimers };
+		      const nextTableKeys = new Set(
+		        visibleTableOrders.map((o) => String(Number(o.table_number)))
+		      );
+		      for (const prevKey of prevByTable.keys()) {
+		        if (!nextTableKeys.has(String(prevKey))) delete nextTimers[String(prevKey)];
+		      }
+
+		      const merged = Object.values(
+		        visibleTableOrders.reduce((acc, order) => {
+		          const key = Number(order.table_number);
+		          const tableKey = String(key);
+		          const prevMerged = prevByTable.get(key);
+		          const knownItems = Array.isArray(prevMerged?.items) ? prevMerged.items : null;
+		          const orderWithKnownItems = knownItems ? { ...order, items: knownItems } : order;
+		          if (!acc[key]) {
+		            acc[key] = {
+		              ...order,
+		              merged_ids: [order.id],
+		              items: Array.isArray(prevMerged?.items) ? prevMerged.items : null,
+		              suborders: Array.isArray(prevMerged?.suborders) ? prevMerged.suborders : order.suborders,
+		              reservation: prevMerged?.reservation ?? null,
+		              confirmedSinceMs: resolveConfirmedSinceMs(prevMerged, orderWithKnownItems, {
+		                isInitialLoad,
+		                tableKey,
+		                timers: nextTimers,
+		              }),
+		            };
+		          } else {
+		            acc[key].merged_ids.push(order.id);
+		            acc[key].created_at = pickLatestTimestampValue(acc[key].created_at, order.created_at);
+		            acc[key].updated_at = pickLatestTimestampValue(acc[key].updated_at, order.updated_at);
+		            acc[key].prep_started_at = pickLatestTimestampValue(
+		              acc[key].prep_started_at,
+		              order.prep_started_at
+		            );
+		            acc[key].estimated_ready_at = pickLatestTimestampValue(
+		              acc[key].estimated_ready_at,
+		              order.estimated_ready_at
+		            );
+		            acc[key].kitchen_delivered_at = pickLatestTimestampValue(
+		              acc[key].kitchen_delivered_at,
+		              order.kitchen_delivered_at
+		            );
+		            acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
+		            const nextStatus =
+		              acc[key].status === "paid" && order.status === "paid"
+		                ? "paid"
+		                : acc[key].status === "reserved" ||
+		                  order.status === "reserved" ||
+		                  acc[key].order_type === "reservation" ||
+		                  order.order_type === "reservation" ||
+		                  acc[key].reservation_date ||
+		                  order.reservation_date
+		                ? "reserved"
+		                : "confirmed";
+		            acc[key].status = nextStatus;
+		            if (nextStatus !== "confirmed") {
+		              acc[key].confirmedSinceMs = null;
+		              delete nextTimers[tableKey];
+		            } else if (!Number.isFinite(acc[key].confirmedSinceMs)) {
+		              acc[key].confirmedSinceMs = resolveConfirmedSinceMs(prevMerged, orderWithKnownItems, {
+		                isInitialLoad,
+		                tableKey,
+		                timers: nextTimers,
+		              });
+		            }
+		          }
+		          return acc;
+		        }, {})
+		      );
+
+		      const sorted = merged.sort(
+		        (a, b) => Number(a.table_number) - Number(b.table_number)
+		      );
+		      writeTableOverviewConfirmedTimers(nextTimers);
+          writeTableOrdersCache(sorted);
+      if (import.meta.env.DEV) console.timeEnd('[Phase1] setOrders');
+      return sorted;
+    });
+
+    const runWithConcurrency = async (arr, limit, task) => {
+      const list = Array.isArray(arr) ? arr : [];
+      const count = Math.max(1, Math.min(limit, list.length || 1));
+      const results = new Array(list.length);
+      let idx = 0;
+
+      await Promise.all(
+        Array.from({ length: count }, async () => {
+          while (idx < list.length) {
+            const current = idx++;
+            try {
+              results[current] = await task(list[current]);
+            } catch (err) {
+              console.warn("⚠️ Order hydrate failed:", err);
+              results[current] = null;
+            }
+          }
+        })
+      );
+
+      return results.filter(Boolean);
+    };
+
+    // Phase 2: hydrate items/reservations (slower) and update IN BATCH.
+    if (isDev) console.log(`🔄 [TableOverview] Starting Phase 2 hydration...`);
+    const t1 = isDev ? performance.now() : 0;
+    
+    // 🚀 Schedule hydration when idle to avoid blocking UI
+    const scheduleHydration = (task) => {
+      return new Promise((resolve) => {
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(() => resolve(task()));
+        } else {
+          setTimeout(() => resolve(task()), 0);
+        }
+      });
+    };
+
+    const hydrated = await scheduleHydration(async () => {
+      return await runWithConcurrency(visibleTableOrders, 6, async (order) => {
+        // If this is a synthetic reservation we created (no backend order id),
+        // skip the items fetch and return as-is so it won't be dropped later.
+        if (!order.id) {
+          const itemsArr = [];
+          const reservationObj = order.reservation || (order.reservation_date ? {
+            reservation_date: order.reservation_date,
+            reservation_time: order.reservation_time ?? null,
+            reservation_clients: order.reservation_clients ?? 0,
+            reservation_notes: order.reservation_notes ?? "",
+          } : null);
+          return { ...order, items: itemsArr, reservation: reservationObj };
+        }
+
+        const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+        const itemsArr = Array.isArray(itemsRaw) ? itemsRaw : [];
+
+        let items = itemsArr.map((item) => ({
+          ...item,
+          discount_type: item.discount_type || item.discountType || null,
+          discount_value:
+            item.discount_value != null
+              ? parseFloat(item.discount_value)
+              : item.discountValue != null
+              ? parseFloat(item.discountValue)
+              : 0,
+        }));
+
+        const isOrderPaid =
+          order.status === "paid" ||
+          String(order.payment_status || "").toLowerCase() === "paid" ||
+          order.is_paid === true;
+        if (isOrderPaid) {
+          const hasAnyPaidMarker = items.some(
+            (i) => i?.paid_at != null || typeof i?.paid === "boolean"
+          );
+          if (!hasAnyPaidMarker) {
+            items = items.map((i) => ({ ...i, paid: true }));
+          }
+        }
+
+        let reservation = null;
+        try {
+          if (order.status === "reserved" || order.reservation_date) {
+            const resData = await secureFetch(`/orders/reservations/${order.id}`);
+            if (resData?.success && resData?.reservation) {
+              reservation = resData.reservation;
+            }
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch reservation for order ${order.id}:`, err);
+        }
+
+        return { ...order, items, reservation };
+      });
+    });
+
+    if (ordersFetchSeqRef.current !== seq) return;
+
+    if (isDev) console.log(`✅ [TableOverview] Phase 2 hydration completed in ${(performance.now() - t1).toFixed(1)}ms`);
+
+	    const mergedByTable = Object.values(
+	      hydrated.reduce((acc, order) => {
+	        const key = Number(order.table_number);
+	        if (!acc[key]) {
+	          acc[key] = {
+	            ...order,
+	            merged_ids: [order.id],
+	            merged_items: [...(order.items || [])],
+	          };
+	        } else {
+	          acc[key].merged_ids.push(order.id);
+	          acc[key].created_at = pickLatestTimestampValue(acc[key].created_at, order.created_at);
+	          acc[key].updated_at = pickLatestTimestampValue(acc[key].updated_at, order.updated_at);
+	          acc[key].prep_started_at = pickLatestTimestampValue(
+	            acc[key].prep_started_at,
+	            order.prep_started_at
+	          );
+	          acc[key].estimated_ready_at = pickLatestTimestampValue(
+	            acc[key].estimated_ready_at,
+	            order.estimated_ready_at
+	          );
+	          acc[key].kitchen_delivered_at = pickLatestTimestampValue(
+	            acc[key].kitchen_delivered_at,
+	            order.kitchen_delivered_at
+	          );
+	          acc[key].items = [...(acc[key].items || []), ...(order.items || [])];
+	          acc[key].merged_items = acc[key].items;
+	          acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
+	          acc[key].status =
+	            acc[key].status === "paid" && order.status === "paid"
+	              ? "paid"
+	              : acc[key].status === "reserved" ||
+	                order.status === "reserved" ||
+	                acc[key].order_type === "reservation" ||
+	                order.order_type === "reservation" ||
+	                acc[key].reservation_date ||
+	                order.reservation_date
+	              ? "reserved"
+	              : "confirmed";
+	        }
+	        const anyUnpaid = (acc[key].items || []).some((i) => !i.paid_at && !i.paid);
+	        acc[key].is_paid = !anyUnpaid;
+	        return acc;
+	      }, {})
+	    ).sort((a, b) => Number(a.table_number) - Number(b.table_number));
+
+    // 🎯 BATCHED UPDATE with shallow diff to preserve references
+		    setOrders((prev) => {
+          if (isDev) console.time('⚡ Phase 2 setState');
+		      const prevByTable = new Map();
+		      (Array.isArray(prev) ? prev : []).forEach((o) => {
+		        if (o?.table_number != null) prevByTable.set(Number(o.table_number), o);
+		      });
+
+		      const storedTimers = readTableOverviewConfirmedTimers();
+		      const nextTimers = { ...storedTimers };
+		      const nextTableKeys = new Set(
+		        mergedByTable.map((o) => String(Number(o.table_number)))
+		      );
+		      for (const prevKey of prevByTable.keys()) {
+		        if (!nextTableKeys.has(String(prevKey))) delete nextTimers[String(prevKey)];
+		      }
+
+		      const nextOrders = mergedByTable.map((o) => {
+		        const tableKey = String(Number(o.table_number));
+		        const prevMerged = prevByTable.get(Number(o.table_number));
+		        
+		        // 🔍 Shallow diff: preserve reference if items haven't changed
+		        const prevItemsJson = JSON.stringify(prevMerged?.items || []);
+		        const nextItemsJson = JSON.stringify(o.items || []);
+		        const itemsChanged = prevItemsJson !== nextItemsJson;
+		        
+		        // Only create new object if something actually changed
+		        if (!itemsChanged && prevMerged?.status === o.status && prevMerged?.total === o.total) {
+		          return prevMerged; // ✅ Keep same reference = no re-render
+		        }
+		        
+		        return {
+		          ...o,
+		          confirmedSinceMs: resolveConfirmedSinceMs(prevMerged, o, {
+		            isInitialLoad,
+		            tableKey,
+		            timers: nextTimers,
+		          }),
+		        };
+		      });
+		      writeTableOverviewConfirmedTimers(nextTimers);
+          writeTableOrdersCache(nextOrders);
+          
+          if (isDev) {
+            const changedCount = nextOrders.filter((o, i) => o !== prev[i]).length;
+            console.log(`🔄 Phase 2 updated ${changedCount}/${nextOrders.length} tables`);
+            console.timeEnd('⚡ Phase 2 setState');
+          }
+          
+		      return nextOrders;
+		    });
+
+	    if (isInitialLoad) didInitialOrdersLoadRef.current = true;
+	  } catch (err) {
+	    console.error("❌ Fetch open orders failed:", err);
+	    toast.error("Could not load open orders");
+	  }
+	}, [currentUser]);
+
+
+
+
+
+function hasReadyOrder(order) {
+  // If any item in the order is ready and not delivered
+  return (
+    Array.isArray(order?.items)
+      ? order.items.some(item => item.kitchen_status === "ready")
+      : false
+  );
+}
+
+
+  // === FIXED fetchKitchenOrders (merges same-customer orders) ===
+const fetchKitchenOrders = useCallback(async () => {
+  try {
+    const data = await secureFetch("/kitchen-orders");
+
+    const active = data.filter(
+      (item) =>
+        item.kitchen_status !== "delivered" &&
+        item.kitchen_status !== null &&
+        item.kitchen_status !== ""
+    );
+
+    const buildGroupKey = (item) => {
+      const type = String(item.order_type || "").trim().toLowerCase();
+      const tableNo = item.table_number ? String(item.table_number) : "";
+      const phone = (item.customer_phone || "").replace(/\s+/g, "");
+      if (type === "table" && tableNo) {
+        return `table-${tableNo}`;
+      }
+      if ((type === "phone" || type === "packet" || type === "takeaway") && phone) {
+        return `phone-${phone}`;
+      }
+      if (item.order_id) {
+        return `order-${item.order_id}`;
+      }
+      const nameKey = (item.customer_name || "").trim().toLowerCase();
+      if (nameKey) return `name-${nameKey}`;
+      return `item-${item.item_id}`;
+    };
+
+    const merged = Object.values(
+      active.reduce((acc, item) => {
+        const key = buildGroupKey(item);
+        if (!acc[key]) {
+          acc[key] = {
+            ...item,
+            merged_item_ids: [item.item_id],
+            merged_products: [item.product_name],
+            total_quantity: Number(item.quantity || 0),
+            tables: item.table_number ? [item.table_number] : [],
+            order_refs: item.order_id ? [item.order_id] : [],
+            phones: item.customer_phone ? [item.customer_phone] : [],
+          };
+          return acc;
+        }
+
+        const entry = acc[key];
+        entry.merged_item_ids.push(item.item_id);
+        entry.merged_products.push(item.product_name);
+        entry.total_quantity += Number(item.quantity || 0);
+        if (item.table_number && !entry.tables.includes(item.table_number)) {
+          entry.tables.push(item.table_number);
+        }
+        if (item.order_id && !entry.order_refs.includes(item.order_id)) {
+          entry.order_refs.push(item.order_id);
+        }
+        if (item.customer_phone && !entry.phones.includes(item.customer_phone)) {
+          entry.phones.push(item.customer_phone);
+        }
+
+        if (
+          (item.kitchen_status === "ready" || item.kitchen_status === "preparing") &&
+          entry.kitchen_status !== "ready"
+        ) {
+          entry.kitchen_status = item.kitchen_status;
+        }
+        return acc;
+      }, {})
+    );
+
+    setKitchenOrders(merged);
+  } catch (err) {
+    console.error("❌ Fetch kitchen orders failed:", err);
+  }
+}, []);
+
+useEffect(() => {
+  const interval = setInterval(() => {
+    React.startTransition(() => setNow(new Date()));
+  }, 1000);
+  return () => clearInterval(interval);
+}, []);
+
+  useEffect(() => {
+    if (tableSettings.showAreas !== false) return;
+    if (activeArea !== "ALL") setActiveArea("ALL");
+  }, [tableSettings.showAreas, activeArea]);
+
+  // If the app stays open across midnight, refresh tables so reservations appear on their day.
+  useEffect(() => {
+    const dayKey = formatLocalYmd(now);
+    if (lastDayKeyRef.current === dayKey) return;
+    lastDayKeyRef.current = dayKey;
+    if (activeTab === "tables") fetchOrders();
+  }, [now, activeTab, fetchOrders]);
+
+const fetchKitchenOpenOrders = useCallback(async () => {
+  try {
+    setKitchenOpenOrdersLoading(true);
+    const data = await secureFetch("/orders");
+    const list = Array.isArray(data) ? data : [];
+
+    const openOrders = list
+      .filter((o) => {
+        const status = normalizeOrderStatus(o?.status);
+        if (status === "closed") return false;
+        if (isOrderCancelledOrCanceled(status)) return false;
+        // include table + phone + packet + takeaway
+        const type = String(o?.order_type || "").toLowerCase();
+        return ["table", "phone", "packet", "takeaway"].includes(type);
+      })
+      .map((o) => ({
+        ...o,
+        status: normalizeOrderStatus(o?.status),
+      }))
+      .sort((a, b) => {
+        const am = parseLooseDateToMs(a?.created_at);
+        const bm = parseLooseDateToMs(b?.created_at);
+        if (Number.isFinite(am) && Number.isFinite(bm)) return bm - am;
+        return Number(b?.id || 0) - Number(a?.id || 0);
+      });
+
+    // Phase 1: render order shells quickly.
+    setKitchenOpenOrders((prev) => {
+      const prevById = new Map();
+      (Array.isArray(prev) ? prev : []).forEach((o) => {
+        if (o?.id != null) prevById.set(Number(o.id), o);
+      });
+      return openOrders.map((o) => {
+        const prevRow = prevById.get(Number(o.id));
+        const knownItems = Array.isArray(prevRow?.items) ? prevRow.items : null;
+        return knownItems ? { ...o, items: knownItems } : o;
+      });
+    });
+
+    const runWithConcurrency = async (arr, limit, task) => {
+      const list = Array.isArray(arr) ? arr : [];
+      const count = Math.max(1, Math.min(limit, list.length || 1));
+      const results = new Array(list.length);
+      let idx = 0;
+      await Promise.all(
+        Array.from({ length: count }, async () => {
+          while (idx < list.length) {
+            const current = idx++;
+            try {
+              results[current] = await task(list[current]);
+            } catch (err) {
+              console.warn("⚠️ Kitchen open order hydrate failed:", err);
+              results[current] = null;
+            }
+          }
+        })
+      );
+      return results.filter(Boolean);
+    };
+
+    // Phase 2: hydrate items/payment status for badges.
+    const hydrated = await runWithConcurrency(openOrders, 6, async (order) => {
+      const itemsRaw = await secureFetch(`/orders/${order.id}/items`);
+      const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+      const anyUnpaid = items.some((i) => !i.paid_at && !i.paid);
+      const inferredPaid = !anyUnpaid;
+      return {
+        ...order,
+        items,
+        is_paid: order?.is_paid === true ? true : inferredPaid,
+      };
+    });
+
+    const hydratedById = new Map(hydrated.map((o) => [Number(o.id), o]));
+    setKitchenOpenOrders((prev) =>
+      (Array.isArray(prev) ? prev : []).map((o) => hydratedById.get(Number(o.id)) || o)
+    );
+  } catch (err) {
+    console.error("❌ Fetch kitchen open orders failed:", err);
+  } finally {
+    setKitchenOpenOrdersLoading(false);
+  }
+}, []);
+
+// Fetch table configurations when viewing tables (inside component)
+const fetchTableConfigs = useCallback(async () => {
+  try {
+    const rows = await secureFetch("/tables");
+    const arr = Array.isArray(rows) ? rows : [];
+    const active = arr.filter((t) => t.active !== false);
+    setTableConfigs((prev) => {
+      const merged = mergeTableConfigsByNumber(prev, active);
+      try {
+        localStorage.setItem(getTableConfigsCacheKey(), JSON.stringify(merged));
+        localStorage.setItem(getTableCountCacheKey(), String(merged.length));
+      } catch {}
+      return merged;
+    });
+  } catch {
+    // Keep any cached/previous configs so the grid doesn't blink on transient errors.
+  }
+}, []);
+
+const upsertTableConfigLocal = useCallback((tableNumber, patch) => {
+  const normalizedNumber = Number(tableNumber);
+  if (!Number.isFinite(normalizedNumber)) return;
+
+  setTableConfigs((prev) => {
+    const prevArr = Array.isArray(prev) ? prev : [];
+    let found = false;
+    const next = prevArr.map((cfg) => {
+      if (Number(cfg?.number) !== normalizedNumber) return cfg;
+      found = true;
+      return { ...cfg, ...patch };
+    });
+
+    const resolved = found
+      ? next
+      : mergeTableConfigsByNumber(prevArr, [{ number: normalizedNumber, active: true, ...patch }]);
+
+    try {
+      localStorage.setItem(getTableConfigsCacheKey(), JSON.stringify(resolved));
+      localStorage.setItem(getTableCountCacheKey(), String(resolved.length));
+    } catch {}
+
+    return resolved;
+  });
+}, []);
+
+const handleGuestsChange = useCallback(
+  async (tableNumber, nextGuests) => {
+    upsertTableConfigLocal(tableNumber, { guests: nextGuests });
+    try {
+      await secureFetch(`/tables/${tableNumber}`, {
+        method: "PATCH",
+        body: JSON.stringify({ guests: nextGuests }),
+      });
+    } catch (err) {
+      console.error("❌ Failed to update table guests:", err);
+      toast.error(t("Failed to update table"));
+      fetchTableConfigs();
+    }
+  },
+  [fetchTableConfigs, upsertTableConfigLocal, t]
+);
+
+
+  const loadDataForTab = useCallback(
+    (tab) => {
+      if (tab === "tables") {
+        fetchOrders();
+        fetchTableConfigs();
+        return;
+      }
+      if (tab === "kitchen" || tab === "open") {
+        fetchKitchenOpenOrders();
+        return;
+      }
+      if (tab === "history") {
+        return;
+      }
+      if (tab === "packet") {
+        fetchPacketOrders();
+        return;
+      }
+      if (tab === "takeaway") {
+        fetchTakeawayOrders();
+      }
+    },
+    [
+      fetchKitchenOpenOrders,
+      fetchOrders,
+      fetchPacketOrders,
+      fetchTableConfigs,
+      fetchTakeawayOrders,
+    ]
+  );
+
+// now safe to reference loadDataForTab
+useEffect(() => {
+  if (!window) return;
+  let rafId = null;
+  let bgRefetchTimeoutId = null;
+  let bgRefetchIdleId = null;
+  const refetch = () => {
+    if (rafId) window.cancelAnimationFrame(rafId);
+    rafId = window.requestAnimationFrame(() => {
+      if (activeTab !== "packet") fetchPacketOrdersCount();
+      // Order updates don't change seats/areas; avoid refetching /tables which can cause UI blinking.
+      if (activeTab === "tables") {
+        fetchOrders();
+        return;
+      }
+      loadDataForTab(activeTab);
+    });
+  };
+
+  // ⚡ Instant refresh without animation frame delay for local events
+  const instantRefetch = () => {
+    if (activeTab !== "packet") fetchPacketOrdersCount();
+    if (activeTab === "tables") {
+      fetchOrders();
+      return;
+    }
+    loadDataForTab(activeTab);
+  };
+
+  const scheduleBackgroundRefetch = () => {
+    if (bgRefetchTimeoutId) window.clearTimeout(bgRefetchTimeoutId);
+    if (bgRefetchIdleId && typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(bgRefetchIdleId);
+      bgRefetchIdleId = null;
+    }
+
+    const run = () => {
+      bgRefetchTimeoutId = null;
+      bgRefetchIdleId = null;
+      instantRefetch();
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      bgRefetchIdleId = window.requestIdleCallback(run, { timeout: 1200 });
+      return;
+    }
+    bgRefetchTimeoutId = window.setTimeout(run, 250);
+  };
+
+  const applyLocalOrderStatusPatch = (detail) => {
+    if (!detail || typeof detail !== "object") return false;
+    if (detail.kind !== "tableoverview_order_status") return false;
+
+    const tableNumber = Number(detail.table_number);
+    if (!Number.isFinite(tableNumber)) return false;
+
+    const nextStatus = String(detail.status || "").toLowerCase();
+    setOrders((prev) => {
+      const prevArr = Array.isArray(prev) ? prev : [];
+
+      if (nextStatus === "closed") {
+        const next = prevArr.filter((o) => Number(o?.table_number) !== tableNumber);
+        writeTableOrdersCache(next);
+        return next;
+      }
+
+      let found = false;
+      const orderId =
+        detail.order_id === null || detail.order_id === undefined
+          ? null
+          : Number(detail.order_id);
+
+      const patch =
+        nextStatus === "paid"
+          ? {
+              status: "paid",
+              payment_status: "paid",
+              is_paid: true,
+              total: 0,
+            }
+          : { status: detail.status };
+
+      const next = prevArr.map((o) => {
+        if (Number(o?.table_number) !== tableNumber) return o;
+        found = true;
+        return {
+          ...o,
+          ...(orderId != null && Number.isFinite(orderId) ? { id: orderId } : null),
+          ...patch,
+          table_number: tableNumber,
+        };
+      });
+
+      if (!found) {
+        next.push({
+          ...(orderId != null && Number.isFinite(orderId) ? { id: orderId } : null),
+          table_number: tableNumber,
+          ...patch,
+        });
+      }
+
+      next.sort((a, b) => Number(a.table_number) - Number(b.table_number));
+      writeTableOrdersCache(next);
+      return next;
+    });
+
+    return true;
+  };
+
+  if (window.socket) {
+    window.socket.on("orders_updated", refetch);
+    // Some backend flows (e.g. closing empty orders) emit `order_closed` without `orders_updated`.
+    window.socket.on("order_closed", refetch);
+  }
+  // ⚡ Immediate local refreshes (dispatched from TransactionScreen)
+  const handleLocalRefresh = (event) => {
+    const didPatch = applyLocalOrderStatusPatch(event?.detail);
+    if (didPatch) {
+      // Patch makes the status/color instant; refetch in background to reconcile.
+      scheduleBackgroundRefetch();
+      return;
+    }
+    instantRefetch();
+  };
+  window.addEventListener("beypro:orders-local-refresh", handleLocalRefresh);
+  return () => {
+    if (rafId) window.cancelAnimationFrame(rafId);
+    if (bgRefetchTimeoutId) window.clearTimeout(bgRefetchTimeoutId);
+    if (bgRefetchIdleId && typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(bgRefetchIdleId);
+    }
+    if (window.socket) {
+      window.socket.off("orders_updated", refetch);
+      window.socket.off("order_closed", refetch);
+    }
+    window.removeEventListener("beypro:orders-local-refresh", handleLocalRefresh);
+  };
+}, [activeTab, loadDataForTab, fetchOrders, fetchPacketOrdersCount]);
+
+useEffect(() => {
+  loadDataForTab(activeTab);
+}, [activeTab, loadDataForTab]);
+
+useEffect(() => {
+  const handler = () => fetchKitchenOpenOrders();
+  if (window && typeof window.addEventListener === "function") {
+    window.addEventListener("beypro:kitchen-orders-reload", handler);
+  }
+  return () => {
+    if (window && typeof window.removeEventListener === "function") {
+      window.removeEventListener("beypro:kitchen-orders-reload", handler);
+    }
+  };
+}, [fetchKitchenOpenOrders]);
+
+  // Ensure table configs load when Tables tab is active
+  useEffect(() => {
+    if (activeTab === "tables" && (Array.isArray(tableConfigs) ? tableConfigs.length === 0 : true)) {
+      fetchTableConfigs();
+    }
+  }, [activeTab, tableConfigs.length, fetchTableConfigs]);
+
+
+const isReservationOrder = (order) =>
+  Boolean(order) &&
+  (normalizeOrderStatus(order.status) === "reserved" ||
+    order.order_type === "reservation" ||
+    Boolean(order.reservation_date));
+
+const tables = React.useMemo(() => {
+  return tableConfigs
+    .map((cfg) => {
+      const parsedCfgNumber = Number(cfg.number);
+      const orderRaw = orders.find((o) => {
+        if (o?.table_number == null) return false;
+        if (isOrderCancelledOrCanceled(o.status)) return false;
+        return Number(o.table_number) === parsedCfgNumber;
+      });
+      const reservationFallback = reservationsToday.find(
+        (res) => Number(res.table_number) === parsedCfgNumber
+      );
+      
+      // ✅ Priority logic:
+      // 1. If orderRaw exists and is a reservation → use it
+      // 2. If orderRaw doesn't exist but reservation exists → create synthetic order
+      // 3. If orderRaw is effectively free but reservation exists → use reservation
+      // 4. Otherwise use orderRaw
+      const order =
+        orderRaw && isReservationOrder(orderRaw)
+          ? orderRaw
+          : !orderRaw && reservationFallback
+          ? {
+              ...reservationFallback,
+              status: "reserved",
+              order_type: "reservation",
+              table_number: parsedCfgNumber,
+              total: 0,
+              items: [],
+            }
+          : isEffectivelyFreeOrder(orderRaw) && reservationFallback
+          ? {
+              ...reservationFallback,
+              status: "reserved",
+              order_type: "reservation",
+              table_number: parsedCfgNumber,
+              total: 0,
+              items: [],
+            }
+          : orderRaw;
+
+	    return {
+      tableNumber: cfg.number,
+      seats: cfg.seats || cfg.chairs || null,
+      guests:
+        cfg.guests === null || cfg.guests === undefined || cfg.guests === ""
+          ? null
+          : Number.isFinite(Number(cfg.guests))
+          ? Number(cfg.guests)
+          : null,
+      area: cfg.area || "Main Hall",
+      label: cfg.label || "",
+      color: cfg.color || null,
+      order,
+    };
+    })
+    .sort((a, b) => a.tableNumber - b.tableNumber);
+}, [tableConfigs, orders, reservationsToday]);
+
+const freeTablesCount = React.useMemo(() => {
+  if (!Array.isArray(tables)) return 0;
+  return tables.filter((table) => isEffectivelyFreeOrder(table.order)).length;
+}, [tables]);
+
+// Reset guest count ("seats") to 0 when returning to TableOverview,
+// but only for tables that are currently free.
+useEffect(() => {
+  if (activeTab !== "tables") return;
+  if (!didInitialOrdersLoadRef.current) return;
+  if (didResetGuestsOnEntryRef.current) return;
+
+  didResetGuestsOnEntryRef.current = true;
+
+  const freeTableNumbersToReset = (Array.isArray(tables) ? tables : [])
+    .filter((table) => isEffectivelyFreeOrder(table?.order))
+    .filter((table) => Number.isFinite(Number(table?.guests)) && Number(table.guests) !== 0)
+    .map((table) => Number(table.tableNumber))
+    .filter((n) => Number.isFinite(n));
+
+  if (freeTableNumbersToReset.length === 0) return;
+
+  freeTableNumbersToReset.forEach((tableNumber) => {
+    upsertTableConfigLocal(tableNumber, { guests: 0 });
+  });
+
+  (async () => {
+    await Promise.allSettled(
+      freeTableNumbersToReset.map((tableNumber) =>
+        secureFetch(`/tables/${tableNumber}`, {
+          method: "PATCH",
+          body: JSON.stringify({ guests: 0 }),
+        })
+      )
+    );
+  })();
+}, [activeTab, tables, upsertTableConfigLocal]);
+
+useEffect(() => {
+  const titlesByTab = {
+    takeaway: t("Pre Order"),
+    tables: t("Tables"),
+    kitchen: t("All Orders"),
+    history: t("History"),
+    packet: t("Packet"),
+    phone: t("Phone"),
+    register: t("Register"),
+  };
+  const headerTitle = titlesByTab[activeTab] || t("Orders");
+  setHeader((prev) => ({
+    ...prev,
+    title: headerTitle,
+    subtitle: undefined,
+    tableNav: null,
+    tableStats: activeTab === "tables" ? { freeTables: freeTablesCount } : undefined,
+  }));
+}, [activeTab, t, setHeader, freeTablesCount]);
+
+
+
+const handlePrintOrder = async (orderId) => {
+  if (!orderId) {
+    toast.warn(t("No order selected to print"));
+    return;
+  }
+  try {
+    const printable = await fetchOrderWithItems(orderId);
+    const ok = await printViaBridge("", printable);
+    toast[ok ? "success" : "warn"](
+      ok ? t("Receipt sent to printer") : t("Printer bridge is not connected")
+    );
+  } catch (err) {
+    console.error("❌ Print failed:", err);
+    toast.error(t("Failed to print receipt"));
+  }
+};
+
+
+const navigateToOrder = useCallback((order) => {
+  if (!order) return;
+  const tableNumber =
+    order.table_number ?? order.tableNumber ?? order?.table_number;
+  if (tableNumber !== null && tableNumber !== undefined && tableNumber !== "") {
+    navigate(`/transaction/${tableNumber}`, { state: { order } });
+    return;
+  }
+  navigate(`/transaction/phone/${order.id}`, { state: { order } });
+}, [navigate]);
+
+const handleTableClick = useCallback(async (table) => {
+  // Keep register guard behavior in TableOverview while register internals live in feature module.
+  try {
+    const open = await checkRegisterOpen();
+    if (!open) {
+      toast.error("Register must be open to access tables!", {
+        position: "top-center",
+        autoClose: 2500,
+      });
+      setShowRegisterModal(true);
+      return;
+    }
+  } catch {
+    // Fail-open here and let TransactionScreen/useRegisterGuard enforce access.
+  }
+
+  const requireGuests = transactionSettings.requireGuestsBeforeOpen ?? true;
+  const seatLimit = Number.isFinite(Number(table.seats)) ? Number(table.seats) : 0;
+  const guestSelection =
+    table.guests === null || table.guests === undefined ? null : Number(table.guests);
+  if (requireGuests && seatLimit > 0 && (!guestSelection || guestSelection <= 0)) {
+    toast.warning(t("Please select number of seats before opening this table"), {
+      style: { background: "#312E81", color: "#F8FAFC" },
+    });
+    return;
+  }
+
+  // 🔥 FIXED: treat cancelled or empty orders as FREE
+  const isCancelledOrder = isOrderCancelledOrCanceled(table.order?.status);
+
+  if (
+    !table.order ||
+    isCancelledOrder ||
+    !Array.isArray(table.order.items) ||
+    table.order.items.length === 0
+  ) {
+    // Navigate immediately with a stub order, then TransactionScreen will create/fetch in background.
+    navigate(`/transaction/${table.tableNumber}`, {
+      state: {
+        order: {
+          table_number: table.tableNumber,
+          order_type: "table",
+          status: "draft",
+          total: 0,
+          items: [],
+        },
+      },
+    });
+  } else {
+    navigate(`/transaction/${table.tableNumber}`, { state: { order: table.order } });
+  }
+}, [transactionSettings.requireGuestsBeforeOpen, t, navigate]);
+
+// 📊 Memoize ordersByTable to avoid recomputing on every render
+const ordersByTable = React.useMemo(() => {
+  return orders.reduce((acc, item) => {
+    const table = item.table_number;
+    if (!acc[table]) acc[table] = [];
+    acc[table].push(item);
+    return acc;
+  }, {});
+}, [orders]);
+
+
+const getTimeElapsed = useCallback((order) => {
+  if (!order || order.status !== "confirmed") return null;
+  const startMs =
+    (Number.isFinite(order.confirmedSinceMs) ? order.confirmedSinceMs : null) ??
+    parseLooseDateToMs(order.updated_at || order.created_at);
+  if (!Number.isFinite(startMs)) return "00:00";
+  const diffMs = now - startMs;
+  const mins = Math.floor(Math.max(0, diffMs) / 60000);
+  const secs = Math.floor((Math.max(0, diffMs) % 60000) / 1000);
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}, [now]);
+
+const markMultipleAsDelivered = useCallback(async (itemIds) => {
+  try {
+    new Audio("/sound-ready.mp3").play(); // 🔊 Play instantly
+await secureFetch("/orders/order-items/kitchen-status", {
+  method: "PUT",
+  body: JSON.stringify({
+    ids: itemIds,
+    status: "delivered",
+  }),
+});
+
+    fetchKitchenOrders();
+  } catch (err) {
+    console.error("❌ Failed to mark as delivered:", err);
+  }
+}, []);
+
+  // Remove duplicate groupedByTable (already have ordersByTable memoized above)
+  // const groupedByTable = orders.reduce(...) // ❌ REMOVED DUPLICATE
+
+// Group tables by area (memoized)
+const groupedTables = React.useMemo(() => {
+  return tables.reduce((acc, tbl) => {
+    const area = tbl.area || "Main Hall";
+    if (!acc[area]) acc[area] = [];
+    acc[area].push(tbl);
+    return acc;
+  }, {});
+}, [tables]);
+
+const areaKeys = React.useMemo(() => Object.keys(groupedTables), [groupedTables]);
+const showAreaTabs = tableSettings.showAreas !== false && areaKeys.length > 1;
+
+const formatAreaLabel = (area) => {
+  const raw = area || "Main Hall";
+  return t(raw, { defaultValue: raw });
+};
+const tableLabelText = String(tableSettings.tableLabelText || "").trim() || t("Table");
+
+const totalSeats = React.useMemo(() => {
+  return (Array.isArray(tables) ? tables : []).reduce((sum, table) => {
+    const seats = Number(table?.seats);
+    if (!Number.isFinite(seats) || seats <= 0) return sum;
+    return sum + Math.trunc(seats);
+  }, 0);
+}, [tables]);
+
+const totalGuests = React.useMemo(() => {
+  return (Array.isArray(tables) ? tables : []).reduce((sum, table) => {
+    const seats = Number(table?.seats);
+    if (!Number.isFinite(seats) || seats <= 0) return sum;
+    const guests = Number.isFinite(table?.guests) ? Math.trunc(Number(table.guests)) : 0;
+    const clamped = Math.min(Math.max(0, guests), Math.trunc(seats));
+    return sum + clamped;
+  }, 0);
+}, [tables]);
+
+	
+  return (
+    <div className="min-h-screen bg-transparent px-0 pt-4 relative">
+      {canSeePacketTab &&
+        activeTab !== "packet" &&
+        packetOrdersCount > 0 &&
+        !transactionSettings.disableTableOverviewOrdersFloatingButton && (
+        <button
+          type="button"
+          onClick={() => handleTabSelect("packet")}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20 hover:brightness-110 active:scale-[0.98] transition"
+          aria-label={t("Packet")}
+        >
+          <span className="font-semibold">{t("Packet")}</span>
+          <span className="min-w-7 px-2 py-0.5 rounded-full bg-white/20 font-extrabold text-sm text-white text-center">
+            {packetOrdersCount}
+          </span>
+	        </button>
+	      )}
+
+      {activeTab === "tables" &&
+        !transactionSettings.disableTableOverviewGuestsFloatingButton && (
+        <div className="fixed bottom-6 left-6 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20">
+          <span className="font-semibold">{t("Guests")}</span>
+          <span className="min-w-7 px-2 py-0.5 rounded-full bg-white/20 font-extrabold text-sm text-white text-center">
+            {totalSeats > 0 ? `${totalGuests}/${totalSeats}` : totalGuests}
+          </span>
+        </div>
+      )}
+	{activeTab === "tables" && (
+	  <div className="w-full flex flex-col items-center">
+	
+	    {/* ================= AREA TABS ================= */}
+    {showAreaTabs && (
+      <div className="flex justify-center gap-3 flex-wrap mt-4 mb-10">
+
+      {/* ALL AREAS */}
+	      <button
+	        onClick={() => setActiveArea("ALL")}
+	        className={`
+	          px-5 py-2 rounded-full font-semibold shadow 
+	          transition-all duration-150 text-xs
+	          ${activeArea === "ALL"
+	            ? "bg-indigo-600 text-white scale-[1.03] shadow-lg"
+	            : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"}
+	        `}
+	      >
+	        {t("All Areas")}
+	      </button>
+
+      {Object.keys(groupedTables).map((area) => (
+	        <button
+	          key={area}
+	          onClick={() => setActiveArea(area)}
+	          className={`
+	            px-5 py-2 rounded-full font-semibold shadow 
+	            transition-all duration-150 text-xs
+	            ${activeArea === area
+	              ? "bg-blue-600 text-white scale-[1.03] shadow-lg"
+	              : "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"}
+	          `}
+	        >
+	          {area === "Hall" ? "" :
+           area === "Main Hall" ? "" :
+           area === "Terrace" ? "" :
+           area === "Garden" ? "" :
+           area === "VIP" ? "" : ""}{" "}
+          {formatAreaLabel(area)}
+        </button>
+      ))}
+    </div>
+    )}
+
+    {/* ================= TABLE GRID (BIGGER, CENTERED) ================= */}
+    <div className="w-full flex justify-center px-4 sm:px-8">
+      <div className="
+        grid
+        grid-cols-2
+        md:grid-cols-3
+        xl:grid-cols-4
+        2xl:grid-cols-4
+        gap-3
+        sm:gap-8
+        place-items-stretch
+        w-full
+        max-w-[1600px]
+      ">
+
+        {(showAreaTabs ? (activeArea === "ALL" ? tables : groupedTables[activeArea]) : tables).map((table) => {
+          const isReservedTable = Boolean(
+            table.order &&
+              (table.order.status === "reserved" ||
+                table.order.order_type === "reservation" ||
+                table.order.reservation_date)
+          );
+          const isFreeTable = !table.order || isEffectivelyFreeOrder(table.order);
+          const isPaidTable = !isFreeTable && isOrderFullyPaid(table.order);
+          const isUnpaidTable = !isFreeTable && hasUnpaidAnywhere(table.order);
+          const cardToneClass = isFreeTable
+            ? "bg-blue-100 border-sky-300 shadow-sky-500/15"
+            : isReservedTable
+              ? "bg-orange-100 border-orange-400 shadow-orange-500/20"
+              : isUnpaidTable
+                ? "bg-red-200 border-red-500 shadow-red-500/25"
+                : isPaidTable
+                  ? "bg-green-100 border-green-300 shadow-green-500/15"
+                  : "bg-indigo-100 border-indigo-500 shadow-indigo-500/20";
+          const hasPreparingItems = Array.isArray(table.order?.items)
+            ? table.order.items.some((i) => i.kitchen_status === "preparing")
+            : false;
+          const isKitchenDelivered =
+            Boolean(table.order?.kitchen_delivered_at) ||
+            (Array.isArray(table.order?.items) &&
+              table.order.items.length > 0 &&
+              table.order.items.every((i) => i.kitchen_status === "delivered"));
+          const readyAtLabel = getReadyAtLabel(table.order, productPrepById);
+          const showReadyAt =
+            !!readyAtLabel &&
+            !isKitchenDelivered &&
+            (hasPreparingItems ||
+              !!table.order?.estimated_ready_at ||
+              !!table.order?.prep_started_at);
+          // Resolve reservation info from order first, fallback to reservationsToday list
+          let reservationInfo = null;
+          if (table.order?.reservation && table.order.reservation.reservation_date) {
+            reservationInfo = table.order.reservation;
+          } else if (table.order?.reservation_date) {
+            reservationInfo = {
+              reservation_date: table.order.reservation_date,
+              reservation_time: table.order.reservation_time ?? null,
+              reservation_clients: table.order.reservation_clients ?? 0,
+              reservation_notes: table.order.reservation_notes ?? "",
+            };
+          } else {
+            // Fallback: if there's a reservation record for this table today, use it
+            const fallback = (Array.isArray(reservationsToday) ? reservationsToday : []).find(
+              (r) => Number(r.table_number) === Number(table.tableNumber)
+            );
+            if (fallback && (fallback.reservation_date || fallback.reservation_time)) {
+              reservationInfo = {
+                reservation_date: fallback.reservation_date || null,
+                reservation_time: fallback.reservation_time || null,
+                reservation_clients: fallback.reservation_clients ?? 0,
+                reservation_notes: fallback.reservation_notes ?? "",
+              };
+            }
+          }
+
+          return (
+          <div
+            key={table.tableNumber}
+            onClick={() => handleTableClick(table)}
+            className={`
+              group relative cursor-pointer
+              rounded-3xl
+              border-2
+              ${cardToneClass}
+              shadow-xl
+              hover:shadow-2xl
+              transition-all duration-200
+              flex flex-col justify-between
+              w-full
+              max-w-[380px]
+              min-h-[220px]
+              overflow-hidden
+            `}
+          >
+
+            <div className="p-3 sm:p-5 flex flex-col h-full">
+            {/* ------- TOP ROW ------- */}
+	            <div className="flex items-center justify-between gap-2 mb-2">
+	              <div className="flex items-center gap-2 min-w-0">
+	                <span className="text-slate-800 text-base sm:text-lg font-extrabold">
+                    {tableLabelText}
+                  </span>
+	                <span className="text-base sm:text-lg font-extrabold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl px-2 py-0.5">
+	                  {String(table.tableNumber).padStart(2, "0")}
+	                </span>
+	                {table.order?.items?.length > 0 && (
+	                  <button
+	                    type="button"
+	                    onClick={(e) => {
+	                      e.stopPropagation();
+	                      handlePrintOrder(table.order.id);
+	                    }}
+	                    className="text-base sm:text-lg font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2 py-0.5 hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+	                  >
+	                    🖨️
+	                  </button>
+	                )}
+	              </div>
+
+	              {normalizeOrderStatus(table.order?.status) === "confirmed" &&
+	                table.order?.items?.length > 0 && (
+	                <span className="shrink-0 bg-blue-600 text-white rounded-full px-3 py-1 font-mono text-[11px] sm:text-sm shadow-md">
+	                  ⏱ {getTimeElapsed(table.order)}
+	                </span>
+	              )}
+	            </div>
+
+            {/* LABEL */}
+            {table.label && (
+              <div className="text-[11px] sm:text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded-full px-2 py-0.5 mb-1 w-fit max-w-full truncate">
+                {table.label}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              {/* AREA */}
+              {tableSettings.showAreas !== false && (
+                <div className="text-[11px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600 max-w-full truncate">
+                  📍 {formatAreaLabel(table.area)}
+                </div>
+              )}
+
+              {/* SEATS */}
+              {table.seats && (
+                <div className="inline-flex items-center text-sm bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-indigo-700 whitespace-nowrap font-semibold">
+                  {table.seats} {t("Seats")}
+                </div>
+              )}
+
+              {/* GUESTS */}
+              {table.seats && (
+                <div
+                  className="inline-flex items-center text-sm bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1 text-emerald-800 whitespace-nowrap gap-2 font-semibold"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span>👥</span>
+                  {(() => {
+                    const seats = Math.max(0, Math.trunc(Number(table.seats)));
+                    const options = Array.from({ length: seats + 1 }, (_, n) => n);
+
+                    const fallbackGuestsRaw = reservationInfo?.reservation_clients;
+                    const fallbackGuestsNum =
+                      fallbackGuestsRaw === null ||
+                      fallbackGuestsRaw === undefined ||
+                      fallbackGuestsRaw === ""
+                        ? null
+                        : Number(fallbackGuestsRaw);
+
+                    const effectiveGuests = Number.isFinite(table.guests)
+                      ? table.guests
+                      : Number.isFinite(fallbackGuestsNum)
+                      ? fallbackGuestsNum
+                      : null;
+
+                    const clamped = Number.isFinite(effectiveGuests)
+                      ? Math.min(Math.max(0, Math.trunc(effectiveGuests)), seats)
+                      : null;
+
+                    return (
+                      <>
+                        <select
+                          className="bg-transparent outline-none font-bold pr-1"
+                          value={Number.isFinite(clamped) ? String(clamped) : ""}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const next = raw === "" ? null : Math.trunc(Number(raw));
+                            handleGuestsChange(table.tableNumber, next);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <option value="">—</option>
+                          {options.map((n) => (
+                            <option key={n} value={String(n)}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-emerald-700/70">/{seats}</span>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+	            {/* STATUS */}
+	            <div className="flex flex-col gap-2 flex-grow">
+	              {(!table.order ||
+	                (normalizeOrderStatus(table.order.status) === "draft" &&
+	                  (!Array.isArray(table.order.items) || table.order.items.length === 0)) ||
+	                (normalizeOrderStatus(table.order.status) === "confirmed" &&
+	                  (!Array.isArray(table.order.items) || table.order.items.length === 0) &&
+	                  Number(table.order.total || 0) <= 0)) ? (
+	                <div className="flex items-center justify-between gap-2">
+	                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-900 border border-green-200 font-extrabold text-sm shadow-sm whitespace-nowrap">
+	                    {t("Free")}
+	                  </span>
+	                  <span className="text-[15px] sm:text-lg font-extrabold text-indigo-700 whitespace-nowrap">
+	                    {formatCurrency(getDisplayTotal(table.order))}
+	                  </span>
+	                </div>
+	              ) : (
+	                <>
+	                  <div className="flex items-start justify-between gap-2 min-w-0">
+	                    <span
+                        className={[
+                          "inline-flex items-center px-3 py-1 rounded-full text-sm font-extrabold shadow-sm whitespace-nowrap",
+                          getTableColor(table.order),
+                        ].join(" ")}
+                      >
+	                      {t(table.order.status === "draft" ? "Free" : table.order.status)}
+	                    </span>
+                      <div className="flex flex-col items-end min-w-0">
+                        <span className="text-[15px] sm:text-lg font-extrabold text-indigo-700 whitespace-nowrap">
+                          {formatCurrency(getDisplayTotal(table.order))}
+                        </span>
+                        {showReadyAt && (
+                          <span className="mt-1 inline-flex max-w-full items-center text-[11px] sm:text-xs font-extrabold bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
+                            {t("Ready at")} {readyAtLabel}
+                          </span>
+                        )}
+                      </div>
+	                  </div>
+
+	                  {/* RESERVATION BADGE */}
+	                  {reservationInfo && reservationInfo.reservation_date && (
+	                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-2xl text-xs">
+	                      <div className="font-extrabold text-blue-700 mb-1">🎫 {t("Reserved")}</div>
+                      <div className="flex gap-2 text-[10px] text-slate-700 min-w-0">
+                        <div className="flex flex-col">
+                          <span className="font-semibold whitespace-nowrap">🕐 {reservationInfo.reservation_time || "—"}</span>
+                          <span className="font-semibold whitespace-nowrap">👥 {reservationInfo.reservation_clients || 0} {t("guests")}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-semibold whitespace-nowrap">📅 {reservationInfo.reservation_date || "—"}</span>
+                          {reservationInfo.reservation_notes && (
+                            <p className="text-[9px] line-clamp-1 text-slate-600">📝 {reservationInfo.reservation_notes}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+	                  {/* KITCHEN BADGES */}
+	                  {table.order.items && (
+	                    <div className="flex flex-wrap gap-1.5 mt-1">
+	                      {["new", "preparing", "ready", "delivered"].map((status) => {
+	                        const count = table.order.items.filter(
+	                          (i) => i.kitchen_status === status
+	                        ).length;
+	                        if (!count) return null;
+
+	                        return (
+	                          <span
+	                            key={status}
+	                            className={`px-2 py-0.5 rounded-full text-[11px] font-bold border shadow-sm whitespace-nowrap
+	                              ${status === "preparing"
+	                                ? "bg-yellow-100 text-yellow-900 border-yellow-200"
+	                                : status === "ready"
+	                                ? "bg-blue-600 text-white border-blue-700"
+	                                : status === "delivered"
+	                                ? "bg-green-600 text-white border-green-700"
+	                                : "bg-slate-400 text-white border-slate-500"}
+	                            `}
+	                          >
+	                            {count} {t(status)}
+	                          </span>
+	                        );
+	                      })}
+	                    </div>
+	                  )}
+                </>
+              )}
+            </div>
+
+	            {/* TOTAL + ACTIONS */}
+	            <div className="flex items-end justify-between mt-3 sm:mt-4">
+	              {isDelayed(table.order) && (
+	                <span className="text-amber-600 font-extrabold animate-pulse">⚠️</span>
+	              )}
+
+	              <div className="flex flex-col items-end gap-2 ml-auto">
+	                {table.order?.items?.length > 0 && (
+	                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
+	                    {/* UNPAID / PAID */}
+	                    {hasUnpaidAnywhere(table.order) ? (
+	                      <span className="px-3 py-1 bg-amber-50 text-amber-900 border border-amber-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
+	                        {t("Unpaid")}
+	                      </span>
+	                    ) : (
+	                      <>
+	                        <span className="px-3 py-1 bg-green-50 text-green-900 border border-green-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
+	                          ✅ {t("Paid")}
+	                        </span>
+
+	                        {/* CLOSE TABLE */}
+	                        <button
+	                          onClick={(e) => {
+	                            e.stopPropagation();
+	                            handleCloseTable(table.order);
+	                          }}
+	                          className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-extrabold rounded-full shadow text-sm whitespace-nowrap hover:brightness-110 active:scale-[0.99] transition"
+	                        >
+	                          🔒 {t("Close")}
+	                        </button>
+	                      </>
+	                    )}
+	                  </div>
+	                )}
+	              </div>
+	            </div>
+            </div>
+
+          </div>
+        );
+        })}
+
+      </div>
+    </div>
+
+  </div>
+)}
+
+
+
+{activeTab === "takeaway" && (
+  <div className="px-6 py-4">
+    <h2 className="text-2xl font-bold text-orange-600 mb-5">🥡 {t("Pre Orders")}</h2>
+
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* ➕ New Takeaway Card */}
+      <button
+        onClick={async () => {
+          try {
+            const newOrder = await secureFetch("/orders", {
+              method: "POST",
+              body: JSON.stringify({
+                order_type: "takeaway",
+                total: 0,
+                items: [],
+              }),
+            });
+            navigate(`/transaction/phone/${newOrder.id}`, { state: { order: newOrder } });
+          } catch (err) {
+            console.error("❌ Failed to create takeaway order:", err);
+            toast.error("Could not create new takeaway order");
+          }
+        }}
+        className="border-2 border-dashed border-orange-400 rounded-3xl p-8 flex flex-col items-center justify-center text-orange-500 hover:bg-orange-50 transition"
+      >
+        <span className="text-5xl mb-2">➕</span>
+        <span className="font-semibold text-lg">{t("New Pre-Orders")}</span>
+      </button>
+
+      {/* Existing Takeaway Orders */}
+      {takeawayOrders.map(order => (
+        <div
+          key={order.id}
+          onClick={() => navigate(`/transaction/phone/${order.id}`, { state: { order } })}
+          className="cursor-pointer rounded-3xl bg-white/80 p-5 shadow-lg hover:shadow-xl transition hover:scale-[1.03]"
+        >
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-lg font-semibold text-orange-700">#{order.id}</span>
+            <span className="text-sm text-gray-500">
+              {new Date(order.created_at).toLocaleTimeString("tr-TR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+          <div className="font-bold text-gray-800">
+            {formatCurrency(getDisplayTotal(order))}
+          </div>
+          <div className="text-sm text-gray-500">
+            {order.customer_name || t("Guest")}
+          </div>
+
+          {/* Pre-order scheduling info */}
+          {order.pickup_time && (
+            <div className="mt-1 text-xs text-orange-700">
+              🕒 {t("Pickup")}: {order.pickup_time}
+            </div>
+          )}
+          {order.customer_address && (
+            <div className="mt-0.5 text-xs text-emerald-700">
+              🚚 {t("Delivery")}: {order.customer_address}
+            </div>
+          )}
+
+          {/* Status + Kitchen badges (like tables) */}
+          <div className="mt-2">
+            {/* Order status label */}
+            {order?.status && (
+              <div className="flex items-center gap-2">
+                <span className="uppercase font-extrabold tracking-wide text-orange-700">
+                  {t(order.status)}
+                </span>
+                {/* Paid / Unpaid chip */}
+                {Array.isArray(order.items) && order.items.length > 0 && (
+                  hasUnpaidAnywhere(order) ? (
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full text-xs shadow-sm">
+                      {t("Unpaid")}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-green-100 text-green-800 font-bold rounded-full text-xs shadow-sm">
+                      ✅ {t("Paid")}
+                    </span>
+                  )
+                )}
+              </div>
+            )}
+
+            {/* Kitchen status badges */}
+            {Array.isArray(order.items) && order.items.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-1">
+                {["new", "preparing", "ready", "delivered"].map((status) => {
+                  const count = order.items.filter((item) => item.kitchen_status === status).length;
+                  if (!count) return null;
+                  return (
+                    <span
+                      key={status}
+	                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+	                        status === "preparing"
+	                          ? "bg-yellow-400 text-indigo-700"
+	                          : status === "ready"
+	                          ? "bg-blue-500 text-white"
+	                          : status === "delivered"
+	                          ? "bg-green-500 text-white"
+                          : status === "new"
+                          ? "bg-gray-400 text-white"
+                          : "bg-gray-300 text-black"
+                      }`}
+                    >
+                      {count} {t(status)}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
+
+
+
+    {/* --- Modal --- */}
+    {showPhoneOrderModal && (
+      <PhoneOrderModal
+        open={showPhoneOrderModal}
+        onClose={() => {
+          setShowPhoneOrderModal(false);
+          handleTabSelect("packet");
+        }}
+	onCreateOrder={() => {
+	  setShowPhoneOrderModal(false);
+	  handleTabSelect("takeaway");
+	  setTimeout(() => {
+	    fetchTakeawayOrders();
+	  }, 300);
+	}}
+
+
+
+
+
+      />
+    )}
+
+    {activeTab === "phone" && <Orders />}
+{activeTab === "packet" && (
+  canSeePacketTab ? (
+    <Orders hideModal={true} orders={packetOrders} />
+  ) : (
+    <div className="text-center mt-10 text-rose-500 font-bold">
+      🚫 {t("Access Denied: Packet Orders")}
+    </div>
+  )
+)}
+
+{activeTab === "history" && (
+      <OrderHistory
+        fromDate={fromDate}
+        toDate={toDate}
+        paymentFilter={paymentFilter}
+        orderTypeFilter={orderTypeFilter}
+        setFromDate={setFromDate}
+        setToDate={setToDate}
+        setPaymentFilter={setPaymentFilter}
+        setOrderTypeFilter={setOrderTypeFilter}
+      />
+    )}
+
+{activeTab === "kitchen" && (
+  <div className="px-3 md:px-8 py-6">
+ 
+    {kitchenOpenOrdersLoading ? (
+      <div className="flex flex-col items-center mt-10">
+        <span className="text-5xl mb-3">⏳</span>
+        <span className="text-xl text-gray-400 font-semibold">{t("Loading orders...")}</span>
+      </div>
+    ) : kitchenOpenOrders.length === 0 ? (
+      <div className="flex flex-col items-center mt-10">
+        <span className="text-xl text-gray-400 font-semibold">{t("No open orders.")}</span>
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-7">
+    {kitchenOpenOrders.map((order) => {
+      const orderType = String(order?.order_type || "").trim().toLowerCase();
+      const readyAtLabel = getReadyAtLabel(order, productPrepById);
+      const paid = isOrderFullyPaid(order);
+      const paymentStatusLabel = paid ? t("Paid") : t("Unpaid");
+      const paymentStatusClass = paid
+        ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+        : "bg-amber-100 text-amber-800 border-amber-200";
+
+      const title = (() => {
+        if (orderType === "table") return `🍽️ ${tableLabelText} ${order.table_number}`;
+      if (orderType === "phone") return `📞 ${t("Phone Order")}`;
+      if (orderType === "packet") return "🛵 Yemeksepti";
+        if (orderType === "takeaway") return `🥡 ${t("Pre Order")}`;
+        return t("Order");
+      })();
+
+      const subtitle = (() => {
+        if (orderType === "table") return null;
+        if (orderType === "phone" || orderType === "packet") {
+          return order.customer_name || order.customer_phone || null;
+        }
+        if (orderType === "takeaway") {
+          return order.customer_name || order.customer_phone || null;
+        }
+        return null;
+      })();
+
+      return (
+        <div
+          key={order.id}
+          className="rounded-3xl bg-white border border-slate-200 shadow-xl p-5 flex flex-col gap-3 hover:shadow-2xl transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              navigateToOrder(order);
+            }
+          }}
+          onClick={() => navigateToOrder(order)}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-extrabold text-lg text-slate-900 truncate">{title}</div>
+              <div className="text-xs text-slate-500 font-semibold">
+                #{order.id}
+                {subtitle ? ` • ${subtitle}` : ""}
+              </div>
+              {order.customer_address && (orderType === "phone" || orderType === "packet") && (
+                <div className="text-xs text-slate-500 mt-1 line-clamp-2">
+                  📍 {order.customer_address}
+                </div>
+              )}
+              {order.pickup_time && orderType === "takeaway" && (
+                <div className="text-xs text-slate-600 mt-1">
+                  🕒 {t("Pickup")}: {order.pickup_time}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col items-end gap-2 flex-shrink-0">
+              <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${paymentStatusClass}`}>
+                {paymentStatusLabel}
+              </span>
+              {readyAtLabel && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-extrabold border bg-slate-100 text-slate-700 border-slate-200">
+                  ⏳ {t("Ready at")} {readyAtLabel}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-bold text-slate-800">
+              {formatCurrency(Number(order.total || 0))}
+            </div>
+            {order.payment_method && (
+              <span className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-2 py-1 rounded-full">
+                {t("Paid")}: {order.payment_method}
+              </span>
+            )}
+          </div>
+
+          {Array.isArray(order.items) && order.items.length > 0 && (
+            <div className="text-xs text-slate-600">
+              {order.items.slice(0, 3).map((it, idx) => (
+                <div key={`${order.id}-${it.id || idx}`} className="truncate">
+                  • {it.product_name || it.name || t("Item")} ×{it.quantity || 1}
+                </div>
+              ))}
+              {order.items.length > 3 && (
+                <div className="text-xs text-slate-400 italic">
+                  +{order.items.length - 3} {t("more")}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    })}
+      </div>
+    )}
+  </div>
+)}
+
+
+
+<RegisterModal
+  showRegisterModal={showRegisterModal}
+  setShowRegisterModal={setShowRegisterModal}
+  handleTabSelect={handleTabSelect}
+/>
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+);
+
+
+
+}

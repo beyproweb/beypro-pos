@@ -1,14 +1,20 @@
 // src/pages/QrMenu.jsx
 // src/pages/QrMenu.jsx
-import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import OrderStatusScreen, { useSocketIO as useOrderSocket } from "../components/OrderStatusScreen";
 import ModernTableSelector from "../components/ModernTableSelector";
+import MenuProductsSection from "../features/qrmenu/components/MenuProductsSection";
+import ProductModal from "../features/qrmenu/components/modals/ProductModal";
+import CartModal from "../features/qrmenu/components/modals/CartModal";
+import CheckoutModal from "../features/qrmenu/components/modals/CheckoutModal";
+import useQrMenuController from "../features/qrmenu/hooks/useQrMenuController";
+import { VoiceOrderController } from "../features/voiceOrder";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
-import { UtensilsCrossed, Soup, Bike, Phone, Share2, Search, Download } from "lucide-react";
+import { UtensilsCrossed, Soup, Bike, Phone, Share2, Search, Download, ChevronDown, Mic, Loader2 } from "lucide-react";
 import { Instagram, Music2, Globe } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import { io } from "socket.io-client";
@@ -433,6 +439,10 @@ const DICT = {
     "Tap here to install the menu as an app": "Tap here to install the menu as an app",
     "Add to Home Screen": "Add to Home Screen",
     "Download Qr": "Download Qr",
+    "Shop Hours": "Shop Hours",
+    "Shop Closed": "Shop Closed",
+    Closed: "Closed",
+    "Open now!": "Open now!",
     "Scan Table QR": "Scan Table QR",
     "Scan the QR code on your table to continue.": "Scan the QR code on your table to continue.",
     "Invalid table QR code.": "Invalid table QR code.",
@@ -536,6 +546,10 @@ const DICT = {
     "Tap here to install the menu as an app": "Menüyü uygulama olarak yüklemek için buraya dokunun",
     "Add to Home Screen": "Ana Ekrana Ekle",
     "Download Qr": "QR İndir",
+    "Shop Hours": "Çalışma Saatleri",
+    "Shop Closed": "Dükkan Kapalı",
+    Closed: "Kapalı",
+    "Open now!": "Şu an açık!",
     "Scan Table QR": "Masa QR'ını Tara",
     "Scan the QR code on your table to continue.": "Devam etmek için masanızdaki QR kodunu tarayın.",
     "Invalid table QR code.": "Geçersiz masa QR kodu.",
@@ -723,6 +737,8 @@ function QrHeader({
   searchValue,
   onSearchChange,
   searchPlaceholder,
+  onVoiceStart,
+  voiceListening,
 }) {
   const displayRestaurantName = React.useMemo(() => {
     const raw = String(restaurantName || "").trim();
@@ -763,6 +779,20 @@ function QrHeader({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {onVoiceStart ? (
+          <button
+            type="button"
+            onClick={onVoiceStart}
+            aria-label={t("Voice Order")}
+            className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+              voiceListening
+                ? "bg-emerald-600 text-white animate-pulse"
+                : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-200 hover:bg-gray-200 dark:hover:bg-neutral-700"
+            }`}
+          >
+            <Mic className="w-5 h-5" />
+          </button>
+        ) : null}
         <button
           onClick={onClose}
           aria-label={t("Close")}
@@ -784,6 +814,7 @@ function OrderTypeSelect({
   t,
   onInstallClick,
   onDownloadQr,
+  onShopOpenChange,
   canInstall,
   showHelp,
   setShowHelp,
@@ -918,6 +949,13 @@ async function load() {
   const [homeSearch, setHomeSearch] = React.useState(
     () => storage.getItem("qr_home_search") || ""
   );
+  const [voiceListening, setVoiceListening] = React.useState(false);
+  const [voiceTranscript, setVoiceTranscript] = React.useState("");
+  const [voiceResult, setVoiceResult] = React.useState(null);
+  const [voiceParsing, setVoiceParsing] = React.useState(false);
+  const [showVoiceCard, setShowVoiceCard] = React.useState(false);
+  const [voiceError, setVoiceError] = React.useState("");
+  const speechRecognitionRef = React.useRef(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -997,6 +1035,98 @@ async function load() {
     storage.setItem("qr_home_search", homeSearch || "");
   }, [homeSearch]);
 
+  const qrLang = React.useMemo(() => {
+    if (typeof window === "undefined") return "en";
+    return (
+      storage.getItem("beyproGuestLanguage") ||
+      storage.getItem("beyproLanguage") ||
+      "en"
+    ).split("-")[0];
+  }, []);
+
+  const getSpeechRecognition = React.useCallback(() => {
+    if (speechRecognitionRef.current !== null) return speechRecognitionRef.current;
+    if (typeof window === "undefined") return null;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    speechRecognitionRef.current = SR ? SR : null;
+    return speechRecognitionRef.current;
+  }, []);
+
+  const parseVoiceTranscript = React.useCallback(
+    async (text) => {
+      if (!text) return;
+      setVoiceParsing(true);
+      setVoiceError("");
+      setVoiceResult(null);
+      setShowVoiceCard(true);
+      try {
+        const token = getStoredToken();
+        const res = await fetch(`${API_URL}/voice/parse-order`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            restaurant_identifier: identifier,
+            transcript: text,
+            language: qrLang,
+            order_type: "table",
+            table_id: null,
+          }),
+        });
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || "Voice parse failed");
+        }
+        const json = await res.json();
+        setVoiceResult(json);
+      } catch (err) {
+        console.error("❌ QR voice parse failed", err);
+        setVoiceError(err?.message || "Voice parsing failed");
+      } finally {
+        setVoiceParsing(false);
+      }
+    },
+    [identifier, qrLang]
+  );
+
+  const handleVoiceStart = React.useCallback(() => {
+    const SR = getSpeechRecognition();
+    if (!SR) {
+      setVoiceError(t("Voice recognition not supported in this browser"));
+      setShowVoiceCard(true);
+      return;
+    }
+    setVoiceTranscript("");
+    setVoiceResult(null);
+    setShowVoiceCard(true);
+    const rec = new SR();
+    rec.lang = qrLang || "en-US";
+    rec.interimResults = false;
+    rec.continuous = false;
+    rec.onstart = () => setVoiceListening(true);
+    rec.onerror = (e) => {
+      setVoiceListening(false);
+      setVoiceError(e.error || "Mic error");
+    };
+    rec.onend = () => setVoiceListening(false);
+    rec.onresult = (evt) => {
+      const text = Array.from(evt.results)
+        .map((r) => r[0]?.transcript || "")
+        .join(" ")
+        .trim();
+      setVoiceTranscript(text);
+      if (text) parseVoiceTranscript(text);
+    };
+    try {
+      rec.start();
+    } catch (err) {
+      setVoiceListening(false);
+      setVoiceError(err?.message || "Mic start failed");
+    }
+  }, [getSpeechRecognition, parseVoiceTranscript, qrLang, t]);
+
   const homeVisibleProducts = React.useMemo(() => {
     const list = Array.isArray(homeProducts) ? homeProducts : [];
     const q = (homeSearch || "").trim().toLowerCase();
@@ -1024,6 +1154,25 @@ async function load() {
     }
   });
   const [loyalty, setLoyalty] = React.useState({ enabled: false, points: 0, goal: 10, reward_text: "", color: "#F59E0B" });
+  const [loyaltyEligibleOrderId, setLoyaltyEligibleOrderId] = React.useState(
+    () => storage.getItem("qr_loyalty_eligible_order_id") || ""
+  );
+  const [loyaltyStampedOrderId, setLoyaltyStampedOrderId] = React.useState(
+    () => storage.getItem("qr_loyalty_stamped_order_id") || ""
+  );
+  const canStampLoyalty =
+    Boolean(loyaltyEligibleOrderId) &&
+    String(loyaltyEligibleOrderId) !== String(loyaltyStampedOrderId || "");
+
+  React.useEffect(() => {
+    const sync = () => {
+      setLoyaltyEligibleOrderId(storage.getItem("qr_loyalty_eligible_order_id") || "");
+      setLoyaltyStampedOrderId(storage.getItem("qr_loyalty_stamped_order_id") || "");
+    };
+    sync();
+    window.addEventListener("qr:loyalty-change", sync);
+    return () => window.removeEventListener("qr:loyalty-change", sync);
+  }, []);
   React.useEffect(() => {
     let cancelled = false;
     async function loadLoyalty() {
@@ -1046,6 +1195,7 @@ async function load() {
     return () => { cancelled = true; };
   }, [identifier, c.loyalty_enabled, deviceId]);
   const handleStamp = async () => {
+    if (!canStampLoyalty) return;
     try {
       const res = await fetch(`${API_URL}/public/loyalty/${encodeURIComponent(identifier)}/add`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1054,6 +1204,10 @@ async function load() {
       const data = await res.json();
       if (res.ok && typeof data.points !== 'undefined') {
         setLoyalty((s) => ({ ...s, points: Number(data.points) }));
+        try {
+          storage.setItem("qr_loyalty_stamped_order_id", String(loyaltyEligibleOrderId));
+          window.dispatchEvent(new Event("qr:loyalty-change"));
+        } catch {}
       }
     } catch {}
   };
@@ -1076,7 +1230,92 @@ async function load() {
   const deliveryTime = c.delivery_time || "25–35 min";
   const pickupTime = c.pickup_time || "10 min";
 
-  const isOpen = true; // dynamic opening hours next step
+  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const [shopHours, setShopHours] = React.useState({});
+  const [loadingShopHours, setLoadingShopHours] = React.useState(true);
+  const [showShopHoursDropdown, setShowShopHoursDropdown] = React.useState(false);
+  const shopHoursDropdownRef = React.useRef(null);
+
+  const todayName = React.useMemo(() => {
+    const map = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return map[new Date().getDay()];
+  }, []);
+
+  const parseTimeToMinutes = React.useCallback((value) => {
+    const s = String(value || "").trim();
+    if (!s) return null;
+    const [hh, mm] = s.split(":").map((part) => Number(part));
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return hh * 60 + mm;
+  }, []);
+
+  const openStatus = React.useMemo(() => {
+    const today = shopHours?.[todayName];
+    const openMin = parseTimeToMinutes(today?.open);
+    const closeMin = parseTimeToMinutes(today?.close);
+    if (openMin === null || closeMin === null) {
+      return { isOpen: false, label: t("Closed") };
+    }
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+
+    if (closeMin > openMin) {
+      const isOpen = nowMin >= openMin && nowMin < closeMin;
+      return { isOpen, label: isOpen ? t("Open now!") : t("Closed") };
+    }
+
+    if (closeMin < openMin) {
+      const isOpen = nowMin >= openMin || nowMin < closeMin;
+      return { isOpen, label: isOpen ? t("Open now!") : t("Closed") };
+    }
+
+    return { isOpen: false, label: t("Closed") };
+  }, [parseTimeToMinutes, shopHours, t, todayName]);
+
+  React.useEffect(() => {
+    onShopOpenChange?.(openStatus.isOpen);
+  }, [onShopOpenChange, openStatus.isOpen]);
+
+  React.useEffect(() => {
+    const onDown = (e) => {
+      const el = shopHoursDropdownRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setShowShopHoursDropdown(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  React.useEffect(() => {
+    let active = true;
+    setLoadingShopHours(true);
+    (async () => {
+      try {
+        const token = getStoredToken();
+        if (!token) throw new Error("Missing token");
+        const data = await secureFetch("/settings/shop-hours/all", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!active) return;
+        const hoursMap = {};
+        if (Array.isArray(data)) {
+          data.forEach((row) => {
+            hoursMap[row.day] = { open: row.open_time, close: row.close_time };
+          });
+        }
+        setShopHours(hoursMap);
+      } catch (err) {
+        // If we can't load hours, keep dropdown functional but default to "Open now!"
+        if (active) setShopHours({});
+      } finally {
+        if (active) setLoadingShopHours(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   /* ============================================================
      3) Local slider state
@@ -1164,10 +1403,69 @@ async function load() {
 	      {/* TITLE & TAGLINE */}
 	      <div className="max-w-3xl">
 	        <div className="flex items-center justify-between gap-3">
-		          <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 dark:bg-neutral-900/60 border border-gray-200 dark:border-neutral-700 shadow-sm text-[11px] font-medium text-gray-700 dark:text-neutral-200">
-		            <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
-		            {isOpen ? "Open now • Order anytime" : "Currently closed"}
-		          </p>
+              <div className="inline-flex items-center" ref={shopHoursDropdownRef}>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowShopHoursDropdown((v) => !v)}
+                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm text-[11px] font-medium transition ${
+                      openStatus.isOpen
+                        ? "bg-emerald-50/80 text-emerald-700 border-emerald-200 hover:bg-emerald-100/80 dark:bg-emerald-950/25 dark:text-emerald-200 dark:border-emerald-900/40"
+                        : "bg-rose-50/80 text-rose-700 border-rose-200 hover:bg-rose-100/80 dark:bg-rose-950/25 dark:text-rose-200 dark:border-rose-900/40"
+                    }`}
+                    aria-label={t("Shop Hours")}
+                    title={t("Shop Hours")}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${openStatus.isOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
+                    <span>{openStatus.label}</span>
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${showShopHoursDropdown ? "rotate-180" : ""}`}
+                    />
+                  </button>
+
+                  {showShopHoursDropdown && (
+                    <div className="absolute left-0 top-[calc(100%+10px)] w-[320px] rounded-2xl border border-gray-200 bg-white/95 dark:bg-neutral-950/90 shadow-2xl backdrop-blur p-3 z-20">
+                      <div className="flex items-center justify-between gap-2 px-1 pb-2">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-neutral-100">
+                          {t("Shop Hours")}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowShopHoursDropdown(false)}
+                          className="text-gray-400 hover:text-gray-700 dark:hover:text-neutral-200 text-lg leading-none"
+                          aria-label={t("Close")}
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-1">
+                        {days.map((day) => {
+                          const isToday = day === todayName;
+                          const open = shopHours?.[day]?.open || "";
+                          const close = shopHours?.[day]?.close || "";
+                          const has = !!(open && close);
+                          return (
+                            <div
+                              key={day}
+                              className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${
+                                isToday
+                                  ? "bg-indigo-50 text-indigo-800 border border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/30 dark:text-indigo-200"
+                                  : "bg-gray-50/80 text-gray-700 dark:bg-neutral-900/40 dark:text-neutral-200"
+                              }`}
+                            >
+                              <span className="font-semibold">{t(day)}</span>
+                              <span className="font-mono text-xs">
+                                {loadingShopHours ? "…" : has ? `${open} - ${close}` : "—"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
 	          <div className="shrink-0">
 	            <LanguageSwitcher lang={lang} setLang={setLang} t={t} />
 	          </div>
@@ -1192,35 +1490,45 @@ async function load() {
         {/* ORDER TYPE BUTTONS */}
         <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3 max-w-xl">
           <button
-            onClick={() => onSelect("takeaway")}
-            className="min-w-0 px-2 py-4 sm:py-5 rounded-2xl bg-gray-900 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
+            onClick={() => openStatus.isOpen && onSelect("takeaway")}
+            disabled={!openStatus.isOpen}
+            className={`min-w-0 px-2 py-4 sm:py-5 rounded-2xl shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
+              openStatus.isOpen
+                ? "bg-gray-900 text-white hover:shadow-lg hover:-translate-y-1"
+                : "bg-gray-300 text-gray-600 cursor-not-allowed"
+            }`}
           >
             <UtensilsCrossed className="w-5 h-5 sm:w-6 sm:h-6" />
             <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
-              {t("Pre Order")}
+              {openStatus.isOpen ? t("Pre Order") : t("Shop Closed")}
             </span>
           </button>
           <button
-            onClick={() => onSelect("table")}
-            className="min-w-0 px-2 py-4 sm:py-5 rounded-2xl bg-gray-800 text-white shadow-md hover:shadow-lg hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-2"
+            onClick={() => openStatus.isOpen && onSelect("table")}
+            disabled={!openStatus.isOpen}
+            className={`min-w-0 px-2 py-4 sm:py-5 rounded-2xl shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
+              openStatus.isOpen
+                ? "bg-gray-800 text-white hover:shadow-lg hover:-translate-y-1"
+                : "bg-gray-300 text-gray-600 cursor-not-allowed"
+            }`}
           >
             <Soup className="w-5 h-5 sm:w-6 sm:h-6" />
             <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
-              {t("Table Order")}
+              {openStatus.isOpen ? t("Table Order") : t("Shop Closed")}
             </span>
           </button>
           <button
-            onClick={() => allowDelivery && onSelect("online")}
-            disabled={!allowDelivery}
+            onClick={() => allowDelivery && openStatus.isOpen && onSelect("online")}
+            disabled={!allowDelivery || !openStatus.isOpen}
             className={`min-w-0 px-2 py-4 sm:py-5 rounded-2xl shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
-              allowDelivery
+              allowDelivery && openStatus.isOpen
                 ? "bg-red-600 hover:shadow-lg hover:-translate-y-1"
                 : "bg-red-200 text-red-600 cursor-not-allowed"
             }`}
           >
             <Bike className={`w-5 h-5 sm:w-6 sm:h-6 ${allowDelivery ? "text-white" : "text-red-600"}`} />
             <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
-              {allowDelivery ? t("Delivery") : t("Delivery is closed")}
+              {allowDelivery && openStatus.isOpen ? t("Delivery") : t("Shop Closed")}
             </span>
           </button>
         </div>
@@ -1252,7 +1560,7 @@ async function load() {
 
 	          {/* Search */}
 	          <div className="mt-3 mb-4">
-	            <div className="relative">
+	            <div className="relative flex items-center gap-2">
 	              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
 	              <input
 	                value={homeSearch}
@@ -1272,6 +1580,18 @@ async function load() {
 	                  ×
 	                </button>
 	              ) : null}
+                <button
+                  type="button"
+                  onClick={handleVoiceStart}
+                  className={`ml-3 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow ${
+                    voiceListening
+                      ? "bg-emerald-600 text-white animate-pulse"
+                      : "bg-white border border-gray-200 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
+                  }`}
+                >
+                  <Mic className="w-4 h-4" />
+                  <span className="hidden sm:inline">{t("Voice Order")}</span>
+                </button>
 	            </div>
 	          </div>
 
@@ -1394,8 +1714,13 @@ async function load() {
             <button
               onClick={handleStamp}
               style={{ backgroundColor: loyalty.color }}
-              className="px-4 py-2 rounded-full text-white font-semibold shadow hover:opacity-90 transition"
-            >Stamp my card</button>
+              disabled={!canStampLoyalty}
+              className={`px-4 py-2 rounded-full text-white font-semibold shadow transition ${
+                canStampLoyalty ? "hover:opacity-90" : "opacity-50 cursor-not-allowed"
+              }`}
+            >
+              Stamp my card
+            </button>
           </div>
           <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">Reward: {loyalty.reward_text || 'Free Menu Item'}</div>
           <div className="mt-3 flex items-center gap-1">
@@ -1803,385 +2128,30 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit, deliveryEnabled =
 	  );
 }
 
-/* ====================== ONLINE ORDER FORM (Luxury Fine Dining Style) ====================== */
-function OnlineOrderForm({ submitting, t, onClose, onSubmit, appendIdentifier }) {
-  const [form, setForm] = useState({ name: "", phone: "", address: "", payment_method: "" });
-  const [touched, setTouched] = useState({});
-  const [useSaved, setUseSaved] = useState(false);
-  const [savedCard, setSavedCard] = useState(null);
-  const [cardName, setCardName] = useState("");
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvc, setCardCvc] = useState("");
-  const [saveCard, setSaveCard] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [savedOnce, setSavedOnce] = useState(false);
-
-
-
-/* ====================== PREFILL SAVED DELIVERY INFO ====================== */
-useEffect(() => {
-  try {
-    const saved = JSON.parse(storage.getItem("qr_delivery_info") || "null");
-    if (saved && typeof saved === "object") {
-      setForm((f) => ({
-        ...f,
-        name: saved.name || f.name,
-        phone: saved.phone || f.phone,
-        address: saved.address || f.address,
-      }));
-    }
-  } catch {}
-}, [appendIdentifier]);
-
-/* ====================== LOAD SAVED CARD ====================== */
-useEffect(() => {
-  const phoneOk = /^(5\d{9}|[578]\d{7})$/.test(form.phone)
-;
-  if (!phoneOk) {
-    setSavedCard(null);
-    setUseSaved(false);
-    return;
-  }
-
-  try {
-    const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
-    const arr = Array.isArray(store[form.phone]) ? store[form.phone] : [];
-    setSavedCard(arr[0] || null);
-    setUseSaved(!!arr[0]);
-  } catch {
-    setSavedCard(null);
-    setUseSaved(false);
-  }
-}, [form.phone]);
-
-/* ====================== SAVE DELIVERY INFO ====================== */
-  async function saveDelivery() {
-    const name = form.name.trim();
-    const phone = form.phone.trim();
-    const address = form.address.trim();
-
-    if (!name || !/^5\d{9}$/.test(phone) || !address) return;
-
-    setSaving(true);
-    try {
-      // 1️⃣ Always save locally (even for guest/QR users)
-      storage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
-
-      // 2️⃣ Sync with backend only if authenticated
-      const token = getAuthToken();
-      if (token) {
-        try {
-          // Fetch existing customer by phone
-          let customer = await secureFetch(appendIdentifier(`/customers?phone=${phone}`), {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-          });
-
-          // If not found, create new
-          if (!customer || !customer.id) {
-            customer = await secureFetch(appendIdentifier("/customers"), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name, phone }),
-            });
-          }
-
-          // Handle addresses
-          if (customer && (customer.id || customer.customer_id)) {
-            const cid = customer.id ?? customer.customer_id;
-            const addrs = Array.isArray(customer.addresses) ? customer.addresses : [];
-
-            const existing = addrs.find((a) => (a.address || "").trim() === address);
-            if (existing) {
-              if (!existing.is_default) {
-                await secureFetch(appendIdentifier(`/customer-addresses/${existing.id}`), {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ is_default: true }),
-                });
-              }
-            } else {
-              await secureFetch(appendIdentifier(`/customers/${cid}/addresses`), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ label: "Default", address, is_default: true }),
-              });
-            }
-          }
-        } catch (err) {
-          console.warn("⚠️ Backend sync failed:", err);
-        }
-      }
-
-      setSavedOnce(true);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-/* ====================== PREFILL FROM BACKEND ====================== */
-useEffect(() => {
-  const phoneOk = /^(5\d{9}|[578]\d{7})$/.test(form.phone)
-;
-  if (!phoneOk) return;
-
-  (async () => {
-    try {
-      const match = await secureFetch(appendIdentifier(`/customers?phone=${form.phone}`), {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!match) return;
-
-      if (match.name && !form.name) {
-        setForm((f) => ({ ...f, name: match.name }));
-      }
-
-      const addrs = Array.isArray(match.addresses) ? match.addresses : [];
-      const def = addrs.find((a) => a.is_default) || addrs[0];
-      if (def && !form.address) {
-        setForm((f) => ({ ...f, address: def.address }));
-      }
-    } catch {}
-  })();
-}, [form.phone]);
-
-/* ====================== VALIDATION ====================== */
-const validBase =
-  form.name && /^(5\d{9}|[578]\d{7})$/.test(form.phone)
- && form.address && !!form.payment_method;
-
-const validCard =
-  form.payment_method !== "card" ||
-  (useSaved && !!savedCard) ||
-  (cardName.trim().length >= 2 &&
-    luhnValid(cardNumber) &&
-    expiryValid(cardExpiry) &&
-    ((detectBrand(cardNumber) === "Amex")
-      ? /^[0-9]{4}$/.test(cardCvc)
-      : /^[0-9]{3}$/.test(cardCvc)));
-
-const validate = () => validBase && validCard;
-
-/* ====================== SAVE CARD META ====================== */
-function persistCardIfRequested(meta) {
-  if (!saveCard) return;
-  try {
-    const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
-    const list = Array.isArray(store[form.phone]) ? store[form.phone] : [];
-    if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) list.unshift(meta);
-    store[form.phone] = list.slice(0, 3);
-    storage.setItem("qr_saved_cards", JSON.stringify(store));
-  } catch {}
-}
-
-/* ====================== CARD DISPLAY FLAG ====================== */
-const showNewCard = !savedCard || !useSaved;
-
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6">
-      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md text-left relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
-        {/* Close */}
-        <button
-          onClick={onClose}
-          aria-label={t("Close")}
-          className="absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:text-red-600 hover:bg-red-50 transition"
-        >
-          ×
-        </button>
-
-        {/* Title */}
-        <h2 className="text-2xl font-serif font-semibold text-neutral-900 mb-6 border-b border-neutral-200 pb-2">
-          {t("Delivery Information")}
-        </h2>
-
-        {/* Form */}
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!validate()) {
-              setTouched({ name: true, phone: true, address: true, payment_method: true, card: true });
-              return;
-            }
-            try {
-              // Optional: persist details locally for next time
-              await saveDelivery();
-            } catch {}
-            // Hand off to parent so it can continue order flow
-            onSubmit({ ...form });
-          }}
-          className="flex flex-col gap-4"
-        >
-          {/* Name */}
-          <input
-            className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400"
-            placeholder={t("Full Name")}
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-
-          {/* Phone */}
-	        <input
-	  className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
-	    touched.phone && !/^(5\d{9}|[578]\d{7})$/.test(form.phone)
-	      ? "border-red-500"
-	      : "border-neutral-300"
-	  }`}
-	  placeholder={t("Phone")}
-	  value={form.phone}
-	  onChange={(e) => {
-	    // Keep digits only, drop leading 0 (e.g., 05XXXXXXXXX → 5XXXXXXXXX), then cap at 10
-	    const onlyDigits = e.target.value.replace(/[^\d]/g, "");
-    const normalized = onlyDigits.startsWith("0") ? onlyDigits.slice(1) : onlyDigits;
-    setForm((f) => ({ ...f, phone: normalized.slice(0, 10) }));
-  }}
-  inputMode="numeric"
-/>
-
-
-          {/* Address */}
-          <textarea
-            className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400"
-            placeholder={t("Address")}
-            rows={3}
-            value={form.address}
-            onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-          />
-
-          {/* Payment Method */}
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-neutral-800">{t("Payment Method")}</label>
-            <select
-              className={`rounded-xl border px-4 py-3 text-neutral-800 bg-white focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
-                touched.payment_method && !form.payment_method ? "border-red-500" : "border-neutral-300"
-              }`}
-              value={form.payment_method}
-              onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
-            >
-              <option value="">{t("Select Payment Method")}</option>
-              <option value="cash">{t("Cash")}</option>
-              <option value="card">{t("Credit Card")}</option>
-              <option value="online">{t("Online Payment")}</option>
-            </select>
-          </div>
-
-          {/* Card Section */}
-          {form.payment_method === "card" && (
-            <div className="mt-1 p-4 rounded-2xl border border-neutral-200 bg-neutral-50">
-              {savedCard && (
-                <div className="mb-2">
-                  <div className="text-xs font-semibold text-neutral-600 mb-1">
-                    {t("Saved Card")}:
-                  </div>
-                  <div className="text-sm text-neutral-700">
-                    {savedCard.brand} •••• {savedCard.last4} ({savedCard.expMonth}/
-                    {String(savedCard.expYear).slice(-2)})
-                  </div>
-                  <div className="mt-2 flex gap-3 text-sm">
-                    <label className="flex items-center gap-2">
-                      <input type="radio" checked={useSaved} onChange={() => setUseSaved(true)} />
-                      {t("Use Saved")}
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input type="radio" checked={!useSaved} onChange={() => setUseSaved(false)} />
-                      {t("Use New")}
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {showNewCard && (
-                <div className="grid grid-cols-1 gap-3 mt-3">
-                  <input
-                    className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
-                    placeholder={t("Name on Card")}
-                    value={cardName}
-                    onChange={(e) => setCardName(e.target.value)}
-                    autoComplete="cc-name"
-                  />
-                  <input
-                    className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
-                    placeholder={t("Card Number")}
-                    value={cardNumber}
-                    onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                    inputMode="numeric"
-                    autoComplete="cc-number"
-                  />
-                  <div className="flex gap-2">
-                    <input
-                      className="flex-1 rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
-                      placeholder={t("Expiry (MM/YY)")}
-                      value={cardExpiry}
-                      onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
-                      inputMode="numeric"
-                      autoComplete="cc-exp"
-                    />
-                    <input
-                      className="w-24 rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
-                      placeholder={t("CVC")}
-                      value={cardCvc}
-                      onChange={(e) => setCardCvc(e.target.value.replace(/\\D/g, "").slice(0, 4))}
-                      inputMode="numeric"
-                      autoComplete="cc-csc"
-                    />
-                  </div>
-                  <label className="flex items-center gap-2 text-sm text-neutral-600">
-                    <input type="checkbox" checked={saveCard} onChange={(e) => setSaveCard(e.target.checked)} />
-                    {t("Save card for next time")}
-                  </label>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Save Info */}
-          <button
-            type="button"
-            onClick={saveDelivery}
-            disabled={
-              saving ||
-              !form.name ||
-              !/^(5\\d{9}|[578]\\d{7})$/.test(form.phone) ||
-              !form.address
-            }
-            className="w-full py-2 rounded-xl border border-neutral-300 bg-white text-neutral-800 font-medium hover:bg-neutral-100 transition disabled:opacity-50"
-          >
-            {saving ? t("Saving...") : savedOnce ? `✓ ${t("Saved")}` : t("Save for next time")}
-          </button>
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
-          >
-            {submitting ? t("Please wait...") : t("Continue")}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-
 function OrderTypePromptModal({
   product,
   onSelect,
   onClose,
   t,
   deliveryEnabled = true,
+  shopIsOpen = true,
 }) {
-  if (!product) return null;
+  const productName = String(product?.name || "").trim();
+  const isGeneric = !productName;
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4 py-6">
       <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.25em] text-neutral-400 dark:text-neutral-400">{t("Order Type")}</p>
-            <h3 className="mt-1 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{product.name}</h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-300">Select how you'd like to order this item.</p>
+            <h3 className="mt-1 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+              {isGeneric ? t("Select Order Type") : productName}
+            </h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-300">
+              {isGeneric
+                ? t("Choose how you'd like to continue.")
+                : t("Select how you'd like to order this item.")}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -2194,26 +2164,41 @@ function OrderTypePromptModal({
 
         <div className="space-y-3">
           <button
-            onClick={() => onSelect?.("takeaway")}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-4 py-3 text-sm font-semibold text-neutral-700 dark:text-neutral-100 hover:border-neutral-900 dark:hover:border-white hover:text-neutral-900 shadow-sm transition"
+            onClick={() => shopIsOpen && onSelect?.("takeaway")}
+            disabled={!shopIsOpen}
+            className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm transition ${
+              shopIsOpen
+                ? "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-100 hover:border-neutral-900 dark:hover:border-white hover:text-neutral-900"
+                : "border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed"
+            }`}
           >
             <UtensilsCrossed className="w-5 h-5" />
-            {t("Pre Order")}
+            {shopIsOpen ? t("Pre Order") : t("Shop Closed")}
           </button>
           <button
-            onClick={() => onSelect?.("table")}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-gradient-to-r from-neutral-900 to-neutral-700 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95"
+            onClick={() => shopIsOpen && onSelect?.("table")}
+            disabled={!shopIsOpen}
+            className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg transition ${
+              shopIsOpen
+                ? "border-neutral-200 dark:border-neutral-700 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white hover:opacity-95"
+                : "border-neutral-200 dark:border-neutral-800 bg-neutral-200 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed shadow-sm"
+            }`}
           >
             <Soup className="w-5 h-5" />
-            {t("Table Order")}
+            {shopIsOpen ? t("Table Order") : t("Shop Closed")}
           </button>
           {deliveryEnabled ? (
             <button
-              onClick={() => onSelect?.("online")}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-red-500"
+              onClick={() => shopIsOpen && onSelect?.("online")}
+              disabled={!shopIsOpen}
+              className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg transition ${
+                shopIsOpen
+                  ? "border-neutral-200 dark:border-neutral-700 bg-red-600 text-white hover:bg-red-500"
+                  : "border-neutral-200 dark:border-neutral-800 bg-neutral-200 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed shadow-sm"
+              }`}
             >
               <Bike className="w-5 h-5" />
-              {t("Delivery")}
+              {shopIsOpen ? t("Delivery") : t("Shop Closed")}
             </button>
           ) : (
             <div className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm font-semibold text-rose-600 dark:text-rose-300">
@@ -2353,86 +2338,6 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
         </div>
       </div>
     </nav>
-  );
-}
-
-/* ====================== TOP CATEGORY ROW (transaction page) ====================== */
-function CategoryTopBar({
-  categories,
-  activeCategory,
-  setActiveCategory,
-  categoryImages,
-  onCategoryClick,
-}) {
-  const categoryList = Array.isArray(categories) ? categories : [];
-  const scrollRef = React.useRef(null);
-  const categoryFallbackSrc = "/Beylogo.svg";
-
-  const scrollToCategory = (index) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const button = el.children[index];
-    if (!button) return;
-    const buttonRect = button.getBoundingClientRect();
-    const containerRect = el.getBoundingClientRect();
-    const offset =
-      buttonRect.left -
-      containerRect.left -
-      containerRect.width / 2 +
-      buttonRect.width / 2;
-    el.scrollBy({ left: offset, behavior: "smooth" });
-  };
-
-  return (
-    <div className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-sm px-2 py-1">
-	      <div
-	        ref={scrollRef}
-	        className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide px-0.5"
-	        style={{ scrollBehavior: "smooth" }}
-	      >
-        {categoryList.map((cat, idx) => {
-          const key = cat?.toLowerCase?.();
-          const imgSrc = categoryImages?.[key];
-          const active = activeCategory === cat;
-          const resolvedSrc = imgSrc
-            ? /^https?:\/\//.test(imgSrc)
-              ? imgSrc
-              : `${API_URL}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
-            : "";
-          return (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => {
-                setActiveCategory(cat);
-                onCategoryClick?.(cat);
-                scrollToCategory(idx);
-              }}
-              className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[13px] font-medium transition-all whitespace-nowrap border
-                ${
-                  active
-                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white"
-                    : "bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-200 hover:text-neutral-900 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700 dark:hover:bg-neutral-700 dark:hover:text-white"
-                }`}
-            >
-              <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300 dark:border-neutral-700 bg-white/70">
-                <img
-                  src={resolvedSrc || categoryFallbackSrc}
-                  alt={cat}
-                  className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-300"
-                  loading="lazy"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = categoryFallbackSrc;
-                  }}
-                />
-              </div>
-              <span className="tracking-wide">{cat}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -2633,773 +2538,6 @@ function FeaturedCard({ slides, currentSlide, setCurrentSlide }) {
 
 
 
-/* ====================== PRODUCT GRID (Luxury Fine Dining Style) ====================== */
-function ProductGrid({ products, onProductClick, t }) {
-  const { formatCurrency } = useCurrency();
-  const productList = Array.isArray(products) ? products : [];
-
-  return (
-    <main className="w-full max-w-none mx-auto pt-3 pb-28 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 lg:gap-4 xl:gap-5">
-      {productList.length === 0 && (
-        <div className="col-span-full text-center text-neutral-400 font-medium text-lg py-12 italic">
-          {t("No products available.")}
-        </div>
-      )}
-
-      {productList.map((product) => (
-        <div
-          key={product.id}
-          onClick={() => onProductClick(product)}
-          className="group relative bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[2px] transition-all duration-300 cursor-pointer"
-        >
-          <div className="aspect-[4/5] w-full overflow-hidden bg-neutral-50 dark:bg-neutral-950">
-            {product.image ? (
-              <img
-                src={
-                  /^https?:\/\//.test(product.image)
-                    ? product.image
-                    : `${API_URL}/uploads/${product.image}`
-                }
-                alt={product.name}
-                className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
-                loading="lazy"
-              />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900" />
-            )}
-          </div>
-
-          <div className="p-3 flex flex-col items-center text-center space-y-1.5">
-            <h3 className="text-sm font-medium text-neutral-800 dark:text-neutral-100 tracking-wide group-hover:text-black dark:group-hover:text-white transition-colors line-clamp-2">
-              {product.name}
-            </h3>
-            <p className="text-[15px] font-semibold text-neutral-700 dark:text-neutral-200 group-hover:text-neutral-900 dark:group-hover:text-white transition-colors">
-              {formatCurrency(parseFloat(product.price || 0))}
-            </p>
-          </div>
-
-          {/* Subtle highlight border */}
-          <span className="absolute inset-0 rounded-2xl ring-0 ring-neutral-400/0 group-hover:ring-1 group-hover:ring-neutral-300 dark:group-hover:ring-neutral-700 transition-all duration-300"></span>
-        </div>
-      ))}
-    </main>
-  );
-}
-
-
-/* ====================== ADD TO CART (Addons) MODAL ====================== */
-function AddToCartModal({ open, product, extrasGroups, onClose, onAddToCart, t }) {
-  const [quantity, setQuantity] = useState(1);
-  const [selectedExtras, setSelectedExtras] = useState([]);
-  const [activeGroupIdx, setActiveGroupIdx] = useState(0);
-  const [note, setNote] = useState("");
-  const { formatCurrency } = useCurrency();
-
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => (document.body.style.overflow = prev || "");
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || !product) return;
-    setQuantity(1);
-    setSelectedExtras([]);
-    setNote("");
-    setActiveGroupIdx(0);
-  }, [open, product]);
-
-  if (!open || !product) return null;
-
-  const basePrice = parseFloat(product.price) || 0;
-
-  // Normalize groups: keep both id + name
-  const normalizedGroups = toArray(extrasGroups).map((g) => ({
-    id: g.id,
-    groupName: g.groupName || g.group_name,
-    items: Array.isArray(g.items)
-      ? g.items
-      : (() => {
-          try {
-            const parsed = JSON.parse(g.items || "[]");
-            return Array.isArray(parsed) ? parsed : [];
-          } catch {
-            return [];
-          }
-        })(),
-  }));
-
-  // Get allowed groups by product.selectedExtrasGroup (IDs)
-  const productGroupIds = toArray(product?.selectedExtrasGroup)
-    .map(Number)
-    .filter((n) => Number.isFinite(n));
-
- let availableGroups = [];
- if (productGroupIds.length > 0) {
-   availableGroups = toArray(normalizedGroups).filter((g) =>
-     productGroupIds.includes(Number(g.id))
-   );
- }
-
- // ✅ Fallback: if no group IDs matched, but product.extras exists
- if (availableGroups.length === 0 &&
-     Array.isArray(product?.extras) &&
-     product.extras.length > 0) {
-   availableGroups = [
-     {
-       id: "manual",
-       groupName: "Extras",
-       items: product.extras.map((ex, idx) => ({
-         id: idx,
-         name: ex.name,
-         price: Number(ex.extraPrice || ex.price || 0),
-         unit: ex.unit || "",
-         amount:
-           ex.amount !== undefined && ex.amount !== null && ex.amount !== ""
-             ? Number(ex.amount)
-             : 1,
-       })),
-     },
-   ];
- }
-
-  const priceOf = (exOrItem) =>
-    parseFloat(exOrItem?.price ?? exOrItem?.extraPrice ?? 0) || 0;
-
-  const extrasPerUnit = selectedExtras.reduce(
-    (sum, ex) => sum + priceOf(ex) * (ex.quantity || 1),
-    0
-  );
-  const lineTotal = (basePrice + extrasPerUnit) * quantity;
-
-  const qtyOf = (groupName, itemName) =>
-    selectedExtras.find(
-      (ex) => ex.group === groupName && ex.name === itemName
-    )?.quantity || 0;
-
-const incExtra = (group, item) => {
-  setSelectedExtras((prev) => {
-    const existing = prev.find(
-      (ex) => ex.group === group.groupName && ex.name === item.name
-    );
-    if (existing) {
-      // ✅ only increment once
-      return prev.map((ex) =>
-        ex.group === group.groupName && ex.name === item.name
-          ? { ...ex, quantity: (ex.quantity || 0) + 1 }
-          : ex
-      );
-    } else {
-      // ✅ add new extra cleanly
-      return [
-        ...prev,
-        {
-          group: group.groupName,
-          name: item.name,
-          price: priceOf(item),
-          quantity: 1,
-        },
-      ];
-    }
-  });
-};
-
-
-const decExtra = (group, item) => {
-  setSelectedExtras((prev) =>
-    prev
-      .map((ex) =>
-        ex.group === group.groupName && ex.name === item.name
-          ? { ...ex, quantity: Math.max(0, (ex.quantity || 0) - 1) }
-          : ex
-      )
-      .filter((ex) => ex.quantity > 0) // 🧹 auto-remove zeroes
-  );
-};
-
-
-  const handleBackdrop = (e) => {
-    if (e.target.dataset.backdrop === "true") onClose?.();
-  };
-
-return createPortal(
-  <div
-    data-backdrop="true"
-    onMouseDown={handleBackdrop}
-    className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-  >
-    <div
-      onMouseDown={(e) => e.stopPropagation()}
-      className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:w-[720px] md:w-[860px] bg-white/95 sm:rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden"
-    >
-      {/* Close */}
-      <button
-        onClick={onClose}
-        aria-label={t('Close')}
-        className="absolute right-4 top-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:text-red-600 hover:bg-red-50 transition"
-      >
-        ×
-      </button>
-
-      {/* Header */}
-      <div className="flex items-center gap-4 px-6 py-5 border-b border-neutral-200 bg-white/80 backdrop-blur-sm">
-        <img
-          src={
-            product.image
-              ? /^https?:\/\//.test(product.image)
-                ? product.image
-                : `${API_URL}/uploads/${product.image}`
-              : 'https://via.placeholder.com/120?text=No+Image'
-          }
-          alt={product.name}
-          className="w-16 h-16 object-cover rounded-xl border border-neutral-300 shadow-sm"
-        />
-        <div className="flex flex-col">
-          <div className="text-xl font-medium text-neutral-900 tracking-tight">
-            {product.name}
-          </div>
-          <div className="text-lg font-semibold text-neutral-600">
-            {formatCurrency(basePrice)}
-          </div>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
-        {/* Groups rail */}
-        <aside className="sm:w-48 border-b sm:border-b-0 sm:border-r border-neutral-200 bg-neutral-50/60 p-3 overflow-x-auto sm:overflow-y-auto">
-          <div className="text-[11px] font-semibold text-neutral-500 mb-3 px-1 uppercase tracking-wide">
-            {t('Extras')}
-          </div>
-          <div className="flex sm:block gap-2 sm:gap-0">
-            {availableGroups.map((g, idx) => (
-              <button
-                key={g.id}
-                onClick={() => setActiveGroupIdx(idx)}
-                className={`block w-full text-left px-3 py-2 rounded-lg text-sm font-medium mb-2 border transition-all ${
-                  activeGroupIdx === idx
-                    ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                    : 'bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-100'
-                }`}
-              >
-                {g.groupName}
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        {/* Items + Quantity + Note */}
-        <section className="flex-1 p-5 overflow-y-auto bg-white/80">
-          {availableGroups.length > 0 ? (
-            <>
-              <div className="font-medium text-neutral-800 mb-3 text-base tracking-tight">
-                {availableGroups[activeGroupIdx].groupName}
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {(availableGroups[activeGroupIdx].items || []).map((item) => {
-                  const unit = priceOf(item);
-                  const q =
-                    selectedExtras.find(
-                      (ex) =>
-                        ex.group ===
-                          availableGroups[activeGroupIdx].groupName &&
-                        ex.name === item.name
-                    )?.quantity || 0;
-                  return (
-                    <div
-                      key={item.id ?? item.name}
-                      className="flex flex-col items-center bg-white border border-neutral-200 rounded-xl px-3 py-3 min-h-[96px] shadow-sm hover:shadow-md transition-all"
-                    >
-                      <div className="text-center text-sm font-medium text-neutral-800 leading-tight line-clamp-2">
-                        {item.name}
-                      </div>
-                      <div className="text-xs text-neutral-500 font-medium mt-0.5">
-                        {formatCurrency(unit)}
-                      </div>
-                      <div className="mt-2 flex items-center justify-center gap-2">
-                        <button
-                          onClick={() =>
-                            decExtra(
-                              availableGroups[activeGroupIdx],
-                              item
-                            )
-                          }
-                          className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-700 text-lg hover:bg-neutral-200"
-                        >
-                          –
-                        </button>
-                        <span className="min-w-[28px] text-center text-base font-semibold text-neutral-800">
-                          {q}
-                        </span>
-                        <button
-                          onClick={() =>
-                            incExtra(
-                              availableGroups[activeGroupIdx],
-                              item
-                            )
-                          }
-                          className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-700 text-lg hover:bg-neutral-200"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div className="text-neutral-400 italic">
-              {t('Select a group')}
-            </div>
-          )}
-
-          {/* Quantity */}
-          <div className="mt-6">
-            <div className="text-sm font-medium text-neutral-700 mb-2">
-              {t('Quantity')}
-            </div>
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                className="w-11 h-11 rounded-full bg-neutral-100 text-neutral-700 text-2xl hover:bg-neutral-200"
-              >
-                –
-              </button>
-              <span className="w-12 text-center text-2xl font-semibold text-neutral-900">
-                {quantity}
-              </span>
-              <button
-                onClick={() => setQuantity((q) => q + 1)}
-                className="w-11 h-11 rounded-full bg-neutral-100 text-neutral-700 text-2xl hover:bg-neutral-200"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
-          {/* Note */}
-          <div className="mt-5">
-            <textarea
-              className="w-full rounded-xl border border-neutral-300 p-3 text-sm text-neutral-700 placeholder-neutral-400 bg-white/70 focus:outline-none focus:ring-1 focus:ring-neutral-400"
-              placeholder={t('Add a note (optional)…')}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-            />
-          </div>
-        </section>
-      </div>
-
-      {/* Footer */}
-      <div className="border-t border-neutral-200 px-6 py-4 flex items-center justify-between bg-white/90 backdrop-blur-sm">
-        <div className="text-lg font-medium text-neutral-900">
-          {t('Total')}:{" "}
-          <span className="font-semibold">
-            {formatCurrency(lineTotal)}
-          </span>
-        </div>
-        <button
-          onClick={() => {
-            const unique_id = `${product.id}-${Date.now().toString(36)}-${Math.random()
-              .toString(36)
-              .slice(2, 8)}`;
-            const extrasList = Array.isArray(selectedExtras)
-              ? selectedExtras
-              : [];
-            onAddToCart({
-              id: product.id,
-              name: product.name,
-              image: product.image,
-              price: basePrice,
-              quantity,
-              extras: extrasList.filter((e) => e.quantity > 0),
-              note,
-              unique_id,
-            });
-          }}
-          className="py-2.5 px-6 rounded-full bg-neutral-900 text-white font-medium hover:bg-neutral-800 transition-all"
-        >
-          {t('Add to Cart')}
-        </button>
-      </div>
-    </div>
-  </div>,
-  document.body
-);
-
-}
-
-
-function CartDrawer({
-  cart,
-  setCart,
-  onSubmitOrder,
-  orderType,
-  paymentMethod,
-  setPaymentMethod,
-  submitting,
-  onOrderAnother,
-  t,
-  hasActiveOrder,
-  orderScreenStatus,
-  onShowStatus,
-  isOrderStatusOpen,
-  onOpenCart,
-  layout = "drawer",
-}) {
-  const isPanel = layout === "panel";
-  const [show, setShow] = useState(isPanel);
-  const { formatCurrency } = useCurrency();
-  const paymentMethods = usePaymentMethods();
-
-  const cartArray = toArray(cart);
-  const cartLength = cartArray.length;
-  const prevItems = cartArray.filter((i) => i.locked);
-  const newItems  = cartArray.filter((i) => !i.locked);
-  const newItemsCount = newItems.length;
-  const hasNewItems = newItemsCount > 0;
-
-  const lineTotal = (item) => {
-    const base = parseFloat(item.price) || 0;
-    const extrasTotal = (item.extras || []).reduce(
-      (sum, ex) => sum + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
-      0
-    );
-    return (base + extrasTotal) * (item.quantity || 1);
-  };
-
-  const total = newItems.reduce((sum, item) => sum + lineTotal(item), 0);
-
-  const statusLabel = useMemo(() => {
-    if (!hasActiveOrder || !orderScreenStatus) return null;
-    const s = (orderScreenStatus || "").toLowerCase();
-    if (["new", "pending", "confirmed", "preparing"].includes(s)) return t("Preparing");
-    if (["ready"].includes(s)) return t("Ready for Pickup");
-    if (["delivered", "served"].includes(s)) return t("Delivered");
-    return null;
-  }, [hasActiveOrder, orderScreenStatus, t]);
-
-  // 👂 close by global event
-  useEffect(() => {
-    if (isPanel) return;
-    const handler = () => setShow(false);
-    window.addEventListener("qr:cart-close", handler);
-    return () => window.removeEventListener("qr:cart-close", handler);
-  }, [isPanel]);
-
-  // 🚪 auto-open only if allowed
-  useEffect(() => {
-    if (isPanel) return;
-    const auto = storage.getItem("qr_cart_auto_open") !== "0";
-    if (auto) setShow(cartLength > 0);
-  }, [cartLength, isPanel]);
-
-  // Never allow Cart + OrderStatus to overlap.
-  useEffect(() => {
-    if (isPanel) return;
-    if (isOrderStatusOpen) setShow(false);
-  }, [isOrderStatusOpen, isPanel]);
-
-  function removeItem(idx, isNew) {
-    if (!isNew) return; // don't remove locked (read-only)
-    setCart((prev) => {
-      let n = -1;
-      return toArray(prev).filter((it) => (it.locked ? true : (++n !== idx)));
-    });
-  }
-
-  const cartPanel = (
-    <div
-      className={`${isPanel ? "h-full rounded-2xl border border-neutral-200 bg-white/95 shadow-sm" : "w-[92vw] max-w-md max-h-[88vh] overflow-hidden bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)]"} p-4 sm:p-6 flex flex-col`}
-    >
-      {/* Header */}
-      <div className="flex justify-between items-center mb-4 border-b border-neutral-200 pb-2">
-        <span className="text-base sm:text-lg font-serif font-semibold text-neutral-900 tracking-tight">
-          {t("Your Order")}
-        </span>
-        {!isPanel && (
-          <button
-            className="text-2xl text-neutral-400 hover:text-red-600 transition"
-            onClick={() => setShow(false)}
-            aria-label={t("Close")}
-          >
-            ×
-          </button>
-        )}
-      </div>
-
-      {/* Cart Items */}
-      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-        {cartLength === 0 ? (
-          <div className="text-neutral-400 text-center py-8 italic">
-            {t("Cart is empty.")}
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {/* Locked (previously ordered) items */}
-            {prevItems.length > 0 && (
-              <div>
-                <div className="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">
-                  {t("Previously ordered")}
-                </div>
-                <ul className="space-y-3">
-                  {prevItems.map((item, i) => (
-                    <li
-                      key={`prev-${i}`}
-                      className="flex justify-between gap-3 border-b border-neutral-200 pb-2 opacity-70"
-                    >
-                      <div className="flex-1">
-                        <span className="font-medium text-neutral-900 block">
-                          {item.name}{" "}
-                          <span className="text-xs text-neutral-500">
-                            ×{item.quantity}
-                          </span>
-                        </span>
-                        {item.extras?.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {item.extras.map((ex, j) => {
-                              const perItemQty = ex.quantity || 1;
-                              const itemQty = item.quantity || 1;
-                              const totalQty = perItemQty * itemQty;
-                              const unit =
-                                parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                              const line = unit * totalQty;
-                              return (
-                                <span
-                                  key={j}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
-                                >
-                                  {ex.name} ×{totalQty}{" "}
-                                  {formatCurrency(line)}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {item.note && (
-                          <div className="text-xs text-amber-700 mt-1 italic">
-                            📝 {t("Note")}: {item.note}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="font-medium text-neutral-700">
-                          {formatCurrency(lineTotal(item))}
-                        </div>
-                        <div className="text-[10px] text-neutral-400 mt-1">
-                          {t("Locked")}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* New items */}
-            <div>
-              <div className="text-xs uppercase tracking-wide text-neutral-600 font-medium mb-2">
-                {t("New items")}
-              </div>
-              {newItems.length === 0 ? (
-                <div className="text-neutral-400 text-sm italic">
-                  {t("No new items yet.")}
-                </div>
-              ) : (
-                <ul className="space-y-3">
-                  {newItems.map((item, i) => (
-                    <li
-                      key={`new-${i}`}
-                      className="flex justify-between gap-3 border-b border-neutral-200 pb-2"
-                    >
-                      <div className="flex-1">
-                        <span className="font-medium text-neutral-900 block">
-                          {item.name}{" "}
-                          <span className="text-xs text-neutral-500">
-                            ×{item.quantity}
-                          </span>
-                        </span>
-                        {item.extras?.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {item.extras.map((ex, j) => {
-                              const perItemQty = ex.quantity || 1;
-                              const itemQty = item.quantity || 1;
-                              const totalQty = perItemQty * itemQty;
-                              const unit =
-                                parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                              const line = unit * totalQty;
-                              return (
-                                <span
-                                  key={j}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
-                                >
-                                  {ex.name} ×{totalQty}{" "}
-                                  {formatCurrency(line)}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {item.note && (
-                          <div className="text-xs text-amber-700 mt-1 italic">
-                            📝 {t("Note")}: {item.note}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="font-medium text-neutral-700">
-                          {formatCurrency(lineTotal(item))}
-                        </div>
-                        <button
-                          onClick={() => removeItem(i, true)}
-                          className="text-xs text-red-400 hover:text-red-600 mt-1 transition"
-                        >
-                          {t("Remove")}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      {cartLength > 0 && (
-        <div className="mt-5 border-t border-neutral-200 pt-4 space-y-3">
-          {/* Total */}
-          <div className="flex justify-between items-center text-base">
-            <span className="font-medium text-neutral-700">
-              {t("Total")}:
-            </span>
-            <span className="text-lg font-semibold text-neutral-900">
-              {formatCurrency(total)}
-            </span>
-          </div>
-
-          {/* Payment */}
-          <div className="flex flex-col gap-2">
-            <label className="font-medium text-neutral-800">
-              {t("Payment")}
-            </label>
-            <select
-              className="rounded-lg border border-neutral-300 px-3 py-2 bg-white text-sm focus:ring-1 focus:ring-neutral-400"
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-            >
-              {/* POS-configured payment methods; filter for QR usage */}
-              {paymentMethods
-                .filter((m) => m.enabled !== false)
-                .map((method) => (
-                  <option key={method.id} value={method.id}>
-                    {method.icon ? `${method.icon} ` : ""}{method.label}
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          {/* Submit */}
-          <button
-            onClick={onSubmitOrder}
-            disabled={submitting || newItems.length === 0}
-            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium hover:bg-neutral-800 disabled:opacity-50 transition-all"
-          >
-            {submitting ? t("Please wait...") : t("Submit Order")}
-          </button>
-
-          {/* Order Another */}
-          {!isPanel && (
-            <button
-              onClick={() => setShow(false)}
-              className="w-full py-3 rounded-full border border-neutral-300 text-neutral-700 font-medium hover:bg-neutral-100 transition-all"
-            >
-              {t("Order Another")}
-            </button>
-          )}
-
-          {/* Clear new */}
-          <button
-            onClick={() => {
-              const lockedOnly = cartArray.filter((i) => i.locked);
-              setCart(lockedOnly);
-              storage.setItem("qr_cart", JSON.stringify(lockedOnly));
-            }}
-            className="w-full mt-1 py-2 rounded-md text-xs text-neutral-600 bg-neutral-100 hover:bg-neutral-200 transition"
-          >
-            {t("Clear New Items")}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-
-  return (
-    <>
-      {/* Floating cart button */}
-	      {!isPanel && !show && (cartLength > 0 || hasActiveOrder) && (
-	        <button
-          onClick={() => {
-            if (hasNewItems) {
-              onOpenCart?.();
-              storage.setItem("qr_cart_auto_open", "1");
-              setShow(true);
-            } else if (hasActiveOrder && onShowStatus) {
-              onShowStatus();
-            } else {
-              onOpenCart?.();
-              setShow(true);
-            }
-	          }}
-		          className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-full min-w-[260px] font-medium tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all z-50 ${
-		            hasActiveOrder
-		              ? "bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-600 text-white animate-pulse"
-		              : "bg-sky-700 dark:bg-sky-600 text-white hover:bg-sky-800 dark:hover:bg-sky-500 hover:scale-105"
-		          }`}
-		        >
-          <span className="text-xl">🛒</span>
-          <div className="flex flex-col items-start">
-            <span className="text-sm">
-              {hasNewItems ? t("View Cart") : t("Your Order")}
-            </span>
-            {hasActiveOrder && statusLabel && (
-              <span className="text-[11px] uppercase tracking-wide opacity-90">
-                {statusLabel}
-              </span>
-            )}
-          </div>
-          {hasNewItems && (
-            <span className="ml-3 inline-flex items-center justify-center rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-              {newItemsCount}
-            </span>
-          )}
-        </button>
-      )}
-
-      {/* Cart Drawer */}
-      {isPanel ? (
-        <div className="h-full">{cartPanel}</div>
-      ) : (
-        show && (
-          <div
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) setShow(false);
-            }}
-          >
-            {cartPanel}
-          </div>
-        )
-      )}
-    </>
-  );
-
-}
-
 async function startOnlinePaymentSession(id) {
   try {
     const res = await secureFetch('/payments/start' , {
@@ -3509,1853 +2647,272 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
-  
-// Keep both because QrMenu uses id somewhere else (token)
-// Keep both slug and id because the route is /qr-menu/:slug/:id
-const { slug, id } = useParams();
+  const { slug, id } = useParams();
+  const {
+    restaurantIdentifier,
+    lang,
+    setLang,
+    t,
+    showHelp,
+    setShowHelp,
+    platform,
+    table,
+    setTable,
+    categories,
+    activeCategory,
+    categoryImages,
+    cart,
+    setCart,
+    selectedProduct,
+    showAddModal,
+    setShowAddModal,
+    showStatus,
+    setShowStatus,
+    orderStatus,
+    setOrderStatus,
+    orderId,
+    setOrderId,
+    tables,
+    isDarkMain,
+    submitting,
+    safeExtrasGroups,
+    safeCart,
+    safeProducts,
+    safeOccupiedTables,
+    hasActiveOrder,
+    productsForGrid,
+    paymentMethod,
+    setPaymentMethod,
+    orderType,
+    setOrderType,
+    showTakeawayForm,
+    setShowTakeawayForm,
+    orderSelectCustomization,
+    setOrderSelectCustomization,
+    showDeliveryForm,
+    setShowDeliveryForm,
+    pendingPopularProduct,
+    setPendingPopularProduct,
+    returnHomeAfterAdd,
+    setReturnHomeAfterAdd,
+    forceHome,
+    setForceHome,
+    showOrderTypePrompt,
+    setShowOrderTypePrompt,
+    shopIsOpen,
+    setShopIsOpen,
+    suppressMenuFlash,
+    showTableScanner,
+    tableScanTarget,
+    tableScanError,
+    menuSearch,
+    setMenuSearch,
+    qrVoiceListening,
+    qrVoiceParsing,
+    qrVoiceTranscript,
+    setQrVoiceTranscript,
+    qrVoiceResult,
+    qrVoiceError,
+    qrVoiceModalOpen,
+    setQrVoiceModalOpen,
+    setTakeaway,
+    showQrPrompt,
+    setShowQrPrompt,
+    qrPromptMode,
+    setQrPromptMode,
+    canInstall,
+    isDesktopLayout,
+    appendIdentifier,
+    triggerOrderType,
+    handlePopularProductClick,
+    handleMenuCategorySelect,
+    handleMenuCategoryClick,
+    handleMenuProductOpen,
+    parseQrVoiceTranscript,
+    startQrVoiceCapture,
+    injectQrVoiceItemsToCart,
+    openTableScanner,
+    closeTableScanner,
+    resetToTypePicker,
+    handleCloseOrderPage,
+    handleOrderAnother,
+    handleSubmitOrder,
+    handleReset,
+    handleInstallClick,
+    handleDownloadQr,
+    showHome,
+    showTableSelector,
+    filteredOccupied,
+    brandName,
+    lastError,
+    orderCancelReason,
+    orderScreenStatus,
+    setCustomerInfo,
+  } = useQrMenuController({
+    slug,
+    id,
+    QR_TOKEN_KEY,
+    API_URL,
+    API_BASE,
+    BEYPRO_APP_STORE_URL,
+    BEYPRO_PLAY_STORE_URL,
+    storage,
+    toArray,
+    boolish,
+    parseRestaurantIdFromIdentifier,
+    getStoredToken,
+    getQrModeFromLocation,
+    getTableFromLocation,
+    makeT,
+    getPlatform,
+    saveSelectedTable,
+    extractTableNumberFromQrText,
+  });
 
-// Fix null/undefined slug
-const safeSlug =
-  slug && slug !== "null" && slug !== "undefined"
-    ? slug
-    : id && id !== "null" && id !== "undefined"
-    ? id
+  const statusPortalOrderId =
+    orderId || Number(storage.getItem("qr_active_order_id")) || null;
+  const statusPortal = showStatus && statusPortalOrderId
+    ? createPortal(
+        <OrderStatusModal
+          open={true}
+          status={orderStatus}
+          orderId={statusPortalOrderId}
+          orderType={orderType}
+          table={orderType === "table" ? table : null}
+          onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+          onClose={handleReset}
+          onFinished={resetToTypePicker}
+          t={t}
+          appendIdentifier={appendIdentifier}
+          errorMessage={lastError}
+          cancelReason={orderCancelReason}
+          orderScreenStatus={orderScreenStatus}
+          forceDark={isDarkMain}
+        />,
+        document.body
+      )
     : null;
 
-// Identifier used for public QR menu endpoints (slug, qr_code_id, or explicit identifier query)
-let restaurantIdentifier = safeSlug;
-if (!restaurantIdentifier && typeof window !== "undefined") {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    restaurantIdentifier =
-      params.get("identifier") ||
-      params.get("tenant_id") ||
-      params.get("tenant") ||
-      params.get("restaurant_id") ||
-      params.get("restaurant") ||
-      null;
-  } catch {
-    restaurantIdentifier = null;
-  }
-}
-
-  const restaurantIdentifierResolved = restaurantIdentifier;
-
-  // Persist last opened restaurant identifier so the installed PWA can reopen the same menu.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      if (restaurantIdentifierResolved) {
-        window.localStorage.setItem("qr_last_identifier", String(restaurantIdentifierResolved));
-        return;
-      }
-
-      // If app was launched from PWA start_url (/menu), redirect to last known menu.
-      const path = window.location.pathname || "";
-      if (path === "/menu") {
-        const last = window.localStorage.getItem("qr_last_identifier");
-        if (last && last !== "null" && last !== "undefined") {
-          window.location.replace(`/qr-menu/${encodeURIComponent(last)}/scan`);
-        }
-      }
-    } catch {}
-  }, [restaurantIdentifierResolved]);
-
-  const tokenResolveIdentifier = id || restaurantIdentifier;
-
-  // Ensure we have a valid JWT for protected endpoints (e.g., POST /orders)
-  // Priority: ?token=... in URL, else resolve via /api/public/qr-resolve/:code using route id or identifier
-  useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const urlToken = params.get("token");
-      if (urlToken) {
-        storage.setItem(QR_TOKEN_KEY, urlToken);
-        return;
-      }
-    } catch {}
-
-    // If no token present but we have an identifier, resolve it once
-    (async () => {
-      try {
-        const existing = getStoredToken();
-        if (existing) return; // already have a token in storage
-        if (!tokenResolveIdentifier) return;
-        const res = await fetch(
-          `${API_URL}/public/qr-resolve/${encodeURIComponent(tokenResolveIdentifier)}`
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data && data.qr_token) {
-          storage.setItem(QR_TOKEN_KEY, data.qr_token);
-        }
-      } catch {}
-    })();
-  }, [tokenResolveIdentifier]);
-
-  // QR entry mode: "table" (scanned at a table) or "delivery" (generic menu link)
-  const [qrMode] = useState(() => getQrModeFromLocation());
-  // If table QR link encodes the table number, keep it around for defaults
-  const [initialTableFromUrl] = useState(() => getTableFromLocation());
-
-  const appendIdentifier = useCallback(
-    (url) => {
-      const [base, hash] = String(url).split("#");
-      const hasQuery = base.includes("?");
-      const hasIdentifier = /[?&]identifier=/.test(base);
-      const hasMode = /[?&]mode=/.test(base);
-
-      const parts = [];
-      if (restaurantIdentifier && !hasIdentifier) {
-        parts.push(
-          `identifier=${encodeURIComponent(restaurantIdentifier)}`
-        );
-      }
-      if (qrMode && !hasMode) {
-        parts.push(`mode=${encodeURIComponent(qrMode)}`);
-      }
-
-      if (!parts.length) return url;
-
-      const separator = hasQuery ? "&" : "?";
-      const appended = `${base}${separator}${parts.join("&")}`;
-      return hash ? `${appended}#${hash}` : appended;
-    },
-    [restaurantIdentifier, qrMode]
-  );
-
-  // 🔒 One liner to always pass identifier via secureFetch
-  const sFetch = useCallback((path, options) => {
-    return secureFetch(appendIdentifier(path), options);
-  }, [appendIdentifier]);
-
-  const socketRestaurantId = useMemo(() => {
-    // Prefer explicit numeric id if present.
-    try {
-      const stored = window?.localStorage?.getItem("restaurant_id");
-      const n = stored ? Number(stored) : NaN;
-      if (Number.isFinite(n) && n > 0) return n;
-    } catch {}
-    return parseRestaurantIdFromIdentifier(restaurantIdentifier);
-  }, [restaurantIdentifier]);
-
-const shareUrl = useMemo(() => {
-  const origin = window.location.origin;
-  const s = slug && slug !== "null" && slug !== "undefined" ? slug : null;
-
-  if (!s) return `${origin}/qr-menu`;
-
-  return `${origin}/qr-menu/${s}/scan`;
-}, [slug]);
-
-
-
-  // persist language
-  const [lang, setLang] = useState(() => storage.getItem("qr_lang") || "en");
-  useEffect(() => { storage.setItem("qr_lang", lang); }, [lang]);
-  const t = useMemo(() => makeT(lang), [lang]);
-  const [showIosHelp, setShowIosHelp] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
-  const [platform, setPlatform] = useState(getPlatform());
-  const [brandName, setBrandName] = useState("");
-
-  const [table, setTable] = useState(() => {
-    // Prefer explicit table number from QR link, else start empty
-    const fromUrl = getTableFromLocation();
-    return fromUrl ?? null;
-  });
-  const [customerInfo, setCustomerInfo] = useState(null);
-  const [categories, setCategories] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [extrasGroups, setExtrasGroups] = useState([]);
-  const [activeCategory, setActiveCategory] = useState("");
-  const getSavedDeliveryInfo = useCallback(() => {
-    try {
-      const saved = JSON.parse(storage.getItem("qr_delivery_info") || "null");
-      if (saved && typeof saved === "object" && saved.address) {
-        return {
-          name: saved.name || "",
-          phone: saved.phone || "",
-          address: saved.address || "",
-          payment_method: saved.payment_method || "",
-        };
-      }
-    } catch {}
-    return null;
-  }, []);
-  const [cart, setCart] = useState(() => {
-    try {
-      const parsed = JSON.parse(storage.getItem("qr_cart") || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Load public customization to extract the brand title for header
-  useEffect(() => {
-    if (!restaurantIdentifier) return;
-    (async () => {
-      try {
-        const res = await secureFetch(`/public/qr-menu-customization/${encodeURIComponent(restaurantIdentifier)}`);
-        const c = res?.customization || {};
-        setBrandName(c.title || c.main_title || "");
-        setOrderSelectCustomization((prev) => ({ ...prev, ...c }));
-        try {
-          const mode = String(c.qr_theme || "auto").toLowerCase();
-          storage.setItem("qr_theme", mode);
-        } catch {}
-      } catch (err) {
-        // ignore, fallback handled in QrHeader
-      }
-    })();
-  }, [restaurantIdentifier]);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [occupiedTables, setOccupiedTables] = useState([]);
-  const [showStatus, setShowStatus] = useState(false);
-  const [orderStatus, setOrderStatus] = useState("pending");
-  const [orderId, setOrderId] = useState(null);
-  const [tables, setTables] = useState([]);
-  const [isDarkMain, setIsDarkMain] = React.useState(false);
-  const [orderCancelReason, setOrderCancelReason] = useState("");
-  const orderIdToTableRef = useRef(new Map());
-
-  const [submitting, setSubmitting] = useState(false);
-  const [categoryImages, setCategoryImages] = useState({});
-  const [lastError, setLastError] = useState(null);
-  const [activeOrder, setActiveOrder] = useState(null);
-  const [orderScreenStatus, setOrderScreenStatus] = useState(null);
-  const paymentMethods = usePaymentMethods();
-  const [paymentMethod, setPaymentMethod] = useState(() => {
-    const stored = storage.getItem("qr_payment_method");
-    if (stored) return stored;
-    // Fallback: first enabled method from settings, else "online"
-    return (paymentMethods.find((m) => m.enabled !== false)?.id) || "online";
-  });
-  const [orderType, setOrderType] = useState(() => {
-    // For QR links we can pre-lock the flow
-    const mode = getQrModeFromLocation();
-    if (mode === "table") return "table";
-    if (mode === "delivery") return "online";
-
-    // Fallback: any previously stored type
-    try {
-      const saved = storage.getItem("qr_orderType");
-      if (saved === "table" || saved === "online" || saved === "takeaway") {
-        return saved;
-      }
-    } catch {
-      // ignore
-    }
-    return null;
-  });
-  const [showTakeawayForm, setShowTakeawayForm] = useState(false);
-  const [orderSelectCustomization, setOrderSelectCustomization] = useState({
-    delivery_enabled: true,
-    table_geo_enabled: false,
-    table_geo_radius_meters: 150,
-  });
-
-  // Apply QR theme to the transaction/menu (mobile-first) area.
-  useEffect(() => {
-    const mode = String(orderSelectCustomization?.qr_theme || storage.getItem("qr_theme") || "auto")
-      .trim()
-      .toLowerCase();
-    if (mode === "dark") {
-      setIsDarkMain(true);
-      return;
-    }
-    if (mode === "light") {
-      setIsDarkMain(false);
-      return;
-    }
-    // auto
-    try {
-      const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
-      setIsDarkMain(!!mq?.matches);
-    } catch {
-      setIsDarkMain(false);
-    }
-  }, [orderSelectCustomization?.qr_theme]);
-  const [showDeliveryForm, setShowDeliveryForm] = useState(false);
-	const [pendingPopularProduct, setPendingPopularProduct] = useState(null);
-	const [returnHomeAfterAdd, setReturnHomeAfterAdd] = useState(false);
-	const [forceHome, setForceHome] = useState(false);
-	const [showOrderTypePrompt, setShowOrderTypePrompt] = useState(false);
-	const [suppressMenuFlash, setSuppressMenuFlash] = useState(true);
-	const tableScannerRef = useRef(null);
-	const tableScanInFlight = useRef(false);
-	const [showTableScanner, setShowTableScanner] = useState(false);
-  const [tableScanTarget, setTableScanTarget] = useState(null);
-  const [tableScanError, setTableScanError] = useState("");
-  const deliveredResetRef = useRef({ orderId: null, timeoutId: null });
-
-  const safeProducts = useMemo(() => toArray(products), [products]);
-  const safeCategories = useMemo(() => toArray(categories), [categories]);
-  const safeExtrasGroups = useMemo(() => toArray(extrasGroups), [extrasGroups]);
-  const safeCart = useMemo(() => toArray(cart), [cart]);
-  const safeOccupiedTables = useMemo(() => toArray(occupiedTables), [occupiedTables]);
-  const hasActiveOrder = useMemo(() => {
-    if (!activeOrder) return false;
-    const s = (activeOrder.status || "").toLowerCase();
-    return !["closed", "completed", "canceled"].includes(s);
-  }, [activeOrder]);
-  const productsInActiveCategory = useMemo(
-    () =>
-      safeProducts.filter(
-        (p) =>
-          (p?.category || "").trim().toLowerCase() ===
-          (activeCategory || "").trim().toLowerCase()
-      ),
-    [safeProducts, activeCategory]
-  );
-  const [menuSearch, setMenuSearch] = useState("");
-  const productsForGrid = useMemo(() => {
-    const q = String(menuSearch || "").trim().toLowerCase();
-    if (!q) return productsInActiveCategory;
-    return safeProducts.filter((p) => {
-      const name = String(p?.name || "").toLowerCase();
-      return name.includes(q);
-    });
-  }, [menuSearch, productsInActiveCategory, safeProducts]);
-
-  // 🥡 Pre-order (takeaway) fields
-const [takeaway, setTakeaway] = useState({
-  name: "",
-  phone: "",
-  pickup_date: "",
-  pickup_time: "",
-  mode: "pickup", // "pickup" | "delivery"
-  address: "",
-  notes: "",
-});
-const restaurantSlug =
-  localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant_id");
-const identifier = restaurantSlug ? `?identifier=${restaurantSlug}` : "";
-// at the top of QrMenu component
-const [showQrPrompt, setShowQrPrompt] = useState(() => {
-  return !storage.getItem("qr_saved");
-});
-const [qrPromptMode, setQrPromptMode] = useState("default"); // "default" | "hint"
-// === PWA INSTALL HANDLER ===
-const [deferredPrompt, setDeferredPrompt] = useState(null);
-const [canInstall, setCanInstall] = useState(false);
-const stopTableScanner = useCallback(async () => {
-  const scanner = tableScannerRef.current;
-  if (!scanner) return;
-  try {
-    await scanner.stop();
-  } catch {}
-  try {
-    await scanner.clear();
-  } catch {}
-  tableScannerRef.current = null;
-}, []);
-
-const closeTableScanner = useCallback(() => {
-  setShowTableScanner(false);
-  setTableScanTarget(null);
-  setTableScanError("");
-  tableScanInFlight.current = false;
-  stopTableScanner();
-}, [stopTableScanner]);
-
-const openTableScanner = useCallback((tableNumber) => {
-  if (!tableNumber) return;
-  setTableScanTarget(tableNumber);
-  setTableScanError("");
-  setShowTableScanner(true);
-}, []);
-
-const handleTableScanSuccess = useCallback(
-  (decodedText) => {
-    if (tableScanInFlight.current) return;
-    const scannedTable = extractTableNumberFromQrText(decodedText);
-    if (!scannedTable) {
-      setTableScanError(t("Invalid table QR code."));
-      return;
-    }
-    if (tableScanTarget && Number(scannedTable) !== Number(tableScanTarget)) {
-      setTableScanError(
-        `${t("This QR is for table")} ${scannedTable}. ${t("Please scan table")} ${tableScanTarget}.`
-      );
-      return;
-    }
-    tableScanInFlight.current = true;
-    const finalTable = tableScanTarget || scannedTable;
-    stopTableScanner().finally(() => {
-      setShowTableScanner(false);
-      setTableScanError("");
-      setTable(finalTable);
-      saveSelectedTable(finalTable);
-      tableScanInFlight.current = false;
-    });
-  },
-  [stopTableScanner, t, tableScanTarget]
-);
-  const resetToTypePicker = () => {
-    setShowStatus(false);
-    setOrderStatus("pending");
-    setOrderId(null);
-    setCart([]);
-    setCustomerInfo(null);
-    if (qrMode === "table") {
-      // In table mode always stay in table flow
-      const urlTable = initialTableFromUrl;
-      if (urlTable) {
-        setTable(urlTable);
-        saveSelectedTable(urlTable);
-      } else {
-        setTable(null); // will re-open table selector
-      }
-      setOrderType("table");
-    } else if (qrMode === "delivery") {
-      // Delivery QR only supports online orders
-      setTable(null);
-      setOrderType("online");
-    } else {
-      // Generic QR menu → back to type chooser
-      setTable(null);
-      setOrderType(null);
-    }
-    setActiveOrder(null);
-    setOrderScreenStatus(null);
-  };
-const [showOrderStatus, setShowOrderStatus] = useState(false);
-const loadTables = async () => {
-  if (!restaurantIdentifier) {
-    setTables([]);
-    return;
-  }
-
-  try {
-    const res = await fetch(
-      `${API_URL}/public/tables/${encodeURIComponent(restaurantIdentifier)}`
-    );
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const payload = await res.json();
-    const rows = Array.isArray(payload) ? payload : payload.data || [];
-
-    const normalized = rows.map((r) => ({
-      tableNumber: r.number,
-      area: r.area || "Main Hall",
-      seats: r.seats || r.chairs || 0,
-      label: r.label || "",
-      color: r.color || "",
-      active: r.active ?? true,
-    }));
-
-    setTables(normalized.filter((t) => t.active !== false));
-  } catch (err) {
-    console.warn("⚠️ Failed to fetch tables:", err);
-    setTables([]);
-  }
-};
-
-
-
-useEffect(() => {
-  const handler = (e) => {
-    e.preventDefault();
-    setDeferredPrompt(e);
-    setCanInstall(true);
-  };
-  window.addEventListener("beforeinstallprompt", handler);
-  return () => window.removeEventListener("beforeinstallprompt", handler);
-}, [appendIdentifier]);
-
-useEffect(() => {
-  const isStandalone =
-    (typeof window !== "undefined" &&
-      (window.matchMedia?.("(display-mode: standalone)")?.matches ||
-        window.navigator?.standalone)) ||
-    false;
-  if (!isStandalone) return;
-  storage.setItem("qr_saved", "1");
-  setShowQrPrompt(false);
-}, [storage]);
-
-useEffect(() => {
-  if (!showTableScanner) return;
-  let active = true;
-  const start = async () => {
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      if (!active) return;
-      const scanner = new Html5Qrcode("qr-table-reader");
-      tableScannerRef.current = scanner;
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 250 },
-        (decodedText) => {
-          if (!active) return;
-          handleTableScanSuccess(decodedText);
+  const handleVoiceDraftAddToCart = useCallback(
+    ({ product, productId, name, qty, unitPrice, extras, notes }) => {
+      const resolvedQty = Math.max(1, Number(qty) || 1);
+      const resolvedProduct = product || safeProducts.find((it) => String(it?.id) === String(productId)) || null;
+      const resolvedExtras = (Array.isArray(extras) ? extras : []).map((extra, index) => ({
+        ...(extra || {}),
+        key:
+          extra?.key ||
+          extra?.id ||
+          extra?.extraId ||
+          `${extra?.name || "extra"}-${index}`,
+        id: extra?.id ?? extra?.extraId ?? extra?.key ?? `${extra?.name || "extra"}-${index}`,
+        name: extra?.name || "",
+        price: Number(extra?.price ?? extra?.extraPrice ?? 0) || 0,
+        extraPrice: Number(extra?.price ?? extra?.extraPrice ?? 0) || 0,
+        quantity: Math.max(1, Number(extra?.quantity) || 1),
+      }));
+      storage.setItem("qr_cart_auto_open", "1");
+      setCart((prev) => [
+        ...(Array.isArray(prev) ? prev : []),
+        {
+          id: resolvedProduct?.id ?? productId ?? null,
+          name: resolvedProduct?.name || name || t("Unknown product"),
+          image: resolvedProduct?.image || null,
+          price: Number(resolvedProduct?.price ?? unitPrice ?? 0) || 0,
+          quantity: resolvedQty,
+          extras: resolvedExtras,
+          note: notes || "",
+          unique_id: `${resolvedProduct?.id || productId || "voice"}-waiter-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         },
-        () => {}
-      );
-    } catch (err) {
-      if (!active) return;
-      setTableScanError(t("Camera permission is required."));
-    }
-  };
-  start();
-  return () => {
-    active = false;
-    stopTableScanner();
-  };
-}, [handleTableScanSuccess, showTableScanner, stopTableScanner, t]);
+      ]);
+    },
+    [safeProducts, setCart, storage, t]
+  );
 
-function handleInstallClick() {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  deferredPrompt.userChoice.then((choice) => {
-    if (choice.outcome === "accepted") {
-      console.log("✅ User installed app");
-    }
-    setDeferredPrompt(null);
-    setCanInstall(false);
-  });
-}
-
-function handleDownloadQr() {
-  // If store links are configured, prefer taking users to the native app stores.
-  // (Useful when you want the QR menu experience inside the Beypro mobile app.)
-  if (platform === "ios" && BEYPRO_APP_STORE_URL) {
-    window.open(BEYPRO_APP_STORE_URL, "_blank", "noopener,noreferrer");
-    storage.setItem("qr_saved", "1");
-    setShowQrPrompt(false);
-    return;
-  }
-  if (platform === "android" && BEYPRO_PLAY_STORE_URL) {
-    window.open(BEYPRO_PLAY_STORE_URL, "_blank", "noopener,noreferrer");
-    storage.setItem("qr_saved", "1");
-    setShowQrPrompt(false);
-    return;
-  }
-
-  const isStandalone =
-    (typeof window !== "undefined" &&
-      (window.matchMedia?.("(display-mode: standalone)")?.matches ||
-        window.navigator?.standalone)) ||
-    false;
-
-  if (isStandalone) {
-    storage.setItem("qr_saved", "1");
-    setShowQrPrompt(false);
-    return;
-  }
-
-  if (deferredPrompt) {
-    deferredPrompt.prompt();
-    deferredPrompt.userChoice.finally(() => {
-      setDeferredPrompt(null);
-      setCanInstall(false);
-      storage.setItem("qr_saved", "1");
-      setShowQrPrompt(false);
-    });
-    return;
-  }
-
-  // No native install prompt (e.g., iOS Safari). Show "Add to Home Screen" instructions.
-  storage.setItem("qr_saved", "1");
-  setShowQrPrompt(false);
-  setShowHelp(true);
-}
-
-useEffect(() => {
-  const timer = setTimeout(() => setSuppressMenuFlash(false), 250);
-  return () => clearTimeout(timer);
-}, []);
-
-// When switching order type, choose a sensible default
-useEffect(() => {
-  // Ensure paymentMethod always matches one of the configured methods
-  const allowedIds = paymentMethods.map((m) => m.id);
-  if (!allowedIds.length) return;
-  if (!paymentMethod || !allowedIds.includes(paymentMethod)) {
-    setPaymentMethod(allowedIds[0]);
-  }
-}, [paymentMethods, paymentMethod]);
-
-useEffect(() => {
-  storage.setItem("qr_payment_method", paymentMethod);
-}, [paymentMethod]);
-
-const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
-  if (typeof window === "undefined") return false;
-  return window.innerWidth >= 1280;
-});
-
-useEffect(() => {
-  const handleResize = () => {
-    if (typeof window === "undefined") return;
-    setIsDesktopLayout(window.innerWidth >= 1280);
-  };
-  handleResize();
-  window.addEventListener("resize", handleResize);
-  return () => window.removeEventListener("resize", handleResize);
-}, []);
-
-
-// === Always-mounted Order Status (portal) ===
-const statusPortalOrderId =
-  orderId || Number(storage.getItem("qr_active_order_id")) || null;
-const statusPortal = showStatus && statusPortalOrderId
-		  ? createPortal(
-			        <OrderStatusModal
-			        open={true}
-			        status={orderStatus}
-			        orderId={statusPortalOrderId}
-			        orderType={orderType} 
-			        table={orderType === "table" ? table : null}
-			        onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
-			        onClose={handleReset}
-			        onFinished={resetToTypePicker}
-		        t={t}
-			        appendIdentifier={appendIdentifier}
-			        errorMessage={lastError}
-		        cancelReason={orderCancelReason}
-		        orderScreenStatus={orderScreenStatus}
-		        forceDark={isDarkMain}
-		      />,
-	      document.body
-	    )
-	  : null;
-  // show Delivery Info form first, every time Delivery is chosen
-useEffect(() => {
-  const hasActive = !!(orderId || storage.getItem("qr_active_order_id"));
-  if (orderType === "online" && !hasActive) {
-    setShowDeliveryForm(true);
-  }
-}, [orderType, orderId]);
-
-
-
-
-
-
-// -- clear saved table ONLY when no items in cart and no active order
-function resetTableIfEmptyCart() {
-  const count = safeCart.length;
-  const hasActive = !!(orderId || storage.getItem("qr_active_order_id"));
-  if (count === 0 && !hasActive) {
-    try {
-      storage.removeItem("qr_table");
-      storage.removeItem("qr_selected_table");
-      storage.removeItem("qr_orderType");
-    } catch {}
-    // let any listeners react instantly (if you add one later)
-    window.dispatchEvent(new Event("qr:table-reset"));
-  }
-}
-
-
-// when user taps the header “×”
-// ✅ Updated handleCloseOrderPage
-async function handleCloseOrderPage() {
-  const activeId = orderId || Number(storage.getItem("qr_active_order_id")) || null;
-  const cartIsEmpty = !Array.isArray(cart) || cart.length === 0;
-
-  // 🧩 1. If an active order exists, verify its status before showing “Order Sent”
-  if (activeId) {
-    try {
-      const token = getStoredToken();
-      if (token) {
-        const res = await secureFetch(appendIdentifier(`/orders/${activeId}`), {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = typeof res.json === "function" ? await res.json() : res;
-        const status = (data?.status || "").toLowerCase();
-
-        // ✅ Only show “Order Sent” if not closed/completed/canceled
-        if (!["closed", "completed", "canceled"].includes(status)) {
-          setShowStatus(true);
-          setOrderStatus("success");
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn("⚠️ handleCloseOrderPage check failed:", err);
-    }
-  }
-
-  // 🧩 2. If no active order or it's closed → reset everything
-  if (cartIsEmpty) {
-    resetTableIfEmptyCart();
-    resetToTypePicker();
-    return;
-  }
-
-  // 🧩 3. Still items in cart → stay in current screen
-  resetTableIfEmptyCart();
-}
-
-
-
-// Bootstrap on refresh: restore by saved order id, else by saved table
-// Bootstrap on refresh: restore by saved order id, else by saved table
-useEffect(() => {
-  (async () => {
-    try {
-      const activeId = storage.getItem("qr_active_order_id");
-      const wantsStatusOpen = storage.getItem("qr_show_status") === "1";
-
-      // helper: true if ALL items are delivered
-     // helper: true if ALL items are delivered
-	async function allItemsDelivered(id) {
-  try {
-    const token = getStoredToken();
-    if (!token) return false;
-    const ir = await secureFetch(appendIdentifier(`/orders/${id}/items`), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!ir.ok) return false;
-
-    const raw = await ir.json();
-    const arr = Array.isArray(raw) ? raw : [];
-
-    // ✅ Empty or missing items → treat as not delivered
-    if (!arr || arr.length === 0) return false;
-
-    // ✅ Only mark delivered when all have final kitchen statuses
-    return arr.every((it) => {
-      const ks = (it.kitchen_status || "").toLowerCase();
-      return ["delivered", "served", "ready"].includes(ks);
-    });
-  } catch {
-    return false;
-  }
-}
-
-
-// --- Resolve token from either URL or local storage ---
-const urlToken =
-  typeof window !== "undefined"
-    ? new URLSearchParams(window.location.search).get("token")
-    : null;
-
-const storedToken = getStoredToken();
-const token = urlToken || storedToken;
-
-// 1️⃣ If we have a saved active order id, prefer that
-let order = null;
-if (token && activeId) {
-  try {
-    const res = await secureFetch(appendIdentifier(`/orders/${activeId}`), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res && res.ok !== false) {
-      const data = typeof res.json === "function" ? await res.json() : res;
-      order = data;
-    }
-  } catch (err) {
-    console.warn("⚠️ Failed to restore active order:", err);
-  }
-}
-
-
-  if (order) {
-    const status = (order?.status || "").toLowerCase();
-    const paid =
-      status === "paid" ||
-      order.payment_status === "paid" ||
-      order.payment_state === "paid";
-
-    // Restore the active order, but don't pop "Order Sent" on refresh unless user had it open.
-    setOrderStatus("success");
-    setShowStatus(wantsStatusOpen);
-
-    setActiveOrder(order);
-    setOrderScreenStatus(status);
-    setOrderCancelReason(
-      status === "canceled" || status === "cancelled"
-        ? order?.cancellation_reason || order?.cancel_reason || order?.cancelReason || ""
-        : ""
-    );
-
-    const type = order.order_type === "table" ? "table" : "online";
-    setOrderType(type);
-    setTable(type === "table" ? Number(order.table_number) || null : null);
-    setOrderId(order.id);
-
-    return;
-  }
-
-
-      // 2️⃣ Fallback: see if a saved table has an open (non-closed) order
-      const savedTable =
-        Number(
-          storage.getItem("qr_table") ||
-            storage.getItem("qr_selected_table") ||
-            "0"
-        ) || null;
-if (savedTable) {
-  const token = getStoredToken();
-  if (token) {
-    try {
-      const q = await secureFetch(appendIdentifier(`/orders?table_number=${savedTable}`), {
-        headers: { Authorization: `Bearer ${token}` },
+  const handleVoiceDraftConfirmOrder = useCallback(async (draftItems = [], options = {}) => {
+    if (typeof handleSubmitOrder === "function") {
+      const directItems = (Array.isArray(draftItems) ? draftItems : []).map((item, index) => ({
+        id: item?.productId ?? null,
+        product_id: item?.productId ?? null,
+        name: item?.name || t("Unknown product"),
+        quantity: Math.max(1, Number(item?.qty) || 1),
+        price: Number(item?.unitPrice) || 0,
+        extras: (Array.isArray(item?.extras) ? item.extras : []).map((extra, extraIndex) => ({
+          ...extra,
+          key: extra?.key || `${extra?.name || "extra"}-${extraIndex}`,
+          name: extra?.name || "",
+          quantity: Math.max(1, Number(extra?.quantity) || 1),
+          price: Number(extra?.price ?? extra?.extraPrice ?? 0) || 0,
+          extraPrice: Number(extra?.price ?? extra?.extraPrice ?? 0) || 0,
+        })),
+        note: item?.notes || "",
+        unique_id:
+          item?.key ||
+          `${item?.productId || "voice"}-direct-${Date.now().toString(36)}-${index}`,
+      }));
+      await handleSubmitOrder(directItems, {
+        paymentMethodOverride:
+          typeof options?.paymentMethodOverride === "string"
+            ? options.paymentMethodOverride
+            : undefined,
       });
-
-      const raw = await q.json();
-      const list = Array.isArray(raw)
-        ? raw
-        : Array.isArray(raw?.data)
-        ? raw.data
-        : [];
-
-        const openOrder = list.find((o) => o?.status);
-
-	        if (openOrder) {
-	          const status = (openOrder?.status || "").toLowerCase();
-	          const paid =
-	            status === "paid" ||
-	            openOrder.payment_status === "paid" ||
-	            openOrder.payment_state === "paid";
-
-	          // Restore the active order, but don't pop "Order Sent" on refresh unless user had it open.
-	          setOrderType("table");
-	          setTable(savedTable);
-	          setOrderId(openOrder.id);
-	          setOrderStatus("success");
-	          setShowStatus(wantsStatusOpen);
-
-	        setActiveOrder(openOrder);
-	          setOrderScreenStatus(status);
-          setOrderCancelReason(
-            status === "canceled" || status === "cancelled"
-              ? openOrder?.cancellation_reason || openOrder?.cancel_reason || openOrder?.cancelReason || ""
-              : ""
-          );
-
-	          storage.setItem("qr_active_order_id", String(openOrder.id));
-	          storage.setItem("qr_orderType", "table");
-	          return;
-	      }
-	    } catch (err) {
-      console.warn("⚠️ Failed to restore table order:", err);
     }
-  }
-}
+  }, [handleSubmitOrder, t]);
 
-
-      // 3️⃣ Nothing to restore
-      setShowStatus(false);
-      storage.setItem("qr_show_status", "0");
-      resetToTypePicker();
-    } catch (err) {
-      console.error("❌ QRMenu restore failed:", err);
-      setShowStatus(false);
-      storage.setItem("qr_show_status", "0");
-      resetToTypePicker();
-    }
-  })();
-}, [appendIdentifier, qrMode, initialTableFromUrl]);
-
-  // 🔄 Keep a lightweight, real-time summary of the active order status
-  const refreshOrderScreenStatus = useCallback(async () => {
-    if (!orderId) return;
-    try {
-      const token = getStoredToken();
-      const opts = token
-        ? { headers: { Authorization: `Bearer ${token}` } }
-        : {};
-      const res = await secureFetch(appendIdentifier(`/orders/${orderId}`), opts);
-      if (!res || res.ok === false) return;
-
-      const data = typeof res.json === "function" ? await res.json() : res;
-      setActiveOrder(data || null);
-
-      const s = (data?.status || "").toLowerCase();
-      if (!s) {
-        setOrderScreenStatus(null);
-        return;
-      }
-      setOrderScreenStatus(s);
-      setOrderCancelReason(
-        s === "canceled" || s === "cancelled"
-          ? data?.cancellation_reason || data?.cancel_reason || data?.cancelReason || ""
-          : ""
-      );
-
-      // Keep the status modal visible when order is cancelled/closed
-      if (s === "canceled" || s === "cancelled" || s === "closed") {
-        setShowStatus(true);
-        setOrderStatus("success");
-      }
-
-      if (import.meta.env.DEV) {
-        console.info("[QR] refreshOrderScreenStatus", {
-          orderId,
-          status: s,
-          cancel_reason:
-            data?.cancellation_reason || data?.cancel_reason || data?.cancelReason || null,
-        });
-      }
-    } catch (err) {
-      console.warn("⚠️ Failed to refresh QR order status:", err);
-    }
-  }, [orderId, appendIdentifier]);
-
-  // Listen to kitchen/order events over Socket.IO and refresh summary
-  useOrderSocket(refreshOrderScreenStatus, orderId);
-
-  // Also refresh once whenever orderId changes (e.g. after first submit)
-	useEffect(() => {
-    refreshOrderScreenStatus();
-  }, [refreshOrderScreenStatus]);
-
-  useEffect(() => {
-    return () => {
-      if (deliveredResetRef.current.timeoutId) {
-        window.clearTimeout(deliveredResetRef.current.timeoutId);
-      }
-    };
-  }, []);
-
-
-  // QrMenu.jsx
-useEffect(() => {
-  if (!restaurantIdentifier) {
-    setCategoryImages({});
-    return;
-  }
-
-  (async () => {
-    try {
-      const res = await fetch(
-        `${API_URL}/public/category-images/${encodeURIComponent(restaurantIdentifier)}`
-      );
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-
-      const data = await res.json();
-      const dict = {};
-      (Array.isArray(data) ? data : []).forEach(({ category, image }) => {
-        const key = (category || "").trim().toLowerCase();
-        if (!key || !image) return;
-        dict[key] = image;
-      });
-      setCategoryImages(dict);
-    } catch (err) {
-      console.warn("⚠️ Failed to fetch public category images:", err);
-      setCategoryImages({});
-    }
-  })();
-	}, [restaurantIdentifier]);
-
-  const refreshOccupiedTables = useCallback(async () => {
-    const token = getStoredToken();
-    if (!token) return;
-    try {
-      const orders = await sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } });
-      const list = parseArray(orders);
-      try {
-        const nextMap = new Map();
-        toArray(list).forEach((o) => {
-          const oid = Number(o?.id);
-          const tno = Number(o?.table_number);
-          if (Number.isFinite(oid) && Number.isFinite(tno) && tno > 0) nextMap.set(oid, tno);
-        });
-        orderIdToTableRef.current = nextMap;
-      } catch {}
-      const occupied = toArray(list)
-        .filter((order) => {
-          if (!order?.table_number) return false;
-          const status = String(order?.status || "").toLowerCase();
-          return !["closed", "completed", "canceled", "cancelled"].includes(status);
-        })
-        .map((order) => Number(order.table_number))
-        .filter((n) => Number.isFinite(n) && n > 0);
-      setOccupiedTables(occupied);
-    } catch (err) {
-      console.warn("⚠️ Failed to refresh occupied tables:", err);
-    }
-  }, [sFetch]);
-
-  // Realtime table occupancy: join restaurant room and refresh on order events.
-  useEffect(() => {
-    if (!socketRestaurantId) return;
-    const SOCKET_URL =
-      import.meta.env.VITE_SOCKET_URL ||
-      (API_BASE ? String(API_BASE) : "") ||
-      (typeof window !== "undefined" ? window.location.origin : "");
-
-    const s = io(SOCKET_URL, {
-      path: "/socket.io",
-      transports: ["polling", "websocket"],
-      upgrade: true,
-      withCredentials: true,
-      timeout: 20000,
-      auth: { restaurantId: socketRestaurantId },
-    });
-
-    let refreshTimer = null;
-    const scheduleRefresh = () => {
-      if (refreshTimer) return;
-      refreshTimer = window.setTimeout(() => {
-        refreshTimer = null;
-        refreshOccupiedTables();
-      }, 50);
-    };
-
-    try {
-      s.emit("join_restaurant", socketRestaurantId);
-    } catch {}
-
-    const upsertOccupied = (tableNo) => {
-      const n = Number(tableNo);
-      if (!Number.isFinite(n) || n <= 0) return;
-      setOccupiedTables((prev) => {
-        const next = new Set(toArray(prev).map(Number));
-        next.add(n);
-        return Array.from(next);
-      });
-    };
-
-    const removeOccupied = (tableNo) => {
-      const n = Number(tableNo);
-      if (!Number.isFinite(n) || n <= 0) return;
-      setOccupiedTables((prev) => toArray(prev).map(Number).filter((x) => x !== n));
-    };
-
-    const onConfirmed = (payload) => {
-      const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
-      const tableNo =
-        payload?.table_number ??
-        payload?.order?.table_number ??
-        payload?.tableNumber ??
-        null;
-      if (Number.isFinite(orderId)) {
-        const tno = Number(tableNo);
-        if (Number.isFinite(tno) && tno > 0) orderIdToTableRef.current.set(orderId, tno);
-      }
-      if (tableNo) upsertOccupied(tableNo);
-      scheduleRefresh();
-    };
-
-    const onCancelled = (payload) => {
-      const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
-      const tableNo = payload?.table_number ?? payload?.order?.table_number ?? null;
-      if (tableNo) removeOccupied(tableNo);
-      else if (Number.isFinite(orderId)) {
-        const cached = orderIdToTableRef.current.get(orderId);
-        if (cached) removeOccupied(cached);
-      }
-      if (Number.isFinite(orderId)) orderIdToTableRef.current.delete(orderId);
-      scheduleRefresh();
-    };
-
-    const onClosed = (payload) => {
-      const orderId = Number(payload?.orderId ?? payload?.id);
-      if (Number.isFinite(orderId)) {
-        const cached = orderIdToTableRef.current.get(orderId);
-        if (cached) removeOccupied(cached);
-        orderIdToTableRef.current.delete(orderId);
-      }
-      scheduleRefresh();
-    };
-
-    const onAny = () => scheduleRefresh();
-    s.on("order_confirmed", onConfirmed);
-    s.on("orders_updated", onAny);
-    s.on("order_cancelled", onCancelled);
-    s.on("order_closed", onClosed);
-
-    // Initial refresh on connect
-    s.on("connect", () => scheduleRefresh());
-
-    return () => {
-      try {
-        if (refreshTimer) window.clearTimeout(refreshTimer);
-      } catch {}
-      try {
-        s.off("order_confirmed", onConfirmed);
-        s.off("orders_updated", onAny);
-        s.off("order_cancelled", onCancelled);
-        s.off("order_closed", onClosed);
-        s.disconnect();
-      } catch {}
-    };
-  }, [socketRestaurantId, refreshOccupiedTables]);
-
-
-
-
-  useEffect(() => {
-    const storedCart = safeCart;
-    storage.setItem("qr_cart", JSON.stringify(storedCart));
-  }, [safeCart]);
-
-useEffect(() => {
-  let cancelled = false;
-
-  const parseArray = (raw) =>
-    Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
-
-  const tryJSON = (value) => {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-
-  // ✅ UPDATED BLOCK
-// ✅ Corrected public product loader
-const loadProducts = async () => {
-  const assignProducts = (payload) => {
-    const list = parseArray(payload);
-    setProducts(list);
-    const cats = [...new Set(list.map((p) => p.category))].filter(Boolean);
-    setCategories(cats);
-    setActiveCategory(cats[0] || "");
-  };
-
-  try {
-    let payload = null;
-
-    if (restaurantIdentifier
-) {
-      // 👇 Always use the public endpoint; no auth required
-const res = await fetch(
-  `${API_URL}/public/products/${encodeURIComponent(restaurantIdentifier)}`
-);
-if (!res.ok) throw new Error(`Server responded ${res.status}`);
-payload = await res.json();
-
-    }
-
-    assignProducts(payload);
-  } catch (err) {
-    console.warn("⚠️ Failed to fetch products:", err);
-    setProducts([]);
-    setCategories([]);
-    setActiveCategory("");
-  }
-};
-
-
-
-  // ✅ END UPDATED BLOCK
-
-  const loadExtras = async () => {
-  if (!restaurantIdentifier) {
-    setExtrasGroups([]);
-    return;
-  }
-
-  try {
-    const res = await fetch(
-      `${API_URL}/public/extras-groups/${encodeURIComponent(restaurantIdentifier)}`
-    );
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const list = await res.json();
-    if (cancelled) return;
-
-    const listArray = toArray(list);
-    setExtrasGroups(
-      listArray.map((g) => ({
-        groupName: g.groupName || g.group_name,
-        items: typeof g.items === "string" ? tryJSON(g.items) : g.items || [],
-      }))
-    );
-  } catch (err) {
-    console.warn("⚠️ Failed to fetch extras groups:", err);
-    if (cancelled) return;
-    setExtrasGroups([]);
-  }
-};
-
-
-  loadProducts();
-  loadExtras();
-  loadTables(); 
-  const token = getStoredToken();
-  if (token) {
-    sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } })
-      .then((orders) => {
-        if (cancelled) return;
-        const list = parseArray(orders);
-        const occupied = toArray(list)
-          .filter((order) => {
-            if (!order?.table_number) return false;
-            const status = String(order?.status || "").toLowerCase();
-            return !["closed", "completed", "canceled", "cancelled"].includes(status);
-          })
-          .map((order) => Number(order.table_number));
-        setOccupiedTables(occupied);
-      })
-      .catch((err) => {
-        console.warn("⚠️ Failed to fetch orders:", err);
-        if (!cancelled) setOccupiedTables([]);
-      });
-  } else {
-    setOccupiedTables([]);
-  }
-
-  return () => {
-    cancelled = true;
-  };
-}, [appendIdentifier]);
-
-
-
-const triggerOrderType = useCallback(
-  (type) => {
-    setForceHome(false);
-    setOrderType(type);
-    if (type === "online") {
-      setShowDeliveryForm(true);
-    }
-    if (type === "takeaway") {
-      setShowTakeawayForm(true);
-    }
-  },
-  [setForceHome, setOrderType, setShowDeliveryForm, setShowTakeawayForm]
-);
-
-const handlePopularProductClick = useCallback(
-  (product, meta) => {
-    if (!product) return;
-    setPendingPopularProduct(product);
-    setReturnHomeAfterAdd(!!meta?.returnToHomeAfterAdd);
+  const handleVoiceRequireOrderType = useCallback(() => {
+    setShowStatus(false);
+    setShowDeliveryForm(false);
+    setShowTakeawayForm(false);
     setShowOrderTypePrompt(true);
-  },
-  [setPendingPopularProduct, setReturnHomeAfterAdd, setShowOrderTypePrompt]
-);
+    setPendingPopularProduct(null);
+    setOrderType(null);
+    setTable(null);
+    setForceHome(true);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [
+    setForceHome,
+    setOrderType,
+    setTable,
+    setPendingPopularProduct,
+    setShowDeliveryForm,
+    setShowOrderTypePrompt,
+    setShowStatus,
+    setShowTakeawayForm,
+  ]);
 
-		useEffect(() => {
-		  if (!orderType || !pendingPopularProduct) return;
-      // If the chosen order type requires an info modal (delivery / pre-order),
-      // wait until the modal is completed/closed before opening the add-to-cart flow.
-      if (orderType === "online" && showDeliveryForm) return;
-      if (orderType === "takeaway" && showTakeawayForm) return;
-		  const targetCategory = (pendingPopularProduct.category || "").trim();
-		  if (targetCategory) {
-		    setActiveCategory(targetCategory);
-		  }
-		  setSelectedProduct(pendingPopularProduct);
-		  setShowAddModal(true);
-		  setPendingPopularProduct(null);
-		}, [
-      orderType,
-      pendingPopularProduct,
-      showDeliveryForm,
-      showTakeawayForm,
-      setActiveCategory,
-      setSelectedProduct,
-      setShowAddModal,
-    ]);
+  if (showTableSelector) {
+    return (
+      <>
+        <div className={isDarkMain ? "dark" : ""}>
+          <ModernTableSelector
+            tables={tables}
+            occupiedNumbers={filteredOccupied}
+            occupiedLabel={t("Occupied")}
+            onSelect={(tbl) => {
+              openTableScanner(tbl?.tableNumber);
+            }}
+            onBack={() => {
+              setOrderType(null);
+            }}
+          />
 
-		const showHome = !orderType || forceHome;
+          <TableQrScannerModal
+            open={showTableScanner}
+            tableNumber={tableScanTarget}
+            onClose={closeTableScanner}
+            error={tableScanError}
+            t={t}
+          />
+        </div>
 
-// --- Table select (let THIS device re-open its own occupied table) ---
-if (!forceHome && orderType === "table" && !table) {
-function safeNumber(v) {
-  if (!v) return null;
-  if (v === "null" || v === "undefined") return null;
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-const myTable =
-  safeNumber(storage.getItem("qr_table")) ??
-  safeNumber(storage.getItem("qr_selected_table")) ??
-  null;
-
-
-  const filteredOccupied = myTable
-    ? safeOccupiedTables.filter((n) => n !== myTable)
-    : safeOccupiedTables;
+        {statusPortal}
+      </>
+    );
+  }
 
   return (
     <>
-      <div className={isDarkMain ? "dark" : ""}>
-        <ModernTableSelector
-          tables={tables}
-          occupiedNumbers={filteredOccupied}
-          occupiedLabel={t("Occupied")}
-          onSelect={(tbl) => {
-            openTableScanner(tbl?.tableNumber);
-          }}
-          onBack={() => {
-            setOrderType(null);
-          }}
-        />
-
-        <TableQrScannerModal
-          open={showTableScanner}
-          tableNumber={tableScanTarget}
-          onClose={closeTableScanner}
-          error={tableScanError}
-          t={t}
-        />
-      </div>
-
-
-
-      {statusPortal}
-    </>
-  );
-}
-
-
-// ---- Rehydrate cart from current order (generate NEW unique_id for each line) ----
-// ---- Rehydrate cart from current order, but mark them as locked (read-only) ----
-async function rehydrateCartFromOrder(orderId) {
-  try {
-    const token = getStoredToken();
-    if (!token) {
-      console.info("ℹ️ Skipping cart rehydrate (no auth token)");
-      return;
-    }
-const res = await secureFetch(appendIdentifier(`/orders/${orderId}/items`), {
-  headers: {
-    Authorization: `Bearer ${token}`,
-  },
-});
-
-    if (!res.ok) throw new Error("Failed to load order items");
-    const raw = await res.json();
-
-    const now36 = Date.now().toString(36);
-    const lockedItems = (Array.isArray(raw) ? raw : [])
-      // keep non-delivered so customer can see what is in progress/ready
-      .filter(i => (i.kitchen_status || "new") !== "delivered")
-      .map((it) => ({
-        id: it.product_id ?? it.external_product_id,
-        name: it.order_item_name || it.product_name || it.name || "Item",
-        price: Number(it.price || 0),
-        quantity: Number(it.quantity || 1),
-        extras: typeof it.extras === "string" ? JSON.parse(it.extras) : (it.extras || []),
-        note: it.note || "",
-        image: null,
-        unique_id: `${(it.product_id ?? it.external_product_id ?? "x")}-${now36}-${Math.random().toString(36).slice(2,8)}`,
-        locked: true, // ← ← ← IMPORTANT
-      }));
-
-    // Show only locked items for context; new items will be added later
-    setCart(lockedItems);
-  } catch (e) {
-    console.error("rehydrateCartFromOrder failed:", e);
-  }
-}
-
-// ---- Order Another: show previous lines (locked), start fresh for new ones ----
-async function handleOrderAnother() {
-  try {
-    setShowStatus(false);
-    setOrderStatus("pending");
-
-    // keep drawer closed; user opens if needed
-    storage.setItem("qr_cart_auto_open", "0");
-    window.dispatchEvent(new Event("qr:cart-close"));
-
-    // resolve existing order
-    let id = orderId || Number(storage.getItem("qr_active_order_id")) || null;
-    let type = orderType || storage.getItem("qr_orderType") || (table ? "table" : null);
-
-    // Check if current order is cancelled - if so, clear everything for fresh start
-    if (id) {
-      try {
-        const token = getStoredToken();
-        const res = await secureFetch(appendIdentifier(`/orders/${id}`), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (res) {
-          const orderStatus = (res.status || "").toLowerCase();
-          if (orderStatus === "cancelled" || orderStatus === "canceled") {
-            // Clear everything for a fresh start
-            setCart([]);
-            storage.removeItem("qr_cart");
-            storage.removeItem("qr_active_order_id");
-            storage.removeItem("qr_orderType");
-            storage.setItem("qr_show_status", "0");
-            setOrderId(null);
-            setOrderType(null);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn("⚠️ Failed to check order status:", err);
-      }
-    }
-
-    // If table known but no id, fetch open order for that table
-    if (!id && (type === "table" || table)) {
-      const tNo = table || Number(storage.getItem("qr_table")) || null;
-      if (tNo) {
-        const token = getStoredToken();
-        if (token) {
-          try {
-            const q = await secureFetch(appendIdentifier(`/orders?table_number=${tNo}`) , {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (q.ok) {
-              const list = await q.json();
-              const arr = Array.isArray(list) ? list : (Array.isArray(list?.data) ? list.data : []);
-              const open = arr.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
-              if (open) {
-                id = open.id;
-                type = "table";
-                setOrderId(id);
-                setOrderType("table");
-              }
-            }
-          } catch (err) {
-            console.warn("⚠️ Failed to fetch open table order:", err);
-          }
-        }
-      }
-    }
-
-    // ONLINE branch: rehydrate previous (locked) items too
-    if (type === "online" && id) {
-      await rehydrateCartFromOrder(id); // sets locked: true items
-      setOrderType("online");
-      storage.setItem("qr_active_order_id", String(id));
-      storage.setItem("qr_orderType", "online");
-      storage.setItem("qr_show_status", "0");
-      setShowDeliveryForm(false); // don’t ask details again
-      return;
-    }
-
-    // TABLE branch (unchanged)
-    if (type === "table" && id) {
-      await rehydrateCartFromOrder(id); // sets locked: true items
-      storage.setItem("qr_active_order_id", String(id));
-      storage.setItem("qr_orderType", "table");
-      if (table) storage.setItem("qr_table", String(table));
-      storage.setItem("qr_show_status", "0");
-      return;
-    }
-
-    // nothing to restore → clean cart
-    setCart([]);
-    storage.setItem("qr_cart", "[]");
-    storage.setItem("qr_show_status", "0");
-  } catch (e) {
-    console.error("handleOrderAnother failed:", e);
-  }
-}
-
-
-
-
-
-
-    function calcOrderTotalWithExtras(cart) {
-  return cart.reduce((sum, item) => {
-    const extrasTotal = (item.extras || []).reduce(
-      (extraSum, ex) => extraSum + (parseFloat(ex.price) || 0) * (ex.quantity || 1),
-      0
-    );
-    return sum + (parseFloat(item.price) + extrasTotal) * (item.quantity || 1);
-  }, 0);
-}
-
-// ---- helpers ----
-async function postJSON(url, body) {
-  try {
-    // IMPORTANT: QRMenu order placement should use the backend's public QR POST flow (identifier-based).
-    // Do not send an Authorization header here, otherwise some tokens can hit MODULE_NOT_ALLOWED.
-    const json = await secureFetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "",
-      },
-      body: JSON.stringify(body),
-    });
-    return json; // secureFetch already returns parsed JSON or throws
-  } catch (err) {
-    throw new Error(err.message || "Request failed");
-  }
-}
-
-function buildOrderPayload({ orderType, table, items, total, customer, takeaway, paymentMethod, tableGeo }) {
-  const itemsPayload = (items || []).map(i => ({
-    product_id: i.id,
-    quantity: i.quantity,
-    price: parseFloat(i.price) || 0,
-    ingredients: i.ingredients ?? [],
-    extras: i.extras ?? [],
-    unique_id: i.unique_id,
-    note: i.note || null,
-    confirmed: true,
-    kitchen_status: "new",
-    payment_method: null,
-    receipt_id: null,
-  }));
-
-  const isTakeaway = orderType === "takeaway";
-  const isOnline = orderType === "online";
-  const isTable = orderType === "table";
-
-  const pickupDate = takeaway?.pickup_date;
-  const pickupTime = takeaway?.pickup_time;
-  const combinedPickupTime =
-    pickupDate && pickupTime
-      ? `${pickupDate} ${pickupTime}`
-      : pickupTime || pickupDate || null;
-  const isTakeawayDelivery = isTakeaway && !!(takeaway && takeaway.mode === "delivery");
-
-  return {
-    table_number: isTable ? Number(table) : null,
-    order_type: isOnline ? "packet" : isTakeaway ? "takeaway" : "table",
-    total: Number(total) || 0,
-    items: itemsPayload,
-    table_geo_lat: isTable ? tableGeo?.lat ?? null : null,
-    table_geo_lng: isTable ? tableGeo?.lng ?? null : null,
-
-    // ✅ Safely handle missing objects
-    customer_name: isTakeaway
-      ? takeaway?.name || null
-      : customer?.name || null,
-    customer_phone: isTakeaway
-      ? takeaway?.phone || null
-      : customer?.phone || null,
-    customer_address: isOnline
-      ? customer?.address || null
-      : isTakeawayDelivery
-      ? takeaway?.address || null
-      : null,
-    pickup_time: isTakeaway
-      ? combinedPickupTime
-      : null,
-    notes: isTakeaway
-      ? takeaway?.notes || null
-      : null,
-    // Only set payment method for delivery orders; avoid leaking "Online" into takeaway/table.
-    payment_method: isOnline ? (paymentMethod || null) : null,
-  };
-}
-
-
-async function handleSubmitOrder() {
-  try {
-    setLastError(null);
-
-    const type = orderType || storage.getItem("qr_orderType");
-    if (!type) {
-      window.dispatchEvent(new Event("qr:cart-close"));
-      alert(t("Please choose an order type first."));
-      return;
-    }
-    if (!orderType) {
-      setOrderType(type);
-    }
-
-    // Require delivery details for ONLINE orders (always)
-    const hasActiveOnline =
-      type === "online" &&
-      (orderId || storage.getItem("qr_active_order_id"));
-    let deliveryInfo = customerInfo;
-    if (type === "online") {
-      if (!deliveryInfo || !deliveryInfo.address) {
-        const savedDelivery = getSavedDeliveryInfo();
-        if (savedDelivery && savedDelivery.address) {
-          deliveryInfo = savedDelivery;
-          setCustomerInfo(savedDelivery);
-        } else {
-          window.dispatchEvent(new Event("qr:cart-close"));
-          setShowDeliveryForm(true);
-          return;
-        }
-      }
-    }
-
-    // 🔒 Require payment method ONLY for delivery orders
-    if (type === "online" && !paymentMethod) {
-      alert(t("Please select a payment method before continuing."));
-      return;
-    }
-
-    setSubmitting(true);
-    setOrderStatus("pending");
-    setShowStatus(true);
-
-    const newItems = toArray(cart).filter((i) => !i.locked);
-    if (newItems.length === 0) {
-      setOrderStatus("success");
-      setShowStatus(true);
-      return;
-    }
-
-    if (type === "table" && !table) {
-      throw new Error("Please select a table.");
-    }
-
-    // Prevent creating a new table order if that table is already occupied by another session
-    // (allow if appending to existing orderId; below branch handles append)
-    if (!orderId && type === "table") {
-      const nTable = Number(table);
-      if (safeOccupiedTables.includes(nTable)) {
-        throw new Error("This table is currently occupied. Please contact staff.");
-      }
-    }
-
-    let tableGeo = null;
-    if (type === "table" && orderSelectCustomization.table_geo_enabled) {
-      if (!navigator?.geolocation) {
-        throw new Error("Location is required for table orders. Please rescan at the restaurant.");
-      }
-      tableGeo = await new Promise((resolve, reject) => {
-        const timeoutMs = 10000;
-        const timeoutId = window.setTimeout(() => {
-          reject(new Error("Location request timed out. Please rescan at the restaurant."));
-        }, timeoutMs);
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            window.clearTimeout(timeoutId);
-            resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          },
-          () => {
-            window.clearTimeout(timeoutId);
-            reject(new Error("Location permission is required for table orders."));
-          },
-          { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 }
-        );
-      });
-    }
-
-    // ---------- APPEND to existing order ----------
-    if (orderId) {
-      // First, fetch the current order to check its payment status
-      let existingOrder = activeOrder;
-      if (!existingOrder) {
-        try {
-          const res = await secureFetch(appendIdentifier(`/orders/${orderId}`));
-          existingOrder = res;
-        } catch (err) {
-          console.warn("Could not fetch existing order:", err);
-        }
-      }
-      
-      const isOrderAlreadyPaid = existingOrder && (
-        existingOrder.is_paid === true ||
-        (existingOrder.status || "").toLowerCase() === "paid" ||
-        (existingOrder.payment_status || "").toLowerCase() === "paid"
-      );
-
-      const itemsPayload = newItems.map((i) => ({
-        product_id: i.id,
-        quantity: i.quantity,
-        price: parseFloat(i.price) || 0,
-        ingredients: i.ingredients ?? [],
-        extras: i.extras ?? [],
-        unique_id: i.unique_id,
-        note: i.note || null,
-        confirmed: true,
-        payment_method: paymentMethod === "online" ? "Online" : paymentMethod,
-        receipt_id: null,
-      }));
-
-await postJSON(appendIdentifier("/orders/order-items"), {
-  order_id: orderId,
-  receipt_id: null,
-  items: itemsPayload,
-  table_geo_lat: tableGeo?.lat ?? null,
-  table_geo_lng: tableGeo?.lng ?? null,
-});
-
-
-      // Save/patch the chosen payment method on the order (ignore if backend doesn't support)
-      try {
-     await secureFetch(appendIdentifier(`/orders/${orderId}/status`), {
-  method: "PUT",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ payment_method: paymentMethod }),
-});
-
-      } catch {}
-
-      // If user chose Online, create/refresh a checkout session
-      if (paymentMethod === "online") {
-        await startOnlinePaymentSession(orderId);
-        
-        // For sub-orders, we need to create a proper payment receipt for these items
-        try {
-          const subOrderTotal = newItems.reduce(
-            (sum, i) =>
-              sum +
-              (parseFloat(i.price) +
-                (i.extras || []).reduce(
-                  (s, ex) =>
-                  s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
-                  0
-                )) *
-                (i.quantity || 1),
-            0
-          );
-          
-          // Create a receipt for these specific items
-          console.log("📝 Creating receipt for sub-order items with online payment");
-          const receiptData = await postJSON(appendIdentifier("/receipts"), {
-            order_id: orderId,
-            payment_method: "Online",
-            amount: subOrderTotal,
-            items: itemsPayload.map(item => ({
-              ...item,
-              payment_method: "Online",
-            })),
-          });
-          
-          console.log("✅ Receipt created for sub-order:", receiptData);
-        } catch (err) {
-          console.error("❌ Failed to create receipt for sub-order:", err);
-        }
-      }
-
-      // clear only NEW items
-      setCart((prev) => toArray(prev).filter((i) => i.locked));
-
-      storage.setItem(
-        "qr_active_order",
-        JSON.stringify({
-          orderId,
-          orderType: type,
-          table: type === "table" ? table : null,
-        })
-      );
-      storage.setItem("qr_active_order_id", String(orderId));
-      if (type === "table" && table)
-        storage.setItem("qr_table", String(table));
-      storage.setItem("qr_orderType", type);
-      storage.setItem("qr_payment_method", paymentMethod);
-      storage.setItem("qr_show_status", "1");
-
-      setOrderStatus("success");
-      setShowStatus(true);
-      return;
-    }
-
-    // ---------- CREATE brand-new order ----------
-    const total = newItems.reduce((sum, item) => {
-      const extrasTotal = (item.extras || []).reduce(
-        (s, ex) =>
-          s +
-          (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) *
-            (ex.quantity || 1),
-        0
-      );
-      return (
-        sum +
-        (parseFloat(item.price) + extrasTotal) * (item.quantity || 1)
-      );
-    }, 0);
-
-const created = await postJSON(
-  appendIdentifier("/orders"),
-  buildOrderPayload({
-    orderType: type,
-    table,
-    items: newItems,
-    total,
-    customer: type === "online" ? deliveryInfo || customerInfo : null,
-    takeaway: type === "takeaway" ? takeaway : null,
-    paymentMethod,
-    tableGeo,
-  })
-);
-
-
-    const newId = created?.id;
-    if (!newId) throw new Error("Server did not return order id.");
-
-    // If Online, start a checkout session for this order
-    if (paymentMethod === "online") {
-      await startOnlinePaymentSession(newId);
-          // 🔑 Immediately mark order as Paid Online
-     try {
-       await secureFetch(appendIdentifier(`/orders/${newId}/status`) , {
-         method: "PUT",
-         headers: { "Content-Type": "application/json" },
-         body: JSON.stringify({
-           status: "paid",
-           payment_method: "Online",
-           total,
-         }),
-       });
-       console.log("✅ Order marked Paid Online");
-     } catch (err) {
-       console.error("❌ Failed to mark online order as paid:", err);
-     }
-    }
-
-    setOrderId(newId);
-    // Optimistically mark table as occupied immediately for other sessions on this device.
-    if (type === "table" && table) {
-      const nTable = Number(table);
-      if (Number.isFinite(nTable) && nTable > 0) {
-        setOccupiedTables((prev) => {
-          const next = new Set(toArray(prev).map(Number));
-          next.add(nTable);
-          return Array.from(next);
-        });
-      }
-    }
-    storage.setItem(
-      "qr_active_order",
-      JSON.stringify({
-        orderId: newId,
-        orderType: type,
-        table: type === "table" ? table : null,
-      })
-    );
-    storage.setItem("qr_active_order_id", String(newId));
-    if (type === "table" && table)
-      storage.setItem("qr_table", String(table));
-    storage.setItem("qr_orderType", type);
-    storage.setItem("qr_payment_method", paymentMethod);
-    storage.setItem("qr_show_status", "1");
-
-    setCart([]); // fresh order → empty cart
-    setOrderStatus("success");
-    setShowStatus(true);
-  } catch (e) {
-    console.error("Order submit failed:", e);
-    setLastError(e.message || "Order failed");
-    setOrderStatus("fail");
-    setShowStatus(true);
-  } finally {
-    setSubmitting(false);
-  }
-}
-
-		function handleReset() {
-		  // Check if order is delivered or cancelled - if so, navigate to home
-		  const status = (orderScreenStatus || "").toLowerCase();
-		  const isFinished = ["delivered", "served", "cancelled", "canceled", "closed", "completed"].includes(status);
-		  
-		  if (isFinished) {
-		    // Order is complete - navigate to home and clear everything
-		    resetToTypePicker();
-		  } else {
-		    // Order still active - just hide status to return to menu
-		    setShowStatus(false);
-		    storage.setItem("qr_show_status", "0");
-		  }
-		}
-
-
-  
-
-	return (
-	  <>
       <InstallHelpModal
         open={showHelp}
         onClose={() => setShowHelp(false)}
@@ -5428,243 +2985,363 @@ const created = await postJSON(
           </div>
         </div>
       )}
-	    {showHome ? (
-	      <>
-	        <OrderTypeSelect
-	          identifier={restaurantIdentifier}
-	          onSelect={triggerOrderType}
-	          lang={lang}
-	          setLang={setLang}
-	          t={t}
-	          onInstallClick={handleInstallClick}
+      {showHome ? (
+        <>
+          <OrderTypeSelect
+            identifier={restaurantIdentifier}
+            onSelect={triggerOrderType}
+            lang={lang}
+            setLang={setLang}
+            t={t}
+            onInstallClick={handleInstallClick}
             onDownloadQr={handleDownloadQr}
-	          canInstall={canInstall}
-	          showHelp={showHelp}
-	          setShowHelp={setShowHelp}
-	          platform={platform}
-	          onPopularClick={handlePopularProductClick}
-	          onCustomizationLoaded={(next) =>
-	            setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
-	          }
-	        />
+            onShopOpenChange={setShopIsOpen}
+            canInstall={canInstall}
+            showHelp={showHelp}
+            setShowHelp={setShowHelp}
+            platform={platform}
+            onPopularClick={handlePopularProductClick}
+            onCustomizationLoaded={(next) =>
+              setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
+            }
+          />
 
-		        {!orderType && showOrderTypePrompt && pendingPopularProduct && (
-		          <OrderTypePromptModal
-		            product={pendingPopularProduct}
-		            t={t}
-		            onClose={() => {
-		              setShowOrderTypePrompt(false);
-		              setPendingPopularProduct(null);
-		              setReturnHomeAfterAdd(false);
-		            }}
-		            onSelect={(type) => {
-		              triggerOrderType(type);
-		              setShowOrderTypePrompt(false);
-		            }}
-		            deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}
-		          />
-		        )}
-	      </>
-	    ) : (
-	      <div
-	        className={`${isDarkMain ? "dark " : ""}flex-1`}
-	        style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
-	      >
-		        <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-50 dark:bg-neutral-900 flex flex-col">
-		          <QrHeader
-		            orderType={orderType}
-		            table={table}
-		            onClose={handleCloseOrderPage}
-		            t={t}
-		            restaurantName={brandName}
-		            searchValue={menuSearch}
-		            onSearchChange={setMenuSearch}
-		            searchPlaceholder={t("Search products")}
-		          />
+          {!orderType && showOrderTypePrompt && (
+            <OrderTypePromptModal
+              product={pendingPopularProduct}
+              t={t}
+              shopIsOpen={shopIsOpen}
+              onClose={() => {
+                setShowOrderTypePrompt(false);
+                setPendingPopularProduct(null);
+                setReturnHomeAfterAdd(false);
+              }}
+              onSelect={(type) => {
+                triggerOrderType(type);
+                setShowOrderTypePrompt(false);
+              }}
+              deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}
+            />
+          )}
+        </>
+      ) : (
+        <div
+          className={`${isDarkMain ? "dark " : ""}flex-1`}
+          style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
+        >
+          <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-50 dark:bg-neutral-900 flex flex-col">
+            <QrHeader
+              orderType={orderType}
+              table={table}
+              onClose={handleCloseOrderPage}
+              t={t}
+              restaurantName={brandName}
+              searchValue={menuSearch}
+              onSearchChange={setMenuSearch}
+              searchPlaceholder={t("Search products")}
+              onVoiceStart={orderType === "table" ? startQrVoiceCapture : null}
+              voiceListening={qrVoiceListening}
+            />
 
-		          <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-24">
-		            <div className="grid grid-cols-1 xl:grid-cols-[320px,1fr] gap-4 lg:gap-5 xl:gap-6 items-start">
-		              {isDesktopLayout && (
-		                <aside className="hidden xl:block sticky top-[76px] h-[calc(100vh-140px)]">
-			                  <CartDrawer
-		                    cart={safeCart}
-		                    setCart={setCart}
-		                    onSubmitOrder={handleSubmitOrder}
-		                    orderType={orderType}
-		                    paymentMethod={paymentMethod}
-		                    setPaymentMethod={setPaymentMethod}
-		                    submitting={submitting}
-		                    onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
-		                    t={t}
-		                    hasActiveOrder={hasActiveOrder}
-		                    orderScreenStatus={orderScreenStatus}
-		                    onShowStatus={() => {
-		                      window.dispatchEvent(new Event("qr:cart-close"));
-	                      const savedId = Number(storage.getItem("qr_active_order_id")) || null;
-	                      if (!orderId && savedId) {
-	                        setOrderId(savedId);
-	                      }
-	                      setOrderStatus("success");
-	                      setShowStatus(true);
-	                      storage.setItem("qr_show_status", "1");
-	                    }}
-	                    isOrderStatusOpen={showStatus}
-	                    onOpenCart={() => {
-	                      setShowStatus(false);
-	                      storage.setItem("qr_show_status", "0");
-	                    }}
-	                    layout="panel"
-	                  />
-	                </aside>
-		              )}
+            <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-24">
+              <div className="grid grid-cols-1 xl:grid-cols-[320px,1fr] gap-4 lg:gap-5 xl:gap-6 items-start">
+                {isDesktopLayout && (
+                  <aside className="hidden xl:block sticky top-[76px] h-[calc(100vh-140px)]">
+                    <CartModal
+                      cart={safeCart}
+                      setCart={setCart}
+                      onSubmitOrder={handleSubmitOrder}
+                      orderType={orderType}
+                      paymentMethod={paymentMethod}
+                      setPaymentMethod={setPaymentMethod}
+                      submitting={submitting}
+                      onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+                      t={t}
+                      hasActiveOrder={hasActiveOrder}
+                      orderScreenStatus={orderScreenStatus}
+                      onShowStatus={() => {
+                        window.dispatchEvent(new Event("qr:cart-close"));
+                        const savedId = Number(storage.getItem("qr_active_order_id")) || null;
+                        if (!orderId && savedId) {
+                          setOrderId(savedId);
+                        }
+                        setOrderStatus("success");
+                        setShowStatus(true);
+                        storage.setItem("qr_show_status", "1");
+                      }}
+                      isOrderStatusOpen={showStatus}
+                      onOpenCart={() => {
+                        setShowStatus(false);
+                        storage.setItem("qr_show_status", "0");
+                      }}
+                      layout="panel"
+                      storage={storage}
+                    />
+                  </aside>
+                )}
 
-		              <section className="order-2 xl:order-none">
-		                <div className="mb-4">
-		                  <CategoryTopBar
-		                    categories={categories}
-		                    activeCategory={activeCategory}
-		                    setActiveCategory={(cat) => {
-		                      setActiveCategory(cat);
-		                    }}
-		                    categoryImages={categoryImages}
-		                    onCategoryClick={() => {
-		                      setMenuSearch("");
-		                    }}
-		                  />
-		                </div>
-		                <ProductGrid
-		                  products={productsForGrid}
-		                  onProductClick={(product) => {
-		                    setSelectedProduct(product);
-		                    setShowAddModal(true);
-		                  }}
-		                  t={t}
-		                />
-		              </section>
-		            </div>
-		          </div>
+                <MenuProductsSection
+                  categories={categories}
+                  activeCategory={activeCategory}
+                  categoryImages={categoryImages}
+                  products={productsForGrid}
+                  onSelectCategory={handleMenuCategorySelect}
+                  onCategoryClick={handleMenuCategoryClick}
+                  onOpenProduct={handleMenuProductOpen}
+                  t={t}
+                  apiUrl={API_URL}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-		        </div>
-		      </div>
-		    )}
+      {!isDesktopLayout && (
+        <CartModal
+          cart={safeCart}
+          setCart={setCart}
+          onSubmitOrder={handleSubmitOrder}
+          orderType={orderType}
+          paymentMethod={paymentMethod}
+          setPaymentMethod={setPaymentMethod}
+          submitting={submitting}
+          onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+          t={t}
+          hasActiveOrder={hasActiveOrder}
+          orderScreenStatus={orderScreenStatus}
+          onShowStatus={() => {
+            window.dispatchEvent(new Event("qr:cart-close"));
+            const savedId = Number(storage.getItem("qr_active_order_id")) || null;
+            if (!orderId && savedId) {
+              setOrderId(savedId);
+            }
+            setOrderStatus("success");
+            setShowStatus(true);
+            storage.setItem("qr_show_status", "1");
+          }}
+          isOrderStatusOpen={showStatus}
+          onOpenCart={() => {
+            setShowStatus(false);
+            storage.setItem("qr_show_status", "0");
+          }}
+          storage={storage}
+        />
+      )}
 
-    {!isDesktopLayout && (
-	      <CartDrawer
-	        cart={safeCart}
-	        setCart={setCart}
-	        onSubmitOrder={handleSubmitOrder}
-	        orderType={orderType}
-	        paymentMethod={paymentMethod}
-	        setPaymentMethod={setPaymentMethod}
-	        submitting={submitting}
-	        onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
-	        t={t}
-	        hasActiveOrder={hasActiveOrder}
-	        orderScreenStatus={orderScreenStatus}
-	        onShowStatus={() => {
-	          window.dispatchEvent(new Event("qr:cart-close"));
-          const savedId = Number(storage.getItem("qr_active_order_id")) || null;
-          if (!orderId && savedId) {
-            setOrderId(savedId);
-          }
-          setOrderStatus("success");
-          setShowStatus(true);
-          storage.setItem("qr_show_status", "1");
-        }}
-        isOrderStatusOpen={showStatus}
-        onOpenCart={() => {
-          setShowStatus(false);
-          storage.setItem("qr_show_status", "0");
-        }}
+      <VoiceOrderController
+        restaurantId={restaurantIdentifier || id || slug}
+        tableId={table}
+        products={safeProducts}
+        onAddToCart={handleVoiceDraftAddToCart}
+        onConfirmOrder={orderType ? handleVoiceDraftConfirmOrder : undefined}
+        language={lang}
+        paymentMethod={paymentMethod}
+        onPaymentMethodChange={setPaymentMethod}
+        canStartVoiceOrder={Boolean(orderType) && !showHome}
+        onRequireOrderType={handleVoiceRequireOrderType}
       />
-    )}
 
-	    <AddToCartModal
-	      open={showAddModal}
-	      product={selectedProduct}
-	      extrasGroups={safeExtrasGroups}
-	      onClose={() => {
-	        setShowAddModal(false);
-	        setReturnHomeAfterAdd(false);
-	      }}
-	      onAddToCart={(item) => {
-	  storage.setItem("qr_cart_auto_open", "0");
-	  setCart((prev) => [...prev, item]);   // always append new line
-	  setShowAddModal(false);
-	  if (returnHomeAfterAdd) {
-	    setReturnHomeAfterAdd(false);
-	    setForceHome(true);
-	    setShowDeliveryForm(false);
-	    setShowTakeawayForm(false);
-	  }
-	}}
+      {qrVoiceModalOpen && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl border border-gray-200 p-5 space-y-4 dark:bg-neutral-900 dark:border-neutral-800">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center dark:bg-indigo-950/30">
+                  <Mic className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-800 dark:text-neutral-100">
+                    {t("Voice order")}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-neutral-400">
+                    {qrVoiceListening
+                      ? t("Listening…")
+                      : qrVoiceParsing
+                        ? t("Parsing…")
+                        : t("Review and confirm")}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setQrVoiceModalOpen(false)}
+                className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-200"
+              >
+                {t("Close")}
+              </button>
+            </div>
 
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-gray-600 dark:text-neutral-300">
+                {t("Transcript")}
+              </label>
+              <textarea
+                value={qrVoiceTranscript}
+                onChange={(e) => setQrVoiceTranscript(e.target.value)}
+                rows={3}
+                className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-100"
+                placeholder={t("Press the mic and speak, or type here…")}
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={startQrVoiceCapture}
+                  className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-white font-semibold shadow hover:bg-indigo-700 disabled:opacity-60"
+                  disabled={qrVoiceListening || qrVoiceParsing}
+                >
+                  {qrVoiceListening ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {t("Speak again")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => parseQrVoiceTranscript(qrVoiceTranscript)}
+                  className="rounded-xl bg-gray-900 text-white px-4 py-2 text-sm font-semibold shadow hover:bg-gray-800 disabled:opacity-60"
+                  disabled={!qrVoiceTranscript || qrVoiceParsing}
+                >
+                  {qrVoiceParsing ? t("Parsing…") : t("Parse")}
+                </button>
+              </div>
+              {qrVoiceError ? (
+                <div className="rounded-lg bg-rose-50 text-rose-700 px-3 py-2 text-sm border border-rose-100 dark:bg-rose-900/30 dark:text-rose-100 dark:border-rose-800/50">
+                  {qrVoiceError}
+                </div>
+              ) : null}
+            </div>
 
-      t={t}
-    />
+            {!qrVoiceParsing && qrVoiceResult ? (
+              <div className="space-y-3">
+                {qrVoiceResult.clarification_required ? (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:border-amber-800/50 dark:text-amber-100">
+                    {qrVoiceResult.clarification_question || t("We need clarification.")}
+                  </div>
+                ) : null}
+                <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-900/60">
+                  <div className="text-xs font-semibold text-gray-500 mb-2 dark:text-neutral-300">
+                    {t("We understood")}:
+                  </div>
+                  <ul className="space-y-2">
+                    {(qrVoiceResult.items || []).map((it, idx) => (
+                      <li
+                        key={idx}
+                        className="rounded-lg bg-white border border-gray-200 px-3 py-2 text-sm flex flex-col gap-1 shadow-sm dark:bg-neutral-800 dark:border-neutral-700"
+                      >
+                        <div className="font-semibold text-gray-800 dark:text-neutral-100">
+                          {it.quantity}x {it.product_name}
+                        </div>
+                        {it.size ? (
+                          <div className="text-xs text-gray-500">
+                            {t("Size")}: {it.size}
+                          </div>
+                        ) : null}
+                        {Array.isArray(it.modifiers) && it.modifiers.length > 0 ? (
+                          <div className="text-xs text-gray-600 dark:text-neutral-300">
+                            {it.modifiers.map((m, i) => (
+                              <span key={i} className="inline-block mr-2">
+                                {m.type === "remove" ? "-" : "+"}
+                                {m.value}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => injectQrVoiceItemsToCart(qrVoiceResult.items)}
+                    className="rounded-xl bg-emerald-600 text-white px-4 py-2 text-sm font-semibold shadow hover:bg-emerald-700"
+                    disabled={!qrVoiceResult.items || qrVoiceResult.items.length === 0}
+                  >
+                    {t("Confirm order")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
 
-    {/* 🔑 Show Order Status after submit */}
-    {statusPortal}
+      <ProductModal
+        open={showAddModal}
+        product={selectedProduct}
+        extrasGroups={safeExtrasGroups}
+        onClose={() => {
+          setShowAddModal(false);
+          setReturnHomeAfterAdd(false);
+        }}
+        onAddToCart={(item) => {
+          storage.setItem("qr_cart_auto_open", "0");
+          setCart((prev) => [...prev, item]);
+          setShowAddModal(false);
+          if (returnHomeAfterAdd) {
+            setReturnHomeAfterAdd(false);
+            setForceHome(true);
+            setShowDeliveryForm(false);
+            setShowTakeawayForm(false);
+          }
+        }}
+        t={t}
+        apiUrl={API_URL}
+      />
 
-    {/* ✅ Delivery form stays inside the return */}
-{orderType === "online" && showDeliveryForm && (
-  <OnlineOrderForm
-    submitting={submitting}
-    t={t}
-    appendIdentifier={appendIdentifier}
-    onClose={() => {
-  setShowDeliveryForm(false);
-  setOrderType(null); // 👈 return to order type picker
-}}
+      {statusPortal}
 
-    onSubmit={(form) => {
-      setCustomerInfo({
-        name: form.name,
-        phone: form.phone,
-        address: form.address,
-        payment_method: form.payment_method,
-      });
-      setShowDeliveryForm(false);
-    }}
-  />
-)}
+      {orderType === "online" && showDeliveryForm && (
+        <CheckoutModal
+          submitting={submitting}
+          t={t}
+          appendIdentifier={appendIdentifier}
+          storage={storage}
+          onClose={() => {
+            setShowDeliveryForm(false);
+            setOrderType(null);
+          }}
+          onSubmit={(form) => {
+            setCustomerInfo({
+              name: form.name,
+              phone: form.phone,
+              address: form.address,
+              payment_method: form.payment_method,
+            });
+            setShowDeliveryForm(false);
+          }}
+        />
+      )}
 
-{orderType === "takeaway" && showTakeawayForm && (
-  <TakeawayOrderForm
-    submitting={submitting}
-    t={t}
-    deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true)}
-    onClose={() => {
-      setShowTakeawayForm(false);
-      setOrderType(null); // 👈 return to order type picker
-    }}
-    onSubmit={(form) => {
-      if (!form) {
-        // SKIPPED
-        setTakeaway({
-          name: "",
-          phone: "",
-          pickup_date: "",
-          pickup_time: "",
-          mode: "pickup",
-          address: "",
-          notes: "",
-        });
-      } else {
-        // Normal form submit
-        setTakeaway(form);
-      }
+      {orderType === "takeaway" && showTakeawayForm && (
+        <TakeawayOrderForm
+          submitting={submitting}
+          t={t}
+          deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true)}
+          onClose={() => {
+            setShowTakeawayForm(false);
+            setOrderType(null);
+          }}
+          onSubmit={(form) => {
+            if (!form) {
+              setTakeaway({
+                name: "",
+                phone: "",
+                pickup_date: "",
+                pickup_time: "",
+                mode: "pickup",
+                address: "",
+                notes: "",
+              });
+            } else {
+              setTakeaway(form);
+            }
 
-      setShowTakeawayForm(false);
-    }}
-  />
-)}
+            setShowTakeawayForm(false);
+          }}
+        />
+      )}
 
-
-    {suppressMenuFlash && (
-      <div className="fixed inset-0 z-[120] bg-white" aria-hidden="true" />
-    )}
-  </>
-);
-
+      {suppressMenuFlash && (
+        <div className="fixed inset-0 z-[120] bg-white" aria-hidden="true" />
+      )}
+    </>
+  );
 }

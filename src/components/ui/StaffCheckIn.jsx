@@ -8,6 +8,10 @@ let html5QrcodeScannerInstance = null;
 
 const StaffCheckIn = () => {
   const { t } = useTranslation();
+  const isStandalone =
+    typeof window !== "undefined" &&
+    typeof window.location?.pathname === "string" &&
+    window.location.pathname.startsWith("/standalone");
 
   const [status, setStatus] = useState(t("Awaiting Scan"));
   const [message, setMessage] = useState("");
@@ -29,7 +33,14 @@ const StaffCheckIn = () => {
   useEffect(() => {
     fetchStaff();
     fetchAttendance();
-    fetchCheckinSettings();
+    if (!isStandalone) {
+      fetchCheckinSettings();
+    } else {
+      setCheckinGeo({
+        enabled: false,
+        radiusMeters: 150,
+      });
+    }
   }, []);
 
   const staffLookup = useMemo(() => {

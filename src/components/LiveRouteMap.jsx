@@ -57,6 +57,7 @@ export default function LiveRouteMap({
     (import.meta.env.VITE_MAPBOX_TOKEN
       ? `https://api.mapbox.com/v4/mapbox.mapbox-traffic-v1/{z}/{x}/{y}.png?access_token=${import.meta.env.VITE_MAPBOX_TOKEN}`
       : null);
+  const hasSelectedDriver = String(driverId || "").trim() !== "";
   const baseRoute = stopsOverride && stopsOverride.length > 1 ? stopsOverride : [];
   const routeKey = useMemo(() => JSON.stringify(baseRoute || []), [baseRoute]);
 
@@ -198,6 +199,10 @@ export default function LiveRouteMap({
         if (isMounted) setOptimizedRoute([]);
         return;
       }
+      if (!hasSelectedDriver) {
+        if (isMounted) setOptimizedRoute(baseRoute);
+        return;
+      }
       if (baseRoute.length <= 2) {
         if (isMounted) setOptimizedRoute(baseRoute);
         return;
@@ -230,7 +235,7 @@ export default function LiveRouteMap({
     return () => {
       isMounted = false;
     };
-  }, [routeKey]);
+  }, [hasSelectedDriver, routeKey]);
 
   // Fetch driver's real-time location
   useEffect(() => {
@@ -337,6 +342,10 @@ export default function LiveRouteMap({
 
   // Fetch the optimized route from Google Directions API
   useEffect(() => {
+    if (!hasSelectedDriver) {
+      setRouteCoords(null);
+      return;
+    }
     if (!optimizedRoute || optimizedRoute.length < 2) {
       setRouteCoords(null);
       return;
@@ -394,7 +403,7 @@ export default function LiveRouteMap({
     };
 
     fetchRoute();
-  }, [JSON.stringify(optimizedRoute)]);
+  }, [hasSelectedDriver, JSON.stringify(optimizedRoute)]);
 
   // Get marker color based on status
   const getMarkerColor = useCallback((status, index) => {
@@ -467,13 +476,23 @@ export default function LiveRouteMap({
   }, [driverNameOverride]);
 
   const scooterPos =
-    driverPos && typeof driverPos.lat === "number" && typeof driverPos.lng === "number"
+    hasSelectedDriver && driverPos && typeof driverPos.lat === "number" && typeof driverPos.lng === "number"
       ? driverPos
       : optimizedRoute[0];
 
   if (optimizedRoute.length < 2) {
     return (
-      <div className="flex items-center justify-center h-96 bg-slate-50 rounded-lg border border-slate-200">
+      <div className="relative flex items-center justify-center h-96 bg-slate-50 rounded-lg border border-slate-200">
+        {typeof onClose === "function" && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-3 right-3 p-2 rounded-full bg-white shadow hover:bg-slate-100 border border-slate-200 text-slate-600"
+            title={t("Close")}
+          >
+            ✕
+          </button>
+        )}
         <p className="text-slate-500 text-center">{t("Route needs at least restaurant and one customer.")}</p>
       </div>
     );
@@ -781,7 +800,7 @@ export default function LiveRouteMap({
             )}
 
             {/* Optimized Route Path */}
-            {routeCoords && routeCoords.length > 1 && (
+            {hasSelectedDriver && routeCoords && routeCoords.length > 1 && (
               <Polyline
                 positions={routeCoords.map((pt) => [pt.lat, pt.lng])}
                 color="#2563EB"
@@ -792,7 +811,7 @@ export default function LiveRouteMap({
             )}
 
             {/* Live Driver Route */}
-            {liveRouteCoords && liveRouteCoords.length > 1 && (
+            {hasSelectedDriver && liveRouteCoords && liveRouteCoords.length > 1 && (
               <Polyline
                 positions={liveRouteCoords.map((pt) => [pt.lat, pt.lng])}
                 color="#10B981"
@@ -879,7 +898,7 @@ export default function LiveRouteMap({
             })}
 
             {/* Live Driver Marker */}
-            {scooterPos && (
+            {hasSelectedDriver && scooterPos && (
               <Marker
                 position={[scooterPos.lat, scooterPos.lng]}
                 icon={createNumberedMarker(0, MARKER_COLORS.restaurant, true)}

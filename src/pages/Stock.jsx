@@ -6,12 +6,14 @@ import { useTranslation } from "react-i18next";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import WasteAdjustmentsTab from "../components/WasteAdjustmentsTab";
 
 export default function Stock() {
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
   const navigate = useNavigate();
+  const location = useLocation();
   const uiDebugLoggedRef = useRef(false);
   const cardDebugLoggedRef = useRef(false);
   const [tenantId] = useState(() => {
@@ -36,12 +38,28 @@ export default function Stock() {
   const [productionLoading, setProductionLoading] = useState(false);
   const [productionRecipes, setProductionRecipes] = useState([]);
   const [ingredientPrices, setIngredientPrices] = useState([]);
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(location.search || "");
+    return params.get("tab") === "waste" ? "waste" : "inventory";
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const { groupedData, fetchStock, loading, handleAddToCart, setGroupedData } =
     useStock();
   const [editValuesByStockId, setEditValuesByStockId] = useState({});
   const editValuesRef = useRef({});
   const patchTimersRef = useRef(new Map());
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const next = params.get("tab") === "waste" ? "waste" : "inventory";
+    setActiveTab(next);
+  }, [location.search]);
+
+  const handleTabChange = (tabKey) => {
+    setActiveTab(tabKey);
+    const params = new URLSearchParams(location.search || "");
+    params.set("tab", tabKey);
+    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+  };
   
   // Only allow users with "settings" permission
   const hasStockAccess = useHasPermission("stock");
@@ -673,459 +691,420 @@ const suppliersList = Array.from(
 
   const showLoadingPlaceholder = loading && groupedData.length === 0;
 
-      return (
+  return (
     <div className="min-h-screen bg-slate-50 px-4 py-8 transition-colors duration-300 dark:bg-slate-950 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-7xl space-y-8">
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {statCards.map((card, idx) => (
-            <div
-              key={idx}
-              className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900/90"
-            >
-              <div className="flex items-start gap-4">
-                <div
-                  className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-white ${card.accent}`}
-                >
-                  {card.icon}
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {card.title}
-                  </p>
-                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">
-                    {card.value}
-                  </p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {card.description}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </section>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => handleTabChange("inventory")}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition ${
+              activeTab === "inventory"
+                ? "bg-indigo-600 text-white shadow-md"
+                : "bg-white text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200"
+            }`}
+          >
+            {t("Inventory")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange("waste")}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition ${
+              activeTab === "waste"
+                ? "bg-indigo-600 text-white shadow-md"
+                : "bg-white text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200"
+            }`}
+          >
+            {t("Waste & Adjustments")}
+          </button>
+        </div>
 
-        <section className="rounded-2xl border border-slate-200/70 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 sm:p-6">
-          <div className="flex flex-col gap-6">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                {t("Filters & Insights")}
-              </h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {t(
-                  "Refine inventory by supplier or keyword while keeping critical KPIs in view."
-                )}
-              </p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  {t("Filter by Supplier")}
-                </label>
-                <div className="relative">
-                  <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M4 7h16M4 12h16M4 17h16"
-                      />
-                    </svg>
-                  </div>
-                  <select
-                    value={selectedSupplier}
-                    onChange={(e) => setSelectedSupplier(e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                  >
-                    <option value="__all__">{t("All Suppliers")}</option>
-                    {suppliersList.map((s, idx) => (
-                      <option key={idx} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  {t("Search")}
-                </label>
-                <div className="relative">
-                  <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M21 21l-5.2-5.2M17 10a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
-                  </div>
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder={t("Search product or supplier")}
-                    className="w-full rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-10 pr-4 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  {t("Stock Type")}
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setStockTypeFilter("all")}
-                    className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition ${
-                      stockTypeFilter === "all"
-                        ? "border-indigo-600 bg-indigo-600 text-white"
-                        : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    {t("All")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStockTypeFilter("production")}
-                    className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition ${
-                      stockTypeFilter === "production"
-                        ? "border-emerald-600 bg-emerald-600 text-white"
-                        : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    {t("Production")} {t("Stock")}
-                  </button>
-                </div>
-                {stockTypeFilter === "production" && (
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    {productionLoading
-                      ? t("Loading...")
-                      : `${productionProductNames.length.toLocaleString()} ${t(
-                          "products"
-                        )}`}
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col justify-center gap-3 rounded-xl border border-dashed border-slate-300/70 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  {t("Quick facts")}
-                </span>
-                <div className="flex flex-wrap gap-x-4 gap-y-2">
-                  <span>
-                    {t("Suppliers")}:{" "}
-                    <span className="font-semibold text-slate-900 dark:text-white">
-                      {suppliersList.length.toLocaleString()}
-                    </span>
-                  </span>
-                  <span>
-                    {t("Units on hand")}:{" "}
-                    <span className="font-semibold text-slate-900 dark:text-white">
-                      {totalUnitsOnHand.toLocaleString()}
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {showLoadingPlaceholder ? (
-          <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/70 py-16 text-slate-500 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
-            <svg
-              className="mr-2 h-5 w-5 animate-spin"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4v4m0 8v4m8-8h-4M8 12H4"
-              />
-              <circle cx="12" cy="12" r="9" />
-            </svg>
-            {t("Loading stock data...")}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/80 px-6 py-12 text-center text-slate-500 shadow-inner dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
-            <p className="text-lg font-semibold text-slate-600 dark:text-slate-200">
-              {t("No matching stock found.")}
-            </p>
-            <p className="mt-2 text-sm">
-              {t(
-                "Try broadening your filters or resetting the search criteria."
-              )}
-            </p>
-          </div>
+        {activeTab === "waste" ? (
+          <WasteAdjustmentsTab />
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {filtered.map((item, index) => {
-              const key =
-                item.stock_id ||
-                item.id ||
-                `${item.name?.toLowerCase()}_${item.unit}`;
-              const rawPrice =
-                item.price_per_unit ??
-                item.unit_price ??
-                item.cost_per_unit ??
-                item.costPrice ??
-                item.price ??
-                0;
-              let pricePerUnit = getPricePerUnit(item);
-              const itemValue =
-                (toSafeNumber(item.quantity) || 0) * (toSafeNumber(pricePerUnit) || 0);
-
-              if (
-                import.meta.env.DEV &&
-                !cardDebugLoggedRef.current &&
-                (pricePerUnit !== 0 || itemValue !== 0)
-              ) {
-                cardDebugLoggedRef.current = true;
-                console.log("🧾 Stock card debug (render)", {
-                  name: item?.name,
-                  unit: item?.unit,
-                  quantity: item?.quantity,
-                  raw_price_per_unit: item?.price_per_unit,
-                  pricePerUnit,
-                  itemValue,
-                  formatCurrencyType: typeof formatCurrency,
-                  formattedPricePerUnit: formatCurrency(pricePerUnit),
-                  formattedItemValue: formatCurrency(itemValue),
-                });
-              }
-
-              const expiryMeta = getExpiryMeta(item.expiry_date);
-              const expiryColor =
-                expiryColorMap[expiryMeta.severity] || expiryColorMap.info;
-              const badgeClass =
-                expiryBadgeColorMap[expiryMeta.severity] || expiryBadgeColorMap.info;
-              const isLowStock =
-                item.critical_quantity !== null &&
-                item.critical_quantity !== undefined &&
-                Number(item.quantity ?? 0) <= Number(item.critical_quantity ?? 0);
-
-              return (
+          <div className="space-y-8">
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {statCards.map((card, idx) => (
                 <div
-                  key={key}
-                  className={`flex h-full flex-col overflow-hidden rounded-2xl border p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${
-                    isLowStock
-                      ? "border-rose-200/70 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/40"
-                      : "border-slate-200/70 bg-white/95 dark:border-slate-800 dark:bg-slate-900/80"
-                  }`}
+                  key={idx}
+                  className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900/90"
                 >
-                  <div className="flex items-start justify-between border-b border-white/40 pb-4 dark:border-white/5">
+                  <div className="flex items-start gap-4">
+                    <div
+                      className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-white ${card.accent}`}
+                    >
+                      {card.icon}
+                    </div>
                     <div className="space-y-1">
-                      <h3 className="text-lg font-semibold capitalize text-slate-900 dark:text-white">
-                        {item.name}
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-slate-200/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {t("Unit")}: {item.unit || "—"}
-                        </span>
-                        <span className="inline-flex items-center rounded-full bg-slate-200/80 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {item.supplier || t("No supplier linked")}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <span className="text-2xl font-semibold text-slate-900 dark:text-white">
-                        {(Number(item.quantity) || 0).toLocaleString()}
-                      </span>
-                      {isLowStock && (
-                        <span className="inline-flex items-center rounded-full bg-rose-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
-                          {t("Low stock")}
-                        </span>
-                      )}
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        {card.title}
+                      </p>
+                      <p className="text-2xl font-semibold text-slate-900 dark:text-white">
+                        {card.value}
+                      </p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {card.description}
+                      </p>
                     </div>
                   </div>
+                </div>
+              ))}
+            </section>
 
-                  <div className="flex flex-col gap-4 py-5">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="rounded-xl bg-white/70 px-4 py-3 text-slate-600 shadow-inner dark:bg-slate-800/80 dark:text-slate-300">
-                        <p className="text-xs font-semibold uppercase tracking-wide">
-                          {t("Price / Unit")}
-                        </p>
-                        <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                          {formatCurrency(pricePerUnit)}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-white/70 px-4 py-3 text-slate-600 shadow-inner dark:bg-slate-800/80 dark:text-slate-300">
-                        <p className="text-xs font-semibold uppercase tracking-wide">
-                          {t("Total Value")}
-                        </p>
-                        <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                          {formatCurrency(itemValue)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex items-center justify-between gap-4 border-t border-slate-200/70 pt-3 text-sm text-slate-500 dark:border-slate-800/60 dark:text-slate-300">
-                      <div className="flex flex-col">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                          {t("Expiry")}
-                        </span>
-                        <span className={`text-sm font-semibold ${expiryColor}`}>
-                          {expiryMeta.label}
-                        </span>
-                      </div>
-                      {expiryMeta.badge && (
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>
-                          {expiryMeta.badge}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                          {t("Critical threshold")}
-                        </span>
-                        <input
-                          type="number"
-                          value={
-                            editValuesByStockId[item.stock_id]?.critical_quantity ??
-                            item.critical_quantity ??
-                            ""
-                          }
-                          onChange={(e) =>
-                            handleCriticalChange(index, e.target.value)
-                          }
-                          disabled={!item?.stock_id}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                          placeholder="—"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                          {t("Reorder quantity")}
-                        </span>
-                        <input
-                          type="number"
-                          value={
-                            editValuesByStockId[item.stock_id]?.reorder_quantity ??
-                            item.reorder_quantity ??
-                            ""
-                          }
-                          onChange={(e) =>
-                            handleReorderChange(index, e.target.value)
-                          }
-                          disabled={!item?.stock_id}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                          placeholder="1"
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="mt-auto flex flex-col gap-2 pt-2">
-                    <div className="flex items-stretch gap-2">
-                      <button
-                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                        onClick={() => handleAddToCart(item)}
-                        disabled={
-                          !item?.stock_id ||
-                          !item?.supplier_id ||
-                          !(Number(item?.reorder_quantity) > 0)
-                        }
-                      >
+            <section className="rounded-2xl border border-slate-200/70 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 sm:p-6">
+              <div className="flex flex-col gap-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                    {t("Filters & Insights")}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {t(
+                      "Refine inventory by supplier or keyword while keeping critical KPIs in view."
+                    )}
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                      {t("Filter by Supplier")}
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
                         <svg
                           className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M12 5v14m7-7H5"
-                          />
-                        </svg>
-                        {t("Add to Supplier Cart")}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="inline-flex w-12 items-center justify-center rounded-xl border border-slate-200 bg-white/90 text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/60"
-                        title={t("Open Supplier Cart")}
-                        aria-label={t("Open Supplier Cart")}
-                        onClick={() => {
-                          const supplierId = item?.supplier_id;
-                          const target = supplierId
-                            ? `/suppliers?view=cart&openCartSupplierId=${encodeURIComponent(
-                                supplierId
-                              )}`
-                            : "/suppliers?view=cart";
-                          navigate(target);
-                        }}
-                        disabled={!item?.supplier_id}
-                      >
-                        <svg
-                          className="h-5 w-5"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="1.8"
                           viewBox="0 0 24 24"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M3 3h2l.4 2M7 13h10l4-8H6.4M7 13l-1.3 2.6A1 1 0 006.6 17H19M7 13l.4-8m3 16a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z"
-                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
                         </svg>
+                      </div>
+                      <select
+                        value={selectedSupplier}
+                        onChange={(e) => setSelectedSupplier(e.target.value)}
+                        className="w-full appearance-none rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      >
+                        <option value="__all__">{t("All Suppliers")}</option>
+                        {suppliersList.map((s, idx) => (
+                          <option key={idx} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                      {t("Search")}
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.2-5.2M17 10a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                      <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder={t("Search product or supplier")}
+                        className="w-full rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-10 pr-4 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                      {t("Stock Type")}
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setStockTypeFilter("all")}
+                        className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                          stockTypeFilter === "all"
+                            ? "border-indigo-600 bg-indigo-600 text-white"
+                            : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                        }`}
+                      >
+                        {t("All")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStockTypeFilter("production")}
+                        className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                          stockTypeFilter === "production"
+                            ? "border-emerald-600 bg-emerald-600 text-white"
+                            : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                        }`}
+                      >
+                        {t("Production")} {t("Stock")}
                       </button>
                     </div>
-                    <button
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200/80 bg-white/90 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-900/40"
-                      onClick={() => handleDeleteStock(item)}
-                      disabled={!item?.stock_id}
-                    >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5-3h4a1 1 0 011 1v1H9V5a1 1 0 011-1z"
-                        />
-                      </svg>
-                      {t("Delete Item")}
-                    </button>
+                    {stockTypeFilter === "production" && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {productionLoading
+                          ? t("Loading...")
+                          : `${productionProductNames.length.toLocaleString()} ${t("products")}`}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col justify-center gap-3 rounded-xl border border-dashed border-slate-300/70 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      {t("Quick facts")}
+                    </span>
+                    <div className="flex flex-wrap gap-x-4 gap-y-2">
+                      <span>
+                        {t("Suppliers")}: {" "}
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {suppliersList.length.toLocaleString()}
+                        </span>
+                      </span>
+                      <span>
+                        {t("Units on hand")}: {" "}
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {totalUnitsOnHand.toLocaleString()}
+                        </span>
+                      </span>
+                    </div>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            </section>
+
+            {showLoadingPlaceholder ? (
+              <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/70 py-16 text-slate-500 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                <svg
+                  className="mr-2 h-5 w-5 animate-spin"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v4m0 8v4m8-8h-4M8 12H4" />
+                  <circle cx="12" cy="12" r="9" />
+                </svg>
+                {t("Loading stock data...")}
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white/80 px-6 py-12 text-center text-slate-500 shadow-inner dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
+                <p className="text-lg font-semibold text-slate-600 dark:text-slate-200">
+                  {t("No matching stock found.")}
+                </p>
+                <p className="mt-2 text-sm">
+                  {t("Try broadening your filters or resetting the search criteria.")}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {filtered.map((item, index) => {
+                  const key = item.stock_id || item.id || `${item.name?.toLowerCase()}_${item.unit}`;
+                  let pricePerUnit = getPricePerUnit(item);
+                  const itemValue = (toSafeNumber(item.quantity) || 0) * (toSafeNumber(pricePerUnit) || 0);
+
+                  const expiryMeta = getExpiryMeta(item.expiry_date);
+                  const expiryColor = expiryColorMap[expiryMeta.severity] || expiryColorMap.info;
+                  const badgeClass = expiryBadgeColorMap[expiryMeta.severity] || expiryBadgeColorMap.info;
+                  const isLowStock =
+                    item.critical_quantity !== null &&
+                    item.critical_quantity !== undefined &&
+                    Number(item.quantity ?? 0) <= Number(item.critical_quantity ?? 0);
+
+                  return (
+                    <div
+                      key={key}
+                      className={`flex h-full flex-col overflow-hidden rounded-2xl border p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg ${
+                        isLowStock
+                          ? "border-rose-200/70 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/40"
+                          : "border-slate-200/70 bg-white/95 dark:border-slate-800 dark:bg-slate-900/80"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between border-b border-white/40 pb-4 dark:border-white/5">
+                        <div className="space-y-1">
+                          <h3 className="text-lg font-semibold capitalize text-slate-900 dark:text-white">
+                            {item.name}
+                          </h3>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-full bg-slate-200/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                              {t("Unit")}: {item.unit || "—"}
+                            </span>
+                            <span className="inline-flex items-center rounded-full bg-slate-200/80 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                              {item.supplier || t("No supplier linked")}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="text-2xl font-semibold text-slate-900 dark:text-white">
+                            {(Number(item.quantity) || 0).toLocaleString()}
+                          </span>
+                          {isLowStock && (
+                            <span className="inline-flex items-center rounded-full bg-rose-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
+                              {t("Low stock")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-4 py-5">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="rounded-xl bg-white/70 px-4 py-3 text-slate-600 shadow-inner dark:bg-slate-800/80 dark:text-slate-300">
+                            <p className="text-xs font-semibold uppercase tracking-wide">{t("Price / Unit")}</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                              {formatCurrency(pricePerUnit)}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-white/70 px-4 py-3 text-slate-600 shadow-inner dark:bg-slate-800/80 dark:text-slate-300">
+                            <p className="text-xs font-semibold uppercase tracking-wide">{t("Total Value")}</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                              {formatCurrency(itemValue)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex items-center justify-between gap-4 border-t border-slate-200/70 pt-3 text-sm text-slate-500 dark:border-slate-800/60 dark:text-slate-300">
+                          <div className="flex flex-col">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              {t("Expiry")}
+                            </span>
+                            <span className={`text-sm font-semibold ${expiryColor}`}>{expiryMeta.label}</span>
+                          </div>
+                          {expiryMeta.badge && (
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>
+                              {expiryMeta.badge}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                          <label className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              {t("Critical threshold")}
+                            </span>
+                            <input
+                              type="number"
+                              value={
+                                editValuesByStockId[item.stock_id]?.critical_quantity ??
+                                item.critical_quantity ??
+                                ""
+                              }
+                              onChange={(e) => handleCriticalChange(index, e.target.value)}
+                              disabled={!item?.stock_id}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                              placeholder="—"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              {t("Reorder quantity")}
+                            </span>
+                            <input
+                              type="number"
+                              value={
+                                editValuesByStockId[item.stock_id]?.reorder_quantity ??
+                                item.reorder_quantity ??
+                                ""
+                              }
+                              onChange={(e) => handleReorderChange(index, e.target.value)}
+                              disabled={!item?.stock_id}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                              placeholder="1"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="mt-auto flex flex-col gap-2 pt-2">
+                        <div className="flex items-stretch gap-2">
+                          <button
+                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            onClick={() => handleAddToCart(item)}
+                            disabled={
+                              !item?.stock_id || !item?.supplier_id || !(Number(item?.reorder_quantity) > 0)
+                            }
+                          >
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m7-7H5" />
+                            </svg>
+                            {t("Add to Supplier Cart")}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="inline-flex w-12 items-center justify-center rounded-xl border border-slate-200 bg-white/90 text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/60"
+                            title={t("Open Supplier Cart")}
+                            aria-label={t("Open Supplier Cart")}
+                            onClick={() => {
+                              const supplierId = item?.supplier_id;
+                              const target = supplierId
+                                ? `/suppliers?view=cart&openCartSupplierId=${encodeURIComponent(supplierId)}`
+                                : "/suppliers?view=cart";
+                              navigate(target);
+                            }}
+                            disabled={!item?.supplier_id}
+                          >
+                            <svg
+                              className="h-5 w-5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M3 3h2l.4 2M7 13h10l4-8H6.4M7 13l-1.3 2.6A1 1 0 006.6 17H19M7 13l.4-8m3 16a1 1 0 100-2 1 1 0 000 2z"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                        <button
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200/80 bg-white/90 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-900/40"
+                          onClick={() => handleDeleteStock(item)}
+                          disabled={!item?.stock_id}
+                        >
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5-3h4a1 1 0 011 1v1H9V5a1 1 0 011-1z"
+                            />
+                          </svg>
+                          {t("Delete Item")}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

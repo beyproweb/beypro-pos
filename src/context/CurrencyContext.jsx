@@ -58,14 +58,21 @@ export function CurrencyProvider({ children }) {
   // Initial load from backend localization settings
   useEffect(() => {
     let mounted = true;
-    secureFetch("/settings/localization")
-      .then((data) => {
-        if (!mounted || !data?.currency) return;
-        setCurrencyKey(data.currency);
-      })
-      .catch((err) => {
-        console.warn("⚠️ Failed to load localization currency:", err);
-      });
+    const isStandalone =
+      typeof window !== "undefined" &&
+      typeof window.location?.pathname === "string" &&
+      window.location.pathname.startsWith("/standalone");
+
+    if (!isStandalone) {
+      secureFetch("/settings/localization")
+        .then((data) => {
+          if (!mounted || !data?.currency) return;
+          setCurrencyKey(data.currency);
+        })
+        .catch((err) => {
+          console.warn("⚠️ Failed to load localization currency:", err);
+        });
+    }
     return () => {
       mounted = false;
     };
@@ -89,4 +96,3 @@ export function CurrencyProvider({ children }) {
 export function useCurrency() {
   return useContext(CurrencyContext);
 }
-

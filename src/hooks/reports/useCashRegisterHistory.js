@@ -3,7 +3,16 @@ import secureFetch from "../../utils/secureFetch";
 
 const initialState = { loading: false, error: null, data: [] };
 
-const CACHE_VERSION = "reports.cache.v1";
+const CACHE_VERSION = "reports.cache.v2";
+
+const toLocalYmd = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 function getCacheKey(from, to) {
   return `${CACHE_VERSION}:cashHistory:${from}:${to}`;
@@ -15,7 +24,8 @@ function readCache(key) {
     const raw = window.localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed?.data || null;
+    if (!parsed?.data) return null;
+    return { data: parsed.data, cachedAt: parsed.cachedAt || 0 };
   } catch {
     return null;
   }
@@ -34,13 +44,15 @@ function writeCache(key, data) {
 }
 
 export default function useCashRegisterHistory(initialFrom, initialTo) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalYmd(new Date());
   const from = initialFrom ?? "2024-01-01";
   const to = initialTo ?? today;
 
   const [state, setState] = useState(() => {
-    const cached = readCache(getCacheKey(from, to));
-    return cached ? { ...cached, loading: false, error: null } : initialState;
+    const cachedEntry = readCache(getCacheKey(from, to));
+    return cachedEntry?.data
+      ? { ...cachedEntry.data, loading: false, error: null }
+      : initialState;
   });
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -49,15 +61,17 @@ export default function useCashRegisterHistory(initialFrom, initialTo) {
   useEffect(() => {
     let cancelled = false;
     const cacheKey = getCacheKey(from, to);
-    const cached = readCache(cacheKey);
+    const cachedEntry = readCache(cacheKey);
+    const cached = cachedEntry?.data || null;
+    const canUseCache = reloadToken === 0 && !!cached;
+    if (canUseCache) setState({ ...cached, loading: false, error: null });
 
-    if (reloadToken === 0 && cached) {
-      setState({ ...cached, loading: false, error: null });
-      return undefined;
-    }
-
-    async function load() {
-      setState((prev) => ({ ...prev, loading: true, error: null }));
+    async function load({ silent = false } = {}) {
+      if (!silent) {
+        setState((prev) => ({ ...prev, loading: true, error: null }));
+      } else {
+        setState((prev) => ({ ...prev, error: null }));
+      }
       try {
         const data = await secureFetch(`/reports/cash-register-history?from=${from}&to=${to}`);
         if (cancelled) return;
@@ -78,7 +92,7 @@ export default function useCashRegisterHistory(initialFrom, initialTo) {
       }
     }
 
-    load();
+    load({ silent: canUseCache });
     return () => {
       cancelled = true;
     };

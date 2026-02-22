@@ -1,4 +1,11 @@
-import React from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeftRight,
   GitMerge,
@@ -13,6 +20,8 @@ import {
 } from "lucide-react";
 
 const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) => {
+  const CART_WINDOW_INITIAL_COUNT = 80;
+  const CART_WINDOW_STEP = 80;
   const {
     t,
     containerClasses,
@@ -28,6 +37,8 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     showPaidCartItems,
     cartItemsLength,
     cartScrollRef,
+    enableCartVirtualization,
+    virtualizationCartOverscan,
   } = cartData;
 
   const {
@@ -40,6 +51,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     allCartItemsPaid,
     normalizedStatus,
     isFloatingCartOpen,
+    hasExpandedCartItems,
   } = uiState;
 
   const {
@@ -87,6 +99,150 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
   } = actions;
 
   const shouldShowPayButton = hasConfirmedCartUnpaid || hasSuborderUnpaid;
+  const cartWindowingOverscan = Number.isFinite(Number(virtualizationCartOverscan))
+    ? Math.max(0, Number(virtualizationCartOverscan))
+    : 0;
+  const cartWindowThresholdPx = useMemo(
+    () => Math.max(80, cartWindowingOverscan * 18),
+    [cartWindowingOverscan]
+  );
+  const [windowingFallback, setWindowingFallback] = useState(false);
+  const expandedFallbackWarnedRef = useRef(false);
+  const pendingScrollHeightRef = useRef(0);
+  const shouldWindowCart =
+    enableCartVirtualization && !windowingFallback && !hasExpandedCartItems;
+  const shouldWindowUnpaid =
+    shouldWindowCart && unpaidGroups.length > CART_WINDOW_INITIAL_COUNT;
+  const shouldWindowPaid =
+    shouldWindowCart && paidGroups.length > CART_WINDOW_INITIAL_COUNT;
+  const [visibleUnpaidCount, setVisibleUnpaidCount] = useState(() =>
+    shouldWindowUnpaid
+      ? Math.min(unpaidGroups.length, CART_WINDOW_INITIAL_COUNT)
+      : unpaidGroups.length
+  );
+  const [visiblePaidCount, setVisiblePaidCount] = useState(() =>
+    shouldWindowPaid
+      ? Math.min(paidGroups.length, CART_WINDOW_INITIAL_COUNT)
+      : paidGroups.length
+  );
+
+  useEffect(() => {
+    if (!enableCartVirtualization) {
+      setWindowingFallback(false);
+      return;
+    }
+    let rafId = 0;
+    rafId = window.requestAnimationFrame(() => {
+      if (cartScrollRef?.current) return;
+      setWindowingFallback(true);
+      if (import.meta.env.DEV) {
+        console.warn("[TX_VIRTUAL] Cart windowing fallback: missing cart scroll container ref.");
+      }
+    });
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [cartScrollRef, enableCartVirtualization]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || !enableCartVirtualization) {
+      expandedFallbackWarnedRef.current = false;
+      return;
+    }
+    if (hasExpandedCartItems && !expandedFallbackWarnedRef.current) {
+      console.warn(
+        "[TX_VIRTUAL] Cart windowing paused because expanded rows are active."
+      );
+      expandedFallbackWarnedRef.current = true;
+      return;
+    }
+    if (!hasExpandedCartItems) {
+      expandedFallbackWarnedRef.current = false;
+    }
+  }, [enableCartVirtualization, hasExpandedCartItems]);
+
+  useEffect(() => {
+    if (!shouldWindowUnpaid) {
+      setVisibleUnpaidCount(unpaidGroups.length);
+      return;
+    }
+    setVisibleUnpaidCount(Math.min(unpaidGroups.length, CART_WINDOW_INITIAL_COUNT));
+  }, [shouldWindowUnpaid, unpaidGroups, unpaidGroups.length]);
+
+  useEffect(() => {
+    if (!shouldWindowPaid) {
+      setVisiblePaidCount(paidGroups.length);
+      return;
+    }
+    setVisiblePaidCount(Math.min(paidGroups.length, CART_WINDOW_INITIAL_COUNT));
+  }, [paidGroups, paidGroups.length, shouldWindowPaid]);
+
+  const renderedUnpaidGroups = useMemo(() => {
+    if (!shouldWindowUnpaid) return unpaidGroups;
+    const startIndex = Math.max(0, unpaidGroups.length - visibleUnpaidCount);
+    return unpaidGroups.slice(startIndex);
+  }, [shouldWindowUnpaid, unpaidGroups, visibleUnpaidCount]);
+
+  const renderedPaidGroups = useMemo(() => {
+    if (!shouldWindowPaid) return paidGroups;
+    const startIndex = Math.max(0, paidGroups.length - visiblePaidCount);
+    return paidGroups.slice(startIndex);
+  }, [paidGroups, shouldWindowPaid, visiblePaidCount]);
+
+  const handleCartScroll = useCallback(
+    (event) => {
+      if (!shouldWindowCart) return;
+      const node = event?.currentTarget;
+      if (!node) {
+        setWindowingFallback(true);
+        if (import.meta.env.DEV) {
+          console.warn("[TX_VIRTUAL] Cart windowing fallback: invalid scroll node.");
+        }
+        return;
+      }
+      if (node.scrollTop > cartWindowThresholdPx) return;
+      if (shouldWindowUnpaid && visibleUnpaidCount < unpaidGroups.length) {
+        pendingScrollHeightRef.current = node.scrollHeight;
+        setVisibleUnpaidCount((prev) =>
+          Math.min(unpaidGroups.length, prev + CART_WINDOW_STEP + cartWindowingOverscan)
+        );
+        return;
+      }
+      if (
+        showPaidCartItems &&
+        shouldWindowPaid &&
+        visiblePaidCount < paidGroups.length
+      ) {
+        pendingScrollHeightRef.current = node.scrollHeight;
+        setVisiblePaidCount((prev) =>
+          Math.min(paidGroups.length, prev + CART_WINDOW_STEP + cartWindowingOverscan)
+        );
+      }
+    },
+    [
+      cartWindowThresholdPx,
+      cartWindowingOverscan,
+      paidGroups.length,
+      shouldWindowCart,
+      shouldWindowPaid,
+      shouldWindowUnpaid,
+      showPaidCartItems,
+      unpaidGroups.length,
+      visiblePaidCount,
+      visibleUnpaidCount,
+    ]
+  );
+
+  useLayoutEffect(() => {
+    const node = cartScrollRef?.current;
+    const previousHeight = pendingScrollHeightRef.current;
+    if (!node || !previousHeight) return;
+    const delta = node.scrollHeight - previousHeight;
+    if (delta > 0) {
+      node.scrollTop += delta;
+    }
+    pendingScrollHeightRef.current = 0;
+  }, [cartScrollRef, visiblePaidCount, visibleUnpaidCount]);
 
   return (
     <aside className={containerClasses}>
@@ -241,7 +397,11 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
         </div>
       )}
 
-      <div ref={cartScrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={cartScrollRef}
+        onScroll={shouldWindowCart ? handleCartScroll : undefined}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
         <div
           className="min-h-full px-3 pb-2 grid grid-rows-[auto_1fr] gap-1.5 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
           style={{ WebkitOverflowScrolling: "touch" }}
@@ -264,7 +424,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                   </div>
                 ) : (
                   <ul className="flex flex-col gap-1.5">
-                    {unpaidGroups.map((item) => (
+                    {renderedUnpaidGroups.map((item) => (
                       <li
                         data-cart-item="true"
                         key={item.itemKey}
@@ -454,7 +614,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                     </button>
                     {showPaidCartItems && (
                       <ul className="flex flex-col gap-1.5 px-2 pb-2">
-                    {paidGroups.map((item) => (
+                    {renderedPaidGroups.map((item) => (
                       <li
                         data-cart-item="true"
                         key={item.itemKey}
@@ -663,4 +823,4 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
   );
 };
 
-export default CartPanel;
+export default React.memo(CartPanel);

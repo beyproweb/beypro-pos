@@ -12,6 +12,10 @@ import socket from "../utils/socket";
 import { useCurrency } from "./CurrencyContext";
 
 const NotificationsContext = createContext(null);
+const isStandalone =
+  typeof window !== "undefined" &&
+  typeof window.location?.pathname === "string" &&
+  window.location.pathname.startsWith("/standalone");
 
 function safeJsonParse(value, fallback) {
   try {
@@ -556,6 +560,7 @@ export function NotificationsProvider({ children }) {
   }, [pushNotification]);
 
   const refresh = useCallback(async () => {
+    if (isStandalone) return;
     const rid = getRestaurantId();
     if (!rid) return;
     try {
@@ -577,6 +582,11 @@ export function NotificationsProvider({ children }) {
   }, []);
 
   const clearAll = useCallback(async () => {
+    if (isStandalone) {
+      setItems([]);
+      markAllRead();
+      return;
+    }
     try {
       await secureFetch("/notifications/clear", { method: "DELETE" });
     } catch (err) {
@@ -588,6 +598,7 @@ export function NotificationsProvider({ children }) {
   }, [markAllRead]);
 
   const loadSummaries = useCallback(async () => {
+    if (isStandalone) return;
     try {
       const [criticalStock, openMaintenance, inProgressTasks] = await Promise.all([
         secureFetch("/stock/critical").catch(() => null),
@@ -624,12 +635,14 @@ export function NotificationsProvider({ children }) {
 
   // Initial load
   useEffect(() => {
-    refresh();
+    if (!isStandalone) {
+      refresh();
+    }
   }, [refresh]);
 
   // When the bell opens, mark read and load quick summaries.
   useEffect(() => {
-    if (!bellOpen) return;
+    if (!bellOpen || isStandalone) return;
     markAllRead();
     refresh();
     loadSummaries();

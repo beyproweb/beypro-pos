@@ -124,6 +124,10 @@ const CategoryBar = ({
     : `relative mx-3 mt-2 mb-2 flex flex-none rounded-lg border border-slate-200/50 bg-slate-50/70 p-1 shadow-xs dark:border-slate-700/30 dark:bg-slate-900/30 dark:shadow-none transition-opacity duration-200 ${
         disabled ? "opacity-50 pointer-events-none" : "opacity-100"
       }`;
+  const getCategoryKey = useCallback((entry) => {
+    const normalized = String(entry?.cat ?? "").trim().toLowerCase();
+    return normalized || String(entry?.index ?? "");
+  }, []);
 
   if (isRight) {
     return (
@@ -142,7 +146,7 @@ const CategoryBar = ({
           style={{ scrollBehavior: "smooth", maxHeight: '100%' }}
         >
           {categoryColumns.top.map((entry) => (
-            <div key={`right-${entry.cat}-${entry.index}`} className="flex">
+            <div key={`right-${getCategoryKey(entry)}`} className="flex">
               {renderCategoryButton(entry.cat, entry.index, "sidebar")}
             </div>
           ))}
@@ -224,7 +228,7 @@ const CategoryBar = ({
         style={{ scrollBehavior: "smooth" }}
       >
         {categoryColumns.top.map((entry) => (
-          <div key={`top-${entry.cat}-${entry.index}`}>
+          <div key={`top-${getCategoryKey(entry)}`}>
             {renderCategoryButton(entry.cat, entry.index, "horizontal")}
           </div>
         ))}
@@ -251,4 +255,4 @@ const CategoryBar = ({
   );
 };
 
-export default CategoryBar;
+export default React.memo(CategoryBar);

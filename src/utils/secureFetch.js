@@ -49,6 +49,9 @@ const rewriteStandaloneEndpoint = (endpoint) => {
   if (path.startsWith("/settings/qr-")) {
     return path.replace(/^\/settings\//, "/standalone/qr/");
   }
+  if (path.startsWith("/staff")) {
+    return `/standalone${path.startsWith("/") ? path : `/${path}`}`;
+  }
   if (
     path.startsWith("/kitchen") ||
     path.startsWith("/kitchen-") ||

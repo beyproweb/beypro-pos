@@ -5,6 +5,41 @@ import { CalendarIcon } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 
+const getRowDateSource = (row = {}) =>
+  row?.date_time ||
+  row?.datetime ||
+  row?.created_at ||
+  row?.open_at ||
+  row?.opened_at ||
+  row?.close_at ||
+  row?.closed_at ||
+  row?.time ||
+  row?.date;
+
+const formatRowDate = (row = {}) => {
+  const raw = row?.date;
+  if (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const source = getRowDateSource(row);
+  const parsed = new Date(source);
+  if (Number.isNaN(parsed.getTime())) return raw || "-";
+  return parsed.toISOString().slice(0, 10);
+};
+
+const formatRowTime = (row = {}) => {
+  if (typeof row?.time === "string" && row.time.trim()) return row.time;
+
+  const source = getRowDateSource(row);
+  const parsed = new Date(source);
+  if (Number.isNaN(parsed.getTime())) return "-";
+
+  return parsed.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+};
+
 export default function CashRegisterHistory() {
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
@@ -71,6 +106,7 @@ export default function CashRegisterHistory() {
           <thead>
             <tr className="text-left border-b border-gray-300 dark:border-gray-700">
               <th className="p-2">{t("Date")}</th>
+              <th className="p-2">{t("Time")}</th>
               <th className="p-2">{t("Opening Cash")}</th>
               <th className="p-2">{t("Closing Cash")}</th>
               <th className="p-2">{t("Cash Sales")}</th>
@@ -92,7 +128,8 @@ export default function CashRegisterHistory() {
 
               return (
                 <tr key={i} className="border-t border-gray-200 dark:border-gray-700">
-                  <td className="p-2">{r.date}</td>
+                  <td className="p-2">{formatRowDate(r)}</td>
+                  <td className="p-2">{formatRowTime(r)}</td>
                   <td className="p-2 text-blue-600">
                     {!isNaN(open) ? formatCurrency(open) : "-"}
                   </td>

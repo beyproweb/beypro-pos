@@ -1,14 +1,26 @@
 // src/components/UserManagementTab.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
+import { useLocation, useNavigate } from "react-router-dom";
 import RolePermissionModal from "../../modals/RolePermissionModal";
 import ConfirmModal from "../../modals/ConfirmModal";
 import secureFetch from "../../utils/secureFetch";
+import { useHasPermission } from "../hooks/useHasPermission";
 
 export default function UserManagementTab() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isStandalone = useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.location?.pathname === "string" &&
+      window.location.pathname.startsWith("/standalone"),
+    [location.pathname]
+  );
+  const canCheckIn = useHasPermission("staff-checkin");
   const [editingRole, setEditingRole] = useState(null);
   const [newRoleName, setNewRoleName] = useState("");
   const [copyFromRole, setCopyFromRole] = useState("");
@@ -138,6 +150,14 @@ export default function UserManagementTab() {
   const staffCheckinGeoEnabled = usersConfig.staffCheckinGeoEnabled === true;
   const staffCheckinGeoRadiusMeters =
     Number(usersConfig.staffCheckinGeoRadiusMeters) || 150;
+  const qrStaff = useMemo(() => {
+    if (!qrStaffId) return null;
+    return staffList.find((staff) => String(staff.id) === String(qrStaffId)) || null;
+  }, [qrStaffId, staffList]);
+  const getDisplayValue = (value) => {
+    if (value === null || value === undefined || value === "") return "—";
+    return String(value);
+  };
 
   const DEFAULT_AVATAR =
     "https://www.pngkey.com/png/full/115-1150152_default-profile-picture-avatar-png-green.png";
@@ -602,25 +622,113 @@ export default function UserManagementTab() {
             ))}
           </select>
           {qrStaffId ? (
-            <div className="mt-6 flex flex-col items-center gap-3">
-              <QRCodeCanvas
-                value={String(qrStaffId)}
-                size={200}
-                bgColor="#ffffff"
-                fgColor="#000000"
-                level="H"
-                includeMargin
-              />
-              <p className="text-lg font-medium text-gray-800 dark:text-white">
-                {t("QR Code for Staff ID")}: {qrStaffId}
-              </p>
-              <button
-                type="button"
-                onClick={() => handleDeleteStaffRecord(qrStaffId)}
-                className="px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition"
-              >
-                {t("Delete Staff")}
-              </button>
+            <div className="mt-6 grid gap-4 md:grid-cols-[240px_1fr] items-start">
+              <div className="flex flex-col items-center gap-3">
+                <QRCodeCanvas
+                  value={String(qrStaffId)}
+                  size={200}
+                  bgColor="#ffffff"
+                  fgColor="#000000"
+                  level="H"
+                  includeMargin
+                />
+                <p className="text-lg font-medium text-gray-800 dark:text-white">
+                  {t("QR Code for Staff ID")}: {qrStaffId}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteStaffRecord(qrStaffId)}
+                  className="px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition"
+                >
+                  {t("Delete Staff")}
+                </button>
+              </div>
+              {qrStaff ? (
+                <div className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-gray-50 dark:bg-gray-800 p-5 shadow-sm">
+                  <div className="flex items-center gap-4 mb-4">
+                    <img
+                      src={getAvatar(qrStaff.avatar)}
+                      alt={qrStaff.name}
+                      className="w-16 h-16 rounded-full border border-gray-300 dark:border-gray-600 object-cover"
+                    />
+                    <div>
+                      <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                        {getDisplayValue(qrStaff.name)}
+                      </p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        {getDisplayValue(qrStaff.role)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-y-2 gap-x-4 text-sm sm:grid-cols-2">
+                    <div className="text-gray-500 dark:text-gray-400">
+                      {t("Staff ID")}
+                    </div>
+                    <div className="text-gray-900 dark:text-white">
+                      {getDisplayValue(qrStaff.id)}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400">
+                      {t("Phone")}
+                    </div>
+                    <div className="text-gray-900 dark:text-white">
+                      {getDisplayValue(qrStaff.phone)}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400">
+                      {t("Email")}
+                    </div>
+                    <div className="text-gray-900 dark:text-white">
+                      {getDisplayValue(qrStaff.email)}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400">
+                      {t("Address")}
+                    </div>
+                    <div className="text-gray-900 dark:text-white">
+                      {getDisplayValue(qrStaff.address)}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400">
+                      {t("Salary")}
+                    </div>
+                    <div className="text-gray-900 dark:text-white">
+                      {getDisplayValue(qrStaff.salary)}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400">
+                      {t("Salary Model")}
+                    </div>
+                    <div className="text-gray-900 dark:text-white">
+                      {getDisplayValue(qrStaff.salary_model)}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400">
+                      {t("Payment Type")}
+                    </div>
+                    <div className="text-gray-900 dark:text-white">
+                      {getDisplayValue(qrStaff.payment_type)}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400">
+                      {t("Hourly Rate")}
+                    </div>
+                    <div className="text-gray-900 dark:text-white">
+                      {getDisplayValue(qrStaff.hourly_rate)}
+                    </div>
+                  </div>
+                  {isStandalone && canCheckIn && (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(`/standalone/staff/checkin?staffId=${qrStaff.id}`)
+                        }
+                        className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition"
+                      >
+                        {t("Open Check-In Page")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="w-full rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-5 text-sm text-gray-500 dark:text-gray-400">
+                  {t("Staff profile not found.")}
+                </div>
+              )}
             </div>
           ) : (
             <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
@@ -779,11 +887,11 @@ export default function UserManagementTab() {
     {/* Staff Role Assignment */}
     <div className="mb-14">
       <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">👥 {t("Assign Role to Staff")}</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <select
-          value={selectedStaffId}
-          onChange={(e) => setSelectedStaffId(e.target.value)}
-          className="p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <select
+            value={selectedStaffId}
+            onChange={(e) => setSelectedStaffId(e.target.value)}
+            className="p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
         >
           <option value="">{t("Select Staff")}</option>
           {staffList.map((s) => (
@@ -804,9 +912,9 @@ export default function UserManagementTab() {
           ))}
         </select>
 
-        <div className="flex gap-2">
-          <button
-            disabled={!selectedStaffId || !copyFromRole}
+          <div className="flex gap-2">
+            <button
+              disabled={!selectedStaffId || !copyFromRole}
        onClick={async () => {
   await secureFetch(`/staff/${selectedStaffId}/role`, {
     method: "PUT",
@@ -829,6 +937,18 @@ export default function UserManagementTab() {
           >
             {t("Delete")}
           </button>
+          {isStandalone && (
+            <button
+              disabled={!selectedStaffId}
+              onClick={() => {
+                if (!selectedStaffId) return;
+                navigate(`/standalone/staff/checkin?staffId=${selectedStaffId}`);
+              }}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition"
+            >
+              {t("Check-In")}
+            </button>
+          )}
         </div>
       </div>
 

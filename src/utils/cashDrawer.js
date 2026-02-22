@@ -197,6 +197,7 @@ export async function logCashRegisterEvent({ type, amount, note }) {
     change: "expense",
     entry: "entry",
     expense: "expense",
+    payroll: "expense",
     open: "open",
     close: "close",
   };

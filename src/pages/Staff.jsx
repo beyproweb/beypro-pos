@@ -21,6 +21,10 @@ const Staff = () => {
   const navigate = useNavigate();
   const { setHeader } = useHeader();
   const { config, formatCurrency } = useCurrency();
+  const isStandalone =
+    typeof window !== "undefined" &&
+    typeof window.location?.pathname === "string" &&
+    window.location.pathname.startsWith("/standalone");
   const [savedAutoPayment, setSavedAutoPayment] = useState(null);
 
   const [activeTabId, setActiveTabId] = useState("checkin");
@@ -30,6 +34,7 @@ const Staff = () => {
   const [role, setRole] = useState('');
   const [phone, setPhone] = useState('');
   const [id, setId] = useState('');
+  const [pin, setPin] = useState("");
   const [address, setAddress] = useState('');
   const [salary, setSalary] = useState('');
   const [email, setEmail] = useState('');
@@ -59,6 +64,54 @@ const Staff = () => {
   const [autoPaymentDate, setAutoPaymentDate] = useState('');
   const [repeatType, setRepeatType] = useState('none');
   const [repeatTime, setRepeatTime] = useState('09:00');
+  const [autoPayPreview, setAutoPayPreview] = useState(null); // { amount, startDate, endDate }
+
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const startOfWeekMonday = (dateStr) => {
+    const d = new Date(`${dateStr}T00:00:00`);
+    const day = d.getDay(); // 0=Sun
+    const diff = d.getDate() - (day === 0 ? 6 : day - 1);
+    const monday = new Date(d);
+    monday.setDate(diff);
+    return monday.toISOString().slice(0, 10);
+  };
+  const endOfWeekSunday = (dateStr) => {
+    const monday = new Date(`${startOfWeekMonday(dateStr)}T00:00:00`);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return sunday.toISOString().slice(0, 10);
+  };
+  const startOfMonth = (dateStr) => {
+    const d = new Date(`${dateStr}T00:00:00`);
+    const first = new Date(d.getFullYear(), d.getMonth(), 1);
+    return first.toISOString().slice(0, 10);
+  };
+  const endOfMonth = (dateStr) => {
+    const d = new Date(`${dateStr}T00:00:00`);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return last.toISOString().slice(0, 10);
+  };
+  const resolveAutoRange = (basisDate) => {
+    const base = basisDate || todayStr();
+    const rt = String(repeatType || "none").toLowerCase();
+    if (rt === "daily") return { startDate: base, endDate: base };
+    if (rt === "weekly") return { startDate: startOfWeekMonday(base), endDate: endOfWeekSunday(base) };
+    if (rt === "monthly") return { startDate: startOfMonth(base), endDate: endOfMonth(base) };
+    // default payroll range (backend default week) if not specified
+    return { startDate: null, endDate: null };
+  };
+
+  // Allow child components (e.g. Payroll tab) to open the Payment modal for a specific staff member.
+  useEffect(() => {
+    const onOpenPayment = (e) => {
+      const staffId = e?.detail?.staffId;
+      if (staffId == null || staffId === "") return;
+      setSelectedStaffForPayment(String(staffId));
+      setIsModalOpen(true);
+    };
+    window.addEventListener("staff:open-payment", onOpenPayment);
+    return () => window.removeEventListener("staff:open-payment", onOpenPayment);
+  }, []);
 
   const canCheckIn = useHasPermission("staff-checkin");
   const canSchedule = useHasPermission("staff-schedule");
@@ -72,9 +125,10 @@ const Staff = () => {
       setActiveTabId(tabId);
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
-      navigate(`/staff?${params.toString()}`);
+      const base = isStandalone ? "/standalone/staff" : "/staff";
+      navigate(`${base}?${params.toString()}`);
     },
-    [location.search, navigate]
+    [location.search, navigate, isStandalone]
   );
 
   useEffect(() => {
@@ -116,6 +170,8 @@ const Staff = () => {
     [canCheckIn, canSchedule, canPayroll, tabDefinitions]
   );
 
+  const tabsToRender = accessibleTabs;
+
   const staffHeaderNav = useMemo(() => {
     const pillClass = (isActive) =>
       [
@@ -131,15 +187,17 @@ const Staff = () => {
 
     return (
       <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap">
-        <button
-          type="button"
-          onClick={() => navigate("/dashboard")}
-          className={pillClass(false)}
-        >
-          {t("Dashboard")}
-        </button>
+        {!isStandalone && (
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className={pillClass(false)}
+          >
+            {t("Dashboard")}
+          </button>
+        )}
 
-        {accessibleTabs.map((tab) => (
+        {tabsToRender.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -182,7 +240,7 @@ const Staff = () => {
       </div>
     );
   }, [
-    accessibleTabs,
+    tabsToRender,
     activeTabId,
     canAddStaff,
     canPayment,
@@ -192,17 +250,18 @@ const Staff = () => {
     isSendShiftModalOpen,
     showAddStaff,
     t,
+    isStandalone,
   ]);
 
   useLayoutEffect(() => {
     setHeader((prev) => ({
       ...prev,
       title: t("Staff Management"),
-      subtitle: undefined,
+      subtitle: isStandalone ? t("Staff-only portal") : undefined,
       tableNav: null,
       centerNav: staffHeaderNav,
     }));
-  }, [setHeader, staffHeaderNav, t]);
+  }, [setHeader, staffHeaderNav, t, isStandalone]);
 
   useEffect(() => () => setHeader({}), [setHeader]);
 
@@ -223,10 +282,10 @@ const Staff = () => {
   }, []);
 
   // ✅ Fetch payroll + payment history
-const fetchStaffHistory = async (staffId) => {
-  setSelectedStaffForPayment(staffId);
-  if (!staffId) { setStaffHistory({}); return; }
-  try {
+  const fetchStaffHistory = async (staffId) => {
+    setSelectedStaffForPayment(staffId);
+    if (!staffId) { setStaffHistory({}); return; }
+    try {
   const [payroll, payments, autoSchedule] = await Promise.all([
   secureFetch(`/staff/${staffId}/payroll`),
   secureFetch(`/staff/${staffId}/payments`),
@@ -244,20 +303,59 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
     }
   };
 
+  // Refresh selected staff payroll/payment state whenever the payment modal is opened.
+  useEffect(() => {
+    if (!isModalOpen) return;
+    if (!selectedStaffForPayment) return;
+    fetchStaffHistory(Number(selectedStaffForPayment));
+  }, [isModalOpen, selectedStaffForPayment]);
+
+  // Keep the auto schedule "repeat" aligned with the staff's configured payment_type (daily/weekly/monthly).
+  useEffect(() => {
+    if (!selectedStaffForPayment) return;
+    const staff = staffList.find((s) => String(s.id) === String(selectedStaffForPayment));
+    const next = String(staff?.payment_type || "").toLowerCase();
+    if (next === "daily" || next === "weekly" || next === "monthly") {
+      setRepeatType(next);
+    }
+  }, [selectedStaffForPayment, staffList]);
+
+  // Hydrate payment modal fields from the saved auto payroll config (when available).
+  useEffect(() => {
+    if (!isModalOpen) return;
+    if (!selectedStaffForPayment) return;
+    if (!savedAutoPayment) return;
+
+    setRepeatTime(savedAutoPayment.repeat_time || "09:00");
+    setAutoPaymentDate(savedAutoPayment.scheduled_date || "");
+    if (savedAutoPayment.payment_method) {
+      setPaymentMethod(savedAutoPayment.payment_method);
+    }
+    if (typeof savedAutoPayment.note === "string" && savedAutoPayment.note.trim()) {
+      setNote(savedAutoPayment.note);
+    }
+  }, [isModalOpen, selectedStaffForPayment, savedAutoPayment]);
+
   // ✅ Add new staff
   const addStaff = async () => {
-    if (!name || !role || !phone || !id || !address || !salary || !email) {
+    if (!name || !role || !phone || !id || !address || !salary || !email || !pin) {
       toast.error("All fields are required");
+      return;
+    }
+    const parsedId = Number.parseInt(String(id || "").trim(), 10);
+    if (!Number.isInteger(parsedId)) {
+      toast.error(t("Please enter a valid numeric ID"));
       return;
     }
     try {
       await secureFetch("/staff", {
         method: "POST",
         body: JSON.stringify({
-          id,
+          id: parsedId,
           name,
           role,
           phone,
+          pin: String(pin || "").trim(),
           address,
           email,
           salary: parseFloat(salary),
@@ -269,13 +367,13 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
         }),
       });
       toast.success(t("Staff added successfully"));
-      setName(""); setRole(""); setPhone(""); setId(""); setAddress("");
+      setName(""); setRole(""); setPhone(""); setId(""); setPin(""); setAddress("");
       setSalary(""); setEmail(""); setPaymentType("daily"); setSalaryModel("fixed"); setHourlyRate("");
       setShowAddStaff(false);
       const res = await secureFetch("/staff");
       setStaffList(res);
     } catch (err) {
-      toast.error("Please enter a valid numeric ID");
+      toast.error(err?.message || t("Failed to add staff"));
     }
   };
 
@@ -298,13 +396,26 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
   // ✅ Handle payment
   const handlePayment = async () => {
     if (!selectedStaffForPayment) return toast.error("Select staff");
-    const amt = parseFloat(paymentAmount);
-    if (!amt && !autoPaymentEnabled) return toast.error("Enter amount or enable auto");
+    const autoActive = !!(savedAutoPayment && savedAutoPayment.active);
+    const previewAmt = Number(autoPayPreview?.amount ?? staffHistory.salaryDue ?? 0);
+    const manualAmt = parseFloat(paymentAmount);
+
+    if (autoPaymentEnabled) {
+      if (autoActive) return toast.error(t("Manual payments are disabled while auto payroll is active."));
+      if (!autoPaymentDate) return toast.error("Scheduled date is required");
+      if (!repeatType || repeatType === "none") return toast.error("Repeat is required");
+      if (!repeatTime) return toast.error("Time is required");
+      if (!Number.isFinite(previewAmt)) {
+        return toast.error("Invalid auto payment amount");
+      }
+    } else {
+      if (!manualAmt) return toast.error("Enter amount or enable auto");
+    }
     try {
       await secureFetch(`/staff/${selectedStaffForPayment}/payments`, {
         method: "POST",
         body: JSON.stringify({
-          amount: amt,
+          amount: autoPaymentEnabled ? previewAmt : manualAmt,
           date: new Date().toISOString().slice(0, 10),
           note,
           payment_method: paymentMethod,
@@ -325,27 +436,70 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
       setSelectedStaffForPayment("");
       setStaffHistory({});
       setSavedAutoPayment(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("register:refresh"));
+        window.dispatchEvent(new Event("reports:refresh"));
+      }
 
-    } catch {
-      toast.error("Failed to save payment");
+    } catch (err) {
+      console.error("❌ Failed to save payment:", err);
+      toast.error(err?.message || "Failed to save payment");
     }
   };
 
+  // When auto payment is enabled, compute the amount based on payroll for the selected period.
+  useEffect(() => {
+    let active = true;
+    const autoActive = !!(savedAutoPayment && savedAutoPayment.active);
+    if (!autoPaymentEnabled || autoActive) {
+      setAutoPayPreview(null);
+      return;
+    }
+    if (!selectedStaffForPayment) {
+      setAutoPayPreview(null);
+      return;
+    }
+    const basis = autoPaymentDate || todayStr();
+    const { startDate, endDate } = resolveAutoRange(basis);
+    const staffId = Number(selectedStaffForPayment);
+    const query =
+      startDate && endDate ? `?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}` : "";
+
+    (async () => {
+      try {
+        const payroll = await secureFetch(`/staff/${staffId}/payroll${query}`);
+        const amount = Number(payroll?.payroll?.salaryDue ?? payroll?.payroll?.totalSalaryDue ?? 0);
+        if (!active) return;
+        setAutoPayPreview({
+          amount: Number.isFinite(amount) ? amount : 0,
+          startDate: startDate || null,
+          endDate: endDate || null,
+        });
+      } catch {
+        if (!active) return;
+        setAutoPayPreview(null);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [autoPaymentEnabled, autoPaymentDate, repeatType, selectedStaffForPayment, savedAutoPayment]);
+
   const activeTabContent =
-    accessibleTabs.find((tab) => tab.id === activeTabId)?.component ||
-    accessibleTabs[0]?.component;
+    tabsToRender.find((tab) => tab.id === activeTabId)?.component ||
+    tabsToRender[0]?.component;
 
   useEffect(() => {
-    if (!accessibleTabs.length) return;
-    if (!accessibleTabs.some((tab) => tab.id === activeTabId)) {
-      setActiveTabId(accessibleTabs[0].id);
+    if (!tabsToRender.length) return;
+    if (!tabsToRender.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId(tabsToRender[0].id);
     }
-  }, [accessibleTabs, activeTabId]);
+  }, [tabsToRender, activeTabId]);
 
   return (
     <div className="p-6 space-y-1 relative dark:bg-900 text-gray-800 dark:text-white text-base transition-colors">
       <Toaster position="top-center" reverseOrder={false} />
-
 
       {/* Main Content */}
       <div className="bg-transparent">
@@ -368,6 +522,7 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
             <input type="text" placeholder={t("Name")} className="block w-full p-2 border rounded mb-2" value={name} onChange={(e) => setName(e.target.value)} />
             <input type="text" placeholder={t("Role")} className="block w-full p-2 border rounded mb-2" value={role} onChange={(e) => setRole(e.target.value)} />
             <input type="text" placeholder={t("Phone")} className="block w-full p-2 border rounded mb-2" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <input type="text" placeholder={t("PIN")} className="block w-full p-2 border rounded mb-2" value={pin} onChange={(e) => setPin(e.target.value)} />
             <input type="text" placeholder={t("Address")} className="block w-full p-2 border rounded mb-2" value={address} onChange={(e) => setAddress(e.target.value)} />
             <input type="text" placeholder={t("Email")} className="block w-full p-2 border rounded mb-2" value={email} onChange={(e) => setEmail(e.target.value)} />
             <input type="text" placeholder={t("Salary")} className="block w-full p-2 border rounded mb-4" value={salary} onChange={(e) => setSalary(e.target.value)} />
@@ -514,40 +669,78 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
           {/*
             Determine if auto payroll is active for selected staff
           */}
-          {(() => {
-            const autoActive = !!(savedAutoPayment && savedAutoPayment.active);
-            const repeatLabel = (savedAutoPayment?.repeat_type || "none")
-              .replace("daily", t("Daily"))
-              .replace("weekly", t("Weekly"))
-              .replace("monthly", t("Monthly"))
-              .replace("none", t("None"));
-            return (
-              <>
-                <div className="mb-4">
-	                  <p className="text-lg font-semibold text-blue-900 dark:text-slate-100">
-	                    {staffList.find(s => s.id === selectedStaffForPayment)?.name} – {staffList.find(s => s.id === selectedStaffForPayment)?.role}
-	                  </p>
-	                  <p className="text-base text-blue-600 dark:text-slate-300">{t('Salary Due')}: <span className="font-semibold text-red-600">{formatCurrency(staffHistory.salaryDue)}</span></p>
-	                </div>
+	          {(() => {
+	            const autoActive = !!(savedAutoPayment && savedAutoPayment.active);
+	            const repeatLabel = (savedAutoPayment?.repeat_type || "none")
+	              .replace("daily", t("Daily"))
+	              .replace("weekly", t("Weekly"))
+	              .replace("monthly", t("Monthly"))
+	              .replace("none", t("None"));
+		            const selectedStaffObj = staffList.find(
+		              (s) => String(s.id) === String(selectedStaffForPayment)
+		            );
+		            return (
+		              <>
+		                <div className="mb-4">
+			                  <p className="text-lg font-semibold text-blue-900 dark:text-slate-100">
+			                    {selectedStaffObj?.name} – {selectedStaffObj?.role}
+			                  </p>
+			                  <p className="text-base text-blue-600 dark:text-slate-300">
+                          {t('Salary Due')}:{" "}
+                          <span className="font-semibold text-red-600">
+                            {formatCurrency(staffHistory.salaryDue)}
+                          </span>
+                        </p>
+                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                          {t("Salary Model")}:{" "}
+                          <span className="font-semibold">
+                            {(() => {
+                              const raw = String(selectedStaffObj?.salary_model || "").toLowerCase();
+                              if (raw === "hourly") return t("Hourly");
+                              if (raw === "fixed") return t("Fixed");
+                              return raw || "-";
+                            })()}
+                          </span>{" "}
+                          • {t("Repeat")}:{" "}
+                          <span className="font-semibold">
+                            {(() => {
+                              const raw = String(selectedStaffObj?.payment_type || "").toLowerCase();
+                              if (raw === "daily") return t("Daily");
+                              if (raw === "weekly") return t("Weekly");
+                              if (raw === "monthly") return t("Monthly");
+                              return raw || "-";
+                            })()}
+                          </span>
+                        </p>
+			                </div>
 
-                {/* Auto Payroll Banner */}
-                {autoActive && (
-                  <div className="mb-4 p-4 border-2 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 rounded-xl text-yellow-800 dark:text-yellow-200 shadow">
-                    <div className="font-bold mb-1">🔁 {t('Auto Payroll Active')}</div>
-                    <div className="text-sm">
-                      {t('Manual payments are disabled while auto payroll is active.')}
-                      {" "}
-                      <span className="whitespace-nowrap">
-                        {t('Schedule')}: <strong>{repeatLabel}</strong>
-                        {savedAutoPayment?.repeat_time ? ` @ ${savedAutoPayment.repeat_time}` : ""}
-                      </span>
-                      {savedAutoPayment?.scheduled_date && (
-                        <span className="whitespace-nowrap"> • {t('Next Run')}: <strong>{savedAutoPayment.scheduled_date}</strong></span>
-                      )}
-                    </div>
-                    {autoActive && (
-  <button
-    onClick={async () => {
+	                {/* Auto Payroll Banner */}
+	                {autoActive && (
+	                  <div className="mb-4 p-4 border-2 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/30 rounded-xl text-yellow-800 dark:text-yellow-200 shadow break-words">
+	                    <div className="font-bold mb-1">🔁 {t('Auto Payroll Active')}</div>
+	                    <div className="text-sm space-y-1">
+	                      <div>{t('Manual payments are disabled while auto payroll is active.')}</div>
+	                      <div className="flex flex-wrap gap-x-3 gap-y-1">
+	                        <span>
+	                          {t('Schedule')}: <strong>{repeatLabel}</strong>
+	                          {savedAutoPayment?.repeat_time ? ` @ ${savedAutoPayment.repeat_time}` : ""}
+	                        </span>
+	                        {typeof savedAutoPayment?.amount !== "undefined" && (
+	                          <span>
+	                            {t("Amount")}:{" "}
+	                            <strong>{formatCurrency(savedAutoPayment.amount || 0)}</strong>
+	                          </span>
+	                        )}
+	                        {savedAutoPayment?.scheduled_date && (
+	                          <span>
+	                            {t('Next Run')}: <strong>{savedAutoPayment.scheduled_date}</strong>
+	                          </span>
+	                        )}
+	                      </div>
+	                    </div>
+	                    {autoActive && (
+	  <button
+	    onClick={async () => {
       try {
         await secureFetch(`/staff/${selectedStaffForPayment}/payments/auto/toggle`, {
           method: "PUT",
@@ -570,15 +763,23 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
                 )}
                 
 
-                {/* Amount */}
-                <input
-                  type="number"
-                  value={paymentAmount}
-                  onChange={e=>setPaymentAmount(e.target.value)}
-                  placeholder={t('Payment amount (TL)')}
-                  disabled={autoActive}
-                  className={`p-4 border rounded-lg w-full bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 mb-4 text-base ${autoActive ? 'opacity-60 cursor-not-allowed' : ''}`}
-                />
+	                {/* Amount */}
+	                {(() => {
+	                  const autoActive = !!(savedAutoPayment && savedAutoPayment.active);
+	                  const autoAmount = Number(autoPayPreview?.amount ?? staffHistory.salaryDue ?? 0);
+	                  const showAuto = autoPaymentEnabled && !autoActive;
+	                  const disabled = autoActive || autoPaymentEnabled;
+	                  return (
+	                <input
+	                  type="number"
+	                  value={showAuto ? (Number.isFinite(autoAmount) ? autoAmount : 0) : paymentAmount}
+	                  onChange={e=>{ if (!autoPaymentEnabled) setPaymentAmount(e.target.value); }}
+	                  placeholder={autoPaymentEnabled ? t("Auto Payment Amount") : t('Payment amount (TL)')}
+	                  disabled={disabled}
+	                  className={`p-4 border rounded-lg w-full bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 mb-4 text-base ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+	                />
+	                  );
+	                })()}
 
                 {/* Date */}
                 <input
@@ -617,12 +818,20 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
                   </label>
                 </div>
 
-	                {autoPaymentEnabled && !autoActive && (
-	                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-900 rounded-lg text-base text-yellow-800 dark:text-yellow-200 shadow">
-	                    🔁 {t('Auto Payment Amount')}: <span className="font-semibold">{formatCurrency(staffHistory.salaryDue)}</span>
-	                    <p className="text-xs mt-1 text-yellow-600 dark:text-yellow-200">{t('Will be paid on each schedule.')}</p>
-	                  </div>
-	                )}
+		                {autoPaymentEnabled && !autoActive && (
+		                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-900 rounded-lg text-base text-yellow-800 dark:text-yellow-200 shadow">
+		                    🔁 {t('Auto Payment Amount')}:{" "}
+                        <span className="font-semibold">
+                          {formatCurrency(Number(autoPayPreview?.amount ?? staffHistory.salaryDue ?? 0))}
+                        </span>
+                        {autoPayPreview?.startDate && autoPayPreview?.endDate && (
+                          <span className="ml-2 text-xs opacity-80">
+                            ({autoPayPreview.startDate} → {autoPayPreview.endDate})
+                          </span>
+                        )}
+		                    <p className="text-xs mt-1 text-yellow-600 dark:text-yellow-200">{t('Will be paid on each schedule.')}</p>
+		                  </div>
+		                )}
 
                 {autoPaymentEnabled && !autoActive && (
                   <div className="mb-4">
@@ -631,25 +840,26 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
                       type="date"
                       className="w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base"
                       value={autoPaymentDate}
+                      min={todayStr()}
                       onChange={e=>setAutoPaymentDate(e.target.value)}
                     />
                   </div>
                 )}
 
-                <div className="mt-3">
-                  <label className={`text-base font-medium text-blue-900 dark:text-slate-200 ${autoActive ? 'opacity-60' : ''}`}>{t('Repeat')}</label>
-                  <select
-                    className={`w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base ${autoActive ? 'opacity-60 cursor-not-allowed' : ''}`}
-                    value={repeatType}
-                    onChange={e=>setRepeatType(e.target.value)}
-                    disabled={autoActive}
-                  >
-                    <option value="none">{t('Do not repeat')}</option>
-                    <option value="daily">{t('Daily')}</option>
-                    <option value="weekly">{t('Weekly')}</option>
-                    <option value="monthly">{t('Monthly')}</option>
-                  </select>
-                </div>
+	                <div className="mt-3">
+	                  <label className={`text-base font-medium text-blue-900 dark:text-slate-200 ${autoActive ? 'opacity-60' : ''}`}>{t('Repeat')}</label>
+	                  <select
+	                    className={`w-full p-3 border rounded-md dark:bg-slate-800 dark:text-slate-100 text-base ${autoActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+	                    value={repeatType}
+	                    onChange={e=>setRepeatType(e.target.value)}
+	                    disabled={true}
+	                  >
+	                    <option value="none">{t('Do not repeat')}</option>
+	                    <option value="daily">{t('Daily')}</option>
+	                    <option value="weekly">{t('Weekly')}</option>
+	                    <option value="monthly">{t('Monthly')}</option>
+	                  </select>
+	                </div>
 
                 <div className="mt-3">
                   <label className={`text-base font-medium text-blue-900 dark:text-slate-200 ${autoActive ? 'opacity-60' : ''}`}>{t('Time')}</label>
@@ -671,15 +881,20 @@ setSavedAutoPayment(autoSchedule); // ✅ new line
                   disabled={autoActive}
                 ></textarea>
 
-                {/* Save button — fully disabled when auto is active */}
-                <button
-                  onClick={handlePayment}
-                  disabled={autoActive || (!paymentAmount && !autoPaymentEnabled)}
-                  className={`flex items-center justify-center gap-2 transition-colors p-4 rounded-xl w-full text-white font-bold text-base shadow
-                    ${
-                      autoActive
-                        ? 'bg-gray-300 cursor-not-allowed'
-                        : (paymentAmount || autoPaymentEnabled
+	                {/* Save button — fully disabled when auto is active */}
+	                <button
+	                  onClick={handlePayment}
+	                  disabled={
+	                      autoActive ||
+	                      (autoPaymentEnabled
+	                        ? !Number.isFinite(Number(autoPayPreview?.amount ?? staffHistory.salaryDue ?? 0))
+	                        : !paymentAmount)
+	                    }
+	                  className={`flex items-center justify-center gap-2 transition-colors p-4 rounded-xl w-full text-white font-bold text-base shadow
+	                    ${
+	                      autoActive
+	                        ? 'bg-gray-300 cursor-not-allowed'
+	                        : (paymentAmount || autoPaymentEnabled
                             ? 'bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600'
                             : 'bg-gray-300 cursor-not-allowed')
                     }`}

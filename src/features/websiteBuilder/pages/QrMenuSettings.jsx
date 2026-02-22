@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { toast } from "react-toastify";
-import secureFetch from "../utils/secureFetch";
-import { Eye, EyeOff, Search, Copy, Download, Printer, QrCode, Trash2 } from "lucide-react";
+import secureFetch from "../../../utils/secureFetch";
+import { Eye, EyeOff, Search, Copy, Download, Printer, QrCode, Trash2, ChevronDown } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 
@@ -36,6 +36,12 @@ export default function QrMenuSettings() {
 
   const [savingProduct, setSavingProduct] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState(null);
+  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const [shopHours, setShopHours] = useState({});
+  const [loadingShopHours, setLoadingShopHours] = useState(true);
+  const [savingShopHours, setSavingShopHours] = useState(false);
+  const [showShopHoursDropdown, setShowShopHoursDropdown] = useState(false);
+  const shopHoursDropdownRef = useRef(null);
   const [settings, setSettings] = useState({
   main_title: "",
   subtitle: "",
@@ -552,6 +558,108 @@ async function saveAllCustomization() {
     win.document.close();
   };
 
+  useEffect(() => {
+    let active = true;
+    setLoadingShopHours(true);
+    secureFetch("/settings/shop-hours/all")
+      .then((data) => {
+        if (!active) return;
+        const hoursMap = {};
+        if (Array.isArray(data)) {
+          data.forEach((row) => {
+            hoursMap[row.day] = {
+              open: row.open_time,
+              close: row.close_time,
+            };
+          });
+        }
+        setShopHours(hoursMap);
+      })
+      .catch((err) => {
+        console.error("❌ Failed to load shop hours:", err);
+        toast.error(t("Failed to load settings"));
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoadingShopHours(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [t]);
+
+  const handleShopHoursChange = (day, field, value) => {
+    setShopHours((prev) => ({
+      ...prev,
+      [day]: {
+        ...(prev[day] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveShopHours = async () => {
+    setSavingShopHours(true);
+    try {
+      await secureFetch("/settings/shop-hours/all", {
+        method: "POST",
+        body: JSON.stringify({ hours: shopHours }),
+      });
+      toast.success(t("✅ Shop hours saved successfully!"));
+    } catch (err) {
+      console.error("❌ Save failed:", err);
+      toast.error(t("Save failed"));
+    } finally {
+      setSavingShopHours(false);
+    }
+  };
+
+  const todayName = (() => {
+    const map = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return map[new Date().getDay()];
+  })();
+
+  const parseTimeToMinutes = (value) => {
+    const s = String(value || "").trim();
+    if (!s) return null;
+    const [hh, mm] = s.split(":").map((part) => Number(part));
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return hh * 60 + mm;
+  };
+
+  const openStatus = (() => {
+    const today = shopHours?.[todayName];
+    const openMin = parseTimeToMinutes(today?.open);
+    const closeMin = parseTimeToMinutes(today?.close);
+    if (openMin === null || closeMin === null) {
+      return { isOpen: false, label: t("Closed") };
+    }
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+
+    if (closeMin > openMin) {
+      const isOpen = nowMin >= openMin && nowMin < closeMin;
+      return { isOpen, label: isOpen ? t("Open now!") : t("Closed") };
+    }
+
+    if (closeMin < openMin) {
+      const isOpen = nowMin >= openMin || nowMin < closeMin;
+      return { isOpen, label: isOpen ? t("Open now!") : t("Closed") };
+    }
+
+    return { isOpen: false, label: t("Closed") };
+  })();
+
+  useEffect(() => {
+    const onDown = (e) => {
+      const el = shopHoursDropdownRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setShowShopHoursDropdown(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
  return (
   <div className="max-w-5xl mx-auto px-4 py-10">
     <h1 className="text-3xl font-extrabold mb-6 flex items-center gap-3 bg-gradient-to-r from-blue-600 via-fuchsia-500 to-indigo-600 text-transparent bg-clip-text tracking-tight drop-shadow">
@@ -572,6 +680,66 @@ async function saveAllCustomization() {
         ) : (
           <QRCodeCanvas id="qrCanvas" value={qrUrl || ""} size={180} />
         )}
+        <div className="mt-3 w-full flex items-center justify-center" ref={shopHoursDropdownRef}>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowShopHoursDropdown((v) => !v)}
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-extrabold shadow-sm transition ${
+                openStatus.isOpen
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+              }`}
+              title={t("Shop Hours")}
+            >
+              <span>{openStatus.label}</span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${showShopHoursDropdown ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {showShopHoursDropdown && (
+              <div className="absolute left-1/2 top-[calc(100%+10px)] w-[320px] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white shadow-2xl p-3 z-10 dark:border-slate-800 dark:bg-zinc-950">
+                <div className="flex items-center justify-between gap-2 px-1 pb-2">
+                  <div className="text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                    {t("Shop Hours")}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowShopHoursDropdown(false)}
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-lg leading-none"
+                    aria-label={t("Close")}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 gap-1">
+                  {days.map((day) => {
+                    const isToday = day === todayName;
+                    const open = shopHours?.[day]?.open || "";
+                    const close = shopHours?.[day]?.close || "";
+                    const has = !!(open && close);
+                    return (
+                      <div
+                        key={day}
+                        className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${
+                          isToday
+                            ? "bg-indigo-50 text-indigo-800 border border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/30 dark:text-indigo-200"
+                            : "bg-slate-50 text-slate-700 dark:bg-zinc-900/40 dark:text-slate-200"
+                        }`}
+                      >
+                        <span className="font-semibold">{t(day)}</span>
+                        <span className="font-mono text-xs">
+                          {has ? `${open} - ${close}` : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="font-mono text-xs text-gray-500 mt-3 text-center break-all max-w-xs">
           {qrUrl || t("QR link not available yet")}
         </div>
@@ -612,6 +780,66 @@ async function saveAllCustomization() {
         >
           <Printer className="w-4 h-4" /> {t("Print QR")}
         </button>
+      </div>
+    </div>
+
+    {/* Shop Hours */}
+    <div className="mb-10 bg-white/90 dark:bg-zinc-950/80 rounded-3xl shadow-xl border border-blue-100 dark:border-blue-800 overflow-hidden">
+      <div className="p-5 border-b border-blue-100 dark:border-zinc-800">
+        <h2 className="text-xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-transparent bg-clip-text">
+          {t("Customize Shop Hours")}
+        </h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          {t("Set opening and closing times for each day.")}
+        </p>
+      </div>
+
+      <div className="p-5">
+        {loadingShopHours ? (
+          <div className="text-slate-500 dark:text-slate-400">{t("Loading...")}</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {days.map((day) => (
+              <div
+                key={day}
+                className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-white to-slate-50 dark:from-zinc-900/60 dark:to-zinc-950/40 p-4 shadow-sm"
+              >
+                <div className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3 text-center">
+                  {t(day)}
+                </div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t("Open Time")}
+                </label>
+                <input
+                  type="time"
+                  value={shopHours[day]?.open || ""}
+                  onChange={(e) => handleShopHoursChange(day, "open", e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition"
+                />
+                <label className="mt-3 block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t("Close Time")}
+                </label>
+                <input
+                  type="time"
+                  value={shopHours[day]?.close || ""}
+                  onChange={(e) => handleShopHoursChange(day, "close", e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex justify-end mt-5">
+          <button
+            type="button"
+            onClick={saveShopHours}
+            disabled={loadingShopHours || savingShopHours}
+            className="px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg hover:brightness-110 transition disabled:opacity-60"
+          >
+            {savingShopHours ? t("Saving...") : t("Save All")}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -964,36 +1192,36 @@ async function saveAllCustomization() {
 
 	              {/* Category Image (same flow as ProductForm modal) */}
 	              <div className="sm:col-span-2">
-	                <label className="font-semibold block mb-2">{t("Category Image")}</label>
-	                <div className="flex items-center gap-3">
-	                  <input
-	                    ref={categoryImageInputRef}
-	                    type="file"
-	                    accept="image/*"
-	                    className="hidden"
-	                    onChange={async (e) => {
-	                      const file = e.target.files?.[0] || null;
-	                      setCategoryImageFileName(file?.name || "");
-	                      if (!file) return;
-	                      await uploadCategoryImage(file);
-	                      try {
-	                        e.target.value = "";
-	                      } catch {}
-	                    }}
-	                  />
-	                  <button
-	                    type="button"
-	                    onClick={() => categoryImageInputRef.current?.click()}
-	                    disabled={uploadingCategoryImage}
-	                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
-	                  >
-	                    {uploadingCategoryImage ? t("Please wait...") : t("Choose file")}
-	                  </button>
-	                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
-	                    {categoryImageFileName ? categoryImageFileName : t("No file chosen")}
-	                  </span>
-	                </div>
-	                {categoryImagePreview ? (
+                <label className="font-semibold block mb-2">{t("Category Image")}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={categoryImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0] || null;
+                      setCategoryImageFileName(file?.name || "");
+                      if (!file) return;
+                      await uploadCategoryImage(file);
+                      try {
+                        e.target.value = "";
+                      } catch {}
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => categoryImageInputRef.current?.click()}
+                    disabled={uploadingCategoryImage}
+                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+                  >
+                    {uploadingCategoryImage ? t("Please wait...") : t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+                    {categoryImageFileName ? categoryImageFileName : t("No file chosen")}
+                  </span>
+                </div>
+                {categoryImagePreview ? (
 	                  <div className="mt-2 flex items-center gap-3">
 	                    <img
 	                      src={categoryImagePreview}
@@ -1009,35 +1237,35 @@ async function saveAllCustomization() {
 
 	              {/* Product Image (same flow as ProductForm modal) */}
 	              <div className="sm:col-span-2">
-	                <label className="font-semibold block mb-2">{t("Product Image")}</label>
-	                <div className="flex items-center gap-3">
-	                  <input
-	                    ref={productImageInputRef}
-	                    type="file"
-	                    accept="image/*"
-	                    className="hidden"
-	                    onChange={(e) => {
-	                      const file = e.target.files?.[0] || null;
-	                      if (!file) return;
-	                      setNewProductImageFile(file);
-	                      try {
-	                        e.target.value = "";
-	                      } catch {}
-	                    }}
-	                  />
-	                  <button
-	                    type="button"
-	                    onClick={() => productImageInputRef.current?.click()}
-	                    disabled={uploadingNewProductImage}
-	                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
-	                  >
-	                    {uploadingNewProductImage ? t("Please wait...") : t("Choose file")}
-	                  </button>
-	                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
-	                    {newProductImageFile?.name ? newProductImageFile.name : t("No file chosen")}
-	                  </span>
-	                </div>
-	                {newProductImagePreview ? (
+                <label className="font-semibold block mb-2">{t("Product Image")}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={productImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      if (!file) return;
+                      setNewProductImageFile(file);
+                      try {
+                        e.target.value = "";
+                      } catch {}
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => productImageInputRef.current?.click()}
+                    disabled={uploadingNewProductImage}
+                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+                  >
+                    {uploadingNewProductImage ? t("Please wait...") : t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+                    {newProductImageFile?.name ? newProductImageFile.name : t("No file chosen")}
+                  </span>
+                </div>
+                {newProductImagePreview ? (
 	                  <img
 	                    src={newProductImagePreview}
 	                    alt={t("Product Image")}

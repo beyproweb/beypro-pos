@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/button";
+import { Link } from "react-router-dom";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -31,6 +32,7 @@ import {
   MoreHorizontal,
   PhoneCall,
   Globe,
+  Trash2,
 } from "lucide-react";
 import { Card, CardContent } from "../components/ui/card";
 import { toast } from "react-toastify";
@@ -43,6 +45,7 @@ import useCategoryData from "../hooks/reports/useCategoryData";
 import useCategoryTrendsData from "../hooks/reports/useCategoryTrendsData";
 import useCashRegisterHistory from "../hooks/reports/useCashRegisterHistory";
 import useCashRegisterSnapshot from "../hooks/reports/useCashRegisterSnapshot";
+import useExpensesBreakdownData from "../hooks/reports/useExpensesBreakdownData";
 import DateRangeSelector from "../components/reports/DateRangeSelector";
 import SectionState from "../components/reports/SectionState";
 import secureFetch from "../utils/secureFetch";
@@ -62,7 +65,7 @@ function calcOrderTotalWithExtras(order) {
   }, 0);
 }
 
-const REPORTS_CACHE_VERSION = "reports.cache.v1";
+const REPORTS_CACHE_VERSION = "reports.cache.v2";
 
 function getStaffCacheKey(from, to) {
   return `${REPORTS_CACHE_VERSION}:staff:${from}:${to}`;
@@ -142,6 +145,14 @@ export default function Reports() {
   const [staffData, setStaffData] = useState([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffError, setStaffError] = useState(null);
+  const [wasteStats, setWasteStats] = useState({
+    totalWaste: 0,
+    wastePctOfSales: 0,
+    topProducts: [],
+    byReason: [],
+  });
+  const [wasteLoading, setWasteLoading] = useState(false);
+  const [wasteError, setWasteError] = useState(null);
   const yMinRef = useRef();
   const yMaxRef = useRef();
   const [yMin, setYMin] = useState(1000);
@@ -155,7 +166,6 @@ export default function Reports() {
     error: overviewError,
     paymentData,
     productSalesData,
-    expensesData,
     closedOrders,
     orderItems,
     summary,
@@ -164,6 +174,18 @@ export default function Reports() {
     onlinePlatforms,
     refetch: refetchOverview,
   } = useReportsBundle({ from, to });
+
+  const {
+    loading: expensesLoading,
+    error: expensesError,
+    expensesData,
+    staffPayments,
+    supplierPayments,
+    staffPaymentsTotal,
+    supplierPaymentsTotal,
+    expensesToday,
+    refetch: refetchExpenses,
+  } = useExpensesBreakdownData({ from, to });
 
   const {
     loading: categoryLoading,
@@ -188,13 +210,14 @@ export default function Reports() {
     error: cashHistoryError,
     data: cashRegisterHistory,
     refetch: refetchCashHistory,
-  } = useCashRegisterHistory();
+  } = useCashRegisterHistory(from, to);
 
   const {
     loading: cashSnapshotLoading,
     error: cashSnapshotError,
     opening: cashOpening,
     available: cashAvailable,
+    registerState: cashRegisterState,
     refetch: refetchCashSnapshot,
   } = useCashRegisterSnapshot();
 
@@ -210,7 +233,7 @@ export default function Reports() {
     error: profitLossError,
     data: profitLossData,
     refetch: refetchProfitLoss,
-  } = useProfitLossData(timeframe);
+  } = useProfitLossData(timeframe, { from, to });
 
   const fetchStaffPerformance = useCallback(async (force = false) => {
     if (!from || !to) return;
@@ -239,13 +262,42 @@ export default function Reports() {
     }
   }, [from, to]);
 
+  const fetchWasteMetrics = useCallback(async () => {
+    setWasteLoading(true);
+    setWasteError(null);
+    try {
+      const params = new URLSearchParams();
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      const qs = params.toString();
+      const res = await secureFetch(qs ? `/stock/waste/metrics?${qs}` : "/stock/waste/metrics");
+      setWasteStats({
+        totalWaste: res?.totalWaste || 0,
+        wastePctOfSales: res?.wastePctOfSales || 0,
+        topProducts: res?.topProducts || [],
+        byReason: res?.byReason || [],
+      });
+    } catch (err) {
+      console.error("❌ Waste metrics error:", err);
+      setWasteError(err);
+      setWasteStats({ totalWaste: 0, wastePctOfSales: 0, topProducts: [], byReason: [] });
+    } finally {
+      setWasteLoading(false);
+    }
+  }, [from, to]);
+
   useEffect(() => {
     fetchStaffPerformance(false);
   }, [fetchStaffPerformance]);
 
   useEffect(() => {
+    fetchWasteMetrics();
+  }, [fetchWasteMetrics]);
+
+  useEffect(() => {
     const handleRefresh = () => {
       refetchOverview();
+      refetchExpenses();
       refetchCategory();
       refetchCategoryTrends();
       refetchCashHistory();
@@ -253,15 +305,18 @@ export default function Reports() {
       refetchSalesTrends();
       refetchProfitLoss();
       fetchStaffPerformance(true);
+      fetchWasteMetrics();
     };
 
     socket.on("payment_made", handleRefresh);
     socket.on("order_closed", handleRefresh);
+    socket.on("reports_refresh", handleRefresh);
     window.addEventListener("reports:refresh", handleRefresh);
 
     return () => {
       socket.off("payment_made", handleRefresh);
       socket.off("order_closed", handleRefresh);
+      socket.off("reports_refresh", handleRefresh);
       window.removeEventListener("reports:refresh", handleRefresh);
     };
   }, [
@@ -270,9 +325,11 @@ export default function Reports() {
     refetchCashSnapshot,
     refetchCategory,
     refetchCategoryTrends,
+    refetchExpenses,
     refetchOverview,
     refetchProfitLoss,
     refetchSalesTrends,
+    fetchWasteMetrics,
   ]);
 
   const globalLoading =
@@ -294,6 +351,8 @@ export default function Reports() {
   const sectionLoadingMessage = hasLoadedOnce ? null : undefined;
   const kpiLoading = overviewLoading || cashSnapshotLoading;
   const kpiError = overviewError || cashSnapshotError;
+  const expensesKpiLoading = expensesLoading;
+  const expensesKpiError = expensesError;
 
   if (!hasLoadedOnce && globalLoading) {
     return (
@@ -311,15 +370,6 @@ export default function Reports() {
   const grossSales = summary?.gross_sales || 0;
   const netSales = summary?.net_sales || 0;
 
-  const extraExpenses = useMemo(
-    () =>
-      Array.isArray(expensesData)
-        ? expensesData.reduce((sum, row) => sum + parseFloat(row.amount || 0), 0)
-        : 0,
-    [expensesData]
-  );
-
-  const expensesToday = (summary?.expenses_today || 0) + extraExpenses;
   const profit = netSales - expensesToday;
   const dailySales = totalPayments || 0;
 
@@ -515,6 +565,22 @@ export default function Reports() {
         </div>
       </DateRangeSelector>
 
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-sky-50 to-indigo-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-700">
+            {t("Operational Efficiency")}
+          </div>
+          <div className="text-xs text-slate-500">
+            {t("New dashboard that correlates customers, staff hours, and cleaning signals.")}
+          </div>
+        </div>
+        <Link to="/reports/operational">
+          <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700">
+            {t("Open Operational Report")}
+          </Button>
+        </Link>
+      </div>
+
       <SectionState
         loading={false}
         error={kpiError}
@@ -594,14 +660,19 @@ export default function Reports() {
                   <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-100">
                     <CreditCard className="h-5 w-5 text-rose-600" />
                   </span>
-                  <span className="text-lg">{t("Expenses Today")}</span>
+                  <span className="text-lg">
+                    {dateRange === "today" ? t("Expenses Today") : t("Expenses")}
+                  </span>
                 </div>
                 <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-rose-600">
-                  {kpiLoading ? t("Loading...") : formatCurrency(expensesToday)}
+                  {expensesKpiLoading ? t("Loading...") : formatCurrency(expensesToday)}
                 </div>
                 <div className="text-sm text-rose-500">
-                  {kpiLoading ? t("Updating data") : t("Updated just now")}
+                  {expensesKpiLoading ? t("Updating data") : t("Updated just now")}
                 </div>
+                {expensesKpiError ? (
+                  <div className="text-xs text-rose-600">{t("Failed to load expenses.")}</div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -653,6 +724,122 @@ export default function Reports() {
       </SectionState>
 
       <SectionState
+        loading={wasteLoading}
+        error={wasteError}
+        onRetry={fetchWasteMetrics}
+        loadingMessage={sectionLoadingMessage}
+      >
+        <div className="rounded-3xl border border-slate-200/70 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                {t("Waste KPIs")}
+              </h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {t("Waste reduces stock, increases expense, and impacts margin.")}
+              </p>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-100 dark:ring-rose-800/60">
+              <Trash2 className="h-4 w-4" />
+              {t("Tracked per restaurant")}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-4">
+            <div className="rounded-2xl border border-rose-200/60 bg-gradient-to-br from-white via-rose-50 to-rose-100 p-4 shadow-sm dark:border-rose-900/30 dark:from-rose-950/10 dark:via-rose-900/20 dark:to-rose-950/30">
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                {t("Total Waste (₺)")}
+              </p>
+              <p className="mt-2 text-2xl font-bold text-rose-700">
+                {wasteLoading ? "…" : formatCurrency(wasteStats.totalWaste || 0)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200/70 bg-slate-50/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                {t("Waste % of Sales")}
+              </p>
+              <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+                {wasteLoading ? "…" : `${(wasteStats.wastePctOfSales || 0).toFixed(2)}%`}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm lg:col-span-2 dark:border-slate-800 dark:bg-slate-900/70">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  {t("Top Wasted Products")}
+                </p>
+                <span className="text-xs text-slate-500">
+                  {wasteStats.topProducts?.length || 0} {t("items")}
+                </span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {(wasteStats.topProducts || []).map((row) => {
+                  const pct =
+                    wasteStats.topProducts[0]?.total_loss > 0
+                      ? (row.total_loss / wasteStats.topProducts[0].total_loss) * 100
+                      : 0;
+                  return (
+                    <div
+                      key={row.stock_id || row.product_name}
+                      className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-900/50"
+                    >
+                      <div className="flex items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-100">
+                        <span>{row.product_name || t("Unknown product")}</span>
+                        <span className="text-rose-600 dark:text-rose-300">
+                          {formatCurrency(row.total_loss || 0)}
+                        </span>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                        <div
+                          className="h-full rounded-full bg-rose-500/80"
+                          style={{ width: `${Math.min(100, pct || 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                {(wasteStats.topProducts || []).length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-300">
+                    {t("Waste entries will populate this leaderboard.")}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="lg:col-span-4 rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                {t("Waste by Reason")}
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                {(wasteStats.byReason || []).map((row) => (
+                  <div
+                    key={row.reason}
+                    className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-sm dark:border-slate-800 dark:bg-slate-900/60"
+                  >
+                    <p className="font-semibold text-slate-800 dark:text-slate-100">
+                      {row.reason}
+                    </p>
+                    <p className="text-rose-600 dark:text-rose-300">
+                      {formatCurrency(row.total_loss || 0)}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {parseFloat(row.total_qty || 0).toLocaleString()} {t("units")}
+                    </p>
+                  </div>
+                ))}
+                {(wasteStats.byReason || []).length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-300">
+                    {t("No waste reasons in this period")}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </SectionState>
+
+      <SectionState
         loading={overviewLoading || cashHistoryLoading}
         error={overviewError || cashHistoryError}
         onRetry={() => {
@@ -663,7 +850,13 @@ export default function Reports() {
       >
         <Card className="space-y-4 p-4">
           <CardContent>
-            <div className="flex flex-wrap gap-3 items-center justify-between mb-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-4">
+              <div className="flex items-center gap-3 text-slate-700">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-200">
+                  <Wallet className="h-5 w-5 text-slate-600" />
+                </span>
+                <h3 className="text-lg font-semibold">{t("Cash Register")}</h3>
+              </div>
               <DateRangeSelector
                 range={dateRange}
                 onRangeChange={setDateRange}
@@ -671,22 +864,22 @@ export default function Reports() {
                 customEnd={customEnd}
                 onCustomStartChange={setCustomStart}
                 onCustomEndChange={setCustomEnd}
+                className="w-full lg:w-auto"
               />
             </div>
 
             {(() => {
-              const today = new Date();
-              const todayStr = today.toISOString().slice(0, 10);
+              const todayStr = customStart || from;
+              const isRegisterOpenToday =
+                String(cashRegisterState || "").toLowerCase() === "open" &&
+                dateRange === "today";
 
               const filteredHistory = cashRegisterHistory.filter((row) => {
                 const rowDate = row.date?.slice(0, 10);
                 if (!rowDate) return false;
                 if (dateRange === "today") return rowDate === todayStr;
                 if (dateRange === "week") {
-                  const weekStart = new Date();
-                  weekStart.setDate(today.getDate() - 6);
-                  const weekStartStr = weekStart.toISOString().slice(0, 10);
-                  return rowDate >= weekStartStr && rowDate <= todayStr;
+                  return rowDate >= from && rowDate <= to;
                 }
                 if (dateRange === "custom") {
                   return rowDate >= customStart && rowDate <= customEnd;
@@ -694,33 +887,81 @@ export default function Reports() {
                 return true;
               });
 
+              const hasTodayRow = filteredHistory.some(
+                (row) => row?.date?.slice(0, 10) === todayStr
+              );
+              const historyRows = isRegisterOpenToday && !hasTodayRow
+                ? [
+                    {
+                      date: todayStr,
+                      opening_cash: cashOpening,
+                      closing_cash: 0,
+                      cash_sales: 0,
+                      supplier_expenses: 0,
+                      staff_expenses: 0,
+                      register_expenses: 0,
+                      register_entries: 0,
+                      __syntheticOpen: true,
+                    },
+                    ...filteredHistory,
+                  ]
+                : filteredHistory;
+
               return (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {filteredHistory.map((row) => {
-                    const eventsForDay = groupedRegisterEvents[row.date] || [];
-                    const expensesForDay = eventsForDay
-                      .filter((event) => event.type === "expense")
-                      .reduce((sum, event) => sum + parseFloat(event.amount || 0), 0);
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {historyRows.map((row) => {
+                    const dayKey = row?.date?.slice(0, 10) || "";
+                    const eventsForDay = groupedRegisterEvents[dayKey] || [];
+                    const openingCash = parseFloat(row.opening_cash || 0);
+                    const cashSales = parseFloat(row.cash_sales || 0);
+                    const registerEntries = parseFloat(row.register_entries || 0);
+                    const supplierExpenses = parseFloat(row.supplier_expenses || 0);
+                    const staffExpenses = parseFloat(row.staff_expenses || 0);
+                    const registerExpenses = parseFloat(row.register_expenses || 0);
+                    const expensesForDay =
+                      supplierExpenses + staffExpenses + registerExpenses;
+                    const computedAvailable =
+                      openingCash + cashSales + registerEntries - expensesForDay;
+
+                    const isTodayRow = dayKey === todayStr;
+                    const showLiveAvailable =
+                      isTodayRow && isRegisterOpenToday && !row.closing_cash;
+                    const availableForDisplay = showLiveAvailable
+                      ? parseFloat(cashAvailable || 0)
+                      : computedAvailable;
 
                     return (
                       <div
-                        key={row.date}
+                        key={dayKey || row.date}
                         className="rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50 dark:from-gray-800 dark:to-gray-900 border border-white/10 shadow p-4 space-y-2"
                       >
                         <div className="font-semibold text-gray-800 dark:text-white text-sm">
-                          {new Date(row.date).toLocaleDateString()}
+                          <div className="flex items-center justify-between gap-2">
+                            <span>{new Date(row.date).toLocaleDateString()}</span>
+                            {showLiveAvailable ? (
+                              <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                                {t("Open")}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>{t("Opening Cash")}</span>
-                          <span>{formatCurrency(parseFloat(row.opening_cash || 0))}</span>
+                          <span>{formatCurrency(openingCash)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span>{t("Sales")}</span>
-                          <span>{formatCurrency(parseFloat(row.sales_total || 0))}</span>
+                          <span>{t("Cash Sales")}</span>
+                          <span>{formatCurrency(cashSales)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>{t("Expenses")}</span>
                           <span>{formatCurrency(expensesForDay)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>{t("Cash Available")}</span>
+                          <span className="font-semibold">
+                            {formatCurrency(availableForDisplay)}
+                          </span>
                         </div>
                         <details className="text-xs text-gray-600 dark:text-gray-300">
                           <summary className="cursor-pointer underline font-medium">
@@ -730,7 +971,7 @@ export default function Reports() {
                             {eventsForDay.map((event) => (
                               <li key={event.id} className="flex justify-between gap-2">
                                 <span className="truncate">
-                                  {event.reason}
+                                  {event.note || event.reason}
                                 </span>
                                 <span>
                                   {formatCurrency(parseFloat(event.amount || 0))}
@@ -1311,9 +1552,9 @@ export default function Reports() {
       </SectionState>
 
       <SectionState
-        loading={overviewLoading}
-        error={overviewError}
-        onRetry={refetchOverview}
+        loading={expensesLoading}
+        error={expensesError}
+        onRetry={refetchExpenses}
         loadingMessage={sectionLoadingMessage}
       >
         <div className="rounded-[28px] border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.35)] overflow-hidden">
@@ -1321,20 +1562,42 @@ export default function Reports() {
             <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-200 to-slate-100 shadow-inner text-slate-600">
               <BarChart3 className="h-5 w-5" />
             </span>
-            <h3 className="text-xl sm:text-2xl font-semibold text-slate-800">
-              {t("Expenses Breakdown")}
-            </h3>
+            <div className="flex flex-col">
+              <h3 className="text-xl sm:text-2xl font-semibold text-slate-800">
+                {t("Expenses Breakdown")}
+              </h3>
+              <div className="text-sm text-slate-500">
+                {from} → {to}
+              </div>
+            </div>
           </div>
 
           <div className="p-6">
             <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
               <div className="divide-y divide-slate-200/70">
-                {Object.entries(
-                  (expensesData || []).reduce((acc, row) => {
+                {(() => {
+                  const manual = (expensesData || []).reduce((acc, row) => {
                     acc[row.type] = (acc[row.type] || 0) + parseFloat(row.amount || 0);
                     return acc;
-                  }, {})
-                ).map(([type, total]) => (
+                  }, {});
+
+                  const staffByName = (staffPayments || []).reduce((acc, row) => {
+                    const staffName = String(row?.note || "").trim() || t("Staff");
+                    acc[staffName] = (acc[staffName] || 0) + parseFloat(row.amount || 0);
+                    return acc;
+                  }, {});
+
+                  const rows = [
+                    ...Object.entries(manual),
+                    [t("Supplier Payments"), supplierPaymentsTotal],
+                    ...Object.entries(staffByName).map(([name, total]) => [
+                      `${t("Staff Payroll")} - ${name}`,
+                      total,
+                    ]),
+                  ];
+
+                  return rows;
+                })().map(([type, total]) => (
                   <div
                     key={type}
                     className="flex items-center justify-between px-5 py-4 text-base text-slate-700"
@@ -1349,7 +1612,7 @@ export default function Reports() {
               <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-200/70 text-slate-600">
                 <span className="text-base">{t("Total Expenses")}:</span>
                 <span className="text-xl font-semibold text-indigo-700">
-                  {formatCurrency(extraExpenses)}
+                  {formatCurrency(expensesToday)}
                 </span>
               </div>
             </div>

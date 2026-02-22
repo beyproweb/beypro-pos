@@ -276,7 +276,7 @@ export default function ModernHeader({
 
   return (
     <header className="sticky top-0 z-40 w-full px-3 md:px-6 h-auto md:h-16 py-2 md:py-0 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
-      {/* Left: Drawer toggle + Lock button */}
+      {/* Left: Drawer toggle */}
       <div className="flex items-center min-w-0 flex-shrink-0 gap-3">
         {onSidebarToggle && (
           <button
@@ -286,18 +286,6 @@ export default function ModernHeader({
             aria-label="Toggle navigation"
           >
             <Menu className="w-5 h-5" />
-          </button>
-        )}
-        {/* Manual Lock Button - Show for all authenticated users */}
-        {currentUser && onLockClick && (
-          <button
-            type="button"
-            onClick={onLockClick}
-            className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 focus:outline-none focus:ring-2 focus:ring-orange-400 dark:text-orange-300 dark:hover:bg-orange-500/20 transition"
-            aria-label={t("Lock Session")}
-            title={t("Lock Session")}
-          >
-            <Lock className="w-5 h-5" />
           </button>
         )}
       </div>
@@ -362,12 +350,12 @@ export default function ModernHeader({
                       className={[
                         "shrink-0 w-24 sm:w-28 truncate",
                         "inline-flex items-center justify-center gap-2",
-                        "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2.5 py-1.5 text-[12px] md:text-[13px] lg:text-sm font-semibold",
-                        "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
+                        "rounded-xl border border-slate-300/60 dark:border-slate-700/60 px-3 py-2 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                        "shadow-md transition-all duration-150 hover:shadow-lg active:scale-[0.98]",
                         "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
                         isActive
-                          ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
-                          : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+                          ? "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white"
+                          : "bg-white/80 text-slate-800 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70",
                       ].join(" ")}
                     >
                       {tab.label}
@@ -398,14 +386,14 @@ export default function ModernHeader({
                   className={[
                     "w-20 truncate",
                     "inline-flex items-center justify-center",
-                    "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2.5 py-1.5 text-[12px] md:text-[13px] lg:text-sm font-semibold",
-                    "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
+                    "rounded-xl border border-slate-300/60 dark:border-slate-700/60 px-3 py-2 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                    "shadow-md transition-all duration-150 hover:shadow-lg active:scale-[0.98]",
                     "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
                     isActive
-                      ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
+                      ? "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white"
                       : isDashboardTab
                         ? "bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-200 dark:hover:bg-indigo-500/25"
-                        : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+                        : "bg-white/80 text-slate-800 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70",
                   ].join(" ")}
                 >
                   {tab.label}
@@ -428,14 +416,14 @@ export default function ModernHeader({
                       className={[
                         "w-24 sm:w-28 truncate",
                         "inline-flex items-center justify-center gap-2",
-                    "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2.5 py-1.5 text-[12px] md:text-[13px] lg:text-sm font-semibold",
-                        "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
+                        "rounded-xl border border-slate-300/60 dark:border-slate-700/60 px-3 py-2 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                        "shadow-md transition-all duration-150 hover:shadow-lg active:scale-[0.98]",
                     "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
                     isActive
-                      ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/20 ring-1 ring-white/50"
+                      ? "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white"
                       : isDashboardTab
                         ? "bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-200 dark:hover:bg-indigo-500/25"
-                        : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+                        : "bg-white/80 text-slate-800 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70",
                   ].join(" ")}
                 >
                   {tab.label}
@@ -446,9 +434,22 @@ export default function ModernHeader({
         )}
       </div>
 
-      {/* Right: Title + bell + lock + other right content */}
+      {/* Right: Title + lock + bell + other right content */}
       <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
         {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
+
+        {/* Manual Lock Button - placed after tabs on right side */}
+        {currentUser && onLockClick && (
+          <button
+            type="button"
+            onClick={onLockClick}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 focus:outline-none focus:ring-2 focus:ring-orange-400 dark:text-orange-300 dark:hover:bg-orange-500/20 transition"
+            aria-label={t("Lock Session")}
+            title={t("Lock Session")}
+          >
+            <Lock className="w-5 h-5" />
+          </button>
+        )}
 
         {title && (
           <div className="flex items-center gap-3">

@@ -8,6 +8,7 @@ import NotificationBell from "./NotificationBell";
 import { ToastContainer } from "react-toastify";
 import { useHeader } from "../context/HeaderContext";
 import { useSessionLock } from "../context/SessionLockContext";
+import { useSetting } from "./hooks/useSetting";
 import "react-toastify/dist/ReactToastify.css";
 import { ArrowUpDown, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -197,6 +198,12 @@ export default function Layout({
   const [search, setSearch] = useState("");
   const [sortNewestFirst, setSortNewestFirst] = useState(true);
   const contentRef = useRef(null);
+  const [userSettings, setUserSettings] = useState({ pinRequired: true });
+
+  useSetting("users", setUserSettings, { pinRequired: true });
+
+  const isPinLoginEnabled = userSettings?.pinRequired !== false;
+  const handleManualLock = isPinLoginEnabled ? () => lock("manual") : undefined;
 
   // Username from localStorage for welcome
   let username = "Manager";
@@ -422,7 +429,7 @@ export default function Layout({
             onClick={() => setIsSidebarOpen(false)}
             aria-hidden="true"
           />
-          <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} onLockClick={() => lock('manual')} />
+          <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} onLockClick={handleManualLock} />
         </>
       )}
 
@@ -437,7 +444,7 @@ export default function Layout({
           centerNav={centerNav}
           tableNav={tableNav}
           onSidebarToggle={() => setIsSidebarOpen((v) => !v)}
-          onLockClick={() => lock('manual')}
+          onLockClick={handleManualLock}
           rightContent={rightContent}
           userName={username}
           tableStats={tableStats}

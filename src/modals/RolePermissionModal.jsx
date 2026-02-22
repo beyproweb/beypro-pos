@@ -88,6 +88,15 @@ const PERMISSION_LABELS = {
 
 
 const ALL_PERMISSIONS = Object.keys(PERMISSION_LABELS);
+const STANDALONE_STAFF_PERMISSIONS = [
+  "staff",
+  "staff-checkin",
+  "staff-schedule",
+  "staff-payroll",
+  "staff-send-shift",
+  "staff-add",
+  "staff-payment",
+];
 const modalRoot =
   typeof document !== "undefined" ? document.body : null;
 
@@ -124,16 +133,24 @@ export default function RolePermissionModal({
   };
 
   const normalizedQuery = search.trim().toLowerCase();
+  const isStandaloneStaff =
+    typeof window !== "undefined" &&
+    typeof window.location?.pathname === "string" &&
+    window.location.pathname.startsWith("/standalone/staff");
+  const permissionSource = useMemo(
+    () => (isStandaloneStaff ? STANDALONE_STAFF_PERMISSIONS : ALL_PERMISSIONS),
+    [isStandaloneStaff]
+  );
   const visiblePermissions = useMemo(() => {
-    if (!normalizedQuery) return ALL_PERMISSIONS;
-    return ALL_PERMISSIONS.filter(
+    if (!normalizedQuery) return permissionSource;
+    return permissionSource.filter(
       (perm) =>
         perm.includes(normalizedQuery) ||
         (PERMISSION_LABELS[perm] || "")
           .toLowerCase()
           .includes(normalizedQuery)
     );
-  }, [normalizedQuery]);
+  }, [normalizedQuery, permissionSource]);
 
   if (!isOpen) return null;
 

@@ -19,6 +19,17 @@ export default function AppearanceProvider({ children }) {
   const [loaded, setLoaded] = useState(false);
 
 useEffect(() => {
+  const isStandalone =
+    typeof window !== "undefined" &&
+    typeof window.location?.pathname === "string" &&
+    window.location.pathname.startsWith("/standalone");
+
+  if (isStandalone) {
+    setLoaded(true);
+    setAppearance(DEFAULT_APPEARANCE);
+    return;
+  }
+
   if (!currentUser?.id) {
     setLoaded(true);
     setAppearance(DEFAULT_APPEARANCE);

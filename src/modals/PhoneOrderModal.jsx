@@ -30,6 +30,9 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", address: "", birthday: "", email: "" });
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentMethodError, setPaymentMethodError] = useState(false);
+  const [addressError, setAddressError] = useState(false);
+  const [shakeModal, setShakeModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState({ name: "", phone: "", address: "", birthday: "", email: "" });
 
@@ -38,12 +41,6 @@ function PhoneOrderModal({ open, onClose, onCreateOrder }) {
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [addrForm, setAddrForm] = useState({ label: "", address: "" });
   const [editAddrId, setEditAddrId] = useState(null);
-
-  useEffect(() => {
-    if (!paymentMethod && paymentMethods.length) {
-      setPaymentMethod(paymentMethods[0].label);
-    }
-  }, [paymentMethods, paymentMethod]);
 
   const normalizePrefixSource = (value) =>
     String(value || "")
@@ -110,6 +107,7 @@ const fetchAddresses = async (customerId) => {
   if (!customerId) {
     setAddresses([]);
     setSelectedAddressId(null);
+    setAddressError(false);
     return { list: [], selectedId: null };
   }
   const data = await secureFetch(`/customerAddresses/customers/${customerId}/addresses`);
@@ -120,6 +118,7 @@ const fetchAddresses = async (customerId) => {
   const def = list.find((a) => a.is_default) || list[0];
   const selectedId = def?.id || null;
   setSelectedAddressId(selectedId);
+  setAddressError(false);
   return { list, selectedId };
 };
 
@@ -266,8 +265,33 @@ const handleStartOrder = async (options = {}) => {
   const customer = normalizedOptions.customer ?? selected;
   const addressId = normalizedOptions.addressId ?? selectedAddressId;
   const addressSource = normalizedOptions.addresses ?? addresses;
+
+  if (!customer) {
+    setShakeModal(true);
+    toast.error(t("Please select customer"));
+    window.setTimeout(() => setShakeModal(false), 380);
+    return;
+  }
+
   const addrObj = addressSource.find((a) => a.id === addressId);
-  if (!customer || !addrObj) return alert("Select customer and address!");
+  if (!addrObj) {
+    setAddressError(true);
+    setShakeModal(true);
+    if (editAddrId === "new" && String(addrForm?.address || "").trim()) {
+      toast.error(t("Please save address before starting order"));
+    } else {
+      toast.error(t("Please select address"));
+    }
+    window.setTimeout(() => setShakeModal(false), 380);
+    return;
+  }
+  if (!paymentMethod) {
+    setPaymentMethodError(true);
+    setShakeModal(true);
+    toast.error(t("Please select payment method"));
+    window.setTimeout(() => setShakeModal(false), 380);
+    return;
+  }
 
   try {
     setStartingOrder(true);
@@ -305,6 +329,10 @@ const handleStartOrder = async (options = {}) => {
       setAddresses([]);
       setSelectedAddressId(null);
       setStartingOrder(false);
+      setPaymentMethod("");
+      setPaymentMethodError(false);
+      setAddressError(false);
+      setShakeModal(false);
     }
   }, [open]);
 
@@ -312,7 +340,7 @@ const handleStartOrder = async (options = {}) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-200/40 via-fuchsia-200/40 to-indigo-100/60 backdrop-blur-[2px]">
-      <div className="relative bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl max-w-lg w-full p-0">
+      <div className={`relative bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl max-w-lg w-full p-0 ${shakeModal ? "animate-[phoneOrderShake_380ms_ease-in-out]" : ""}`}>
         {/* Header */}
         <div className="flex justify-between items-center px-6 pt-6 pb-3 rounded-t-3xl bg-gradient-to-r from-blue-400 via-fuchsia-400 to-indigo-400 shadow">
           <h2 className="text-2xl font-extrabold text-white tracking-tight">{t("Phone Order")}</h2>
@@ -504,7 +532,7 @@ const handleStartOrder = async (options = {}) => {
 
           {/* 3. Address Management for selected customer */}
           {selected && (
-            <div className="mt-5">
+            <div className={`mt-5 rounded-2xl ${addressError ? "ring-2 ring-rose-300 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900" : ""}`}>
               <div className="font-semibold mb-2 flex items-center gap-2 text-blue-800 dark:text-blue-200">
                 <MapPin size={18} /> {t("Addresses")}
               </div>
@@ -514,7 +542,10 @@ const handleStartOrder = async (options = {}) => {
                     className={`rounded-xl border px-3 py-2 flex items-center justify-between transition
                       ${selectedAddressId === addr.id ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30" : "border-blue-100 dark:border-zinc-800 bg-white dark:bg-zinc-900"}
                       cursor-pointer`}
-                    onClick={() => setSelectedAddressId(addr.id)}
+                    onClick={() => {
+                      setSelectedAddressId(addr.id);
+                      setAddressError(false);
+                    }}
                   >
                     <div className="flex-1">
                       <span className="font-bold">{addr.label || "Address"}:</span>
@@ -587,6 +618,11 @@ const handleStartOrder = async (options = {}) => {
                   >Cancel</button>
                 </div>
               )}
+              {addressError && (
+                <div className="mt-2 text-xs font-semibold text-rose-600">
+                  {t("Please select or save an address before starting order.")}
+                </div>
+              )}
             </div>
           )}
 
@@ -594,11 +630,19 @@ const handleStartOrder = async (options = {}) => {
           <div className="mt-6 mb-2">
             <label className="block mb-2 font-semibold text-gray-800 dark:text-white">{t("Payment Method")}</label>
             <select
-              className="border-2 border-blue-100 rounded-xl px-4 py-2 w-full bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition"
+              className={`border-2 rounded-xl px-4 py-2 w-full bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow focus:ring-2 transition ${
+                paymentMethodError
+                  ? "border-rose-400 focus:ring-rose-200 focus:border-rose-500"
+                  : "border-blue-100 focus:ring-blue-300 focus:border-blue-400"
+              }`}
               value={paymentMethod}
-              onChange={e => setPaymentMethod(e.target.value)}
+              onChange={e => {
+                setPaymentMethod(e.target.value);
+                if (e.target.value) setPaymentMethodError(false);
+              }}
               disabled={paymentMethods.length === 0}
             >
+              <option value="">{t("Select payment")}</option>
               {paymentMethods.length === 0 && <option value="">{t("No payment methods")}</option>}
               {paymentMethods.map(method => (
                 <option key={method.id} value={method.label}>
@@ -607,18 +651,32 @@ const handleStartOrder = async (options = {}) => {
                 </option>
               ))}
             </select>
+            {paymentMethodError && (
+              <div className="mt-1 text-xs font-semibold text-rose-600">
+                {t("Please select payment method before starting order.")}
+              </div>
+            )}
           </div>
 
           {/* 5. Start Order */}
           <button
             className="w-full mt-5 bg-blue-700 hover:bg-blue-900 text-white font-bold text-lg py-3 rounded-2xl shadow transition"
-            disabled={!selected || !selectedAddressId || startingOrder}
+            disabled={startingOrder}
             onClick={() => handleStartOrder()}
           >
             {startingOrder ? t("Loading...") : t("Start Order")}
           </button>
         </div>
       </div>
+      <style>{`
+        @keyframes phoneOrderShake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-8px); }
+          40% { transform: translateX(8px); }
+          60% { transform: translateX(-6px); }
+          80% { transform: translateX(6px); }
+        }
+      `}</style>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import Stock from "./pages/Stock";
 import TableOverview from "./pages/TableOverview";
 import TransactionScreen from "./pages/TransactionScreen";
 import Reports from "./pages/Reports";
+import OperationalEfficiency from "./pages/OperationalEfficiency";
 import Staff from "./pages/Staff";
 import IngredientPrices from "./pages/IngredientPrices";
 import LiveRouteMap from "./components/LiveRouteMap";
@@ -39,7 +40,7 @@ import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 import secureFetch from "./utils/secureFetch";
-import QrMenuSettings from "./pages/QrMenuSettings";
+import { QrMenuSettings } from "./features/websiteBuilder/index.js";
 import UserManagementPage from "./pages/UserManagementPage";
 import PrintersPage from "./pages/PrintersPage";
 import CamerasPage from "./pages/CamerasPage";
@@ -47,6 +48,8 @@ import TakeawayOverview from "./pages/TakeawayOverview";
 import StandaloneLogin from "./pages/standalone/StandaloneLogin";
 import StandaloneRegister from "./pages/standalone/StandaloneRegister";
 import StandaloneApp from "./pages/standalone/StandaloneApp";
+import StandaloneRedirect from "./pages/standalone/StandaloneRedirect";
+import StandaloneStaffApp from "./pages/standalone/StandaloneStaffApp";
 import { setNavigator } from "./utils/navigation";
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
 import { PlanModulesProvider } from "./context/PlanModulesContext";
@@ -190,6 +193,11 @@ function AppShell() {
 
   useEffect(() => {
     const loadSettings = async () => {
+      const isStandalone =
+        typeof window !== "undefined" &&
+        typeof window.location?.pathname === "string" &&
+        window.location.pathname.startsWith("/standalone");
+      if (isStandalone) return;
       try {
         const data = await secureFetch("/settings/notifications");
         window.notificationSettings = data;
@@ -225,11 +233,20 @@ function AppShell() {
             <Route path="/standalone-register" element={<Navigate to="/standalone/register" replace />} />
             <Route path="/standalone/login" element={<StandaloneLogin />} />
             <Route path="/standalone/register" element={<StandaloneRegister />} />
+            <Route path="/standalone/redirect" element={<StandaloneRedirect />} />
             <Route path="/standalone/app" element={<StandaloneApp />}>
               <Route index element={<Navigate to="qr-menu-settings" replace />} />
               <Route path="qr-menu-settings" element={<QrMenuSettings />} />
               <Route path="kitchen" element={<Kitchen />} />
             </Route>
+            <Route
+              path="/standalone/staff/*"
+              element={
+                <HeaderProvider>
+                  <StandaloneStaffApp />
+                </HeaderProvider>
+              }
+            />
 
             {/* PUBLIC: QR Menu (legacy slug-based link) */}
             <Route path="/qr-menu/:slug/:id" element={<QrMenu />} />
@@ -327,6 +344,7 @@ function AppShell() {
               <Route path="transaction/:tableId" element={<TransactionScreen />} />
               <Route path="transaction/phone/:orderId" element={<TransactionScreen />} />
               <Route path="reports" element={<ProtectedRoute permission="reports" moduleKey="page.reports"><Reports /></ProtectedRoute>} />
+              <Route path="reports/operational" element={<ProtectedRoute permission="reports" moduleKey="page.reports"><OperationalEfficiency /></ProtectedRoute>} />
               <Route path="staff" element={<ProtectedRoute permission="staff" moduleKey="page.staff"><Staff /></ProtectedRoute>} />
               <Route path="task" element={<ProtectedRoute permission="task" moduleKey="page.task"><Task /></ProtectedRoute>} />
               <Route path="live-route" element={<ProtectedRoute permission="delivery" moduleKey="page.delivery"><LiveRouteMap /></ProtectedRoute>} />

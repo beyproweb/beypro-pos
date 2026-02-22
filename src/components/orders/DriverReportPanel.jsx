@@ -7,21 +7,54 @@ export function DriverReportPanel({
   driverReport,
   showDriverColumn,
   formatCurrency,
+  reportFromDate,
+  reportToDate,
+  onChangeReportFromDate,
+  onChangeReportToDate,
 }) {
   if (!showDriverReport) return null;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const dateControls = (
+    <div className="mb-4 grid gap-2 sm:grid-cols-2">
+      <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+        <span>{t("From")}</span>
+        <input
+          type="date"
+          value={reportFromDate || ""}
+          max={reportToDate || today}
+          onChange={(e) => onChangeReportFromDate?.(e.target.value)}
+          className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+        />
+      </label>
+      <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+        <span>{t("To")}</span>
+        <input
+          type="date"
+          value={reportToDate || ""}
+          min={reportFromDate || undefined}
+          max={today}
+          onChange={(e) => onChangeReportToDate?.(e.target.value)}
+          className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+        />
+      </label>
+    </div>
+  );
 
   if (reportLoading) {
     return (
-      <div className="mt-2 animate-pulse text-lg sm:text-xl">
-        {t("Loading driver report...")}
+      <div className="mt-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] dark:border-slate-800 dark:bg-slate-950/60 dark:shadow-[0_30px_60px_-35px_rgba(0,0,0,0.6)]">
+        {dateControls}
+        <div className="animate-pulse text-lg sm:text-xl">{t("Loading driver report...")}</div>
       </div>
     );
   }
 
   if (driverReport?.error) {
     return (
-      <div className="mt-2 text-red-600 font-bold">
-        {driverReport.error}
+      <div className="mt-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] dark:border-slate-800 dark:bg-slate-950/60 dark:shadow-[0_30px_60px_-35px_rgba(0,0,0,0.6)]">
+        {dateControls}
+        <div className="text-red-600 font-bold">{driverReport.error}</div>
       </div>
     );
   }
@@ -32,6 +65,7 @@ export function DriverReportPanel({
 
   return (
     <div className="mt-2 rounded-3xl shadow-[0_30px_60px_-35px_rgba(15,23,42,0.18)] p-8 bg-white border border-slate-200 space-y-5 dark:bg-slate-950/60 dark:border-slate-800 dark:shadow-[0_30px_60px_-35px_rgba(0,0,0,0.6)]">
+      {dateControls}
       <div className="flex flex-wrap gap-10 items-center mb-3">
         <div>
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.2em] dark:text-slate-400">

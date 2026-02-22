@@ -5,7 +5,7 @@ import { Toaster, toast } from "react-hot-toast";
 import { Plus, Save, Download, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
-import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../../utils/cashDrawer";
+import { openCashDrawer, isCashLabel } from "../../utils/cashDrawer";
 import { useCurrency } from "../../context/CurrencyContext";
 const dateStr = (d) => new Date(d).toLocaleDateString("tr-TR");
 
@@ -796,16 +796,12 @@ const Payroll = () => {
       fetchStaffHistory(selectedStaff);
 
       if (isCashLabel(paymentMethod) && amt > 0) {
-        const staffEntry = staffList.find(
-          (person) => String(person.id) === String(selectedStaff)
-        );
-        const staffLabel = staffEntry?.name || t("Staff");
-        await logCashRegisterEvent({
-          type: "payroll",
-          amount: amt,
-          note: `Payroll - ${staffLabel}`,
-        });
         await openCashDrawer();
+      }
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("register:refresh"));
+        window.dispatchEvent(new Event("reports:refresh"));
       }
     } catch (err) {
       console.error("❌ Payment error:", err);
@@ -966,25 +962,44 @@ const Payroll = () => {
 
   return (
     <div className="min-h-screen w-full bg-transparent text-blue-900 dark:text-slate-100 pb-12 text-base">
-      <div className="w-full px-8 py-8 flex flex-col md:flex-row gap-6 items-center justify-between bg-transparent">
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <select
-            className="p-4 rounded-lg border border-gray-300 bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 text-base"
-            value={selectedStaff || ""}
-            onChange={(e) => fetchStaffHistory(Number(e.target.value))}
-          >
-            <option value="">{t("Select Staff")}</option>
-            {staffList.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.role})
-              </option>
-            ))}
-          </select>
-          <input
-            type="text"
-            placeholder={t("Search staff...")}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+	      <div className="w-full px-8 py-8 flex flex-col md:flex-row gap-6 items-center justify-between bg-transparent">
+	        <div className="flex items-center gap-4 w-full md:w-auto">
+	          <select
+	            className="p-4 rounded-lg border border-gray-300 bg-white shadow text-blue-900 dark:bg-slate-800 dark:text-slate-100 text-base"
+	            value={selectedStaff || ""}
+	            onChange={(e) => fetchStaffHistory(Number(e.target.value))}
+	          >
+	            <option value="">{t("Select Staff")}</option>
+	            {staffList.map((s) => (
+	              <option key={s.id} value={s.id}>
+	                {s.name} ({s.role})
+	              </option>
+	            ))}
+	          </select>
+	          <button
+	            type="button"
+	            disabled={!selectedStaff}
+	            onClick={() => {
+	              if (!selectedStaff) return;
+	              window.dispatchEvent(
+	                new CustomEvent("staff:open-payment", {
+	                  detail: { staffId: selectedStaff },
+	                })
+	              );
+	            }}
+	            className={`px-4 py-3 rounded-lg font-semibold text-base transition ${
+	              selectedStaff
+	                ? "bg-indigo-600 text-white hover:bg-indigo-700"
+	                : "bg-slate-200 text-slate-500 cursor-not-allowed"
+	            }`}
+	          >
+	            {t("Payment")}
+	          </button>
+	          <input
+	            type="text"
+	            placeholder={t("Search staff...")}
+	            value={searchQuery}
+	            onChange={(e) => setSearchQuery(e.target.value)}
             className="p-4 rounded-lg border border-gray-300 bg-white shadow w-full md:w-1/3 text-base text-blue-900 dark:bg-slate-800 dark:text-slate-100"
           />
         </div>
