@@ -1293,11 +1293,24 @@ async function load() {
     const loadShopHours = async ({ withSpinner = false } = {}) => {
       if (withSpinner && active) setLoadingShopHours(true);
       try {
-        const token = getStoredToken();
-        if (!token) throw new Error("Missing token");
-        const data = await secureFetch("/settings/shop-hours/all", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        let data = null;
+
+        if (identifier) {
+          try {
+            data = await secureFetch(`/public/shop-hours/${encodeURIComponent(identifier)}`);
+          } catch {
+            data = null;
+          }
+        }
+
+        if (!Array.isArray(data)) {
+          const token = getStoredToken() || getAuthToken();
+          if (!token) throw new Error("Missing token");
+          data = await secureFetch("/settings/shop-hours/all", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+
         if (!active) return;
         const hoursMap = {};
         if (Array.isArray(data)) {
@@ -1330,7 +1343,7 @@ async function load() {
       window.clearInterval(pollId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+  }, [identifier]);
 
   /* ============================================================
      3) Local slider state
