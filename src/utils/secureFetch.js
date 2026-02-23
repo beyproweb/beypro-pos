@@ -175,12 +175,6 @@ const isPublic =
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
 
-  if (isShopHoursEndpoint) {
-    headers["Cache-Control"] = headers["Cache-Control"] || "no-cache, no-store, must-revalidate";
-    headers.Pragma = headers.Pragma || "no-cache";
-    headers.Expires = headers.Expires || "0";
-  }
-
   const path = normalizedEndpoint.startsWith("/")
     ? normalizedEndpoint
     : `/${normalizedEndpoint}`;
