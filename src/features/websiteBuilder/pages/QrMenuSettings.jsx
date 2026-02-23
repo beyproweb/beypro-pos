@@ -5,6 +5,20 @@ import { Eye, EyeOff, Search, Copy, Download, Printer, QrCode, Trash2, ChevronDo
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 
+const extractIdentifierFromQrUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const parts = (url.pathname || "").split("/").filter(Boolean);
+    return parts[parts.length - 1] || "";
+  } catch {
+    const clean = raw.replace(/\/+$/, "");
+    const parts = clean.split("/").filter(Boolean);
+    return parts[parts.length - 1] || "";
+  }
+};
+
 export default function QrMenuSettings() {
   const { t } = useTranslation();
   const [qrUrl, setQrUrl] = useState("");
@@ -560,9 +574,25 @@ async function saveAllCustomization() {
 
   useEffect(() => {
     let active = true;
-    setLoadingShopHours(true);
-    secureFetch("/settings/shop-hours/all")
-      .then((data) => {
+    const identifier = extractIdentifierFromQrUrl(qrUrl);
+
+    const loadShopHours = async ({ withSpinner = false, showToastOnError = false } = {}) => {
+      if (withSpinner && active) setLoadingShopHours(true);
+      try {
+        let data = null;
+
+        if (identifier) {
+          try {
+            data = await secureFetch(`/public/shop-hours/${encodeURIComponent(identifier)}`);
+          } catch {
+            data = null;
+          }
+        }
+
+        if (!Array.isArray(data)) {
+          data = await secureFetch("/settings/shop-hours/all");
+        }
+
         if (!active) return;
         const hoursMap = {};
         if (Array.isArray(data)) {
@@ -574,19 +604,35 @@ async function saveAllCustomization() {
           });
         }
         setShopHours(hoursMap);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("❌ Failed to load shop hours:", err);
-        toast.error(t("Failed to load settings"));
-      })
-      .finally(() => {
-        if (!active) return;
-        setLoadingShopHours(false);
-      });
+        if (showToastOnError) {
+          toast.error(t("Failed to load settings"));
+        }
+      } finally {
+        if (withSpinner && active) setLoadingShopHours(false);
+      }
+    };
+
+    loadShopHours({ withSpinner: true, showToastOnError: true });
+
+    const pollId = window.setInterval(() => {
+      loadShopHours({ withSpinner: false, showToastOnError: false });
+    }, 60_000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadShopHours({ withSpinner: false, showToastOnError: false });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       active = false;
+      window.clearInterval(pollId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [t]);
+  }, [qrUrl, t]);
 
   const handleShopHoursChange = (day, field, value) => {
     setShopHours((prev) => ({
