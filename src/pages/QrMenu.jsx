@@ -1289,8 +1289,9 @@ async function load() {
 
   React.useEffect(() => {
     let active = true;
-    setLoadingShopHours(true);
-    (async () => {
+
+    const loadShopHours = async ({ withSpinner = false } = {}) => {
+      if (withSpinner && active) setLoadingShopHours(true);
       try {
         const token = getStoredToken();
         if (!token) throw new Error("Missing token");
@@ -1306,14 +1307,28 @@ async function load() {
         }
         setShopHours(hoursMap);
       } catch (err) {
-        // If we can't load hours, keep dropdown functional but default to "Open now!"
         if (active) setShopHours({});
       } finally {
-        if (active) setLoadingShopHours(false);
+        if (withSpinner && active) setLoadingShopHours(false);
       }
-    })();
+    };
+
+    loadShopHours({ withSpinner: true });
+    const pollId = window.setInterval(() => {
+      loadShopHours({ withSpinner: false });
+    }, 60_000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadShopHours({ withSpinner: false });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       active = false;
+      window.clearInterval(pollId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 

@@ -153,6 +153,7 @@ export default async function secureFetch(endpoint, options = {}) {
   const lower = normalizedEndpoint.toLowerCase();
   const lowerPath = lower.replace(/[?#].*$/, "");
   const hasQrMenuSegment = /(?:^|\/)qr-menu(?:\/|$|[?#])/.test(lower);
+  const isShopHoursEndpoint = lowerPath === "/settings/shop-hours/all";
 
 const isPublic =
   lower.includes("/products?identifier=") ||
@@ -174,6 +175,12 @@ const isPublic =
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
 
+  if (isShopHoursEndpoint) {
+    headers["Cache-Control"] = headers["Cache-Control"] || "no-cache, no-store, must-revalidate";
+    headers.Pragma = headers.Pragma || "no-cache";
+    headers.Expires = headers.Expires || "0";
+  }
+
   const path = normalizedEndpoint.startsWith("/")
     ? normalizedEndpoint
     : `/${normalizedEndpoint}`;
@@ -185,7 +192,12 @@ const isPublic =
     url: fullUrl,
   };
 
-  const res = await fetch(fullUrl, { ...options, headers });
+  const fetchOptions = { ...options, headers };
+  if (isShopHoursEndpoint) {
+    fetchOptions.cache = "no-store";
+  }
+
+  const res = await fetch(fullUrl, fetchOptions);
   const ctype = res.headers.get("content-type") || "";
 
   if (!ctype.includes("application/json")) {
