@@ -173,6 +173,13 @@ const shareUrl = useMemo(() => {
 const parseArray = useCallback((raw) => {
   return Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
 }, []);
+const parseOrderItemsPayload = useCallback((raw) => {
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.data)) return raw.data;
+  if (Array.isArray(raw?.items)) return raw.items;
+  if (Array.isArray(raw?.order_items)) return raw.order_items;
+  return [];
+}, []);
 
 const parseReservationDateTimeMs = (reservationDate, reservationTime) => {
   if (!reservationDate) return NaN;
@@ -694,6 +701,24 @@ const startTableScannerWithGuests = useCallback((guests) => {
   return true;
 }, [storage]);
 
+const syncTableGuestsFromQr = useCallback(
+  async (tableNumber, guests) => {
+    const normalizedTable = Number(tableNumber);
+    const normalizedGuests = normalizeOptionalGuestCount(guests);
+    if (!Number.isFinite(normalizedTable) || normalizedTable <= 0 || !normalizedGuests) return;
+    try {
+      await secureFetch(appendIdentifier(`/tables/${normalizedTable}`), {
+        method: "PATCH",
+        body: JSON.stringify({ guests: normalizedGuests }),
+      });
+    } catch (err) {
+      // Public QR flows may not have staff auth; ignore and rely on order reservation fallback.
+      console.warn("⚠️ QR guest sync to table config failed:", err?.message || err);
+    }
+  },
+  [appendIdentifier]
+);
+
 const handleTableScanSuccess = useCallback(
   (decodedText) => {
     if (tableScanInFlight.current) return;
@@ -711,16 +736,27 @@ const handleTableScanSuccess = useCallback(
     tableScanInFlight.current = true;
     const finalTable = tableScanTarget || scannedTable;
     stopTableScanner().finally(() => {
+      const normalizedGuests = clampGuestCount(tableScanGuests, 1);
       setShowTableScanner(false);
       setTableScanError("");
       setTableScanReady(false);
       setTable(finalTable);
       saveSelectedTable(finalTable);
-      storage.setItem("qr_table_guests", String(clampGuestCount(tableScanGuests, 1)));
+      storage.setItem("qr_table_guests", String(normalizedGuests));
+      syncTableGuestsFromQr(finalTable, normalizedGuests);
       tableScanInFlight.current = false;
     });
   },
-  [saveSelectedTable, setTable, stopTableScanner, storage, t, tableScanGuests, tableScanTarget]
+  [
+    saveSelectedTable,
+    setTable,
+    stopTableScanner,
+    storage,
+    syncTableGuestsFromQr,
+    t,
+    tableScanGuests,
+    tableScanTarget,
+  ]
 );
   const resetToTypePicker = () => {
     if (isForcedStatusActive()) {
@@ -1010,15 +1046,11 @@ const token = urlToken || storedToken;
 
 // 1️⃣ If we have a saved active order id, prefer that
 let order = null;
-if (token && activeId) {
+if (activeId) {
   try {
-    const res = await secureFetch(appendIdentifier(`/orders/${activeId}`), {
-      headers: { Authorization: `Bearer ${token}` },
+    order = await secureFetch(appendIdentifier(`/orders/${activeId}`), {
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
     });
-    if (res && res.ok !== false) {
-      const data = typeof res.json === "function" ? await res.json() : res;
-      order = data;
-    }
   } catch (err) {
     console.warn("⚠️ Failed to restore active order:", err);
   }
@@ -1063,18 +1095,12 @@ if (token && activeId) {
         ) || null;
 if (savedTable) {
   const token = getStoredToken();
-  if (token) {
-    try {
-      const q = await secureFetch(appendIdentifier(`/orders?table_number=${savedTable}`), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+  try {
+    const q = await secureFetch(appendIdentifier(`/orders?table_number=${savedTable}`), {
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+    });
 
-      const raw = await q.json();
-      const list = Array.isArray(raw)
-        ? raw
-        : Array.isArray(raw?.data)
-        ? raw.data
-        : [];
+    const list = parseArray(q);
 
         const openOrder = list.find((o) => o?.status);
 
@@ -1100,13 +1126,12 @@ if (savedTable) {
               : ""
           );
 
-	          storage.setItem("qr_active_order_id", String(openOrder.id));
-	          storage.setItem("qr_orderType", "table");
-	          return;
-	      }
-	    } catch (err) {
+	        storage.setItem("qr_active_order_id", String(openOrder.id));
+	        storage.setItem("qr_orderType", "table");
+	        return;
+	    }
+	  } catch (err) {
       console.warn("⚠️ Failed to restore table order:", err);
-    }
   }
 }
 
@@ -1134,22 +1159,7 @@ if (savedTable) {
       const opts = token
         ? { headers: { Authorization: `Bearer ${token}` } }
         : {};
-      const res = await secureFetch(appendIdentifier(`/orders/${orderId}`), opts);
-      if (!res || res.ok === false) {
-        const forceActive = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
-        if (forceActive) {
-          storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
-          storage.setItem("qr_show_status", "0");
-          setShowStatus(false);
-          setOrderId(null);
-          setActiveOrder(null);
-          setOrderScreenStatus(null);
-          resetToTypePicker();
-        }
-        return;
-      }
-
-      const data = typeof res.json === "function" ? await res.json() : res;
+      const data = await secureFetch(appendIdentifier(`/orders/${orderId}`), opts);
       setActiveOrder(data || null);
       setLoyaltyEligibilityFromOrder(data || null);
 
@@ -1172,12 +1182,38 @@ if (savedTable) {
         Number.isFinite(resolvedTableNo) &&
         resolvedTableNo > 0 &&
         safeReservedTables.some((n) => Number(n) === resolvedTableNo);
+      let hasActiveOrderItems = false;
+      if (forceActive && lostReservationPayload && s !== "reserved" && !tableStillReserved) {
+        try {
+          const tokenForItems = getStoredToken();
+          const itemsRaw = await secureFetch(appendIdentifier(`/orders/${orderId}/items`), {
+            ...(tokenForItems
+              ? { headers: { Authorization: `Bearer ${tokenForItems}` } }
+              : {}),
+          });
+          const items = parseOrderItemsPayload(itemsRaw);
+          hasActiveOrderItems = items.some((item) => {
+            const qty = Number(item?.quantity ?? 1);
+            if (!Number.isFinite(qty) || qty <= 0) return false;
+            const state = String(
+              item?.status || item?.item_status || item?.kitchen_status || ""
+            ).toLowerCase();
+            return !["canceled", "cancelled", "deleted", "void"].includes(state);
+          });
+        } catch {
+          // If items cannot be fetched, fail-safe to keep status open for active table orders.
+          hasActiveOrderItems = true;
+        }
+      }
       // Keep force-status active while order is still reserved.
       // Reservation payload can momentarily be missing during sync transitions.
       if (
         forceActive &&
         (isTerminalOrderStatus(s) ||
-          (lostReservationPayload && s !== "reserved" && !tableStillReserved))
+          (lostReservationPayload &&
+            s !== "reserved" &&
+            !tableStillReserved &&
+            !hasActiveOrderItems))
       ) {
         storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
         storage.setItem("qr_show_status", "0");
@@ -1202,9 +1238,14 @@ if (savedTable) {
           : ""
       );
 
-      // Keep the status modal visible when order is cancelled/closed
+      // Keep status visible for cancelled/closed only when user didn't intentionally hide it.
+      // This prevents status-vs-cart flicker when opening cart from the bottom nav.
       if (s === "canceled" || s === "cancelled" || s === "closed") {
-        setShowStatus(true);
+        const shouldKeepOpen = forceActive || storage.getItem("qr_show_status") === "1";
+        if (shouldKeepOpen) {
+          setShowStatus(true);
+          storage.setItem("qr_show_status", "1");
+        }
         setOrderStatus("success");
       }
 
@@ -1222,10 +1263,12 @@ if (savedTable) {
   }, [
     orderId,
     appendIdentifier,
+    parseOrderItemsPayload,
     resetToTypePicker,
     storage,
     table,
     safeReservedTables,
+    getStoredToken,
     setLoyaltyEligibilityFromOrder,
   ]);
 
@@ -1266,11 +1309,35 @@ if (savedTable) {
     try {
       if (restaurantIdentifier) {
         try {
-          const payload = await secureFetch(
-            appendIdentifier(
-              `/public/unavailable-tables/${encodeURIComponent(restaurantIdentifier)}`
-            )
-          );
+          const token = getStoredToken();
+          const authOpts = token
+            ? {
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            : {};
+          let payload = null;
+          try {
+            payload = await secureFetch(
+              appendIdentifier(
+                `/public/unavailable-tables/${encodeURIComponent(restaurantIdentifier)}`
+              ),
+              authOpts
+            );
+          } catch (primaryErr) {
+            const retryLegacy = /401|404|405|unauthorized|token missing/i.test(
+              String(primaryErr?.message || "")
+            );
+            if (!retryLegacy) throw primaryErr;
+            // Backward-compat for older production API shape.
+            payload = await secureFetch(
+              appendIdentifier(
+                `/public/unavailable-tables?identifier=${encodeURIComponent(
+                  restaurantIdentifier
+                )}`
+              ),
+              authOpts
+            );
+          }
           addNumbers(nextOccupiedSet, payload?.table_numbers);
           addNumbers(nextReservedSet, payload?.reserved_table_numbers);
           hasAnySource = true;
@@ -1760,29 +1827,41 @@ const showTableSelector = !forceHome && orderType === "table" && !table;
 async function rehydrateCartFromOrder(orderId) {
   try {
     const token = getStoredToken();
-    if (!token) {
-      console.info("ℹ️ Skipping cart rehydrate (no auth token)");
-      return;
+    let raw = null;
+    try {
+      raw = await secureFetch(appendIdentifier(`/orders/${orderId}/items`), {
+        ...(token
+          ? {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          : {}),
+      });
+    } catch (primaryErr) {
+      // Some QR flows can read order items publicly with identifier-scoped endpoints.
+      // Retry once without auth header before giving up.
+      if (!token) throw primaryErr;
+      raw = await secureFetch(appendIdentifier(`/orders/${orderId}/items`));
     }
-const res = await secureFetch(appendIdentifier(`/orders/${orderId}/items`), {
-  headers: {
-    Authorization: `Bearer ${token}`,
-  },
-});
-
-    if (!res.ok) throw new Error("Failed to load order items");
-    const raw = await res.json();
 
     const now36 = Date.now().toString(36);
-    const lockedItems = (Array.isArray(raw) ? raw : [])
-      // keep non-delivered so customer can see what is in progress/ready
-      .filter(i => (i.kitchen_status || "new") !== "delivered")
+    const lockedItems = parseOrderItemsPayload(raw)
       .map((it) => ({
         id: it.product_id ?? it.external_product_id,
         name: it.order_item_name || it.product_name || it.name || "Item",
         price: Number(it.price || 0),
         quantity: Number(it.quantity || 1),
-        extras: typeof it.extras === "string" ? JSON.parse(it.extras) : (it.extras || []),
+        extras: (() => {
+          if (Array.isArray(it.extras)) return it.extras;
+          if (typeof it.extras !== "string") return [];
+          try {
+            const parsed = JSON.parse(it.extras);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })(),
         note: it.note || "",
         image: null,
         unique_id: `${(it.product_id ?? it.external_product_id ?? "x")}-${now36}-${Math.random().toString(36).slice(2,8)}`,
@@ -1796,10 +1875,39 @@ const res = await secureFetch(appendIdentifier(`/orders/${orderId}/items`), {
   }
 }
 
+async function hydrateCartFromActiveOrder() {
+  const activeOrderId = Number(
+    orderId ||
+      activeOrder?.id ||
+      storage.getItem("qr_active_order_id") ||
+      null
+  );
+  if (!Number.isFinite(activeOrderId) || activeOrderId <= 0) return false;
+  await rehydrateCartFromOrder(activeOrderId);
+  setOrderId(activeOrderId);
+  storage.setItem("qr_active_order_id", String(activeOrderId));
+  storage.setItem("qr_show_status", "0");
+  return true;
+}
+
 // ---- Order Another: show previous lines (locked), start fresh for new ones ----
 async function handleOrderAnother() {
-  const currentStatus = String(orderScreenStatus || "").toLowerCase();
-  const allowOrderAnotherWhileReserved = currentStatus === "reserved";
+  const currentStatus = String(orderScreenStatus || activeOrder?.status || "").toLowerCase();
+  const tableForLockCheck = Number(
+    table ||
+      storage.getItem("qr_table") ||
+      storage.getItem("qr_selected_table") ||
+      activeOrder?.table_number ||
+      activeOrder?.tableNumber ||
+      null
+  );
+  const reservedTableContextWhileLocked =
+    Number.isFinite(tableForLockCheck) &&
+    safeReservedTables.some((n) => Number(n) === Number(tableForLockCheck));
+  const allowOrderAnotherWhileReserved =
+    currentStatus === "reserved" ||
+    currentStatus === "confirmed" ||
+    reservedTableContextWhileLocked;
   if (isForcedStatusActive() && !allowOrderAnotherWhileReserved) {
     setShowStatus(true);
     storage.setItem("qr_show_status", "1");
@@ -1864,20 +1972,17 @@ async function handleOrderAnother() {
             const q = await secureFetch(appendIdentifier(`/orders?table_number=${tNo}`) , {
               headers: { Authorization: `Bearer ${token}` },
             });
-            if (q.ok) {
-              const list = await q.json();
-              const arr = Array.isArray(list) ? list : (Array.isArray(list?.data) ? list.data : []);
-              const open = arr.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
-              if (open) {
-                id = open.id;
-                type = "table";
-                const openTable = Number(open.table_number);
-                if (Number.isFinite(openTable) && openTable > 0) {
-                  resolvedTableNo = openTable;
-                }
-                setOrderId(id);
-                setOrderType("table");
+            const arr = Array.isArray(q) ? q : (Array.isArray(q?.data) ? q.data : []);
+            const open = arr.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
+            if (open) {
+              id = open.id;
+              type = "table";
+              const openTable = Number(open.table_number);
+              if (Number.isFinite(openTable) && openTable > 0) {
+                resolvedTableNo = openTable;
               }
+              setOrderId(id);
+              setOrderType("table");
             }
           } catch (err) {
             console.warn("⚠️ Failed to fetch open table order:", err);
@@ -1961,13 +2066,42 @@ function handleReset() {
 
     setCallingWaiter(true);
     try {
-      await secureFetch(`/public/call-waiter/${encodeURIComponent(restaurantIdentifier)}`, {
-        method: "POST",
-        body: JSON.stringify({
-          table_number: tableNumber,
-          source: "qr_menu",
-        }),
-      });
+      const token = getStoredToken();
+      const authOpts = token
+        ? {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        : {};
+      const callWaiterBody = {
+        table_number: tableNumber,
+        source: "qr_menu",
+      };
+      try {
+        await secureFetch(`/public/call-waiter/${encodeURIComponent(restaurantIdentifier)}`, {
+          method: "POST",
+          ...authOpts,
+          body: JSON.stringify(callWaiterBody),
+        });
+      } catch (primaryErr) {
+        const retryLegacy = /401|404|405|unauthorized|token missing/i.test(
+          String(primaryErr?.message || "")
+        );
+        if (!retryLegacy) throw primaryErr;
+        // Backward-compat for older production API shape.
+        await secureFetch(
+          `/public/call-waiter?identifier=${encodeURIComponent(restaurantIdentifier)}`,
+          {
+            method: "POST",
+            ...authOpts,
+            body: JSON.stringify({
+              ...callWaiterBody,
+              identifier: restaurantIdentifier,
+            }),
+          }
+        );
+      }
       setCallWaiterCooldownUntil(Date.now() + 15000);
       return { ok: true };
     } catch (err) {
@@ -1980,7 +2114,7 @@ function handleReset() {
     } finally {
       setCallingWaiter(false);
     }
-  }, [restaurantIdentifier, table, storage, callWaiterCooldownUntil]);
+  }, [restaurantIdentifier, table, storage, callWaiterCooldownUntil, getStoredToken]);
 
   const callWaiterCooldownSeconds = Math.max(
     0,
@@ -2139,6 +2273,7 @@ function handleReset() {
     closeTableScanner,
     resetToTypePicker,
     handleCloseOrderPage,
+    hydrateCartFromActiveOrder,
     handleOrderAnother,
     handleSubmitOrder,
     handleReset,

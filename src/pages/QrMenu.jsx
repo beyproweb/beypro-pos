@@ -3318,24 +3318,27 @@ function OrderStatusModal({
 </div>
 
 
-        {/* Footer */}
-        <div className="p-4 border-t bg-white">
-          {lockBlocksActions ? (
-            <button
-              className="w-full py-3 rounded-xl bg-slate-200 text-slate-700 font-bold shadow cursor-not-allowed"
-              disabled
-            >
-              {t("Table must be closed by staff first")}
-            </button>
-          ) : (
-            <button
-              className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
-              onClick={status === "success" ? onOrderAnother : onClose}
-            >
-              {status === "success" ? t("Order Another") : t("Close")}
-            </button>
-          )}
-        </div>
+        {/* Footer: keep only when no embedded OrderStatusScreen is rendered.
+            OrderStatusScreen already renders Close + Order Again actions. */}
+        {!orderId && (
+          <div className="p-4 border-t bg-white">
+            {lockBlocksActions ? (
+              <button
+                className="w-full py-3 rounded-xl bg-slate-200 text-slate-700 font-bold shadow cursor-not-allowed"
+                disabled
+              >
+                {t("Table must be closed by staff first")}
+              </button>
+            ) : (
+              <button
+                className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
+                onClick={status === "success" ? onOrderAnother : onClose}
+              >
+                {status === "success" ? t("Order Another") : t("Close")}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3443,6 +3446,7 @@ export default function QrMenu() {
     closeTableScanner,
     resetToTypePicker,
     handleCloseOrderPage,
+    hydrateCartFromActiveOrder,
     handleOrderAnother,
     handleSubmitOrder,
     handleReset,
@@ -3547,9 +3551,21 @@ export default function QrMenu() {
     showCallWaiterFeedback(t("Unable to call waiter right now."));
   }, [handleCallWaiter, showCallWaiterFeedback, t]);
 
-  const onOpenCartFromNav = useCallback(() => {
+  const onOpenCartFromNav = useCallback(async () => {
+    // Ensure status overlay is dismissed before opening cart to avoid open/close flicker.
+    setShowStatus(false);
+    storage.setItem("qr_show_status", "0");
+    // Rehydrate when there are no pending new items; locked-only cart can be stale
+    // right after sub-order submit and must be refreshed from server.
+    if (cartNewItemsCount === 0 && hasActiveOrder) {
+      try {
+        await hydrateCartFromActiveOrder?.();
+      } catch (err) {
+        console.warn("⚠️ Failed to hydrate cart from active order:", err);
+      }
+    }
     window.dispatchEvent(new Event("qr:cart-open"));
-  }, []);
+  }, [cartNewItemsCount, hasActiveOrder, hydrateCartFromActiveOrder, setShowStatus, storage]);
 
   const onOpenVoiceFromNav = useCallback(() => {
     window.dispatchEvent(new Event("qr:voice-order-open"));
@@ -3561,8 +3577,15 @@ export default function QrMenu() {
     const activeId = Number(orderId || storage.getItem("qr_active_order_id"));
     return Number.isFinite(activeId) && activeId > 0;
   })();
+  const normalizedStatusForLock = String(orderScreenStatus || "").toLowerCase();
+  const reservedTableContextWhileLocked =
+    Number.isFinite(Number(resolvedTableForActions)) &&
+    safeReservedTables.some((n) => Number(n) === Number(resolvedTableForActions));
   const allowOrderAnotherWhenLocked =
-    forceStatusLockActive && String(orderScreenStatus || "").toLowerCase() === "reserved";
+    forceStatusLockActive &&
+    (normalizedStatusForLock === "reserved" ||
+      normalizedStatusForLock === "confirmed" ||
+      reservedTableContextWhileLocked);
 
   const statusPortal = showStatus && statusPortalOrderId
     ? createPortal(

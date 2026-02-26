@@ -524,10 +524,11 @@ const CartPanelContainer = ({
           ? t("Close Later")
           : t("Pay Later"),
       footerCancelDisabled:
-        !["confirmed", "paid"].includes(normalizedStatus) ||
+        !["confirmed", "paid", "reserved"].includes(normalizedStatus) ||
         hasUnconfirmedCartItems ||
         cartItems.length === 0,
-      footerCanShowCancel: orderType === "table" || orderType === "takeaway",
+      footerCanShowCancel:
+        orderType === "table" || orderType === "takeaway" || orderType === "reservation",
       footerPrimaryActionLabel: primaryActionLabel,
     }),
     [

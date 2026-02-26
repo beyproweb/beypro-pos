@@ -59,14 +59,14 @@ export const useFooterActions = ({
 
   const footerCancelDisabled = useMemo(
     () =>
-      !["confirmed", "paid"].includes(normalizedStatus) ||
+      !["confirmed", "paid", "reserved"].includes(normalizedStatus) ||
       hasUnconfirmedCartItems ||
       cartItems.length === 0,
     [cartItems.length, hasUnconfirmedCartItems, normalizedStatus]
   );
 
   const footerCanShowCancel = useMemo(
-    () => orderType === "table" || orderType === "takeaway",
+    () => orderType === "table" || orderType === "takeaway" || orderType === "reservation",
     [orderType]
   );
 

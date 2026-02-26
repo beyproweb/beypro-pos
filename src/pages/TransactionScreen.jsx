@@ -1271,11 +1271,29 @@ useEffect(() => {
       if (currentItems.length > 0) return;
 
       const orderType = String(currentOrder.order_type || "").toLowerCase();
+      const orderStatus = String(currentOrder.status || "").toLowerCase();
+      const isTableLikeOrder = orderType === "table" || orderType === "reservation";
+      const hasReservationPayload = Boolean(
+        getReservationSchedule(currentOrder) ||
+          currentOrder?.reservation_id ||
+          currentOrder?.reservationId ||
+          currentOrder?.reservation?.id ||
+          currentOrder?.reservation_date ||
+          currentOrder?.reservationDate ||
+          currentOrder?.reservation_time ||
+          currentOrder?.reservationTime
+      );
+      const shouldSkipEmptyResetForReservation =
+        isTableLikeOrder &&
+        (orderType === "reservation" || orderStatus === "reserved" || hasReservationPayload);
+
+      if (shouldSkipEmptyResetForReservation) return;
+
       if (orderType === "phone") {
         txApiRequest(`/orders/${currentOrder.id}/close${identifier}`, { method: "POST" });
         return;
       }
-      if (orderType === "table") {
+      if (isTableLikeOrder) {
         const tableNum = Number(currentOrder?.table_number ?? currentOrder?.tableNumber);
         if (Number.isFinite(tableNum)) removeTableOverviewOrderFromCache(tableNum);
       }

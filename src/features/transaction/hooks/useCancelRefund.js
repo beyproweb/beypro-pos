@@ -55,9 +55,12 @@ export const useCancelRefund = ({
 
   const openCancelModal = useCallback(() => {
     if (!order?.id) return;
-    const canCancelStatus = normalizedStatus === "confirmed" || normalizedStatus === "paid";
+    const canCancelStatus =
+      normalizedStatus === "confirmed" ||
+      normalizedStatus === "paid" ||
+      normalizedStatus === "reserved";
     if (!canCancelStatus) {
-      showToast(t("Order must be confirmed or paid before cancelling."));
+      showToast(t("Order must be confirmed, reserved, or paid before cancelling."));
       return;
     }
     if (selectedCartItems.length === 0) {

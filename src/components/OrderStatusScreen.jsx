@@ -793,7 +793,7 @@ const OrderStatusScreen = ({
         title={t("Order Status")}
         subtitle={restaurantName}
         meta={orderId ? `#${orderId}` : null}
-        onBack={onClose || null}
+        onBack={null}
       />
 
       <main className="mx-auto w-full max-w-[640px] px-4 pt-4 pb-6">
@@ -830,10 +830,9 @@ const OrderStatusScreen = ({
 
           <InlineBottomActions
             t={t}
-            primaryLabel={t("Order Again")}
-            secondaryLabel={t("Close")}
+            primaryLabel={t("Order")}
             onPrimary={onOrderAnother}
-            onSecondary={onClose || null}
+            onSecondary={null}
           />
         </div>
       </main>

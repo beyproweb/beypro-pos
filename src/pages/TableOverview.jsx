@@ -274,7 +274,6 @@ export default function TableOverview() {
   const { formatCurrency } = useCurrency();
   const navigate = useNavigate();
   const location = useLocation();
-  const didResetGuestsOnEntryRef = useRef(false);
   const lastDayKeyRef = useRef(formatLocalYmd(new Date()));
   const tabFromUrl = React.useMemo(() => {
     const params = new window.URLSearchParams(location.search);
@@ -625,6 +624,30 @@ const handleDeleteReservation = useCallback(
           return true;
         });
       });
+
+      if (Number.isFinite(tableNumber)) {
+        setTableConfigs((prev) => {
+          const prevArr = Array.isArray(prev) ? prev : [];
+          const next = prevArr.map((cfg) =>
+            Number(cfg?.number) === tableNumber ? { ...cfg, guests: null } : cfg
+          );
+          try {
+            localStorage.setItem(getTableConfigsCacheKey(), JSON.stringify(next));
+            localStorage.setItem(getTableCountCacheKey(), String(next.length));
+          } catch (cacheErr) {
+            void cacheErr;
+          }
+          return next;
+        });
+        try {
+          await secureFetch(`/tables/${tableNumber}`, {
+            method: "PATCH",
+            body: JSON.stringify({ guests: null }),
+          });
+        } catch (guestResetErr) {
+          console.error("❌ Failed to reset table guests after deleting reservation:", guestResetErr);
+        }
+      }
 
       toast.success(t("Reservation deleted"));
       fetchOrders({ skipHydration: true });
@@ -1839,39 +1862,6 @@ const freeTablesCount = React.useMemo(() => {
   return tables.filter((table) => isEffectivelyFreeOrder(table.order)).length;
 }, [tables]);
 
-// Reset guest count ("seats") to 0 when returning to TableOverview,
-// but only for tables that are currently free.
-useEffect(() => {
-  if (activeTab !== "tables") return;
-  if (!didInitialOrdersLoadRef.current) return;
-  if (didResetGuestsOnEntryRef.current) return;
-
-  didResetGuestsOnEntryRef.current = true;
-
-  const freeTableNumbersToReset = (Array.isArray(tables) ? tables : [])
-    .filter((table) => isEffectivelyFreeOrder(table?.order))
-    .filter((table) => Number.isFinite(Number(table?.guests)) && Number(table.guests) !== 0)
-    .map((table) => Number(table.tableNumber))
-    .filter((n) => Number.isFinite(n));
-
-  if (freeTableNumbersToReset.length === 0) return;
-
-  freeTableNumbersToReset.forEach((tableNumber) => {
-    upsertTableConfigLocal(tableNumber, { guests: 0 });
-  });
-
-  (async () => {
-    await Promise.allSettled(
-      freeTableNumbersToReset.map((tableNumber) =>
-        secureFetch(`/tables/${tableNumber}`, {
-          method: "PATCH",
-          body: JSON.stringify({ guests: 0 }),
-        })
-      )
-    );
-  })();
-}, [activeTab, tables, upsertTableConfigLocal]);
-
 useEffect(() => {
   const titlesByTab = {
     takeaway: t("Pre Order"),
@@ -1941,8 +1931,24 @@ const handleTableClick = useCallback(async (table) => {
 
   const requireGuests = transactionSettings.requireGuestsBeforeOpen ?? true;
   const seatLimit = Number.isFinite(Number(table.seats)) ? Number(table.seats) : 0;
+  const tableGuestsRaw =
+    table?.guests === null || table?.guests === undefined ? null : Number(table.guests);
+  const orderGuestsRaw =
+    table?.order?.reservation_clients ??
+    table?.order?.reservationClients ??
+    table?.order?.reservation?.reservation_clients ??
+    table?.order?.reservation?.reservationClients ??
+    null;
+  const reservationFallbackGuestsRaw =
+    table?.reservationFallback?.reservation_clients ??
+    table?.reservationFallback?.reservationClients ??
+    null;
+  const guestCandidates = [tableGuestsRaw, Number(orderGuestsRaw), Number(reservationFallbackGuestsRaw)];
+  const resolvedGuests = guestCandidates.find((value) => Number.isFinite(value) && value > 0) ?? null;
   const guestSelection =
-    table.guests === null || table.guests === undefined ? null : Number(table.guests);
+    Number.isFinite(resolvedGuests) && seatLimit > 0
+      ? Math.min(Math.max(0, Math.trunc(resolvedGuests)), Math.trunc(seatLimit))
+      : resolvedGuests;
   if (requireGuests && seatLimit > 0 && (!guestSelection || guestSelection <= 0)) {
     toast.warning(t("Please select number of seats before opening this table"), {
       style: { background: "#312E81", color: "#F8FAFC" },

@@ -155,6 +155,12 @@ const CartModal = React.memo(function CartModal({
       return next;
     });
   }
+  const closeFromUi = useCallback(() => {
+    setShow(false);
+    if (hasActiveOrder && !hasNewItems) {
+      onShowStatus?.();
+    }
+  }, [hasActiveOrder, hasNewItems, onShowStatus]);
 
   const cartPanel = (
     <div
@@ -168,7 +174,7 @@ const CartModal = React.memo(function CartModal({
         {!isPanel && (
           <button
             className="text-2xl text-neutral-400 hover:text-red-600 transition"
-            onClick={() => setShow(false)}
+            onClick={closeFromUi}
             aria-label={t("Close")}
           >
             ×
@@ -340,7 +346,7 @@ const CartModal = React.memo(function CartModal({
 
           {!isPanel && (
             <button
-              onClick={() => setShow(false)}
+              onClick={closeFromUi}
               className="w-full py-3 rounded-full border border-neutral-300 text-neutral-700 font-medium hover:bg-neutral-100 transition-all"
             >
               {t("Order Another")}
@@ -353,7 +359,7 @@ const CartModal = React.memo(function CartModal({
               setCart(lockedOnly);
               storage.setItem("qr_cart", JSON.stringify(lockedOnly));
               if (!isPanel) {
-                setShow(false);
+                closeFromUi();
               }
             }}
             className="w-full mt-1 py-2 rounded-md text-xs text-neutral-600 bg-neutral-100 hover:bg-neutral-200 transition"
@@ -418,7 +424,7 @@ const CartModal = React.memo(function CartModal({
           <div
             className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
             onMouseDown={(e) => {
-              if (e.target === e.currentTarget) setShow(false);
+              if (e.target === e.currentTarget) closeFromUi();
             }}
           >
             {cartPanel}

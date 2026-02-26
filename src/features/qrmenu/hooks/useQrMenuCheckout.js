@@ -166,6 +166,17 @@ export function useQrMenuCheckout({
       const reservationTableNumber = Number(takeaway?.table_number);
       const hasReservationTable =
         Number.isFinite(reservationTableNumber) && reservationTableNumber > 0;
+      const selectedGuests = (() => {
+        const takeawayGuests = Number(takeaway?.reservation_clients);
+        if (Number.isFinite(takeawayGuests) && takeawayGuests > 0) {
+          return Math.min(20, Math.max(1, Math.floor(takeawayGuests)));
+        }
+        const storedGuests = Number(storage.getItem("qr_table_guests"));
+        if (Number.isFinite(storedGuests) && storedGuests > 0) {
+          return Math.min(20, Math.max(1, Math.floor(storedGuests)));
+        }
+        return 1;
+      })();
       const effectiveOrderTypeForStorage = isTakeawayReservation ? "table" : type;
       const effectiveTableForStorage =
         type === "table"
@@ -329,7 +340,12 @@ export function useQrMenuCheckout({
           await secureFetch(appendIdentifier(`/orders/${orderId}/status`), {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ payment_method: effectivePaymentMethod }),
+            body: JSON.stringify({
+              payment_method: effectivePaymentMethod,
+              ...(type === "table" || isTakeawayReservation
+                ? { reservation_clients: selectedGuests }
+                : {}),
+            }),
           });
         } catch {}
 
