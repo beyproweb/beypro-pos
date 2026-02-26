@@ -1,5 +1,5 @@
 import React from "react";
-import { normalizeOrderStatus } from "./tableVisuals";
+import { isReservationDueNow, normalizeOrderStatus } from "./tableVisuals";
 import ElapsedTimer from "./components/ElapsedTimer";
 import {
   RenderCounter,
@@ -17,6 +17,13 @@ const getKitchenStatusToneClass = (status) => {
   return "bg-slate-400 text-white border-slate-500";
 };
 
+const getPhoneHref = (phone) => {
+  const value = String(phone ?? "").trim();
+  if (!value) return null;
+  const normalized = value.replace(/[^\d+]/g, "");
+  return normalized ? `tel:${normalized}` : null;
+};
+
 function TableCard({
   table,
   tableLabelText,
@@ -28,7 +35,11 @@ function TableCard({
   handlePrintOrder,
   handleGuestsChange,
   handleCloseTable,
+  handleDeleteReservation,
   getTablePrepMeta,
+  waiterCallsByTable,
+  handleAcknowledgeWaiterCall,
+  handleResolveWaiterCall,
 }) {
   const renderCount = useRenderCount("TableCard", {
     id: table?.tableNumber,
@@ -40,6 +51,8 @@ function TableCard({
   const hasOrderItems = tableItems.length > 0;
   const normalizedOrderStatus = normalizeOrderStatus(tableOrder?.status);
   const tablePrepMeta = getTablePrepMeta(table.tableNumber);
+  const waiterCall = waiterCallsByTable?.[String(table.tableNumber)] || null;
+  const isCallingWaiter = Boolean(waiterCall);
 
   const handleCardClick = React.useCallback(() => {
     handleTableClick(table);
@@ -78,14 +91,45 @@ function TableCard({
     [handleCloseTable, tableOrder]
   );
 
+  const handleAcknowledgeClick = React.useCallback(
+    (e) => {
+      e.stopPropagation();
+      handleAcknowledgeWaiterCall?.(table.tableNumber);
+    },
+    [handleAcknowledgeWaiterCall, table.tableNumber]
+  );
+
+  const handleResolvedClick = React.useCallback(
+    (e) => {
+      e.stopPropagation();
+      handleResolveWaiterCall?.(table.tableNumber);
+    },
+    [handleResolveWaiterCall, table.tableNumber]
+  );
+
   const isReservedTable = Boolean(table.isReservedTable);
   const isFreeTable = Boolean(table.isFreeTable);
   const isPaidTable = !isFreeTable && Boolean(table.isFullyPaid);
   const hasUnpaidItems = !isFreeTable && Boolean(table.hasUnpaidItems);
+  const hasReservationSignalOnOrder = Boolean(
+    tableOrder?.reservation_id ||
+      tableOrder?.reservationId ||
+      tableOrder?.reservation_date ||
+      tableOrder?.reservationDate ||
+      tableOrder?.reservation_time ||
+      tableOrder?.reservationTime ||
+      tableOrder?.reservation?.id ||
+      tableOrder?.reservation?.reservation_id ||
+      tableOrder?.reservation?.reservationId ||
+      tableOrder?.reservation?.reservation_date ||
+      tableOrder?.reservation?.reservationDate ||
+      tableOrder?.reservation?.reservation_time ||
+      tableOrder?.reservation?.reservationTime
+  );
+  const hasExplicitReservationState =
+    normalizedOrderStatus === "reserved" && hasReservationSignalOnOrder;
   const cardToneClass = isFreeTable
     ? "bg-blue-100 border-sky-300 shadow-sky-500/15"
-    : isReservedTable
-    ? "bg-orange-100 border-orange-400 shadow-orange-500/20"
     : hasUnpaidItems
     ? "bg-red-200 border-red-500 shadow-red-500/25"
     : isPaidTable
@@ -102,28 +146,148 @@ function TableCard({
     (hasPreparingItems || !!tableOrder?.estimated_ready_at || !!tableOrder?.prep_started_at);
 
   const reservationInfo = React.useMemo(() => {
-    if (tableOrder?.reservation && tableOrder.reservation.reservation_date) {
-      return tableOrder.reservation;
-    }
-    if (tableOrder?.reservation_date) {
+    // Use fallback reservation only when no order is attached to the table
+    // or when the attached order is explicitly reservation-like.
+    const canUseFallbackReservation = !tableOrder || hasExplicitReservationState;
+
+    if (
+      tableOrder?.reservation &&
+      (tableOrder.reservation.reservation_date ||
+        tableOrder.reservation.reservationDate ||
+        tableOrder.reservation.reservation_time ||
+        tableOrder.reservation.reservationTime ||
+        Number(tableOrder.reservation.reservation_clients ?? tableOrder.reservation.reservationClients ?? 0) > 0 ||
+        tableOrder.reservation.reservation_notes ||
+        tableOrder.reservation.customer_name ||
+        tableOrder.reservation.customerName ||
+        tableOrder.reservation.customer_phone ||
+        tableOrder.reservation.customerPhone)
+    ) {
       return {
-        reservation_date: tableOrder.reservation_date,
-        reservation_time: tableOrder.reservation_time ?? null,
-        reservation_clients: tableOrder.reservation_clients ?? 0,
-        reservation_notes: tableOrder.reservation_notes ?? "",
+        id: tableOrder.reservation.id ?? null,
+        reservation_date: tableOrder.reservation.reservation_date ?? null,
+        reservation_time:
+          tableOrder.reservation.reservation_time ?? tableOrder.reservation.reservationTime ?? null,
+        reservation_clients:
+          tableOrder.reservation.reservation_clients ??
+          tableOrder.reservation.reservationClients ??
+          0,
+        reservation_notes:
+          tableOrder.reservation.reservation_notes ?? tableOrder.reservation.reservationNotes ?? "",
+        customer_name:
+          tableOrder.reservation.customer_name ??
+          tableOrder.reservation.customerName ??
+          tableOrder.customer_name ??
+          tableOrder.customerName ??
+          "",
+        customer_phone:
+          tableOrder.reservation.customer_phone ??
+          tableOrder.reservation.customerPhone ??
+          tableOrder.customer_phone ??
+          tableOrder.customerPhone ??
+          "",
       };
     }
-    const fallback = table.reservationFallback;
-    if (fallback && (fallback.reservation_date || fallback.reservation_time)) {
+    if (
+      tableOrder?.reservation_date ||
+      tableOrder?.reservationDate ||
+      tableOrder?.reservation_time ||
+      tableOrder?.reservationTime ||
+      Number(tableOrder?.reservation_clients ?? tableOrder?.reservationClients ?? 0) > 0 ||
+      tableOrder?.reservation_notes ||
+      tableOrder?.reservationNotes ||
+      tableOrder?.customer_name ||
+      tableOrder?.customerName ||
+      tableOrder?.customer_phone ||
+      tableOrder?.customerPhone
+    ) {
       return {
-        reservation_date: fallback.reservation_date || null,
-        reservation_time: fallback.reservation_time || null,
-        reservation_clients: fallback.reservation_clients ?? 0,
-        reservation_notes: fallback.reservation_notes ?? "",
+        id: tableOrder.reservation_id ?? tableOrder.reservationId ?? null,
+        reservation_date: tableOrder.reservation_date ?? tableOrder.reservationDate ?? null,
+        reservation_time: tableOrder.reservation_time ?? tableOrder.reservationTime ?? null,
+        reservation_clients:
+          tableOrder.reservation_clients ?? tableOrder.reservationClients ?? 0,
+        reservation_notes: tableOrder.reservation_notes ?? tableOrder.reservationNotes ?? "",
+        customer_name: tableOrder.customer_name ?? tableOrder.customerName ?? "",
+        customer_phone: tableOrder.customer_phone ?? tableOrder.customerPhone ?? "",
+      };
+    }
+    const fallback = canUseFallbackReservation ? table.reservationFallback : null;
+    if (
+      fallback &&
+      (fallback.reservation_date ||
+        fallback.reservationDate ||
+        fallback.reservation_time ||
+        fallback.reservationTime ||
+        Number(fallback.reservation_clients ?? fallback.reservationClients ?? 0) > 0 ||
+        fallback.reservation_notes ||
+        fallback.reservationNotes ||
+        fallback.customer_name ||
+        fallback.customerName ||
+        fallback.customer_phone ||
+        fallback.customerPhone)
+    ) {
+      return {
+        id: fallback.id ?? null,
+        reservation_date: fallback.reservation_date ?? fallback.reservationDate ?? null,
+        reservation_time: fallback.reservation_time ?? fallback.reservationTime ?? null,
+        reservation_clients: fallback.reservation_clients ?? fallback.reservationClients ?? 0,
+        reservation_notes: fallback.reservation_notes ?? fallback.reservationNotes ?? "",
+        customer_name: fallback.customer_name ?? fallback.customerName ?? "",
+        customer_phone: fallback.customer_phone ?? fallback.customerPhone ?? "",
       };
     }
     return null;
-  }, [table.reservationFallback, tableOrder]);
+  }, [hasExplicitReservationState, table.reservationFallback, tableOrder]);
+  const [reservationClockMs, setReservationClockMs] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!reservationInfo) return undefined;
+    const intervalId = window.setInterval(() => {
+      setReservationClockMs(Date.now());
+    }, 15000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    reservationInfo?.id,
+    reservationInfo?.reservation_date,
+    reservationInfo?.reservation_time,
+  ]);
+  const shouldShowReservedBadge = React.useMemo(() => {
+    const dueNowFromInfo = reservationInfo
+      ? isReservationDueNow(reservationInfo, reservationClockMs)
+      : false;
+    const dueNowFromOrder =
+      normalizedOrderStatus === "reserved" && hasReservationSignalOnOrder;
+
+    if (reservationInfo) {
+      // Keep reservation badge off for active unpaid normal orders.
+      return dueNowFromInfo && (hasExplicitReservationState || isPaidTable || isFreeTable);
+    }
+    return dueNowFromOrder;
+  }, [
+    hasExplicitReservationState,
+    hasReservationSignalOnOrder,
+    isFreeTable,
+    isPaidTable,
+    normalizedOrderStatus,
+    reservationClockMs,
+    reservationInfo,
+  ]);
+  const handleDeleteReservationClick = React.useCallback(
+    (e) => {
+      e.stopPropagation();
+      handleDeleteReservation?.(table, reservationInfo);
+    },
+    [handleDeleteReservation, reservationInfo, table]
+  );
+  const reservationPhoneHref = React.useMemo(
+    () => getPhoneHref(reservationInfo?.customer_phone),
+    [reservationInfo?.customer_phone]
+  );
+  const handlePhoneLinkClick = React.useCallback((e) => {
+    e.stopPropagation();
+  }, []);
 
   const confirmedStartTime = tablePrepMeta.startedAt;
 
@@ -131,15 +295,21 @@ function TableCard({
     const seatsValue = Math.max(0, Math.trunc(Number(table.seats)));
     const options = Array.from({ length: seatsValue + 1 }, (_, n) => n);
 
+    const tableGuestsNum =
+      table?.guests === null || table?.guests === undefined || table?.guests === ""
+        ? null
+        : Number(table.guests);
     const fallbackGuestsRaw = reservationInfo?.reservation_clients;
     const fallbackGuestsNum =
       fallbackGuestsRaw === null || fallbackGuestsRaw === undefined || fallbackGuestsRaw === ""
         ? null
         : Number(fallbackGuestsRaw);
 
-    const effectiveGuests = Number.isFinite(table.guests)
-      ? table.guests
-      : Number.isFinite(fallbackGuestsNum)
+    // Prefer TableOverview-configured guests only when it is a positive value.
+    // If it's 0/empty, show guests chosen from QR reservation/order payload.
+    const effectiveGuests = Number.isFinite(tableGuestsNum) && tableGuestsNum > 0
+      ? tableGuestsNum
+      : Number.isFinite(fallbackGuestsNum) && fallbackGuestsNum > 0
       ? fallbackGuestsNum
       : null;
 
@@ -206,8 +376,9 @@ function TableCard({
   const shouldRenderKitchenStatuses = Boolean(tableOrder?.items);
   const isOrderDelayed = tablePrepMeta.isDelayed;
   const displayTotal = formatCurrency(Number(table.unpaidTotal || 0));
-  const paidStatusLabel = t(hasUnpaidItems ? "Unpaid" : "Paid");
+  const paidStatusLabel = t("Unpaid");
   const orderStatusLabel = t(tableOrder?.status === "draft" ? "Free" : tableOrder?.status);
+  const showOrderStatusBadge = !shouldShowReservedBadge;
 
   return (
     <div
@@ -226,8 +397,12 @@ function TableCard({
               max-w-[380px]
               min-h-[220px]
               overflow-hidden
+              ${isCallingWaiter ? "ring-2 ring-red-500/70 animate-[pulse_2.4s_ease-in-out_infinite]" : ""}
             `}
     >
+      {isCallingWaiter && (
+        <div className="pointer-events-none absolute inset-0 bg-red-500/10 animate-pulse" />
+      )}
       <div className="p-3 sm:p-5 flex flex-col h-full">
         {showRenderCounter && (
           <div className="mb-1 flex justify-end">
@@ -254,6 +429,11 @@ function TableCard({
           {shouldShowConfirmedTimer && (
             <span className="shrink-0 bg-blue-600 text-white rounded-full px-3 py-1 font-mono text-[11px] sm:text-sm shadow-md">
               ⏱ <ElapsedTimer startTime={confirmedStartTime} />
+            </span>
+          )}
+          {isCallingWaiter && (
+            <span className="shrink-0 rounded-full bg-red-600 text-white px-3 py-1 text-[11px] sm:text-xs font-extrabold tracking-wide shadow-md animate-pulse">
+              🔴 CALLING
             </span>
           )}
         </div>
@@ -310,7 +490,11 @@ function TableCard({
           ) : (
             <>
               <div className="flex items-start justify-between gap-2 min-w-0">
-                <span className={tableStatusClassName}>{orderStatusLabel}</span>
+                {showOrderStatusBadge ? (
+                  <span className={tableStatusClassName}>{orderStatusLabel}</span>
+                ) : (
+                  <span />
+                )}
                 <div className="flex flex-col items-end min-w-0">
                   <span className="text-[15px] sm:text-lg font-extrabold text-indigo-700 whitespace-nowrap">
                     {displayTotal}
@@ -323,28 +507,63 @@ function TableCard({
                 </div>
               </div>
 
-              {reservationInfo && reservationInfo.reservation_date && (
-                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-2xl text-xs">
-                  <div className="font-extrabold text-blue-700 mb-1">🎫 {t("Reserved")}</div>
-                  <div className="flex gap-2 text-[10px] text-slate-700 min-w-0">
-                    <div className="flex flex-col">
-                      <span className="font-semibold whitespace-nowrap">🕐 {reservationInfo.reservation_time || "—"}</span>
-                      <span className="font-semibold whitespace-nowrap">
-                        👥 {reservationInfo.reservation_clients || 0} {t("guests")}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="font-semibold whitespace-nowrap">📅 {reservationInfo.reservation_date || "—"}</span>
-                      {reservationInfo.reservation_notes && (
-                        <p className="text-[9px] line-clamp-1 text-slate-600">📝 {reservationInfo.reservation_notes}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {shouldRenderKitchenStatuses && <div className="flex flex-wrap gap-1.5 mt-1">{kitchenStatusBadges}</div>}
             </>
+          )}
+
+          {shouldShowReservedBadge && (
+            <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-2xl text-xs">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="font-extrabold text-blue-700">🎫 {t("Reserved")}</div>
+                <button
+                  type="button"
+                  onClick={handleDeleteReservationClick}
+                  className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700 hover:bg-red-100"
+                >
+                  {t("Delete")}
+                </button>
+              </div>
+              {reservationInfo ? (
+                <div className="flex gap-2 text-[10px] text-slate-700 min-w-0">
+                  <div className="flex flex-col">
+                    <span className="font-semibold whitespace-nowrap">
+                      🕐 {reservationInfo.reservation_time || "—"}
+                    </span>
+                    <span className="font-semibold whitespace-nowrap">
+                      👥 {reservationInfo.reservation_clients || 0} {t("guests")}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold whitespace-nowrap">📅 {reservationInfo.reservation_date || "—"}</span>
+                    {(reservationInfo.customer_name || reservationInfo.customer_phone) && (
+                      <div className="mt-0.5 space-y-0.5 text-[9px] text-slate-700">
+                        {reservationInfo.customer_name && (
+                          <p className="line-clamp-1">👤 {reservationInfo.customer_name}</p>
+                        )}
+                        {reservationInfo.customer_phone && (
+                          reservationPhoneHref ? (
+                            <a
+                              href={reservationPhoneHref}
+                              onClick={handlePhoneLinkClick}
+                              className="line-clamp-1 font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800"
+                            >
+                              📞 {reservationInfo.customer_phone}
+                            </a>
+                          ) : (
+                            <p className="line-clamp-1">📞 {reservationInfo.customer_phone}</p>
+                          )
+                        )}
+                      </div>
+                    )}
+                    {reservationInfo.reservation_notes && (
+                      <p className="text-[9px] line-clamp-1 text-slate-600">📝 {reservationInfo.reservation_notes}</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-slate-700">{t("This table has an active reservation")}</p>
+              )}
+            </div>
           )}
         </div>
 
@@ -352,6 +571,24 @@ function TableCard({
           {isOrderDelayed && <span className="text-amber-600 font-extrabold animate-pulse">⚠️</span>}
 
           <div className="flex flex-col items-end gap-2 ml-auto">
+            {isCallingWaiter && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleAcknowledgeClick}
+                  className="px-3 py-1.5 bg-red-600 text-white font-extrabold rounded-full shadow text-xs whitespace-nowrap hover:bg-red-700 active:scale-[0.99] transition"
+                >
+                  {t("Acknowledge")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResolvedClick}
+                  className="px-3 py-1.5 bg-emerald-600 text-white font-extrabold rounded-full shadow text-xs whitespace-nowrap hover:bg-emerald-700 active:scale-[0.99] transition"
+                >
+                  {t("Resolved")}
+                </button>
+              </div>
+            )}
             {hasOrderItems && (
               <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
                 {hasUnpaidItems ? (
@@ -359,18 +596,12 @@ function TableCard({
                     {paidStatusLabel}
                   </span>
                 ) : (
-                  <>
-                    <span className="px-3 py-1 bg-green-50 text-green-900 border border-green-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
-                      ✅ {paidStatusLabel}
-                    </span>
-
-                    <button
-                      onClick={handleCloseClick}
-                      className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-extrabold rounded-full shadow text-sm whitespace-nowrap hover:brightness-110 active:scale-[0.99] transition"
-                    >
-                      🔒 {t("Close")}
-                    </button>
-                  </>
+                  <button
+                    onClick={handleCloseClick}
+                    className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-extrabold rounded-full shadow text-sm whitespace-nowrap hover:brightness-110 active:scale-[0.99] transition"
+                  >
+                    🔒 {t("Close")}
+                  </button>
                 )}
               </div>
             )}
@@ -393,7 +624,11 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
     prevProps.handlePrintOrder === nextProps.handlePrintOrder &&
     prevProps.handleGuestsChange === nextProps.handleGuestsChange &&
     prevProps.handleCloseTable === nextProps.handleCloseTable &&
-    prevProps.getTablePrepMeta === nextProps.getTablePrepMeta;
+    prevProps.handleDeleteReservation === nextProps.handleDeleteReservation &&
+    prevProps.getTablePrepMeta === nextProps.getTablePrepMeta &&
+    prevProps.waiterCallsByTable === nextProps.waiterCallsByTable &&
+    prevProps.handleAcknowledgeWaiterCall === nextProps.handleAcknowledgeWaiterCall &&
+    prevProps.handleResolveWaiterCall === nextProps.handleResolveWaiterCall;
 
   if (!isEqual) {
     logMemoDiff({
@@ -412,7 +647,11 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
         "handlePrintOrder",
         "handleGuestsChange",
         "handleCloseTable",
+        "handleDeleteReservation",
         "getTablePrepMeta",
+        "waiterCallsByTable",
+        "handleAcknowledgeWaiterCall",
+        "handleResolveWaiterCall",
       ],
     });
   }

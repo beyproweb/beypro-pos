@@ -21,7 +21,6 @@ export function createConfirmFlow(deps) {
     discountValue,
     discountType,
     fetchOrderItems,
-    transactionSettings,
     setIsFloatingCartOpen,
     scheduleNavigate,
     setHeader,
@@ -30,8 +29,6 @@ export function createConfirmFlow(deps) {
     allPaidIncludingSuborders,
     existingReservation,
     getReservationSchedule,
-    isEarlyReservationClose,
-    requestReservationCloseConfirmation,
     allItemsDelivered,
     setDiscountValue,
     setDiscountType,
@@ -43,6 +40,25 @@ export function createConfirmFlow(deps) {
     return Array.isArray(orderItems)
       ? orderItems.some((item) => item.kitchen_status === "preparing")
       : false;
+  }
+
+  function hasActiveReservation(orderLike) {
+    if (!orderLike || typeof orderLike !== "object") return false;
+    const reservation = orderLike?.reservation && typeof orderLike.reservation === "object"
+      ? orderLike.reservation
+      : null;
+    const reservationDate =
+      reservation?.reservation_date ??
+      orderLike?.reservation_date ??
+      orderLike?.reservationDate ??
+      null;
+    const reservationTime =
+      reservation?.reservation_time ??
+      orderLike?.reservation_time ??
+      orderLike?.reservationTime ??
+      null;
+    const reservationId = reservation?.id;
+    return Boolean(getReservationSchedule(orderLike) || reservationDate || reservationTime || reservationId != null);
   }
 
   async function handleMultifunction() {
@@ -96,6 +112,11 @@ export function createConfirmFlow(deps) {
           return;
         }
       } else {
+        const reservationSource = existingReservation ?? order;
+        if (hasActiveReservation(reservationSource)) {
+          showToast(t("Delete reservation first before closing table"));
+          return;
+        }
         await resetTableGuests(order?.table_number ?? order?.tableNumber);
         broadcastTableOverviewOrderStatus("closed");
         navigate("/tableoverview?tab=tables");
@@ -243,11 +264,8 @@ export function createConfirmFlow(deps) {
         }, 0);
       }
 
-      // 🚪 Optionally leave Transaction screen after confirm (table only)
-      if (orderType === "table" && transactionSettings.autoNavigateTableAfterConfirm) {
-        setIsFloatingCartOpen(false);
-        scheduleNavigate("/tableoverview?tab=tables", 200);
-      }
+      // Keep table orders on Transaction screen after confirm so order status remains visible.
+      // Users can leave manually from nav/actions when needed.
 
       // 🥡 TAKEAWAY — confirm but STAY here (no navigate, no payment modal)
       if (orderType === "takeaway" && getPrimaryActionLabel() === "Confirm") {
@@ -284,10 +302,9 @@ export function createConfirmFlow(deps) {
     // 🧠 For table orders → close ONLY when all items are delivered
     if (getPrimaryActionLabel() === "Close" && (order.status === "paid" || allPaidIncludingSuborders)) {
       const reservationSource = existingReservation ?? order;
-      const schedule = getReservationSchedule(reservationSource);
-      if (schedule && isEarlyReservationClose(reservationSource)) {
-        const ok = await requestReservationCloseConfirmation(schedule);
-        if (!ok) return;
+      if (hasActiveReservation(reservationSource)) {
+        showToast(t("Delete reservation first before closing table"));
+        return;
       }
 
       // Re-check against the latest backend state so we don't block close due to stale kitchen_status/category

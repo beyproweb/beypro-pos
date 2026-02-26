@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useCallback, useMemo, useState } from "react";
 
 function formatPrice(value) {
   const amount = Number(value) || 0;
@@ -17,6 +17,9 @@ function DraftOrderRecapModalComponent({
   paymentMethods,
   onPaymentMethodChange,
   paymentLabel = "Payment",
+  paymentPlaceholder = "Select your payment",
+  paymentRequiredPrompt = "Please select a payment method before continuing.",
+  onPaymentRequired,
   onClose,
   onConfirm,
   onContinue,
@@ -33,9 +36,34 @@ function DraftOrderRecapModalComponent({
   const safePaymentMethods = (Array.isArray(paymentMethods) ? paymentMethods : []).filter(
     (method) => method?.enabled !== false
   );
-  const activePaymentMethod = String(
-    paymentMethod || safePaymentMethods[0]?.id || ""
+  const activePaymentMethod = String(paymentMethod || "");
+  const [paymentPromptVisible, setPaymentPromptVisible] = useState(false);
+  const [shakeNonce, setShakeNonce] = useState(0);
+  const modalShakeStyle = useMemo(
+    () => (shakeNonce > 0 ? { animation: "voiceRecapShake 420ms ease-in-out" } : undefined),
+    [shakeNonce]
   );
+
+  const handlePaymentChange = useCallback(
+    (value) => {
+      if (paymentPromptVisible) {
+        setPaymentPromptVisible(false);
+      }
+      onPaymentMethodChange?.(value);
+    },
+    [onPaymentMethodChange, paymentPromptVisible]
+  );
+
+  const handleConfirmClick = useCallback(() => {
+    if (safePaymentMethods.length > 0 && !activePaymentMethod) {
+      setPaymentPromptVisible(true);
+      setShakeNonce((prev) => prev + 1);
+      onPaymentRequired?.(paymentRequiredPrompt);
+      return;
+    }
+    setPaymentPromptVisible(false);
+    onConfirm?.();
+  }, [activePaymentMethod, onConfirm, onPaymentRequired, paymentRequiredPrompt, safePaymentMethods.length]);
   const groupedItems = safeItems.reduce((acc, item) => {
     const label = String(item?.groupLabel || "Table").trim() || "Table";
     if (!acc[label]) acc[label] = [];
@@ -46,7 +74,10 @@ function DraftOrderRecapModalComponent({
 
   return (
     <div className="fixed inset-0 z-[145] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
+      <div
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
+        style={modalShakeStyle}
+      >
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-neutral-700">
           <h2 className="text-base font-semibold text-slate-900 dark:text-neutral-100">{title}</h2>
           <button
@@ -210,9 +241,10 @@ function DraftOrderRecapModalComponent({
               </label>
               <select
                 value={activePaymentMethod}
-                onChange={(e) => onPaymentMethodChange?.(e.target.value)}
+                onChange={(e) => handlePaymentChange(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-300 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
               >
+                <option value="">{paymentPlaceholder}</option>
                 {safePaymentMethods.map((method) => (
                   <option key={method.id} value={method.id}>
                     {method.icon ? `${method.icon} ` : ""}
@@ -220,6 +252,11 @@ function DraftOrderRecapModalComponent({
                   </option>
                 ))}
               </select>
+            </div>
+          ) : null}
+          {paymentPromptVisible ? (
+            <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/30 dark:text-rose-200">
+              {paymentRequiredPrompt}
             </div>
           ) : null}
           <div className="mb-3 flex items-center justify-between">
@@ -231,7 +268,7 @@ function DraftOrderRecapModalComponent({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               type="button"
-              onClick={onConfirm}
+              onClick={handleConfirmClick}
               disabled={safeItems.length === 0 || isSubmitting}
               className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -254,6 +291,15 @@ function DraftOrderRecapModalComponent({
           </div>
         </div>
       </div>
+      <style>{`
+        @keyframes voiceRecapShake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-6px); }
+          40% { transform: translateX(6px); }
+          60% { transform: translateX(-4px); }
+          80% { transform: translateX(4px); }
+        }
+      `}</style>
     </div>
   );
 }

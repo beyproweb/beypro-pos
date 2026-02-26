@@ -28,6 +28,21 @@ export function useQrMenuController({
   saveSelectedTable,
   extractTableNumberFromQrText,
 }) {
+const FORCE_STATUS_UNTIL_CLOSE_KEY = "qr_force_status_until_closed";
+const clampGuestCount = (value, fallback = 1) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(20, Math.max(1, Math.floor(n)));
+};
+const normalizeOptionalGuestCount = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(20, Math.max(1, Math.floor(n)));
+};
+const isTerminalOrderStatus = (status) =>
+  ["closed", "completed", "cancelled", "canceled"].includes(
+    String(status || "").toLowerCase()
+  );
 // Fix null/undefined slug
 const safeSlug =
   slug && slug !== "null" && slug !== "undefined"
@@ -50,6 +65,17 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
       null;
   } catch {
     restaurantIdentifier = null;
+  }
+}
+if (!restaurantIdentifier && typeof window !== "undefined") {
+  try {
+    const storedRestaurantId = window?.localStorage?.getItem("restaurant_id");
+    const parsed = storedRestaurantId ? Number(storedRestaurantId) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) {
+      restaurantIdentifier = String(parsed);
+    }
+  } catch {
+    // ignore local storage read failures
   }
 }
 
@@ -91,15 +117,49 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
     return secureFetch(appendIdentifier(path), options);
   }, [appendIdentifier]);
 
-  const socketRestaurantId = useMemo(() => {
-    // Prefer explicit numeric id if present.
+  const [resolvedRestaurantId, setResolvedRestaurantId] = useState(() => {
     try {
       const stored = window?.localStorage?.getItem("restaurant_id");
       const n = stored ? Number(stored) : NaN;
       if (Number.isFinite(n) && n > 0) return n;
     } catch {}
     return parseRestaurantIdFromIdentifier(restaurantIdentifier);
-  }, [restaurantIdentifier]);
+  });
+
+  const socketRestaurantId = useMemo(() => {
+    const n = Number(resolvedRestaurantId);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [resolvedRestaurantId]);
+
+  useEffect(() => {
+    const parsed = parseRestaurantIdFromIdentifier(restaurantIdentifier);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setResolvedRestaurantId(parsed);
+      return;
+    }
+    setResolvedRestaurantId(null);
+    if (!restaurantIdentifier) return;
+    let alive = true;
+    (async () => {
+      try {
+        const info = await secureFetch(
+          `/public/restaurant-info?identifier=${encodeURIComponent(restaurantIdentifier)}`
+        );
+        if (!alive) return;
+        const idValue = Number(info?.id);
+        if (!Number.isFinite(idValue) || idValue <= 0) return;
+        setResolvedRestaurantId(idValue);
+        try {
+          window?.localStorage?.setItem("restaurant_id", String(idValue));
+        } catch {}
+      } catch {
+        // no-op: fallback paths continue to work without realtime
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [restaurantIdentifier, parseRestaurantIdFromIdentifier]);
 
 const shareUrl = useMemo(() => {
   const origin = window.location.origin;
@@ -113,6 +173,61 @@ const shareUrl = useMemo(() => {
 const parseArray = useCallback((raw) => {
   return Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
 }, []);
+
+const parseReservationDateTimeMs = (reservationDate, reservationTime) => {
+  if (!reservationDate) return NaN;
+  const dateRaw = String(reservationDate).trim();
+  if (!dateRaw) return NaN;
+  const timeRaw = reservationTime ? String(reservationTime).trim() : "00:00:00";
+  const hhmmss = timeRaw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (hhmmss) {
+    const hours = Math.max(0, Math.min(23, Number(hhmmss[1])));
+    const minutes = Math.max(0, Math.min(59, Number(hhmmss[2])));
+    const seconds = Math.max(0, Math.min(59, Number(hhmmss[3] || 0)));
+    const dateParts = dateRaw.split("-").map(Number);
+    if (dateParts.length === 3 && dateParts.every((v) => Number.isFinite(v))) {
+      const [year, month, day] = dateParts;
+      return new Date(year, month - 1, day, hours, minutes, seconds, 0).getTime();
+    }
+  }
+  const fallback = new Date(`${dateRaw}T${timeRaw || "00:00:00"}`).getTime();
+  return Number.isFinite(fallback) ? fallback : NaN;
+};
+
+const isReservationLikeEntry = (entry) => {
+  if (!entry || typeof entry !== "object") return false;
+  const nested =
+    entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
+  return Boolean(
+    entry?.reservation_id ||
+      entry?.reservationId ||
+      entry?.reservation_date ||
+      entry?.reservationDate ||
+      entry?.reservation_time ||
+      entry?.reservationTime ||
+      nested?.id ||
+      nested?.reservation_id ||
+      nested?.reservationId ||
+      nested?.reservation_date ||
+      nested?.reservationDate ||
+      nested?.reservation_time ||
+      nested?.reservationTime
+  );
+};
+
+const isReservationDueNow = (entry, nowMs = Date.now()) => {
+  if (!isReservationLikeEntry(entry)) return false;
+  const reservationDate = entry?.reservation_date ?? entry?.reservationDate ?? null;
+  const reservationTime = entry?.reservation_time ?? entry?.reservationTime ?? null;
+  if (!reservationDate) return true;
+  const scheduledMs = parseReservationDateTimeMs(reservationDate, reservationTime);
+  if (!Number.isFinite(scheduledMs)) return true;
+  return nowMs >= scheduledMs;
+};
+
+const hasActiveReservationPayload = (entry) => {
+  return isReservationLikeEntry(entry);
+};
 
   const {
     lang,
@@ -205,6 +320,7 @@ const parseArray = useCallback((raw) => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [occupiedTables, setOccupiedTables] = useState([]);
+  const [reservedTables, setReservedTables] = useState([]);
   const [showStatus, setShowStatus] = useState(false);
   const [orderStatus, setOrderStatus] = useState("pending");
   const [orderId, setOrderId] = useState(null);
@@ -212,10 +328,21 @@ const parseArray = useCallback((raw) => {
   const [isDarkMain, setIsDarkMain] = React.useState(false);
   const [orderCancelReason, setOrderCancelReason] = useState("");
   const orderIdToTableRef = useRef(new Map());
+  const [callingWaiter, setCallingWaiter] = useState(false);
+  const [callWaiterCooldownUntil, setCallWaiterCooldownUntil] = useState(0);
+  const [callWaiterTickMs, setCallWaiterTickMs] = useState(() => Date.now());
 
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
   const [orderScreenStatus, setOrderScreenStatus] = useState(null);
+  const isForcedStatusActive = useCallback(() => {
+    const forced = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
+    if (!forced) return false;
+    const activeIdRaw = orderId || storage.getItem("qr_active_order_id");
+    const activeId = Number(activeIdRaw);
+    if (!Number.isFinite(activeId) || activeId <= 0) return false;
+    return true;
+  }, [orderId, storage]);
   const setLoyaltyEligibilityFromOrder = useCallback((order) => {
     if (!order) return;
     const status = String(order?.status || "").toLowerCase();
@@ -287,10 +414,15 @@ const parseArray = useCallback((raw) => {
 	const tableScanInFlight = useRef(false);
 	const [showTableScanner, setShowTableScanner] = useState(false);
   const [tableScanTarget, setTableScanTarget] = useState(null);
+  const [tableScanGuests, setTableScanGuests] = useState(() =>
+    normalizeOptionalGuestCount(storage.getItem("qr_table_guests"))
+  );
+  const [tableScanReady, setTableScanReady] = useState(false);
   const [tableScanError, setTableScanError] = useState("");
   const deliveredResetRef = useRef({ orderId: null, timeoutId: null });
 
   const safeOccupiedTables = useMemo(() => toArray(occupiedTables), [occupiedTables]);
+  const safeReservedTables = useMemo(() => toArray(reservedTables), [reservedTables]);
   const hasActiveOrder = useMemo(() => {
     if (!activeOrder) return false;
     const s = (activeOrder.status || "").toLowerCase();
@@ -484,9 +616,10 @@ const [takeaway, setTakeaway] = useState({
   phone: "",
   pickup_date: "",
   pickup_time: "",
-  mode: "pickup", // "pickup" | "delivery"
-  address: "",
+  mode: "reservation", // "pickup" | "reservation"
+  table_number: "",
   notes: "",
+  payment_method: "",
 });
 const {
   paymentMethod,
@@ -536,17 +669,30 @@ const stopTableScanner = useCallback(async () => {
 const closeTableScanner = useCallback(() => {
   setShowTableScanner(false);
   setTableScanTarget(null);
+  setTableScanReady(false);
   setTableScanError("");
   tableScanInFlight.current = false;
   stopTableScanner();
 }, [stopTableScanner]);
 
-const openTableScanner = useCallback((tableNumber) => {
+const openTableScanner = useCallback((tableNumber, guests = 1) => {
   if (!tableNumber) return;
+  setTableScanGuests(normalizeOptionalGuestCount(guests));
+  setTableScanReady(false);
   setTableScanTarget(tableNumber);
   setTableScanError("");
   setShowTableScanner(true);
 }, []);
+
+const startTableScannerWithGuests = useCallback((guests) => {
+  const normalized = normalizeOptionalGuestCount(guests);
+  if (!normalized) return false;
+  setTableScanGuests(normalized);
+  storage.setItem("qr_table_guests", String(normalized));
+  setTableScanError("");
+  setTableScanReady(true);
+  return true;
+}, [storage]);
 
 const handleTableScanSuccess = useCallback(
   (decodedText) => {
@@ -567,15 +713,24 @@ const handleTableScanSuccess = useCallback(
     stopTableScanner().finally(() => {
       setShowTableScanner(false);
       setTableScanError("");
+      setTableScanReady(false);
       setTable(finalTable);
       saveSelectedTable(finalTable);
+      storage.setItem("qr_table_guests", String(clampGuestCount(tableScanGuests, 1)));
       tableScanInFlight.current = false;
     });
   },
-  [stopTableScanner, t, tableScanTarget]
+  [saveSelectedTable, setTable, stopTableScanner, storage, t, tableScanGuests, tableScanTarget]
 );
   const resetToTypePicker = () => {
+    if (isForcedStatusActive()) {
+      setShowStatus(true);
+      storage.setItem("qr_show_status", "1");
+      return;
+    }
     setShowStatus(false);
+    storage.setItem("qr_show_status", "0");
+    storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
     setOrderStatus("pending");
     setOrderId(null);
     setCart([]);
@@ -610,21 +765,32 @@ const loadTables = async () => {
   }
 
   try {
-    const res = await fetch(
-      `${API_URL}/public/tables/${encodeURIComponent(restaurantIdentifier)}`
-    );
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+    let rows = [];
+    try {
+      // Keep QR table settings aligned with TableOverview/Settings source of truth.
+      const scoped = await secureFetch(
+        appendIdentifier(`/tables?active=true&identifier=${encodeURIComponent(restaurantIdentifier)}`)
+      );
+      rows = Array.isArray(scoped) ? scoped : scoped?.data || [];
+    } catch {
+      const res = await fetch(
+        `${API_URL}/public/tables/${encodeURIComponent(restaurantIdentifier)}`
+      );
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const payload = await res.json();
+      rows = Array.isArray(payload) ? payload : payload.data || [];
     }
 
-    const payload = await res.json();
-    const rows = Array.isArray(payload) ? payload : payload.data || [];
-
     const normalized = rows.map((r) => ({
-      tableNumber: r.number,
+      tableNumber: r.number ?? r.tableNumber ?? r.table_number,
       area: r.area || "Main Hall",
       seats: r.seats || r.chairs || 0,
+      guests:
+        r.guests === null || r.guests === undefined || r.guests === ""
+          ? null
+          : Number(r.guests),
       label: r.label || "",
       color: r.color || "",
       active: r.active ?? true,
@@ -661,7 +827,7 @@ useEffect(() => {
 }, [storage]);
 
 useEffect(() => {
-  if (!showTableScanner) return;
+  if (!showTableScanner || !tableScanReady) return;
   let active = true;
   const start = async () => {
     try {
@@ -688,7 +854,7 @@ useEffect(() => {
     active = false;
     stopTableScanner();
   };
-}, [handleTableScanSuccess, showTableScanner, stopTableScanner, t]);
+}, [handleTableScanSuccess, showTableScanner, stopTableScanner, t, tableScanReady]);
 
 useEffect(() => {
   const timer = setTimeout(() => setSuppressMenuFlash(false), 250);
@@ -741,41 +907,27 @@ function resetTableIfEmptyCart() {
 // when user taps the header “×”
 // ✅ Updated handleCloseOrderPage
 async function handleCloseOrderPage() {
-  const activeId = orderId || Number(storage.getItem("qr_active_order_id")) || null;
-  const cartIsEmpty = !Array.isArray(cart) || cart.length === 0;
+  if (isForcedStatusActive()) {
+    setShowStatus(true);
+    storage.setItem("qr_show_status", "1");
+    return;
+  }
+  const hasCartItems = Array.isArray(cart) && cart.length > 0;
 
-  // 🧩 1. If an active order exists, verify its status before showing “Order Sent”
-  if (activeId) {
-    try {
-      const token = getStoredToken();
-      if (token) {
-        const res = await secureFetch(appendIdentifier(`/orders/${activeId}`), {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = typeof res.json === "function" ? await res.json() : res;
-        const status = (data?.status || "").toLowerCase();
-
-        // ✅ Only show “Order Sent” if not closed/completed/canceled
-        if (!["closed", "completed", "canceled"].includes(status)) {
-          setShowStatus(true);
-          setOrderStatus("success");
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn("⚠️ handleCloseOrderPage check failed:", err);
-    }
+  // Requested behavior:
+  // - If cart has items, reopen cart.
+  // - If cart is empty, go home.
+  if (hasCartItems) {
+    setShowStatus(false);
+    window.dispatchEvent(new Event("qr:cart-open"));
+    return;
   }
 
-  // 🧩 2. If no active order or it's closed → reset everything
-  if (cartIsEmpty) {
+  if (!hasCartItems) {
     resetTableIfEmptyCart();
     resetToTypePicker();
     return;
   }
-
-  // 🧩 3. Still items in cart → stay in current screen
-  resetTableIfEmptyCart();
 }
 
 
@@ -786,14 +938,17 @@ useEffect(() => {
   (async () => {
     try {
       const activeId = storage.getItem("qr_active_order_id");
-      const wantsStatusOpen = storage.getItem("qr_show_status") === "1";
+      const forceStatusOpen = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
+      const wantsStatusOpen =
+        forceStatusOpen || storage.getItem("qr_show_status") === "1";
       const skipRestoreOnRefresh = !qrMode && !initialTableFromUrl;
 
       // On a normal refresh (no explicit table/delivery mode), always land on the home page
       // and do not re-open status/menu from prior sessions. This avoids "blink" loops.
-      if (skipRestoreOnRefresh) {
+      if (skipRestoreOnRefresh && !forceStatusOpen) {
         setShowStatus(false);
         storage.setItem("qr_show_status", "0");
+        storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
         setOrderStatus("pending");
         setOrderId(null);
         setActiveOrder(null);
@@ -930,9 +1085,9 @@ if (savedTable) {
 	            openOrder.payment_status === "paid" ||
 	            openOrder.payment_state === "paid";
 
-	          // Restore the active order, but don't pop "Order Sent" on refresh unless user had it open.
-	          setOrderType("table");
-	          setTable(savedTable);
+		          // Restore the active order, but don't pop "Order Sent" on refresh unless user had it open.
+		          setOrderType("table");
+		          setTable(savedTable);
 	          setOrderId(openOrder.id);
 	          setOrderStatus("success");
 	          setShowStatus(wantsStatusOpen);
@@ -959,11 +1114,13 @@ if (savedTable) {
       // 3️⃣ Nothing to restore
       setShowStatus(false);
       storage.setItem("qr_show_status", "0");
+      storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
       resetToTypePicker();
     } catch (err) {
       console.error("❌ QRMenu restore failed:", err);
       setShowStatus(false);
       storage.setItem("qr_show_status", "0");
+      storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
       resetToTypePicker();
     }
   })();
@@ -978,18 +1135,67 @@ if (savedTable) {
         ? { headers: { Authorization: `Bearer ${token}` } }
         : {};
       const res = await secureFetch(appendIdentifier(`/orders/${orderId}`), opts);
-      if (!res || res.ok === false) return;
+      if (!res || res.ok === false) {
+        const forceActive = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
+        if (forceActive) {
+          storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
+          storage.setItem("qr_show_status", "0");
+          setShowStatus(false);
+          setOrderId(null);
+          setActiveOrder(null);
+          setOrderScreenStatus(null);
+          resetToTypePicker();
+        }
+        return;
+      }
 
       const data = typeof res.json === "function" ? await res.json() : res;
       setActiveOrder(data || null);
       setLoyaltyEligibilityFromOrder(data || null);
 
       const s = (data?.status || "").toLowerCase();
+      const forceActive = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
+      const wantsStatusOpen = storage.getItem("qr_show_status") === "1";
       if (!s) {
         setOrderScreenStatus(null);
         return;
       }
+      const lostReservationPayload = !hasActiveReservationPayload(data);
+      const resolvedTableNo = Number(
+        data?.table_number ??
+          table ??
+          storage.getItem("qr_table") ??
+          storage.getItem("qr_selected_table") ??
+          null
+      );
+      const tableStillReserved =
+        Number.isFinite(resolvedTableNo) &&
+        resolvedTableNo > 0 &&
+        safeReservedTables.some((n) => Number(n) === resolvedTableNo);
+      // Keep force-status active while order is still reserved.
+      // Reservation payload can momentarily be missing during sync transitions.
+      if (
+        forceActive &&
+        (isTerminalOrderStatus(s) ||
+          (lostReservationPayload && s !== "reserved" && !tableStillReserved))
+      ) {
+        storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
+        storage.setItem("qr_show_status", "0");
+        setShowStatus(false);
+        setOrderId(null);
+        setActiveOrder(null);
+        setOrderScreenStatus(null);
+        resetToTypePicker();
+        return;
+      }
       setOrderScreenStatus(s);
+      const keepHiddenWhileReserved = forceActive && s === "reserved" && !wantsStatusOpen;
+      if (forceActive && !keepHiddenWhileReserved) {
+        setShowStatus(true);
+        storage.setItem("qr_show_status", "1");
+      } else if (keepHiddenWhileReserved) {
+        setShowStatus(false);
+      }
       setOrderCancelReason(
         s === "canceled" || s === "cancelled"
           ? data?.cancellation_reason || data?.cancel_reason || data?.cancelReason || ""
@@ -1013,7 +1219,15 @@ if (savedTable) {
     } catch (err) {
       console.warn("⚠️ Failed to refresh QR order status:", err);
     }
-  }, [orderId, appendIdentifier]);
+  }, [
+    orderId,
+    appendIdentifier,
+    resetToTypePicker,
+    storage,
+    table,
+    safeReservedTables,
+    setLoyaltyEligibilityFromOrder,
+  ]);
 
   // Listen to kitchen/order events over Socket.IO and refresh summary
   useOrderSocket(refreshOrderScreenStatus, orderId);
@@ -1033,33 +1247,185 @@ if (savedTable) {
 
 
   const refreshOccupiedTables = useCallback(async () => {
-    const token = getStoredToken();
-    if (!token) return;
+    const nextOccupiedSet = new Set();
+    const nextReservedSet = new Set();
+    let hasAnySource = false;
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    const todayYmd = `${yyyy}-${mm}-${dd}`;
+
+    const addNumbers = (targetSet, values) => {
+      toArray(values).forEach((value) => {
+        const n = Number(value);
+        if (Number.isFinite(n) && n > 0) targetSet.add(n);
+      });
+    };
+
     try {
-      const orders = await sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } });
-      const list = parseArray(orders);
-      try {
-        const nextMap = new Map();
-        toArray(list).forEach((o) => {
-          const oid = Number(o?.id);
-          const tno = Number(o?.table_number);
-          if (Number.isFinite(oid) && Number.isFinite(tno) && tno > 0) nextMap.set(oid, tno);
-        });
-        orderIdToTableRef.current = nextMap;
-      } catch {}
-      const occupied = toArray(list)
-        .filter((order) => {
-          if (!order?.table_number) return false;
-          const status = String(order?.status || "").toLowerCase();
-          return !["closed", "completed", "canceled", "cancelled"].includes(status);
-        })
-        .map((order) => Number(order.table_number))
-        .filter((n) => Number.isFinite(n) && n > 0);
-      setOccupiedTables(occupied);
+      if (restaurantIdentifier) {
+        try {
+          const payload = await secureFetch(
+            appendIdentifier(
+              `/public/unavailable-tables/${encodeURIComponent(restaurantIdentifier)}`
+            )
+          );
+          addNumbers(nextOccupiedSet, payload?.table_numbers);
+          addNumbers(nextReservedSet, payload?.reserved_table_numbers);
+          hasAnySource = true;
+        } catch (err) {
+          console.warn("⚠️ Public unavailable tables fetch failed:", err);
+        }
+
+        try {
+          // Public fallback: derive reservation occupancy from table orders by identifier.
+          const ordersPayload = await secureFetch(
+            `/orders?identifier=${encodeURIComponent(restaurantIdentifier)}&type=table`
+          );
+          const orderRows = parseArray(ordersPayload);
+          const nowMs = Date.now();
+
+          const occupiedFromPublicOrders = toArray(orderRows)
+            .filter((order) => {
+              const status = String(order?.status || "").toLowerCase();
+              if (["closed", "completed", "canceled", "cancelled"].includes(status)) {
+                return false;
+              }
+              if (isReservationLikeEntry(order)) return isReservationDueNow(order, nowMs);
+              return true;
+            })
+            .map((order) => Number(order?.table_number))
+            .filter((n) => Number.isFinite(n) && n > 0);
+
+          const reservedFromPublicOrders = toArray(orderRows)
+            .filter((order) => {
+              const status = String(order?.status || "").toLowerCase();
+              if (["canceled", "cancelled"].includes(status)) return false;
+              if (!isReservationLikeEntry(order)) return false;
+              if (!isReservationDueNow(order, nowMs)) return false;
+
+              if (["closed", "completed"].includes(status)) {
+                const reservationDate =
+                  String(order?.reservation_date ?? order?.reservationDate ?? "").trim();
+                // Allow legacy closed+reservation rows only for today's schedule.
+                if (!reservationDate || reservationDate !== todayYmd) return false;
+              }
+              return true;
+            })
+            .map((order) => Number(order?.table_number))
+            .filter((n) => Number.isFinite(n) && n > 0);
+
+          addNumbers(nextOccupiedSet, occupiedFromPublicOrders);
+          // Public orders source is authoritative enough to prevent stale reserved badges.
+          nextReservedSet.clear();
+          addNumbers(nextReservedSet, reservedFromPublicOrders);
+          addNumbers(nextOccupiedSet, reservedFromPublicOrders);
+          hasAnySource = true;
+        } catch (err) {
+          console.warn("⚠️ Public orders fallback fetch failed:", err);
+        }
+      }
+
+      const token = getStoredToken();
+      if (token) {
+        const [ordersRes, reservationsRes] = await Promise.allSettled([
+          sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } }),
+          sFetch(`/orders/reservations?start_date=${todayYmd}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+
+        if (ordersRes.status !== "fulfilled") {
+          throw ordersRes.reason || new Error("Failed to fetch orders");
+        }
+
+        const list = parseArray(ordersRes.value);
+        const reservationsRaw =
+          reservationsRes.status === "fulfilled" ? reservationsRes.value : [];
+        const reservations = Array.isArray(reservationsRaw?.reservations)
+          ? reservationsRaw.reservations
+          : Array.isArray(reservationsRaw)
+          ? reservationsRaw
+          : [];
+        try {
+          const nextMap = new Map();
+          toArray(list).forEach((o) => {
+            const oid = Number(o?.id);
+            const tno = Number(o?.table_number);
+            if (Number.isFinite(oid) && Number.isFinite(tno) && tno > 0) nextMap.set(oid, tno);
+          });
+          orderIdToTableRef.current = nextMap;
+        } catch {}
+        const nowMs = Date.now();
+        const occupiedFromOrders = toArray(list)
+          .filter((order) => {
+            if (!order?.table_number) return false;
+            const status = String(order?.status || "").toLowerCase();
+            if (["closed", "completed", "canceled", "cancelled"].includes(status)) return false;
+            if (isReservationLikeEntry(order)) return isReservationDueNow(order, nowMs);
+            return true;
+          })
+          .map((order) => Number(order.table_number))
+          .filter((n) => Number.isFinite(n) && n > 0);
+        const occupiedFromReservations = toArray(reservations)
+          .filter((reservation) => {
+            const status = String(reservation?.status || "").toLowerCase();
+            if (["closed", "completed", "canceled", "cancelled"].includes(status)) return false;
+            return isReservationDueNow(reservation, nowMs);
+          })
+          .map((reservation) =>
+            Number(
+              reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
+            )
+          )
+          .filter((n) => Number.isFinite(n) && n > 0);
+        const reservedFromOrders = toArray(list)
+          .filter((order) => {
+            const status = String(order?.status || "").toLowerCase();
+            if (["closed", "completed", "canceled", "cancelled"].includes(status)) return false;
+            if (!isReservationLikeEntry(order)) return false;
+            return isReservationDueNow(order, nowMs);
+          })
+          .map((order) => Number(order?.table_number))
+          .filter((n) => Number.isFinite(n) && n > 0);
+        const reservedFromReservations = toArray(reservations)
+          .filter((reservation) => {
+            const status = String(reservation?.status || "").toLowerCase();
+            if (["closed", "completed", "canceled", "cancelled"].includes(status)) return false;
+            return isReservationDueNow(reservation, nowMs);
+          })
+          .map((reservation) =>
+            Number(
+              reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
+            )
+          )
+          .filter((n) => Number.isFinite(n) && n > 0);
+        addNumbers(nextOccupiedSet, occupiedFromOrders);
+        addNumbers(nextOccupiedSet, occupiedFromReservations);
+        // Authenticated orders/reservations are authoritative for reserved state.
+        nextReservedSet.clear();
+        addNumbers(nextReservedSet, reservedFromOrders);
+        addNumbers(nextReservedSet, reservedFromReservations);
+        hasAnySource = true;
+      }
+
+      if (!hasAnySource && !restaurantIdentifier && !token) {
+        setOccupiedTables([]);
+        setReservedTables([]);
+        return;
+      }
+      if (!hasAnySource) {
+        // Keep previous availability state when fetch sources are temporarily unavailable.
+        return;
+      }
+      setOccupiedTables(Array.from(nextOccupiedSet));
+      setReservedTables(Array.from(nextReservedSet));
     } catch (err) {
       console.warn("⚠️ Failed to refresh occupied tables:", err);
+      // Preserve previous known state on transient errors.
     }
-  }, [sFetch]);
+  }, [appendIdentifier, getStoredToken, restaurantIdentifier, sFetch, toArray]);
 
   // Realtime table occupancy: join restaurant room and refresh on order events.
   useEffect(() => {
@@ -1107,6 +1473,22 @@ if (savedTable) {
       setOccupiedTables((prev) => toArray(prev).map(Number).filter((x) => x !== n));
     };
 
+    const upsertReserved = (tableNo) => {
+      const n = Number(tableNo);
+      if (!Number.isFinite(n) || n <= 0) return;
+      setReservedTables((prev) => {
+        const next = new Set(toArray(prev).map(Number));
+        next.add(n);
+        return Array.from(next);
+      });
+    };
+
+    const removeReserved = (tableNo) => {
+      const n = Number(tableNo);
+      if (!Number.isFinite(n) || n <= 0) return;
+      setReservedTables((prev) => toArray(prev).map(Number).filter((x) => x !== n));
+    };
+
     const onConfirmed = (payload) => {
       const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
       const tableNo =
@@ -1125,10 +1507,16 @@ if (savedTable) {
     const onCancelled = (payload) => {
       const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
       const tableNo = payload?.table_number ?? payload?.order?.table_number ?? null;
-      if (tableNo) removeOccupied(tableNo);
+      if (tableNo) {
+        removeOccupied(tableNo);
+        removeReserved(tableNo);
+      }
       else if (Number.isFinite(orderId)) {
         const cached = orderIdToTableRef.current.get(orderId);
-        if (cached) removeOccupied(cached);
+        if (cached) {
+          removeOccupied(cached);
+          removeReserved(cached);
+        }
       }
       if (Number.isFinite(orderId)) orderIdToTableRef.current.delete(orderId);
       scheduleRefresh();
@@ -1138,8 +1526,49 @@ if (savedTable) {
       const orderId = Number(payload?.orderId ?? payload?.id);
       if (Number.isFinite(orderId)) {
         const cached = orderIdToTableRef.current.get(orderId);
-        if (cached) removeOccupied(cached);
+        if (cached) {
+          removeOccupied(cached);
+          removeReserved(cached);
+        }
         orderIdToTableRef.current.delete(orderId);
+      }
+      scheduleRefresh();
+    };
+
+    const onReservationCreated = (payload) => {
+      const tableNo =
+        payload?.table_number ??
+        payload?.reservation?.table_number ??
+        payload?.order?.table_number ??
+        null;
+      if (tableNo) {
+        upsertOccupied(tableNo);
+        upsertReserved(tableNo);
+      }
+      scheduleRefresh();
+    };
+
+    const onReservationUpdated = (payload) => {
+      const tableNo =
+        payload?.table_number ??
+        payload?.reservation?.table_number ??
+        payload?.order?.table_number ??
+        null;
+      if (tableNo) {
+        upsertOccupied(tableNo);
+        upsertReserved(tableNo);
+      }
+      scheduleRefresh();
+    };
+
+    const onReservationCancelled = (payload) => {
+      const tableNo =
+        payload?.table_number ??
+        payload?.reservation?.table_number ??
+        payload?.order?.table_number ??
+        null;
+      if (tableNo) {
+        removeReserved(tableNo);
       }
       scheduleRefresh();
     };
@@ -1149,6 +1578,10 @@ if (savedTable) {
     s.on("orders_updated", onAny);
     s.on("order_cancelled", onCancelled);
     s.on("order_closed", onClosed);
+    s.on("reservation_created", onReservationCreated);
+    s.on("reservation_updated", onReservationUpdated);
+    s.on("reservation_cancelled", onReservationCancelled);
+    s.on("reservation_deleted", onReservationCancelled);
 
     // Initial refresh on connect
     s.on("connect", () => scheduleRefresh());
@@ -1162,6 +1595,10 @@ if (savedTable) {
         s.off("orders_updated", onAny);
         s.off("order_cancelled", onCancelled);
         s.off("order_closed", onClosed);
+        s.off("reservation_created", onReservationCreated);
+        s.off("reservation_updated", onReservationUpdated);
+        s.off("reservation_cancelled", onReservationCancelled);
+        s.off("reservation_deleted", onReservationCancelled);
         s.disconnect();
       } catch {}
     };
@@ -1170,37 +1607,28 @@ if (savedTable) {
 useEffect(() => {
   let cancelled = false;
 
-  const parseArray = (raw) =>
-    Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
-
   loadTables();
-  const token = getStoredToken();
-  if (token) {
-    sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } })
-      .then((orders) => {
-        if (cancelled) return;
-        const list = parseArray(orders);
-        const occupied = toArray(list)
-          .filter((order) => {
-            if (!order?.table_number) return false;
-            const status = String(order?.status || "").toLowerCase();
-            return !["closed", "completed", "canceled", "cancelled"].includes(status);
-          })
-          .map((order) => Number(order.table_number));
-        setOccupiedTables(occupied);
-      })
-      .catch((err) => {
-        console.warn("⚠️ Failed to fetch orders:", err);
-        if (!cancelled) setOccupiedTables([]);
-      });
-  } else {
-    setOccupiedTables([]);
-  }
+  (async () => {
+    await refreshOccupiedTables();
+    if (cancelled) return;
+  })().catch((err) => {
+    console.warn("⚠️ Failed to load occupied tables:", err);
+    if (!cancelled) setOccupiedTables([]);
+  });
 
   return () => {
     cancelled = true;
   };
-}, [appendIdentifier]);
+}, [appendIdentifier, refreshOccupiedTables]);
+
+useEffect(() => {
+  const intervalId = window.setInterval(() => {
+    refreshOccupiedTables();
+  }, 30000);
+  return () => {
+    window.clearInterval(intervalId);
+  };
+}, [refreshOccupiedTables]);
 
 
 
@@ -1225,11 +1653,40 @@ const triggerOrderType = useCallback(
 const handlePopularProductClick = useCallback(
   (product, meta) => {
     if (!product) return;
+    // If order type is already chosen, open add-to-cart modal immediately.
+    // This avoids getting stuck behind the order-type prompt/pending flow.
+    const orderTypeReady =
+      !!orderType &&
+      !(orderType === "online" && showDeliveryForm) &&
+      !(orderType === "takeaway" && showTakeawayForm);
+    if (orderTypeReady) {
+      const targetCategory = (product.category || "").trim();
+      if (targetCategory) {
+        setActiveCategory(targetCategory);
+      }
+      setReturnHomeAfterAdd(!!meta?.returnToHomeAfterAdd);
+      setShowOrderTypePrompt(false);
+      setPendingPopularProduct(null);
+      setSelectedProduct(product);
+      setShowAddModal(true);
+      return;
+    }
+
     setPendingPopularProduct(product);
     setReturnHomeAfterAdd(!!meta?.returnToHomeAfterAdd);
     setShowOrderTypePrompt(true);
   },
-  [setPendingPopularProduct, setReturnHomeAfterAdd, setShowOrderTypePrompt]
+  [
+    orderType,
+    setActiveCategory,
+    setPendingPopularProduct,
+    setReturnHomeAfterAdd,
+    setSelectedProduct,
+    setShowAddModal,
+    setShowOrderTypePrompt,
+    showDeliveryForm,
+    showTakeawayForm,
+  ]
 );
 
 const handleMenuCategorySelect = useCallback(
@@ -1292,6 +1749,9 @@ const myTable =
 const filteredOccupied = myTable
   ? safeOccupiedTables.filter((n) => n !== myTable)
   : safeOccupiedTables;
+const filteredReserved = myTable
+  ? safeReservedTables.filter((n) => n !== myTable)
+  : safeReservedTables;
 const showTableSelector = !forceHome && orderType === "table" && !table;
 
 
@@ -1338,8 +1798,17 @@ const res = await secureFetch(appendIdentifier(`/orders/${orderId}/items`), {
 
 // ---- Order Another: show previous lines (locked), start fresh for new ones ----
 async function handleOrderAnother() {
+  const currentStatus = String(orderScreenStatus || "").toLowerCase();
+  const allowOrderAnotherWhileReserved = currentStatus === "reserved";
+  if (isForcedStatusActive() && !allowOrderAnotherWhileReserved) {
+    setShowStatus(true);
+    storage.setItem("qr_show_status", "1");
+    return;
+  }
   try {
+    setForceHome(false);
     setShowStatus(false);
+    storage.setItem("qr_show_status", "0");
     setOrderStatus("pending");
 
     // keep drawer closed; user opens if needed
@@ -1349,6 +1818,11 @@ async function handleOrderAnother() {
     // resolve existing order
     let id = orderId || Number(storage.getItem("qr_active_order_id")) || null;
     let type = orderType || storage.getItem("qr_orderType") || (table ? "table" : null);
+    let resolvedTableNo =
+      Number(table) ||
+      Number(storage.getItem("qr_table")) ||
+      Number(storage.getItem("qr_selected_table")) ||
+      null;
 
     // Check if current order is cancelled - if so, clear everything for fresh start
     if (id) {
@@ -1359,6 +1833,10 @@ async function handleOrderAnother() {
         });
         if (res) {
           const orderStatus = (res.status || "").toLowerCase();
+          const fetchedTable = Number(res.table_number);
+          if (Number.isFinite(fetchedTable) && fetchedTable > 0) {
+            resolvedTableNo = fetchedTable;
+          }
           if (orderStatus === "cancelled" || orderStatus === "canceled") {
             // Clear everything for a fresh start
             setCart([]);
@@ -1393,6 +1871,10 @@ async function handleOrderAnother() {
               if (open) {
                 id = open.id;
                 type = "table";
+                const openTable = Number(open.table_number);
+                if (Number.isFinite(openTable) && openTable > 0) {
+                  resolvedTableNo = openTable;
+                }
                 setOrderId(id);
                 setOrderType("table");
               }
@@ -1418,9 +1900,17 @@ async function handleOrderAnother() {
     // TABLE branch (unchanged)
     if (type === "table" && id) {
       await rehydrateCartFromOrder(id); // sets locked: true items
+      setOrderId(id);
+      setOrderType("table");
+      if (Number.isFinite(Number(resolvedTableNo)) && Number(resolvedTableNo) > 0) {
+        const tableToUse = Number(resolvedTableNo);
+        setTable(tableToUse);
+        saveSelectedTable(tableToUse);
+        storage.setItem("qr_table", String(tableToUse));
+        storage.setItem("qr_selected_table", String(tableToUse));
+      }
       storage.setItem("qr_active_order_id", String(id));
       storage.setItem("qr_orderType", "table");
-      if (table) storage.setItem("qr_table", String(table));
       storage.setItem("qr_show_status", "0");
       return;
     }
@@ -1434,10 +1924,15 @@ async function handleOrderAnother() {
   }
 }
 
-		function handleReset() {
-		  // Check if order is delivered or cancelled - if so, navigate to home
-		  const status = (orderScreenStatus || "").toLowerCase();
-		  const isFinished = ["delivered", "served", "cancelled", "canceled", "closed", "completed"].includes(status);
+function handleReset() {
+		  if (isForcedStatusActive()) {
+		    setShowStatus(true);
+		    storage.setItem("qr_show_status", "1");
+		    return;
+		  }
+			  // Check if order is delivered or cancelled - if so, navigate to home
+			  const status = (orderScreenStatus || "").toLowerCase();
+			  const isFinished = ["delivered", "served", "cancelled", "canceled", "closed", "completed"].includes(status);
 		  
 		  if (isFinished) {
 		    // Order is complete - navigate to home and clear everything
@@ -1448,6 +1943,62 @@ async function handleOrderAnother() {
 		    storage.setItem("qr_show_status", "0");
 		  }
 		}
+
+  const handleCallWaiter = useCallback(async () => {
+    const tableNumber =
+      Number(table) ||
+      Number(storage.getItem("qr_table")) ||
+      Number(storage.getItem("qr_selected_table")) ||
+      null;
+    if (!restaurantIdentifier || !Number.isFinite(tableNumber) || tableNumber <= 0) {
+      return { ok: false, reason: "missing_table" };
+    }
+
+    const now = Date.now();
+    if (callWaiterCooldownUntil > now) {
+      return { ok: false, reason: "cooldown", retryAfterMs: callWaiterCooldownUntil - now };
+    }
+
+    setCallingWaiter(true);
+    try {
+      await secureFetch(`/public/call-waiter/${encodeURIComponent(restaurantIdentifier)}`, {
+        method: "POST",
+        body: JSON.stringify({
+          table_number: tableNumber,
+          source: "qr_menu",
+        }),
+      });
+      setCallWaiterCooldownUntil(Date.now() + 15000);
+      return { ok: true };
+    } catch (err) {
+      const msg = String(err?.message || "").toLowerCase();
+      if (msg.includes("429") || msg.includes("too many")) {
+        setCallWaiterCooldownUntil(Date.now() + 15000);
+        return { ok: false, reason: "cooldown", retryAfterMs: 15000 };
+      }
+      return { ok: false, reason: "failed" };
+    } finally {
+      setCallingWaiter(false);
+    }
+  }, [restaurantIdentifier, table, storage, callWaiterCooldownUntil]);
+
+  const callWaiterCooldownSeconds = Math.max(
+    0,
+    Math.ceil((callWaiterCooldownUntil - callWaiterTickMs) / 1000)
+  );
+
+  useEffect(() => {
+    if (!callWaiterCooldownUntil || callWaiterCooldownUntil <= Date.now()) {
+      setCallWaiterTickMs(Date.now());
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => {
+      setCallWaiterTickMs(Date.now());
+    }, 500);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [callWaiterCooldownUntil]);
 
 
   
@@ -1485,6 +2036,7 @@ async function handleOrderAnother() {
     showAddModal,
     setShowAddModal,
     occupiedTables,
+    reservedTables,
     setOccupiedTables,
     showStatus,
     setShowStatus,
@@ -1534,6 +2086,10 @@ async function handleOrderAnother() {
     setShowTableScanner,
     tableScanTarget,
     setTableScanTarget,
+    tableScanGuests,
+    setTableScanGuests,
+    tableScanReady,
+    startTableScannerWithGuests,
     tableScanError,
     setTableScanError,
     menuSearch,
@@ -1568,6 +2124,7 @@ async function handleOrderAnother() {
     safeExtrasGroups,
     safeCart,
     safeOccupiedTables,
+    safeReservedTables,
     hasActiveOrder,
     productsForGrid,
     triggerOrderType,
@@ -1590,6 +2147,10 @@ async function handleOrderAnother() {
     showHome,
     showTableSelector,
     filteredOccupied,
+    filteredReserved,
+    callingWaiter,
+    callWaiterCooldownSeconds,
+    handleCallWaiter,
   };
 }
 

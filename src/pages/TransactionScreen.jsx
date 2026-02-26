@@ -37,6 +37,7 @@ import { getReservationSchedule, isEarlyReservationClose } from "../utils/reserv
 import { loadRegisterSummary, clearRegisterSummaryCache } from "../utils/registerSummaryCache";
 import { clearRegisterDataCache } from "../utils/registerDataCache";
 import {
+  upsertTableOverviewOrderInCache,
   removeTableOverviewOrderFromCache,
 } from "../utils/tableOverviewOrdersCache";
 import CartPanelContainer from "../features/transaction/components/CartPanelContainer";
@@ -1444,6 +1445,72 @@ const orderStatusFlow = useMemo(
   ]
 );
 const { updateOrderStatus } = orderStatusFlow;
+const handleReservationDeletedSync = useCallback(
+  (nextOrder) => {
+    const source = nextOrder && typeof nextOrder === "object" ? nextOrder : order;
+    const tableNumber = Number(source?.table_number ?? source?.tableNumber ?? tableId);
+    if (!Number.isFinite(tableNumber)) return;
+
+    const orderIdNum =
+      source?.id === null || source?.id === undefined ? null : Number(source.id);
+    const statusLower = String(source?.status || "").toLowerCase();
+
+    if (statusLower === "closed") {
+      removeTableOverviewOrderFromCache(tableNumber);
+      dispatchOrdersLocalRefresh({
+        kind: "tableoverview_order_status",
+        table_number: tableNumber,
+        order_id: orderIdNum,
+        status: "closed",
+        patch: null,
+      });
+      return;
+    }
+
+    const normalizedStatus =
+      statusLower === "reserved" ? "confirmed" : source?.status || "confirmed";
+    const normalizedStatusLower = String(normalizedStatus || "").toLowerCase();
+
+    const patch = {
+      status: normalizedStatus,
+      order_type:
+        source?.order_type === "reservation" && normalizedStatusLower !== "reserved"
+          ? "table"
+          : source?.order_type,
+      payment_status: source?.payment_status,
+      is_paid: source?.is_paid,
+      total: source?.total,
+      reservation: null,
+      reservation_id: null,
+      reservationId: null,
+      reservation_date: null,
+      reservationDate: null,
+      reservation_time: null,
+      reservationTime: null,
+      reservation_clients: null,
+      reservationClients: null,
+      reservation_notes: null,
+      reservationNotes: null,
+      items: Array.isArray(source?.items) ? source.items : undefined,
+      suborders: Array.isArray(source?.suborders) ? source.suborders : undefined,
+    };
+
+    upsertTableOverviewOrderInCache({
+      tableNumber,
+      orderId: orderIdNum,
+      patch,
+    });
+
+    dispatchOrdersLocalRefresh({
+      kind: "tableoverview_order_status",
+      table_number: tableNumber,
+      order_id: orderIdNum,
+      status: patch.status,
+      patch,
+    });
+  },
+  [dispatchOrdersLocalRefresh, order, tableId]
+);
 const {
   reservationDate,
   setReservationDate,
@@ -1478,6 +1545,7 @@ const {
   discountValue,
   discountType,
   setOrder,
+  onReservationDeleted: handleReservationDeletedSync,
 });
 
 useEffect(() => {
@@ -2196,6 +2264,7 @@ const cartPanelProps = useMemo(
     isDebtSaving,
     handleCartPrint,
     openReservationModal,
+    handleDeleteReservation,
     openCancelModal,
     setShowDiscountModal,
     handleOpenCashRegister,
@@ -2239,6 +2308,7 @@ const cartPanelProps = useMemo(
     getMatchedExtrasGroups,
     getPrimaryActionLabel,
     handleCartPrint,
+    handleDeleteReservation,
     handleMultifunction,
     handleOpenCashRegister,
     handleOpenDebtModal,
@@ -2574,6 +2644,14 @@ const vm = useMemo(
     );
   }
 
+  const totalCartItemCount = cartItems.length;
+  const paidCartItemCount = cartItems.filter((item) => item.paid).length;
+  const floatingCartPaidState =
+    totalCartItemCount > 0 && paidCartItemCount === totalCartItemCount;
+  const floatingCartButtonClassName = floatingCartPaidState
+    ? "flex h-[64px] min-w-[228px] items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600 px-4 text-white shadow-lg shadow-emerald-600/30 ring-2 ring-white/40 backdrop-blur-sm active:scale-[0.97] transition dark:ring-slate-900/30"
+    : "flex h-[64px] min-w-[228px] items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-rose-500 via-red-600 to-red-700 px-4 text-white shadow-lg shadow-red-600/30 ring-2 ring-white/40 backdrop-blur-sm active:scale-[0.97] transition dark:ring-slate-900/30";
+
   return (
     <div className="relative flex h-full min-h-[calc(100vh-80px)] w-full flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-50 to-indigo-50/40 dark:from-slate-950 dark:via-slate-950 dark:to-indigo-950/30" />
@@ -2611,20 +2689,27 @@ const vm = useMemo(
         <button
           type="button"
           onClick={() => setIsFloatingCartOpen(true)}
-          className="flex h-[64px] min-w-[190px] items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 px-4 text-white shadow-lg shadow-indigo-600/30 ring-2 ring-white/40 backdrop-blur-sm active:scale-[0.97] transition dark:ring-slate-900/30"
+          className={floatingCartButtonClassName}
           aria-label={t("View Cart")}
         >
           <div className="flex flex-col items-start leading-tight">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-indigo-50">
-              {t("Cart")}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/90">
+                {t("Cart")}
+              </span>
+              {paidCartItemCount > 0 && (
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                  {t("Paid")} {paidCartItemCount}
+                </span>
+              )}
+            </div>
             <span className="text-[15px] font-bold">
               {formatCurrency(discountedTotal)}
             </span>
           </div>
           <div className="rounded-xl bg-white/15 px-3 py-1 text-center">
-            <span className="text-[12px] font-semibold text-indigo-50">
-              {cartItems.filter((i) => !i.paid).length} {t("Items")}
+            <span className="text-[12px] font-semibold text-white/90">
+              {totalCartItemCount} {t("Items")}
             </span>
           </div>
         </button>

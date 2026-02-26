@@ -19,6 +19,13 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+const getPhoneHref = (phone) => {
+  const value = String(phone ?? "").trim();
+  if (!value) return null;
+  const normalized = value.replace(/[^\d+]/g, "");
+  return normalized ? `tel:${normalized}` : null;
+};
+
 const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) => {
   const CART_WINDOW_INITIAL_COUNT = 80;
   const CART_WINDOW_STEP = 80;
@@ -28,6 +35,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     headerPadding,
     footerPadding,
     orderId,
+    order,
     tableLabelText,
     tableId,
     invoiceNumber,
@@ -87,6 +95,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     incrementCartItem,
     removeItem,
     openReservationModal,
+    handleDeleteReservation,
     openCancelModal,
     setShowDiscountModal,
     handleOpenCashRegister,
@@ -99,6 +108,22 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
   } = actions;
 
   const shouldShowPayButton = hasConfirmedCartUnpaid || hasSuborderUnpaid;
+  const reservationCustomerName =
+    existingReservation?.customer_name ??
+    existingReservation?.customerName ??
+    order?.customer_name ??
+    order?.customerName ??
+    "";
+  const reservationCustomerPhone =
+    existingReservation?.customer_phone ??
+    existingReservation?.customerPhone ??
+    order?.customer_phone ??
+    order?.customerPhone ??
+    "";
+  const reservationCustomerPhoneHref = useMemo(
+    () => getPhoneHref(reservationCustomerPhone),
+    [reservationCustomerPhone]
+  );
   const cartWindowingOverscan = Number.isFinite(Number(virtualizationCartOverscan))
     ? Math.max(0, Number(virtualizationCartOverscan))
     : 0;
@@ -373,6 +398,35 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                   </div>
                 </div>
               </div>
+              {(reservationCustomerName || reservationCustomerPhone) && (
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-700 dark:text-slate-200">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
+                      {t("Name")}
+                    </div>
+                    <div className="truncate font-bold">
+                      {reservationCustomerName || "—"}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
+                      {t("Phone")}
+                    </div>
+                    {reservationCustomerPhone && reservationCustomerPhoneHref ? (
+                      <a
+                        href={reservationCustomerPhoneHref}
+                        className="truncate font-bold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800 dark:text-blue-300 dark:decoration-blue-500/40 dark:hover:text-blue-200"
+                      >
+                        {reservationCustomerPhone}
+                      </a>
+                    ) : (
+                      <div className="truncate font-bold">
+                        {reservationCustomerPhone || "—"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               {existingReservation.reservation_notes && (
                 <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:bg-zinc-800 dark:text-slate-200">
                   <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
@@ -384,15 +438,26 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => openReservationModal()}
-              className="flex items-center justify-center h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-colors flex-shrink-0 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
-              title={t("Edit Reservation")}
-              aria-label={t("Edit Reservation")}
-            >
-              <Edit2 className="h-4 w-4" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleDeleteReservation?.()}
+                className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-bold text-red-700 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-900/20 dark:text-red-200 dark:hover:bg-red-900/35"
+                title={t("Delete Reservation")}
+                aria-label={t("Delete Reservation")}
+              >
+                {t("Delete")}
+              </button>
+              <button
+                type="button"
+                onClick={() => openReservationModal()}
+                className="flex items-center justify-center h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-colors dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
+                title={t("Edit Reservation")}
+                aria-label={t("Edit Reservation")}
+              >
+                <Edit2 className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -797,7 +862,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
             <button
               type="button"
               onClick={openCancelModal}
-              disabled={cartItemsLength === 0 || normalizedStatus !== "confirmed" || hasUnpaidConfirmed}
+              disabled={footerCancelDisabled}
               className="flex-1 min-w-[120px] rounded-full border border-rose-200 bg-rose-50/80 px-4 py-2 text-center text-xs font-semibold text-rose-600 shadow-[0_8px_18px_rgba(244,63,94,0.12)] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-950/25 dark:text-rose-200 dark:hover:bg-rose-950/35"
             >
               {t("Cancel")}

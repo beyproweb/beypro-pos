@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "./ProductCard";
 
 const CategoryTopBar = React.memo(function CategoryTopBar({
@@ -9,13 +9,14 @@ const CategoryTopBar = React.memo(function CategoryTopBar({
   onCategoryClick,
   apiUrl,
 }) {
-  const categoryList = Array.isArray(categories) ? categories : [];
+  const categoryList = useMemo(() => (Array.isArray(categories) ? categories : []), [categories]);
   const scrollRef = useRef(null);
   const categoryFallbackSrc = "/Beylogo.svg";
+  const [canScroll, setCanScroll] = useState({ left: false, right: false });
 
-  const scrollToCategory = (index) => {
+  const scrollToCategory = useCallback((index) => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || index < 0) return;
     const button = el.children[index];
     if (!button) return;
     const buttonRect = button.getBoundingClientRect();
@@ -26,10 +27,65 @@ const CategoryTopBar = React.memo(function CategoryTopBar({
       containerRect.width / 2 +
       buttonRect.width / 2;
     el.scrollBy({ left: offset, behavior: "smooth" });
-  };
+  }, []);
+
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { scrollLeft, clientWidth, scrollWidth } = el;
+    const canScrollLeft = scrollLeft > 0;
+    const canScrollRight = scrollLeft + clientWidth < scrollWidth - 1;
+    setCanScroll((prev) => {
+      if (prev.canScrollLeft === canScrollLeft && prev.canScrollRight === canScrollRight) {
+        return prev;
+      }
+      return { canScrollLeft, canScrollRight };
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateScrollState();
+    const handleResize = () => updateScrollState();
+    el.addEventListener("scroll", updateScrollState, { passive: true });
+    let resizeObserver;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(updateScrollState);
+      resizeObserver.observe(el);
+    } else if (typeof window !== "undefined") {
+      window.addEventListener("resize", handleResize);
+    }
+    return () => {
+      el.removeEventListener("scroll", updateScrollState);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      } else if (typeof window !== "undefined") {
+        window.removeEventListener("resize", handleResize);
+      }
+    };
+  }, [updateScrollState, categoryList.length]);
+
+  useEffect(() => {
+    if (!activeCategory) return;
+    const index = categoryList.findIndex((cat) => cat === activeCategory);
+    if (index < 0) return;
+    const timer = setTimeout(() => scrollToCategory(index), 0);
+    return () => clearTimeout(timer);
+  }, [activeCategory, categoryList, scrollToCategory]);
+
+  const handleScroll = useCallback(
+    (direction) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const step = Math.max(el.clientWidth * 0.6, 160);
+      el.scrollBy({ left: direction === "left" ? -step : step, behavior: "smooth" });
+    },
+    []
+  );
 
   return (
-    <div className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-sm px-2 py-1">
+    <div className="relative w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-sm px-2 py-1">
       <div
         ref={scrollRef}
         className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide px-0.5"
@@ -77,6 +133,26 @@ const CategoryTopBar = React.memo(function CategoryTopBar({
           );
         })}
       </div>
+      {canScroll.canScrollLeft && (
+        <button
+          type="button"
+          onClick={() => handleScroll("left")}
+          aria-label="Scroll categories left"
+          className="absolute left-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-full bg-white/80 p-1 text-sm text-neutral-600 shadow-lg backdrop-blur-sm transition hover:bg-white dark:bg-neutral-900/80 dark:text-neutral-300"
+        >
+          ‹
+        </button>
+      )}
+      {canScroll.canScrollRight && (
+        <button
+          type="button"
+          onClick={() => handleScroll("right")}
+          aria-label="Scroll categories right"
+          className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-full bg-white/80 p-1 text-sm text-neutral-600 shadow-lg backdrop-blur-sm transition hover:bg-white dark:bg-neutral-900/80 dark:text-neutral-300"
+        >
+          ›
+        </button>
+      )}
     </div>
   );
 });

@@ -29,6 +29,9 @@ function VoiceOrderFabComponent({
   draftItemsPreview = [],
   showOpenRecap = false,
   openRecapLabel = "Open Cart",
+  showClearRecap = false,
+  clearRecapLabel = "Clear Item",
+  onClearRecap,
   noisyModeLabel = "Noisy Mode",
   noisyModeDescription = "",
   suggestions = [],
@@ -60,7 +63,7 @@ function VoiceOrderFabComponent({
         type="button"
         onClick={handleMainClick}
         aria-label="Start voice order"
-        className={`pointer-events-auto group flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 pr-12 text-left shadow-[0_10px_25px_rgba(15,23,42,0.13)] backdrop-blur transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 dark:border-neutral-700 dark:bg-neutral-900/95 ${
+        className={`pointer-events-auto group flex w-full items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50/95 pr-12 text-left shadow-[0_12px_28px_rgba(2,132,199,0.2)] backdrop-blur transition hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(2,132,199,0.24)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 dark:border-sky-700 dark:bg-sky-950/70 ${
           noisyMode ? "px-4 py-4" : "px-3 py-3"
         }`}
       >
@@ -73,7 +76,7 @@ function VoiceOrderFabComponent({
           <div className={`truncate font-semibold text-slate-900 dark:text-neutral-100 ${noisyMode ? "text-base" : "text-sm"}`}>
             {title}
           </div>
-          <div className={`truncate text-slate-500 dark:text-neutral-400 ${noisyMode ? "text-sm font-medium" : "text-xs"}`}>
+          <div className={`truncate text-sky-700 dark:text-sky-200 ${noisyMode ? "text-sm font-medium" : "text-xs"}`}>
             {mainSubtitle}
           </div>
         </div>
@@ -101,7 +104,7 @@ function VoiceOrderFabComponent({
         </button>
       ) : null}
 
-      <div className="pointer-events-auto mt-2 rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs shadow-[0_10px_25px_rgba(15,23,42,0.13)] backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
+      <div className="pointer-events-auto mt-2 rounded-2xl border border-sky-200 bg-sky-50/95 p-3 text-xs shadow-[0_12px_28px_rgba(2,132,199,0.2)] backdrop-blur dark:border-sky-700 dark:bg-sky-950/70">
         <button
           type="button"
           role="switch"
@@ -221,6 +224,15 @@ function VoiceOrderFabComponent({
             className="mt-3 w-full rounded-xl border border-emerald-300 bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300 dark:border-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-400"
           >
             {openRecapLabel}
+          </button>
+        ) : null}
+        {showClearRecap ? (
+          <button
+            type="button"
+            onClick={onClearRecap}
+            className="mt-2 w-full rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-300 dark:border-rose-500/80 dark:bg-neutral-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
+          >
+            {clearRecapLabel}
           </button>
         ) : null}
 

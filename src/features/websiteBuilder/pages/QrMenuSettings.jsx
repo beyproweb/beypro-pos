@@ -54,6 +54,8 @@ export default function QrMenuSettings() {
   const [shopHours, setShopHours] = useState({});
   const [loadingShopHours, setLoadingShopHours] = useState(true);
   const [savingShopHours, setSavingShopHours] = useState(false);
+  const [shopHoursDirty, setShopHoursDirty] = useState(false);
+  const [shopHoursSaveStatus, setShopHoursSaveStatus] = useState("idle");
   const [showShopHoursDropdown, setShowShopHoursDropdown] = useState(false);
   const shopHoursDropdownRef = useRef(null);
   const [settings, setSettings] = useState({
@@ -595,15 +597,21 @@ async function saveAllCustomization() {
 
         if (!active) return;
         const hoursMap = {};
+        days.forEach((day) => {
+          hoursMap[day] = { open: "", close: "", enabled: false };
+        });
         if (Array.isArray(data)) {
           data.forEach((row) => {
             hoursMap[row.day] = {
-              open: row.open_time,
-              close: row.close_time,
+              open: row.open_time || "",
+              close: row.close_time || "",
+              enabled: Boolean(row.open_time && row.close_time),
             };
           });
         }
         setShopHours(hoursMap);
+        setShopHoursDirty(false);
+        setShopHoursSaveStatus("idle");
       } catch (err) {
         console.error("❌ Failed to load shop hours:", err);
         if (showToastOnError) {
@@ -640,25 +648,96 @@ async function saveAllCustomization() {
       [day]: {
         ...(prev[day] || {}),
         [field]: value,
+        enabled: true,
       },
     }));
+    setShopHoursDirty(true);
+    setShopHoursSaveStatus("idle");
   };
 
-  const saveShopHours = async () => {
+  const handleShopHoursDayToggle = (day) => {
+    setShopHours((prev) => {
+      const current = prev[day] || { open: "", close: "", enabled: false };
+      const nextEnabled = !(current.enabled !== false);
+      return {
+        ...prev,
+        [day]: {
+          ...current,
+          enabled: nextEnabled,
+          open: nextEnabled ? current.open || "09:00" : current.open || "",
+          close: nextEnabled ? current.close || "22:00" : current.close || "",
+        },
+      };
+    });
+    setShopHoursDirty(true);
+    setShopHoursSaveStatus("idle");
+  };
+
+  const handleMainShopToggle = () => {
+    setShopHours((prev) => {
+      const currentlyOpen = days.some((day) => prev[day]?.enabled !== false);
+      const nextEnabled = !currentlyOpen;
+      const updated = { ...prev };
+      days.forEach((day) => {
+        const current = updated[day] || { open: "", close: "", enabled: false };
+        updated[day] = {
+          ...current,
+          enabled: nextEnabled,
+          open: nextEnabled ? current.open || "09:00" : current.open || "",
+          close: nextEnabled ? current.close || "22:00" : current.close || "",
+        };
+      });
+      return updated;
+    });
+    setShopHoursDirty(true);
+    setShopHoursSaveStatus("idle");
+  };
+
+  const shopEnabled = days.some((day) => shopHours[day]?.enabled !== false);
+
+  const saveShopHours = async ({ showToast = false } = {}) => {
+    if (savingShopHours) return;
     setSavingShopHours(true);
+    setShopHoursSaveStatus("saving");
     try {
+      const payloadHours = {};
+      for (const day of days) {
+        const current = shopHours[day] || {};
+        const enabled = current.enabled !== false;
+        payloadHours[day] = {
+          open: enabled ? current.open || "09:00" : null,
+          close: enabled ? current.close || "22:00" : null,
+        };
+      }
       await secureFetch("/settings/shop-hours/all", {
         method: "POST",
-        body: JSON.stringify({ hours: shopHours }),
+        body: JSON.stringify({ hours: payloadHours }),
       });
-      toast.success(t("✅ Shop hours saved successfully!"));
+      try {
+        window.dispatchEvent(new Event("qr:shop-hours-updated"));
+        localStorage.setItem("qr_shop_hours_updated_at", String(Date.now()));
+      } catch {}
+      setShopHoursDirty(false);
+      setShopHoursSaveStatus("saved");
+      if (showToast) {
+        toast.success(t("✅ Shop hours saved successfully!"));
+      }
     } catch (err) {
       console.error("❌ Save failed:", err);
+      setShopHoursSaveStatus("error");
       toast.error(t("Save failed"));
     } finally {
       setSavingShopHours(false);
     }
   };
+
+  useEffect(() => {
+    if (loadingShopHours || savingShopHours || !shopHoursDirty) return;
+    const timer = window.setTimeout(() => {
+      saveShopHours({ showToast: false });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [loadingShopHours, savingShopHours, shopHoursDirty, shopHours]);
 
   const todayName = (() => {
     const map = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -675,25 +754,28 @@ async function saveAllCustomization() {
 
   const openStatus = (() => {
     const today = shopHours?.[todayName];
+    if (today?.enabled === false) {
+      return { isOpen: false, label: t("Closed"), source: "schedule" };
+    }
     const openMin = parseTimeToMinutes(today?.open);
     const closeMin = parseTimeToMinutes(today?.close);
     if (openMin === null || closeMin === null) {
-      return { isOpen: false, label: t("Closed") };
+      return { isOpen: false, label: t("Closed"), source: "schedule" };
     }
     const now = new Date();
     const nowMin = now.getHours() * 60 + now.getMinutes();
 
     if (closeMin > openMin) {
       const isOpen = nowMin >= openMin && nowMin < closeMin;
-      return { isOpen, label: isOpen ? t("Open now!") : t("Closed") };
+      return { isOpen, label: isOpen ? t("Open now!") : t("Closed"), source: "schedule" };
     }
 
     if (closeMin < openMin) {
       const isOpen = nowMin >= openMin || nowMin < closeMin;
-      return { isOpen, label: isOpen ? t("Open now!") : t("Closed") };
+      return { isOpen, label: isOpen ? t("Open now!") : t("Closed"), source: "schedule" };
     }
 
-    return { isOpen: false, label: t("Closed") };
+    return { isOpen: false, label: t("Closed"), source: "schedule" };
   })();
 
   useEffect(() => {
@@ -764,7 +846,8 @@ async function saveAllCustomization() {
                     const isToday = day === todayName;
                     const open = shopHours?.[day]?.open || "";
                     const close = shopHours?.[day]?.close || "";
-                    const has = !!(open && close);
+                    const enabled = shopHours?.[day]?.enabled !== false;
+                    const has = enabled && !!(open && close);
                     return (
                       <div
                         key={day}
@@ -832,9 +915,29 @@ async function saveAllCustomization() {
     {/* Shop Hours */}
     <div className="mb-10 bg-white/90 dark:bg-zinc-950/80 rounded-3xl shadow-xl border border-blue-100 dark:border-blue-800 overflow-hidden">
       <div className="p-5 border-b border-blue-100 dark:border-zinc-800">
-        <h2 className="text-xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-transparent bg-clip-text">
-          {t("Customize Shop Hours")}
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 text-transparent bg-clip-text">
+            {t("Customize Shop Hours")}
+          </h2>
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <span
+              className={`text-sm font-bold ${
+                shopEnabled ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+              }`}
+            >
+              {shopEnabled ? t("Shop Open") : t("Shop Closed")}
+            </span>
+            <span className="relative inline-flex items-center">
+              <input
+                type="checkbox"
+                checked={shopEnabled}
+                onChange={handleMainShopToggle}
+                className="sr-only peer"
+              />
+              <span className="w-11 h-6 bg-gray-300 peer-checked:bg-emerald-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+            </span>
+          </label>
+        </div>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
           {t("Set opening and closing times for each day.")}
         </p>
@@ -845,46 +948,66 @@ async function saveAllCustomization() {
           <div className="text-slate-500 dark:text-slate-400">{t("Loading...")}</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {days.map((day) => (
-              <div
-                key={day}
-                className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-white to-slate-50 dark:from-zinc-900/60 dark:to-zinc-950/40 p-4 shadow-sm"
-              >
-                <div className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3 text-center">
-                  {t(day)}
+            {days.map((day) => {
+              const enabled = shopHours[day]?.enabled !== false;
+              return (
+                <div
+                  key={day}
+                  className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-white to-slate-50 dark:from-zinc-900/60 dark:to-zinc-950/40 p-4 shadow-sm"
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                      {t(day)}
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        onChange={() => handleShopHoursDayToggle(day)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+                    </label>
+                  </div>
+
+                  <div className={enabled ? "" : "opacity-50"}>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      {t("Open Time")}
+                    </label>
+                    <input
+                      type="time"
+                      value={shopHours[day]?.open || ""}
+                      disabled={!enabled}
+                      onChange={(e) => handleShopHoursChange(day, "open", e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition disabled:cursor-not-allowed"
+                    />
+                    <label className="mt-3 block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      {t("Close Time")}
+                    </label>
+                    <input
+                      type="time"
+                      value={shopHours[day]?.close || ""}
+                      disabled={!enabled}
+                      onChange={(e) => handleShopHoursChange(day, "close", e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition disabled:cursor-not-allowed"
+                    />
+                  </div>
                 </div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  {t("Open Time")}
-                </label>
-                <input
-                  type="time"
-                  value={shopHours[day]?.open || ""}
-                  onChange={(e) => handleShopHoursChange(day, "open", e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition"
-                />
-                <label className="mt-3 block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  {t("Close Time")}
-                </label>
-                <input
-                  type="time"
-                  value={shopHours[day]?.close || ""}
-                  onChange={(e) => handleShopHoursChange(day, "close", e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition"
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
         <div className="flex justify-end mt-5">
-          <button
-            type="button"
-            onClick={saveShopHours}
-            disabled={loadingShopHours || savingShopHours}
-            className="px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg hover:brightness-110 transition disabled:opacity-60"
-          >
-            {savingShopHours ? t("Saving...") : t("Save All")}
-          </button>
+          <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+            {shopHoursSaveStatus === "saving"
+              ? t("Saving...")
+              : shopHoursSaveStatus === "saved"
+              ? t("Saved")
+              : shopHoursSaveStatus === "error"
+              ? t("Save failed")
+              : t("Auto-save enabled")}
+          </div>
         </div>
       </div>
     </div>
@@ -1126,6 +1249,15 @@ async function saveAllCustomization() {
             >
               <label className="font-semibold">{t("Slide Image")}</label>
               <input type="file" onChange={(e) => uploadHeroImage(e, index)} className="w-full mt-1" />
+              {slide.image ? (
+                <div className="mt-2">
+                  <img
+                    src={resolveUploadSrc(slide.image)}
+                    alt={`${t("Slide Image")} ${index + 1}`}
+                    className="h-16 w-24 rounded-lg border object-cover"
+                  />
+                </div>
+              ) : null}
 
               <label className="font-semibold mt-2 block">{t("Title")}</label>
               <input
@@ -1481,6 +1613,15 @@ async function saveAllCustomization() {
 
           <label className="font-semibold mt-3">{t("Story Image")}</label>
           <input type="file" onChange={uploadStoryImage} className="w-full" />
+          {settings.story_image ? (
+            <div className="mt-2">
+              <img
+                src={resolveUploadSrc(settings.story_image)}
+                alt={t("Story Image")}
+                className="h-16 w-24 rounded-lg border object-cover"
+              />
+            </div>
+          ) : null}
         </div>
 
         {/* REVIEWS */}

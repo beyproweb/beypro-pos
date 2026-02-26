@@ -35,6 +35,18 @@ const OrdersActionBar = memo(function OrdersActionBar({
 
           <button
             type="button"
+            className="inline-flex h-[46px] items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-indigo-500 via-indigo-500 to-blue-500 px-4 text-base font-semibold text-white shadow-md transition hover:from-indigo-600 hover:via-indigo-600 hover:to-blue-600 active:scale-[0.98] disabled:opacity-40"
+            disabled={!drivers.length}
+            onClick={onOpenRoute}
+          >
+            <span className="rounded-lg border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold leading-none text-emerald-700">
+              LIVE
+            </span>
+            <span>Route</span>
+          </button>
+
+          <button
+            type="button"
             className={`inline-flex h-[46px] items-center justify-center rounded-xl border px-4 text-base font-semibold shadow-sm transition ${
               showDriverReport
                 ? "border-amber-300/60 bg-gradient-to-br from-amber-500 via-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
@@ -44,18 +56,6 @@ const OrdersActionBar = memo(function OrdersActionBar({
             onClick={onToggleDriverReport}
           >
             Driver Report
-          </button>
-
-          <button
-            type="button"
-            className="inline-flex h-[46px] items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-indigo-500 via-indigo-500 to-blue-500 px-4 text-base font-semibold text-white shadow-md transition hover:from-indigo-600 hover:via-indigo-600 hover:to-blue-600 active:scale-[0.98] disabled:opacity-40"
-            disabled={!drivers.length}
-            onClick={onOpenRoute}
-          >
-            <span className="rounded-lg border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold leading-none text-emerald-700">
-              LIVE
-            </span>
-            <span>Route</span>
           </button>
 
           <button

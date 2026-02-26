@@ -1,16 +1,26 @@
 import { useMemo, useRef } from "react";
 import {
   getMemoizedTableDerivedFields,
+  hasReservationSignal,
+  isReservationDueNow,
   isEffectivelyFreeOrder,
   normalizeOrderStatus,
 } from "../tableVisuals";
 import { isTablePerfDebugEnabled, withPerfTimer } from "../dev/perfDebug";
 
-const isReservationOrder = (order) =>
-  Boolean(order) &&
-  (normalizeOrderStatus(order.status) === "reserved" ||
-    order.order_type === "reservation" ||
-    Boolean(order.reservation_date));
+const isReservationOrder = (order, nowMs = Date.now()) => {
+  if (!order) return false;
+  const hasSignal = hasReservationSignal(order);
+  if (!hasSignal) return false;
+
+  const hasExplicitReservationState =
+    normalizeOrderStatus(order.status) === "reserved" || order.order_type === "reservation";
+  if (hasExplicitReservationState) return true;
+
+  // Signal-only rows should behave as reservation only for effectively free tables.
+  if (!isEffectivelyFreeOrder(order)) return false;
+  return isReservationDueNow(order, nowMs);
+};
 
 const normalizeGuests = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -23,10 +33,10 @@ const getReservationShadowKey = (reservation) => {
   return [
     reservation.id ?? "",
     reservation.table_number ?? reservation.tableNumber ?? reservation.table ?? "",
-    reservation.reservation_date ?? "",
-    reservation.reservation_time ?? "",
-    reservation.reservation_clients ?? "",
-    reservation.reservation_notes ?? "",
+    reservation.reservation_date ?? reservation.reservationDate ?? "",
+    reservation.reservation_time ?? reservation.reservationTime ?? "",
+    reservation.reservation_clients ?? reservation.reservationClients ?? "",
+    reservation.reservation_notes ?? reservation.reservationNotes ?? "",
   ].join("|");
 };
 
@@ -38,6 +48,16 @@ const buildReservationShadowOrder = (reservation, parsedTableNumber) => ({
   total: 0,
   items: [],
 });
+
+const getReservationSortKey = (reservation) => {
+  if (!reservation || typeof reservation !== "object") return "9999-99-99 99:99:99";
+  const dateRaw = reservation?.reservation_date ?? reservation?.reservationDate ?? "";
+  const date = String(dateRaw || "").trim();
+  if (!date) return "9999-99-99 99:99:99";
+  const timeRaw = reservation?.reservation_time ?? reservation?.reservationTime ?? "00:00:00";
+  const time = String(timeRaw || "00:00:00").trim() || "00:00:00";
+  return `${date} ${time}`;
+};
 
 const canReuseTableModel = (prev, next) => {
   if (!prev || !next) return false;
@@ -74,7 +94,16 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
           reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
         );
         if (!Number.isFinite(tableNumber)) continue;
-        map.set(tableNumber, reservation);
+        const existing = map.get(tableNumber);
+        if (!existing) {
+          map.set(tableNumber, reservation);
+          continue;
+        }
+        const existingKey = getReservationSortKey(existing);
+        const nextKey = getReservationSortKey(reservation);
+        if (nextKey < existingKey) {
+          map.set(tableNumber, reservation);
+        }
       }
       return map;
     });
@@ -85,6 +114,7 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
       const previousByNumber = prevTablesByNumberRef.current;
       const nextByNumber = new Map();
       const nextReservationShadowCache = new Map();
+      const nowMs = Date.now();
       const configList = Array.isArray(tableConfigs)
         ? [...tableConfigs].sort((a, b) => Number(a?.number) - Number(b?.number))
         : [];
@@ -96,9 +126,13 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
         const reservationFallback = reservationsByTable.get(parsedCfgNumber) || null;
 
         let order = orderRaw;
-        if (orderRaw && isReservationOrder(orderRaw)) {
+        if (orderRaw && isReservationOrder(orderRaw, nowMs)) {
           order = orderRaw;
-        } else if ((!orderRaw || isEffectivelyFreeOrder(orderRaw)) && reservationFallback) {
+        } else if (
+          (!orderRaw || isEffectivelyFreeOrder(orderRaw)) &&
+          reservationFallback &&
+          isReservationDueNow(reservationFallback, nowMs)
+        ) {
           const reservationKey = getReservationShadowKey(reservationFallback);
           const cacheEntry = reservationShadowCacheRef.current.get(parsedCfgNumber);
           if (cacheEntry && cacheEntry.key === reservationKey) {
@@ -110,6 +144,14 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
             nextReservationShadowCache.set(parsedCfgNumber, nextEntry);
             order = shadowOrder;
           }
+        } else if (
+          orderRaw &&
+          isEffectivelyFreeOrder(orderRaw) &&
+          hasReservationSignal(orderRaw) &&
+          !isReservationDueNow(orderRaw, nowMs)
+        ) {
+          // Future reservation should not block free-table UI before reservation time.
+          order = null;
         }
 
         const derived = getMemoizedTableDerivedFields(order);

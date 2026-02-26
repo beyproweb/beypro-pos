@@ -3,6 +3,8 @@ import { toast } from "react-toastify";
 import secureFetch from "../../utils/secureFetch";
 import {
   formatLocalYmd,
+  isEffectivelyFreeOrder,
+  isReservationDueNow,
   isOrderCancelledOrCanceled,
   normalizeOrderStatus,
   parseLooseDateToMs,
@@ -71,6 +73,83 @@ const areItemsEquivalent = (prevItems, nextItems) => {
   }
 
   return true;
+};
+
+const getReservationFingerprint = (order) => {
+  if (!order || typeof order !== "object") return "";
+  const r = order.reservation && typeof order.reservation === "object" ? order.reservation : null;
+  return [
+    order.reservation_date ?? order.reservationDate ?? "",
+    order.reservation_time ?? order.reservationTime ?? "",
+    order.reservation_clients ?? order.reservationClients ?? "",
+    order.reservation_notes ?? order.reservationNotes ?? "",
+    r?.reservation_date ?? r?.reservationDate ?? "",
+    r?.reservation_time ?? r?.reservationTime ?? "",
+    r?.reservation_clients ?? r?.reservationClients ?? "",
+    r?.reservation_notes ?? r?.reservationNotes ?? "",
+    order.order_type ?? "",
+  ].join("|");
+};
+
+const hasOrderReservationSignal = (order) => {
+  if (!order || typeof order !== "object") return false;
+  const r = order.reservation && typeof order.reservation === "object" ? order.reservation : null;
+  const reservationDate =
+    order.reservation_date ??
+    order.reservationDate ??
+    r?.reservation_date ??
+    r?.reservationDate ??
+    null;
+  const reservationTime =
+    order.reservation_time ??
+    order.reservationTime ??
+    r?.reservation_time ??
+    r?.reservationTime ??
+    null;
+  const reservationId =
+    order.reservation_id ??
+    order.reservationId ??
+    r?.id ??
+    r?.reservation_id ??
+    r?.reservationId ??
+    null;
+  return Boolean(
+    reservationDate ||
+      reservationTime ||
+      (reservationId !== null && reservationId !== undefined && reservationId !== "")
+  );
+};
+
+const getOrderTableNumber = (order) => {
+  const raw =
+    order?.table_number ??
+    order?.tableNumber ??
+    order?.table_id ??
+    order?.tableId ??
+    order?.table;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
+const isReservationLikeOrder = (order, nowMs = Date.now()) => {
+  if (!order || typeof order !== "object") return false;
+  const hasSignal = hasOrderReservationSignal(order);
+  if (!hasSignal) return false;
+
+  const status = normalizeOrderStatus(order?.status);
+  const hasExplicitReservationState = status === "reserved" || order?.order_type === "reservation";
+  if (hasExplicitReservationState) return true;
+
+  // Treat signal-only rows as reservations only when the row is effectively free
+  // (empty reservation tables), so normal active orders keep their real status.
+  if (!isEffectivelyFreeOrder(order)) return false;
+  return isReservationDueNow(order, nowMs);
+};
+
+const getNormalizedNonReservationStatus = (order) => {
+  const status = normalizeOrderStatus(order?.status);
+  if (status === "reserved" && !hasOrderReservationSignal(order)) return "confirmed";
+  return status;
 };
 
 export default function useTableOrdersData() {
@@ -148,8 +227,19 @@ export default function useTableOrdersData() {
         }
 
         let reservation = null;
+        const hasReservationHint =
+          normalizeOrderStatus(order?.status) === "reserved" ||
+          order?.order_type === "reservation" ||
+          order?.reservation_date ||
+          order?.reservationDate ||
+          order?.reservation_time ||
+          order?.reservationTime ||
+          order?.reservation_clients != null ||
+          order?.reservationClients != null ||
+          order?.reservation_notes ||
+          order?.reservationNotes;
         try {
-          if (order.status === "reserved" || order.reservation_date) {
+          if (order?.id != null) {
             const resData = await secureFetch(`/orders/reservations/${order.id}`, { signal });
             if (signal?.aborted) return null;
             if (resData?.success && resData?.reservation) {
@@ -158,7 +248,9 @@ export default function useTableOrdersData() {
           }
         } catch (err) {
           if (isAbortError(err)) return null;
-          console.warn(`Failed to fetch reservation for order ${order.id}:`, err);
+          if (hasReservationHint) {
+            console.warn(`Failed to fetch reservation for order ${order.id}:`, err);
+          }
         }
 
         return { ...order, items, reservation };
@@ -182,6 +274,7 @@ export default function useTableOrdersData() {
     const t0 = isDev ? performance.now() : 0;
     const controller = new AbortController();
     const signal = controller.signal;
+    const nowMs = Date.now();
 
     try {
       activeFetchControllerRef.current?.abort?.();
@@ -204,7 +297,9 @@ export default function useTableOrdersData() {
         secureFetch("/orders", { signal }),
         (async () => {
           const today = formatLocalYmd(new Date());
-          return secureFetch(`/orders/reservations?start_date=${today}&end_date=${today}`, { signal });
+          // Include upcoming reservations too; TableOverview cards should still show reserved
+          // even when reservation date is not today (e.g., empty cart reserved tables).
+          return secureFetch(`/orders/reservations?start_date=${today}`, { signal });
         })(),
       ]);
       if (signal.aborted || ordersFetchSeqRef.current !== seq) return;
@@ -255,9 +350,7 @@ export default function useTableOrdersData() {
       const reservationsList =
         reservationsRes.status === "fulfilled" ? normalizeReservationList(reservationsRes.value) : [];
 
-      const existingTableNumbers = new Set(
-        data.map((o) => Number(o.table_number)).filter(Number.isFinite)
-      );
+      const existingTableNumbers = new Set(data.map(getOrderTableNumber).filter(Number.isFinite));
 
       const reservationsByOrderId = new Map();
       reservationsList.forEach((res) => {
@@ -265,41 +358,61 @@ export default function useTableOrdersData() {
       });
 
       const enrichedOrders = data.map((order) => {
+        const tableNumber = getOrderTableNumber(order);
         const reservation = reservationsByOrderId.get(Number(order.id));
         if (reservation && !order.reservation_date) {
           if (isDev) {
             console.log(
-              `🔗 [TableOverview] Enriching order ${order.id} (table ${order.table_number}) with reservation from map`
+              `🔗 [TableOverview] Enriching order ${order.id} (table ${Number.isFinite(tableNumber) ? tableNumber : "?"}) with reservation from map`
             );
           }
           return {
             ...order,
+            table_number: Number.isFinite(tableNumber) ? tableNumber : order?.table_number ?? null,
             status: order.status === "reserved" ? "reserved" : order.status,
             order_type: order.order_type === "reservation" ? "reservation" : order.order_type,
             reservation_date: reservation.reservation_date,
             reservation_time: reservation.reservation_time,
             reservation_clients: reservation.reservation_clients,
             reservation_notes: reservation.reservation_notes,
+            customer_name:
+              order?.customer_name ??
+              order?.customerName ??
+              reservation?.customer_name ??
+              reservation?.customerName ??
+              null,
+            customer_phone:
+              order?.customer_phone ??
+              order?.customerPhone ??
+              reservation?.customer_phone ??
+              reservation?.customerPhone ??
+              null,
           };
         }
         if (order.reservation_date && isDev) {
           console.log(
-            `✅ [TableOverview] Order ${order.id} (table ${order.table_number}) already has reservation_date: ${order.reservation_date}`
+            `✅ [TableOverview] Order ${order.id} (table ${Number.isFinite(tableNumber) ? tableNumber : "?"}) already has reservation_date: ${order.reservation_date}`
           );
         }
-        return order;
+        return {
+          ...order,
+          table_number: Number.isFinite(tableNumber) ? tableNumber : order?.table_number ?? null,
+        };
       });
 
       const reservationOrders = reservationsList
         .filter((res) => {
-          if (res.table_number == null) return false;
+          const reservationTableNumber = Number(
+            res?.table_number ?? res?.tableNumber ?? res?.table
+          );
+          if (!Number.isFinite(reservationTableNumber)) return false;
           if (res.order_id && !existingOrderIds.has(res.order_id)) return true;
-          if (!res.order_id && !existingTableNumbers.has(Number(res.table_number))) return true;
+          if (!res.order_id && !existingTableNumbers.has(reservationTableNumber)) return true;
           return false;
         })
         .map((res) => ({
           id: res.order_id || null,
-          table_number: Number(res.table_number),
+          table_number: Number(res?.table_number ?? res?.tableNumber ?? res?.table),
           status: "reserved",
           order_type: "reservation",
           total: 0,
@@ -308,20 +421,31 @@ export default function useTableOrdersData() {
           reservation_time: res.reservation_time,
           reservation_clients: res.reservation_clients,
           reservation_notes: res.reservation_notes,
+          customer_name: res.customer_name ?? res.customerName ?? null,
+          customer_phone: res.customer_phone ?? res.customerPhone ?? null,
         }));
 
       const openTableOrders = [...enrichedOrders, ...reservationOrders]
         .filter((o) => {
+          const tableNumber = getOrderTableNumber(o);
+          if (!Number.isFinite(tableNumber)) return false;
+
           const status = normalizeOrderStatus(o.status);
+          if (isReservationLikeOrder(o, nowMs)) return true;
           if (status === "closed") return false;
           if (isOrderCancelledOrCanceled(status)) return false;
-          return o.table_number != null;
+          if (isEffectivelyFreeOrder(o)) return false;
+          return true;
         })
         .map((order) => {
-          const status = normalizeOrderStatus(order.status);
+          const reservationLike = isReservationLikeOrder(order, nowMs);
+          const status = reservationLike ? "reserved" : getNormalizedNonReservationStatus(order);
+          const tableNumber = getOrderTableNumber(order);
           return {
             ...order,
+            table_number: Number.isFinite(tableNumber) ? tableNumber : null,
             status,
+            is_paid: order?.is_paid,
             total: status === "paid" ? 0 : parseFloat(order.total || 0),
           };
         });
@@ -333,19 +457,26 @@ export default function useTableOrdersData() {
           if (import.meta.env.DEV) console.time("[Phase1] setOrders");
           const prevByTable = new Map();
           (Array.isArray(prev) ? prev : []).forEach((o) => {
-            if (o?.table_number != null) prevByTable.set(Number(o.table_number), o);
+            const tableNumber = getOrderTableNumber(o);
+            if (Number.isFinite(tableNumber)) prevByTable.set(tableNumber, o);
           });
 
           const storedTimers = getTimersSnapshot();
           const nextTimers = { ...storedTimers };
-          const nextTableKeys = new Set(visibleTableOrders.map((o) => String(Number(o.table_number))));
+          const nextTableKeys = new Set(
+            visibleTableOrders
+              .map((o) => getOrderTableNumber(o))
+              .filter(Number.isFinite)
+              .map((n) => String(n))
+          );
           for (const prevKey of prevByTable.keys()) {
             if (!nextTableKeys.has(String(prevKey))) delete nextTimers[String(prevKey)];
           }
 
           const merged = Object.values(
             visibleTableOrders.reduce((acc, order) => {
-              const key = Number(order.table_number);
+              const key = getOrderTableNumber(order);
+              if (!Number.isFinite(key)) return acc;
               const tableKey = String(key);
               const prevMerged = prevByTable.get(key);
               const knownItems = Array.isArray(prevMerged?.items) ? prevMerged.items : null;
@@ -384,6 +515,12 @@ export default function useTableOrdersData() {
                 if (!acc[key].order_number && order.order_number) {
                   acc[key].order_number = order.order_number;
                 }
+                if (!acc[key].customer_name && (order.customer_name || order.customerName)) {
+                  acc[key].customer_name = order.customer_name ?? order.customerName;
+                }
+                if (!acc[key].customer_phone && (order.customer_phone || order.customerPhone)) {
+                  acc[key].customer_phone = order.customer_phone ?? order.customerPhone;
+                }
                 if (!acc[key].receipt_id && order.receipt_id) {
                   acc[key].receipt_id = order.receipt_id;
                 }
@@ -401,16 +538,43 @@ export default function useTableOrdersData() {
                   acc[key].kitchen_delivered_at,
                   order.kitchen_delivered_at
                 );
+                if (
+                  !acc[key].reservation_date &&
+                  !acc[key].reservationDate &&
+                  (order.reservation_date || order.reservationDate)
+                ) {
+                  acc[key].reservation_date = order.reservation_date ?? order.reservationDate;
+                }
+                if (
+                  !acc[key].reservation_time &&
+                  !acc[key].reservationTime &&
+                  (order.reservation_time || order.reservationTime)
+                ) {
+                  acc[key].reservation_time = order.reservation_time ?? order.reservationTime;
+                }
+                if (
+                  (acc[key].reservation_clients == null || acc[key].reservation_clients === "") &&
+                  (order.reservation_clients != null || order.reservationClients != null)
+                ) {
+                  acc[key].reservation_clients =
+                    order.reservation_clients ?? order.reservationClients;
+                }
+                if (
+                  !acc[key].reservation_notes &&
+                  !acc[key].reservationNotes &&
+                  (order.reservation_notes || order.reservationNotes)
+                ) {
+                  acc[key].reservation_notes = order.reservation_notes ?? order.reservationNotes;
+                }
+                if (!acc[key].reservation && order.reservation) {
+                  acc[key].reservation = order.reservation;
+                }
                 acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
                 const nextStatus =
                   acc[key].status === "paid" && order.status === "paid"
                     ? "paid"
-                    : acc[key].status === "reserved" ||
-                      order.status === "reserved" ||
-                      acc[key].order_type === "reservation" ||
-                      order.order_type === "reservation" ||
-                      acc[key].reservation_date ||
-                      order.reservation_date
+                    : isReservationLikeOrder(acc[key], nowMs) ||
+                      isReservationLikeOrder(order, nowMs)
                     ? "reserved"
                     : "confirmed";
                 acc[key].status = nextStatus;
@@ -429,7 +593,9 @@ export default function useTableOrdersData() {
             }, {})
           );
 
-          const sorted = merged.sort((a, b) => Number(a.table_number) - Number(b.table_number));
+          const sorted = merged.sort(
+            (a, b) => getOrderTableNumber(a) - getOrderTableNumber(b)
+          );
           persistTimers(nextTimers);
           writeTableOrdersCache(sorted);
           if (import.meta.env.DEV) console.timeEnd("[Phase1] setOrders");
@@ -447,10 +613,12 @@ export default function useTableOrdersData() {
 
       const mergedByTable = Object.values(
         hydrated.reduce((acc, order) => {
-          const key = Number(order.table_number);
+          const key = getOrderTableNumber(order);
+          if (!Number.isFinite(key)) return acc;
           if (!acc[key]) {
             acc[key] = {
               ...order,
+              table_number: key,
               merged_ids: [order.id],
               merged_items: [...(order.items || [])],
             };
@@ -473,6 +641,12 @@ export default function useTableOrdersData() {
             if (!acc[key].order_number && order.order_number) {
               acc[key].order_number = order.order_number;
             }
+            if (!acc[key].customer_name && (order.customer_name || order.customerName)) {
+              acc[key].customer_name = order.customer_name ?? order.customerName;
+            }
+            if (!acc[key].customer_phone && (order.customer_phone || order.customerPhone)) {
+              acc[key].customer_phone = order.customer_phone ?? order.customerPhone;
+            }
             if (!acc[key].receipt_id && order.receipt_id) {
               acc[key].receipt_id = order.receipt_id;
             }
@@ -490,48 +664,97 @@ export default function useTableOrdersData() {
               acc[key].kitchen_delivered_at,
               order.kitchen_delivered_at
             );
+            if (
+              !acc[key].reservation_date &&
+              !acc[key].reservationDate &&
+              (order.reservation_date || order.reservationDate)
+            ) {
+              acc[key].reservation_date = order.reservation_date ?? order.reservationDate;
+            }
+            if (
+              !acc[key].reservation_time &&
+              !acc[key].reservationTime &&
+              (order.reservation_time || order.reservationTime)
+            ) {
+              acc[key].reservation_time = order.reservation_time ?? order.reservationTime;
+            }
+            if (
+              (acc[key].reservation_clients == null || acc[key].reservation_clients === "") &&
+              (order.reservation_clients != null || order.reservationClients != null)
+            ) {
+              acc[key].reservation_clients = order.reservation_clients ?? order.reservationClients;
+            }
+            if (
+              !acc[key].reservation_notes &&
+              !acc[key].reservationNotes &&
+              (order.reservation_notes || order.reservationNotes)
+            ) {
+              acc[key].reservation_notes = order.reservation_notes ?? order.reservationNotes;
+            }
+            if (!acc[key].reservation && order.reservation) {
+              acc[key].reservation = order.reservation;
+            }
             acc[key].items = [...(acc[key].items || []), ...(order.items || [])];
             acc[key].merged_items = acc[key].items;
             acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
             acc[key].status =
               acc[key].status === "paid" && order.status === "paid"
                 ? "paid"
-                : acc[key].status === "reserved" ||
-                  order.status === "reserved" ||
-                  acc[key].order_type === "reservation" ||
-                  order.order_type === "reservation" ||
-                  acc[key].reservation_date ||
-                  order.reservation_date
+                : isReservationLikeOrder(acc[key], nowMs) ||
+                  isReservationLikeOrder(order, nowMs)
                 ? "reserved"
                 : "confirmed";
           }
           const anyUnpaid = (acc[key].items || []).some((i) => !i.paid_at && !i.paid);
-          acc[key].is_paid = !anyUnpaid;
+          const reservationLike = isReservationLikeOrder(acc[key], nowMs);
+          if (reservationLike) {
+            const explicitPaid =
+              String(acc[key]?.payment_status || "").toLowerCase() === "paid" ||
+              acc[key]?.is_paid === true;
+            acc[key].is_paid = anyUnpaid ? false : explicitPaid;
+          } else {
+            acc[key].is_paid = !anyUnpaid;
+          }
           return acc;
         }, {})
-      ).sort((a, b) => Number(a.table_number) - Number(b.table_number));
+      ).sort((a, b) => getOrderTableNumber(a) - getOrderTableNumber(b));
 
       setOrders((prev) => {
         if (isDev) console.time("⚡ Phase 2 setState");
         const prevByTable = new Map();
         (Array.isArray(prev) ? prev : []).forEach((o) => {
-          if (o?.table_number != null) prevByTable.set(Number(o.table_number), o);
+          const tableNumber = getOrderTableNumber(o);
+          if (Number.isFinite(tableNumber)) prevByTable.set(tableNumber, o);
         });
 
         const storedTimers = getTimersSnapshot();
         const nextTimers = { ...storedTimers };
-        const nextTableKeys = new Set(mergedByTable.map((o) => String(Number(o.table_number))));
+        const nextTableKeys = new Set(
+          mergedByTable
+            .map((o) => getOrderTableNumber(o))
+            .filter(Number.isFinite)
+            .map((n) => String(n))
+        );
         for (const prevKey of prevByTable.keys()) {
           if (!nextTableKeys.has(String(prevKey))) delete nextTimers[String(prevKey)];
         }
 
         const nextOrders = mergedByTable.map((o) => {
-          const tableKey = String(Number(o.table_number));
-          const prevMerged = prevByTable.get(Number(o.table_number));
+          const currentTableNumber = getOrderTableNumber(o);
+          const tableKey = String(currentTableNumber);
+          const prevMerged = prevByTable.get(currentTableNumber);
 
           const itemsChanged = !areItemsEquivalent(prevMerged?.items, o.items);
 
-          if (!itemsChanged && prevMerged?.status === o.status && prevMerged?.total === o.total) {
+          const reservationUnchanged =
+            getReservationFingerprint(prevMerged) === getReservationFingerprint(o);
+
+          if (
+            !itemsChanged &&
+            prevMerged?.status === o.status &&
+            prevMerged?.total === o.total &&
+            reservationUnchanged
+          ) {
             return prevMerged;
           }
 
@@ -586,14 +809,14 @@ export default function useTableOrdersData() {
     const map = new Map();
 
     for (const order of orders || []) {
-      const tableId = order?.table_id ?? order?.table_number;
-      if (!tableId) continue;
+      const tableNumber = getOrderTableNumber(order);
+      if (!Number.isFinite(tableNumber)) continue;
 
-      if (!map.has(tableId)) {
-        map.set(tableId, []);
+      if (!map.has(tableNumber)) {
+        map.set(tableNumber, []);
       }
 
-      map.get(tableId).push(order);
+      map.get(tableNumber).push(order);
     }
 
     return map;
@@ -604,6 +827,7 @@ export default function useTableOrdersData() {
     ordersByTable,
     setOrders,
     reservationsToday,
+    setReservationsToday,
     ordersLoading,
     refreshOrders,
     hydrateOrderItemsInBackground,

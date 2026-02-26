@@ -15,6 +15,7 @@ export const useReservation = ({
   discountValue,
   discountType,
   setOrder,
+  onReservationDeleted,
 }) => {
   const [reservationDate, setReservationDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [reservationTime, setReservationTime] = useState("");
@@ -162,6 +163,41 @@ export const useReservation = ({
         method: "DELETE",
       });
       if (response?.success === false) throw new Error(response.message || t("Failed to delete reservation"));
+
+      const responseOrder =
+        response?.order && typeof response.order === "object" ? response.order : null;
+      const fallbackStatus = String(order?.status || "").toLowerCase();
+      const normalizedStatus =
+        responseOrder?.status ??
+        (fallbackStatus === "reserved" ? "confirmed" : order?.status ?? "confirmed");
+      const normalizedStatusLower = String(normalizedStatus || "").toLowerCase();
+      const nextOrderTypeSource = responseOrder?.order_type ?? order?.order_type;
+      const normalizedOrderType =
+        nextOrderTypeSource === "reservation" && normalizedStatusLower !== "reserved"
+          ? "table"
+          : nextOrderTypeSource;
+
+      const normalizedOrder = {
+        ...(order && typeof order === "object" ? order : {}),
+        ...(responseOrder || {}),
+        status: normalizedStatus,
+        order_type: normalizedOrderType,
+        reservation: null,
+        reservation_id: null,
+        reservationId: null,
+        reservation_date: null,
+        reservationDate: null,
+        reservation_time: null,
+        reservationTime: null,
+        reservation_clients: null,
+        reservationClients: null,
+        reservation_notes: null,
+        reservationNotes: null,
+      };
+
+      setOrder((prev) => ({ ...(prev || {}), ...normalizedOrder }));
+      onReservationDeleted?.(normalizedOrder);
+
       setExistingReservation(null);
       resetReservationForm();
       showToast(t("Reservation deleted"));
@@ -172,7 +208,18 @@ export const useReservation = ({
     } finally {
       setReservationLoading(false);
     }
-  }, [existingReservation, identifier, order?.id, resetReservationForm, showToast, t, txApiRequest]);
+  }, [
+    existingReservation,
+    identifier,
+    onReservationDeleted,
+    order,
+    order?.id,
+    resetReservationForm,
+    setOrder,
+    showToast,
+    t,
+    txApiRequest,
+  ]);
 
   const openReservationModal = useCallback(async () => {
     if (order?.id) {

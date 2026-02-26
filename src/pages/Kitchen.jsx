@@ -445,7 +445,7 @@ const fetchKitchenOrders = async () => {
         item.kitchen_status !== "delivered" &&
         item.kitchen_status !== null &&
         item.kitchen_status !== "" &&
-        ["table", "packet", "phone", "takeaway"].includes(
+        ["table", "reservation", "packet", "phone", "takeaway"].includes(
           String(item.order_type || "").toLowerCase()
         )
     );
@@ -460,7 +460,7 @@ const fetchKitchenOrders = async () => {
     // 🎫 Fetch reservation data for table orders
     const withReservations = await Promise.all(
       active.map(async (item) => {
-        if (item.order_type === "table" && item.order_id) {
+        if (["table", "reservation"].includes(String(item.order_type || "").toLowerCase()) && item.order_id) {
           try {
             const resData = await secureFetch(`/orders/reservations/${item.order_id}`);
             if (resData?.success && resData?.reservation) {
@@ -679,14 +679,14 @@ function compileTotals(selectedOrders) {
     const parsedExtras = safeParse(item.extras);
     const type = String(item.order_type || "").toLowerCase();
     const orderLabel = (() => {
-      if (type === "table") return `${t("Table")} ${item.table_number}`;
+      if (type === "table" || type === "reservation") return `${t("Table")} ${item.table_number}`;
       if (item.customer_name) return item.customer_name;
       if (item.order_id) return `${t("Order")} #${item.order_id}`;
       return `${t("Order")} #${itemId}`;
     })();
 
     const orderIcon = (() => {
-      if (type === "table") return "🍽";
+      if (type === "table" || type === "reservation") return "🍽";
       if (type === "packet") return "🛵";
       if (type === "phone") return "📱";
       if (type === "takeaway") return "🥡";
@@ -1511,7 +1511,7 @@ return (
             className="flex justify-between border-b border-slate-200/60 pb-0.5"
           >
 	            <span>
-	              {o.order_type === "table"
+	              {["table", "reservation"].includes(String(o.order_type || "").toLowerCase())
 	                ? `🍽️ Table ${o.table_number}`
 	                : o.order_type === "packet"
 	                ? `🛵 ${resolveOnlineSourceLabelFromOrder(o) || t("Packet")} ${o.customer_name || o.customer_phone || ""}`

@@ -52,6 +52,8 @@ export function useTransactionOrchestratorEffects({
                 payment_status: "paid",
                 is_paid: true,
                 total: 0,
+                items: [],
+                suborders: [],
               }
             : {
                 status: nextStatus,
@@ -60,7 +62,7 @@ export function useTransactionOrchestratorEffects({
                 total: order?.total,
               };
 
-        if (Array.isArray(order?.items)) {
+        if (String(nextStatus).toLowerCase() !== "paid" && Array.isArray(order?.items)) {
           patch.items = order.items;
         }
 
@@ -79,6 +81,15 @@ export function useTransactionOrchestratorEffects({
         patch:
           String(nextStatus).toLowerCase() === "closed"
             ? null
+            : String(nextStatus).toLowerCase() === "paid"
+            ? {
+                status: "paid",
+                payment_status: "paid",
+                is_paid: true,
+                total: 0,
+                items: [],
+                suborders: [],
+              }
             : {
                 status: nextStatus,
                 payment_status: order?.payment_status,

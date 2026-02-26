@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import secureFetch from "../../../utils/secureFetch";
-import { usePaymentMethods } from "../../../hooks/usePaymentMethods";
 
 export function useQrMenuCheckout({
   storage,
@@ -28,21 +27,8 @@ export function useQrMenuCheckout({
   setLastError,
   setOccupiedTables,
 }) {
-  const paymentMethods = usePaymentMethods();
-  const [paymentMethod, setPaymentMethod] = useState(() => {
-    const stored = storage.getItem("qr_payment_method");
-    if (stored) return stored;
-    return paymentMethods.find((m) => m.enabled !== false)?.id || "online";
-  });
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    const allowedIds = paymentMethods.map((m) => m.id);
-    if (!allowedIds.length) return;
-    if (!paymentMethod || !allowedIds.includes(paymentMethod)) {
-      setPaymentMethod(allowedIds[0]);
-    }
-  }, [paymentMethods, paymentMethod]);
 
   useEffect(() => {
     storage.setItem("qr_payment_method", paymentMethod);
@@ -83,6 +69,24 @@ export function useQrMenuCheckout({
       const isTakeaway = orderType === "takeaway";
       const isOnline = orderType === "online";
       const isTable = orderType === "table";
+      const isTakeawayReservation =
+        isTakeaway && String(takeaway?.mode || "").toLowerCase() === "reservation";
+      const selectedGuests = (() => {
+        const takeawayGuests = Number(takeaway?.reservation_clients);
+        if (Number.isFinite(takeawayGuests) && takeawayGuests > 0) {
+          return Math.min(20, Math.max(1, Math.floor(takeawayGuests)));
+        }
+        const storedGuests = Number(storage.getItem("qr_table_guests"));
+        if (Number.isFinite(storedGuests) && storedGuests > 0) {
+          return Math.min(20, Math.max(1, Math.floor(storedGuests)));
+        }
+        return 1;
+      })();
+      const reservationTableNumber = Number(takeaway?.table_number);
+      const resolvedReservationTable =
+        Number.isFinite(reservationTableNumber) && reservationTableNumber > 0
+          ? reservationTableNumber
+          : null;
 
       const pickupDate = takeaway?.pickup_date;
       const pickupTime = takeaway?.pickup_time;
@@ -90,28 +94,35 @@ export function useQrMenuCheckout({
         pickupDate && pickupTime
           ? `${pickupDate} ${pickupTime}`
           : pickupTime || pickupDate || null;
-      const isTakeawayDelivery = isTakeaway && !!(takeaway && takeaway.mode === "delivery");
 
       return {
-        table_number: isTable ? Number(table) : null,
-        order_type: isOnline ? "packet" : isTakeaway ? "takeaway" : "table",
+        table_number: isTable
+          ? Number(table)
+          : isTakeawayReservation
+          ? resolvedReservationTable
+          : null,
+        order_type: isOnline ? "packet" : isTakeawayReservation ? "table" : isTakeaway ? "takeaway" : "table",
         total: Number(total) || 0,
         items: itemsPayload,
         table_geo_lat: isTable ? tableGeo?.lat ?? null : null,
         table_geo_lng: isTable ? tableGeo?.lng ?? null : null,
         customer_name: isTakeaway ? takeaway?.name || null : customer?.name || null,
         customer_phone: isTakeaway ? takeaway?.phone || null : customer?.phone || null,
-        customer_address: isOnline
-          ? customer?.address || null
-          : isTakeawayDelivery
-            ? takeaway?.address || null
-            : null,
-        pickup_time: isTakeaway ? combinedPickupTime : null,
+        customer_address: isOnline ? customer?.address || null : null,
+        pickup_time: isTakeaway && !isTakeawayReservation ? combinedPickupTime : null,
         notes: isTakeaway ? takeaway?.notes || null : null,
-        payment_method: isOnline ? paymentMethod || null : null,
+        payment_method: isOnline
+          ? paymentMethod || null
+          : isTakeaway
+            ? takeaway?.payment_method || null
+            : null,
+        reservation_date: isTakeawayReservation ? pickupDate || null : null,
+        reservation_time: isTakeawayReservation ? pickupTime || null : null,
+        reservation_clients: isTakeawayReservation || isTable ? selectedGuests : null,
+        reservation_notes: isTakeawayReservation ? takeaway?.notes || null : null,
       };
     },
-    []
+    [storage]
   );
 
   const startOnlinePaymentSession = useCallback(
@@ -149,8 +160,20 @@ export function useQrMenuCheckout({
           ? options.paymentMethodOverride
           : null;
       const effectivePaymentMethod = paymentMethodOverride || paymentMethod;
-
       const type = orderType || storage.getItem("qr_orderType");
+      const isTakeawayReservation =
+        type === "takeaway" && String(takeaway?.mode || "").toLowerCase() === "reservation";
+      const reservationTableNumber = Number(takeaway?.table_number);
+      const hasReservationTable =
+        Number.isFinite(reservationTableNumber) && reservationTableNumber > 0;
+      const effectiveOrderTypeForStorage = isTakeawayReservation ? "table" : type;
+      const effectiveTableForStorage =
+        type === "table"
+          ? Number(table)
+          : isTakeawayReservation && hasReservationTable
+          ? reservationTableNumber
+          : null;
+
       if (!type) {
         window.dispatchEvent(new Event("qr:cart-close"));
         alert(t("Please choose an order type first."));
@@ -223,11 +246,19 @@ export function useQrMenuCheckout({
         throw new Error("Please select a table.");
       }
 
+      if (isTakeawayReservation && !hasReservationTable) {
+        throw new Error("Please select a table for reservation.");
+      }
+
       if (!orderId && type === "table") {
         const nTable = Number(table);
         if (safeOccupiedTables.includes(nTable)) {
           throw new Error("This table is currently occupied. Please contact staff.");
         }
+      }
+
+      if (!orderId && isTakeawayReservation && safeOccupiedTables.includes(reservationTableNumber)) {
+        throw new Error("This table is currently occupied. Please select another table.");
       }
 
       let tableGeo = null;
@@ -280,6 +311,7 @@ export function useQrMenuCheckout({
           unique_id: i.unique_id,
           note: i.note || null,
           confirmed: true,
+          kitchen_status: "new",
           payment_method:
             effectivePaymentMethod === "online" ? "Online" : effectivePaymentMethod,
           receipt_id: null,
@@ -305,6 +337,24 @@ export function useQrMenuCheckout({
           await startOnlinePaymentSession(orderId);
         }
 
+        if (
+          isTakeawayReservation &&
+          hasReservationTable &&
+          takeaway?.pickup_date &&
+          takeaway?.pickup_time
+        ) {
+          await postJSON(appendIdentifier("/orders/reservations"), {
+            order_id: orderId,
+            table_number: reservationTableNumber,
+            reservation_date: takeaway.pickup_date,
+            reservation_time: takeaway.pickup_time,
+            reservation_clients: Number(takeaway?.reservation_clients) || Number(storage.getItem("qr_table_guests")) || 1,
+            reservation_notes: takeaway?.notes || null,
+            customer_name: takeaway?.name || null,
+            customer_phone: takeaway?.phone || null,
+          });
+        }
+
         if (!usingOverrideItems) {
           setCart((prev) => toArray(prev).filter((i) => i.locked));
         }
@@ -313,13 +363,15 @@ export function useQrMenuCheckout({
           "qr_active_order",
           JSON.stringify({
             orderId,
-            orderType: type,
-            table: type === "table" ? table : null,
+            orderType: effectiveOrderTypeForStorage,
+            table: effectiveTableForStorage || null,
           })
         );
         storage.setItem("qr_active_order_id", String(orderId));
-        if (type === "table" && table) storage.setItem("qr_table", String(table));
-        storage.setItem("qr_orderType", type);
+        if (Number.isFinite(effectiveTableForStorage) && effectiveTableForStorage > 0) {
+          storage.setItem("qr_table", String(effectiveTableForStorage));
+        }
+        storage.setItem("qr_orderType", effectiveOrderTypeForStorage);
         storage.setItem("qr_payment_method", effectivePaymentMethod);
         storage.setItem("qr_show_status", "1");
 
@@ -354,6 +406,24 @@ export function useQrMenuCheckout({
       const newId = created?.id;
       if (!newId) throw new Error("Server did not return order id.");
 
+      if (
+        isTakeawayReservation &&
+        hasReservationTable &&
+        takeaway?.pickup_date &&
+        takeaway?.pickup_time
+      ) {
+        await postJSON(appendIdentifier("/orders/reservations"), {
+          order_id: newId,
+          table_number: reservationTableNumber,
+          reservation_date: takeaway.pickup_date,
+          reservation_time: takeaway.pickup_time,
+          reservation_clients: Number(takeaway?.reservation_clients) || Number(storage.getItem("qr_table_guests")) || 1,
+          reservation_notes: takeaway?.notes || null,
+          customer_name: takeaway?.name || null,
+          customer_phone: takeaway?.phone || null,
+        });
+      }
+
       if (effectivePaymentMethod === "online") {
         await startOnlinePaymentSession(newId);
         try {
@@ -373,8 +443,8 @@ export function useQrMenuCheckout({
       }
 
       setOrderId(newId);
-      if (type === "table" && table) {
-        const nTable = Number(table);
+      if (Number.isFinite(effectiveTableForStorage) && effectiveTableForStorage > 0) {
+        const nTable = Number(effectiveTableForStorage);
         if (Number.isFinite(nTable) && nTable > 0) {
           setOccupiedTables((prev) => {
             const next = new Set(toArray(prev).map(Number));
@@ -387,15 +457,21 @@ export function useQrMenuCheckout({
         "qr_active_order",
         JSON.stringify({
           orderId: newId,
-          orderType: type,
-          table: type === "table" ? table : null,
+          orderType: effectiveOrderTypeForStorage,
+          table: effectiveTableForStorage || null,
         })
       );
       storage.setItem("qr_active_order_id", String(newId));
-      if (type === "table" && table) storage.setItem("qr_table", String(table));
-      storage.setItem("qr_orderType", type);
+      if (Number.isFinite(effectiveTableForStorage) && effectiveTableForStorage > 0) {
+        storage.setItem("qr_table", String(effectiveTableForStorage));
+      }
+      storage.setItem("qr_orderType", effectiveOrderTypeForStorage);
       storage.setItem("qr_payment_method", effectivePaymentMethod);
       storage.setItem("qr_show_status", "1");
+
+      if (isTakeawayReservation) {
+        setOrderType("table");
+      }
 
       if (!usingOverrideItems) {
         setCart([]);

@@ -9,13 +9,30 @@ export function createCloseFlow(deps) {
     selectedPaymentMethod,
     existingReservationRef,
     getReservationSchedule,
-    isEarlyReservationClose,
-    requestReservationCloseConfirmation,
     broadcastTableOverviewOrderStatus,
     navigate,
     excludedItemsSet,
     excludedCategoriesSet,
   } = deps;
+
+  function hasActiveReservation(orderLike) {
+    if (!orderLike || typeof orderLike !== "object") return false;
+    const reservation = orderLike?.reservation && typeof orderLike.reservation === "object"
+      ? orderLike.reservation
+      : null;
+    const reservationDate =
+      reservation?.reservation_date ??
+      orderLike?.reservation_date ??
+      orderLike?.reservationDate ??
+      null;
+    const reservationTime =
+      reservation?.reservation_time ??
+      orderLike?.reservation_time ??
+      orderLike?.reservationTime ??
+      null;
+    const reservationId = reservation?.id;
+    return Boolean(getReservationSchedule(orderLike) || reservationDate || reservationTime || reservationId != null);
+  }
 
   async function resetTableGuests(tableNumber) {
     const normalizedNumber =
@@ -122,11 +139,7 @@ export function createCloseFlow(deps) {
 
     if (shouldAutoCloseTable) {
       const reservationSource = existingReservationRef.current ?? order;
-      const schedule = getReservationSchedule(reservationSource);
-      if (schedule && isEarlyReservationClose(reservationSource)) {
-        const ok = await requestReservationCloseConfirmation(schedule);
-        if (!ok) return;
-      }
+      if (hasActiveReservation(reservationSource)) return;
     }
 
     try {

@@ -2,7 +2,15 @@
 import React, { useState, useMemo } from "react";
 import { ChevronLeft } from "lucide-react";
 
-export default function ModernTableSelector({ tables = [], onSelect, onBack, occupiedNumbers = [], occupiedLabel = 'Occupied' }) {
+export default function ModernTableSelector({
+  tables = [],
+  onSelect,
+  onBack,
+  occupiedNumbers = [],
+  occupiedLabel = "Occupied",
+  reservedNumbers = [],
+  reservedLabel = "Reserved",
+}) {
   // Group tables by area
   const grouped = useMemo(() => {
     return tables.reduce((acc, t) => {
@@ -16,6 +24,7 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack, occ
   const areas = Object.keys(grouped);
   const [activeArea, setActiveArea] = useState(areas[0] || "Main Hall");
   const occupiedSet = useMemo(() => new Set((occupiedNumbers || []).map((n) => Number(n))), [occupiedNumbers]);
+  const reservedSet = useMemo(() => new Set((reservedNumbers || []).map((n) => Number(n))), [reservedNumbers]);
 
   return (
     <div className="min-h-screen w-full px-4 py-6 bg-gradient-to-br from-[#fafafa] to-[#f0f2f5] dark:from-neutral-950 dark:to-neutral-900 text-neutral-900 dark:text-neutral-100">
@@ -64,10 +73,13 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack, occ
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5 pb-20">
         {grouped[activeArea]?.map((tbl) => {
           const isOcc = occupiedSet.has(Number(tbl.tableNumber));
+          const isReserved = reservedSet.has(Number(tbl.tableNumber));
           return (
           <button
             key={tbl.tableNumber}
-            onClick={() => { if (!isOcc) onSelect(tbl); }}
+            onClick={() => {
+              if (!isOcc) onSelect(tbl);
+            }}
             disabled={isOcc}
             className={`
               w-full p-5 rounded-3xl bg-white/70 dark:bg-neutral-900/70 backdrop-blur-xl border border-gray-200 dark:border-neutral-800 
@@ -84,8 +96,12 @@ export default function ModernTableSelector({ tables = [], onSelect, onBack, occ
               </span>
 
               {isOcc ? (
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white">
-                  {occupiedLabel}
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-semibold text-white ${
+                    isReserved ? "bg-amber-600" : "bg-red-600"
+                  }`}
+                >
+                  {isReserved ? reservedLabel : occupiedLabel}
                 </span>
               ) : (() => {
                 const lbl = (tbl.label ?? "").toString().trim();

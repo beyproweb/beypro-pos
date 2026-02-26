@@ -154,6 +154,7 @@ export default async function secureFetch(endpoint, options = {}) {
   const lowerPath = lower.replace(/[?#].*$/, "");
   const hasQrMenuSegment = /(?:^|\/)qr-menu(?:\/|$|[?#])/.test(lower);
   const isShopHoursEndpoint = lowerPath === "/settings/shop-hours/all";
+  const isPublicShopHoursEndpoint = lowerPath.startsWith("/public/shop-hours/");
 
 const isPublic =
   lower.includes("/products?identifier=") ||
@@ -187,7 +188,7 @@ const isPublic =
   };
 
   const fetchOptions = { ...options, headers };
-  if (isShopHoursEndpoint) {
+  if (isShopHoursEndpoint || isPublicShopHoursEndpoint) {
     fetchOptions.cache = "no-store";
   }
 

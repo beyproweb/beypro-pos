@@ -1,14 +1,110 @@
 export const normalizeOrderStatus = (status) => {
   if (!status) return "";
-  const normalized = String(status).toLowerCase();
+  const normalized = String(status).trim().toLowerCase();
   return normalized === "occupied" ? "confirmed" : normalized;
+};
+
+export const hasReservationSignal = (order) => {
+  if (!order || typeof order !== "object") return false;
+  const reservation = order?.reservation;
+  const reservationDate =
+    order?.reservation_date ??
+    order?.reservationDate ??
+    reservation?.reservation_date ??
+    reservation?.reservationDate ??
+    null;
+  const reservationTime =
+    order?.reservation_time ??
+    order?.reservationTime ??
+    reservation?.reservation_time ??
+    reservation?.reservationTime ??
+    null;
+  const nestedReservationId = reservation?.id;
+  return Boolean(
+    reservationDate ||
+      reservationTime ||
+      (nestedReservationId !== null && nestedReservationId !== undefined && nestedReservationId !== "")
+  );
+};
+
+const normalizeReservationDateValue = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  return formatLocalYmd(parsed);
+};
+
+const extractReservationDateTime = (source) => {
+  if (!source || typeof source !== "object") {
+    return { reservationDate: null, reservationTime: null };
+  }
+  const reservation = source?.reservation;
+  const reservationDate =
+    source?.reservation_date ??
+    source?.reservationDate ??
+    reservation?.reservation_date ??
+    reservation?.reservationDate ??
+    null;
+  const reservationTime =
+    source?.reservation_time ??
+    source?.reservationTime ??
+    reservation?.reservation_time ??
+    reservation?.reservationTime ??
+    null;
+  return { reservationDate, reservationTime };
+};
+
+const parseReservationDateTimeMs = (reservationDate, reservationTime) => {
+  const normalizedDate = normalizeReservationDateValue(reservationDate);
+  if (!normalizedDate) return NaN;
+
+  if (!reservationTime) {
+    return new Date(`${normalizedDate}T00:00:00`).getTime();
+  }
+
+  const rawTime = String(reservationTime).trim();
+  const hhmmss = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (hhmmss) {
+    const hours = Math.max(0, Math.min(23, Number(hhmmss[1])));
+    const minutes = Math.max(0, Math.min(59, Number(hhmmss[2])));
+    const seconds = Math.max(0, Math.min(59, Number(hhmmss[3] || 0)));
+    const [year, month, day] = normalizedDate.split("-").map(Number);
+    return new Date(year, month - 1, day, hours, minutes, seconds, 0).getTime();
+  }
+
+  const fallback = new Date(`${normalizedDate}T${rawTime}`).getTime();
+  if (Number.isFinite(fallback)) return fallback;
+
+  return new Date(`${normalizedDate}T00:00:00`).getTime();
+};
+
+export const isReservationDueNow = (source, nowMs = Date.now()) => {
+  if (!source || typeof source !== "object") return false;
+
+  const { reservationDate, reservationTime } = extractReservationDateTime(source);
+  if (!reservationDate && !reservationTime) return false;
+  if (!reservationDate) return true;
+
+  const scheduledMs = parseReservationDateTimeMs(reservationDate, reservationTime);
+  if (!Number.isFinite(scheduledMs)) return true;
+  return nowMs >= scheduledMs;
 };
 
 export const hasUnpaidAnywhere = (order) => {
   if (!order) return false;
+  const status = normalizeOrderStatus(order?.status);
+  const paymentStatus = String(order?.payment_status || "").toLowerCase();
 
   const suborders = Array.isArray(order.suborders) ? order.suborders : [];
   const items = Array.isArray(order.items) ? order.items : [];
+  const hasLineData = items.length > 0 || suborders.length > 0;
+  const hasPaidFlag = status === "paid" || paymentStatus === "paid" || order?.is_paid === true;
+  // Keep instant-paid UX only for transient states where line data is not available yet.
+  if (hasPaidFlag && !hasLineData) {
+    return false;
+  }
 
   const unpaidSub = suborders.some((sub) =>
     Array.isArray(sub.items) ? sub.items.some((i) => !i.paid_at && !i.paid) : false
@@ -38,8 +134,9 @@ export const isEffectivelyFreeOrder = (order) => {
   const status = normalizeOrderStatus(order.status);
   if (status === "closed") return true;
 
-  if (status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
-    return false;
+  const hasSignal = hasReservationSignal(order);
+  if ((status === "reserved" || order.order_type === "reservation") && hasSignal) {
+    return !isReservationDueNow(order);
   }
 
   if (status === "draft") return true;
@@ -86,13 +183,6 @@ export const getTableColor = (order) => {
 
   const status = normalizeOrderStatus(order.status);
 
-  if (status === "reserved" || order.order_type === "reservation" || order.reservation_date) {
-    if (isOrderFullyPaid(order)) {
-      return "bg-green-500 text-white";
-    }
-    return "bg-orange-500 text-white";
-  }
-
   if (isOrderFullyPaid(order)) {
     return "bg-green-500 text-white";
   }
@@ -130,6 +220,10 @@ export const getTableColor = (order) => {
 
 export const getDisplayTotal = (order) => {
   if (!order) return 0;
+  const items = Array.isArray(order.items) ? order.items : [];
+  const suborders = Array.isArray(order.suborders) ? order.suborders : [];
+  const hasLineData = items.length > 0 || suborders.length > 0;
+  if (isOrderPaid(order) && !hasLineData) return 0;
 
   const computeLineTotal = (item) => {
     if (!item || typeof item !== "object") return 0;
@@ -155,8 +249,6 @@ export const getDisplayTotal = (order) => {
   };
 
   if (hasUnpaidAnywhere(order)) {
-    const items = Array.isArray(order.items) ? order.items : [];
-    const suborders = Array.isArray(order.suborders) ? order.suborders : [];
     const unpaidMainTotal = items
       .filter((i) => !i?.paid_at && !i?.paid)
       .reduce((sum, i) => sum + computeLineTotal(i), 0);
@@ -193,10 +285,21 @@ export const getMemoizedTableDerivedFields = (order) => {
   if (cached) return cached;
 
   const tableStatus = normalizeOrderStatus(order.status);
+  const hasSignal = hasReservationSignal(order);
   const hasUnpaidItems = hasUnpaidAnywhere(order);
   const isFullyPaid = isOrderFullyPaid(order);
-  const isReservedTable =
-    tableStatus === "reserved" || order.order_type === "reservation" || Boolean(order.reservation_date);
+  const hasExplicitReservationState =
+    (tableStatus === "reserved" || order.order_type === "reservation") && hasSignal;
+  const hasSignalReservationState =
+    !hasExplicitReservationState &&
+    hasSignal &&
+    isEffectivelyFreeOrder(order);
+  const hasReservationState = hasExplicitReservationState || hasSignalReservationState;
+  const isReservedTable = hasReservationState
+    ? hasSignal
+      ? isReservationDueNow(order)
+      : true
+    : false;
   const derived = {
     tableStatus,
     tableColor: getTableColor(order),

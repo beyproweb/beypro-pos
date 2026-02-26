@@ -226,6 +226,9 @@ export default function VoiceOrderController({
   onPaymentMethodChange,
   canStartVoiceOrder = true,
   onRequireOrderType,
+  forceMinimized = false,
+  hideMiniButton = false,
+  openEventName = "",
 }) {
   const { t, i18n } = useTranslation();
   const location = useLocation();
@@ -386,10 +389,25 @@ export default function VoiceOrderController({
       pushMessage(tVoice("voice.waiter.readBackEmpty", "Your draft is empty."));
       return;
     }
+    if (!recapOpen) {
+      onPaymentMethodChange?.("");
+    }
     clearPending();
     setRecapOpen(true);
     pushMessage(tVoice("voice.waiter.recapNow", "Okay, let me recap your order."));
-  }, [clearPending, pushMessage, summary.items.length, tVoice]);
+  }, [clearPending, onPaymentMethodChange, pushMessage, recapOpen, summary.items.length, tVoice]);
+
+  const handleClearDraftFromFloating = useCallback(() => {
+    if (!summary.items.length) {
+      pushMessage(tVoice("voice.waiter.readBackEmpty", "Your draft is empty."));
+      return;
+    }
+    clear();
+    clearPending();
+    setWaiterSuggestions([]);
+    setRecapOpen(false);
+    pushMessage(tVoice("voice.waiter.draftCleared", "Draft order cleared."), true);
+  }, [clear, clearPending, pushMessage, summary.items.length, tVoice]);
 
   const respondReadBack = useCallback(() => {
     if (!summary.items.length) {
@@ -1175,6 +1193,7 @@ export default function VoiceOrderController({
       }
       return;
     }
+
     if (noisyModeEnabled && isListening) {
       stopListening();
       return;
@@ -1198,17 +1217,38 @@ export default function VoiceOrderController({
     if (isListening) stopListening();
   }, [isListening, noisyModeEnabled, stopListening]);
 
+  const paymentRequiredPrompt = t("Please select a payment method before continuing.", {
+    lng: activeLang,
+    defaultValue: "Please select a payment method before continuing.",
+  });
+
+  const handlePaymentRequiredPrompt = useCallback(
+    (text) => {
+      const message = String(text || paymentRequiredPrompt);
+      pushMessage(message, true);
+    },
+    [paymentRequiredPrompt, pushMessage]
+  );
+
   const handleConfirmRecap = useCallback(async (options = {}) => {
     if (!summary.items.length || isSubmitting) return;
 
+    const paymentMethodOverride =
+      typeof options?.paymentMethodOverride === "string"
+        ? options.paymentMethodOverride
+        : null;
+    const selectedPaymentMethod = String(
+      paymentMethodOverride || paymentMethod || ""
+    ).trim();
+    if (!selectedPaymentMethod) {
+      pushMessage(paymentRequiredPrompt, true);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const paymentMethodOverride =
-        typeof options?.paymentMethodOverride === "string"
-          ? options.paymentMethodOverride
-          : null;
       if (typeof onConfirmOrder === "function") {
-        await onConfirmOrder(summary.items, { paymentMethodOverride });
+        await onConfirmOrder(summary.items, { paymentMethodOverride: selectedPaymentMethod });
       } else {
         for (const item of summary.items) {
           const product = productById.get(String(item.productId)) || null;
@@ -1250,6 +1290,8 @@ export default function VoiceOrderController({
     isSubmitting,
     onAddToCart,
     onConfirmOrder,
+    paymentMethod,
+    paymentRequiredPrompt,
     productById,
     pushMessage,
     summary.items,
@@ -1336,6 +1378,7 @@ export default function VoiceOrderController({
     [summary.items]
   );
   const openRecapLabel = tVoice("voice.waiter.openCart", "Open Cart");
+  const clearItemLabel = tVoice("voice.waiter.clearItem", "Clear Item");
   const noisyModeLabel = tVoice("voice.waiter.noisyMode", "Noisy Mode");
   const noisyModeDescription = tVoice(
     "voice.waiter.noisyModeDescription",
@@ -1354,6 +1397,7 @@ export default function VoiceOrderController({
     : tVoice("voice.waiter.tapToSpeak", "Tap to speak");
   const holdLabel = tVoice("voice.waiter.holdToTalk", "Hold to talk");
   const lastTranscriptLabel = tr("Last heard", "Son duyulan", "Zuletzt gehört", "Dernier entendu");
+  const aiOrderLabel = tVoice("voice.waiter.aiOrderTitle", tr("AI Order", "YZ Siparis", "KI Bestellung", "Commande IA"));
   const consolidatedSuggestions = mode === MODE.IDLE && !recapOpen ? waiterSuggestions : [];
 
   return (
@@ -1367,7 +1411,8 @@ export default function VoiceOrderController({
         onHoldEndVoiceOrder={handleVoiceHoldEnd}
         noisyMode={noisyModeEnabled}
         isListening={isListening}
-        title={tVoice("voice.waiter.waiterTitle", "Waiter")}
+        title={aiOrderLabel}
+        miniLabel={canStartVoiceOrder ? aiOrderLabel : ""}
         subtitle={fabSubtitle}
         holdLabel={holdLabel}
         tapToStartLabel={tVoice("voice.waiter.tapToStart", "Tap to start")}
@@ -1379,6 +1424,9 @@ export default function VoiceOrderController({
         showOpenRecap={summary.totalQty > 0}
         openRecapLabel={openRecapLabel}
         onOpenRecap={openRecapNow}
+        showClearRecap={summary.totalQty > 0}
+        clearRecapLabel={clearItemLabel}
+        onClearRecap={handleClearDraftFromFloating}
         onToggleNoisyMode={toggleNoisyMode}
         noisyModeLabel={noisyModeLabel}
         noisyModeDescription={noisyModeDescription}
@@ -1399,6 +1447,9 @@ export default function VoiceOrderController({
         onCancelUnknown={handleInlineUnknownCancel}
         onSelectUnknownOption={handleInlineUnknownSelect}
         startActionOnly={!canStartVoiceOrder}
+        forceMinimized={forceMinimized}
+        hideMiniButton={hideMiniButton}
+        openEventName={openEventName}
       />
 
       <DraftOrderRecapModal
@@ -1409,6 +1460,12 @@ export default function VoiceOrderController({
         paymentMethods={paymentMethods}
         onPaymentMethodChange={onPaymentMethodChange}
         paymentLabel={t("Payment", { lng: activeLang, defaultValue: "Payment" })}
+        paymentPlaceholder={t("Select your payment", {
+          lng: activeLang,
+          defaultValue: "Select your payment",
+        })}
+        paymentRequiredPrompt={paymentRequiredPrompt}
+        onPaymentRequired={handlePaymentRequiredPrompt}
         onClose={() => setRecapOpen(false)}
         onConfirm={handleConfirmRecap}
         onContinue={() => {

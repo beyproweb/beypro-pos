@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import VoiceOrderFab from "./VoiceOrderFab";
 import VoiceOrderMini from "./VoiceOrderMini";
@@ -14,6 +14,7 @@ export default function VoiceOrderFloating({
   noisyMode = false,
   isListening = false,
   title = "Waiter",
+  miniLabel = "AI Order",
   subtitle = "Tap to speak",
   holdLabel = "Hold to talk",
   tapToStartLabel = "Tap to start",
@@ -25,6 +26,9 @@ export default function VoiceOrderFloating({
   showOpenRecap = false,
   openRecapLabel = "Open Cart",
   onOpenRecap,
+  showClearRecap = false,
+  clearRecapLabel = "Clear Item",
+  onClearRecap,
   onToggleNoisyMode,
   noisyModeLabel = "Noisy Mode",
   noisyModeDescription = "",
@@ -42,11 +46,16 @@ export default function VoiceOrderFloating({
   onCancelUnknown,
   onSelectUnknownOption,
   startActionOnly = false,
+  forceMinimized = false,
+  hideMiniButton = false,
+  openEventName = "",
   offsetClassName = "right-4 bottom-20 sm:bottom-6",
   zIndexClassName = "z-[125]",
 }) {
   const location = useLocation();
   const [stubModalOpen, setStubModalOpen] = useState(false);
+  const [statusMinimized, setStatusMinimized] = useState(false);
+  const prevForceMinimizedRef = useRef(false);
 
   const fallbackScope = useMemo(
     () => `${location.pathname || ""}${location.search || ""}`,
@@ -100,13 +109,45 @@ export default function VoiceOrderFloating({
   }, [onHoldEndVoiceOrderProp, handleStopVoiceOrder]);
 
   const bypassFab = Boolean(startActionOnly);
+  const showExpanded = !bypassFab && isOpen && !statusMinimized;
+
+  useEffect(() => {
+    const wasForceMinimized = prevForceMinimizedRef.current;
+    if (forceMinimized && !wasForceMinimized) {
+      setStatusMinimized(true);
+    }
+    if (!forceMinimized && wasForceMinimized) {
+      setStatusMinimized(false);
+    }
+    prevForceMinimizedRef.current = forceMinimized;
+  }, [forceMinimized]);
+
+  const handleOpenMini = useCallback(() => {
+    if (statusMinimized) {
+      setStatusMinimized(false);
+    }
+    if (bypassFab) {
+      handleStartVoiceOrder();
+      return;
+    }
+    open();
+  }, [bypassFab, handleStartVoiceOrder, open, statusMinimized]);
+
+  useEffect(() => {
+    if (!openEventName) return undefined;
+    const handler = () => handleOpenMini();
+    window.addEventListener(openEventName, handler);
+    return () => window.removeEventListener(openEventName, handler);
+  }, [handleOpenMini, openEventName]);
+
+  const showMiniButton = !hideMiniButton;
 
   return (
     <>
       <div className={`pointer-events-none fixed ${offsetClassName} ${zIndexClassName}`}>
         {bypassFab ? (
-          <VoiceOrderMini onOpen={handleStartVoiceOrder} />
-        ) : isOpen ? (
+          showMiniButton ? <VoiceOrderMini onOpen={handleOpenMini} label={miniLabel} /> : null
+        ) : showExpanded ? (
           <VoiceOrderFab
             onStart={handleStartVoiceOrder}
             onStop={handleStopVoiceOrder}
@@ -127,6 +168,9 @@ export default function VoiceOrderFloating({
             showOpenRecap={showOpenRecap}
             openRecapLabel={openRecapLabel}
             onOpenRecap={onOpenRecap}
+            showClearRecap={showClearRecap}
+            clearRecapLabel={clearRecapLabel}
+            onClearRecap={onClearRecap}
             onToggleNoisyMode={onToggleNoisyMode}
             noisyModeLabel={noisyModeLabel}
             noisyModeDescription={noisyModeDescription}
@@ -145,7 +189,7 @@ export default function VoiceOrderFloating({
             onSelectUnknownOption={onSelectUnknownOption}
           />
         ) : (
-          <VoiceOrderMini onOpen={open} />
+          showMiniButton ? <VoiceOrderMini onOpen={handleOpenMini} label={miniLabel} /> : null
         )}
       </div>
 

@@ -72,6 +72,8 @@ const CheckoutModal = React.memo(function CheckoutModal({
   const [saveCard, setSaveCard] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
+  const [paymentPrompt, setPaymentPrompt] = useState(false);
+  const [shakeModal, setShakeModal] = useState(false);
 
   useEffect(() => {
     try {
@@ -190,6 +192,12 @@ const CheckoutModal = React.memo(function CheckoutModal({
     })();
   }, [appendIdentifier, form.address, form.name, form.phone]);
 
+  useEffect(() => {
+    if (form.payment_method) {
+      setPaymentPrompt(false);
+    }
+  }, [form.payment_method]);
+
   const validBase =
     form.name && /^(5\d{9}|[578]\d{7})$/.test(form.phone) && form.address && !!form.payment_method;
 
@@ -202,6 +210,12 @@ const CheckoutModal = React.memo(function CheckoutModal({
       (detectBrand(cardNumber) === "Amex"
         ? /^[0-9]{4}$/.test(cardCvc)
         : /^[0-9]{3}$/.test(cardCvc)));
+
+  const triggerPaymentError = () => {
+    setPaymentPrompt(true);
+    setShakeModal(true);
+    setTimeout(() => setShakeModal(false), 420);
+  };
 
   const validate = () => validBase && validCard;
 
@@ -216,11 +230,29 @@ const CheckoutModal = React.memo(function CheckoutModal({
     } catch {}
   }
 
+  const handleFormSubmit = async (e) => {
+    e.preventDefault();
+    if (!validate()) {
+      setTouched({ name: true, phone: true, address: true, payment_method: true, card: true });
+      if (!form.payment_method) {
+        triggerPaymentError();
+      }
+      return;
+    }
+    try {
+      await saveDelivery();
+    } catch {}
+    onSubmit({ ...form });
+  };
+
   const showNewCard = !savedCard || !useSaved;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6">
-      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md text-left relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
+    <div className="fixed inset-0 z-[160] flex items-start sm:items-center justify-center bg-black/40 backdrop-blur-sm p-3 sm:p-6">
+      <div
+        className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-5 sm:p-8 pb-[calc(1.25rem+env(safe-area-inset-bottom))] w-full max-w-md text-left relative max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
+        style={shakeModal ? { animation: "checkoutShake 420ms ease-in-out" } : undefined}
+      >
         <button
           onClick={onClose}
           aria-label={t("Close")}
@@ -234,17 +266,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
         </h2>
 
         <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!validate()) {
-              setTouched({ name: true, phone: true, address: true, payment_method: true, card: true });
-              return;
-            }
-            try {
-              await saveDelivery();
-            } catch {}
-            onSubmit({ ...form });
-          }}
+          onSubmit={handleFormSubmit}
           className="flex flex-col gap-4"
         >
           <input
@@ -292,6 +314,11 @@ const CheckoutModal = React.memo(function CheckoutModal({
               <option value="card">{t("Credit Card")}</option>
               <option value="online">{t("Online Payment")}</option>
             </select>
+            {paymentPrompt && !form.payment_method && (
+              <p className="text-xs font-semibold text-rose-600">
+                {t("Please select a payment method before continuing.")}
+              </p>
+            )}
           </div>
 
           {form.payment_method === "card" && (
@@ -380,6 +407,15 @@ const CheckoutModal = React.memo(function CheckoutModal({
           </button>
         </form>
       </div>
+      <style>{`
+        @keyframes checkoutShake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-6px); }
+          40% { transform: translateX(6px); }
+          60% { transform: translateX(-4px); }
+          80% { transform: translateX(4px); }
+        }
+      `}</style>
     </div>
   );
 });

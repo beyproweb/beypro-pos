@@ -73,6 +73,7 @@ function VirtualTablesGrid({
   const containerRef = React.useRef(null);
   const resizeObserversRef = React.useRef(new Map());
   const rowNodesRef = React.useRef(new Map());
+  const rowRefCallbacksRef = React.useRef(new Map());
   const rafRef = React.useRef(null);
   const [viewport, setViewport] = React.useState(() => {
     if (typeof window === "undefined") return DEFAULT_VIEWPORT;
@@ -83,6 +84,11 @@ function VirtualTablesGrid({
     };
   });
   const [measuredRowHeights, setMeasuredRowHeights] = React.useState({});
+  const measuredRowHeightsRef = React.useRef({});
+
+  React.useEffect(() => {
+    measuredRowHeightsRef.current = measuredRowHeights || {};
+  }, [measuredRowHeights]);
 
   const columnCount = React.useMemo(
     () => getColumnsForViewport(viewport.viewportWidth || 0),
@@ -95,6 +101,7 @@ function VirtualTablesGrid({
   );
 
   React.useEffect(() => {
+    measuredRowHeightsRef.current = {};
     setMeasuredRowHeights({});
   }, [columnCount, list.length]);
 
@@ -212,9 +219,12 @@ function VirtualTablesGrid({
     const updateHeight = () => {
       const nextHeight = Math.ceil(node.getBoundingClientRect().height);
       if (nextHeight <= 0) return;
+      if (measuredRowHeightsRef.current?.[rowIndex] === nextHeight) return;
       setMeasuredRowHeights((prev) => {
         if (prev[rowIndex] === nextHeight) return prev;
-        return { ...prev, [rowIndex]: nextHeight };
+        const next = { ...prev, [rowIndex]: nextHeight };
+        measuredRowHeightsRef.current = next;
+        return next;
       });
     };
 
@@ -230,8 +240,21 @@ function VirtualTablesGrid({
       resizeObserversRef.current.forEach((observer) => observer.disconnect());
       resizeObserversRef.current.clear();
       rowNodesRef.current.clear();
+      rowRefCallbacksRef.current.clear();
     };
   }, []);
+
+  const getRowRef = React.useCallback(
+    (rowIndex) => {
+      if (rowRefCallbacksRef.current.has(rowIndex)) {
+        return rowRefCallbacksRef.current.get(rowIndex);
+      }
+      const cb = (node) => setRowNode(rowIndex, node);
+      rowRefCallbacksRef.current.set(rowIndex, cb);
+      return cb;
+    },
+    [setRowNode]
+  );
 
   const { startRow, endRow } = React.useMemo(
     () =>
@@ -278,7 +301,7 @@ function VirtualTablesGrid({
                 key={`row-${rowIndex}`}
                 style={{ position: "absolute", top: `${rowTop}px`, left: 0, right: 0 }}
               >
-                <div ref={(node) => setRowNode(rowIndex, node)} className={GRID_CLASS_NAME}>
+                <div ref={getRowRef(rowIndex)} className={GRID_CLASS_NAME}>
                   {rowItems.map((item) => (
                     <React.Fragment key={itemKey(item)}>{renderItem(item)}</React.Fragment>
                   ))}

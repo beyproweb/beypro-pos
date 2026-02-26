@@ -45,6 +45,7 @@ const CartPanelContainer = ({
   isDebtSaving,
   handleCartPrint,
   openReservationModal,
+  handleDeleteReservation,
   openCancelModal,
   setShowDiscountModal,
   handleOpenCashRegister,
@@ -457,6 +458,7 @@ const CartPanelContainer = ({
       headerPadding,
       footerPadding,
       orderId,
+      order,
       tableLabelText,
       tableId,
       invoiceNumber,
@@ -475,6 +477,7 @@ const CartPanelContainer = ({
       headerPadding,
       footerPadding,
       orderId,
+      order,
       tableLabelText,
       tableId,
       invoiceNumber,
@@ -521,7 +524,9 @@ const CartPanelContainer = ({
           ? t("Close Later")
           : t("Pay Later"),
       footerCancelDisabled:
-        normalizedStatus !== "confirmed" || hasUnconfirmedCartItems || cartItems.length === 0,
+        !["confirmed", "paid"].includes(normalizedStatus) ||
+        hasUnconfirmedCartItems ||
+        cartItems.length === 0,
       footerCanShowCancel: orderType === "table" || orderType === "takeaway",
       footerPrimaryActionLabel: primaryActionLabel,
     }),
@@ -588,6 +593,7 @@ const CartPanelContainer = ({
       incrementCartItem,
       removeItem,
       openReservationModal,
+      handleDeleteReservation,
       openCancelModal,
       setShowDiscountModal,
       handleOpenCashRegister,
@@ -614,6 +620,7 @@ const CartPanelContainer = ({
       incrementCartItem,
       removeItem,
       openReservationModal,
+      handleDeleteReservation,
       openCancelModal,
       setShowDiscountModal,
       handleOpenCashRegister,

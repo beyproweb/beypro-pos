@@ -72,6 +72,7 @@ function inferLink(type, extra) {
     return "/tableoverview?tab=tables";
   }
   if (normalizedType === "driver") return "/orders";
+  if (normalizedType === "customer_call") return "/tableoverview?tab=tables";
   return null;
 }
 
@@ -96,6 +97,33 @@ function extractTableLabelFromPayload(payload) {
     }
   }
   return null;
+}
+
+function extractTableNumberFromPayload(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const tableKeys = ["table_number", "tableNumber", "table", "table_label", "tableLabel"];
+  for (const key of tableKeys) {
+    const raw = payload[key];
+    const num = Number(raw);
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+  const nested = payload.order;
+  if (nested && typeof nested === "object") {
+    for (const key of tableKeys) {
+      const raw = nested[key];
+      const num = Number(raw);
+      if (Number.isFinite(num) && num > 0) return num;
+    }
+  }
+  return null;
+}
+
+function buildCustomerCallMessage(payload, fallback = "Table is calling waiter") {
+  const tableNo = extractTableNumberFromPayload(payload);
+  if (Number.isFinite(tableNo)) return `Table ${tableNo} is calling waiter`;
+  const tableRef = extractTableLabelFromPayload(payload);
+  if (tableRef) return `Table ${tableRef} is calling waiter`;
+  return fallback;
 }
 
 function buildNewOrderNotificationMessage(payload, fallback = "New order") {
@@ -340,6 +368,7 @@ function dedupe(items, next) {
 
 export function NotificationsProvider({ children }) {
   const [items, setItems] = useState([]);
+  const [customerCalls, setCustomerCalls] = useState({});
   const [bellOpen, setBellOpen] = useState(false);
   const [summaries, setSummaries] = useState({
     criticalStock: null,
@@ -358,6 +387,58 @@ export function NotificationsProvider({ children }) {
   const restaurantIdRef = useRef(getRestaurantId());
   const registerStatusRef = useRef(null);
   const lastSeenKeyRef = useRef(null);
+
+  const clearCustomerCall = useCallback((tableNumber) => {
+    const tableNum = Number(tableNumber);
+    if (!Number.isFinite(tableNum) || tableNum <= 0) return;
+    setCustomerCalls((prev) => {
+      const key = String(tableNum);
+      if (!prev?.[key]) return prev;
+      const next = { ...(prev || {}) };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  const upsertCustomerCall = useCallback((payload = {}) => {
+    const tableNumber = extractTableNumberFromPayload(payload);
+    if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
+    const key = String(tableNumber);
+    const requestedAt = payload?.requested_at || payload?.time || new Date().toISOString();
+    setCustomerCalls((prev) => ({
+      ...(prev || {}),
+      [key]: {
+        tableNumber,
+        tableLabel: extractTableLabelFromPayload(payload),
+        requestId: payload?.request_id || payload?.requestId || null,
+        requestedAt,
+        source: payload?.source || "socket",
+      },
+    }));
+    return tableNumber;
+  }, []);
+
+  const acknowledgeCustomerCall = useCallback((tableNumber) => {
+    const tableNum = Number(tableNumber);
+    if (!Number.isFinite(tableNum) || tableNum <= 0) return;
+    try {
+      socket.emit("customer_call_acknowledge", { table_number: tableNum });
+    } catch {
+      // best-effort emit
+    }
+    clearCustomerCall(tableNum);
+  }, [clearCustomerCall]);
+
+  const resolveCustomerCall = useCallback((tableNumber) => {
+    const tableNum = Number(tableNumber);
+    if (!Number.isFinite(tableNum) || tableNum <= 0) return;
+    try {
+      socket.emit("customer_call_resolve", { table_number: tableNum });
+    } catch {
+      // best-effort emit
+    }
+    clearCustomerCall(tableNum);
+  }, [clearCustomerCall]);
 
   const resolveStorageKey = useCallback(() => {
     const rid = getRestaurantId();
@@ -597,6 +678,45 @@ export function NotificationsProvider({ children }) {
     }
   }, [markAllRead]);
 
+  const syncCustomerCallSound = useCallback(() => {
+    const hasActiveCalls = Object.keys(customerCalls || {}).length > 0;
+    const settings = window?.notificationSettings || {};
+    const notificationsEnabled = settings.enabled !== false;
+    const soundsEnabled = settings.enableSounds !== false;
+    const callWaiterEnabled = settings.enableCallWaiterAlerts !== false;
+
+    if (hasActiveCalls && notificationsEnabled && soundsEnabled && callWaiterEnabled) {
+      if (typeof window?.startCallWaiterSound === "function") {
+        window.startCallWaiterSound();
+      }
+      return;
+    }
+
+    if (typeof window?.stopCallWaiterSound === "function") {
+      window.stopCallWaiterSound();
+    }
+  }, [customerCalls]);
+
+  useEffect(() => {
+    syncCustomerCallSound();
+  }, [syncCustomerCallSound]);
+
+  useEffect(() => {
+    const onSettingsUpdated = () => syncCustomerCallSound();
+    window.addEventListener("notification_settings_updated", onSettingsUpdated);
+    return () => {
+      window.removeEventListener("notification_settings_updated", onSettingsUpdated);
+    };
+  }, [syncCustomerCallSound]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window?.stopCallWaiterSound === "function") {
+        window.stopCallWaiterSound();
+      }
+    };
+  }, []);
+
   const loadSummaries = useCallback(async () => {
     if (isStandalone) return;
     try {
@@ -769,6 +889,50 @@ export function NotificationsProvider({ children }) {
         });
       };
 
+    const onCustomerCall = (payload = {}) => {
+      const tableNumber = upsertCustomerCall(payload);
+      if (!Number.isFinite(tableNumber)) return;
+      pushNotification({
+        message: buildCustomerCallMessage(payload),
+        type: "customer_call",
+        time: Date.now(),
+        extra: {
+          event: "customer_call_requested",
+          table_number: tableNumber,
+          table_label: payload?.table_label ?? payload?.tableLabel ?? null,
+          request_id: payload?.request_id ?? payload?.requestId ?? null,
+          ...payload,
+        },
+        source: "socket",
+      });
+    };
+
+    const onCustomerCallAcknowledged = (payload = {}) => {
+      const tableNumber = extractTableNumberFromPayload(payload);
+      if (!Number.isFinite(tableNumber)) return;
+      clearCustomerCall(tableNumber);
+      pushNotification({
+        message: `Table ${tableNumber} waiter call acknowledged`,
+        type: "customer_call",
+        time: Date.now(),
+        extra: { event: "customer_call_acknowledged", table_number: tableNumber, ...payload },
+        source: "socket",
+      });
+    };
+
+    const onCustomerCallResolved = (payload = {}) => {
+      const tableNumber = extractTableNumberFromPayload(payload);
+      if (!Number.isFinite(tableNumber)) return;
+      clearCustomerCall(tableNumber);
+      pushNotification({
+        message: `Table ${tableNumber} waiter call resolved`,
+        type: "customer_call",
+        time: Date.now(),
+        extra: { event: "customer_call_resolved", table_number: tableNumber, ...payload },
+        source: "socket",
+      });
+    };
+
     const onPayment = (payload = {}) => {
       const orderId = payload?.orderId || payload?.id;
       const suffix = orderId ? `#${orderId}` : "";
@@ -932,6 +1096,9 @@ export function NotificationsProvider({ children }) {
     socket.on("order_preparing", onOrderPreparing);
     socket.on("order_delivered", onOrderDelivered);
     socket.on("order_cancelled", onOrderCancelled);
+    socket.on("customer_call", onCustomerCall);
+    socket.on("customer_call_acknowledged", onCustomerCallAcknowledged);
+    socket.on("customer_call_resolved", onCustomerCallResolved);
     socket.on("payment_made", onPayment);
     socket.on("driver_assigned", onDriverAssigned);
     socket.on("driver_on_road", onDriverOnRoad);
@@ -947,6 +1114,9 @@ export function NotificationsProvider({ children }) {
       socket.off("order_preparing", onOrderPreparing);
       socket.off("order_delivered", onOrderDelivered);
       socket.off("order_cancelled", onOrderCancelled);
+      socket.off("customer_call", onCustomerCall);
+      socket.off("customer_call_acknowledged", onCustomerCallAcknowledged);
+      socket.off("customer_call_resolved", onCustomerCallResolved);
       socket.off("payment_made", onPayment);
       socket.off("driver_assigned", onDriverAssigned);
       socket.off("driver_on_road", onDriverOnRoad);
@@ -956,7 +1126,7 @@ export function NotificationsProvider({ children }) {
       socket.off("maintenance_created", onMaintenanceCreated);
       socket.off("maintenance_updated", onMaintenanceUpdated);
     };
-  }, [pushNotification]);
+  }, [pushNotification, upsertCustomerCall, clearCustomerCall]);
 
   const unread = useMemo(() => {
     if (!items.length) return 0;
@@ -967,24 +1137,30 @@ export function NotificationsProvider({ children }) {
   const value = useMemo(
     () => ({
       notifications: items,
+      customerCalls,
       unread,
       bellOpen,
       setBellOpen,
       lastSeenAtMs,
       markAllRead,
       pushNotification,
+      acknowledgeCustomerCall,
+      resolveCustomerCall,
       refresh,
       clearAll,
       summaries,
     }),
     [
+      acknowledgeCustomerCall,
       bellOpen,
       clearAll,
+      customerCalls,
       items,
       lastSeenAtMs,
       markAllRead,
       pushNotification,
       refresh,
+      resolveCustomerCall,
       summaries,
       unread,
     ]

@@ -69,7 +69,7 @@ export default function KitchenNew() {
           item.kitchen_status !== "delivered" &&
           item.kitchen_status !== null &&
           item.kitchen_status !== "" &&
-          ["table", "packet", "phone", "takeaway"].includes(
+          ["table", "reservation", "packet", "phone", "takeaway"].includes(
             String(item.order_type || "").toLowerCase()
           )
       );
@@ -77,7 +77,7 @@ export default function KitchenNew() {
       // Fetch reservation info for table orders
       const withReservations = await Promise.all(
         active.map(async (item) => {
-          if (String(item.order_type).toLowerCase() === "table" && item.order_id) {
+          if (["table", "reservation"].includes(String(item.order_type).toLowerCase()) && item.order_id) {
             try {
               const resData = await secureFetch(`/orders/reservations/${item.order_id}`);
               if (resData?.success && resData?.reservation) {
@@ -286,7 +286,7 @@ export default function KitchenNew() {
       // Filter for Table orders only
       return groupedOrders.filter((order) => {
         const type = String(order.order_type || "").toLowerCase();
-        return type === "table";
+        return type === "table" || type === "reservation";
       });
     }
     if (activeTab === "cooking") {
@@ -631,7 +631,7 @@ function OrderCard({
   };
 
   const orderLabel = (() => {
-    if (type === "table") return `${t("Table")} ${order.table_number}`;
+    if (type === "table" || type === "reservation") return `${t("Table")} ${order.table_number}`;
     if (type === "packet") {
       const onlineLabel = resolveOnlineSourceLabelFromOrder(order);
       return onlineLabel || t("Packet");
@@ -672,7 +672,7 @@ function OrderCard({
       </div>
 
       {/* Client Info (delivery / takeaway / phone) */}
-      {type !== "table" && (order.customer_name || order.customer_phone || order.customer_address) && (
+      {!["table", "reservation"].includes(type) && (order.customer_name || order.customer_phone || order.customer_address) && (
         <div className="mb-3 text-xs text-gray-700 dark:text-gray-200 space-y-1">
           {order.customer_name && (
             <div className="font-semibold truncate">👤 {order.customer_name}</div>

@@ -22,6 +22,7 @@ export default function NotificationsTab() {
     order_delayed: "Delayed Order Alert",
     driver_arrived: "Driver Delivered",
     driver_assigned: "Driver Assigned",
+    call_waiter: "Call Waiter",
     yemeksepeti_order: "Yemeksepeti Order",
   };
 
@@ -58,12 +59,15 @@ export default function NotificationsTab() {
     driver_arrived: "horn.mp3",
     driver_assigned: "horn.mp3",
     stock_expiry: "alarm.mp3",
+    call_waiter: "alarm.mp3",
   };
 
   const defaultConfig = {
     enabled: true,
     defaultSound: "ding",
-      volume: 0.8,
+    volume: 0.8,
+    enableCallWaiterAlerts: true,
+    enableCallWaiterVibration: false,
     channels: {
       kitchen: "app",
       cashier: "app",
@@ -256,6 +260,70 @@ if (!settingsLoaded || !notifications) return <p>{t("Loading settings...")}</p>;
   </label>
 </div>
 
+{/* 🔔 Enable Call Waiter Alerts */}
+<div className="flex items-center justify-between mb-6">
+  <span className="text-lg font-medium">{t("Enable Call Waiter Alerts")}</span>
+  <label className="relative inline-flex items-center cursor-pointer">
+    <input
+      type="checkbox"
+      checked={notifications.enableCallWaiterAlerts ?? true}
+      onChange={() =>
+        setNotifications((prev) => ({
+          ...prev,
+          enableCallWaiterAlerts: !(prev.enableCallWaiterAlerts ?? true),
+        }))
+      }
+      className="sr-only peer"
+    />
+    <div className="w-11 h-6 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+  </label>
+</div>
+
+{/* 🔔 Call Waiter Sound */}
+<div className="mb-6">
+  <label className="block text-lg font-medium mb-2">
+    {t("Call Waiter Sound")}
+  </label>
+  <select
+    value={notifications.eventSounds?.call_waiter ?? "alarm.mp3"}
+    onChange={(e) =>
+      setNotifications((prev) => ({
+        ...prev,
+        eventSounds: {
+          ...prev.eventSounds,
+          call_waiter: e.target.value,
+        },
+      }))
+    }
+    className="w-full p-3 border rounded-lg bg-gray-50 dark:bg-gray-800 dark:text-white"
+  >
+    {availableSounds.map((s) => (
+      <option key={`cw_${s}`} value={s}>
+        {s === "none" ? t("None") : s.charAt(0).toUpperCase() + s.slice(1)}
+      </option>
+    ))}
+  </select>
+</div>
+
+{/* 📳 Enable vibration (future mobile support) */}
+<div className="flex items-center justify-between mb-6">
+  <span className="text-lg font-medium">{t("Enable vibration")}</span>
+  <label className="relative inline-flex items-center cursor-pointer">
+    <input
+      type="checkbox"
+      checked={notifications.enableCallWaiterVibration ?? false}
+      onChange={() =>
+        setNotifications((prev) => ({
+          ...prev,
+          enableCallWaiterVibration: !(prev.enableCallWaiterVibration ?? false),
+        }))
+      }
+      className="sr-only peer"
+    />
+    <div className="w-11 h-6 bg-gray-300 peer-checked:bg-indigo-600 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+  </label>
+</div>
+
 
 {/* Volume Slider */}
 <div className="mb-6">
@@ -266,7 +334,11 @@ if (!settingsLoaded || !notifications) return <p>{t("Loading settings...")}</p>;
     max="1"
     step="0.01"
     value={volume}
-    onChange={(e) => setVolume(parseFloat(e.target.value))}
+    onChange={(e) => {
+      const nextVolume = parseFloat(e.target.value);
+      setVolume(nextVolume);
+      setNotifications((prev) => ({ ...prev, volume: nextVolume }));
+    }}
     className="w-full"
   />
 </div>

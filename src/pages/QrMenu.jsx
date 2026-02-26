@@ -14,8 +14,26 @@ import { useNavigate, useParams } from "react-router-dom";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
-import { UtensilsCrossed, Soup, Bike, Phone, Share2, Search, Download, ChevronDown, Mic, Loader2 } from "lucide-react";
-import { Instagram, Music2, Globe } from "lucide-react";
+import {
+  UtensilsCrossed,
+  Soup,
+  Bike,
+  Phone,
+  Share2,
+  Search,
+  Download,
+  ChevronDown,
+  Mic,
+  Loader2,
+  Bell,
+  ShoppingCart,
+  Sparkles,
+  Instagram,
+  Music2,
+  Globe,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import { io } from "socket.io-client";
 
@@ -178,6 +196,149 @@ const storage = {
     }
   },
 };
+
+const CategorySlider = React.memo(function CategorySlider({
+  categories,
+  activeCategory,
+  onCategorySelect,
+  categoryImages,
+  apiUrl,
+}) {
+  const sliderRef = useRef(null);
+  const [canScroll, setCanScroll] = useState({ left: false, right: false });
+  const normalizedCategories = useMemo(() => (Array.isArray(categories) ? categories : []), [categories]);
+  const updateScrollState = useCallback(() => {
+    const el = sliderRef.current;
+    if (!el) return;
+    const { scrollLeft, clientWidth, scrollWidth } = el;
+    setCanScroll({
+      left: scrollLeft > 10,
+      right: scrollLeft + clientWidth < scrollWidth - 10,
+    });
+  }, []);
+
+  const scrollToCategory = useCallback(
+    (index) => {
+      const el = sliderRef.current;
+      if (!el || index < 0 || index >= el.children.length) return;
+      const button = el.children[index];
+      const buttonRect = button.getBoundingClientRect();
+      const containerRect = el.getBoundingClientRect();
+      const offset =
+        buttonRect.left -
+        containerRect.left -
+        containerRect.width / 2 +
+        buttonRect.width / 2;
+      el.scrollBy({ left: offset, behavior: "smooth" });
+    },
+    []
+  );
+
+  useEffect(() => {
+    const el = sliderRef.current;
+    if (!el) return;
+    updateScrollState();
+    const handleResize = () => updateScrollState();
+    el.addEventListener("scroll", updateScrollState, { passive: true });
+    window.addEventListener("resize", handleResize);
+    return () => {
+      el.removeEventListener("scroll", updateScrollState);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [updateScrollState]);
+
+  useEffect(() => {
+    if (!activeCategory) return;
+    const idx = normalizedCategories.findIndex((cat) => cat === activeCategory);
+    if (idx >= 0) {
+      scrollToCategory(idx);
+    }
+  }, [activeCategory, normalizedCategories, scrollToCategory]);
+
+  const handleArrow = useCallback(
+    (direction) => {
+      const el = sliderRef.current;
+      if (!el) return;
+      const step = Math.max(el.clientWidth * 0.65, 180);
+      el.scrollBy({ left: direction === "left" ? -step : step, behavior: "smooth" });
+    },
+    []
+  );
+
+  const categoryFallbackSrc = "/Beylogo.svg";
+
+  return (
+    <div className="relative">
+      <div
+        ref={sliderRef}
+        className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide px-0.5"
+        style={{ scrollBehavior: "smooth" }}
+      >
+        {normalizedCategories.map((cat, idx) => {
+          const key = (cat || "").trim().toLowerCase();
+          const imgSrc = categoryImages?.[key];
+          const resolvedSrc = imgSrc
+            ? /^https?:\/\//.test(String(imgSrc))
+              ? String(imgSrc)
+              : `${apiUrl}/uploads/${String(imgSrc).replace(/^\/?uploads\//, "")}`
+            : "";
+          const active = activeCategory === cat;
+          return (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => {
+                onCategorySelect?.(cat);
+                scrollToCategory(idx);
+              }}
+              className={`flex-none w-32 min-w-[120px] rounded-2xl border bg-white/90 dark:bg-neutral-900/75 shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
+                active
+                  ? "border-gray-900 text-gray-900 dark:border-white dark:text-white"
+                  : "border-gray-200 text-gray-700 dark:border-neutral-800 dark:text-neutral-200"
+              }`}
+            >
+              <div className="p-3 flex flex-col items-center gap-2">
+                <div className="w-full aspect-square rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
+                  <img
+                    src={resolvedSrc || categoryFallbackSrc}
+                    alt={cat}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = categoryFallbackSrc;
+                    }}
+                  />
+                </div>
+                <span className="text-xs font-semibold leading-tight text-center truncate">{cat}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {canScroll.left && (
+        <button
+          type="button"
+          onClick={() => handleArrow("left")}
+          className="absolute left-1 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-1 shadow-md backdrop-blur transition hover:bg-white dark:bg-neutral-900/80"
+          aria-label="Scroll categories left"
+        >
+          <ChevronLeft className="w-4 h-4 text-neutral-800 dark:text-neutral-100" />
+        </button>
+      )}
+      {canScroll.right && (
+        <button
+          type="button"
+          onClick={() => handleArrow("right")}
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-1 shadow-md backdrop-blur transition hover:bg-white dark:bg-neutral-900/80"
+          aria-label="Scroll categories right"
+        >
+          <ChevronRight className="w-4 h-4 text-neutral-800 dark:text-neutral-100" />
+        </button>
+      )}
+    </div>
+  );
+});
 
 const toArray = (value) => {
   if (Array.isArray(value)) return value;
@@ -346,6 +507,11 @@ function formatExpiry(v) {
 const DICT = {
   en: {
     "Order Type": "Order Type",
+    Information: "Information",
+    Date: "Date",
+    "Select Order Type": "Select Order Type",
+    "Choose how you'd like to continue.": "Choose how you'd like to continue.",
+    "Select how you'd like to order this item.": "Select how you'd like to order this item.",
     "Table Order": "Table Order",
     Delivery: "Delivery",
     Language: "Language",
@@ -382,6 +548,7 @@ const DICT = {
     "Something went wrong. Please try again.": "Something went wrong. Please try again.",
     Close: "Close",
     "Order Another": "Order Another",
+    "Order Again": "Order Again",
     Table: "Table",
     "Table Order (short)": "Table Order",
     "Online Order": "Online Order",
@@ -392,6 +559,12 @@ const DICT = {
     Preparing: "Preparing",
     Delivered: "Delivered",
     Time: "Time",
+    Guests: "Guests",
+    "Select Guests": "Select Guests",
+    "Select guests": "Select guests",
+    "Select guests first": "Select guests first",
+    "Choose guest amount first": "Choose guest amount first",
+    "Select guests on a table card to enable QR scan": "Select guests on a table card to enable QR scan",
     "Items Ordered": "Items Ordered",
     "Select Payment Method": "Select Payment Method",
     "Name on Card": "Name on Card",
@@ -408,9 +581,58 @@ const DICT = {
     "Pre Order Information": "Pre Order Information",
     "Pickup / Delivery Date": "Pickup / Delivery Date",
     "Pickup / Delivery": "Pickup / Delivery",
+    "Pickup / Reservation Date": "Pickup / Reservation Date",
+    "Pickup / Reservation": "Pickup / Reservation",
+    Reservation: "Reservation",
+    Reserved: "Reserved",
+    "Reservation Time": "Reservation Time",
+    "Select Table": "Select Table",
+    "Please select an available table.": "Please select an available table.",
+    "This table is currently occupied. Please select another table.": "This table is currently occupied. Please select another table.",
+    "Reservation saved": "Reservation saved",
+    "Failed to save reservation": "Failed to save reservation",
+    "Table must be closed by staff first": "Table must be closed by staff first",
     Pickup: "Pickup",
     "Call Us": "Call Us",
+    "Call Waiter": "Call Waiter",
+    "Calling Waiter...": "Calling Waiter...",
+    "Waiter notified!": "Waiter notified!",
+    "Please wait before calling again.": "Please wait before calling again.",
+    "Unable to call waiter right now.": "Unable to call waiter right now.",
+    "AI Order": "AI Order",
     Share: "Share",
+    Search: "Search",
+    "Voice Order": "Voice Order",
+    Categories: "Categories",
+    "Loyalty Card": "Loyalty Card",
+    "Stamp my card": "Stamp my card",
+    Reward: "Reward",
+    "Free Menu Item": "Free Menu Item",
+    "Popular This Week": "Popular This Week",
+    "What our guests say": "What our guests say",
+    "No reviews yet.": "No reviews yet.",
+    Featured: "Featured",
+    "Order Status": "Order Status",
+    "Order received": "Order received",
+    "Order ready": "Order ready",
+    "Order Cancelled": "Order Cancelled",
+    Status: "Status",
+    Items: "Items",
+    Unpaid: "Unpaid",
+    Unknown: "Unknown",
+    Cancelled: "Cancelled",
+    Order: "Order",
+    Online: "Online",
+    Card: "Card",
+    Split: "Split",
+    Back: "Back",
+    Item: "Item",
+    Restaurant: "Restaurant",
+    New: "New",
+    Confirmed: "Confirmed",
+    Pending: "Pending",
+    Open: "Open",
+    Completed: "Completed",
     "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)": "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)",
     "Pickup Time": "Pickup Time",
     "Notes (optional)": "Notes (optional)",
@@ -441,6 +663,7 @@ const DICT = {
     "Download Qr": "Download Qr",
     "Shop Hours": "Shop Hours",
     "Shop Closed": "Shop Closed",
+    "Delivery Closed": "Delivery Closed",
     Closed: "Closed",
     "Open now!": "Open now!",
     "Scan Table QR": "Scan Table QR",
@@ -453,6 +676,11 @@ const DICT = {
   },
   tr: {
     "Order Type": "Sipariş Türü",
+    Information: "Bilgi",
+    Date: "Tarih",
+    "Select Order Type": "Sipariş Türü Seçin",
+    "Choose how you'd like to continue.": "Nasıl devam etmek istediğinizi seçin.",
+    "Select how you'd like to order this item.": "Bu ürünü nasıl sipariş etmek istediğinizi seçin.",
     "Table Order": "Masa Siparişi",
     Delivery: "Paket",
     Language: "Dil",
@@ -489,6 +717,7 @@ const DICT = {
     "Something went wrong. Please try again.": "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
     Close: "Kapat",
     "Order Another": "Yeni Sipariş Ver",
+    "Order Again": "Tekrar Sipariş Ver",
     Table: "Masa",
     "Table Order (short)": "Masa",
     "Online Order": "Paket",
@@ -499,6 +728,12 @@ const DICT = {
     Preparing: "Hazırlanıyor",
     Delivered: "Teslim Edildi",
     Time: "Süre",
+    Guests: "Misafir",
+    "Select Guests": "Misafir Seçin",
+    "Select guests": "Misafir seçin",
+    "Select guests first": "Önce misafir seçin",
+    "Choose guest amount first": "Önce misafir sayısını seçin",
+    "Select guests on a table card to enable QR scan": "QR taramayı açmak için masa kartında misafir seçin",
     "Items Ordered": "Sipariş Edilenler",
     "Select Payment Method": "Ödeme yöntemi seçin",
     "Name on Card": "Kart Üzerindeki İsim",
@@ -515,9 +750,58 @@ const DICT = {
     "Pre Order Information": "Ön Sipariş Bilgileri",
     "Pickup / Delivery Date": "Alış / Teslim Tarihi",
     "Pickup / Delivery": "Alış / Teslim Şekli",
+    "Pickup / Reservation Date": "Alış / Rezervasyon Tarihi",
+    "Pickup / Reservation": "Alış / Rezervasyon",
+    Reservation: "Rezervasyon",
+    Reserved: "Rezerve",
+    "Reservation Time": "Rezervasyon Saati",
+    "Select Table": "Masa Seçin",
+    "Please select an available table.": "Lütfen uygun bir masa seçin.",
+    "This table is currently occupied. Please select another table.": "Bu masa şu anda dolu. Lütfen başka bir masa seçin.",
+    "Reservation saved": "Rezervasyon kaydedildi",
+    "Failed to save reservation": "Rezervasyon kaydedilemedi",
+    "Table must be closed by staff first": "Önce personel masayı kapatmalıdır",
     Pickup: "Gel Al",
     "Call Us": "Bizi Ara",
+    "Call Waiter": "Garson Çağır",
+    "Calling Waiter...": "Garson Çağırılıyor...",
+    "Waiter notified!": "Garsona haber verildi!",
+    "Please wait before calling again.": "Lütfen tekrar çağırmadan önce bekleyin.",
+    "Unable to call waiter right now.": "Şu anda garson çağrılamıyor.",
+    "AI Order": "YZ Siparis",
     Share: "Paylaş",
+    Search: "Ara",
+    "Voice Order": "Sesli Sipariş",
+    Categories: "Kategoriler",
+    "Loyalty Card": "Sadakat Kartı",
+    "Stamp my card": "Kartımı damgala",
+    Reward: "Ödül",
+    "Free Menu Item": "Ücretsiz Menü Ürünü",
+    "Popular This Week": "Bu Haftanın Popülerleri",
+    "What our guests say": "Misafirlerimiz ne diyor",
+    "No reviews yet.": "Henüz yorum yok.",
+    Featured: "Öne Çıkan",
+    "Order Status": "Sipariş Durumu",
+    "Order received": "Sipariş alındı",
+    "Order ready": "Sipariş hazır",
+    "Order Cancelled": "Sipariş iptal edildi",
+    Status: "Durum",
+    Items: "Ürünler",
+    Unpaid: "Ödenmedi",
+    Unknown: "Bilinmiyor",
+    Cancelled: "İptal edildi",
+    Order: "Sipariş",
+    Online: "Online",
+    Card: "Kart",
+    Split: "Bölünmüş",
+    Back: "Geri",
+    Item: "Ürün",
+    Restaurant: "Restoran",
+    New: "Yeni",
+    Confirmed: "Onaylandı",
+    Pending: "Bekliyor",
+    Open: "Açık",
+    Completed: "Tamamlandı",
     "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)": "Telefon (🇹🇷 5XXXXXXXXX veya 🇲🇺 7/8XXXXXXX)",
     "Pickup Time": "Alış Zamanı",
     "Notes (optional)": "Notlar (opsiyonel)",
@@ -548,6 +832,7 @@ const DICT = {
     "Download Qr": "QR İndir",
     "Shop Hours": "Çalışma Saatleri",
     "Shop Closed": "Dükkan Kapalı",
+    "Delivery Closed": "Paket Kapalı",
     Closed: "Kapalı",
     "Open now!": "Şu an açık!",
     "Scan Table QR": "Masa QR'ını Tara",
@@ -559,6 +844,64 @@ const DICT = {
     Cancel: "İptal",
   },
   de: {
+    Information: "Informationen",
+    Date: "Datum",
+    "Select Order Type": "Bestellart wählen",
+    "Choose how you'd like to continue.": "Wählen Sie, wie Sie fortfahren möchten.",
+    "Select how you'd like to order this item.": "Wählen Sie, wie Sie diesen Artikel bestellen möchten.",
+    Search: "Suchen",
+    "Voice Order": "Sprachbestellung",
+    Categories: "Kategorien",
+    "Loyalty Card": "Treuekarte",
+    "Stamp my card": "Karte stempeln",
+    Reward: "Belohnung",
+    "Free Menu Item": "Kostenloser Menüartikel",
+    "Popular This Week": "Diese Woche beliebt",
+    "What our guests say": "Was unsere Gäste sagen",
+    "No reviews yet.": "Noch keine Bewertungen.",
+    Featured: "Empfohlen",
+    "Order Status": "Bestellstatus",
+    "Order received": "Bestellung erhalten",
+    Preparing: "In Zubereitung",
+    "Order ready": "Bestellung fertig",
+    Delivered: "Geliefert",
+    "Order Cancelled": "Bestellung storniert",
+    Status: "Status",
+    Items: "Artikel",
+    Unpaid: "Unbezahlt",
+    Unknown: "Unbekannt",
+    Cancelled: "Storniert",
+    Order: "Bestellung",
+    Online: "Online",
+    Card: "Karte",
+    Split: "Geteilt",
+    Back: "Zurück",
+    Item: "Artikel",
+    Restaurant: "Restaurant",
+    New: "Neu",
+    Confirmed: "Bestätigt",
+    Pending: "Ausstehend",
+    Open: "Offen",
+    Completed: "Abgeschlossen",
+    Closed: "Geschlossen",
+    Table: "Tisch",
+    Pickup: "Abholung",
+    Delivery: "Lieferung",
+    Time: "Zeit",
+    Guests: "Gäste",
+    "Select Guests": "Gäste wählen",
+    "Select guests": "Gäste wählen",
+    "Select guests first": "Zuerst Gäste wählen",
+    "Choose guest amount first": "Wählen Sie zuerst die Gästeanzahl",
+    "Select guests on a table card to enable QR scan": "Wählen Sie Gäste auf einer Tischkarte, um den QR-Scan zu aktivieren",
+    "Reservation Time": "Reservierungszeit",
+    Payment: "Zahlung",
+    Cash: "Bar",
+    Total: "Gesamt",
+    "Your Order": "Ihre Bestellung",
+    "Order Again": "Erneut bestellen",
+    Close: "Schließen",
+    Note: "Notiz",
     "Share QR Menu": "QR-Menü teilen",
     "Save QR Menu to Phone": "QR-Menü auf dem Handy speichern",
     "Tap here to install the menu as an app": "Tippen Sie hier, um das Menü als App zu installieren",
@@ -573,6 +916,64 @@ const DICT = {
     Cancel: "Abbrechen",
   },
   fr: {
+    Information: "Informations",
+    Date: "Date",
+    "Select Order Type": "Sélectionnez le type de commande",
+    "Choose how you'd like to continue.": "Choisissez comment vous souhaitez continuer.",
+    "Select how you'd like to order this item.": "Choisissez comment vous souhaitez commander cet article.",
+    Search: "Rechercher",
+    "Voice Order": "Commande vocale",
+    Categories: "Catégories",
+    "Loyalty Card": "Carte fidélité",
+    "Stamp my card": "Tamponner ma carte",
+    Reward: "Récompense",
+    "Free Menu Item": "Article du menu gratuit",
+    "Popular This Week": "Populaire cette semaine",
+    "What our guests say": "Ce que disent nos clients",
+    "No reviews yet.": "Aucun avis pour le moment.",
+    Featured: "En vedette",
+    "Order Status": "Statut de la commande",
+    "Order received": "Commande reçue",
+    Preparing: "Préparation",
+    "Order ready": "Commande prête",
+    Delivered: "Livré",
+    "Order Cancelled": "Commande annulée",
+    Status: "Statut",
+    Items: "Articles",
+    Unpaid: "Impayé",
+    Unknown: "Inconnu",
+    Cancelled: "Annulé",
+    Order: "Commande",
+    Online: "En ligne",
+    Card: "Carte",
+    Split: "Partagé",
+    Back: "Retour",
+    Item: "Article",
+    Restaurant: "Restaurant",
+    New: "Nouveau",
+    Confirmed: "Confirmé",
+    Pending: "En attente",
+    Open: "Ouvert",
+    Completed: "Terminé",
+    Closed: "Fermé",
+    Table: "Table",
+    Pickup: "À emporter",
+    Delivery: "Livraison",
+    Time: "Temps",
+    Guests: "Invités",
+    "Select Guests": "Choisir des invités",
+    "Select guests": "Choisir des invités",
+    "Select guests first": "Choisissez d'abord les invités",
+    "Choose guest amount first": "Choisissez d'abord le nombre d'invités",
+    "Select guests on a table card to enable QR scan": "Sélectionnez les invités sur une carte de table pour activer le scan QR",
+    "Reservation Time": "Heure de réservation",
+    Payment: "Paiement",
+    Cash: "Espèces",
+    Total: "Total",
+    "Your Order": "Votre commande",
+    "Order Again": "Commander à nouveau",
+    Close: "Fermer",
+    Note: "Note",
     "Share QR Menu": "Partager le menu QR",
     "Save QR Menu to Phone": "Enregistrer le menu QR sur le téléphone",
     "Tap here to install the menu as an app": "Appuyez ici pour installer le menu comme une application",
@@ -625,15 +1026,30 @@ function LanguageSwitcher({ lang, setLang, t }) {
   );
 }
 
-function TableQrScannerModal({ open, tableNumber, onClose, error, t }) {
+function TableQrScannerModal({
+  open,
+  tableNumber,
+  guestCount,
+  guestOptions = [],
+  onGuestChange,
+  onStartScan,
+  scanReady,
+  onClose,
+  error,
+  t,
+}) {
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">
       <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
         <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
-          <div className="text-lg font-semibold text-gray-900 dark:text-neutral-100">{t("Scan Table QR")}</div>
+          <div className="text-lg font-semibold text-gray-900 dark:text-neutral-100">
+            {scanReady ? t("Scan Table QR") : t("Guests")}
+          </div>
           <div className="text-sm text-gray-600 dark:text-neutral-300 mt-1">
-            {t("Scan the QR code on your table to continue.")}
+            {scanReady
+              ? t("Scan the QR code on your table to continue.")
+              : t("Select Guests")}
           </div>
           {tableNumber ? (
             <div className="mt-2 text-xs text-gray-500 dark:text-neutral-400">
@@ -642,10 +1058,38 @@ function TableQrScannerModal({ open, tableNumber, onClose, error, t }) {
           ) : null}
         </div>
         <div className="p-5">
-          <div
-            id="qr-table-reader"
-            className="w-full rounded-2xl overflow-hidden bg-gray-100 dark:bg-neutral-950"
-          />
+          {scanReady ? (
+            <div
+              id="qr-table-reader"
+              className="w-full rounded-2xl overflow-hidden bg-gray-100 dark:bg-neutral-950"
+            />
+          ) : (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                {t("Guests")}
+              </label>
+              <select
+                value={guestCount ? String(guestCount) : ""}
+                onChange={(e) => onGuestChange?.(e.target.value)}
+                className="w-full rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:bg-neutral-950 dark:border-neutral-700 dark:text-neutral-100"
+              >
+                <option value="">{t("Select Guests")}</option>
+                {guestOptions.map((count) => (
+                  <option key={count} value={String(count)}>
+                    {count}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => onStartScan?.()}
+                disabled={!guestCount}
+                className="w-full rounded-xl bg-neutral-900 text-white py-2.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t("Continue")}
+              </button>
+            </div>
+          )}
           {error ? (
             <div className="mt-3 text-sm text-red-600">{error}</div>
           ) : null}
@@ -879,7 +1323,7 @@ async function load() {
     }
     return raw;
   }, [restaurantName]);
-  const subtitle = c.subtitle || "Welcome";
+  const subtitle = (c.subtitle ?? "").trim();
   const tagline = c.tagline || "Fresh • Crafted • Delicious";
   const phoneNumber = c.phone || "";
   const allowDelivery = boolish(c.delivery_enabled, true);
@@ -1227,8 +1671,6 @@ async function load() {
           },
         ];
 
-  const deliveryTime = c.delivery_time || "25–35 min";
-  const pickupTime = c.pickup_time || "10 min";
 
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const [shopHours, setShopHours] = React.useState({});
@@ -1251,25 +1693,28 @@ async function load() {
 
   const openStatus = React.useMemo(() => {
     const today = shopHours?.[todayName];
+    if (today?.enabled === false) {
+      return { isOpen: false, label: t("Closed"), source: "schedule" };
+    }
     const openMin = parseTimeToMinutes(today?.open);
     const closeMin = parseTimeToMinutes(today?.close);
     if (openMin === null || closeMin === null) {
-      return { isOpen: false, label: t("Closed") };
+      return { isOpen: false, label: t("Closed"), source: "schedule" };
     }
     const now = new Date();
     const nowMin = now.getHours() * 60 + now.getMinutes();
 
     if (closeMin > openMin) {
       const isOpen = nowMin >= openMin && nowMin < closeMin;
-      return { isOpen, label: isOpen ? t("Open now!") : t("Closed") };
+      return { isOpen, label: isOpen ? t("Open now!") : t("Closed"), source: "schedule" };
     }
 
     if (closeMin < openMin) {
       const isOpen = nowMin >= openMin || nowMin < closeMin;
-      return { isOpen, label: isOpen ? t("Open now!") : t("Closed") };
+      return { isOpen, label: isOpen ? t("Open now!") : t("Closed"), source: "schedule" };
     }
 
-    return { isOpen: false, label: t("Closed") };
+    return { isOpen: false, label: t("Closed"), source: "schedule" };
   }, [parseTimeToMinutes, shopHours, t, todayName]);
 
   React.useEffect(() => {
@@ -1289,6 +1734,7 @@ async function load() {
 
   React.useEffect(() => {
     let active = true;
+    let realtimeSocket = null;
 
     const loadShopHours = async ({ withSpinner = false } = {}) => {
       if (withSpinner && active) setLoadingShopHours(true);
@@ -1313,9 +1759,16 @@ async function load() {
 
         if (!active) return;
         const hoursMap = {};
+        days.forEach((day) => {
+          hoursMap[day] = { open: "", close: "", enabled: false };
+        });
         if (Array.isArray(data)) {
           data.forEach((row) => {
-            hoursMap[row.day] = { open: row.open_time, close: row.close_time };
+            hoursMap[row.day] = {
+              open: row.open_time || "",
+              close: row.close_time || "",
+              enabled: Boolean(row.open_time && row.close_time),
+            };
           });
         }
         setShopHours(hoursMap);
@@ -1338,10 +1791,64 @@ async function load() {
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
 
+    const refreshFromRealtime = () => {
+      loadShopHours({ withSpinner: false });
+    };
+
+    const onLocalShopHoursUpdated = () => {
+      refreshFromRealtime();
+    };
+    window.addEventListener("qr:shop-hours-updated", onLocalShopHoursUpdated);
+
+    const onStorage = (e) => {
+      if (e?.key !== "qr_shop_hours_updated_at") return;
+      refreshFromRealtime();
+    };
+    window.addEventListener("storage", onStorage);
+
+    try {
+      const SOCKET_URL =
+        import.meta.env.VITE_SOCKET_URL ||
+        (API_BASE ? String(API_BASE) : "") ||
+        (typeof window !== "undefined" ? window.location.origin : "");
+      const socketRestaurantId = parseRestaurantIdFromIdentifier(identifier);
+
+      realtimeSocket = io(SOCKET_URL, {
+        path: "/socket.io",
+        transports: ["polling", "websocket"],
+        upgrade: true,
+        withCredentials: true,
+        timeout: 20000,
+      });
+
+      if (socketRestaurantId) {
+        realtimeSocket.emit("join_restaurant", socketRestaurantId);
+      }
+
+      realtimeSocket.on("connect", () => {
+        if (socketRestaurantId) {
+          realtimeSocket.emit("join_restaurant", socketRestaurantId);
+        }
+      });
+      realtimeSocket.on("shop_hours_updated", refreshFromRealtime);
+      realtimeSocket.on("shop_hours_updated_public", refreshFromRealtime);
+    } catch (socketErr) {
+      console.warn("⚠️ QR shop-hours realtime socket unavailable:", socketErr?.message || socketErr);
+    }
+
     return () => {
       active = false;
       window.clearInterval(pollId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("qr:shop-hours-updated", onLocalShopHoursUpdated);
+      window.removeEventListener("storage", onStorage);
+      try {
+        if (realtimeSocket) {
+          realtimeSocket.off("shop_hours_updated", refreshFromRealtime);
+          realtimeSocket.off("shop_hours_updated_public", refreshFromRealtime);
+          realtimeSocket.disconnect();
+        }
+      } catch {}
     };
   }, [identifier]);
 
@@ -1472,7 +1979,8 @@ async function load() {
                           const isToday = day === todayName;
                           const open = shopHours?.[day]?.open || "";
                           const close = shopHours?.[day]?.close || "";
-                          const has = !!(open && close);
+                          const enabled = shopHours?.[day]?.enabled !== false;
+                          const has = enabled && !!(open && close);
                           return (
                             <div
                               key={day}
@@ -1499,24 +2007,27 @@ async function load() {
 	          </div>
 	        </div>
 
-		        <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-tight tracking-tight text-gray-900 dark:text-neutral-50">
-		          {displayRestaurantName}
-		        </h1>
+			        <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-tight tracking-tight text-gray-900 dark:text-neutral-50">
+			          {displayRestaurantName}
+			        </h1>
 
-	        {/* Featured products */}
-	        <div className="mt-5 space-y-4 max-w-3xl">
-	          <FeaturedCard
-	            slides={slides}
-	            currentSlide={currentSlide}
-	            setCurrentSlide={setCurrentSlide}
-	          />
-	        </div>
+				        {subtitle ? (
+				          <p className="mt-[10px] text-[17px] font-light text-gray-600 dark:text-neutral-200/80">{subtitle}</p>
+				        ) : null}
 
-		        <p className="mt-3 text-lg font-light text-gray-600 dark:text-neutral-200/80">{subtitle}</p>
-		        <p className="mt-3 text-base text-gray-500 dark:text-neutral-400 max-w-xl">{tagline}</p>
+			        {/* Featured products */}
+			        <div className="mt-5 space-y-4 max-w-3xl">
+			          <FeaturedCard
+			            slides={slides}
+			            currentSlide={currentSlide}
+			            setCurrentSlide={setCurrentSlide}
+                  t={t}
+			          />
+			        </div>
+				        <p className="mt-3 text-sm text-gray-500 dark:text-neutral-400 max-w-xl mx-auto text-center">{tagline}</p>
 
         {/* ORDER TYPE BUTTONS */}
-        <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3 max-w-xl">
+	        <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3 max-w-xl">
           <button
             onClick={() => openStatus.isOpen && onSelect("takeaway")}
             disabled={!openStatus.isOpen}
@@ -1527,8 +2038,8 @@ async function load() {
             }`}
           >
             <UtensilsCrossed className="w-5 h-5 sm:w-6 sm:h-6" />
-            <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
-              {openStatus.isOpen ? t("Pre Order") : t("Shop Closed")}
+            <span className="text-xs sm:text-sm leading-tight text-center font-semibold tracking-wide break-words">
+              {openStatus.isOpen ? t("Reservation") : t("Shop Closed")}
             </span>
           </button>
           <button
@@ -1541,7 +2052,7 @@ async function load() {
             }`}
           >
             <Soup className="w-5 h-5 sm:w-6 sm:h-6" />
-            <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
+            <span className="text-xs sm:text-sm leading-tight text-center font-semibold tracking-wide break-words">
               {openStatus.isOpen ? t("Table Order") : t("Shop Closed")}
             </span>
           </button>
@@ -1555,39 +2066,19 @@ async function load() {
             }`}
           >
             <Bike className={`w-5 h-5 sm:w-6 sm:h-6 ${allowDelivery ? "text-white" : "text-red-600"}`} />
-            <span className="text-[10px] sm:text-xs leading-tight text-center font-semibold tracking-wide break-words">
-              {allowDelivery && openStatus.isOpen ? t("Delivery") : t("Shop Closed")}
-            </span>
+            <span className="text-xs sm:text-sm leading-tight text-center font-semibold tracking-wide break-words">
+	              {openStatus.isOpen ? (allowDelivery ? t("Delivery") : t("Delivery Closed")) : t("Shop Closed")}
+	            </span>
           </button>
-        </div>
-      </div>
+	        </div>
+
+	      </div>
 
       {/* CATEGORIES (scrollable 1 row) */}
       {homeCategories.length > 0 && (
         <div className="mt-5 max-w-3xl">
-	          {/* INFO BOXES */}
-	          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-	            <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 px-2 py-2 shadow-sm min-w-0">
-	              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 dark:text-neutral-400 leading-tight truncate">Delivery</p>
-	              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-emerald-600 leading-tight truncate">⏱️ {deliveryTime}</p>
-	              <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400 leading-tight truncate hidden sm:block">Fast doorstep service</p>
-	            </div>
-	
-	            <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 px-2 py-2 shadow-sm min-w-0">
-	              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 dark:text-neutral-400 leading-tight truncate">Pickup</p>
-	              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-sky-600 leading-tight truncate">🛍️ {pickupTime}</p>
-	              <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400 leading-tight truncate hidden sm:block">Ready on arrival</p>
-	            </div>
-	
-	            <div className="rounded-2xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 px-2 py-2 shadow-sm min-w-0">
-	              <p className="text-[10px] uppercase tracking-[0.12em] text-gray-400 dark:text-neutral-400 leading-tight truncate">Rating</p>
-	              <p className="mt-1 text-[11px] sm:text-sm font-semibold text-amber-600 leading-tight truncate">★★★★★</p>
-	              <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400 leading-tight truncate hidden sm:block">Guest favorites</p>
-	            </div>
-	          </div>
-
-	          {/* Search */}
-	          <div className="mt-3 mb-4">
+		          {/* Search */}
+		          <div className="mt-3 mb-4">
 	            <div className="relative flex items-center gap-2">
 	              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
 	              <input
@@ -1625,52 +2116,18 @@ async function load() {
 
 	          <div className="flex items-end justify-between">
 	            <div className="text-[11px] uppercase tracking-[0.18em] text-gray-500 dark:text-neutral-400">
-	              Categories
+	              {t("Categories")}
 	            </div>
 	          </div>
 
-          <div className="mt-3 flex gap-3 overflow-x-auto pb-2 scroll-smooth scrollbar-hide">
-            {homeCategories.map((cat) => {
-              const categoryFallbackSrc = "/Beylogo.svg";
-              const key = (cat || "").trim().toLowerCase();
-              const imgSrc = homeCategoryImages?.[key];
-              const active = activeHomeCategory === cat;
-              const resolvedSrc = imgSrc
-                ? /^https?:\/\//.test(String(imgSrc))
-                  ? String(imgSrc)
-                  : `${API_URL}/uploads/${String(imgSrc).replace(/^\/?uploads\//, "")}`
-                : "";
-
-              return (
-	                <button
-	                  key={cat}
-	                  type="button"
-	                  onClick={() => setActiveHomeCategory(cat)}
-	                  className={`flex-none w-[calc((100%-2.25rem)/4)] sm:w-32 rounded-2xl border bg-white/80 dark:bg-neutral-900/70 shadow-sm hover:shadow-md transition text-left ${
-	                    active ? "border-gray-900 dark:border-white" : "border-gray-200 dark:border-neutral-800"
-	                  }`}
-	                  aria-label={`Category ${cat}`}
-	                >
-	                  <div className="p-2">
-	                    <div className="w-full aspect-square rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
-                        <img
-                          src={resolvedSrc || categoryFallbackSrc}
-                          alt={cat}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          onError={(e) => {
-                            e.currentTarget.onerror = null;
-                            e.currentTarget.src = categoryFallbackSrc;
-                          }}
-                        />
-	                    </div>
-	                    <div className="mt-2 text-[11px] sm:text-xs font-semibold text-neutral-800 dark:text-neutral-100 text-center line-clamp-1">
-	                      {cat}
-	                    </div>
-	                  </div>
-	                </button>
-              );
-            })}
+          <div className="mt-3">
+            <CategorySlider
+              categories={homeCategories}
+              activeCategory={activeHomeCategory}
+              onCategorySelect={(cat) => setActiveHomeCategory(cat)}
+              categoryImages={homeCategoryImages}
+              apiUrl={API_URL}
+            />
           </div>
         </div>
       )}
@@ -1738,7 +2195,7 @@ async function load() {
       {loyalty.enabled && (
         <div className="mt-2 rounded-3xl border border-amber-200/70 dark:border-amber-800/50 bg-white/80 dark:bg-amber-950/20 p-5 shadow-sm max-w-3xl">
           <div className="flex items-center justify-between">
-            <div className="text-lg font-semibold">⭐ Loyalty Card</div>
+            <div className="text-lg font-semibold">⭐ {t("Loyalty Card")}</div>
             <button
               onClick={handleStamp}
               style={{ backgroundColor: loyalty.color }}
@@ -1747,10 +2204,12 @@ async function load() {
                 canStampLoyalty ? "hover:opacity-90" : "opacity-50 cursor-not-allowed"
               }`}
             >
-              Stamp my card
+              {t("Stamp my card")}
             </button>
           </div>
-          <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">Reward: {loyalty.reward_text || 'Free Menu Item'}</div>
+          <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+            {t("Reward")}: {loyalty.reward_text || t("Free Menu Item")}
+          </div>
           <div className="mt-3 flex items-center gap-1">
             {Array.from({ length: loyalty.goal || 10 }).map((_, i) => {
               const filled = i < Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10);
@@ -1765,55 +2224,62 @@ async function load() {
         </div>
       )}
 
-	      {/* CALL + SHARE */}
-	      <div className="mt-6 flex flex-col sm:flex-row gap-4 max-w-3xl">
-	        {phoneNumber && (
+	      {/* CALL + SHARE + DOWNLOAD */}
+	      <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-4 max-w-3xl">
+	        {phoneNumber ? (
 	          <a
 	            href={`tel:${phoneNumber}`}
-	            className="flex-1 py-4 rounded-2xl bg-black text-white font-semibold shadow-md flex items-center justify-center gap-2 hover:shadow-lg hover:-translate-y-1 transition-all"
+	            className="w-full py-3 sm:py-4 rounded-2xl bg-black text-white font-semibold shadow-md flex items-center justify-center gap-2 hover:shadow-lg hover:-translate-y-1 transition-all"
 	            style={{ backgroundColor: accent }}
 	          >
 	            <Phone className="w-5 h-5" />
-	            {t("Call Us")}
+	            <span className="text-xs sm:text-sm">{t("Call Us")}</span>
 	          </a>
+	        ) : (
+	          <button
+	            type="button"
+	            disabled
+	            className="w-full py-3 sm:py-4 rounded-2xl bg-neutral-200 text-neutral-500 font-semibold shadow-sm flex items-center justify-center gap-2 cursor-not-allowed"
+	          >
+	            <Phone className="w-5 h-5" />
+	            <span className="text-xs sm:text-sm">{t("Call Us")}</span>
+	          </button>
 	        )}
 
-          <div className="flex-1 flex flex-col gap-3">
-	          <button
-	            onClick={() => {
-	              if (navigator.share) {
-	                navigator.share({
-	                  title: restaurantName,
-	                  text: "Check out our menu!",
-	                  url: window.location.href,
-	                });
-	              } else {
-	                navigator.clipboard.writeText(window.location.href);
-	                alert(t("Link copied."));
-	              }
-	            }}
-		          className="w-full py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
-		        >
-		          <Share2 className="w-5 h-5" />
-		          {t("Share")}
-		        </button>
+	        <button
+	          onClick={() => {
+	            if (navigator.share) {
+	              navigator.share({
+	                title: restaurantName,
+	                text: "Check out our menu!",
+	                url: window.location.href,
+	              });
+	            } else {
+	              navigator.clipboard.writeText(window.location.href);
+	              alert(t("Link copied."));
+	            }
+	          }}
+	          className="w-full py-3 sm:py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
+	        >
+	          <Share2 className="w-5 h-5" />
+	          <span className="text-xs sm:text-sm">{t("Share")}</span>
+	        </button>
 
-            <button
-              type="button"
-              onClick={() => onDownloadQr?.()}
-              className="w-full py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
-            >
-              <Download className="w-5 h-5" />
-              {t("Download Qr")}
-            </button>
-          </div>
+	        <button
+	          type="button"
+	          onClick={() => onDownloadQr?.()}
+	          className="w-full py-3 sm:py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
+	        >
+	          <Download className="w-5 h-5" />
+	          <span className="text-xs sm:text-sm">{t("Download Qr")}</span>
+	        </button>
 	      </div>
 
 	      {/* Popular This Week (below Share button) */}
 	      {c.enable_popular && popularProducts.length > 0 && (
 	        <div className="mt-6 max-w-3xl">
 	          <PopularCarousel
-	            title="⭐ Popular This Week"
+	            title={`⭐ ${t("Popular This Week")}`}
 	            items={popularProducts}
 	            onProductClick={onPopularClick}
 	          />
@@ -1865,12 +2331,12 @@ async function load() {
 	    {/* === REVIEWS === */}
 	    <section id="reviews-section" className="max-w-6xl mx-auto px-4 pt-2 pb-16">
 	      <h2 className="text-3xl font-serif font-bold text-gray-900 dark:text-neutral-50 mb-4">
-	        What our guests say
+	        {t("What our guests say")}
 	      </h2>
 
 	      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 	        {reviews.length === 0 && (
-	          <p className="text-neutral-500 dark:text-neutral-400 text-sm">No reviews yet.</p>
+	          <p className="text-neutral-500 dark:text-neutral-400 text-sm">{t("No reviews yet.")}</p>
 	        )}
 
 	        {reviews.map((r, idx) => (
@@ -1950,39 +2416,160 @@ async function load() {
 
 
 /* ====================== TAKEAWAY ORDER FORM ====================== */
-function TakeawayOrderForm({ submitting, t, onClose, onSubmit, deliveryEnabled = true }) {
+function TakeawayOrderForm({
+  submitting,
+  t,
+  onClose,
+  onSubmit,
+  tables = [],
+  occupiedTables = [],
+  reservedTables = [],
+  paymentMethod,
+  setPaymentMethod,
+}) {
   const today = new Date().toISOString().slice(0, 10);
+  const paymentMethods = usePaymentMethods();
   const [form, setForm] = useState({
     name: "",
     phone: "",
     pickup_date: "",
     pickup_time: "",
-    mode: "pickup", // "pickup" | "delivery"
-    address: "",
+    mode: "reservation", // "pickup" | "reservation"
+    table_number: "",
+    reservation_clients: "",
     notes: "",
+    payment_method: "",
   });
   const [touched, setTouched] = useState({});
+  const [paymentPrompt, setPaymentPrompt] = useState(false);
+  const [shakeModal, setShakeModal] = useState(false);
+  const safeTables = useMemo(() => (Array.isArray(tables) ? tables : []), [tables]);
+  const unavailableTables = useMemo(() => {
+    const set = new Set();
+    (Array.isArray(occupiedTables) ? occupiedTables : []).forEach((value) => {
+      const n = Number(value);
+      if (Number.isFinite(n) && n > 0) set.add(n);
+    });
+    return set;
+  }, [occupiedTables]);
+  const reservedTableSet = useMemo(() => {
+    const set = new Set();
+    (Array.isArray(reservedTables) ? reservedTables : []).forEach((value) => {
+      const n = Number(value);
+      if (Number.isFinite(n) && n > 0) set.add(n);
+    });
+    return set;
+  }, [reservedTables]);
 
   useEffect(() => {
-    if (deliveryEnabled) return;
-    setForm((f) => {
-      if (f.mode !== "delivery") return f;
-      return { ...f, mode: "pickup", address: "" };
-    });
-  }, [deliveryEnabled]);
+    if (form.payment_method) {
+      setPaymentPrompt(false);
+    }
+  }, [form.payment_method]);
 
-  const requiresAddress = form.mode === "delivery";
+  const fallbackPaymentMethods = useMemo(
+    () => [
+      { id: "cash", label: t("Cash") },
+      { id: "card", label: t("Credit Card") },
+      { id: "online", label: t("Online Payment") },
+    ],
+    [t]
+  );
+  const availablePaymentMethods =
+    paymentMethods.length > 0 ? paymentMethods : fallbackPaymentMethods;
+
+  const requiresReservationTable = form.mode === "reservation";
+  const requiresPayment = form.mode !== "reservation";
   const phoneValid = /^(5\d{9}|[578]\d{7})$/.test(form.phone);
+  const selectedTableNumber = Number(form.table_number);
+  const selectedTable = useMemo(
+    () => safeTables.find((tbl) => Number(tbl?.tableNumber) === selectedTableNumber) || null,
+    [safeTables, selectedTableNumber]
+  );
+  const maxGuestsForSelectedTable = (() => {
+    const seats = Number(selectedTable?.seats);
+    if (Number.isFinite(seats) && seats > 0) return Math.min(20, Math.max(1, Math.floor(seats)));
+    return 12;
+  })();
+  const guestOptions = useMemo(
+    () => Array.from({ length: maxGuestsForSelectedTable }, (_, i) => i + 1),
+    [maxGuestsForSelectedTable]
+  );
+  const reservationClientsCount = Number(form.reservation_clients);
+  const hasReservationClients =
+    requiresReservationTable &&
+    Number.isFinite(reservationClientsCount) &&
+    reservationClientsCount > 0 &&
+    reservationClientsCount <= maxGuestsForSelectedTable;
+  const hasReservationTable =
+    requiresReservationTable &&
+    Number.isFinite(selectedTableNumber) &&
+    selectedTableNumber > 0 &&
+    !unavailableTables.has(selectedTableNumber);
   const valid =
     form.name &&
     phoneValid &&
     form.pickup_date &&
     form.pickup_time &&
-    (!requiresAddress || (form.address || "").trim().length > 0);
+    (!requiresReservationTable || (hasReservationTable && hasReservationClients)) &&
+    (!requiresPayment || !!form.payment_method);
+
+  useEffect(() => {
+    if (!requiresReservationTable) return;
+    if (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0) return;
+    setForm((prev) => {
+      if (!prev.reservation_clients) return prev;
+      const current = Number(prev.reservation_clients);
+      const nextValue = Number.isFinite(current) && current > 0
+        ? Math.min(current, maxGuestsForSelectedTable)
+        : "";
+      if (nextValue === "") return { ...prev, reservation_clients: "" };
+      const next = String(Math.max(1, nextValue));
+      if (prev.reservation_clients === next) return prev;
+      return { ...prev, reservation_clients: next };
+    });
+  }, [requiresReservationTable, selectedTableNumber, maxGuestsForSelectedTable]);
+
+  const triggerPaymentError = () => {
+    setPaymentPrompt(true);
+    setShakeModal(true);
+    setTimeout(() => setShakeModal(false), 420);
+  };
+
+  const handlePaymentChange = (value) => {
+    setForm((prev) => ({ ...prev, payment_method: value }));
+    if (typeof setPaymentMethod === "function") {
+      setPaymentMethod(value);
+    }
+  };
+
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    if (!valid) {
+      setTouched({
+        name: true,
+        phone: true,
+        pickup_date: true,
+        pickup_time: true,
+        table_number: requiresReservationTable,
+        reservation_clients: requiresReservationTable,
+        payment_method: requiresPayment,
+      });
+      if (requiresPayment && !form.payment_method) {
+        triggerPaymentError();
+        return;
+      }
+      return;
+    }
+    onSubmit(form);
+  };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6">
-      <div className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-8 w-full max-w-md relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
+    <div className="fixed inset-0 z-[160] flex items-start sm:items-center justify-center bg-black/40 backdrop-blur-sm p-3 sm:p-6">
+      <div
+        className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-5 sm:p-8 pb-[calc(1.25rem+env(safe-area-inset-bottom))] w-full max-w-md relative max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
+        style={shakeModal ? { animation: "takeawayShake 420ms ease-in-out" } : undefined}
+      >
         {/* Close */}
         <button
           onClick={onClose}
@@ -1994,27 +2581,11 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit, deliveryEnabled =
 
         {/* Title */}
         <h2 className="text-2xl font-serif font-semibold text-neutral-900 mb-6 border-b border-neutral-200 pb-2">
-          {t("Pre Order Information")}
+          {t("Information")}
         </h2>
 
         {/* Form */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!valid) {
-              setTouched({
-                name: true,
-                phone: true,
-                pickup_date: true,
-                pickup_time: true,
-                address: requiresAddress,
-              });
-              return;
-            }
-            onSubmit(form);
-          }}
-          className="flex flex-col gap-4"
-        >
+        <form onSubmit={handleFormSubmit} className="flex flex-col gap-4">
           {/* Name */}
           <input
             className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
@@ -2024,17 +2595,16 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit, deliveryEnabled =
           />
 
           {/* Phone */}
-	          <input
-	            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 ${
-	              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300"
-	            }`}
-	            placeholder={t("Phone")}
-	            value={form.phone}
-	            onChange={(e) => {
-	              const clean = e.target.value.replace(/[^\d]/g, ""); // allow only digits
-	              // Decide max length based on first digit
+          <input
+            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 ${
+              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300"
+            }`}
+            placeholder={t("Phone")}
+            value={form.phone}
+            onChange={(e) => {
+              const clean = e.target.value.replace(/[^\d]/g, ""); // allow only digits
               let maxLen = 10;
-              if (/^[78]/.test(clean)) maxLen = 8; // Mauritius landline/mobile
+              if (/^[78]/.test(clean)) maxLen = 8;
               const trimmed = clean.slice(0, maxLen);
               setForm((f) => ({ ...f, phone: trimmed }));
             }}
@@ -2042,93 +2612,160 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit, deliveryEnabled =
             maxLength={10}
           />
 
-          {/* Pickup / Delivery Date */}
-          <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1">
-              {t("Pickup / Delivery Date")}
-            </label>
-            <input
-              type="date"
-              min={today}
-              className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400 ${
-                touched.pickup_date && !form.pickup_date ? "border-red-500" : "border-neutral-300"
-              }`}
-              value={form.pickup_date}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, pickup_date: e.target.value }))
-              }
-            />
+          {/* Pickup / Reservation Date + Time */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">
+                {t("Date")}
+              </label>
+              <input
+                type="date"
+                min={today}
+                className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400 ${
+                  touched.pickup_date && !form.pickup_date ? "border-red-500" : "border-neutral-300"
+                }`}
+                value={form.pickup_date}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, pickup_date: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">
+                {t("Time")}
+              </label>
+              <input
+                type="time"
+                className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400 ${
+                  touched.pickup_time && !form.pickup_time ? "border-red-500" : "border-neutral-300"
+                }`}
+                value={form.pickup_time}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, pickup_time: e.target.value }))
+                }
+              />
+            </div>
           </div>
 
-          {/* Pickup Time */}
+          {/* Pickup / Reservation toggle */}
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1">
-              {t("Pickup Time")}
+              {t("Pickup / Reservation")}
             </label>
-            <input
-              type="time"
-              className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400 ${
-                touched.pickup_time && !form.pickup_time ? "border-red-500" : "border-neutral-300"
-              }`}
-              value={form.pickup_time}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, pickup_time: e.target.value }))
-              }
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, mode: "reservation" }))}
+                className={`py-2.5 rounded-xl text-sm font-semibold border ${
+                  form.mode === "reservation"
+                    ? "bg-neutral-900 text-white border-neutral-900"
+                    : "bg-white text-neutral-700 border-neutral-300"
+                }`}
+              >
+                🎫 {t("Reservation")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, mode: "pickup" }))}
+                className={`py-2.5 rounded-xl text-sm font-semibold border ${
+                  form.mode === "pickup"
+                    ? "bg-neutral-900 text-white border-neutral-900"
+                    : "bg-white text-neutral-700 border-neutral-300"
+                }`}
+              >
+                🛍️ {t("Pickup")}
+              </button>
+            </div>
           </div>
 
-	          {/* Pickup / Delivery toggle */}
-	          <div>
-	            <label className="block text-sm font-medium text-neutral-700 mb-1">
-	              {t("Pickup / Delivery")}
-	            </label>
-	            <div className="grid grid-cols-2 gap-2">
-	              <button
-	                type="button"
-	                onClick={() => setForm((f) => ({ ...f, mode: "pickup" }))}
-	                className={`py-2.5 rounded-xl text-sm font-semibold border ${
-	                  form.mode === "pickup"
-	                    ? "bg-neutral-900 text-white border-neutral-900"
-	                    : "bg-white text-neutral-700 border-neutral-300"
-	                }`}
-	              >
-	                🛍️ {t("Pickup")}
-	              </button>
-	              <button
-	                type="button"
-	                onClick={() => {
-	                  if (!deliveryEnabled) return;
-	                  setForm((f) => ({ ...f, mode: "delivery" }));
-	                }}
-	                disabled={!deliveryEnabled}
-	                className={`py-2.5 rounded-xl text-sm font-semibold border ${
-	                  form.mode === "delivery"
-	                    ? "bg-neutral-900 text-white border-neutral-900"
-	                    : "bg-white text-neutral-700 border-neutral-300"
-	                }`}
-	              >
-	                🛵 {t("Delivery")}
-	              </button>
-	            </div>
-	            {!deliveryEnabled ? (
-	              <div className="mt-2 text-xs font-medium text-rose-600">
-	                {t("Delivery is closed")}
-	              </div>
-	            ) : null}
-	          </div>
+          {/* Table select (only for reservation) */}
+          {form.mode === "reservation" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  {t("Select Table")}
+                </label>
+                <select
+                  className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
+                    touched.table_number && !hasReservationTable ? "border-red-500" : "border-neutral-300"
+                  }`}
+                  value={form.table_number}
+                  onChange={(e) => setForm((f) => ({ ...f, table_number: e.target.value }))}
+                >
+                  <option value="">{t("Select Table")}</option>
+                  {safeTables.map((tbl) => {
+                    const tableNumber = Number(tbl?.tableNumber);
+                    if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
+                    const disabled = unavailableTables.has(tableNumber);
+                    const reserved = reservedTableSet.has(tableNumber);
+                    return (
+                      <option key={tableNumber} value={String(tableNumber)} disabled={disabled}>
+                        {`${t("Table")} ${String(tableNumber).padStart(2, "0")}${
+                          disabled ? ` - ${reserved ? t("Reserved") : t("Occupied")}` : ""
+                        }`}
+                      </option>
+                    );
+                  })}
+                </select>
+                {touched.table_number && !hasReservationTable && (
+                  <p className="mt-1 text-xs font-semibold text-rose-600">
+                    {t("Please select an available table.")}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  {t("Guests")}
+                </label>
+                <select
+                  className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
+                    touched.reservation_clients && !hasReservationClients ? "border-red-500" : "border-neutral-300"
+                  }`}
+                  value={form.reservation_clients}
+                  onChange={(e) => setForm((f) => ({ ...f, reservation_clients: e.target.value }))}
+                  disabled={!hasReservationTable}
+                >
+                  <option value="">{t("Select Guests")}</option>
+                  {guestOptions.map((count) => (
+                    <option key={count} value={String(count)}>
+                      {count}
+                    </option>
+                  ))}
+                </select>
+                {touched.reservation_clients && !hasReservationClients && (
+                  <p className="mt-1 text-xs font-semibold text-rose-600">
+                    {t("Select Guests")}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
-          {/* Address (only for delivery) */}
-          {form.mode === "delivery" && (
-            <textarea
-              className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 resize-none h-20 ${
-                touched.address && !form.address ? "border-red-500" : "border-neutral-300"
-              }`}
-              placeholder={t("Address")}
-              value={form.address}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, address: e.target.value }))
-              }
-            />
+          {/* Payment Method */}
+          {requiresPayment && (
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-neutral-800">{t("Payment Method")}</label>
+              <select
+                className={`rounded-xl border px-4 py-3 text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
+                  paymentPrompt && !form.payment_method ? "border-red-500" : "border-neutral-300"
+                }`}
+                value={form.payment_method}
+                onChange={(e) => handlePaymentChange(e.target.value)}
+              >
+                <option value="">{t("Select Payment Method")}</option>
+                {availablePaymentMethods.map((method) => (
+                  <option key={method.id} value={method.id}>
+                    {method.icon ? `${method.icon} ` : ""}
+                    {method.label}
+                  </option>
+                ))}
+              </select>
+              {paymentPrompt && !form.payment_method && (
+                <p className="text-xs font-semibold text-rose-600">
+                  {t("Please select a payment method before continuing.")}
+                </p>
+              )}
+            </div>
           )}
 
           {/* Notes */}
@@ -2141,19 +2778,27 @@ function TakeawayOrderForm({ submitting, t, onClose, onSubmit, deliveryEnabled =
             }
           />
 
-	{/* Submit */}
-	<button
-	  type="submit"
-	  disabled={submitting}
-	  className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
-	>
-	  {submitting ? t("Please wait...") : t("Continue")}
-	</button>
-
-	        </form>
-	      </div>
-	    </div>
-	  );
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
+          >
+            {submitting ? t("Please wait...") : t("Continue")}
+          </button>
+        </form>
+      </div>
+      <style>{`
+        @keyframes takeawayShake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-6px); }
+          40% { transform: translateX(6px); }
+          60% { transform: translateX(-4px); }
+          80% { transform: translateX(4px); }
+        }
+      `}</style>
+    </div>
+  );
 }
 
 function OrderTypePromptModal({
@@ -2201,7 +2846,7 @@ function OrderTypePromptModal({
             }`}
           >
             <UtensilsCrossed className="w-5 h-5" />
-            {shopIsOpen ? t("Pre Order") : t("Shop Closed")}
+            {shopIsOpen ? t("Reservation") : t("Shop Closed")}
           </button>
           <button
             onClick={() => shopIsOpen && onSelect?.("table")}
@@ -2241,8 +2886,6 @@ function OrderTypePromptModal({
 
 
 /* ====================== SMART CATEGORY BAR (auto-center on click + arrows) ====================== */
-import { ChevronLeft, ChevronRight } from "lucide-react";
-
 
 function CategoryBar({ categories, activeCategory, setActiveCategory, categoryImages }) {
   const categoryList = Array.isArray(categories) ? categories : [];
@@ -2370,7 +3013,7 @@ function CategoryBar({ categories, activeCategory, setActiveCategory, categoryIm
 }
 
 /* ====================== RIGHT CATEGORY RAIL ====================== */
-function CategoryRail({ categories, activeCategory, setActiveCategory, categoryImages }) {
+function CategoryRail({ categories, activeCategory, setActiveCategory, categoryImages, t = (key) => key }) {
   const categoryList = Array.isArray(categories) ? categories : [];
   const categoryFallbackSrc = "/Beylogo.svg";
 
@@ -2378,7 +3021,7 @@ function CategoryRail({ categories, activeCategory, setActiveCategory, categoryI
     <aside className="w-full h-full">
       <div className="h-full rounded-2xl border border-neutral-200 bg-white/85 shadow-sm p-3 flex flex-col">
         <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500 mb-2 px-1">
-          Categories
+          {t("Categories")}
         </div>
         <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2">
           {categoryList.map((cat) => {
@@ -2520,7 +3163,7 @@ function PopularCarousel({ title, items, onProductClick }) {
 
 
 /* ====================== FEATURED CARD (Moved below Popular) ====================== */
-function FeaturedCard({ slides, currentSlide, setCurrentSlide }) {
+function FeaturedCard({ slides, currentSlide, setCurrentSlide, t }) {
   if (!Array.isArray(slides) || slides.length === 0) return null;
   return (
     <div className="flex items-stretch">
@@ -2535,7 +3178,7 @@ function FeaturedCard({ slides, currentSlide, setCurrentSlide }) {
 
         <div className="px-5 py-4">
           <p className="text-[10px] uppercase tracking-[0.22em] text-neutral-500 dark:text-neutral-400">
-            Featured
+            {t("Featured")}
           </p>
           <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mt-1">
             {slides[currentSlide].title}
@@ -2593,7 +3236,24 @@ async function startOnlinePaymentSession(id) {
 
 
 /* ====================== ORDER STATUS MODAL ====================== */
-function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnother, onClose, onFinished, t, appendIdentifier, errorMessage, cancelReason, orderScreenStatus, forceDark }) {
+function OrderStatusModal({
+  open,
+  status,
+  orderId,
+  orderType,
+  table,
+  onOrderAnother,
+  onClose,
+  onFinished,
+  t,
+  appendIdentifier,
+  errorMessage,
+  cancelReason,
+  orderScreenStatus,
+  forceDark,
+  forceLock = false,
+  allowOrderAnotherWhenLocked = false,
+}) {
   if (!open) return null;
 
   const uiStatus = (status || "").toLowerCase(); // pending | success | fail
@@ -2617,10 +3277,13 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
           ? errorMessage || t("Something went wrong. Please try again.")
           : t("Thank you! Your order has been received.");
 
+  const lockBlocksActions = forceLock && !allowOrderAnotherWhenLocked;
+
   return (
     <div
       className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onMouseDown={(e) => {
+        if (lockBlocksActions) return;
         if (e.target === e.currentTarget) onClose?.();
       }}
     >
@@ -2637,13 +3300,14 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
         {/* Scrollable content */}
        <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
   {orderId ? (
-	<OrderStatusScreen
-	  orderId={orderId}
-	  table={orderType === "table" ? table : null}   // now safe
-	   onOrderAnother={onOrderAnother}   
-	  onClose={onClose}
-	  onFinished={onFinished}
-	  forceDark={forceDark}
+		<OrderStatusScreen
+		  orderId={orderId}
+		  table={orderType === "table" ? table : null}   // now safe
+		   onOrderAnother={lockBlocksActions ? null : onOrderAnother}   
+		  onClose={lockBlocksActions ? null : onClose}
+		  onFinished={onFinished}
+      forceLock={forceLock}
+		  forceDark={forceDark}
 
 	  t={t}
 	  buildUrl={(path) => apiUrl(path)}
@@ -2656,12 +3320,21 @@ function OrderStatusModal({ open, status, orderId, orderType, table, onOrderAnot
 
         {/* Footer */}
         <div className="p-4 border-t bg-white">
-          <button
-            className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
-            onClick={status === "success" ? onOrderAnother : onClose}
-          >
-            {status === "success" ? t("Order Another") : t("Close")}
-          </button>
+          {lockBlocksActions ? (
+            <button
+              className="w-full py-3 rounded-xl bg-slate-200 text-slate-700 font-bold shadow cursor-not-allowed"
+              disabled
+            >
+              {t("Table must be closed by staff first")}
+            </button>
+          ) : (
+            <button
+              className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
+              onClick={status === "success" ? onOrderAnother : onClose}
+            >
+              {status === "success" ? t("Order Another") : t("Close")}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2701,12 +3374,15 @@ export default function QrMenu() {
     orderId,
     setOrderId,
     tables,
+    occupiedTables,
     isDarkMain,
     submitting,
+    setSubmitting,
     safeExtrasGroups,
     safeCart,
     safeProducts,
     safeOccupiedTables,
+    safeReservedTables,
     hasActiveOrder,
     productsForGrid,
     paymentMethod,
@@ -2732,6 +3408,10 @@ export default function QrMenu() {
     suppressMenuFlash,
     showTableScanner,
     tableScanTarget,
+    tableScanGuests,
+    setTableScanGuests,
+    tableScanReady,
+    startTableScannerWithGuests,
     tableScanError,
     menuSearch,
     setMenuSearch,
@@ -2771,6 +3451,10 @@ export default function QrMenu() {
     showHome,
     showTableSelector,
     filteredOccupied,
+    filteredReserved,
+    callingWaiter,
+    callWaiterCooldownSeconds,
+    handleCallWaiter,
     brandName,
     lastError,
     orderCancelReason,
@@ -2799,6 +3483,87 @@ export default function QrMenu() {
 
   const statusPortalOrderId =
     orderId || Number(storage.getItem("qr_active_order_id")) || null;
+  const [callWaiterFeedback, setCallWaiterFeedback] = useState("");
+  const callWaiterFeedbackTimeoutRef = useRef(null);
+
+  const resolvedTableForActions =
+    Number(table) || Number(storage.getItem("qr_table")) || Number(storage.getItem("qr_selected_table")) || null;
+  const resolvedOrderTypeForActions =
+    orderType || storage.getItem("qr_orderType") || (Number.isFinite(resolvedTableForActions) && resolvedTableForActions > 0 ? "table" : null);
+
+  const showCallWaiterButton =
+    (!showHome || showStatus) &&
+    resolvedOrderTypeForActions === "table" &&
+    Number.isFinite(resolvedTableForActions) &&
+    resolvedTableForActions > 0;
+  const callWaiterButtonDisabled = callingWaiter || callWaiterCooldownSeconds > 0;
+  const callWaiterLabel = t("Call Waiter");
+  const aiOrderLabel = t("AI Order");
+  const cartLabel = t("Your Order");
+  const showBottomActions = !isDesktopLayout && !showTableSelector && (!showHome || showStatus);
+  const scanTargetTable = useMemo(
+    () => toArray(tables).find((tbl) => Number(tbl?.tableNumber) === Number(tableScanTarget)) || null,
+    [tables, tableScanTarget]
+  );
+  const scanGuestOptions = useMemo(() => {
+    const seats = Number(scanTargetTable?.seats ?? scanTargetTable?.chairs ?? 0);
+    const max = Number.isFinite(seats) && seats > 0 ? Math.min(20, Math.floor(seats)) : 12;
+    return Array.from({ length: max }, (_, idx) => idx + 1);
+  }, [scanTargetTable]);
+  const cartItems = toArray(safeCart);
+  const cartNewItemsCount = cartItems.filter((item) => !item?.locked).length;
+  const canOpenCartFromNav = cartItems.length > 0 || hasActiveOrder;
+  const canStartVoiceFromNav = Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus);
+
+  const showCallWaiterFeedback = useCallback((message) => {
+    setCallWaiterFeedback(message);
+    if (callWaiterFeedbackTimeoutRef.current) {
+      window.clearTimeout(callWaiterFeedbackTimeoutRef.current);
+    }
+    callWaiterFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setCallWaiterFeedback("");
+      callWaiterFeedbackTimeoutRef.current = null;
+    }, 2200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (callWaiterFeedbackTimeoutRef.current) {
+        window.clearTimeout(callWaiterFeedbackTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const onCallWaiterClick = useCallback(async () => {
+    const result = await handleCallWaiter?.();
+    if (result?.ok) {
+      showCallWaiterFeedback(t("Waiter notified!"));
+      return;
+    }
+    if (result?.reason === "cooldown") {
+      showCallWaiterFeedback(t("Please wait before calling again."));
+      return;
+    }
+    showCallWaiterFeedback(t("Unable to call waiter right now."));
+  }, [handleCallWaiter, showCallWaiterFeedback, t]);
+
+  const onOpenCartFromNav = useCallback(() => {
+    window.dispatchEvent(new Event("qr:cart-open"));
+  }, []);
+
+  const onOpenVoiceFromNav = useCallback(() => {
+    window.dispatchEvent(new Event("qr:voice-order-open"));
+  }, []);
+
+  const forceStatusLockActive = (() => {
+    const forced = storage.getItem("qr_force_status_until_closed") === "1";
+    if (!forced) return false;
+    const activeId = Number(orderId || storage.getItem("qr_active_order_id"));
+    return Number.isFinite(activeId) && activeId > 0;
+  })();
+  const allowOrderAnotherWhenLocked =
+    forceStatusLockActive && String(orderScreenStatus || "").toLowerCase() === "reserved";
+
   const statusPortal = showStatus && statusPortalOrderId
     ? createPortal(
         <OrderStatusModal
@@ -2807,7 +3572,7 @@ export default function QrMenu() {
           orderId={statusPortalOrderId}
           orderType={orderType}
           table={orderType === "table" ? table : null}
-          onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+          onOrderAnother={forceStatusLockActive && !allowOrderAnotherWhenLocked ? null : handleOrderAnother}
           onClose={handleReset}
           onFinished={resetToTypePicker}
           t={t}
@@ -2816,6 +3581,8 @@ export default function QrMenu() {
           cancelReason={orderCancelReason}
           orderScreenStatus={orderScreenStatus}
           forceDark={isDarkMain}
+          forceLock={forceStatusLockActive}
+          allowOrderAnotherWhenLocked={allowOrderAnotherWhenLocked}
         />,
         document.body
       )
@@ -2852,8 +3619,9 @@ export default function QrMenu() {
           unique_id: `${resolvedProduct?.id || productId || "voice"}-waiter-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         },
       ]);
+      setPaymentMethod("");
     },
-    [safeProducts, setCart, storage, t]
+    [safeProducts, setCart, storage, t, setPaymentMethod]
   );
 
   const handleVoiceDraftConfirmOrder = useCallback(async (draftItems = [], options = {}) => {
@@ -2915,10 +3683,13 @@ export default function QrMenu() {
         <div className={isDarkMain ? "dark" : ""}>
           <ModernTableSelector
             tables={tables}
+            t={t}
             occupiedNumbers={filteredOccupied}
             occupiedLabel={t("Occupied")}
+            reservedNumbers={filteredReserved}
+            reservedLabel={t("Reserved")}
             onSelect={(tbl) => {
-              openTableScanner(tbl?.tableNumber);
+              openTableScanner(tbl?.tableNumber, Number(tbl?.guests));
             }}
             onBack={() => {
               setOrderType(null);
@@ -2928,6 +3699,18 @@ export default function QrMenu() {
           <TableQrScannerModal
             open={showTableScanner}
             tableNumber={tableScanTarget}
+            guestCount={tableScanGuests}
+            guestOptions={scanGuestOptions}
+            onGuestChange={(value) => {
+              const n = Number(value);
+              setTableScanGuests(Number.isFinite(n) && n > 0 ? n : null);
+            }}
+            onStartScan={() => {
+              if (!startTableScannerWithGuests(tableScanGuests)) {
+                return;
+              }
+            }}
+            scanReady={tableScanReady}
             onClose={closeTableScanner}
             error={tableScanError}
             t={t}
@@ -3071,7 +3854,7 @@ export default function QrMenu() {
               voiceListening={qrVoiceListening}
             />
 
-            <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-24">
+            <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-32">
               <div className="grid grid-cols-1 xl:grid-cols-[320px,1fr] gap-4 lg:gap-5 xl:gap-6 items-start">
                 {isDesktopLayout && (
                   <aside className="hidden xl:block sticky top-[76px] h-[calc(100vh-140px)]">
@@ -3083,7 +3866,7 @@ export default function QrMenu() {
                       paymentMethod={paymentMethod}
                       setPaymentMethod={setPaymentMethod}
                       submitting={submitting}
-                      onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+                      onOrderAnother={handleOrderAnother}
                       t={t}
                       hasActiveOrder={hasActiveOrder}
                       orderScreenStatus={orderScreenStatus}
@@ -3104,6 +3887,7 @@ export default function QrMenu() {
                       }}
                       layout="panel"
                       storage={storage}
+                      voiceListening={qrVoiceListening}
                     />
                   </aside>
                 )}
@@ -3134,7 +3918,7 @@ export default function QrMenu() {
           paymentMethod={paymentMethod}
           setPaymentMethod={setPaymentMethod}
           submitting={submitting}
-          onOrderAnother={orderType === "table" ? handleReset : handleOrderAnother}
+          onOrderAnother={handleOrderAnother}
           t={t}
           hasActiveOrder={hasActiveOrder}
           orderScreenStatus={orderScreenStatus}
@@ -3154,20 +3938,94 @@ export default function QrMenu() {
             storage.setItem("qr_show_status", "0");
           }}
           storage={storage}
+          voiceListening={qrVoiceListening}
+          hideFloatingButton={true}
         />
+      )}
+
+      {showBottomActions && (
+        <div className="fixed inset-x-0 bottom-0 z-[130] px-3 pb-[calc(8px+env(safe-area-inset-bottom))]">
+          {callWaiterFeedback ? (
+            <div className="mx-auto mb-2 w-fit rounded-xl bg-white/95 border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 shadow-sm whitespace-nowrap">
+              {callWaiterFeedback}
+            </div>
+          ) : null}
+          <div className="mx-auto grid w-full max-w-md grid-cols-3 gap-2 rounded-2xl border border-neutral-200 bg-white/95 p-2 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur">
+            <button
+              type="button"
+              onClick={onCallWaiterClick}
+              disabled={!showCallWaiterButton || callWaiterButtonDisabled}
+              className={`relative inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
+                !showCallWaiterButton || callWaiterButtonDisabled
+                  ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+                  : "border-red-500 bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"
+              }`}
+              title={callWaiterLabel}
+              aria-label={callWaiterLabel}
+            >
+              {callingWaiter ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" aria-hidden="true" />}
+              <span className="block whitespace-nowrap">{callWaiterLabel}</span>
+              {!callingWaiter && callWaiterCooldownSeconds > 0 ? (
+                <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full border border-red-200 bg-white px-1 text-[9px] font-bold leading-none text-red-600">
+                  {callWaiterCooldownSeconds}
+                </span>
+              ) : null}
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenCartFromNav}
+              disabled={!canOpenCartFromNav}
+              className={`relative inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
+                canOpenCartFromNav
+                  ? "border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
+                  : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+              }`}
+              title={cartLabel}
+              aria-label={cartLabel}
+            >
+              <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+              <span className="block whitespace-nowrap">{cartLabel}</span>
+              {cartNewItemsCount > 0 ? (
+                <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-sky-700 px-1 text-[9px] font-bold leading-none text-white">
+                  {cartNewItemsCount}
+                </span>
+              ) : null}
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenVoiceFromNav}
+              disabled={!canStartVoiceFromNav}
+              className={`inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
+                canStartVoiceFromNav
+                  ? "border-violet-500 bg-violet-600 text-white hover:bg-violet-700 active:scale-[0.98]"
+                  : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+              }`}
+              title={aiOrderLabel}
+              aria-label={aiOrderLabel}
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              <span className="block whitespace-nowrap">{aiOrderLabel}</span>
+            </button>
+          </div>
+        </div>
       )}
 
       <VoiceOrderController
         restaurantId={restaurantIdentifier || id || slug}
-        tableId={table}
+        tableId={resolvedTableForActions || table}
         products={safeProducts}
         onAddToCart={handleVoiceDraftAddToCart}
         onConfirmOrder={orderType ? handleVoiceDraftConfirmOrder : undefined}
         language={lang}
         paymentMethod={paymentMethod}
         onPaymentMethodChange={setPaymentMethod}
-        canStartVoiceOrder={Boolean(orderType) && !showHome}
+        canStartVoiceOrder={Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus)}
         onRequireOrderType={handleVoiceRequireOrderType}
+        forceMinimized={Boolean(showStatus)}
+        hideMiniButton={!isDesktopLayout && !showHome}
+        openEventName={!isDesktopLayout ? "qr:voice-order-open" : ""}
       />
 
       {qrVoiceModalOpen && (
@@ -3296,14 +4154,26 @@ export default function QrMenu() {
         product={selectedProduct}
         extrasGroups={safeExtrasGroups}
         onClose={() => {
+          const hasCartItems = toArray(safeCart).length > 0;
           setShowAddModal(false);
           setReturnHomeAfterAdd(false);
+          if (hasCartItems) {
+            window.dispatchEvent(new Event("qr:cart-open"));
+            return;
+          }
+          setForceHome(true);
+          setShowDeliveryForm(false);
+          setShowTakeawayForm(false);
+          setShowStatus(false);
         }}
         onAddToCart={(item) => {
           storage.setItem("qr_cart_auto_open", "0");
           setCart((prev) => [...prev, item]);
           setShowAddModal(false);
           if (returnHomeAfterAdd) {
+            // Home-product flow should return home and open cart immediately.
+            storage.setItem("qr_cart_auto_open", "1");
+            window.dispatchEvent(new Event("qr:cart-open"));
             setReturnHomeAfterAdd(false);
             setForceHome(true);
             setShowDeliveryForm(false);
@@ -3342,28 +4212,94 @@ export default function QrMenu() {
         <TakeawayOrderForm
           submitting={submitting}
           t={t}
-          deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true)}
+          tables={tables}
+          occupiedTables={occupiedTables}
+          reservedTables={safeReservedTables}
           onClose={() => {
             setShowTakeawayForm(false);
             setOrderType(null);
           }}
-          onSubmit={(form) => {
+          onSubmit={async (form) => {
             if (!form) {
               setTakeaway({
                 name: "",
                 phone: "",
                 pickup_date: "",
                 pickup_time: "",
-                mode: "pickup",
-                address: "",
+                mode: "reservation",
+                table_number: "",
+                reservation_clients: "",
                 notes: "",
+                payment_method: "",
               });
-            } else {
-              setTakeaway(form);
+              setShowTakeawayForm(false);
+              return;
             }
 
+            if (String(form?.mode || "").toLowerCase() === "reservation") {
+              const tableNumber = Number(form?.table_number);
+              if (!Number.isFinite(tableNumber) || tableNumber <= 0) {
+                alert(t("Please select an available table."));
+                return;
+              }
+              if (safeOccupiedTables.includes(tableNumber)) {
+                alert(t("This table is currently occupied. Please select another table."));
+                return;
+              }
+
+              try {
+                setSubmitting(true);
+                const response = await secureFetch(appendIdentifier("/orders/reservations"), {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    table_number: tableNumber,
+                    reservation_date: form.pickup_date,
+                    reservation_time: form.pickup_time,
+                    reservation_clients: Number(form.reservation_clients) || 1,
+                    reservation_notes: form.notes || "",
+                    customer_name: form.name || null,
+                    customer_phone: form.phone || null,
+                  }),
+                });
+
+                const reservationOrderId = Number(response?.reservation?.id);
+                setTakeaway(form);
+                setShowTakeawayForm(false);
+                setOrderType("table");
+                setTable(tableNumber);
+                storage.setItem("qr_orderType", "table");
+                storage.setItem("qr_table", String(tableNumber));
+                storage.setItem("qr_show_status", "1");
+                setOrderStatus("success");
+                setShowStatus(true);
+                if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
+                  storage.setItem("qr_force_status_until_closed", "1");
+                  setOrderId(reservationOrderId);
+                  storage.setItem("qr_active_order_id", String(reservationOrderId));
+                  storage.setItem(
+                    "qr_active_order",
+                    JSON.stringify({
+                      orderId: reservationOrderId,
+                      orderType: "table",
+                      table: tableNumber,
+                    })
+                  );
+                }
+              } catch (err) {
+                console.error("❌ Failed to save reservation from QR menu:", err);
+                alert(err?.message || t("Failed to save reservation"));
+              } finally {
+                setSubmitting(false);
+              }
+              return;
+            }
+
+            setTakeaway(form);
             setShowTakeawayForm(false);
           }}
+          paymentMethod={paymentMethod}
+          setPaymentMethod={setPaymentMethod}
         />
       )}
 
