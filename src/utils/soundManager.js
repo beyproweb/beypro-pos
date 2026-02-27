@@ -1,7 +1,6 @@
 const DEFAULT_SOUND_FILES = {
   new_order: "/sounds/new_order.mp3",
   payment_made: "/sounds/cash.mp3",
-  call_waiter: "/sounds/alarm.mp3",
 };
 
 const audioCache = new Map();
@@ -31,6 +30,7 @@ const resolveSoundPath = (eventKey, settings) => {
     const fallback = normalizePath(defaultSound);
     if (fallback) return fallback;
   }
+  if (eventKey === "call_waiter") return null;
   return DEFAULT_SOUND_FILES[eventKey] || "/sounds/ding.mp3";
 };
 

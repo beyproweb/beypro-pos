@@ -59,7 +59,7 @@ export default function NotificationsTab() {
     driver_arrived: "horn.mp3",
     driver_assigned: "horn.mp3",
     stock_expiry: "alarm.mp3",
-    call_waiter: "alarm.mp3",
+    call_waiter: "none",
   };
 
   const defaultConfig = {
@@ -285,7 +285,7 @@ if (!settingsLoaded || !notifications) return <p>{t("Loading settings...")}</p>;
     {t("Call Waiter Sound")}
   </label>
   <select
-    value={notifications.eventSounds?.call_waiter ?? "alarm.mp3"}
+    value={notifications.eventSounds?.call_waiter ?? "none"}
     onChange={(e) =>
       setNotifications((prev) => ({
         ...prev,
