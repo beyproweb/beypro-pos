@@ -2169,6 +2169,8 @@ async function load() {
 			            slides={slides}
 			            currentSlide={currentSlide}
 			            setCurrentSlide={setCurrentSlide}
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={handleTouchEnd}
                   t={t}
 			          />
 			        </div>
@@ -3309,12 +3311,17 @@ function PopularCarousel({ title, items, onProductClick }) {
 
 
 /* ====================== FEATURED CARD (Moved below Popular) ====================== */
-function FeaturedCard({ slides, currentSlide, setCurrentSlide, t }) {
+function FeaturedCard({ slides, currentSlide, setCurrentSlide, onTouchStart, onTouchEnd, t }) {
   if (!Array.isArray(slides) || slides.length === 0) return null;
   return (
     <div className="flex items-stretch">
       <div className="w-full rounded-3xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm">
-        <div className="w-full h-64 sm:h-72 overflow-hidden">
+        <div
+          className="w-full h-64 sm:h-72 overflow-hidden"
+          onTouchStart={slides.length > 1 ? onTouchStart : undefined}
+          onTouchEnd={slides.length > 1 ? onTouchEnd : undefined}
+          style={{ touchAction: "pan-y" }}
+        >
           <img
             src={slides[currentSlide].src}
             alt={slides[currentSlide].title}
