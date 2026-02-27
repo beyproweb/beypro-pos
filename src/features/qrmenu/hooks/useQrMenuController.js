@@ -39,10 +39,21 @@ const normalizeOptionalGuestCount = (value) => {
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.min(20, Math.max(1, Math.floor(n)));
 };
-const isTerminalOrderStatus = (status) =>
-  ["closed", "completed", "cancelled", "canceled"].includes(
+const isCancelledLikeStatus = (status) =>
+  ["cancelled", "canceled", "deleted", "void"].includes(
     String(status || "").toLowerCase()
   );
+const isTerminalOrderStatus = (status) =>
+  ["closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(
+    String(status || "").toLowerCase()
+  );
+const getOrderCancellationReason = (order) =>
+  order?.cancellation_reason ||
+  order?.cancel_reason ||
+  order?.cancelReason ||
+  order?.delete_reason ||
+  order?.deletion_reason ||
+  "";
 // Fix null/undefined slug
 const safeSlug =
   slug && slug !== "null" && slug !== "undefined"
@@ -433,7 +444,7 @@ const hasActiveReservationPayload = (entry) => {
   const hasActiveOrder = useMemo(() => {
     if (!activeOrder) return false;
     const s = (activeOrder.status || "").toLowerCase();
-    return !["closed", "completed", "canceled"].includes(s);
+    return !isTerminalOrderStatus(s);
   }, [activeOrder]);
   const [qrVoiceListening, setQrVoiceListening] = useState(false);
   const [qrVoiceParsing, setQrVoiceParsing] = useState(false);
@@ -758,8 +769,9 @@ const handleTableScanSuccess = useCallback(
     tableScanTarget,
   ]
 );
-  const resetToTypePicker = () => {
-    if (isForcedStatusActive()) {
+  const resetToTypePicker = (options = null) => {
+    const forceManualClose = options?.allowForceClose === true;
+    if (isForcedStatusActive() && !forceManualClose) {
       setShowStatus(true);
       storage.setItem("qr_show_status", "1");
       return;
@@ -767,6 +779,8 @@ const handleTableScanSuccess = useCallback(
     setShowStatus(false);
     storage.setItem("qr_show_status", "0");
     storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
+    storage.removeItem("qr_active_order_id");
+    storage.removeItem("qr_active_order");
     setOrderStatus("pending");
     setOrderId(null);
     setCart([]);
@@ -948,11 +962,30 @@ async function handleCloseOrderPage() {
     storage.setItem("qr_show_status", "1");
     return;
   }
+  const statusLower = String(orderScreenStatus || activeOrder?.status || "").toLowerCase();
+  const cancelledLikeStatus = isCancelledLikeStatus(statusLower);
+  const activeOrderId =
+    Number(
+      orderId ||
+        storage.getItem("qr_active_order_id") ||
+        (cancelledLikeStatus ? activeOrder?.id : null)
+    ) || null;
   const hasCartItems = Array.isArray(cart) && cart.length > 0;
 
   // Requested behavior:
-  // - If cart has items, reopen cart.
+  // - If there is an active order, show order status.
+  // - If cart has items (but no active order), reopen cart.
   // - If cart is empty, go home.
+  if (activeOrderId) {
+    setOrderId(activeOrderId);
+    storage.setItem("qr_active_order_id", String(activeOrderId));
+    setOrderStatus("success");
+    setShowStatus(true);
+    storage.setItem("qr_show_status", "1");
+    window.dispatchEvent(new Event("qr:cart-close"));
+    return;
+  }
+
   if (hasCartItems) {
     setShowStatus(false);
     window.dispatchEvent(new Event("qr:cart-open"));
@@ -1072,8 +1105,8 @@ if (activeId) {
     setOrderScreenStatus(status);
     setLoyaltyEligibilityFromOrder(order);
     setOrderCancelReason(
-      status === "canceled" || status === "cancelled"
-        ? order?.cancellation_reason || order?.cancel_reason || order?.cancelReason || ""
+      isCancelledLikeStatus(status)
+        ? getOrderCancellationReason(order)
         : ""
     );
 
@@ -1119,10 +1152,10 @@ if (savedTable) {
 	          setShowStatus(wantsStatusOpen);
 
 	        setActiveOrder(openOrder);
-	          setOrderScreenStatus(status);
+		          setOrderScreenStatus(status);
           setOrderCancelReason(
-            status === "canceled" || status === "cancelled"
-              ? openOrder?.cancellation_reason || openOrder?.cancel_reason || openOrder?.cancelReason || ""
+            isCancelledLikeStatus(status)
+              ? getOrderCancellationReason(openOrder)
               : ""
           );
 
@@ -1164,6 +1197,10 @@ if (savedTable) {
       setLoyaltyEligibilityFromOrder(data || null);
 
       const s = (data?.status || "").toLowerCase();
+      const hasOrderCancellationReason = Boolean(
+        getOrderCancellationReason(data)
+      );
+      const isCancelledStatus = isCancelledLikeStatus(s);
       const forceActive = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
       const wantsStatusOpen = storage.getItem("qr_show_status") === "1";
       if (!s) {
@@ -1209,9 +1246,10 @@ if (savedTable) {
       // Reservation payload can momentarily be missing during sync transitions.
       if (
         forceActive &&
-        (isTerminalOrderStatus(s) ||
+        ((isTerminalOrderStatus(s) && !isCancelledStatus && !hasOrderCancellationReason) ||
           (lostReservationPayload &&
             s !== "reserved" &&
+            !hasOrderCancellationReason &&
             !tableStillReserved &&
             !hasActiveOrderItems))
       ) {
@@ -1225,23 +1263,26 @@ if (savedTable) {
         return;
       }
       setOrderScreenStatus(s);
-      const keepHiddenWhileReserved = forceActive && s === "reserved" && !wantsStatusOpen;
-      if (forceActive && !keepHiddenWhileReserved) {
-        setShowStatus(true);
-        storage.setItem("qr_show_status", "1");
-      } else if (keepHiddenWhileReserved) {
-        setShowStatus(false);
+      if (forceActive) {
+        // Respect explicit user hide (e.g. opening cart from status screen)
+        // for all reservation-lock states, not only "reserved".
+        if (wantsStatusOpen) {
+          setShowStatus(true);
+          storage.setItem("qr_show_status", "1");
+        } else {
+          setShowStatus(false);
+        }
       }
       setOrderCancelReason(
-        s === "canceled" || s === "cancelled"
-          ? data?.cancellation_reason || data?.cancel_reason || data?.cancelReason || ""
+        isCancelledLikeStatus(s)
+          ? getOrderCancellationReason(data)
           : ""
       );
 
       // Keep status visible for cancelled/closed only when user didn't intentionally hide it.
       // This prevents status-vs-cart flicker when opening cart from the bottom nav.
-      if (s === "canceled" || s === "cancelled" || s === "closed") {
-        const shouldKeepOpen = forceActive || storage.getItem("qr_show_status") === "1";
+      if (isCancelledLikeStatus(s) || s === "closed" || s === "completed") {
+        const shouldKeepOpen = storage.getItem("qr_show_status") === "1";
         if (shouldKeepOpen) {
           setShowStatus(true);
           storage.setItem("qr_show_status", "1");
@@ -1356,7 +1397,7 @@ if (savedTable) {
           const occupiedFromPublicOrders = toArray(orderRows)
             .filter((order) => {
               const status = String(order?.status || "").toLowerCase();
-              if (["closed", "completed", "canceled", "cancelled"].includes(status)) {
+              if (isTerminalOrderStatus(status)) {
                 return false;
               }
               if (isReservationLikeEntry(order)) return isReservationDueNow(order, nowMs);
@@ -1368,7 +1409,7 @@ if (savedTable) {
           const reservedFromPublicOrders = toArray(orderRows)
             .filter((order) => {
               const status = String(order?.status || "").toLowerCase();
-              if (["canceled", "cancelled"].includes(status)) return false;
+              if (isCancelledLikeStatus(status)) return false;
               if (!isReservationLikeEntry(order)) return false;
               if (!isReservationDueNow(order, nowMs)) return false;
 
@@ -1429,7 +1470,7 @@ if (savedTable) {
           .filter((order) => {
             if (!order?.table_number) return false;
             const status = String(order?.status || "").toLowerCase();
-            if (["closed", "completed", "canceled", "cancelled"].includes(status)) return false;
+            if (isTerminalOrderStatus(status)) return false;
             if (isReservationLikeEntry(order)) return isReservationDueNow(order, nowMs);
             return true;
           })
@@ -1438,7 +1479,7 @@ if (savedTable) {
         const occupiedFromReservations = toArray(reservations)
           .filter((reservation) => {
             const status = String(reservation?.status || "").toLowerCase();
-            if (["closed", "completed", "canceled", "cancelled"].includes(status)) return false;
+            if (isTerminalOrderStatus(status)) return false;
             return isReservationDueNow(reservation, nowMs);
           })
           .map((reservation) =>
@@ -1450,7 +1491,7 @@ if (savedTable) {
         const reservedFromOrders = toArray(list)
           .filter((order) => {
             const status = String(order?.status || "").toLowerCase();
-            if (["closed", "completed", "canceled", "cancelled"].includes(status)) return false;
+            if (isTerminalOrderStatus(status)) return false;
             if (!isReservationLikeEntry(order)) return false;
             return isReservationDueNow(order, nowMs);
           })
@@ -1459,7 +1500,7 @@ if (savedTable) {
         const reservedFromReservations = toArray(reservations)
           .filter((reservation) => {
             const status = String(reservation?.status || "").toLowerCase();
-            if (["closed", "completed", "canceled", "cancelled"].includes(status)) return false;
+            if (isTerminalOrderStatus(status)) return false;
             return isReservationDueNow(reservation, nowMs);
           })
           .map((reservation) =>
@@ -1907,7 +1948,10 @@ async function handleOrderAnother() {
   const allowOrderAnotherWhileReserved =
     currentStatus === "reserved" ||
     currentStatus === "confirmed" ||
-    reservedTableContextWhileLocked;
+    reservedTableContextWhileLocked ||
+    (isCancelledLikeStatus(currentStatus) &&
+      Number.isFinite(tableForLockCheck) &&
+      tableForLockCheck > 0);
   if (isForcedStatusActive() && !allowOrderAnotherWhileReserved) {
     setShowStatus(true);
     storage.setItem("qr_show_status", "1");
@@ -1923,13 +1967,26 @@ async function handleOrderAnother() {
     storage.setItem("qr_cart_auto_open", "0");
     window.dispatchEvent(new Event("qr:cart-close"));
 
+    const normalizeOrderTypeForReorder = (rawType, tableNo) => {
+      const type = String(rawType || "").trim().toLowerCase();
+      const hasTable = Number.isFinite(Number(tableNo)) && Number(tableNo) > 0;
+      if (type === "table" || type === "reservation" || hasTable) return "table";
+      if (["online", "packet", "takeaway", "delivery"].includes(type)) return "online";
+      return null;
+    };
+
     // resolve existing order
     let id = orderId || Number(storage.getItem("qr_active_order_id")) || null;
-    let type = orderType || storage.getItem("qr_orderType") || (table ? "table" : null);
+    let type = normalizeOrderTypeForReorder(
+      orderType || storage.getItem("qr_orderType") || activeOrder?.order_type || null,
+      table ?? activeOrder?.table_number ?? activeOrder?.tableNumber
+    );
     let resolvedTableNo =
       Number(table) ||
       Number(storage.getItem("qr_table")) ||
       Number(storage.getItem("qr_selected_table")) ||
+      Number(activeOrder?.table_number) ||
+      Number(activeOrder?.tableNumber) ||
       null;
 
     // Check if current order is cancelled - if so, clear everything for fresh start
@@ -1941,20 +1998,47 @@ async function handleOrderAnother() {
         });
         if (res) {
           const orderStatus = (res.status || "").toLowerCase();
-          const fetchedTable = Number(res.table_number);
+          const fetchedTable = Number(res.table_number ?? res.tableNumber);
+          const fetchedType = normalizeOrderTypeForReorder(
+            res.order_type,
+            fetchedTable
+          );
+          if (fetchedType) {
+            type = fetchedType;
+          }
           if (Number.isFinite(fetchedTable) && fetchedTable > 0) {
             resolvedTableNo = fetchedTable;
           }
-          if (orderStatus === "cancelled" || orderStatus === "canceled") {
-            // Clear everything for a fresh start
-            setCart([]);
-            storage.removeItem("qr_cart");
+          if (isCancelledLikeStatus(orderStatus)) {
+            // For cancelled table/reservation orders, keep table flow so Re-Order can continue.
+            const cancelledTableNo =
+              Number.isFinite(fetchedTable) && fetchedTable > 0 ? fetchedTable : resolvedTableNo;
+            const cancelledTableFlow =
+              fetchedType === "table" ||
+              type === "table" ||
+              (Number.isFinite(cancelledTableNo) && cancelledTableNo > 0);
+
+            storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
             storage.removeItem("qr_active_order_id");
-            storage.removeItem("qr_orderType");
+            storage.removeItem("qr_active_order");
             storage.setItem("qr_show_status", "0");
             setOrderId(null);
-            setOrderType(null);
-            return;
+            id = null;
+
+            if (cancelledTableFlow) {
+              type = "table";
+              if (Number.isFinite(cancelledTableNo) && cancelledTableNo > 0) {
+                resolvedTableNo = cancelledTableNo;
+              }
+              storage.setItem("qr_orderType", "table");
+            } else {
+              // Non-table cancelled orders still reset fully.
+              setCart([]);
+              storage.removeItem("qr_cart");
+              storage.removeItem("qr_orderType");
+              setOrderType(null);
+              return;
+            }
           }
         }
       } catch (err) {
@@ -1962,9 +2046,17 @@ async function handleOrderAnother() {
       }
     }
 
+    if (!type) {
+      type = normalizeOrderTypeForReorder(activeOrder?.order_type, resolvedTableNo);
+    }
+
     // If table known but no id, fetch open order for that table
-    if (!id && (type === "table" || table)) {
-      const tNo = table || Number(storage.getItem("qr_table")) || null;
+    if (!id && type === "table") {
+      const tNo =
+        Number(resolvedTableNo) ||
+        Number(table) ||
+        Number(storage.getItem("qr_table")) ||
+        null;
       if (tNo) {
         const token = getStoredToken();
         if (token) {
@@ -1973,7 +2065,8 @@ async function handleOrderAnother() {
               headers: { Authorization: `Bearer ${token}` },
             });
             const arr = Array.isArray(q) ? q : (Array.isArray(q?.data) ? q.data : []);
-            const open = arr.find(o => (o?.status || "").toLowerCase() !== "closed") || null;
+            const open =
+              arr.find((o) => !isTerminalOrderStatus((o?.status || "").toLowerCase())) || null;
             if (open) {
               id = open.id;
               type = "table";
@@ -2020,6 +2113,18 @@ async function handleOrderAnother() {
       return;
     }
 
+    // Keep table flow visible even if order id cannot be restored right now.
+    if (type === "table" && Number.isFinite(Number(resolvedTableNo)) && Number(resolvedTableNo) > 0) {
+      const tableToUse = Number(resolvedTableNo);
+      setOrderType("table");
+      setTable(tableToUse);
+      saveSelectedTable(tableToUse);
+      storage.setItem("qr_table", String(tableToUse));
+      storage.setItem("qr_selected_table", String(tableToUse));
+      storage.setItem("qr_orderType", "table");
+      return;
+    }
+
     // nothing to restore → clean cart
     setCart([]);
     storage.setItem("qr_cart", "[]");
@@ -2029,15 +2134,20 @@ async function handleOrderAnother() {
   }
 }
 
-function handleReset() {
-		  if (isForcedStatusActive()) {
-		    setShowStatus(true);
-		    storage.setItem("qr_show_status", "1");
-		    return;
-		  }
-			  // Check if order is delivered or cancelled - if so, navigate to home
-			  const status = (orderScreenStatus || "").toLowerCase();
-			  const isFinished = ["delivered", "served", "cancelled", "canceled", "closed", "completed"].includes(status);
+function handleReset(options = null) {
+			  const forceManualClose = options?.allowForceClose === true;
+			  if (isForcedStatusActive() && !forceManualClose) {
+			    setShowStatus(true);
+			    storage.setItem("qr_show_status", "1");
+			    return;
+			  }
+			  if (forceManualClose) {
+			    resetToTypePicker({ allowForceClose: true });
+			    return;
+			  }
+				  // Check if order is delivered or cancelled - if so, navigate to home
+				  const status = (orderScreenStatus || "").toLowerCase();
+				  const isFinished = ["delivered", "served", "closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(status);
 		  
 		  if (isFinished) {
 		    // Order is complete - navigate to home and clear everything
@@ -2076,6 +2186,7 @@ function handleReset() {
         : {};
       const callWaiterBody = {
         table_number: tableNumber,
+        // Manual "Call waiter" should always be audible on POS.
         source: "qr_menu",
       };
       try {

@@ -99,15 +99,44 @@ export const useCancelRefund = ({
       return;
     }
     const selectedItemsForCancel = selectedCartItems
-      .map((item) => {
-        const uniqueId = item.unique_id || item.id;
-        if (!uniqueId) return null;
-        const maxQty = Math.max(1, Number(item.quantity) || 1);
-        const requested = Number(selectionQuantities[String(uniqueId)]) || 1;
-        const qty = Math.min(Math.max(1, requested), maxQty);
-        return { unique_id: String(uniqueId), quantity: qty };
+      .flatMap((item) => {
+        const selectionKey = String(item.cancel_key || item.unique_id || item.id || "");
+        if (!selectionKey) return [];
+
+        const targets = Array.isArray(item.cancel_targets)
+          ? item.cancel_targets.filter((target) => target?.unique_id)
+          : [];
+
+        const totalMaxQty =
+          targets.length > 0
+            ? targets.reduce(
+                (sum, target) => sum + Math.max(1, Number(target.maxQty) || 1),
+                0
+              )
+            : Math.max(1, Number(item.quantity) || 1);
+
+        let remaining = Math.min(
+          Math.max(1, Number(selectionQuantities[selectionKey]) || 1),
+          totalMaxQty
+        );
+
+        if (!targets.length) {
+          const uniqueId = item.unique_id || item.id;
+          if (!uniqueId) return [];
+          return [{ unique_id: String(uniqueId), quantity: remaining }];
+        }
+
+        const allocations = [];
+        for (const target of targets) {
+          if (remaining <= 0) break;
+          const maxQty = Math.max(1, Number(target.maxQty) || 1);
+          const qty = Math.min(remaining, maxQty);
+          allocations.push({ unique_id: String(target.unique_id), quantity: qty });
+          remaining -= qty;
+        }
+        return allocations;
       })
-      .filter(Boolean);
+      .filter((entry) => entry && entry.unique_id && Number(entry.quantity) > 0);
     const isPartialCancel = selectedItemsForCancel.length > 0;
     if (!isPartialCancel) {
       showToast(t("Select item to cancel"));

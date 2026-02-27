@@ -54,6 +54,8 @@ const CartModal = React.memo(function CartModal({
   const [shakeCart, setShakeCart] = useState(false);
   const shakeTimeoutRef = useRef(null);
   const prevOrderTypeRef = useRef(orderType);
+  const suppressStatusAutoCloseRef = useRef(false);
+  const suppressStatusReleaseTimerRef = useRef(null);
 
   const statusLabel = useMemo(() => {
     if (!hasActiveOrder || !orderScreenStatus) return null;
@@ -65,6 +67,12 @@ const CartModal = React.memo(function CartModal({
   }, [hasActiveOrder, orderScreenStatus, t]);
 
   const paymentPromptText = t("Please select a payment method before continuing.");
+  const normalizedOrderStatus = String(orderScreenStatus || "").toLowerCase();
+  const canShowOrderNowButton =
+    cartLength === 0 &&
+    hasActiveOrder &&
+    orderType === "table" &&
+    ["reserved", "confirmed"].includes(normalizedOrderStatus);
   const speakPaymentPrompt = useCallback(
     (message) => {
       if (!voiceListening || !message || typeof window === "undefined") return;
@@ -119,7 +127,24 @@ const CartModal = React.memo(function CartModal({
 
   useEffect(() => {
     if (isPanel) return;
-    if (isOrderStatusOpen) setShow(false);
+    if (!isOrderStatusOpen) {
+      // Keep suppression briefly to ignore delayed status re-open races
+      // after external events (e.g. reservation deletion updates).
+      if (suppressStatusAutoCloseRef.current) {
+        if (suppressStatusReleaseTimerRef.current) {
+          window.clearTimeout(suppressStatusReleaseTimerRef.current);
+        }
+        suppressStatusReleaseTimerRef.current = window.setTimeout(() => {
+          suppressStatusAutoCloseRef.current = false;
+          suppressStatusReleaseTimerRef.current = null;
+        }, 1600);
+      }
+      return;
+    }
+    // If cart was intentionally opened from status view, don't immediately
+    // close it while status state is still propagating.
+    if (suppressStatusAutoCloseRef.current) return;
+    setShow(false);
   }, [isOrderStatusOpen, isPanel]);
 
   useEffect(() => {
@@ -141,6 +166,10 @@ const CartModal = React.memo(function CartModal({
         window.clearTimeout(shakeTimeoutRef.current);
         shakeTimeoutRef.current = null;
       }
+      if (suppressStatusReleaseTimerRef.current) {
+        window.clearTimeout(suppressStatusReleaseTimerRef.current);
+        suppressStatusReleaseTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -156,11 +185,27 @@ const CartModal = React.memo(function CartModal({
     });
   }
   const closeFromUi = useCallback(() => {
+    suppressStatusAutoCloseRef.current = false;
+    if (suppressStatusReleaseTimerRef.current) {
+      window.clearTimeout(suppressStatusReleaseTimerRef.current);
+      suppressStatusReleaseTimerRef.current = null;
+    }
     setShow(false);
     if (hasActiveOrder && !hasNewItems) {
       onShowStatus?.();
     }
   }, [hasActiveOrder, hasNewItems, onShowStatus]);
+
+  const goToProductPage = useCallback(() => {
+    suppressStatusAutoCloseRef.current = false;
+    if (suppressStatusReleaseTimerRef.current) {
+      window.clearTimeout(suppressStatusReleaseTimerRef.current);
+      suppressStatusReleaseTimerRef.current = null;
+    }
+    storage?.setItem("qr_cart_auto_open", "0");
+    onOpenCart?.();
+    if (!isPanel) setShow(false);
+  }, [isPanel, onOpenCart, storage]);
 
   const cartPanel = (
     <div
@@ -184,7 +229,18 @@ const CartModal = React.memo(function CartModal({
 
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         {cartLength === 0 ? (
-          <div className="text-neutral-400 text-center py-8 italic">{t("Cart is empty.")}</div>
+          <div className="py-8 text-center">
+            <div className="text-neutral-400 italic">{t("Cart is empty.")}</div>
+            {canShowOrderNowButton ? (
+              <button
+                type="button"
+                onClick={goToProductPage}
+                className="mt-4 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-600 to-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(5,150,105,0.3)] transition-all hover:from-emerald-700 hover:to-green-700 active:scale-[0.99]"
+              >
+                {t("Order now")}
+              </button>
+            ) : null}
+          </div>
         ) : (
           <div className="space-y-5">
             {prevItems.length > 0 && (
@@ -346,10 +402,10 @@ const CartModal = React.memo(function CartModal({
 
           {!isPanel && (
             <button
-              onClick={closeFromUi}
-              className="w-full py-3 rounded-full border border-neutral-300 text-neutral-700 font-medium hover:bg-neutral-100 transition-all"
+              onClick={goToProductPage}
+              className="w-full py-3 rounded-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-semibold shadow-[0_8px_20px_rgba(37,99,235,0.3)] hover:from-sky-700 hover:to-indigo-700 transition-all active:scale-[0.99]"
             >
-              {t("Order Another")}
+              ↺ {t("Order Another")}
             </button>
           )}
 
@@ -373,6 +429,11 @@ const CartModal = React.memo(function CartModal({
 
   const openFromTrigger = useCallback(() => {
     if (hasNewItems) {
+      suppressStatusAutoCloseRef.current = true;
+      if (suppressStatusReleaseTimerRef.current) {
+        window.clearTimeout(suppressStatusReleaseTimerRef.current);
+        suppressStatusReleaseTimerRef.current = null;
+      }
       onOpenCart?.();
       storage.setItem("qr_cart_auto_open", "1");
       setShow(true);
@@ -387,6 +448,11 @@ const CartModal = React.memo(function CartModal({
   }, [hasNewItems, hasActiveOrder, onOpenCart, onShowStatus, storage]);
 
   const openFromExternalEvent = useCallback(() => {
+    suppressStatusAutoCloseRef.current = true;
+    if (suppressStatusReleaseTimerRef.current) {
+      window.clearTimeout(suppressStatusReleaseTimerRef.current);
+      suppressStatusReleaseTimerRef.current = null;
+    }
     onOpenCart?.();
     setShow(true);
   }, [onOpenCart]);

@@ -49,6 +49,7 @@ export default function VoiceOrderFloating({
   forceMinimized = false,
   hideMiniButton = false,
   openEventName = "",
+  closeEventName = "",
   offsetClassName = "right-4 bottom-20 sm:bottom-6",
   zIndexClassName = "z-[125]",
 }) {
@@ -139,6 +140,17 @@ export default function VoiceOrderFloating({
     window.addEventListener(openEventName, handler);
     return () => window.removeEventListener(openEventName, handler);
   }, [handleOpenMini, openEventName]);
+
+  useEffect(() => {
+    if (!closeEventName) return undefined;
+    const handler = () => {
+      setStatusMinimized(true);
+      close();
+      closeStubModal();
+    };
+    window.addEventListener(closeEventName, handler);
+    return () => window.removeEventListener(closeEventName, handler);
+  }, [close, closeEventName, closeStubModal]);
 
   const showMiniButton = !hideMiniButton;
 

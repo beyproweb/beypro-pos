@@ -61,6 +61,57 @@ export function createConfirmFlow(deps) {
     return Boolean(getReservationSchedule(orderLike) || reservationDate || reservationTime || reservationId != null);
   }
 
+  function isPaidOrderLike(orderLike) {
+    if (!orderLike || typeof orderLike !== "object") return false;
+    const status = String(orderLike?.status || "").toLowerCase();
+    const paymentStatus = String(orderLike?.payment_status || "").toLowerCase();
+    return status === "paid" || paymentStatus === "paid" || orderLike?.is_paid === true;
+  }
+
+  function isReservationMissingError(err) {
+    const message = String(err?.message || err || "").toLowerCase();
+    return (
+      message.includes("not found") ||
+      message.includes("no reservation") ||
+      message.includes("already deleted")
+    );
+  }
+
+  async function autoDeleteReservationForPaidClose(reservationSource) {
+    const orderId = Number(order?.id ?? reservationSource?.order_id ?? reservationSource?.id);
+    const reservationId = Number(
+      reservationSource?.reservation?.id ??
+      reservationSource?.reservation_id ??
+      reservationSource?.reservationId ??
+      existingReservation?.id
+    );
+
+    let lastErr = null;
+
+    if (Number.isFinite(orderId) && orderId > 0) {
+      try {
+        await txApiRequest(`/orders/${orderId}/reservations${identifier}`, { method: "DELETE" });
+        return true;
+      } catch (err) {
+        if (isReservationMissingError(err)) return true;
+        lastErr = err;
+      }
+    }
+
+    if (Number.isFinite(reservationId) && reservationId > 0) {
+      try {
+        await txApiRequest(`/orders/reservations/${reservationId}${identifier}`, { method: "DELETE" });
+        return true;
+      } catch (err) {
+        if (isReservationMissingError(err)) return true;
+        lastErr = err;
+      }
+    }
+
+    if (lastErr) throw lastErr;
+    return false;
+  }
+
   async function handleMultifunction() {
     console.log("ENTERED handleMultifunction()");
     console.log("order before any checks →", order);
@@ -114,8 +165,24 @@ export function createConfirmFlow(deps) {
       } else {
         const reservationSource = existingReservation ?? order;
         if (hasActiveReservation(reservationSource)) {
-          showToast(t("Delete reservation first before closing table"));
-          return;
+          const shouldAutoDeleteReservation =
+            isPaidOrderLike(order) || isPaidOrderLike(reservationSource) || allPaidIncludingSuborders === true;
+          if (!shouldAutoDeleteReservation) {
+            showToast(t("Delete reservation first before closing table"));
+            return;
+          }
+
+          try {
+            const deleted = await autoDeleteReservationForPaidClose(reservationSource);
+            if (!deleted) {
+              showToast(t("Failed to delete reservation"));
+              return;
+            }
+          } catch (err) {
+            console.error("❌ Failed to auto-delete reservation before close:", err);
+            showToast(t("Failed to delete reservation"));
+            return;
+          }
         }
         await resetTableGuests(order?.table_number ?? order?.tableNumber);
         broadcastTableOverviewOrderStatus("closed");
@@ -303,8 +370,17 @@ export function createConfirmFlow(deps) {
     if (getPrimaryActionLabel() === "Close" && (order.status === "paid" || allPaidIncludingSuborders)) {
       const reservationSource = existingReservation ?? order;
       if (hasActiveReservation(reservationSource)) {
-        showToast(t("Delete reservation first before closing table"));
-        return;
+        try {
+          const deleted = await autoDeleteReservationForPaidClose(reservationSource);
+          if (!deleted) {
+            showToast(t("Failed to delete reservation"));
+            return;
+          }
+        } catch (err) {
+          console.error("❌ Failed to auto-delete reservation before close:", err);
+          showToast(t("Failed to delete reservation"));
+          return;
+        }
       }
 
       // Re-check against the latest backend state so we don't block close due to stale kitchen_status/category

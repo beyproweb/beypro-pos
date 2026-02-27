@@ -1,10 +1,12 @@
 const DEFAULT_SOUND_FILES = {
   new_order: "/sounds/new_order.mp3",
   payment_made: "/sounds/cash.mp3",
+  call_waiter: "/sounds/alert.mp3",
 };
 
 const audioCache = new Map();
 const loopingAudioByEvent = new Map();
+const SUPPORTED_EXTENSIONS = [".mp3", ".wav", ".ogg"];
 
 const clampVolume = (value) => {
   if (typeof value !== "number" || Number.isNaN(value)) return 0.8;
@@ -13,9 +15,22 @@ const clampVolume = (value) => {
 
 const normalizePath = (source) => {
   if (!source) return null;
-  if (source === "none") return null;
-  if (source.startsWith("/")) return source;
-  return `/sounds/${source}`;
+  const raw = String(source).trim();
+  if (!raw) return null;
+
+  const lowered = raw.toLowerCase();
+  if (lowered === "none" || lowered === "off" || lowered === "silent") return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  let candidate = raw.replace(/^(\.\/|\.{2}\/)+/, "");
+  const hasKnownExtension = SUPPORTED_EXTENSIONS.some((ext) =>
+    candidate.toLowerCase().endsWith(ext)
+  );
+  if (!hasKnownExtension) candidate += ".mp3";
+
+  if (candidate.startsWith("/")) return candidate;
+  if (candidate.startsWith("sounds/")) return `/${candidate}`;
+  return `/sounds/${candidate}`;
 };
 
 const resolveSoundPath = (eventKey, settings) => {
@@ -30,7 +45,6 @@ const resolveSoundPath = (eventKey, settings) => {
     const fallback = normalizePath(defaultSound);
     if (fallback) return fallback;
   }
-  if (eventKey === "call_waiter") return null;
   return DEFAULT_SOUND_FILES[eventKey] || "/sounds/ding.mp3";
 };
 

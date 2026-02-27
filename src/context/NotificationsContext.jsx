@@ -679,13 +679,26 @@ export function NotificationsProvider({ children }) {
   }, [markAllRead]);
 
   const syncCustomerCallSound = useCallback(() => {
-    const hasActiveCalls = Object.keys(customerCalls || {}).length > 0;
+    const activeCalls = Object.values(customerCalls || {});
+    const hasActiveCalls = activeCalls.length > 0;
+    const isQrMenuPage = typeof window !== "undefined" && window.__isQrMenuPage === true;
+    const hasAudibleCalls = activeCalls.some((call) => {
+      const source = String(call?.source || "").toLowerCase().trim();
+      return source !== "qr_menu_order_status";
+    });
     const settings = window?.notificationSettings || {};
     const notificationsEnabled = settings.enabled !== false;
     const soundsEnabled = settings.enableSounds !== false;
     const callWaiterEnabled = settings.enableCallWaiterAlerts !== false;
 
-    if (hasActiveCalls && notificationsEnabled && soundsEnabled && callWaiterEnabled) {
+    if (
+      !isQrMenuPage &&
+      hasActiveCalls &&
+      hasAudibleCalls &&
+      notificationsEnabled &&
+      soundsEnabled &&
+      callWaiterEnabled
+    ) {
       if (typeof window?.startCallWaiterSound === "function") {
         window.startCallWaiterSound();
       }

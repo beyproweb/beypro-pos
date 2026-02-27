@@ -157,10 +157,56 @@ export const useReservation = ({
     if (!existingReservation?.reservation_date) return;
     const ok = window.confirm(t("Delete this reservation?"));
     if (!ok) return;
+
+    const normalizedStatus = String(order?.status || "").toLowerCase();
+    const normalizedType = String(order?.order_type || "").toLowerCase();
+    const isReservationLikeOrder =
+      normalizedStatus === "reserved" ||
+      normalizedType === "reservation" ||
+      !!existingReservation?.id;
+
+    let itemCount = Array.isArray(order?.items) ? order.items.length : null;
+    if (!Number.isFinite(itemCount) && order?.id) {
+      try {
+        const itemsResponse = await txApiRequest(`/orders/${order.id}/items${identifier}`);
+        const latestItems = Array.isArray(itemsResponse)
+          ? itemsResponse
+          : Array.isArray(itemsResponse?.items)
+          ? itemsResponse.items
+          : [];
+        itemCount = latestItems.length;
+      } catch {
+        itemCount = null;
+      }
+    }
+    const totalAmount = Number(order?.total || 0);
+    const isEmptyReservationOnly =
+      isReservationLikeOrder && totalAmount <= 0 && Number(itemCount || 0) === 0;
+
+    let deleteReason = "";
+    if (isEmptyReservationOnly) {
+      const input = window.prompt(t("Please enter a reason for deleting this empty reservation"));
+      if (input === null) return;
+      const trimmed = String(input || "").trim();
+      if (!trimmed) {
+        showToast(t("Reason is required"));
+        return;
+      }
+      deleteReason = trimmed;
+    }
+
     setReservationLoading(true);
     try {
       const response = await txApiRequest(`/orders/${order.id}/reservations${identifier}`, {
         method: "DELETE",
+        ...(deleteReason
+          ? {
+              body: JSON.stringify({
+                delete_reason: deleteReason,
+                cancellation_reason: deleteReason,
+              }),
+            }
+          : {}),
       });
       if (response?.success === false) throw new Error(response.message || t("Failed to delete reservation"));
 

@@ -34,6 +34,49 @@ export function createCloseFlow(deps) {
     return Boolean(getReservationSchedule(orderLike) || reservationDate || reservationTime || reservationId != null);
   }
 
+  function isReservationMissingError(err) {
+    const message = String(err?.message || err || "").toLowerCase();
+    return (
+      message.includes("not found") ||
+      message.includes("no reservation") ||
+      message.includes("already deleted")
+    );
+  }
+
+  async function autoDeleteReservationForPaidClose(reservationSource) {
+    const orderId = Number(order?.id ?? reservationSource?.order_id ?? reservationSource?.id);
+    const reservationId = Number(
+      reservationSource?.reservation?.id ??
+      reservationSource?.reservation_id ??
+      reservationSource?.reservationId
+    );
+
+    let lastErr = null;
+
+    if (Number.isFinite(orderId) && orderId > 0) {
+      try {
+        await txApiRequest(`/orders/${orderId}/reservations${identifier}`, { method: "DELETE" });
+        return true;
+      } catch (err) {
+        if (isReservationMissingError(err)) return true;
+        lastErr = err;
+      }
+    }
+
+    if (Number.isFinite(reservationId) && reservationId > 0) {
+      try {
+        await txApiRequest(`/orders/reservations/${reservationId}${identifier}`, { method: "DELETE" });
+        return true;
+      } catch (err) {
+        if (isReservationMissingError(err)) return true;
+        lastErr = err;
+      }
+    }
+
+    if (lastErr) throw lastErr;
+    return false;
+  }
+
   async function resetTableGuests(tableNumber) {
     const normalizedNumber =
       tableNumber === null || tableNumber === undefined
@@ -139,7 +182,15 @@ export function createCloseFlow(deps) {
 
     if (shouldAutoCloseTable) {
       const reservationSource = existingReservationRef.current ?? order;
-      if (hasActiveReservation(reservationSource)) return;
+      if (hasActiveReservation(reservationSource)) {
+        try {
+          const deleted = await autoDeleteReservationForPaidClose(reservationSource);
+          if (!deleted) return;
+        } catch (err) {
+          console.warn("⚠️ Auto-delete reservation before auto-close failed:", err?.message || err);
+          return;
+        }
+      }
     }
 
     try {

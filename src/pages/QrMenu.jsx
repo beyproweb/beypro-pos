@@ -24,6 +24,7 @@ import {
   Download,
   ChevronDown,
   Mic,
+  RotateCcw,
   Loader2,
   Bell,
   ShoppingCart,
@@ -49,6 +50,30 @@ const QR_PREFIX = "qr_";
 const QR_TOKEN_KEY = "qr_token";
 const BEYPRO_APP_STORE_URL = import.meta.env.VITE_BEYPRO_APPSTORE_URL || "";
 const BEYPRO_PLAY_STORE_URL = import.meta.env.VITE_BEYPRO_PLAYSTORE_URL || "";
+const isCancelledLikeStatus = (status) =>
+  ["canceled", "cancelled", "deleted", "void"].includes(
+    String(status || "").toLowerCase()
+  );
+const hasReservationPayload = (order) => {
+  if (!order || typeof order !== "object") return false;
+  const nested =
+    order?.reservation && typeof order.reservation === "object" ? order.reservation : null;
+  return Boolean(
+    order?.reservation_id ||
+      order?.reservationId ||
+      order?.reservation_date ||
+      order?.reservationDate ||
+      order?.reservation_time ||
+      order?.reservationTime ||
+      nested?.id ||
+      nested?.reservation_id ||
+      nested?.reservationId ||
+      nested?.reservation_date ||
+      nested?.reservationDate ||
+      nested?.reservation_time ||
+      nested?.reservationTime
+  );
+};
 
 function computeTenantSuffix() {
   if (typeof window === "undefined") return "";
@@ -98,6 +123,34 @@ function getQrKeyVariants(key) {
   const scoped = resolveQrKey(key);
   if (scoped === key) return [key];
   return [scoped, key];
+}
+
+function readQrTableShowAreasSetting(restaurantIdentifier) {
+  if (typeof window === "undefined") return true;
+  try {
+    const native = window.localStorage;
+    if (!native) return true;
+    const candidates = [
+      String(native.getItem("restaurant_id") || "").trim(),
+      String(native.getItem("restaurant_slug") || "").trim(),
+      String(restaurantIdentifier || "").trim(),
+    ].filter((value) => value && value !== "undefined" && value !== "null");
+
+    const visited = new Set();
+    for (const tenant of candidates) {
+      if (visited.has(tenant)) continue;
+      visited.add(tenant);
+      const raw = native.getItem(`beypro:settings:${tenant}:tables`);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && "showAreas" in parsed) {
+        return parsed.showAreas !== false;
+      }
+    }
+  } catch {
+    // ignore and fall back to default
+  }
+  return true;
 }
 
 function boolish(value, defaultValue = true) {
@@ -420,41 +473,136 @@ function getQrModeFromLocation() {
   }
 }
 
-// Read table number from current URL (for table QR links)
-function getTableFromLocation() {
-  if (typeof window === "undefined") return null;
+function parsePositiveTableNumber(value) {
+  const n = Number(String(value ?? "").trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function decodeJwtPayload(token) {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get("table");
-    if (!raw) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    if (typeof token !== "string") return null;
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    if (typeof atob !== "function") return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const json = atob(padded);
+    const payload = JSON.parse(json);
+    return payload && typeof payload === "object" ? payload : null;
   } catch {
     return null;
   }
 }
 
+function extractTableFromParams(params) {
+  if (!params) return null;
+  const keys = ["table", "table_number", "tableNumber", "tableNo", "t", "masa", "no"];
+  for (const key of keys) {
+    const parsed = parsePositiveTableNumber(params.get(key));
+    if (parsed) return parsed;
+  }
+
+  const token =
+    params.get("token") ||
+    params.get("qr_token") ||
+    params.get("jwt") ||
+    params.get("table_token");
+  if (token) {
+    const payload = decodeJwtPayload(token);
+    const fromPayload =
+      parsePositiveTableNumber(payload?.table_number) ||
+      parsePositiveTableNumber(payload?.tableNumber) ||
+      parsePositiveTableNumber(payload?.table);
+    if (fromPayload) return fromPayload;
+  }
+
+  return null;
+}
+
+// Read table number from current URL (for table QR links)
+function getTableFromLocation() {
+  if (typeof window === "undefined") return null;
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    const fromSearch = extractTableFromParams(params);
+    if (fromSearch) return fromSearch;
+
+    const hash = String(window.location.hash || "");
+    if (hash.includes("?")) {
+      const hashParams = new URLSearchParams(hash.slice(hash.indexOf("?") + 1));
+      const fromHash = extractTableFromParams(hashParams);
+      if (fromHash) return fromHash;
+    }
+
+    const path = String(window.location.pathname || "");
+    const pathMatch = path.match(/\/(?:table|tables|masa)\/(\d+)(?:\/|$)/i);
+    if (pathMatch) return parsePositiveTableNumber(pathMatch[1]);
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function extractTableNumberFromQrText(raw) {
   if (!raw) return null;
-  const text = String(raw).trim();
+  const text = String(raw).trim().replace(/^['"]|['"]$/g, "");
   if (!text) return null;
-  try {
-    const url = new URL(text);
-    const tableParam = url.searchParams.get("table");
-    if (tableParam) {
-      const n = Number(tableParam);
-      if (Number.isFinite(n) && n > 0) return n;
+
+  const parseFromUrlLike = (value) => {
+    const url = new URL(value);
+
+    const fromQuery = extractTableFromParams(url.searchParams);
+    if (fromQuery) return fromQuery;
+
+    const pathMatch = String(url.pathname || "").match(
+      /\/(?:table|tables|masa)\/(\d+)(?:\/|$)/i
+    );
+    if (pathMatch) return parsePositiveTableNumber(pathMatch[1]);
+
+    const hash = String(url.hash || "");
+    if (hash.includes("?")) {
+      const hashParams = new URLSearchParams(hash.slice(hash.indexOf("?") + 1));
+      const fromHash = extractTableFromParams(hashParams);
+      if (fromHash) return fromHash;
     }
+
+    return null;
+  };
+
+  try {
+    const fromUrl = parseFromUrlLike(text);
+    if (fromUrl) return fromUrl;
   } catch {
-    // not a URL
+    // maybe missing scheme; try using current origin
+    try {
+      const base = typeof window !== "undefined" ? window.location.origin : "https://pos.beypro.com";
+      const fromRelativeUrl = parseFromUrlLike(new URL(text, base).toString());
+      if (fromRelativeUrl) return fromRelativeUrl;
+    } catch {
+      // not URL-like
+    }
   }
-  const match = text.match(/(?:table|masa)\s*#?\s*(\d+)/i);
-  if (match) {
-    const n = Number(match[1]);
-    if (Number.isFinite(n) && n > 0) return n;
+
+  const explicitParamMatch = text.match(
+    /(?:table_number|tableNumber|tableNo|table|masa|t)\s*[:=#\s_-]*\s*(\d{1,4})/i
+  );
+  if (explicitParamMatch) {
+    const parsed = parsePositiveTableNumber(explicitParamMatch[1]);
+    if (parsed) return parsed;
   }
-  const fallback = Number(text);
-  if (Number.isFinite(fallback) && fallback > 0) return fallback;
+
+  const tokenMatch = text.match(/(?:token|qr_token|jwt|table_token)\s*[:=#]\s*([A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+)/);
+  if (tokenMatch) {
+    const payload = decodeJwtPayload(tokenMatch[1]);
+    const fromPayload =
+      parsePositiveTableNumber(payload?.table_number) ||
+      parsePositiveTableNumber(payload?.tableNumber) ||
+      parsePositiveTableNumber(payload?.table);
+    if (fromPayload) return fromPayload;
+  }
+
+  const fallback = parsePositiveTableNumber(text);
+  if (fallback) return fallback;
   return null;
 }
 
@@ -3258,7 +3406,7 @@ function OrderStatusModal({
 
   const uiStatus = (status || "").toLowerCase(); // pending | success | fail
   const backendStatus = (orderScreenStatus || "").toLowerCase(); // confirmed | cancelled | closed | ...
-  const isCancelled = backendStatus === "canceled" || backendStatus === "cancelled";
+  const isCancelled = isCancelledLikeStatus(backendStatus);
   const isSending = uiStatus === "pending";
   const isFailed = uiStatus === "fail";
 
@@ -3278,12 +3426,13 @@ function OrderStatusModal({
           : t("Thank you! Your order has been received.");
 
   const lockBlocksActions = forceLock && !allowOrderAnotherWhenLocked;
+  const lockBlocksForCancelState = lockBlocksActions && !isCancelled;
 
   return (
     <div
       className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onMouseDown={(e) => {
-        if (lockBlocksActions) return;
+        if (lockBlocksForCancelState) return;
         if (e.target === e.currentTarget) onClose?.();
       }}
     >
@@ -3303,8 +3452,8 @@ function OrderStatusModal({
 		<OrderStatusScreen
 		  orderId={orderId}
 		  table={orderType === "table" ? table : null}   // now safe
-		   onOrderAnother={lockBlocksActions ? null : onOrderAnother}   
-		  onClose={lockBlocksActions ? null : onClose}
+		   onOrderAnother={lockBlocksForCancelState ? null : onOrderAnother}   
+		  onClose={lockBlocksForCancelState ? null : onClose}
 		  onFinished={onFinished}
       forceLock={forceLock}
 		  forceDark={forceDark}
@@ -3462,6 +3611,7 @@ export default function QrMenu() {
     brandName,
     lastError,
     orderCancelReason,
+    activeOrder,
     orderScreenStatus,
     setCustomerInfo,
   } = useQrMenuController({
@@ -3490,8 +3640,22 @@ export default function QrMenu() {
   const [callWaiterFeedback, setCallWaiterFeedback] = useState("");
   const callWaiterFeedbackTimeoutRef = useRef(null);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    window.__isQrMenuPage = true;
+    return () => {
+      window.__isQrMenuPage = false;
+    };
+  }, []);
+
   const resolvedTableForActions =
-    Number(table) || Number(storage.getItem("qr_table")) || Number(storage.getItem("qr_selected_table")) || null;
+    Number(table) ||
+    Number(storage.getItem("qr_table")) ||
+    Number(storage.getItem("qr_selected_table")) ||
+    Number(activeOrder?.table_number) ||
+    Number(activeOrder?.tableNumber) ||
+    Number(activeOrder?.table) ||
+    null;
   const resolvedOrderTypeForActions =
     orderType || storage.getItem("qr_orderType") || (Number.isFinite(resolvedTableForActions) && resolvedTableForActions > 0 ? "table" : null);
 
@@ -3500,11 +3664,11 @@ export default function QrMenu() {
     resolvedOrderTypeForActions === "table" &&
     Number.isFinite(resolvedTableForActions) &&
     resolvedTableForActions > 0;
-  const callWaiterButtonDisabled = callingWaiter || callWaiterCooldownSeconds > 0;
+  const callWaiterButtonDisabledBase = callingWaiter || callWaiterCooldownSeconds > 0;
   const callWaiterLabel = t("Call Waiter");
+  const reOrderLabel = "Re-Order";
   const aiOrderLabel = t("AI Order");
   const cartLabel = t("Your Order");
-  const showBottomActions = !isDesktopLayout && !showTableSelector && (!showHome || showStatus);
   const scanTargetTable = useMemo(
     () => toArray(tables).find((tbl) => Number(tbl?.tableNumber) === Number(tableScanTarget)) || null,
     [tables, tableScanTarget]
@@ -3517,7 +3681,19 @@ export default function QrMenu() {
   const cartItems = toArray(safeCart);
   const cartNewItemsCount = cartItems.filter((item) => !item?.locked).length;
   const canOpenCartFromNav = cartItems.length > 0 || hasActiveOrder;
-  const canStartVoiceFromNav = Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus);
+  const hasBottomNavContext = showStatus || hasActiveOrder || cartItems.length > 0;
+  const showBottomActions =
+    !isDesktopLayout &&
+    !showTableSelector &&
+    hasBottomNavContext &&
+    (!showHome || showStatus);
+  const canReOrderFromNav = Boolean(hasActiveOrder || showStatus);
+  const canStartVoiceFromNavBase =
+    Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus);
+  const showTableAreas = useMemo(
+    () => readQrTableShowAreasSetting(restaurantIdentifier),
+    [restaurantIdentifier, tables.length]
+  );
 
   const showCallWaiterFeedback = useCallback((message) => {
     setCallWaiterFeedback(message);
@@ -3564,12 +3740,31 @@ export default function QrMenu() {
         console.warn("⚠️ Failed to hydrate cart from active order:", err);
       }
     }
-    window.dispatchEvent(new Event("qr:cart-open"));
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("qr:cart-open"));
+      });
+    } else {
+      window.dispatchEvent(new Event("qr:cart-open"));
+    }
   }, [cartNewItemsCount, hasActiveOrder, hydrateCartFromActiveOrder, setShowStatus, storage]);
 
   const onOpenVoiceFromNav = useCallback(() => {
     window.dispatchEvent(new Event("qr:voice-order-open"));
   }, []);
+
+  const onReOrderFromNav = useCallback(async () => {
+    // Use the same restore logic as "Order Another" so table flow does not fall back to home.
+    window.dispatchEvent(new Event("qr:voice-order-close"));
+    await handleOrderAnother?.();
+  }, [handleOrderAnother]);
+  const onForceCloseStatusFromNav = useCallback(() => {
+    storage.removeItem("qr_force_status_until_closed");
+    storage.setItem("qr_show_status", "0");
+    setShowStatus(false);
+    window.dispatchEvent(new Event("qr:voice-order-close"));
+    resetToTypePicker?.({ allowForceClose: true });
+  }, [resetToTypePicker, setShowStatus, storage]);
 
   const forceStatusLockActive = (() => {
     const forced = storage.getItem("qr_force_status_until_closed") === "1";
@@ -3586,6 +3781,34 @@ export default function QrMenu() {
     (normalizedStatusForLock === "reserved" ||
       normalizedStatusForLock === "confirmed" ||
       reservedTableContextWhileLocked);
+  const activeOrderHasReservation = hasReservationPayload(activeOrder);
+  const activeOrderItemCount = (() => {
+    if (Array.isArray(activeOrder?.items)) return activeOrder.items.length;
+    const countFromPayload = Number(activeOrder?.items_count ?? activeOrder?.item_count);
+    if (Number.isFinite(countFromPayload) && countFromPayload >= 0) return countFromPayload;
+    return 0;
+  })();
+  const activeOrderTotal = Number(activeOrder?.total || 0);
+  const statusAllowsCloseSlot =
+    normalizedStatusForLock === "" ||
+    ["confirmed", "closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(
+      normalizedStatusForLock
+    );
+  const showCloseInReorderSlot =
+    forceStatusLockActive &&
+    statusAllowsCloseSlot &&
+    !activeOrderHasReservation &&
+    activeOrderItemCount === 0 &&
+    activeOrderTotal <= 0;
+  const disableAuxBottomNavActions = showCloseInReorderSlot;
+  const callWaiterButtonDisabled = callWaiterButtonDisabledBase || disableAuxBottomNavActions;
+  const canStartVoiceFromNav =
+    canStartVoiceFromNavBase && !disableAuxBottomNavActions;
+  const reorderActionLabel = showCloseInReorderSlot ? t("Close") : reOrderLabel;
+  const canUseReorderSlot = showCloseInReorderSlot || canReOrderFromNav;
+  const onReorderSlotClick = showCloseInReorderSlot
+    ? onForceCloseStatusFromNav
+    : onReOrderFromNav;
 
   const statusPortal = showStatus && statusPortalOrderId
     ? createPortal(
@@ -3706,6 +3929,7 @@ export default function QrMenu() {
         <div className={isDarkMain ? "dark" : ""}>
           <ModernTableSelector
             tables={tables}
+            showAreas={showTableAreas}
             t={t}
             occupiedNumbers={filteredOccupied}
             occupiedLabel={t("Occupied")}
@@ -3973,7 +4197,7 @@ export default function QrMenu() {
               {callWaiterFeedback}
             </div>
           ) : null}
-          <div className="mx-auto grid w-full max-w-md grid-cols-3 gap-2 rounded-2xl border border-neutral-200 bg-white/95 p-2 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur">
+          <div className="mx-auto grid w-full max-w-md grid-cols-4 gap-2 rounded-2xl border border-neutral-200 bg-white/95 p-2 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur">
             <button
               type="button"
               onClick={onCallWaiterClick}
@@ -3993,6 +4217,22 @@ export default function QrMenu() {
                   {callWaiterCooldownSeconds}
                 </span>
               ) : null}
+            </button>
+
+            <button
+              type="button"
+              onClick={onReorderSlotClick}
+              disabled={!canUseReorderSlot}
+              className={`inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
+                canUseReorderSlot
+                  ? "border-amber-500 bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.98]"
+                  : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+              }`}
+              title={reorderActionLabel}
+              aria-label={reorderActionLabel}
+            >
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              <span className="block whitespace-nowrap">{reorderActionLabel}</span>
             </button>
 
             <button
@@ -4049,6 +4289,7 @@ export default function QrMenu() {
         forceMinimized={Boolean(showStatus)}
         hideMiniButton={!isDesktopLayout && !showHome}
         openEventName={!isDesktopLayout ? "qr:voice-order-open" : ""}
+        closeEventName={!isDesktopLayout ? "qr:voice-order-close" : ""}
       />
 
       {qrVoiceModalOpen && (
@@ -4190,13 +4431,19 @@ export default function QrMenu() {
           setShowStatus(false);
         }}
         onAddToCart={(item) => {
-          storage.setItem("qr_cart_auto_open", "0");
+          storage.setItem("qr_cart_auto_open", "1");
           setCart((prev) => [...prev, item]);
           setShowAddModal(false);
-          if (returnHomeAfterAdd) {
-            // Home-product flow should return home and open cart immediately.
-            storage.setItem("qr_cart_auto_open", "1");
+          setShowStatus(false);
+          if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+            window.requestAnimationFrame(() => {
+              window.dispatchEvent(new Event("qr:cart-open"));
+            });
+          } else {
             window.dispatchEvent(new Event("qr:cart-open"));
+          }
+          if (returnHomeAfterAdd) {
+            // Home-product flow should return home with cart open.
             setReturnHomeAfterAdd(false);
             setForceHome(true);
             setShowDeliveryForm(false);

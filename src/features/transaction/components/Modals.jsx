@@ -29,6 +29,7 @@ const Modals = ({
   hasSelection,
   selectedItemsTotal,
   selectionQuantities,
+  setSelectionQuantities,
   selectedCartItemIds,
   activeSplitMethod,
   setActiveSplitMethod,
@@ -206,7 +207,7 @@ const Modals = ({
                 <ul className="space-y-1 text-[12px]">
                   {selectedCartItems.map((item) => {
                     const itemQty = Math.max(1, Number(item.quantity) || 1);
-                    const key = String(item.unique_id || item.id);
+                    const key = String(item.cancel_key || item.unique_id || item.id);
                     const requested = Number(selectionQuantities[key]) || 1;
                     const cancelQty = Math.min(Math.max(1, requested), itemQty);
                     const perUnit = computeItemLineTotal(item) / itemQty;

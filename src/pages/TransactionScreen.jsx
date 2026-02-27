@@ -83,6 +83,7 @@ import {
   resolveItemPaymentMethod,
   isPaidItem,
   toLocalYmd,
+  normalizeYmd,
   isPromoActiveToday,
   computeDiscountedUnitPrice,
 } from "../features/transaction/utils/transactionUtils";
@@ -1054,7 +1055,7 @@ const parseVoiceTranscript = useCallback(
   [currentUser?.restaurant_id, orderType, preferredLanguage, tableId, t, txApiRequest]
 );
 
-  const matchExtraPrice = useCallback((product, modifierValue) => {
+const matchExtraPrice = useCallback((product, modifierValue) => {
   if (!product) return 0;
   const extras = (() => {
     if (Array.isArray(product.extras)) return product.extras;
@@ -1071,30 +1072,97 @@ const parseVoiceTranscript = useCallback(
   return Number(found?.price ?? found?.extraPrice ?? 0) || 0;
 }, []);
 
+  const buildCartSelectionGroupKey = useCallback(
+    (item) => {
+      const extrasKey = JSON.stringify(safeParseExtras(item.extras) || []);
+      const noteKey =
+        typeof item.note === "string" ? item.note.trim() : JSON.stringify(item.note || "");
+      const pricingKey = [
+        Number(item.price) || 0,
+        Number(item.original_price ?? item.originalPrice ?? 0) || 0,
+        String(item.discount_type ?? item.discountType ?? ""),
+        Number(item.discount_value ?? item.discountValue ?? 0) || 0,
+        normalizeYmd(item.promo_start ?? item.promoStart ?? ""),
+        normalizeYmd(item.promo_end ?? item.promoEnd ?? ""),
+      ].join("|");
+      const statusSlice = item.paid
+        ? `paid:${item.receipt_id || "yes"}`
+        : item.confirmed
+        ? "confirmed"
+        : "unconfirmed";
+
+      return item.confirmed
+        ? `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}__uid:${item.unique_id}`
+        : `${item.name}__${extrasKey}__${noteKey}__${pricingKey}__${statusSlice}`;
+    },
+    [safeParseExtras]
+  );
+
+  const selectedCartBuckets = useMemo(() => {
+    if (!selectedCartItemIds.size) return [];
+    const selectedKeys = new Set(Array.from(selectedCartItemIds, (id) => String(id)));
+    const grouped = new Map();
+
+    (Array.isArray(cartItems) ? cartItems : []).forEach((item) => {
+      const groupKey = buildCartSelectionGroupKey(item);
+      const qty = Math.max(1, Number(item.quantity) || 1);
+      const selectionKey = String(item.unique_id || item.id || "");
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, {
+          groupKey,
+          selectionKey,
+          quantity: 0,
+          items: [],
+        });
+      }
+      const bucket = grouped.get(groupKey);
+      if (!bucket.selectionKey && selectionKey) {
+        bucket.selectionKey = selectionKey;
+      }
+      bucket.quantity += qty;
+      bucket.items.push(item);
+    });
+
+    return Array.from(grouped.values()).filter(
+      (bucket) => bucket.selectionKey && selectedKeys.has(bucket.selectionKey)
+    );
+  }, [cartItems, selectedCartItemIds, buildCartSelectionGroupKey]);
+
+  const computeSelectedBucketAmount = useCallback(
+    (bucket, requestedQty, includePaidItems) => {
+      let remaining = Math.min(
+        Math.max(1, Number(requestedQty) || 1),
+        Math.max(1, Number(bucket.quantity) || 1)
+      );
+      let subtotal = 0;
+
+      for (const item of bucket.items) {
+        if (remaining <= 0) break;
+        if (includePaidItems ? !isPaidItem(item) : isPaidItem(item)) continue;
+        const itemMaxQty = Math.max(1, Number(item.quantity) || 1);
+        const takeQty = Math.min(remaining, itemMaxQty);
+        const perUnit = computeItemLineTotal(item, safeParseExtras) / itemMaxQty;
+        subtotal += perUnit * takeQty;
+        remaining -= takeQty;
+      }
+
+      return subtotal;
+    },
+    [computeItemLineTotal, safeParseExtras]
+  );
+
   // 💡 Compute total of selected cart items (supports partial quantity selection)
   // Only count unpaid items toward payment totals so paid-item selections (for refunds)
   // don’t inflate the pay modal.
   const selectedItemsTotal = useMemo(
     () =>
-      cartItems.reduce((sum, item) => {
-        if (isPaidItem(item)) return sum;
-        const key = String(item.unique_id || item.id);
-        if (!selectedCartItemIds.has(key)) return sum;
-        const maxQty = Math.max(1, Number(item.quantity) || 1);
-        const selectedQty = Math.min(
-          maxQty,
-          Number(selectionQuantities?.[key] || maxQty)
-        );
-        const perUnit = computeItemLineTotal(item, safeParseExtras) / maxQty;
-        return sum + perUnit * selectedQty;
+      selectedCartBuckets.reduce((sum, bucket) => {
+        const maxQty = Math.max(1, Number(bucket.quantity) || 1);
+        const requested = Number(selectionQuantities?.[bucket.selectionKey] ?? maxQty);
+        const selectedQty = Math.min(maxQty, Math.max(1, requested || maxQty));
+        return sum + computeSelectedBucketAmount(bucket, selectedQty, false);
       }, 0),
-    [
-      cartItems,
-      computeItemLineTotal,
-      safeParseExtras,
-      selectedCartItemIds,
-      selectionQuantities,
-    ]
+    [selectedCartBuckets, selectionQuantities, computeSelectedBucketAmount]
   );
 
   const hasSelection = selectedCartItemIds.size > 0;
@@ -1107,29 +1175,42 @@ const parseVoiceTranscript = useCallback(
   }, [cartItems, computeItemLineTotal, safeParseExtras]);
 
   const selectedPaidRefundAmount = useMemo(() => {
-    if (!selectedCartItemIds.size) return 0;
-    const keys = new Set(Array.from(selectedCartItemIds, (id) => String(id)));
-    return cartItems.reduce((sum, item) => {
-      const key = String(item.unique_id || item.id);
-      if (!keys.has(key) || !item.paid) return sum;
-      const maxQty = Math.max(1, Number(item.quantity) || 1);
-      const requested = Number(selectionQuantities[key]) || 1;
-      const cancelQty = Math.min(Math.max(1, requested), maxQty);
-      const perUnit = computeItemLineTotal(item, safeParseExtras) / maxQty;
-      return sum + perUnit * cancelQty;
+    if (!selectedCartBuckets.length) return 0;
+    return selectedCartBuckets.reduce((sum, bucket) => {
+      const maxQty = Math.max(1, Number(bucket.quantity) || 1);
+      const requested = Number(
+        selectionQuantities?.[bucket.groupKey] ?? selectionQuantities?.[bucket.selectionKey]
+      );
+      const cancelQty = Math.min(maxQty, Math.max(1, requested || 1));
+      return sum + computeSelectedBucketAmount(bucket, cancelQty, true);
     }, 0);
-  }, [selectionQuantities, cartItems, selectedCartItemIds, computeItemLineTotal]);
+  }, [selectionQuantities, selectedCartBuckets, computeSelectedBucketAmount]);
 
-  const refundAmount = selectedPaidRefundAmount > 0 ? selectedPaidRefundAmount : totalPaidAmount;
+  const refundAmount = hasSelection ? selectedPaidRefundAmount : totalPaidAmount;
   const hasPaidItems = refundAmount > 0;
   const isUnpaidPaymentMethod =
     (order?.payment_method || "").toLowerCase().trim() === "unpaid";
   const shouldShowRefundMethod = hasPaidItems && !isUnpaidPaymentMethod;
   const selectedCartItems = useMemo(() => {
-    if (!selectedCartItemIds.size) return [];
-    const keys = new Set(Array.from(selectedCartItemIds, (id) => String(id)));
-    return cartItems.filter((item) => keys.has(String(item.unique_id || item.id)));
-  }, [cartItems, selectedCartItemIds]);
+    if (!selectedCartBuckets.length) return [];
+    return selectedCartBuckets
+      .map((bucket) => {
+        const firstItem = bucket.items[0];
+        if (!firstItem) return null;
+        return {
+          ...firstItem,
+          quantity: Math.max(1, Number(bucket.quantity) || 1),
+          cancel_key: bucket.groupKey,
+          cancel_targets: bucket.items
+            .map((item) => ({
+              unique_id: String(item.unique_id || item.id || ""),
+              maxQty: Math.max(1, Number(item.quantity) || 1),
+            }))
+            .filter((target) => target.unique_id),
+        };
+      })
+      .filter(Boolean);
+  }, [selectedCartBuckets]);
 
   const unpaidCartItems = useMemo(() => {
     return (Array.isArray(cartItems) ? cartItems : []).filter((item) => !item?.paid);
@@ -2486,6 +2567,7 @@ const modalsProps = useMemo(
     hasSelection,
     selectedItemsTotal,
     selectionQuantities,
+    setSelectionQuantities,
     selectedCartItemIds,
     activeSplitMethod,
     setActiveSplitMethod,
@@ -2600,6 +2682,7 @@ const modalsProps = useMemo(
     selectedPaymentMethod,
     selectedProduct,
     selectionQuantities,
+    setSelectionQuantities,
     setActiveSplitMethod,
     setCancelReason,
     setDebtError,

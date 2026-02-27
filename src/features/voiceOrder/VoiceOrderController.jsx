@@ -229,6 +229,7 @@ export default function VoiceOrderController({
   forceMinimized = false,
   hideMiniButton = false,
   openEventName = "",
+  closeEventName = "",
 }) {
   const { t, i18n } = useTranslation();
   const location = useLocation();
@@ -1450,6 +1451,7 @@ export default function VoiceOrderController({
         forceMinimized={forceMinimized}
         hideMiniButton={hideMiniButton}
         openEventName={openEventName}
+        closeEventName={closeEventName}
       />
 
       <DraftOrderRecapModal

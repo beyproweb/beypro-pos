@@ -90,12 +90,29 @@ const normItem = (it) => ({
   name: it.name || it.product_name || it.item_name || "",
   price: Number(it.price || 0),
   quantity: Number(it.quantity || 1),
-  kitchen_status: it.kitchen_status || "new",
+  kitchen_status: it.kitchen_status || it.status || "new",
   note: it.note || "",
+  cancellation_reason:
+    it.cancellation_reason ||
+    it.cancel_reason ||
+    it.cancelReason ||
+    it.kitchen_cancel_reason ||
+    it.reason ||
+    "",
   extras: parseMaybeJSON(it.extras),
   payment_method: it.payment_method || it.paymentMethod || null,
   paid_at: it.paid_at || it.paidAt || null,
 });
+
+const isCancelledItemStatus = (value) => {
+  const status = String(value || "").toLowerCase();
+  return ["canceled", "cancelled", "void", "deleted"].includes(status);
+};
+
+const isCancelledLikeOrderStatus = (value) => {
+  const status = String(value || "").toLowerCase();
+  return ["canceled", "cancelled", "void", "deleted"].includes(status);
+};
 
 /* ---------- UI COMPONENTS (UI-only; no business logic) ---------- */
 function OrderStatusHeader({ t, title, subtitle, meta, onBack }) {
@@ -303,6 +320,8 @@ function OrderItemsList({ t, items, totalLabel, formatCurrency, badgeColor, disp
           const baseTotal = basePrice * quantity;
           const isItemPaid = !!item.paid_at;
           const itemPm = pmLabel(item.payment_method);
+          const isItemCancelled = isCancelledItemStatus(item.kitchen_status);
+          const itemCancelReason = String(item.cancellation_reason || "").trim();
 
           return (
             <li key={item.id} className="px-4 py-4">
@@ -360,6 +379,12 @@ function OrderItemsList({ t, items, totalLabel, formatCurrency, badgeColor, disp
                           {item.note}
                         </div>
                       ) : null}
+
+                      {isItemCancelled && itemCancelReason ? (
+                        <div className="mt-2 rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-2 py-1.5 text-xs text-rose-700 dark:text-rose-300">
+                          <span className="font-semibold">{t("Reason")}:</span> {itemCancelReason}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="shrink-0 text-right">
@@ -377,9 +402,9 @@ function OrderItemsList({ t, items, totalLabel, formatCurrency, badgeColor, disp
           );
         })}
       </ul>
-      <div className="border-t border-neutral-100 dark:border-neutral-800 px-4 py-3 flex justify-end">
-        <div className="text-right">
-          <div className="text-[11px] text-neutral-500 dark:text-neutral-400">{t("Total")}</div>
+      <div className="border-t border-neutral-100 dark:border-neutral-800 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="text-[15px] font-semibold text-neutral-700 dark:text-neutral-300">{t("Total")}</div>
           <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{totalLabel}</div>
         </div>
       </div>
@@ -573,10 +598,18 @@ const OrderStatusScreen = ({
     if (!order) return;
     const status = (order.status || "").toLowerCase();
     const preserveWhileReserved = forceLock && hasReservationPayload(order);
-    if (FINISHED_STATES.includes(status) && !preserveWhileReserved) {
+    const orderCancelReason =
+      order?.cancellation_reason || order?.cancel_reason || order?.cancelReason || "";
+    const hasCancelledItems = items.some((item) => isCancelledItemStatus(item?.kitchen_status));
+    const keepVisibleForCancellation =
+      status === "cancelled" ||
+      status === "canceled" ||
+      Boolean(orderCancelReason) ||
+      hasCancelledItems;
+    if (FINISHED_STATES.includes(status) && !preserveWhileReserved && !keepVisibleForCancellation) {
       onFinished?.();
     }
-  }, [order, forceLock, hasReservationPayload, onFinished]);
+  }, [order, items, forceLock, hasReservationPayload, onFinished]);
 
   const fetchOrder = async () => {
     if (!orderId) return;
@@ -592,7 +625,7 @@ const OrderStatusScreen = ({
     } catch {}
 
     try {
-      const { res, data } = await fetchJSON(`/orders/${orderId}/items`);
+      const { res, data } = await fetchJSON(`/orders/${orderId}/items?include_cancelled=1`);
       if (!res.ok) throw new Error();
       const normalized = toArray(data).map(normItem);
       setItems(normalized);
@@ -679,6 +712,7 @@ const OrderStatusScreen = ({
     t("Restaurant");
 
   const total = items.reduce((sum, it) => {
+    if (isCancelledItemStatus(it?.kitchen_status)) return sum;
     const extras = (it.extras || []).reduce(
       (s, ex) => s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
       0
@@ -687,8 +721,20 @@ const OrderStatusScreen = ({
   }, 0);
 
   const orderStatus = (order?.status || "").toLowerCase();
-  const isCancelled = orderStatus === "cancelled" || orderStatus === "canceled";
-  const cancelReason = order?.cancellation_reason || order?.cancel_reason || order?.cancelReason || "";
+  const isOrderCancelled = isCancelledLikeOrderStatus(orderStatus);
+  const orderCancelReason =
+    order?.cancellation_reason ||
+    order?.cancel_reason ||
+    order?.cancelReason ||
+    order?.delete_reason ||
+    order?.deletion_reason ||
+    "";
+  const cancelledItems = items.filter((item) => isCancelledItemStatus(item?.kitchen_status));
+  const allItemsCancelled = items.length > 0 && items.every((item) => isCancelledItemStatus(item?.kitchen_status));
+  const firstItemCancelReason = String(cancelledItems[0]?.cancellation_reason || "").trim();
+  const cancelReason = String(orderCancelReason || firstItemCancelReason || "").trim();
+  const isCancelledFlow = isOrderCancelled || allItemsCancelled || Boolean(orderCancelReason);
+  const showCloseButton = typeof onClose === "function" && items.length === 0;
 
   const normalizeStatus = (s) => {
     const v = (s || "").toLowerCase();
@@ -699,6 +745,7 @@ const OrderStatusScreen = ({
   const displayStatus = (s) => {
     const v = normalizeStatus(s);
     if (v === "ready") return t("Order ready");
+    if (v === "cancelled" || v === "canceled" || v === "void" || v === "deleted") return t("Cancelled");
     if (!v) return t("Unknown");
     return t(v.charAt(0).toUpperCase() + v.slice(1));
   };
@@ -707,12 +754,15 @@ const OrderStatusScreen = ({
     const s = normalizeStatus(status);
     if (s === "ready") return "bg-blue-50 text-blue-700 border-blue-200";
     if (s === "preparing") return "bg-amber-50 text-amber-700 border-amber-200";
+    if (s === "cancelled" || s === "canceled" || s === "void" || s === "deleted") {
+      return "bg-rose-50 text-rose-700 border-rose-200";
+    }
     if (s === "new") return "bg-neutral-50 text-neutral-700 border-neutral-200";
     return "bg-neutral-50 text-neutral-600 border-neutral-200";
   };
 
   const getCurrentStepIndex = () => {
-    if (isCancelled) return 0;
+    if (isCancelledFlow) return 0;
     const rank = (s) => {
       const v = normalizeStatus(s);
       if (v === "ready") return 2;
@@ -796,26 +846,26 @@ const OrderStatusScreen = ({
         onBack={null}
       />
 
-      <main className="mx-auto w-full max-w-[640px] px-4 pt-4 pb-6">
+      <main className="mx-auto w-full max-w-[640px] px-4 pt-4 pb-[calc(104px+env(safe-area-inset-bottom))] sm:pb-8">
         <div className="space-y-4">
           <OrderProgressStepper
             t={t}
             currentStepIndex={getCurrentStepIndex()}
-            isCancelled={isCancelled}
+            isCancelled={isCancelledFlow}
           />
 
           <OrderSummaryCard
             t={t}
             title={titleLine || t("Your Order")}
-            statusLabel={isCancelled ? t("Cancelled") : displayStatus(order?.status)}
-            timerLabel={isCancelled ? t("—") : `${timer}`}
+            statusLabel={isCancelledFlow ? t("Cancelled") : displayStatus(order?.status)}
+            timerLabel={isCancelledFlow ? t("—") : `${timer}`}
             paymentLabel={paymentLabel}
             createdAtLabel={createdAtLabel}
             reservedAtLabel={reservedAtLabel}
             reservationGuestsLabel={reservationGuestsLabel}
             totalLabel={formatCurrency(total)}
             cancelReason={cancelReason}
-            isCancelled={isCancelled}
+            isCancelled={isCancelledFlow}
           />
 
           <OrderItemsList
@@ -828,12 +878,14 @@ const OrderStatusScreen = ({
             pmLabel={pmLabel}
           />
 
-          <InlineBottomActions
-            t={t}
-            primaryLabel={t("Order")}
-            onPrimary={onOrderAnother}
-            onSecondary={null}
-          />
+          {showCloseButton ? (
+            <InlineBottomActions
+              t={t}
+              primaryLabel={t("Close")}
+              onPrimary={() => onClose?.({ allowForceClose: true })}
+            />
+          ) : null}
+
         </div>
       </main>
     </div>

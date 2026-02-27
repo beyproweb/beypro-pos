@@ -91,14 +91,6 @@ function TableCard({
     [handleCloseTable, tableOrder]
   );
 
-  const handleAcknowledgeClick = React.useCallback(
-    (e) => {
-      e.stopPropagation();
-      handleAcknowledgeWaiterCall?.(table.tableNumber);
-    },
-    [handleAcknowledgeWaiterCall, table.tableNumber]
-  );
-
   const handleResolvedClick = React.useCallback(
     (e) => {
       e.stopPropagation();
@@ -431,11 +423,6 @@ function TableCard({
               ⏱ <ElapsedTimer startTime={confirmedStartTime} />
             </span>
           )}
-          {isCallingWaiter && (
-            <span className="shrink-0 rounded-full bg-red-600 text-white px-3 py-1 text-[11px] sm:text-xs font-extrabold tracking-wide shadow-md animate-pulse">
-              🔴 CALLING
-            </span>
-          )}
         </div>
 
         {table.label && (
@@ -573,13 +560,9 @@ function TableCard({
           <div className="flex flex-col items-end gap-2 ml-auto">
             {isCallingWaiter && (
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleAcknowledgeClick}
-                  className="px-3 py-1.5 bg-red-600 text-white font-extrabold rounded-full shadow text-xs whitespace-nowrap hover:bg-red-700 active:scale-[0.99] transition"
-                >
-                  {t("Acknowledge")}
-                </button>
+                <span className="px-3 py-1.5 bg-red-600 text-white font-extrabold rounded-full shadow text-xs whitespace-nowrap animate-pulse">
+                  🔴 {t("Calling")}
+                </span>
                 <button
                   type="button"
                   onClick={handleResolvedClick}

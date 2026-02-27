@@ -183,6 +183,23 @@ function buildOrderCancelledMessage(payload) {
   return `Order cancelled${reason}`;
 }
 
+function isCustomerCallAlertPayload(payload) {
+  if (!payload || typeof payload !== "object") return false;
+
+  const type = String(payload?.type || "").toLowerCase().trim();
+  if (type === "customer_call" || type === "call_waiter") return true;
+
+  const event = String(payload?.event || payload?.extra?.event || "").toLowerCase().trim();
+  if (event.startsWith("customer_call")) return true;
+
+  const message = String(payload?.message || "").toLowerCase();
+  return (
+    message.includes("called waiter") ||
+    message.includes("calling waiter") ||
+    message.includes("waiter call")
+  );
+}
+
 const clampVolume = (value, fallback = 1) => {
   if (typeof value !== "number" || Number.isNaN(value)) return fallback;
   return Math.min(Math.max(value, 0), 1);
@@ -579,6 +596,9 @@ export default function GlobalOrderAlert() {
   useEffect(() => {
     const handleAlertEvent = (payload) => {
       if (!payload?.message) return;
+      if (isCustomerCallAlertPayload(payload)) {
+        return;
+      }
       const key = alertEventKeyMap[payload.type] || "other";
       notify(key, payload.message);
     };

@@ -1,5 +1,5 @@
 // ModernTableSelector.jsx — Luxury Version
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 
 export default function ModernTableSelector({
@@ -10,19 +10,39 @@ export default function ModernTableSelector({
   occupiedLabel = "Occupied",
   reservedNumbers = [],
   reservedLabel = "Reserved",
+  showAreas = true,
 }) {
-  // Group tables by area
+  const areaViewEnabled = showAreas !== false;
+
+  // Group tables by area when enabled; otherwise keep one flat bucket.
   const grouped = useMemo(() => {
+    if (!areaViewEnabled) {
+      return { ALL: [...tables] };
+    }
     return tables.reduce((acc, t) => {
       const key = t.area || "Main Hall";
       if (!acc[key]) acc[key] = [];
       acc[key].push(t);
       return acc;
     }, {});
-  }, [tables]);
+  }, [areaViewEnabled, tables]);
 
-  const areas = Object.keys(grouped);
-  const [activeArea, setActiveArea] = useState(areas[0] || "Main Hall");
+  const areas = useMemo(() => Object.keys(grouped), [grouped]);
+  const [activeArea, setActiveArea] = useState(
+    areaViewEnabled ? areas[0] || "Main Hall" : "ALL"
+  );
+  useEffect(() => {
+    if (!areaViewEnabled) {
+      setActiveArea("ALL");
+      return;
+    }
+    if (!areas.includes(activeArea)) {
+      setActiveArea(areas[0] || "Main Hall");
+    }
+  }, [activeArea, areaViewEnabled, areas]);
+
+  const resolvedArea = areaViewEnabled ? activeArea || areas[0] || "Main Hall" : "ALL";
+  const visibleTables = grouped[resolvedArea] || [];
   const occupiedSet = useMemo(() => new Set((occupiedNumbers || []).map((n) => Number(n))), [occupiedNumbers]);
   const reservedSet = useMemo(() => new Set((reservedNumbers || []).map((n) => Number(n))), [reservedNumbers]);
 
@@ -50,28 +70,30 @@ export default function ModernTableSelector({
       </div>
 
       {/* AREA TABS */}
-      <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-none mb-6">
-        {areas.map((area) => (
-          <button
-            key={area}
-            onClick={() => setActiveArea(area)}
-            className={`
-              whitespace-nowrap px-6 py-2.5 rounded-full text-sm font-medium transition-all
-              ${
-                activeArea === area
-                  ? "bg-black text-white shadow-md dark:bg-white dark:text-neutral-900"
-                  : "bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-800 hover:bg-gray-100 dark:hover:bg-neutral-800"
-              }
-            `}
-          >
-            {area}
-          </button>
-        ))}
-      </div>
+      {areaViewEnabled && areas.length > 1 && (
+        <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-none mb-6">
+          {areas.map((area) => (
+            <button
+              key={area}
+              onClick={() => setActiveArea(area)}
+              className={`
+                whitespace-nowrap px-6 py-2.5 rounded-full text-sm font-medium transition-all
+                ${
+                  activeArea === area
+                    ? "bg-black text-white shadow-md dark:bg-white dark:text-neutral-900"
+                    : "bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-800 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                }
+              `}
+            >
+              {area}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* TABLE GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5 pb-20">
-        {grouped[activeArea]?.map((tbl) => {
+        {visibleTables.map((tbl) => {
           const isOcc = occupiedSet.has(Number(tbl.tableNumber));
           const isReserved = reservedSet.has(Number(tbl.tableNumber));
           return (
@@ -116,9 +138,11 @@ export default function ModernTableSelector({
             </div>
 
             {/* AREA LABEL */}
-            <div className="text-sm text-gray-600 dark:text-neutral-300 flex items-center gap-2">
-              📍 <span className="font-medium">{tbl.area}</span>
-            </div>
+            {areaViewEnabled && (
+              <div className="text-sm text-gray-600 dark:text-neutral-300 flex items-center gap-2">
+                📍 <span className="font-medium">{tbl.area}</span>
+              </div>
+            )}
 
             {/* SEATS */}
             <div className="text-sm text-gray-700 dark:text-neutral-200 bg-gray-100 dark:bg-neutral-800 rounded-full px-3 py-1 inline-block">

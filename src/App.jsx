@@ -201,6 +201,7 @@ function AppShell() {
       try {
         const data = await secureFetch("/settings/notifications");
         window.notificationSettings = data;
+        window.dispatchEvent(new Event("notification_settings_updated"));
       } catch (err) {
         console.warn("⚠️ Failed to load notification settings", err);
       }

@@ -443,12 +443,14 @@ const handleCloseTable = async (orderOrId) => {
   const order = orderOrId && typeof orderOrId === "object" ? orderOrId : null;
   const orderId = order?.id ?? orderOrId;
   const normalizedStatus = normalizeOrderStatus(order?.status);
+  const isPaidClose =
+    isOrderPaid(order) || isOrderFullyPaid(order) || normalizedStatus === "paid";
   const hasExplicitReservationState =
     normalizedStatus === "reserved" ||
     String(order?.order_type || "").trim().toLowerCase() === "reservation";
   const normalizedOrderId = Number(orderId);
   const normalizedTableNumber = Number(order?.table_number ?? order?.tableNumber);
-  const hasReservationFromList = (Array.isArray(effectiveReservationsToday) ? effectiveReservationsToday : []).some(
+  const matchingReservation = (Array.isArray(effectiveReservationsToday) ? effectiveReservationsToday : []).find(
     (reservation) => {
       const reservationStatus = normalizeOrderStatus(reservation?.status);
       if (["closed", "cancelled", "canceled"].includes(reservationStatus)) return false;
@@ -475,11 +477,52 @@ const handleCloseTable = async (orderOrId) => {
       return false;
     }
   );
+  const hasReservationFromList = Boolean(matchingReservation);
   const hasActiveReservation = hasExplicitReservationState || hasReservationFromList;
 
   if (hasActiveReservation) {
-    toast.warning(t("Delete reservation first before closing table"));
-    return;
+    if (!isPaidClose) {
+      toast.warning(t("Delete reservation first before closing table"));
+      return;
+    }
+
+    const reservationId = Number(order?.reservation?.id ?? matchingReservation?.id);
+    try {
+      if (Number.isFinite(normalizedOrderId) && normalizedOrderId > 0) {
+        await secureFetch(`/orders/${normalizedOrderId}/reservations`, { method: "DELETE" });
+      } else if (Number.isFinite(reservationId) && reservationId > 0) {
+        await secureFetch(`/orders/reservations/${reservationId}`, { method: "DELETE" });
+      } else {
+        toast.error(t("Failed to delete reservation"));
+        return;
+      }
+
+      setReservationsToday((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        return list.filter((reservation) => {
+          const rowReservationId = Number(reservation?.id);
+          const rowOrderId = Number(reservation?.order_id ?? reservation?.orderId);
+          const rowTableNumber = Number(
+            reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
+          );
+          if (Number.isFinite(reservationId) && rowReservationId === reservationId) return false;
+          if (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) return false;
+          if (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber) return false;
+          return true;
+        });
+      });
+    } catch (reservationDeleteErr) {
+      const message = String(reservationDeleteErr?.message || reservationDeleteErr || "").toLowerCase();
+      const alreadyDeleted =
+        message.includes("not found") ||
+        message.includes("no reservation") ||
+        message.includes("already deleted");
+      if (!alreadyDeleted) {
+        console.error("❌ Failed to auto-delete reservation before close:", reservationDeleteErr);
+        toast.error(t("Failed to delete reservation"));
+        return;
+      }
+    }
   }
 
   try {
@@ -557,10 +600,54 @@ const handleDeleteReservation = useCallback(
     const ok = window.confirm(t("Delete this reservation?"));
     if (!ok) return;
 
+    const normalizedStatus = normalizeOrderStatus(table?.order?.status);
+    const normalizedOrderType = String(table?.order?.order_type || "").trim().toLowerCase();
+    const isReservationLikeOrder =
+      normalizedStatus === "reserved" ||
+      normalizedOrderType === "reservation" ||
+      !!reservationInfo?.id;
+
+    let itemCount = Array.isArray(table?.order?.items) ? table.order.items.length : null;
+    if (!Number.isFinite(itemCount) && Number.isFinite(orderId)) {
+      try {
+        const latestItems = await secureFetch(`/orders/${orderId}/items`);
+        const items = Array.isArray(latestItems) ? latestItems : [];
+        itemCount = items.length;
+      } catch {
+        itemCount = null;
+      }
+    }
+    const totalAmount = Number(table?.order?.total || 0);
+    const isEmptyReservationOnly =
+      isReservationLikeOrder && totalAmount <= 0 && Number(itemCount || 0) === 0;
+
+    let deleteReason = "";
+    if (isEmptyReservationOnly) {
+      const input = window.prompt(t("Please enter a reason for deleting this empty reservation"));
+      if (input === null) return;
+      const trimmed = String(input || "").trim();
+      if (!trimmed) {
+        toast.warning(t("Reason is required"));
+        return;
+      }
+      deleteReason = trimmed;
+    }
+
     try {
+      const deleteOptions = {
+        method: "DELETE",
+        ...(deleteReason
+          ? {
+              body: JSON.stringify({
+                delete_reason: deleteReason,
+                cancellation_reason: deleteReason,
+              }),
+            }
+          : {}),
+      };
       const response = Number.isFinite(orderId)
-        ? await secureFetch(`/orders/${orderId}/reservations`, { method: "DELETE" })
-        : await secureFetch(`/orders/reservations/${reservationId}`, { method: "DELETE" });
+        ? await secureFetch(`/orders/${orderId}/reservations`, deleteOptions)
+        : await secureFetch(`/orders/reservations/${reservationId}`, deleteOptions);
 
       const updatedOrder = response?.order && typeof response.order === "object" ? response.order : null;
       const normalizedUpdatedStatus = String(updatedOrder?.status || "").toLowerCase();
