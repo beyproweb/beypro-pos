@@ -54,6 +54,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     hasSelection,
     selectedCount,
     isPhoneOrder,
+    hasUnconfirmedCartItems,
     hasConfirmedCartUnpaid,
     hasSuborderUnpaid,
     allCartItemsPaid,
@@ -107,7 +108,8 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     hasUnpaidConfirmed,
   } = actions;
 
-  const shouldShowPayButton = hasConfirmedCartUnpaid || hasSuborderUnpaid;
+  const shouldShowPayButton =
+    (hasConfirmedCartUnpaid || hasSuborderUnpaid) && !hasUnconfirmedCartItems;
   const reservationCustomerName =
     existingReservation?.customer_name ??
     existingReservation?.customerName ??

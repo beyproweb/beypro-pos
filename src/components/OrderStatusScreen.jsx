@@ -734,7 +734,12 @@ const OrderStatusScreen = ({
   const firstItemCancelReason = String(cancelledItems[0]?.cancellation_reason || "").trim();
   const cancelReason = String(orderCancelReason || firstItemCancelReason || "").trim();
   const isCancelledFlow = isOrderCancelled || allItemsCancelled || Boolean(orderCancelReason);
-  const showCloseButton = typeof onClose === "function" && items.length === 0;
+  const isReservedOrderContext =
+    orderStatus === "reserved" || hasReservationPayload(order);
+  const showCloseButton =
+    typeof onClose === "function" &&
+    items.length === 0 &&
+    !isReservedOrderContext;
 
   const normalizeStatus = (s) => {
     const v = (s || "").toLowerCase();
