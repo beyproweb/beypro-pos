@@ -2081,7 +2081,7 @@ async function load() {
 	    </header>
 	
 	    {/* === HERO SECTION === */}
-		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-4 pb-14 space-y-10">
+		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-4 pb-4 space-y-10">
 	
 	      {/* TITLE & TAGLINE */}
 	      <div className="max-w-3xl">
@@ -2342,22 +2342,20 @@ async function load() {
       {/* LOYALTY CARD (optional) */}
       {loyalty.enabled && (
         <div className="mt-2 rounded-3xl border border-amber-200/70 dark:border-amber-800/50 bg-white/80 dark:bg-amber-950/20 p-5 shadow-sm max-w-3xl">
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-semibold">⭐ {t("Loyalty Card")}</div>
-            <button
-              onClick={handleStamp}
-              style={{ backgroundColor: loyalty.color }}
-              disabled={!canStampLoyalty}
-              className={`px-4 py-2 rounded-full text-white font-semibold shadow transition ${
-                canStampLoyalty ? "hover:opacity-90" : "opacity-50 cursor-not-allowed"
-              }`}
-            >
-              {t("Stamp my card")}
-            </button>
-          </div>
+          <div className="text-lg font-semibold">⭐ {t("Loyalty Card")}</div>
           <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
             {t("Reward")}: {loyalty.reward_text || t("Free Menu Item")}
           </div>
+          <button
+            onClick={handleStamp}
+            style={{ backgroundColor: loyalty.color }}
+            disabled={!canStampLoyalty}
+            className={`mt-3 px-4 py-2 rounded-full text-[14px] text-white font-semibold shadow transition ${
+              canStampLoyalty ? "hover:opacity-90" : "opacity-50 cursor-not-allowed"
+            }`}
+          >
+            {t("Stamp my card")}
+          </button>
           <div className="mt-3 flex items-center gap-1">
             {Array.from({ length: loyalty.goal || 10 }).map((_, i) => {
               const filled = i < Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10);
@@ -2436,7 +2434,7 @@ async function load() {
 	    </section>
 
     {/* === STORY SECTION (B: TEXT LEFT — IMAGE RIGHT) === */}
-	    <section id="story-section" className="max-w-6xl mx-auto px-4 pt-4 pb-14">
+	    <section id="story-section" className="max-w-6xl mx-auto px-4 pt-2 pb-14">
 	      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
         
 	        {/* TEXT LEFT */}
