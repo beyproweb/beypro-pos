@@ -713,6 +713,8 @@ const DICT = {
     "Select guests first": "Select guests first",
     "Choose guest amount first": "Choose guest amount first",
     "Select guests on a table card to enable QR scan": "Select guests on a table card to enable QR scan",
+    "Select Your Table": "Select Your Table",
+    Seats: "Seats",
     "Items Ordered": "Items Ordered",
     "Select Payment Method": "Select Payment Method",
     "Name on Card": "Name on Card",
@@ -882,6 +884,8 @@ const DICT = {
     "Select guests first": "Önce misafir seçin",
     "Choose guest amount first": "Önce misafir sayısını seçin",
     "Select guests on a table card to enable QR scan": "QR taramayı açmak için masa kartında misafir seçin",
+    "Select Your Table": "Masanızı Seçin",
+    Seats: "Kişilik",
     "Items Ordered": "Sipariş Edilenler",
     "Select Payment Method": "Ödeme yöntemi seçin",
     "Name on Card": "Kart Üzerindeki İsim",
@@ -1042,6 +1046,8 @@ const DICT = {
     "Select guests first": "Zuerst Gäste wählen",
     "Choose guest amount first": "Wählen Sie zuerst die Gästeanzahl",
     "Select guests on a table card to enable QR scan": "Wählen Sie Gäste auf einer Tischkarte, um den QR-Scan zu aktivieren",
+    "Select Your Table": "Wählen Sie Ihren Tisch",
+    Seats: "Sitze",
     "Reservation Time": "Reservierungszeit",
     Payment: "Zahlung",
     Cash: "Bar",
@@ -1114,6 +1120,8 @@ const DICT = {
     "Select guests first": "Choisissez d'abord les invités",
     "Choose guest amount first": "Choisissez d'abord le nombre d'invités",
     "Select guests on a table card to enable QR scan": "Sélectionnez les invités sur une carte de table pour activer le scan QR",
+    "Select Your Table": "Choisissez votre table",
+    Seats: "Places",
     "Reservation Time": "Heure de réservation",
     Payment: "Paiement",
     Cash: "Espèces",
@@ -1144,32 +1152,111 @@ function makeT(lang) {
 
 /* ====================== SUPPORTED LANGS ====================== */
 const LANGS = [
-  { code: "en", label: "🇺🇸 English" },
-  { code: "tr", label: "🇹🇷 Türkçe" },
-  { code: "de", label: "🇩🇪 Deutsch" },
-  { code: "fr", label: "🇫🇷 Français" },
+  { code: "en", label: "🇺🇸 Eng" },
+  { code: "tr", label: "🇹🇷 Tr" },
+  { code: "de", label: "🇩🇪 De" },
+  { code: "fr", label: "🇫🇷 Fr" },
 ];
 
 
 /* ====================== LANGUAGE SWITCHER ====================== */
-function LanguageSwitcher({ lang, setLang, t }) {
+function LanguageSwitcher({ lang, setLang, t, isDark = false }) {
+  const [open, setOpen] = React.useState(false);
+  const current = LANGS.find((item) => item.code === lang) || LANGS[0];
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   return (
-    <div className="flex items-center gap-2">
-      <label className="hidden sm:block text-[11px] uppercase tracking-[0.15em] text-gray-500 dark:text-neutral-400">
-        {t("Language")}
-      </label>
-      <select
-        value={lang}
-        onChange={(e) => setLang(e.target.value)}
-        className="appearance-none rounded-full border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs text-gray-700 dark:text-neutral-100 shadow-sm hover:border-gray-400 dark:hover:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-gray-300/60 dark:focus:ring-white/10"
+    <div className="flex items-center">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[11px] font-medium transition focus:outline-none focus:ring-2 ${
+          isDark
+            ? "border-white/10 bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:bg-white/[0.12] focus:ring-white/15"
+            : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:ring-slate-200"
+        }`}
         aria-label={t("Language")}
+        aria-expanded={open}
       >
-        {LANGS.map((l) => (
-          <option key={l.code} value={l.code}>
-            {l.label}
-          </option>
-        ))}
-      </select>
+        <span>{current.label}</span>
+      </button>
+
+      {open ? (
+        <div className="fixed inset-0 z-[90]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/35 backdrop-blur-[2px]"
+            aria-label={t("Close")}
+            onClick={() => setOpen(false)}
+          />
+          <div className={`absolute right-0 top-0 h-full w-[280px] border-l shadow-[0_24px_60px_rgba(0,0,0,0.18)] ${
+            isDark
+              ? "border-white/10 bg-neutral-950 text-white shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
+              : "border-gray-200 bg-white text-gray-900"
+          }`}>
+            <div className={`flex items-center justify-between border-b px-5 py-4 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+              <div>
+                <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isDark ? "text-white/45" : "text-gray-400"}`}>
+                  {t("Language")}
+                </div>
+                <div className={`mt-1 text-sm font-medium ${isDark ? "text-white/80" : "text-gray-600"}`}>
+                  {current.label}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                  isDark
+                    ? "border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08] hover:text-white"
+                    : "border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                }`}
+                aria-label={t("Close")}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-3">
+              <div className="space-y-1">
+                {LANGS.map((item) => {
+                  const active = item.code === lang;
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => {
+                        setLang(item.code);
+                        setOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-sm transition ${
+                        active
+                          ? isDark
+                            ? "bg-white text-neutral-950"
+                            : "bg-slate-900 text-white"
+                          : isDark
+                            ? "text-white/82 hover:bg-white/[0.08] hover:text-white"
+                            : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                      }`}
+                    >
+                      <span>{item.label}</span>
+                      {active ? <span className="text-xs font-semibold">•</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1177,6 +1264,7 @@ function LanguageSwitcher({ lang, setLang, t }) {
 function TableQrScannerModal({
   open,
   tableNumber,
+  tableDisplayName,
   guestCount,
   guestOptions = [],
   onGuestChange,
@@ -1199,9 +1287,9 @@ function TableQrScannerModal({
               ? t("Scan the QR code on your table to continue.")
               : t("Select Guests")}
           </div>
-          {tableNumber ? (
+          {tableDisplayName || tableNumber ? (
             <div className="mt-2 text-xs text-gray-500 dark:text-neutral-400">
-              {t("Table")} {String(tableNumber).padStart(2, "0")}
+              {tableDisplayName || `${t("Table")} ${String(tableNumber).padStart(2, "0")}`}
             </div>
           ) : null}
         </div>
@@ -1365,7 +1453,7 @@ function QrHeader({
         <div className="hidden md:block text-xs text-gray-500 mt-1 text-center">
           {orderType === "table"
             ? table
-              ? `${t("Table")} ${table}`
+              ? formatTableName(table)
               : t("Table Order (short)")
             : t("Online Order")}
         </div>
@@ -1472,7 +1560,7 @@ async function load() {
     return raw;
   }, [restaurantName]);
   const subtitle = (c.subtitle ?? "").trim();
-  const tagline = c.tagline || "Fresh • Crafted • Delicious";
+  const tagline = (c.tagline ?? "").trim();
   const phoneNumber = c.phone || "";
   const allowDelivery = boolish(c.delivery_enabled, true);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
@@ -2073,98 +2161,158 @@ async function load() {
 	    <div className="absolute inset-x-0 top-0 h-[420px] sm:h-[480px] -z-10 bg-gradient-to-b from-white/70 via-white/80 to-white dark:from-neutral-950/40 dark:via-neutral-950/70 dark:to-black/90" />
 
 	    {/* === TOP BAR === */}
-	    <header className="max-w-6xl mx-auto px-4 pt-3 flex items-center justify-between gap-3">
-	      {/* Left spacer (keep layout balanced) */}
-	      <div className="w-10" />
+	    <header className={`fixed inset-x-0 top-0 z-40 border-b backdrop-blur-xl ${
+        isDark
+          ? "border-white/10 bg-neutral-950/88"
+          : "border-gray-200/80 bg-white/92"
+      }`}>
+        <div className="max-w-5xl mx-auto px-3 sm:px-5 py-3">
+          <div className="grid grid-cols-1 items-center gap-3">
+            <div className="grid grid-cols-3 gap-2 min-w-0">
+              <button
+                onClick={() => openStatus.isOpen && onSelect("takeaway")}
+                disabled={!openStatus.isOpen}
+                className={`h-10 sm:h-11 rounded-lg border px-3 text-[13px] sm:text-[15px] font-medium transition-colors ${
+                  !openStatus.isOpen
+                    ? isDark
+                      ? "bg-white/[0.04] text-white/35 border-white/10 cursor-not-allowed"
+                      : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : isDark
+                      ? "bg-white text-neutral-950 border-white/80 hover:bg-white/90"
+                      : "bg-slate-900 text-white border-slate-900 hover:bg-slate-800"
+                }`}
+              >
+                {t("Reservation")}
+              </button>
 
-	      {/* Dot nav removed */}
+              <button
+                onClick={() => openStatus.isOpen && onSelect("table")}
+                disabled={!openStatus.isOpen}
+                className={`h-10 sm:h-11 rounded-lg border px-3 text-[13px] sm:text-[15px] font-medium transition-colors ${
+                  !openStatus.isOpen
+                    ? isDark
+                      ? "bg-white/[0.04] text-white/35 border-white/10 cursor-not-allowed"
+                      : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : isDark
+                      ? "bg-white/[0.04] text-white/82 border-white/12 hover:bg-white/[0.08] hover:text-white"
+                      : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
+                }`}
+              >
+                {t("Table Order")}
+              </button>
+
+              <button
+                onClick={() => allowDelivery && openStatus.isOpen && onSelect("online")}
+                disabled={!allowDelivery || !openStatus.isOpen}
+                className={`h-10 sm:h-11 rounded-lg border px-3 text-[13px] sm:text-[15px] font-medium transition-colors ${
+                  !allowDelivery || !openStatus.isOpen
+                    ? isDark
+                      ? "bg-white/[0.04] text-white/35 border-white/10 cursor-not-allowed"
+                      : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : isDark
+                      ? "bg-white/[0.04] text-white/82 border-white/12 hover:bg-white/[0.08] hover:text-white"
+                      : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
+                }`}
+              >
+                {t("Delivery")}
+              </button>
+            </div>
+          </div>
+        </div>
 	    </header>
+      <div className="h-[72px] sm:h-[76px]" aria-hidden="true" />
 	
 	    {/* === HERO SECTION === */}
-		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-4 pb-4 space-y-10">
+		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-8 pb-4 space-y-10">
 	
 	      {/* TITLE & TAGLINE */}
-	      <div className="max-w-3xl">
-	        <div className="flex items-center justify-between gap-3">
-              <div className="inline-flex items-center" ref={shopHoursDropdownRef}>
-                <div className="relative">
+	      <div className="max-w-4xl mx-auto">
+              <div className="text-center">
+			        <h1 className="text-[2.05rem] sm:text-[2.65rem] md:text-[3.15rem] font-serif font-semibold leading-[1.04] tracking-[-0.035em] text-gray-900 dark:text-neutral-50">
+			          {displayRestaurantName}
+			        </h1>
+                {subtitle ? (
+                  <p className="mt-3 text-[16px] sm:text-[17px] font-light tracking-[0.01em] text-gray-600 dark:text-neutral-300/85">
+                    {subtitle}
+                  </p>
+                ) : null}
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-3" ref={shopHoursDropdownRef}>
                   <button
                     type="button"
                     onClick={() => setShowShopHoursDropdown((v) => !v)}
-                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm text-[11px] font-medium transition ${
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[12px] sm:text-[13px] font-medium transition ${
                       openStatus.isOpen
-                        ? "bg-emerald-50/80 text-emerald-700 border-emerald-200 hover:bg-emerald-100/80 dark:bg-emerald-950/25 dark:text-emerald-200 dark:border-emerald-900/40"
-                        : "bg-rose-50/80 text-rose-700 border-rose-200 hover:bg-rose-100/80 dark:bg-rose-950/25 dark:text-rose-200 dark:border-rose-900/40"
+                        ? "bg-emerald-50/90 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/25 dark:text-emerald-200 dark:border-emerald-900/30"
+                        : "bg-rose-50/90 text-rose-700 border-rose-200/80 dark:bg-rose-950/25 dark:text-rose-200 dark:border-rose-900/30"
                     }`}
                     aria-label={t("Shop Hours")}
                     title={t("Shop Hours")}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full ${openStatus.isOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
                     <span>{openStatus.label}</span>
-                    <ChevronDown
-                      className={`h-4 w-4 transition-transform ${showShopHoursDropdown ? "rotate-180" : ""}`}
-                    />
                   </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowShopHoursDropdown((v) => !v)}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200/90 bg-transparent text-gray-700 text-[12px] sm:text-[13px] font-medium hover:bg-gray-50 dark:text-neutral-200 dark:border-neutral-800 dark:hover:bg-neutral-900/70 transition"
+                      aria-label={t("Shop Hours")}
+                      title={t("Shop Hours")}
+                    >
+                      <span>{t("Shop Hours")}</span>
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 transition-transform ${showShopHoursDropdown ? "rotate-180" : ""}`}
+                      />
+                    </button>
 
-                  {showShopHoursDropdown && (
-                    <div className="absolute left-0 top-[calc(100%+10px)] w-[320px] rounded-2xl border border-gray-200 bg-white/95 dark:bg-neutral-950/90 shadow-2xl backdrop-blur p-3 z-20">
-                      <div className="flex items-center justify-between gap-2 px-1 pb-2">
-                        <div className="text-sm font-semibold text-gray-900 dark:text-neutral-100">
-                          {t("Shop Hours")}
+                    {showShopHoursDropdown && (
+                      <div className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-0 top-[calc(100%+10px)] w-[min(320px,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] rounded-2xl border border-gray-200 bg-white/95 dark:bg-neutral-950/90 shadow-xl backdrop-blur p-3 z-20">
+                        <div className="flex items-center justify-between gap-2 px-1 pb-2">
+                          <div className="text-sm font-semibold text-gray-900 dark:text-neutral-100">
+                            {t("Shop Hours")}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowShopHoursDropdown(false)}
+                            className="text-gray-400 hover:text-gray-700 dark:hover:text-neutral-200 text-lg leading-none"
+                            aria-label={t("Close")}
+                          >
+                            ×
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowShopHoursDropdown(false)}
-                          className="text-gray-400 hover:text-gray-700 dark:hover:text-neutral-200 text-lg leading-none"
-                          aria-label={t("Close")}
-                        >
-                          ×
-                        </button>
-                      </div>
 
-                      <div className="grid grid-cols-1 gap-1">
-                        {days.map((day) => {
-                          const isToday = day === todayName;
-                          const open = shopHours?.[day]?.open || "";
-                          const close = shopHours?.[day]?.close || "";
-                          const enabled = shopHours?.[day]?.enabled !== false;
-                          const has = enabled && !!(open && close);
-                          return (
-                            <div
-                              key={day}
-                              className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${
-                                isToday
-                                  ? "bg-indigo-50 text-indigo-800 border border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/30 dark:text-indigo-200"
-                                  : "bg-gray-50/80 text-gray-700 dark:bg-neutral-900/40 dark:text-neutral-200"
-                              }`}
-                            >
-                              <span className="font-semibold">{t(day)}</span>
-                              <span className="font-mono text-xs">
-                                {loadingShopHours ? "…" : has ? `${open} - ${close}` : "—"}
-                              </span>
-                            </div>
-                          );
-                        })}
+                        <div className="grid grid-cols-1 gap-1">
+                          {days.map((day) => {
+                            const isToday = day === todayName;
+                            const open = shopHours?.[day]?.open || "";
+                            const close = shopHours?.[day]?.close || "";
+                            const enabled = shopHours?.[day]?.enabled !== false;
+                            const has = enabled && !!(open && close);
+                            return (
+                              <div
+                                key={day}
+                                className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${
+                                  isToday
+                                    ? "bg-indigo-50 text-indigo-800 border border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/30 dark:text-indigo-200"
+                                    : "bg-gray-50/80 text-gray-700 dark:bg-neutral-900/40 dark:text-neutral-200"
+                                }`}
+                              >
+                                <span className="font-semibold">{t(day)}</span>
+                                <span className="font-mono text-xs">
+                                  {loadingShopHours ? "…" : has ? `${open} - ${close}` : "—"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
-	          <div className="shrink-0">
-	            <LanguageSwitcher lang={lang} setLang={setLang} t={t} />
-	          </div>
-	        </div>
-
-			        <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-serif font-bold leading-tight tracking-tight text-gray-900 dark:text-neutral-50">
-			          {displayRestaurantName}
-			        </h1>
-
-				        {subtitle ? (
-				          <p className="mt-[10px] text-[17px] font-light text-gray-600 dark:text-neutral-200/80">{subtitle}</p>
-				        ) : null}
 
 			        {/* Featured products */}
-			        <div className="mt-5 space-y-4 max-w-3xl">
+			        <div className="mt-7 space-y-4 max-w-3xl mx-auto">
 			          <FeaturedCard
 			            slides={slides}
 			            currentSlide={currentSlide}
@@ -2174,59 +2322,15 @@ async function load() {
                   t={t}
 			          />
 			        </div>
-				        <p className="mt-3 text-sm text-gray-500 dark:text-neutral-400 max-w-xl mx-auto text-center">{tagline}</p>
-
-        {/* ORDER TYPE BUTTONS */}
-	        <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3 max-w-xl">
-          <button
-            onClick={() => openStatus.isOpen && onSelect("takeaway")}
-            disabled={!openStatus.isOpen}
-            className={`min-w-0 px-2 py-4 sm:py-5 rounded-2xl shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
-              openStatus.isOpen
-                ? "bg-gray-900 text-white hover:shadow-lg hover:-translate-y-1"
-                : "bg-gray-300 text-gray-600 cursor-not-allowed"
-            }`}
-          >
-            <UtensilsCrossed className="w-5 h-5 sm:w-6 sm:h-6" />
-            <span className="text-xs sm:text-sm leading-tight text-center font-semibold tracking-wide break-words">
-              {openStatus.isOpen ? t("Reservation") : t("Shop Closed")}
-            </span>
-          </button>
-          <button
-            onClick={() => openStatus.isOpen && onSelect("table")}
-            disabled={!openStatus.isOpen}
-            className={`min-w-0 px-2 py-4 sm:py-5 rounded-2xl shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
-              openStatus.isOpen
-                ? "bg-gray-800 text-white hover:shadow-lg hover:-translate-y-1"
-                : "bg-gray-300 text-gray-600 cursor-not-allowed"
-            }`}
-          >
-            <Soup className="w-5 h-5 sm:w-6 sm:h-6" />
-            <span className="text-xs sm:text-sm leading-tight text-center font-semibold tracking-wide break-words">
-              {openStatus.isOpen ? t("Table Order") : t("Shop Closed")}
-            </span>
-          </button>
-          <button
-            onClick={() => allowDelivery && openStatus.isOpen && onSelect("online")}
-            disabled={!allowDelivery || !openStatus.isOpen}
-            className={`min-w-0 px-2 py-4 sm:py-5 rounded-2xl shadow-md transition-all flex flex-col items-center justify-center gap-2 ${
-              allowDelivery && openStatus.isOpen
-                ? "bg-red-600 hover:shadow-lg hover:-translate-y-1"
-                : "bg-red-200 text-red-600 cursor-not-allowed"
-            }`}
-          >
-            <Bike className={`w-5 h-5 sm:w-6 sm:h-6 ${allowDelivery ? "text-white" : "text-red-600"}`} />
-            <span className="text-xs sm:text-sm leading-tight text-center font-semibold tracking-wide break-words">
-	              {openStatus.isOpen ? (allowDelivery ? t("Delivery") : t("Delivery Closed")) : t("Shop Closed")}
-	            </span>
-          </button>
-	        </div>
+                {tagline ? (
+				          <p className="mt-4 text-sm text-gray-500 dark:text-neutral-400 max-w-xl mx-auto text-center leading-relaxed">{tagline}</p>
+                ) : null}
 
 	      </div>
 
       {/* CATEGORIES (scrollable 1 row) */}
       {homeCategories.length > 0 && (
-        <div className="mt-5 max-w-3xl">
+        <div className="mt-3 max-w-3xl">
 		          {/* Search */}
 		          <div className="mt-3 mb-4">
 	            <div className="relative flex items-center gap-2">
@@ -2344,21 +2448,23 @@ async function load() {
       {/* LOYALTY CARD (optional) */}
       {loyalty.enabled && (
         <div className="mt-2 rounded-3xl border border-amber-200/70 dark:border-amber-800/50 bg-white/80 dark:bg-amber-950/20 p-5 shadow-sm max-w-3xl">
-          <div className="text-lg font-semibold">⭐ {t("Loyalty Card")}</div>
-          <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-            {t("Reward")}: {loyalty.reward_text || t("Free Menu Item")}
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-lg font-semibold">⭐ {t("Loyalty Card")}</div>
+            <div className="text-sm text-right text-gray-600 dark:text-gray-300">
+              {t("Reward")}: {loyalty.reward_text || t("Free Menu Item")}
+            </div>
           </div>
           <button
             onClick={handleStamp}
             style={{ backgroundColor: loyalty.color }}
             disabled={!canStampLoyalty}
-            className={`mt-3 px-4 py-2 rounded-full text-[14px] text-white font-semibold shadow transition ${
+            className={`mt-3 mb-5 px-4 py-2 rounded-xl text-[14px] text-white font-semibold shadow transition ${
               canStampLoyalty ? "hover:opacity-90" : "opacity-50 cursor-not-allowed"
             }`}
           >
             {t("Stamp my card")}
           </button>
-          <div className="mt-3 flex items-center gap-1">
+          <div className="flex items-center gap-1">
             {Array.from({ length: loyalty.goal || 10 }).map((_, i) => {
               const filled = i < Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10);
               return (
@@ -2422,7 +2528,6 @@ async function load() {
 	          <span className="text-xs sm:text-sm">{t("Download Qr")}</span>
 	        </button>
 	      </div>
-
 	      {/* Popular This Week (below Share button) */}
 	      {c.enable_popular && popularProducts.length > 0 && (
 	        <div className="mt-6 max-w-3xl">
@@ -2508,7 +2613,9 @@ async function load() {
 	    </section>
 
 	    {/* === SOCIAL ICONS === */}
-	    <div className="flex items-center justify-center gap-6 pb-10">
+	    <div className="flex flex-col items-center justify-center gap-4 pb-10">
+        <LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />
+        <div className="flex items-center justify-center gap-6">
 	      {c.social_instagram && (
 	        <a
 	          href={c.social_instagram}
@@ -2547,6 +2654,7 @@ async function load() {
 	          <Globe className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
 	        </a>
 	      )}
+        </div>
 	    </div>
 
 	  </div>
@@ -2574,6 +2682,7 @@ function TakeawayOrderForm({
   reservedTables = [],
   paymentMethod,
   setPaymentMethod,
+  formatTableName,
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const paymentMethods = usePaymentMethods();
@@ -2846,9 +2955,13 @@ function TakeawayOrderForm({
                     if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
                     const disabled = unavailableTables.has(tableNumber);
                     const reserved = reservedTableSet.has(tableNumber);
+                    const tableText =
+                      typeof formatTableName === "function"
+                        ? formatTableName(tbl)
+                        : `${t("Table")} ${String(tableNumber).padStart(2, "0")}`;
                     return (
                       <option key={tableNumber} value={String(tableNumber)} disabled={disabled}>
-                        {`${t("Table")} ${String(tableNumber).padStart(2, "0")}${
+                        {`${tableText}${
                           disabled ? ` - ${reserved ? t("Reserved") : t("Occupied")}` : ""
                         }`}
                       </option>
@@ -3699,6 +3812,32 @@ export default function QrMenu() {
     () => readQrTableShowAreasSetting(restaurantIdentifier),
     [restaurantIdentifier, tables.length]
   );
+  const formatTableName = useCallback(
+    (tableValue) => {
+      const inputIsObject = tableValue && typeof tableValue === "object";
+      const tableNumber = Number(
+        inputIsObject
+          ? tableValue?.tableNumber ?? tableValue?.number ?? tableValue?.table_number
+          : tableValue
+      );
+      if (!Number.isFinite(tableNumber) || tableNumber <= 0) {
+        return t("Table");
+      }
+      const tableRecord = inputIsObject
+        ? tableValue
+        : toArray(tables).find((tbl) => Number(tbl?.tableNumber) === tableNumber);
+      const customLabel = String(tableRecord?.label || "").trim();
+      if (customLabel) {
+        return customLabel;
+      }
+      return `${t("Table")} ${String(tableNumber).padStart(2, "0")}`;
+    },
+    [t, tables]
+  );
+  const scanTargetTableDisplayName = useMemo(
+    () => formatTableName(scanTargetTable || tableScanTarget),
+    [formatTableName, scanTargetTable, tableScanTarget]
+  );
 
   const showCallWaiterFeedback = useCallback((message) => {
     setCallWaiterFeedback(message);
@@ -3936,6 +4075,7 @@ export default function QrMenu() {
             tables={tables}
             showAreas={showTableAreas}
             t={t}
+            formatTableName={formatTableName}
             occupiedNumbers={filteredOccupied}
             occupiedLabel={t("Occupied")}
             reservedNumbers={filteredReserved}
@@ -3951,6 +4091,7 @@ export default function QrMenu() {
           <TableQrScannerModal
             open={showTableScanner}
             tableNumber={tableScanTarget}
+            tableDisplayName={scanTargetTableDisplayName}
             guestCount={tableScanGuests}
             guestOptions={scanGuestOptions}
             onGuestChange={(value) => {
@@ -4292,7 +4433,7 @@ export default function QrMenu() {
         canStartVoiceOrder={Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus)}
         onRequireOrderType={handleVoiceRequireOrderType}
         forceMinimized={Boolean(showStatus)}
-        hideMiniButton={!isDesktopLayout && !showHome}
+        hideMiniButton={showHome || !isDesktopLayout}
         openEventName={!isDesktopLayout ? "qr:voice-order-open" : ""}
         closeEventName={!isDesktopLayout ? "qr:voice-order-close" : ""}
       />
@@ -4490,6 +4631,7 @@ export default function QrMenu() {
           tables={tables}
           occupiedTables={occupiedTables}
           reservedTables={safeReservedTables}
+          formatTableName={formatTableName}
           onClose={() => {
             setShowTakeawayForm(false);
             setOrderType(null);

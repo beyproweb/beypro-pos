@@ -11,6 +11,8 @@ export default function ModernTableSelector({
   reservedNumbers = [],
   reservedLabel = "Reserved",
   showAreas = true,
+  formatTableName,
+  t = (value) => value,
 }) {
   const areaViewEnabled = showAreas !== false;
 
@@ -62,7 +64,7 @@ export default function ModernTableSelector({
         </button>
 
         <h1 className="flex-1 text-center text-3xl font-serif font-bold tracking-tight text-gray-900 dark:text-neutral-50">
-          Select Your Table
+          {t("Select Your Table")}
         </h1>
 
         {/* Empty space to balance layout */}
@@ -96,6 +98,10 @@ export default function ModernTableSelector({
         {visibleTables.map((tbl) => {
           const isOcc = occupiedSet.has(Number(tbl.tableNumber));
           const isReserved = reservedSet.has(Number(tbl.tableNumber));
+          const tableTitle =
+            typeof formatTableName === "function"
+              ? formatTableName(tbl)
+              : `${t("Table")} ${String(tbl.tableNumber).padStart(2, "0")}`;
           return (
           <button
             key={tbl.tableNumber}
@@ -114,7 +120,7 @@ export default function ModernTableSelector({
             {/* TABLE TITLE */}
             <div className="flex justify-between items-center">
               <span className="text-2xl font-serif font-bold text-gray-900 dark:text-neutral-50 tracking-wide">
-                Table {String(tbl.tableNumber).padStart(2, "0")}
+                {tableTitle}
               </span>
 
               {isOcc ? (
@@ -146,7 +152,7 @@ export default function ModernTableSelector({
 
             {/* SEATS */}
             <div className="text-sm text-gray-700 dark:text-neutral-200 bg-gray-100 dark:bg-neutral-800 rounded-full px-3 py-1 inline-block">
-              🪑 {tbl.seats || tbl.chairs || "?"} Seats
+              🪑 {tbl.seats || tbl.chairs || "?"} {t("Seats")}
             </div>
 
             {/* COLOR STRIP */}
