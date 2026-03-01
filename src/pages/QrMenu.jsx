@@ -1583,6 +1583,51 @@ async function load() {
     }
   }, [themeMode]);
 
+  React.useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+
+    const pageTitle = displayRestaurantName || "Restaurant";
+    const description = subtitle || tagline || pageTitle;
+    const previousTitle = document.title;
+    document.title = pageTitle;
+
+    const touchedMeta = [];
+    const upsertMeta = (selector, attributes, content) => {
+      let node = document.head.querySelector(selector);
+      const created = !node;
+      if (!node) {
+        node = document.createElement("meta");
+        Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
+        document.head.appendChild(node);
+      }
+      touchedMeta.push({ node, created, previous: node.getAttribute("content") });
+      node.setAttribute("content", content);
+    };
+
+    upsertMeta('meta[property="og:title"]', { property: "og:title" }, pageTitle);
+    upsertMeta('meta[name="twitter:title"]', { name: "twitter:title" }, pageTitle);
+    upsertMeta('meta[property="og:site_name"]', { property: "og:site_name" }, pageTitle);
+    upsertMeta('meta[name="apple-mobile-web-app-title"]', { name: "apple-mobile-web-app-title" }, pageTitle);
+    upsertMeta('meta[name="description"]', { name: "description" }, description);
+    upsertMeta('meta[property="og:description"]', { property: "og:description" }, description);
+    upsertMeta('meta[name="twitter:description"]', { name: "twitter:description" }, description);
+
+    return () => {
+      document.title = previousTitle;
+      touchedMeta.forEach(({ node, created, previous }) => {
+        if (created) {
+          node.remove();
+          return;
+        }
+        if (previous == null) {
+          node.removeAttribute("content");
+        } else {
+          node.setAttribute("content", previous);
+        }
+      });
+    };
+  }, [displayRestaurantName, subtitle, tagline]);
+
 
   const storyTitle = c.story_title || "Our Story";
   const storyText = c.story_text || "";
