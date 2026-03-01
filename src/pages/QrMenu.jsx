@@ -62,6 +62,14 @@ const API_BASE = API_ROOT.endsWith("/api")
 const API_URL = API_BASE ? `${API_BASE}/api` : "/api";
 const apiUrl = (path) =>
   `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
+
+function resolveUploadedAsset(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  return `${API_URL}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+}
+
 const QR_PREFIX = "qr_";
 const QR_TOKEN_KEY = "qr_token";
 const BEYPRO_APP_STORE_URL = import.meta.env.VITE_BEYPRO_APPSTORE_URL || "";
@@ -1629,60 +1637,22 @@ async function load() {
     };
   }, [displayRestaurantName, subtitle, tagline]);
 
-  React.useEffect(() => {
-    if (typeof document === "undefined" || typeof window === "undefined") return undefined;
-
-    const manifestLink = document.querySelector('link[rel="manifest"]');
-    if (!manifestLink) return undefined;
-
-    const previousHref = manifestLink.getAttribute("href");
-    const pageTitle = displayRestaurantName || "Restaurant";
-    const description = subtitle || tagline || pageTitle;
-    const startUrl = `${window.location.pathname}${window.location.search || ""}`;
-    const iconSrc = logoUrl || "/Beylogo.svg";
-    const manifest = {
-      name: pageTitle,
-      short_name: pageTitle,
-      description,
-      start_url: startUrl,
-      scope: "/",
-      display: "standalone",
-      theme_color: "#0f172a",
-      background_color: "#0f172a",
-      icons: [
-        {
-          src: iconSrc,
-          sizes: "any",
-          type: iconSrc.endsWith(".svg") ? "image/svg+xml" : "image/png",
-          purpose: "any",
-        },
-        {
-          src: iconSrc,
-          sizes: "any",
-          type: iconSrc.endsWith(".svg") ? "image/svg+xml" : "image/png",
-          purpose: "maskable",
-        },
-      ],
-    };
-
-    const blob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
-    const manifestUrl = URL.createObjectURL(blob);
-    manifestLink.setAttribute("href", manifestUrl);
-
-    return () => {
-      if (previousHref) {
-        manifestLink.setAttribute("href", previousHref);
-      } else {
-        manifestLink.removeAttribute("href");
-      }
-      URL.revokeObjectURL(manifestUrl);
-    };
-  }, [displayRestaurantName, subtitle, tagline, logoUrl]);
-
-
   const storyTitle = c.story_title || "Our Story";
   const storyText = c.story_text || "";
-  const storyImage = c.story_image || "";
+  const storyImages = React.useMemo(() => {
+    const orderedImages = Array.isArray(c.story_images) ? c.story_images : [];
+    const legacyImage = c.story_image ? [c.story_image] : [];
+    const uniqueImages = [];
+
+    [...orderedImages, ...legacyImage].forEach((item) => {
+      const value = String(item || "").trim();
+      if (!value || uniqueImages.includes(value)) return;
+      uniqueImages.push(value);
+    });
+
+    return uniqueImages.map((item) => resolveUploadedAsset(item));
+  }, [c.story_images, c.story_image]);
+  const showStorySection = boolish(c.story_enabled, true) && storyImages.length > 0;
 
   const reviews = Array.isArray(c.reviews) ? c.reviews : [];
 
@@ -2188,6 +2158,7 @@ async function load() {
      3) Local slider state
      ============================================================ */
   const [currentSlide, setCurrentSlide] = React.useState(0);
+  const [currentStorySlide, setCurrentStorySlide] = React.useState(0);
 
   React.useEffect(() => {
     if (slides.length > 1) {
@@ -2198,6 +2169,20 @@ async function load() {
       return () => clearInterval(timer);
     }
   }, [slides.length]);
+
+  React.useEffect(() => {
+    setCurrentStorySlide(0);
+  }, [storyImages.length]);
+
+  React.useEffect(() => {
+    if (storyImages.length <= 1) return undefined;
+
+    const timer = window.setInterval(() => {
+      setCurrentStorySlide((s) => (s + 1) % storyImages.length);
+    }, 4200);
+
+    return () => window.clearInterval(timer);
+  }, [storyImages.length]);
 
   /* SWIPE */
   const touchStartXRef = React.useRef(null);
@@ -2219,6 +2204,30 @@ async function load() {
     }
 
     touchStartXRef.current = null;
+  }
+
+  const storyTouchStartXRef = React.useRef(null);
+  function handleStoryTouchStart(e) {
+    storyTouchStartXRef.current = e.touches[0].clientX;
+  }
+  function handleStoryTouchEnd(e) {
+    const startX = storyTouchStartXRef.current;
+    if (startX == null || storyImages.length <= 1) {
+      storyTouchStartXRef.current = null;
+      return;
+    }
+
+    const endX = e.changedTouches[0].clientX;
+    const delta = endX - startX;
+    const threshold = 40;
+
+    if (delta > threshold) {
+      setCurrentStorySlide((s) => (s - 1 + storyImages.length) % storyImages.length);
+    } else if (delta < -threshold) {
+      setCurrentStorySlide((s) => (s + 1) % storyImages.length);
+    }
+
+    storyTouchStartXRef.current = null;
   }
 
   /* PARALLAX */
@@ -2636,46 +2645,68 @@ async function load() {
 	      )}
 	    </section>
 
-    {/* === STORY SECTION (B: TEXT LEFT — IMAGE RIGHT) === */}
-	    <section id="story-section" className="max-w-6xl mx-auto px-4 pt-2 pb-14">
-	      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
-        
-	        {/* TEXT LEFT */}
-	        <div>
-	          <h2 className="text-3xl font-serif font-bold text-gray-900 dark:text-neutral-50 mb-3">
-	            {storyTitle}
-	          </h2>
-	          <p className="text-base text-gray-600 dark:text-neutral-300 leading-relaxed whitespace-pre-line">
-	            {storyText}
-	          </p>
-	        </div>
+    {/* === STORY SECTION === */}
+      {showStorySection && (
+	      <section id="story-section" className="max-w-6xl mx-auto px-4 pt-3 pb-14">
+	        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] gap-6 lg:gap-10 items-center">
+	          <div className="max-w-xl">
+	            <h2 className="text-[2rem] sm:text-[2.35rem] font-serif font-semibold tracking-[-0.03em] text-gray-900 dark:text-neutral-50">
+	              {storyTitle}
+	            </h2>
+	            {storyText ? (
+	              <p className="mt-3 text-[15px] sm:text-base text-gray-600 dark:text-neutral-300 leading-relaxed whitespace-pre-line">
+	                {storyText}
+	              </p>
+	            ) : null}
+	          </div>
 
-        {/* IMAGE RIGHT */}
-	        {storyImage && (
-	          <div className="flex justify-center">
+	          <div className="w-full">
 	            <div
-	              className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-sm border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
-	              style={{
-	                backgroundImage: storyImage
-	                  ? `linear-gradient(135deg, rgba(255,255,255,0.9), rgba(229,231,235,0.8)), url(${storyImage})`
-	                  : undefined,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }}
+	              className="relative overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
+	              onTouchStart={storyImages.length > 1 ? handleStoryTouchStart : undefined}
+	              onTouchEnd={storyImages.length > 1 ? handleStoryTouchEnd : undefined}
+	              style={{ touchAction: "pan-y" }}
 	            >
-	              <div className="relative w-full h-48 flex items-center justify-center bg-white/70 dark:bg-neutral-950/40 backdrop-blur-sm">
-	                <img
-	                  src={storyImage}
-	                  alt={storyTitle}
-                  className="h-full w-full max-w-full object-contain"
-                  style={{ objectPosition: "center" }}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
+	              <div className="aspect-[4/5] sm:aspect-[16/10] md:aspect-[4/3] w-full bg-neutral-100 dark:bg-neutral-950">
+	                <div
+	                  className="flex h-full w-full transition-transform duration-700 ease-out"
+	                  style={{ transform: `translateX(-${currentStorySlide * 100}%)` }}
+	                >
+	                  {storyImages.map((image, index) => (
+	                    <div key={`${image}-${index}`} className="h-full w-full shrink-0">
+	                      <img
+	                        src={image}
+	                        alt={`${storyTitle} ${index + 1}`}
+	                        className="h-full w-full object-cover"
+	                        loading={index === 0 ? "eager" : "lazy"}
+	                      />
+	                    </div>
+	                  ))}
+	                </div>
+	              </div>
+	            </div>
+
+	            {storyImages.length > 1 ? (
+	              <div className="mt-3 flex items-center justify-center gap-2">
+	                {storyImages.map((_, index) => (
+	                  <button
+	                    key={index}
+	                    type="button"
+	                    onClick={() => setCurrentStorySlide(index)}
+	                    className={`transition-all ${
+	                      index === currentStorySlide
+	                        ? "w-6 h-1.5 rounded-full bg-neutral-900 dark:bg-neutral-100"
+	                        : "w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-700 hover:bg-neutral-400 dark:hover:bg-neutral-500"
+	                    }`}
+	                    aria-label={`${t("Go to slide")} ${index + 1}`}
+	                  />
+	                ))}
+	              </div>
+	            ) : null}
+	          </div>
+	        </div>
+	      </section>
+      )}
 
 	    {/* === REVIEWS === */}
 	    <section id="reviews-section" className="max-w-6xl mx-auto px-4 pt-2 pb-16">

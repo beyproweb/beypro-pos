@@ -58,6 +58,8 @@ export default function QrMenuSettings() {
   const [shopHoursSaveStatus, setShopHoursSaveStatus] = useState("idle");
   const [showShopHoursDropdown, setShowShopHoursDropdown] = useState(false);
   const shopHoursDropdownRef = useRef(null);
+  const [uploadingStoryImages, setUploadingStoryImages] = useState(false);
+  const [draggedStoryImageIndex, setDraggedStoryImageIndex] = useState(null);
   const [settings, setSettings] = useState({
   main_title: "",
   subtitle: "",
@@ -72,8 +74,10 @@ export default function QrMenuSettings() {
   loyalty_reward_text: "Free Menu Item",
   loyalty_color: "#F59E0B",
   hero_slides: [],
+  story_enabled: true,
   story_title: "",
   story_text: "",
+  story_images: [],
   story_image: "",
   reviews: [],
   social_instagram: "",
@@ -92,6 +96,30 @@ export default function QrMenuSettings() {
     if (!value) return "";
     if (value.startsWith("http")) return value;
     return `${uploadsBaseUrl}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+  };
+
+  const normalizeStoryImages = (source) => {
+    const ordered = Array.isArray(source?.story_images) ? source.story_images : [];
+    const next = ordered
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+
+    if (next.length > 0) return next;
+
+    const legacy = String(source?.story_image || "").trim();
+    return legacy ? [legacy] : [];
+  };
+
+  const updateStoryImages = (nextImages) => {
+    const normalized = nextImages
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+
+    setSettings((prev) => ({
+      ...prev,
+      story_images: normalized,
+      story_image: normalized[0] || "",
+    }));
   };
 
 function updateField(key, value) {
@@ -130,21 +158,79 @@ async function uploadHeroImage(e, index) {
 
 
 
-async function uploadStoryImage(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+async function uploadStoryImages(e) {
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) return;
 
-  const formData = new FormData();
-  formData.append("file", file);
+  setUploadingStoryImages(true);
 
-  const res = await secureFetch("/upload", {
-    method: "POST",
-    body: formData,
-  });
+  try {
+    const uploads = await Promise.allSettled(
+      files.map(async (file) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await secureFetch("/upload", {
+          method: "POST",
+          body: formData,
+        });
+        return res?.url || "";
+      })
+    );
 
-  if (res.url) {
-    updateField("story_image", res.url);
+    const uploadedImages = uploads
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value)
+      .filter(Boolean);
+    if (uploadedImages.length === 0) {
+      toast.error(t("Upload failed"));
+      return;
+    }
+
+    setSettings((prev) => {
+      const nextImages = [
+        ...normalizeStoryImages(prev),
+        ...uploadedImages,
+      ];
+      return {
+        ...prev,
+        story_images: nextImages,
+        story_image: nextImages[0] || "",
+      };
+    });
+  } catch (err) {
+    console.error("❌ Failed to upload story images:", err);
+    toast.error(t("Upload failed"));
+  } finally {
+    setUploadingStoryImages(false);
+    e.target.value = "";
   }
+}
+
+function removeStoryImage(index) {
+  updateStoryImages(settings.story_images.filter((_, i) => i !== index));
+}
+
+function moveStoryImage(index, direction) {
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= settings.story_images.length) return;
+
+  const nextImages = [...settings.story_images];
+  const [moved] = nextImages.splice(index, 1);
+  nextImages.splice(targetIndex, 0, moved);
+  updateStoryImages(nextImages);
+}
+
+function handleStoryImageDrop(dropIndex) {
+  if (draggedStoryImageIndex == null || draggedStoryImageIndex === dropIndex) {
+    setDraggedStoryImageIndex(null);
+    return;
+  }
+
+  const nextImages = [...settings.story_images];
+  const [moved] = nextImages.splice(draggedStoryImageIndex, 1);
+  nextImages.splice(dropIndex, 0, moved);
+  updateStoryImages(nextImages);
+  setDraggedStoryImageIndex(null);
 }
 
 function updateReview(i, key, value) {
@@ -164,9 +250,15 @@ function addReview() {
 
 async function saveAllCustomization() {
   try {
+    const storyImages = normalizeStoryImages(settings);
     await secureFetch("/settings/qr-menu-customization", {
       method: "POST",
-      body: JSON.stringify(settings),
+      body: JSON.stringify({
+        ...settings,
+        story_enabled: settings.story_enabled !== false,
+        story_images: storyImages,
+        story_image: storyImages[0] || "",
+      }),
     });
     toast.success(t("Saved!"));
   } catch {
@@ -191,9 +283,13 @@ async function saveAllCustomization() {
       // ✅ 3) LOAD QR MENU CUSTOMIZATION (THE FIX)
       const customRes = await secureFetch("/settings/qr-menu-customization");
       if (customRes?.success && customRes.customization) {
+        const storyImages = normalizeStoryImages(customRes.customization);
         setSettings((prev) => ({
           ...prev,
           ...customRes.customization,
+          story_enabled: customRes.customization.story_enabled !== false,
+          story_images: storyImages,
+          story_image: storyImages[0] || "",
         }));
       }
 
@@ -1592,36 +1688,138 @@ async function saveAllCustomization() {
         </div>
 
         {/* STORY */}
-        <div className="mt-10">
-          <h3 className="text-xl font-bold mb-3 text-indigo-600">{t("Our Story Section")}</h3>
+        <div className="mt-10 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h3 className="text-xl font-bold text-indigo-600">{t("Our Story Section")}</h3>
+            <label className="inline-flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={settings.story_enabled !== false}
+                onChange={(e) => updateField("story_enabled", e.target.checked)}
+              />
+              <span>{t("Enable Story Section")}</span>
+            </label>
+          </div>
 
-          <label className="font-semibold">{t("Story Title")}</label>
-          <input
-            type="text"
-            value={settings.story_title}
-            onChange={(e) => updateField("story_title", e.target.value)}
-            className="w-full p-3 rounded-xl border"
-          />
-
-          <label className="font-semibold mt-3">{t("Story Text")}</label>
-          <textarea
-            rows="5"
-            value={settings.story_text}
-            onChange={(e) => updateField("story_text", e.target.value)}
-            className="w-full p-3 rounded-xl border resize-none"
-          />
-
-          <label className="font-semibold mt-3">{t("Story Image")}</label>
-          <input type="file" onChange={uploadStoryImage} className="w-full" />
-          {settings.story_image ? (
-            <div className="mt-2">
-              <img
-                src={resolveUploadSrc(settings.story_image)}
-                alt={t("Story Image")}
-                className="h-16 w-24 rounded-lg border object-cover"
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="font-semibold">{t("Story Title")}</label>
+              <input
+                type="text"
+                value={settings.story_title}
+                onChange={(e) => updateField("story_title", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
               />
             </div>
-          ) : null}
+
+            <div>
+              <label className="font-semibold">{t("Story Images")}</label>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={uploadStoryImages}
+                className="w-full mt-1"
+              />
+              <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
+                {uploadingStoryImages
+                  ? t("Uploading story images...")
+                  : t("Upload multiple images. Drag thumbnails or use arrows to reorder them.")}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="font-semibold">{t("Story Text")}</label>
+            <textarea
+              rows="5"
+              value={settings.story_text}
+              onChange={(e) => updateField("story_text", e.target.value)}
+              className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none"
+            />
+          </div>
+
+          {settings.story_images.length > 0 ? (
+            <div className="mt-5">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <p className="text-sm font-semibold text-gray-700 dark:text-zinc-200">
+                  {t("Story Slide Order")}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-zinc-400">
+                  {t("First image appears first in the slider.")}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {settings.story_images.map((image, index) => (
+                  <div
+                    key={`${image}-${index}`}
+                    draggable
+                    onDragStart={() => setDraggedStoryImageIndex(index)}
+                    onDragEnd={() => setDraggedStoryImageIndex(null)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => handleStoryImageDrop(index)}
+                    className={`rounded-2xl border bg-white dark:bg-zinc-900 overflow-hidden transition ${
+                      draggedStoryImageIndex === index
+                        ? "border-indigo-400 ring-2 ring-indigo-200 dark:ring-indigo-900/40"
+                        : "border-gray-200 dark:border-zinc-700"
+                    }`}
+                  >
+                    <div className="aspect-[4/3] bg-gray-100 dark:bg-zinc-950">
+                      <img
+                        src={resolveUploadSrc(image)}
+                        alt={`${t("Story Image")} ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+
+                    <div className="p-3 flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-zinc-100">
+                          {t("Slide")} {index + 1}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-zinc-400">
+                          {t("Drag to reorder")}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => moveStoryImage(index, -1)}
+                          disabled={index === 0}
+                          className="px-2.5 py-1.5 rounded-lg border text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {t("Up")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveStoryImage(index, 1)}
+                          disabled={index === settings.story_images.length - 1}
+                          className="px-2.5 py-1.5 rounded-lg border text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {t("Down")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeStoryImage(index)}
+                          className="p-2 rounded-lg border text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900/40 dark:hover:bg-red-950/30"
+                          aria-label={t("Remove Story Image")}
+                          title={t("Remove Story Image")}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-5 rounded-2xl border border-dashed border-gray-300 dark:border-zinc-700 px-4 py-8 text-center text-sm text-gray-500 dark:text-zinc-400">
+              {t("No story images uploaded yet.")}
+            </div>
+          )}
         </div>
 
         {/* REVIEWS */}
