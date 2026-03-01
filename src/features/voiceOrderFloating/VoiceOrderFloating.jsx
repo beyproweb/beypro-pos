@@ -45,6 +45,10 @@ export default function VoiceOrderFloating({
   onTryAgainUnknown,
   onCancelUnknown,
   onSelectUnknownOption,
+  catalogProducts = [],
+  catalogTitle = "Menu",
+  allCategoriesLabel = "All",
+  emptyCatalogLabel = "No products available.",
   startActionOnly = false,
   forceMinimized = false,
   hideMiniButton = false,
@@ -134,12 +138,26 @@ export default function VoiceOrderFloating({
     open();
   }, [bypassFab, handleStartVoiceOrder, open, statusMinimized]);
 
+  const handleClosePanel = useCallback(() => {
+    setStatusMinimized(false);
+    close();
+    closeStubModal();
+  }, [close, closeStubModal]);
+
+  const handleToggleFromOpenEvent = useCallback(() => {
+    if (showExpanded) {
+      handleClosePanel();
+      return;
+    }
+    handleOpenMini();
+  }, [handleClosePanel, handleOpenMini, showExpanded]);
+
   useEffect(() => {
     if (!openEventName) return undefined;
-    const handler = () => handleOpenMini();
+    const handler = () => handleToggleFromOpenEvent();
     window.addEventListener(openEventName, handler);
     return () => window.removeEventListener(openEventName, handler);
-  }, [handleOpenMini, openEventName]);
+  }, [handleToggleFromOpenEvent, openEventName]);
 
   useEffect(() => {
     if (!closeEventName) return undefined;
@@ -152,20 +170,28 @@ export default function VoiceOrderFloating({
     return () => window.removeEventListener(closeEventName, handler);
   }, [close, closeEventName, closeStubModal]);
 
+  useEffect(() => {
+    if (!showExpanded) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showExpanded]);
+
   const showMiniButton = !hideMiniButton;
 
   return (
     <>
-      <div className={`pointer-events-none fixed ${offsetClassName} ${zIndexClassName}`}>
-        {bypassFab ? (
-          showMiniButton ? <VoiceOrderMini onOpen={handleOpenMini} label={miniLabel} /> : null
-        ) : showExpanded ? (
+      {showExpanded ? (
+        <div className={`fixed inset-0 ${zIndexClassName}`}>
+          <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" />
           <VoiceOrderFab
             onStart={handleStartVoiceOrder}
             onStop={handleStopVoiceOrder}
             onHoldStart={handleHoldStartVoiceOrder}
             onHoldEnd={handleHoldEndVoiceOrder}
-            onClose={close}
+            onClose={handleClosePanel}
             noisyMode={noisyMode}
             isListening={isListening}
             title={title}
@@ -199,11 +225,22 @@ export default function VoiceOrderFloating({
             onTryAgainUnknown={onTryAgainUnknown}
             onCancelUnknown={onCancelUnknown}
             onSelectUnknownOption={onSelectUnknownOption}
+            catalogProducts={catalogProducts}
+            catalogTitle={catalogTitle}
+            allCategoriesLabel={allCategoriesLabel}
+            emptyCatalogLabel={emptyCatalogLabel}
+            fullScreen={true}
           />
-        ) : (
-          showMiniButton ? <VoiceOrderMini onOpen={handleOpenMini} label={miniLabel} /> : null
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className={`pointer-events-none fixed ${offsetClassName} ${zIndexClassName}`}>
+          {bypassFab ? (
+            showMiniButton ? <VoiceOrderMini onOpen={handleOpenMini} label={miniLabel} /> : null
+          ) : (
+            showMiniButton ? <VoiceOrderMini onOpen={handleOpenMini} label={miniLabel} /> : null
+          )}
+        </div>
+      )}
 
       {stubModalOpen ? (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">

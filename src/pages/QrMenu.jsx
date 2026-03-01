@@ -1186,23 +1186,32 @@ const LANGS = [
 /* ====================== LANGUAGE SWITCHER ====================== */
 function LanguageSwitcher({ lang, setLang, t, isDark = false }) {
   const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef(null);
   const current = LANGS.find((item) => item.code === lang) || LANGS[0];
 
   React.useEffect(() => {
     if (!open) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+
+    const handlePointerDown = (event) => {
+      if (!containerRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
     };
   }, [open]);
 
   return (
-    <div className="flex items-center">
+    <div className="relative flex items-center" ref={containerRef}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[11px] font-medium transition focus:outline-none focus:ring-2 ${
+        className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-[11px] font-medium transition focus:outline-none focus:ring-2 ${
           isDark
             ? "border-white/10 bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:bg-white/[0.12] focus:ring-white/15"
             : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:ring-slate-200"
@@ -1211,73 +1220,48 @@ function LanguageSwitcher({ lang, setLang, t, isDark = false }) {
         aria-expanded={open}
       >
         <span>{current.label}</span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-[90]">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/35 backdrop-blur-[2px]"
-            aria-label={t("Close")}
-            onClick={() => setOpen(false)}
-          />
-          <div className={`absolute right-0 top-0 h-full w-[280px] border-l shadow-[0_24px_60px_rgba(0,0,0,0.18)] ${
+        <div
+          className={`absolute bottom-full right-0 z-[90] mb-2 w-[180px] rounded-2xl border p-2 shadow-lg ${
             isDark
-              ? "border-white/10 bg-neutral-950 text-white shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
-              : "border-gray-200 bg-white text-gray-900"
+              ? "border-white/10 bg-neutral-950/98 text-white shadow-[0_18px_45px_rgba(0,0,0,0.35)]"
+              : "border-gray-200 bg-white/98 text-gray-900 shadow-[0_18px_45px_rgba(15,23,42,0.12)]"
+          }`}
+        >
+          <div className={`px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+            isDark ? "text-white/45" : "text-gray-400"
           }`}>
-            <div className={`flex items-center justify-between border-b px-5 py-4 ${isDark ? "border-white/10" : "border-gray-200"}`}>
-              <div>
-                <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isDark ? "text-white/45" : "text-gray-400"}`}>
-                  {t("Language")}
-                </div>
-                <div className={`mt-1 text-sm font-medium ${isDark ? "text-white/80" : "text-gray-600"}`}>
-                  {current.label}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
-                  isDark
-                    ? "border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08] hover:text-white"
-                    : "border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-                }`}
-                aria-label={t("Close")}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="p-3">
-              <div className="space-y-1">
-                {LANGS.map((item) => {
-                  const active = item.code === lang;
-                  return (
-                    <button
-                      key={item.code}
-                      type="button"
-                      onClick={() => {
-                        setLang(item.code);
-                        setOpen(false);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-sm transition ${
-                        active
-                          ? isDark
-                            ? "bg-white text-neutral-950"
-                            : "bg-slate-900 text-white"
-                          : isDark
-                            ? "text-white/82 hover:bg-white/[0.08] hover:text-white"
-                            : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                      }`}
-                    >
-                      <span>{item.label}</span>
-                      {active ? <span className="text-xs font-semibold">•</span> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {t("Language")}
+          </div>
+          <div className="space-y-1">
+            {LANGS.map((item) => {
+              const active = item.code === lang;
+              return (
+                <button
+                  key={item.code}
+                  type="button"
+                  onClick={() => {
+                    setLang(item.code);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                    active
+                      ? isDark
+                        ? "bg-white text-neutral-950"
+                        : "bg-slate-900 text-white"
+                      : isDark
+                        ? "text-white/82 hover:bg-white/[0.08] hover:text-white"
+                        : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  {active ? <span className="text-xs font-semibold">•</span> : null}
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : null}
@@ -1438,6 +1422,7 @@ function QrHeader({
   onClose,
   t,
   restaurantName,
+  formatTableName,
   searchValue,
   onSearchChange,
   searchPlaceholder,
@@ -1469,7 +1454,9 @@ function QrHeader({
         <div className="hidden md:block text-xs text-gray-500 mt-1 text-center">
           {orderType === "table"
             ? table
-              ? formatTableName(table)
+              ? typeof formatTableName === "function"
+                ? formatTableName(table)
+                : t("Table")
               : t("Table Order (short)")
             : t("Online Order")}
         </div>
@@ -2739,48 +2726,50 @@ async function load() {
 	      </div>
 	    </section>
 
-	    {/* === SOCIAL ICONS === */}
-	    <div className="flex flex-col items-center justify-center gap-4 pb-10">
-        <LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />
-        <div className="flex items-center justify-center gap-6">
-	      {c.social_instagram && (
-	        <a
-	          href={c.social_instagram}
-	          target="_blank"
-	          rel="noreferrer"
-	          className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
-	                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
-	                     transition-all"
-	        >
-	          <Instagram className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
-	        </a>
-	      )}
+	    {/* === SOCIAL ICONS + LANGUAGE === */}
+	    <div className="relative w-full max-w-3xl mx-auto flex items-center justify-center pb-10 px-4 sm:px-0 min-h-[40px]">
+        <div className="flex items-center justify-center gap-6 mx-auto">
+	        {c.social_instagram && (
+	          <a
+	            href={c.social_instagram}
+	            target="_blank"
+	            rel="noreferrer"
+	            className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
+	                       flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+	                       transition-all"
+	          >
+	            <Instagram className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
+	          </a>
+	        )}
 
-	      {c.social_tiktok && (
-	        <a
-	          href={c.social_tiktok}
-	          target="_blank"
-	          rel="noreferrer"
-	          className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
-	                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
-	                     transition-all"
-	        >
-	          <Music2 className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
-	        </a>
-	      )}
+	        {c.social_tiktok && (
+	          <a
+	            href={c.social_tiktok}
+	            target="_blank"
+	            rel="noreferrer"
+	            className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
+	                       flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+	                       transition-all"
+	          >
+	            <Music2 className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
+	          </a>
+	        )}
 
-	      {c.social_website && (
-	        <a
-	          href={c.social_website}
-	          target="_blank"
-	          rel="noreferrer"
-	          className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
-	                     flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
-	                     transition-all"
-	        >
-	          <Globe className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
-	        </a>
-	      )}
+	        {c.social_website && (
+	          <a
+	            href={c.social_website}
+	            target="_blank"
+	            rel="noreferrer"
+	            className="w-10 h-10 rounded-full bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 
+	                       flex items-center justify-center hover:shadow-lg hover:-translate-y-1 
+	                       transition-all"
+	          >
+	            <Globe className="w-5 h-5 text-neutral-700 dark:text-neutral-200" />
+	          </a>
+	        )}
+        </div>
+        <div className="absolute right-4 sm:right-0">
+          <LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />
         </div>
 	    </div>
 
@@ -3925,8 +3914,10 @@ export default function QrMenu() {
   }, [scanTargetTable]);
   const cartItems = toArray(safeCart);
   const cartNewItemsCount = cartItems.filter((item) => !item?.locked).length;
-  const canOpenCartFromNav = cartItems.length > 0 || hasActiveOrder;
-  const hasBottomNavContext = showStatus || hasActiveOrder || cartItems.length > 0;
+  const isTableOrderProductPage = !showHome && resolvedOrderTypeForActions === "table";
+  const canOpenCartFromNav = cartItems.length > 0 || hasActiveOrder || isTableOrderProductPage;
+  const hasBottomNavContext =
+    showStatus || hasActiveOrder || cartItems.length > 0 || isTableOrderProductPage;
   const showBottomActions =
     !isDesktopLayout &&
     !showTableSelector &&
@@ -4367,6 +4358,7 @@ export default function QrMenu() {
               onClose={handleCloseOrderPage}
               t={t}
               restaurantName={brandName}
+              formatTableName={formatTableName}
               searchValue={menuSearch}
               onSearchChange={setMenuSearch}
               searchPlaceholder={t("Search products")}
@@ -4560,7 +4552,7 @@ export default function QrMenu() {
         canStartVoiceOrder={Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus)}
         onRequireOrderType={handleVoiceRequireOrderType}
         forceMinimized={Boolean(showStatus)}
-        hideMiniButton={showHome || !isDesktopLayout}
+        hideMiniButton={true}
         openEventName={!isDesktopLayout ? "qr:voice-order-open" : ""}
         closeEventName={!isDesktopLayout ? "qr:voice-order-close" : ""}
       />

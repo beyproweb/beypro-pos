@@ -1399,6 +1399,12 @@ export default function VoiceOrderController({
   const holdLabel = tVoice("voice.waiter.holdToTalk", "Hold to talk");
   const lastTranscriptLabel = tr("Last heard", "Son duyulan", "Zuletzt gehört", "Dernier entendu");
   const aiOrderLabel = tVoice("voice.waiter.aiOrderTitle", tr("AI Order", "YZ Siparis", "KI Bestellung", "Commande IA"));
+  const menuCatalogLabel = tVoice("voice.waiter.menuCatalog", tr("Menu", "Menu", "Speisekarte", "Menu"));
+  const allCategoriesLabel = tVoice("voice.waiter.allCategories", tr("All", "Tumu", "Alle", "Tous"));
+  const emptyCatalogLabel = tVoice(
+    "voice.waiter.emptyCatalog",
+    tr("No products available.", "Urun bulunamadi.", "Keine Produkte verfugbar.", "Aucun produit disponible.")
+  );
   const consolidatedSuggestions = mode === MODE.IDLE && !recapOpen ? waiterSuggestions : [];
 
   return (
@@ -1447,6 +1453,10 @@ export default function VoiceOrderController({
         onTryAgainUnknown={handleInlineUnknownTryAgain}
         onCancelUnknown={handleInlineUnknownCancel}
         onSelectUnknownOption={handleInlineUnknownSelect}
+        catalogProducts={products}
+        catalogTitle={menuCatalogLabel}
+        allCategoriesLabel={allCategoriesLabel}
+        emptyCatalogLabel={emptyCatalogLabel}
         startActionOnly={!canStartVoiceOrder}
         forceMinimized={forceMinimized}
         hideMiniButton={hideMiniButton}
