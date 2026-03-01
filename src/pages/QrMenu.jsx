@@ -38,6 +38,22 @@ import {
 import { Html5Qrcode } from "html5-qrcode";
 import { io } from "socket.io-client";
 
+function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+
+  const withoutBrandPrefix = raw.replace(/^(beypro\s+(qr\s+menu|pos)\s*[-:|]\s*)/i, "").trim();
+  const candidate = withoutBrandPrefix || raw;
+
+  if (candidate.includes("+")) {
+    const [head] = candidate.split("+");
+    const trimmed = String(head || "").trim();
+    return trimmed || candidate;
+  }
+
+  return candidate;
+}
+
 const RAW_API = import.meta.env.VITE_API_URL || "";
 const API_ROOT = RAW_API.replace(/\/+$/, "");
 const API_BASE = API_ROOT.endsWith("/api")
@@ -1421,15 +1437,7 @@ function QrHeader({
   voiceListening,
 }) {
   const displayRestaurantName = React.useMemo(() => {
-    const raw = String(restaurantName || "").trim();
-    if (!raw) return "Restaurant";
-    // Some tenants store names like "Brand+username" — hide the "+username" in the UI.
-    if (raw.includes("+")) {
-      const [head] = raw.split("+");
-      const trimmed = String(head || "").trim();
-      return trimmed || raw;
-    }
-    return raw;
+    return normalizeRestaurantDisplayName(restaurantName, "Restaurant");
   }, [restaurantName]);
 
   return (
@@ -1550,14 +1558,7 @@ async function load() {
   }, [custom]);
   const restaurantName = c.title || c.main_title || "Restaurant";
   const displayRestaurantName = React.useMemo(() => {
-    const raw = String(restaurantName || "").trim();
-    if (!raw) return "Restaurant";
-    if (raw.includes("+")) {
-      const [head] = raw.split("+");
-      const trimmed = String(head || "").trim();
-      return trimmed || raw;
-    }
-    return raw;
+    return normalizeRestaurantDisplayName(restaurantName, "Restaurant");
   }, [restaurantName]);
   const subtitle = (c.subtitle ?? "").trim();
   const tagline = (c.tagline ?? "").trim();
@@ -1627,6 +1628,56 @@ async function load() {
       });
     };
   }, [displayRestaurantName, subtitle, tagline]);
+
+  React.useEffect(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") return undefined;
+
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    if (!manifestLink) return undefined;
+
+    const previousHref = manifestLink.getAttribute("href");
+    const pageTitle = displayRestaurantName || "Restaurant";
+    const description = subtitle || tagline || pageTitle;
+    const startUrl = `${window.location.pathname}${window.location.search || ""}`;
+    const iconSrc = logoUrl || "/Beylogo.svg";
+    const manifest = {
+      name: pageTitle,
+      short_name: pageTitle,
+      description,
+      start_url: startUrl,
+      scope: "/",
+      display: "standalone",
+      theme_color: "#0f172a",
+      background_color: "#0f172a",
+      icons: [
+        {
+          src: iconSrc,
+          sizes: "any",
+          type: iconSrc.endsWith(".svg") ? "image/svg+xml" : "image/png",
+          purpose: "any",
+        },
+        {
+          src: iconSrc,
+          sizes: "any",
+          type: iconSrc.endsWith(".svg") ? "image/svg+xml" : "image/png",
+          purpose: "maskable",
+        },
+      ],
+    };
+
+    const blob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
+    const manifestUrl = URL.createObjectURL(blob);
+    manifestLink.setAttribute("href", manifestUrl);
+
+    return () => {
+      if (previousHref) {
+        manifestLink.setAttribute("href", previousHref);
+      } else {
+        manifestLink.removeAttribute("href");
+      }
+      URL.revokeObjectURL(manifestUrl);
+    };
+  }, [displayRestaurantName, subtitle, tagline, logoUrl]);
 
 
   const storyTitle = c.story_title || "Our Story";
