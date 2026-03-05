@@ -45,6 +45,7 @@ export default function VoiceOrderFloating({
   onTryAgainUnknown,
   onCancelUnknown,
   onSelectUnknownOption,
+  onSelectCatalogProduct,
   catalogProducts = [],
   catalogTitle = "Menu",
   allCategoriesLabel = "All",
@@ -225,6 +226,7 @@ export default function VoiceOrderFloating({
             onTryAgainUnknown={onTryAgainUnknown}
             onCancelUnknown={onCancelUnknown}
             onSelectUnknownOption={onSelectUnknownOption}
+            onSelectCatalogProduct={onSelectCatalogProduct}
             catalogProducts={catalogProducts}
             catalogTitle={catalogTitle}
             allCategoriesLabel={allCategoriesLabel}

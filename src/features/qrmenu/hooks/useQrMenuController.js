@@ -39,6 +39,11 @@ const normalizeOptionalGuestCount = (value) => {
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.min(20, Math.max(1, Math.floor(n)));
 };
+const normalizeReservationStatus = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 const isCancelledLikeStatus = (status) =>
   ["cancelled", "canceled", "deleted", "void"].includes(
     String(status || "").toLowerCase()
@@ -47,6 +52,10 @@ const isTerminalOrderStatus = (status) =>
   ["closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(
     String(status || "").toLowerCase()
   );
+const isCheckedInReservationStatus = (status) => {
+  const normalized = normalizeReservationStatus(status);
+  return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
+};
 const getOrderCancellationReason = (order) =>
   order?.cancellation_reason ||
   order?.cancel_reason ||
@@ -191,6 +200,19 @@ const parseOrderItemsPayload = useCallback((raw) => {
   if (Array.isArray(raw?.order_items)) return raw.order_items;
   return [];
 }, []);
+const isPaidLikeOrderItem = (item) => {
+  if (!item || typeof item !== "object") return false;
+  const paymentStatus = String(
+    item?.payment_status ?? item?.paymentStatus ?? item?.payment_state ?? item?.paymentState ?? ""
+  ).toLowerCase();
+  return Boolean(
+    item?.paid === true ||
+      item?.is_paid === true ||
+      item?.paid_at ||
+      item?.paidAt ||
+      paymentStatus === "paid"
+  );
+};
 
 const parseReservationDateTimeMs = (reservationDate, reservationTime) => {
   if (!reservationDate) return NaN;
@@ -223,13 +245,18 @@ const isReservationLikeEntry = (entry) => {
       entry?.reservationDate ||
       entry?.reservation_time ||
       entry?.reservationTime ||
+      entry?.reservation_status ||
+      entry?.reservationStatus ||
       nested?.id ||
       nested?.reservation_id ||
       nested?.reservationId ||
       nested?.reservation_date ||
       nested?.reservationDate ||
       nested?.reservation_time ||
-      nested?.reservationTime
+      nested?.reservationTime ||
+      nested?.status ||
+      nested?.reservation_status ||
+      nested?.reservationStatus
   );
 };
 
@@ -245,6 +272,98 @@ const isReservationDueNow = (entry, nowMs = Date.now()) => {
 
 const hasActiveReservationPayload = (entry) => {
   return isReservationLikeEntry(entry);
+};
+
+const resolveReservationAwareStatus = (entry, fallbackStatus = null) => {
+  if (!entry || typeof entry !== "object") {
+    return normalizeReservationStatus(fallbackStatus);
+  }
+  const nested =
+    entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
+  const directStatus = normalizeReservationStatus(entry?.status);
+  const nestedStatus = normalizeReservationStatus(nested?.status);
+  const flatReservationStatus = normalizeReservationStatus(
+    entry?.reservation_status ??
+      entry?.reservationStatus ??
+      nested?.reservation_status ??
+      nested?.reservationStatus
+  );
+  const fallback = normalizeReservationStatus(fallbackStatus);
+  return directStatus || nestedStatus || flatReservationStatus || fallback;
+};
+
+const isCheckedInReservationEntry = (entry, fallbackStatus = null) => {
+  if (!entry || typeof entry !== "object") return false;
+  const nested =
+    entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
+  const directStatus = normalizeReservationStatus(entry?.status);
+  const nestedStatus = normalizeReservationStatus(nested?.status);
+  const flatReservationStatus = normalizeReservationStatus(
+    entry?.reservation_status ??
+      entry?.reservationStatus ??
+      nested?.reservation_status ??
+      nested?.reservationStatus
+  );
+  const resolvedStatus = resolveReservationAwareStatus(entry, fallbackStatus);
+  return (
+    entry?.checked_in === true ||
+    nested?.checked_in === true ||
+    [directStatus, nestedStatus, flatReservationStatus, resolvedStatus].some((status) =>
+    isCheckedInReservationStatus(status)
+    )
+  );
+};
+
+const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrderIds = null) => {
+  if (!entry || typeof entry !== "object") return false;
+  const nested =
+    entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
+  const status = resolveReservationAwareStatus(entry, fallbackStatus);
+  const nestedStatus = normalizeReservationStatus(nested?.status);
+  const flatReservationStatus = normalizeReservationStatus(
+    entry?.reservation_status ??
+      entry?.reservationStatus ??
+      nested?.reservation_status ??
+      nested?.reservationStatus
+  );
+  const hasReservationContext = hasActiveReservationPayload(entry);
+  if (!hasReservationContext) return false;
+  const orderIdValue =
+    entry?.id ??
+    entry?.order_id ??
+    entry?.orderId ??
+    nested?.id ??
+    nested?.order_id ??
+    nested?.orderId ??
+    null;
+  if (
+    checkedInOrderIds &&
+    typeof checkedInOrderIds.has === "function" &&
+    checkedInOrderIds.has(Number(orderIdValue))
+  ) {
+    return false;
+  }
+  if (
+    isCancelledLikeStatus(status) ||
+    isCancelledLikeStatus(nestedStatus) ||
+    isCancelledLikeStatus(flatReservationStatus)
+  ) {
+    return false;
+  }
+  if (isCheckedInReservationEntry(entry, fallbackStatus)) return false;
+  const orderType = String(
+    entry?.order_type ?? entry?.orderType ?? nested?.order_type ?? nested?.orderType ?? ""
+  ).toLowerCase();
+  if (
+    status === "reserved" ||
+    nestedStatus === "reserved" ||
+    flatReservationStatus === "reserved" ||
+    orderType === "reservation"
+  ) {
+    return true;
+  }
+  // Keep reservation lock for any pre-checkin state (including transient "paid/closed" before restore).
+  return true;
 };
 
   const {
@@ -353,6 +472,14 @@ const hasActiveReservationPayload = (entry) => {
   const [lastError, setLastError] = useState(null);
   const [activeOrder, setActiveOrder] = useState(null);
   const [orderScreenStatus, setOrderScreenStatus] = useState(null);
+  const activeOrderRef = useRef(null);
+  const orderIdRef = useRef(null);
+  const tableRef = useRef(null);
+  const checkedInOrdersRef = useRef(new Set());
+  const refreshOccupiedTablesRef = useRef(null);
+  const refreshOrderScreenStatusRef = useRef(null);
+  const resetToTypePickerRef = useRef(null);
+  const dismissReservationStatusLockRef = useRef(null);
   const isForcedStatusActive = useCallback(() => {
     const forced = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
     if (!forced) return false;
@@ -385,6 +512,28 @@ const hasActiveReservationPayload = (entry) => {
       }
       window.dispatchEvent(new Event("qr:loyalty-change"));
     } catch {}
+  }, []);
+  const markOrderCheckedIn = useCallback((orderLike) => {
+    if (!orderLike || typeof orderLike !== "object") return;
+    const candidates = [
+      orderLike?.order_id,
+      orderLike?.orderId,
+      orderLike?.id,
+      orderLike?.order?.id,
+      orderLike?.order?.order_id,
+      orderLike?.order?.orderId,
+      orderLike?.reservation?.order_id,
+      orderLike?.reservation?.orderId,
+      orderLike?.reservation_id,
+      orderLike?.reservationId,
+      orderLike?.reservation?.id,
+    ];
+    candidates.forEach((value) => {
+      const numericId = Number(value);
+      if (Number.isFinite(numericId) && numericId > 0) {
+        checkedInOrdersRef.current.add(numericId);
+      }
+    });
   }, []);
   const [orderType, setOrderType] = useState(() => {
     // For QR links we can pre-lock the flow
@@ -562,6 +711,10 @@ const hasActiveReservationPayload = (entry) => {
   }, [getQrSpeechRecognition, orderType, parseQrVoiceTranscript, qrVoiceLanguage, t]);
   const injectQrVoiceItemsToCart = useCallback(
     async (items) => {
+      if (orderType === "table" && isReservationPendingCheckIn(activeOrder, orderScreenStatus, checkedInOrdersRef.current)) {
+        setQrVoiceError(t("Items can be added after check-in."));
+        return;
+      }
       if (!Array.isArray(items) || items.length === 0) return;
       const byId = new Map(safeProducts.map((p) => [Number(p.id), p]));
       const byName = new Map(
@@ -625,7 +778,16 @@ const hasActiveReservationPayload = (entry) => {
         }
       }
     },
-    [qrVoiceLogId, qrVoiceResult?.confidence_score, safeProducts, setCart, t]
+    [
+      activeOrder,
+      orderScreenStatus,
+      orderType,
+      qrVoiceLogId,
+      qrVoiceResult?.confidence_score,
+      safeProducts,
+      setCart,
+      t,
+    ]
   );
 
   // 🥡 Pre-order (takeaway) fields
@@ -1007,14 +1169,15 @@ useEffect(() => {
   (async () => {
     try {
       const activeId = storage.getItem("qr_active_order_id");
+      const hasSavedActiveOrder = Boolean(activeId);
       const forceStatusOpen = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
       const wantsStatusOpen =
-        forceStatusOpen || storage.getItem("qr_show_status") === "1";
+        forceStatusOpen || storage.getItem("qr_show_status") === "1" || hasSavedActiveOrder;
       const skipRestoreOnRefresh = !qrMode && !initialTableFromUrl;
 
       // On a normal refresh (no explicit table/delivery mode), always land on the home page
       // and do not re-open status/menu from prior sessions. This avoids "blink" loops.
-      if (skipRestoreOnRefresh && !forceStatusOpen) {
+      if (skipRestoreOnRefresh && !forceStatusOpen && !hasSavedActiveOrder) {
         setShowStatus(false);
         storage.setItem("qr_show_status", "0");
         storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
@@ -1092,25 +1255,46 @@ if (activeId) {
 
   if (order) {
     const status = (order?.status || "").toLowerCase();
-    const paid =
-      status === "paid" ||
-      order.payment_status === "paid" ||
-      order.payment_state === "paid";
+    const shouldKeepFetchedActiveOrder =
+      isReservationPendingCheckIn(order, status, checkedInOrdersRef.current) ||
+      !isTerminalOrderStatus(status);
+    if (!shouldKeepFetchedActiveOrder) {
+      order = null;
+      storage.removeItem("qr_active_order_id");
+      storage.removeItem("qr_active_order");
+    }
+  }
+
+  if (order) {
+    const status = (order?.status || "").toLowerCase();
+    const reservationAwareStatus = resolveReservationAwareStatus(order, status);
+    if (isCheckedInReservationEntry(order, reservationAwareStatus)) {
+      markOrderCheckedIn(order);
+    }
+    const stickyStatus =
+      Number.isFinite(Number(order?.id)) && checkedInOrdersRef.current.has(Number(order?.id))
+        ? "checked_in"
+        : reservationAwareStatus;
 
     // Restore the active order, but don't pop "Order Sent" on refresh unless user had it open.
     setOrderStatus("success");
     setShowStatus(wantsStatusOpen);
+    storage.setItem("qr_show_status", wantsStatusOpen ? "1" : "0");
 
     setActiveOrder(order);
-    setOrderScreenStatus(status);
+    setOrderScreenStatus(stickyStatus || null);
     setLoyaltyEligibilityFromOrder(order);
     setOrderCancelReason(
-      isCancelledLikeStatus(status)
+      isCancelledLikeStatus(reservationAwareStatus)
         ? getOrderCancellationReason(order)
         : ""
     );
 
-    const type = order.order_type === "table" ? "table" : "online";
+    const normalizedOrderType = String(order?.order_type || "").toLowerCase();
+    const type =
+      normalizedOrderType === "table" || normalizedOrderType === "reservation"
+        ? "table"
+        : "online";
     setOrderType(type);
     setTable(type === "table" ? Number(order.table_number) || null : null);
     setOrderId(order.id);
@@ -1135,26 +1319,39 @@ if (savedTable) {
 
     const list = parseArray(q);
 
-        const openOrder = list.find((o) => o?.status);
+    const openOrder =
+      list.find((o) => {
+        const statusLower = String(o?.status || "").toLowerCase();
+        if (isTerminalOrderStatus(statusLower)) return false;
+        return isReservationPendingCheckIn(o, statusLower, checkedInOrdersRef.current);
+      }) ||
+      list.find((o) => !isTerminalOrderStatus((o?.status || "").toLowerCase())) ||
+      null;
 
 	        if (openOrder) {
-	          const status = (openOrder?.status || "").toLowerCase();
-	          const paid =
-	            status === "paid" ||
-	            openOrder.payment_status === "paid" ||
-	            openOrder.payment_state === "paid";
+          const status = (openOrder?.status || "").toLowerCase();
+          const reservationAwareStatus = resolveReservationAwareStatus(openOrder, status);
+          if (isCheckedInReservationEntry(openOrder, reservationAwareStatus)) {
+            markOrderCheckedIn(openOrder);
+          }
+          const stickyStatus =
+            Number.isFinite(Number(openOrder?.id)) &&
+            checkedInOrdersRef.current.has(Number(openOrder?.id))
+              ? "checked_in"
+              : reservationAwareStatus;
 
 		          // Restore the active order, but don't pop "Order Sent" on refresh unless user had it open.
 		          setOrderType("table");
 		          setTable(savedTable);
-	          setOrderId(openOrder.id);
-	          setOrderStatus("success");
-	          setShowStatus(wantsStatusOpen);
+          setOrderId(openOrder.id);
+		          setOrderStatus("success");
+		          setShowStatus(wantsStatusOpen);
+              storage.setItem("qr_show_status", wantsStatusOpen ? "1" : "0");
 
-	        setActiveOrder(openOrder);
-		          setOrderScreenStatus(status);
+        setActiveOrder(openOrder);
+		          setOrderScreenStatus(stickyStatus || null);
           setOrderCancelReason(
-            isCancelledLikeStatus(status)
+            isCancelledLikeStatus(stickyStatus)
               ? getOrderCancellationReason(openOrder)
               : ""
           );
@@ -1184,6 +1381,30 @@ if (savedTable) {
   })();
 }, [appendIdentifier, qrMode, initialTableFromUrl]);
 
+  const dismissReservationStatusLock = useCallback(
+    ({ clearActiveOrder = false, keepStatusOpen = false } = {}) => {
+      storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
+      storage.setItem("qr_show_status", keepStatusOpen ? "1" : "0");
+      setShowStatus(Boolean(keepStatusOpen));
+      setOrderCancelReason("");
+      if (!clearActiveOrder) return;
+      storage.removeItem("qr_active_order_id");
+      storage.removeItem("qr_active_order");
+      setOrderId(null);
+      setActiveOrder(null);
+      setOrderScreenStatus(null);
+      setOrderStatus("pending");
+    },
+    [
+      setActiveOrder,
+      setOrderCancelReason,
+      setOrderId,
+      setOrderStatus,
+      setShowStatus,
+      storage,
+    ]
+  );
+
   // 🔄 Keep a lightweight, real-time summary of the active order status
   const refreshOrderScreenStatus = useCallback(async () => {
     if (!orderId) return;
@@ -1197,73 +1418,181 @@ if (savedTable) {
       setLoyaltyEligibilityFromOrder(data || null);
 
       const s = (data?.status || "").toLowerCase();
-      const hasOrderCancellationReason = Boolean(
-        getOrderCancellationReason(data)
-      );
-      const isCancelledStatus = isCancelledLikeStatus(s);
+      const reservationAwareStatus = resolveReservationAwareStatus(data, s);
+      if (isCheckedInReservationEntry(data, reservationAwareStatus)) {
+        markOrderCheckedIn(data);
+      }
       const forceActive = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
       const wantsStatusOpen = storage.getItem("qr_show_status") === "1";
+      const reservationStillActive = hasActiveReservationPayload(data);
       if (!s) {
         setOrderScreenStatus(null);
         return;
       }
-      const lostReservationPayload = !hasActiveReservationPayload(data);
-      const resolvedTableNo = Number(
-        data?.table_number ??
-          table ??
-          storage.getItem("qr_table") ??
-          storage.getItem("qr_selected_table") ??
-          null
-      );
-      const tableStillReserved =
-        Number.isFinite(resolvedTableNo) &&
-        resolvedTableNo > 0 &&
-        safeReservedTables.some((n) => Number(n) === resolvedTableNo);
-      let hasActiveOrderItems = false;
-      if (forceActive && lostReservationPayload && s !== "reserved" && !tableStillReserved) {
-        try {
-          const tokenForItems = getStoredToken();
-          const itemsRaw = await secureFetch(appendIdentifier(`/orders/${orderId}/items`), {
-            ...(tokenForItems
-              ? { headers: { Authorization: `Bearer ${tokenForItems}` } }
-              : {}),
-          });
-          const items = parseOrderItemsPayload(itemsRaw);
-          hasActiveOrderItems = items.some((item) => {
-            const qty = Number(item?.quantity ?? 1);
-            if (!Number.isFinite(qty) || qty <= 0) return false;
-            const state = String(
-              item?.status || item?.item_status || item?.kitchen_status || ""
-            ).toLowerCase();
-            return !["canceled", "cancelled", "deleted", "void"].includes(state);
-          });
-        } catch {
-          // If items cannot be fetched, fail-safe to keep status open for active table orders.
-          hasActiveOrderItems = true;
+      const isTerminalStatus = isTerminalOrderStatus(s);
+      if (isTerminalStatus) {
+        const resolvedTableNo = Number(
+          data?.table_number ??
+            data?.tableNumber ??
+            tableRef.current ??
+            storage.getItem("qr_table") ??
+            storage.getItem("qr_selected_table") ??
+            0
+        );
+        if (Number.isFinite(resolvedTableNo) && resolvedTableNo > 0) {
+          try {
+            const tableOrdersRaw = await secureFetch(
+              appendIdentifier(`/orders?table_number=${resolvedTableNo}`),
+              opts
+            );
+            const tableOrders = parseArray(tableOrdersRaw);
+            const currentOrderId = Number(orderId || data?.id || 0);
+            const replacementOrder =
+              tableOrders.find((entry) => {
+                const entryId = Number(entry?.id);
+                if (!Number.isFinite(entryId) || entryId <= 0) return false;
+                if (Number.isFinite(currentOrderId) && entryId === currentOrderId) return false;
+                const statusLower = String(entry?.status || "").toLowerCase();
+                if (isTerminalOrderStatus(statusLower)) return false;
+                return isReservationPendingCheckIn(
+                  entry,
+                  statusLower,
+                  checkedInOrdersRef.current
+                );
+              }) ||
+              tableOrders.find((entry) => {
+                const entryId = Number(entry?.id);
+                if (!Number.isFinite(entryId) || entryId <= 0) return false;
+                if (Number.isFinite(currentOrderId) && entryId === currentOrderId) return false;
+                return !isTerminalOrderStatus(String(entry?.status || "").toLowerCase());
+              }) ||
+              null;
+
+            if (replacementOrder) {
+              const replacementId = Number(replacementOrder.id);
+              if (Number.isFinite(replacementId) && replacementId > 0) {
+                const replacementStatus = resolveReservationAwareStatus(
+                  replacementOrder,
+                  String(replacementOrder?.status || "").toLowerCase()
+                );
+                if (isCheckedInReservationEntry(replacementOrder, replacementStatus)) {
+                  markOrderCheckedIn(replacementOrder);
+                }
+                setOrderId(replacementId);
+                setActiveOrder(replacementOrder);
+                setOrderScreenStatus(
+                  checkedInOrdersRef.current.has(replacementId)
+                    ? "checked_in"
+                    : replacementStatus || null
+                );
+                setOrderCancelReason(
+                  isCancelledLikeStatus(replacementStatus)
+                    ? getOrderCancellationReason(replacementOrder)
+                    : ""
+                );
+                setLoyaltyEligibilityFromOrder(replacementOrder);
+                storage.setItem("qr_active_order_id", String(replacementId));
+                storage.setItem(
+                  "qr_orderType",
+                  String(
+                    replacementOrder?.order_type ||
+                      replacementOrder?.orderType ||
+                      "table"
+                  ).toLowerCase() === "reservation"
+                    ? "table"
+                    : String(replacementOrder?.order_type || replacementOrder?.orderType || "table")
+                );
+                if (wantsStatusOpen) {
+                  setShowStatus(true);
+                  storage.setItem("qr_show_status", "1");
+                }
+                setOrderStatus("success");
+                return;
+              }
+            }
+          } catch (fallbackErr) {
+            console.warn("⚠️ Failed to resolve replacement order for terminal QR order:", fallbackErr);
+          }
         }
       }
-      // Keep force-status active while order is still reserved.
-      // Reservation payload can momentarily be missing during sync transitions.
-      if (
-        forceActive &&
-        ((isTerminalOrderStatus(s) && !isCancelledStatus && !hasOrderCancellationReason) ||
-          (lostReservationPayload &&
-            s !== "reserved" &&
-            !hasOrderCancellationReason &&
-            !tableStillReserved &&
-            !hasActiveOrderItems))
-      ) {
-        storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
-        storage.setItem("qr_show_status", "0");
-        setShowStatus(false);
-        setOrderId(null);
-        setActiveOrder(null);
-        setOrderScreenStatus(null);
-        resetToTypePicker();
-        return;
+      if (!isTerminalStatus && isReservationPendingCheckIn(data, reservationAwareStatus, checkedInOrdersRef.current)) {
+        const resolvedTableNo = Number(
+          data?.table_number ??
+            data?.tableNumber ??
+            tableRef.current ??
+            storage.getItem("qr_table") ??
+            storage.getItem("qr_selected_table") ??
+            0
+        );
+        if (Number.isFinite(resolvedTableNo) && resolvedTableNo > 0) {
+          try {
+            const tableOrdersRaw = await secureFetch(
+              appendIdentifier(`/orders?table_number=${resolvedTableNo}`),
+              opts
+            );
+            const tableOrders = parseArray(tableOrdersRaw);
+            const currentOrderId = Number(orderId || data?.id || 0);
+            const checkedInOrder =
+              tableOrders.find((entry) => {
+                const entryId = Number(entry?.id);
+                if (!Number.isFinite(entryId) || entryId <= 0) return false;
+                if (Number.isFinite(currentOrderId) && entryId === currentOrderId) return false;
+                return isCheckedInReservationEntry(
+                  entry,
+                  String(entry?.status || "").toLowerCase()
+                );
+              }) || null;
+            if (checkedInOrder) {
+              const checkedInId = Number(checkedInOrder.id);
+                if (Number.isFinite(checkedInId) && checkedInId > 0) {
+                  const checkedInStatus = resolveReservationAwareStatus(
+                    checkedInOrder,
+                    String(checkedInOrder?.status || "").toLowerCase()
+                  );
+                  markOrderCheckedIn(checkedInOrder);
+                  setOrderId(checkedInId);
+                  setActiveOrder(checkedInOrder);
+                  setOrderScreenStatus(checkedInStatus || "checked_in");
+                setOrderCancelReason(
+                  isCancelledLikeStatus(checkedInStatus)
+                    ? getOrderCancellationReason(checkedInOrder)
+                    : ""
+                );
+                setLoyaltyEligibilityFromOrder(checkedInOrder);
+                storage.setItem("qr_active_order_id", String(checkedInId));
+                storage.setItem("qr_orderType", "table");
+                if (wantsStatusOpen) {
+                  setShowStatus(true);
+                  storage.setItem("qr_show_status", "1");
+                }
+                setOrderStatus("success");
+                return;
+              }
+            }
+          } catch (promoteErr) {
+            console.warn("⚠️ Failed to resolve checked-in table order:", promoteErr);
+          }
+        }
       }
-      setOrderScreenStatus(s);
-      if (forceActive) {
+      const finalReservationStatus = reservationAwareStatus;
+      if (isCheckedInReservationEntry(data, finalReservationStatus)) {
+        markOrderCheckedIn(data);
+      }
+      const stickyCheckedIn =
+        Number.isFinite(Number(orderId)) &&
+        checkedInOrdersRef.current.has(Number(orderId));
+      const finalStatus = stickyCheckedIn ? "checked_in" : finalReservationStatus;
+      setOrderScreenStatus(finalStatus || null);
+      if (forceActive && !reservationStillActive) {
+        dismissReservationStatusLock({
+          clearActiveOrder: isTerminalStatus,
+          keepStatusOpen: !isTerminalStatus,
+        });
+        if (isTerminalStatus) {
+          return;
+        }
+      }
+      if (forceActive && reservationStillActive) {
         // Respect explicit user hide (e.g. opening cart from status screen)
         // for all reservation-lock states, not only "reserved".
         if (wantsStatusOpen) {
@@ -1274,14 +1603,14 @@ if (savedTable) {
         }
       }
       setOrderCancelReason(
-        isCancelledLikeStatus(s)
+        isCancelledLikeStatus(reservationAwareStatus)
           ? getOrderCancellationReason(data)
           : ""
       );
 
       // Keep status visible for cancelled/closed only when user didn't intentionally hide it.
       // This prevents status-vs-cart flicker when opening cart from the bottom nav.
-      if (isCancelledLikeStatus(s) || s === "closed" || s === "completed") {
+      if (isTerminalStatus) {
         const shouldKeepOpen = storage.getItem("qr_show_status") === "1";
         if (shouldKeepOpen) {
           setShowStatus(true);
@@ -1304,11 +1633,9 @@ if (savedTable) {
   }, [
     orderId,
     appendIdentifier,
-    parseOrderItemsPayload,
-    resetToTypePicker,
+    dismissReservationStatusLock,
+    parseArray,
     storage,
-    table,
-    safeReservedTables,
     getStoredToken,
     setLoyaltyEligibilityFromOrder,
   ]);
@@ -1410,13 +1737,12 @@ if (savedTable) {
             .filter((order) => {
               const status = String(order?.status || "").toLowerCase();
               if (isCancelledLikeStatus(status)) return false;
+              if (isCheckedInReservationStatus(status)) return false;
               if (!isReservationLikeEntry(order)) return false;
               if (!isReservationDueNow(order, nowMs)) return false;
-
               if (["closed", "completed"].includes(status)) {
                 const reservationDate =
                   String(order?.reservation_date ?? order?.reservationDate ?? "").trim();
-                // Allow legacy closed+reservation rows only for today's schedule.
                 if (!reservationDate || reservationDate !== todayYmd) return false;
               }
               return true;
@@ -1492,6 +1818,7 @@ if (savedTable) {
           .filter((order) => {
             const status = String(order?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
+            if (isCheckedInReservationStatus(status)) return false;
             if (!isReservationLikeEntry(order)) return false;
             return isReservationDueNow(order, nowMs);
           })
@@ -1501,6 +1828,7 @@ if (savedTable) {
           .filter((reservation) => {
             const status = String(reservation?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
+            if (isCheckedInReservationStatus(status)) return false;
             return isReservationDueNow(reservation, nowMs);
           })
           .map((reservation) =>
@@ -1535,6 +1863,34 @@ if (savedTable) {
     }
   }, [appendIdentifier, getStoredToken, restaurantIdentifier, sFetch, toArray]);
 
+  useEffect(() => {
+    activeOrderRef.current = activeOrder;
+  }, [activeOrder]);
+
+  useEffect(() => {
+    orderIdRef.current = orderId;
+  }, [orderId]);
+
+  useEffect(() => {
+    tableRef.current = table;
+  }, [table]);
+
+  useEffect(() => {
+    refreshOccupiedTablesRef.current = refreshOccupiedTables;
+  }, [refreshOccupiedTables]);
+
+  useEffect(() => {
+    refreshOrderScreenStatusRef.current = refreshOrderScreenStatus;
+  }, [refreshOrderScreenStatus]);
+
+  useEffect(() => {
+    resetToTypePickerRef.current = resetToTypePicker;
+  }, [resetToTypePicker]);
+
+  useEffect(() => {
+    dismissReservationStatusLockRef.current = dismissReservationStatusLock;
+  }, [dismissReservationStatusLock]);
+
   // Realtime table occupancy: join restaurant room and refresh on order events.
   useEffect(() => {
     if (!socketRestaurantId) return;
@@ -1557,7 +1913,7 @@ if (savedTable) {
       if (refreshTimer) return;
       refreshTimer = window.setTimeout(() => {
         refreshTimer = null;
-        refreshOccupiedTables();
+        refreshOccupiedTablesRef.current?.();
       }, 50);
     };
 
@@ -1595,6 +1951,46 @@ if (savedTable) {
       const n = Number(tableNo);
       if (!Number.isFinite(n) || n <= 0) return;
       setReservedTables((prev) => toArray(prev).map(Number).filter((x) => x !== n));
+    };
+
+    const matchesActiveReservationPayload = (payload, tableNo) => {
+      const currentActiveOrder = activeOrderRef.current;
+      const activeOrderId = Number(orderIdRef.current || storage.getItem("qr_active_order_id") || 0);
+      const payloadOrderId = Number(
+        payload?.order_id ??
+          payload?.orderId ??
+          payload?.reservation_id ??
+          payload?.reservationId ??
+          payload?.reservation?.id ??
+          payload?.order?.id ??
+          0
+      );
+      const activeTableNo = Number(
+        tableRef.current ??
+          storage.getItem("qr_table") ??
+          storage.getItem("qr_selected_table") ??
+          currentActiveOrder?.table_number ??
+          currentActiveOrder?.tableNumber ??
+          0
+      );
+      const normalizedPayloadTableNo = Number(tableNo || 0);
+      const forceActive = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
+      const orderIdMatches =
+        Number.isFinite(activeOrderId) &&
+        activeOrderId > 0 &&
+        Number.isFinite(payloadOrderId) &&
+        payloadOrderId > 0 &&
+        activeOrderId === payloadOrderId;
+      const tableMatches =
+        Number.isFinite(activeTableNo) &&
+        activeTableNo > 0 &&
+        Number.isFinite(normalizedPayloadTableNo) &&
+        normalizedPayloadTableNo > 0 &&
+        activeTableNo === normalizedPayloadTableNo;
+      return (
+        orderIdMatches ||
+        ((forceActive || hasActiveReservationPayload(currentActiveOrder)) && tableMatches)
+      );
     };
 
     const onConfirmed = (payload) => {
@@ -1662,9 +2058,41 @@ if (savedTable) {
         payload?.reservation?.table_number ??
         payload?.order?.table_number ??
         null;
+      const statusCandidates = [
+        String(payload?.order?.status || "").toLowerCase(),
+        String(payload?.reservation?.status || "").toLowerCase(),
+        String(payload?.status || "").toLowerCase(),
+      ].filter(Boolean);
+      const nextStatus = statusCandidates[0] || "";
+      const isCheckedInUpdate = statusCandidates.some((status) =>
+        isCheckedInReservationStatus(status)
+      );
       if (tableNo) {
         upsertOccupied(tableNo);
-        upsertReserved(tableNo);
+        if (isCheckedInUpdate) {
+          removeReserved(tableNo);
+        } else {
+          upsertReserved(tableNo);
+        }
+      }
+      if (isCheckedInUpdate && matchesActiveReservationPayload(payload, tableNo)) {
+        markOrderCheckedIn(payload?.order || payload?.reservation || payload);
+        const nextOrderId = Number(
+          payload?.order?.id ??
+            payload?.order_id ??
+            payload?.orderId
+        );
+        if (Number.isFinite(nextOrderId) && nextOrderId > 0) {
+          setOrderId(nextOrderId);
+          storage.setItem("qr_active_order_id", String(nextOrderId));
+        }
+        dismissReservationStatusLockRef.current?.({
+          clearActiveOrder: false,
+          keepStatusOpen: true,
+        });
+        window.setTimeout(() => {
+          refreshOrderScreenStatusRef.current?.();
+        }, 30);
       }
       scheduleRefresh();
     };
@@ -1677,6 +2105,22 @@ if (savedTable) {
         null;
       if (tableNo) {
         removeReserved(tableNo);
+      }
+      const matchesActiveReservation = matchesActiveReservationPayload(payload, tableNo);
+      if (matchesActiveReservation) {
+        const nextStatus = String(
+          payload?.status ?? payload?.order?.status ?? payload?.reservation?.status ?? ""
+        ).toLowerCase();
+        const isTerminalAfterDelete = isTerminalOrderStatus(nextStatus);
+        dismissReservationStatusLockRef.current?.({ clearActiveOrder: isTerminalAfterDelete });
+        if (isTerminalAfterDelete) {
+          resetToTypePickerRef.current?.();
+          scheduleRefresh();
+          return;
+        }
+        window.setTimeout(() => {
+          refreshOrderScreenStatusRef.current?.();
+        }, 30);
       }
       scheduleRefresh();
     };
@@ -1710,7 +2154,7 @@ if (savedTable) {
         s.disconnect();
       } catch {}
     };
-  }, [socketRestaurantId, refreshOccupiedTables]);
+  }, [socketRestaurantId, storage, toArray]);
 
 useEffect(() => {
   let cancelled = false;
@@ -1810,10 +2254,14 @@ const handleMenuCategoryClick = useCallback(() => {
 
 const handleMenuProductOpen = useCallback(
   (product) => {
+    if (orderType === "table" && isReservationPendingCheckIn(activeOrder, orderScreenStatus, checkedInOrdersRef.current)) {
+      alert(t("Items can be added after check-in."));
+      return;
+    }
     setSelectedProduct(product);
     setShowAddModal(true);
   },
-  [setSelectedProduct, setShowAddModal]
+  [activeOrder, orderScreenStatus, orderType, setSelectedProduct, setShowAddModal, t]
 );
 
 		useEffect(() => {
@@ -1865,7 +2313,30 @@ const showTableSelector = !forceHome && orderType === "table" && !table;
 
 // ---- Rehydrate cart from current order (generate NEW unique_id for each line) ----
 // ---- Rehydrate cart from current order, but mark them as locked (read-only) ----
-async function rehydrateCartFromOrder(orderId) {
+async function rehydrateCartFromOrder(orderId, orderSnapshot = null) {
+  const normalizedOrderId = Number(orderId);
+  const trackedOrderId = Number(
+    orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0
+  );
+  const currentTrackedStatus = String(orderScreenStatus || activeOrder?.status || "").toLowerCase();
+  if (isReservationPendingCheckIn(orderSnapshot, null, checkedInOrdersRef.current)) {
+    setCart([]);
+    storage.setItem("qr_cart", "[]");
+    return false;
+  }
+  if (
+    Number.isFinite(normalizedOrderId) &&
+    normalizedOrderId > 0 &&
+    Number.isFinite(trackedOrderId) &&
+    trackedOrderId > 0 &&
+    normalizedOrderId === trackedOrderId &&
+    isReservationPendingCheckIn(activeOrder, currentTrackedStatus, checkedInOrdersRef.current)
+  ) {
+    setCart([]);
+    storage.setItem("qr_cart", "[]");
+    return false;
+  }
+
   try {
     const token = getStoredToken();
     let raw = null;
@@ -1888,6 +2359,7 @@ async function rehydrateCartFromOrder(orderId) {
 
     const now36 = Date.now().toString(36);
     const lockedItems = parseOrderItemsPayload(raw)
+      .filter((it) => !isPaidLikeOrderItem(it))
       .map((it) => ({
         id: it.product_id ?? it.external_product_id,
         name: it.order_item_name || it.product_name || it.name || "Item",
@@ -1911,8 +2383,10 @@ async function rehydrateCartFromOrder(orderId) {
 
     // Show only locked items for context; new items will be added later
     setCart(lockedItems);
+    return true;
   } catch (e) {
     console.error("rehydrateCartFromOrder failed:", e);
+    return false;
   }
 }
 
@@ -1924,11 +2398,19 @@ async function hydrateCartFromActiveOrder() {
       null
   );
   if (!Number.isFinite(activeOrderId) || activeOrderId <= 0) return false;
-  await rehydrateCartFromOrder(activeOrderId);
+  if (isReservationPendingCheckIn(activeOrder, orderScreenStatus, checkedInOrdersRef.current)) {
+    setCart([]);
+    storage.setItem("qr_cart", "[]");
+    setOrderId(activeOrderId);
+    storage.setItem("qr_active_order_id", String(activeOrderId));
+    storage.setItem("qr_show_status", "0");
+    return false;
+  }
+  const hydrated = await rehydrateCartFromOrder(activeOrderId);
   setOrderId(activeOrderId);
   storage.setItem("qr_active_order_id", String(activeOrderId));
   storage.setItem("qr_show_status", "0");
-  return true;
+  return hydrated;
 }
 
 // ---- Order Another: show previous lines (locked), start fresh for new ones ----
@@ -1981,6 +2463,7 @@ async function handleOrderAnother() {
       orderType || storage.getItem("qr_orderType") || activeOrder?.order_type || null,
       table ?? activeOrder?.table_number ?? activeOrder?.tableNumber
     );
+    let resolvedOrderSnapshot = activeOrder || null;
     let resolvedTableNo =
       Number(table) ||
       Number(storage.getItem("qr_table")) ||
@@ -1997,6 +2480,7 @@ async function handleOrderAnother() {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (res) {
+          resolvedOrderSnapshot = res;
           const orderStatus = (res.status || "").toLowerCase();
           const fetchedTable = Number(res.table_number ?? res.tableNumber);
           const fetchedType = normalizeOrderTypeForReorder(
@@ -2068,6 +2552,7 @@ async function handleOrderAnother() {
             const open =
               arr.find((o) => !isTerminalOrderStatus((o?.status || "").toLowerCase())) || null;
             if (open) {
+              resolvedOrderSnapshot = open;
               id = open.id;
               type = "table";
               const openTable = Number(open.table_number);
@@ -2086,7 +2571,7 @@ async function handleOrderAnother() {
 
     // ONLINE branch: rehydrate previous (locked) items too
     if (type === "online" && id) {
-      await rehydrateCartFromOrder(id); // sets locked: true items
+      await rehydrateCartFromOrder(id, resolvedOrderSnapshot); // sets locked: true items
       setOrderType("online");
       storage.setItem("qr_active_order_id", String(id));
       storage.setItem("qr_orderType", "online");
@@ -2097,7 +2582,7 @@ async function handleOrderAnother() {
 
     // TABLE branch (unchanged)
     if (type === "table" && id) {
-      await rehydrateCartFromOrder(id); // sets locked: true items
+      await rehydrateCartFromOrder(id, resolvedOrderSnapshot); // sets locked: true items
       setOrderId(id);
       setOrderType("table");
       if (Number.isFinite(Number(resolvedTableNo)) && Number(resolvedTableNo) > 0) {
@@ -2148,7 +2633,7 @@ function handleReset(options = null) {
 				  // Check if order is delivered or cancelled - if so, navigate to home
 				  const status = (orderScreenStatus || "").toLowerCase();
 				  const isFinished = ["delivered", "served", "closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(status);
-		  
+
 		  if (isFinished) {
 		    // Order is complete - navigate to home and clear everything
 		    resetToTypePicker();
@@ -2244,9 +2729,6 @@ function handleReset(options = null) {
       window.clearInterval(intervalId);
     };
   }, [callWaiterCooldownUntil]);
-
-
-  
 
   return {
     restaurantIdentifier,

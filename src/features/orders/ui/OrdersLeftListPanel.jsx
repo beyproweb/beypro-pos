@@ -19,9 +19,6 @@ const OrdersLeftListPanel = memo(function OrdersLeftListPanel({
   confirmOnlineOrder,
   actions,
   setOrders,
-  shouldAutoClosePacketOnDelivered,
-  closeOrderInstantly,
-  emitToast,
   fetchOrders,
   propOrders,
   openCancelModalForOrder,
@@ -382,6 +379,8 @@ return (
         : kitchenStatus === "ready" || kitchenStatus === "delivered"
         ? "bg-red-700 text-white shadow-sm"
         : "bg-slate-400 text-white shadow-sm";
+      const showMobileHeaderNewOrderBadge =
+        kitchenStatus === "new" && Boolean(kitchenBadgeLabel);
 
 
 
@@ -430,7 +429,7 @@ return (
   style={{ minHeight: 150 }}
 >
   {/* TOP BAR: Address + Timer + Print */}
-  <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white/30 border-b border-slate-300/50">
+  <div className="flex flex-col gap-2 px-4 py-2.5 bg-white/30 border-b border-slate-300/50 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
     <div className="min-w-0 flex-1">
       {order.customer_address ? (
         <a
@@ -438,12 +437,12 @@ return (
           target="_blank"
           rel="noopener noreferrer"
           title={order.customer_address}
-          className="block font-semibold text-[17px] leading-snug text-slate-900 hover:text-blue-700 truncate"
+          className="block break-words font-semibold text-[17px] leading-snug text-slate-900 hover:text-blue-700 sm:truncate"
         >
           {order.customer_address}
         </a>
       ) : (
-        <div className="font-semibold text-[17px] leading-snug text-slate-500 truncate">
+        <div className="font-semibold text-[17px] leading-snug text-slate-500 break-words sm:truncate">
           {t("No address available")}
         </div>
       )}
@@ -457,44 +456,56 @@ return (
       )}
     </div>
     {order?.items?.length > 0 && (
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <span
-          className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md font-mono font-semibold text-sm ${statusVisual.timer}`}
-        >
-          {getWaitingTimer(order)}
-        </span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handlePacketPrint(order.id);
-          }}
-          className="h-7 w-7 inline-flex items-center justify-center rounded-md bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 transition text-base"
-          title={t("Print Receipt")}
-          type="button"
-        >
-          🖨️
-        </button>
+      <div className="flex w-full items-center justify-between gap-2 flex-shrink-0 sm:w-auto sm:justify-end sm:self-auto">
+        {showMobileHeaderNewOrderBadge ? (
+          <span
+            className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-tight sm:hidden ${kitchenBadgeClass}`}
+          >
+            {kitchenBadgeLabel}
+          </span>
+        ) : (
+          <span className="sm:hidden" />
+        )}
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md font-mono font-semibold text-sm ${statusVisual.timer}`}
+          >
+            {getWaitingTimer(order)}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePacketPrint(order.id);
+            }}
+            className="h-7 w-7 inline-flex items-center justify-center rounded-md bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 transition text-base"
+            title={t("Print Receipt")}
+            type="button"
+          >
+            🖨️
+          </button>
+        </div>
       </div>
     )}
   </div>
 
   {/* MIDDLE ROW: Order Source + Customer + Phone + Status Badge */}
-  <div className="flex items-center gap-2 px-4 py-2 bg-white/20 border-b border-slate-300/50">
+  <div className="flex flex-col gap-2 px-4 py-2 bg-white/20 border-b border-slate-300/50 sm:flex-row sm:items-center">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 rounded-md border border-slate-300/70 bg-white/35 px-2.5 py-2">
     {order.order_type && (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
+      <span className="inline-flex max-w-full items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-tight bg-white/80 border border-slate-300 text-slate-700">
         {order.order_type === "phone" ? t("Phone Order") : null}
         {order.order_type === "packet" ? (onlineSourceLabel || t("Packet")) : null}
         {order.order_type === "table" ? t("Table") : null}
         {order.order_type === "takeaway" ? t("Takeaway") : null}
       </span>
     )}
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700">
+    <span className="inline-flex max-w-full items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-tight bg-white/80 border border-slate-300 text-slate-700">
       {order.customer_name || t("Customer")}
     </span>
     {order.customer_phone && (
       <a
         href={`tel:${order.customer_phone}`}
-        className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-white/80 border border-slate-300 text-slate-700 hover:bg-white transition"
+        className="inline-flex max-w-full items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-tight bg-white/80 border border-slate-300 text-slate-700 hover:bg-white transition"
         title={t("Click to call")}
         style={{ textDecoration: "none" }}
       >
@@ -502,17 +513,18 @@ return (
       </a>
     )}
     {readyAtLabel && (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none bg-amber-100 text-amber-800 border border-amber-300">
+      <span className="inline-flex max-w-full items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-tight bg-amber-100 text-amber-800 border border-amber-300">
         {t("Ready at")} {readyAtLabel}
       </span>
     )}
     {kitchenBadgeLabel && (
       <span
-        className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-none ${kitchenBadgeClass}`}
+        className={`inline-flex max-w-full items-center px-2.5 py-0.5 rounded-md text-[15px] font-semibold leading-tight ${showMobileHeaderNewOrderBadge ? "hidden sm:inline-flex" : ""} ${kitchenBadgeClass}`}
       >
         {kitchenBadgeLabel}
       </span>
     )}
+    </div>
     {!normalizeDriverStatus(order.driver_status) && (
       (() => {
         const hasKitchenExcludedItem = Array.isArray(order?.items)
@@ -530,7 +542,7 @@ return (
             ? "Available after kitchen delivered or excluded items"
             : undefined
         }
-        className={`ml-auto inline-flex items-center justify-center rounded-md px-5 py-1.5 text-base font-bold text-white transition disabled:opacity-50 h-8 shadow-md ${
+        className={`inline-flex w-full items-center justify-center rounded-md px-5 py-1.5 text-base font-bold text-white transition disabled:opacity-50 h-8 shadow-md sm:ml-auto sm:w-auto ${
           kitchenStatus === "new"
             ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/50"
             : kitchenStatus === "preparing"
@@ -546,18 +558,6 @@ return (
             prev.map((o) => (o.id === order.id ? { ...o, driver_status: nextStatus } : o))
           );
           await actions.patchDriverStatus(order.id, nextStatus);
-          if (
-            nextStatus === "delivered" &&
-            shouldAutoClosePacketOnDelivered(order)
-          ) {
-            try {
-              await closeOrderInstantly(order);
-            } catch (err) {
-              globalThis.console.error("❌ Failed to auto-close delivered order:", err);
-              emitToast("error", t("Failed to close order"));
-              if (!propOrders) await fetchOrders();
-            }
-          }
         }}
       >
         {isYemeksepetiPickupOrder(order) ? t("Picked up") : t("On Road")}
@@ -569,7 +569,7 @@ return (
       <button
         type="button"
         disabled={driverButtonDisabled(order)}
-        className="ml-auto inline-flex items-center justify-center rounded-md bg-sky-800 hover:bg-sky-900 px-5 py-1.5 text-base font-bold text-white transition disabled:opacity-50 h-8 shadow-md shadow-sky-500/50"
+        className="inline-flex w-full items-center justify-center rounded-md bg-sky-800 hover:bg-sky-900 px-5 py-1.5 text-base font-bold text-white transition disabled:opacity-50 h-8 shadow-md shadow-sky-500/50 sm:ml-auto sm:w-auto"
         onClick={async () => {
           if (driverButtonDisabled(order)) return;
           setUpdating((prev) => ({ ...prev, [order.id]: true }));
@@ -580,15 +580,6 @@ return (
             await actions.patchDriverStatus(order.id, "delivered", {
               withJsonHeader: true,
             });
-              if (shouldAutoClosePacketOnDelivered(order)) {
-                try {
-                  await closeOrderInstantly(order);
-                } catch (err) {
-                  globalThis.console.error("❌ Failed to auto-close delivered order:", err);
-                  emitToast("error", t("Failed to close order"));
-                  if (!propOrders) await fetchOrders();
-                }
-              }
           } catch (err) {
             globalThis.console.error("❌ Failed to mark delivered:", err);
             if (!propOrders) await fetchOrders();
@@ -603,7 +594,7 @@ return (
     {normalizeDriverStatus(order.driver_status) === "delivered" && (
       <button
         type="button"
-        className="ml-auto inline-flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 px-5 py-1.5 text-base font-bold text-white transition h-8 shadow-md shadow-emerald-500/50"
+        className="inline-flex w-full items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 px-5 py-1.5 text-base font-bold text-white transition h-8 shadow-md shadow-emerald-500/50 sm:ml-auto sm:w-auto"
         onClick={async () => {
           if (isOnlinePayment) {
             try {
@@ -624,7 +615,7 @@ return (
   </div>
 
   {/* DRIVER ROW: Avatar + Name + Auto Confirmed + Cancel */}
-  <div className="flex items-center gap-3 px-4 py-2.5 bg-white/15 border-b border-slate-300/50">
+  <div className="flex flex-wrap items-start gap-3 px-4 py-2.5 bg-white/15 border-b border-slate-300/50 sm:items-center">
     <div className="h-9 w-9 rounded-full bg-white border border-slate-300 flex items-center justify-center overflow-hidden flex-shrink-0">
       {driverAvatarUrl ? (
         <img
@@ -642,7 +633,7 @@ return (
         const driverId = e.target.value;
         await actions.assignDriverToOrder(order, driverId);
       }}
-      className="appearance-none bg-white border border-slate-300 rounded-md text-slate-900 text-sm font-semibold px-2.5 py-1 pr-6 focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 transition-all"
+      className="min-w-[9.5rem] flex-1 appearance-none bg-white border border-slate-300 rounded-md text-slate-900 text-sm font-semibold px-2.5 py-1 pr-6 focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 transition-all sm:flex-none"
 	    >
 	      <option value="">{t("Unassigned")}</option>
 	      {drivers.map((d) => (
@@ -655,7 +646,7 @@ return (
         <button
           type="button"
           onClick={() => openCancelModalForOrder(order)}
-          className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
+          className="hidden h-8 items-center rounded-md bg-rose-600 px-3 text-[13px] font-semibold leading-none text-white transition hover:bg-rose-700 sm:inline-flex"
         >
           {t("Cancel")}
         </button>
@@ -682,65 +673,79 @@ return (
             <button
               type="button"
               onClick={() => openCancelModalForOrder(order)}
-              className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
+              className="hidden h-8 items-center rounded-md bg-rose-600 px-3 text-[13px] font-semibold leading-none text-white transition hover:bg-rose-700 sm:inline-flex"
             >
               {t("Cancel")}
             </button>
           )}
-	        <div className="ml-auto flex flex-wrap items-center gap-2 justify-end md:flex-nowrap">
-	          <button
-	            onClick={() => openPaymentModalForOrder(order)}
-		            className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
-            title={t("Edit payment")}
-            type="button"
-          >
-            {order.payment_method ? order.payment_method : "—"}
-            {!isOnlinePayment && (
-              <span className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center text-slate-400" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
-                </svg>
-              </span>
-            )}
-          </button>
-          <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700 whitespace-nowrap">
-            {formatCurrency(discountedTotal)}
-          </span>
-        </div>
-      </>
+		        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+	                <button
+	                  type="button"
+	                  onClick={() => openCancelModalForOrder(order)}
+		                className="inline-flex h-8 items-center rounded-md bg-rose-600 px-3 text-[13px] font-semibold leading-none text-white transition hover:bg-rose-700 sm:hidden"
+		              >
+		                {t("Cancel")}
+		              </button>
+		          <button
+		            onClick={() => openPaymentModalForOrder(order)}
+			            className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
+	            title={t("Edit payment")}
+	            type="button"
+	          >
+	            {order.payment_method ? order.payment_method : "—"}
+	            {!isOnlinePayment && (
+	              <span className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center text-slate-400" aria-hidden="true">
+	                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+	                  <path d="M12 20h9" />
+	                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+	                </svg>
+		              </span>
+		            )}
+		          </button>
+		            <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700 whitespace-nowrap">
+		              {formatCurrency(discountedTotal)}
+		            </span>
+	        </div>
+	      </>
 	    ) : (
-	      <div className="ml-auto flex flex-wrap items-center gap-2 justify-end md:flex-nowrap">
+		      <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
           {!isExternalOnlineOrder && (
             <button
               type="button"
               onClick={() => openCancelModalForOrder(order)}
-              className="inline-flex items-center h-8 rounded-md bg-rose-600 text-white px-3 text-[13px] font-semibold leading-none hover:bg-rose-700 transition"
+              className="hidden h-8 items-center rounded-md bg-rose-600 px-3 text-[13px] font-semibold leading-none text-white transition hover:bg-rose-700 sm:inline-flex"
             >
               {t("Cancel")}
             </button>
           )}
-	        <button
-	          onClick={() => openPaymentModalForOrder(order)}
-		          className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
-	          title={t("Edit payment")}
-          type="button"
-        >
-          {order.payment_method ? order.payment_method : "—"}
-          {!isOnlinePayment && (
-            <span className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center text-slate-400" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
-              </svg>
-            </span>
-          )}
-        </button>
-        <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700 whitespace-nowrap">
-          {formatCurrency(discountedTotal)}
-        </span>
-      </div>
-    )}
+	              <button
+	                type="button"
+	                onClick={() => openCancelModalForOrder(order)}
+		                className="inline-flex h-8 items-center rounded-md bg-rose-600 px-3 text-[13px] font-semibold leading-none text-white transition hover:bg-rose-700 sm:hidden"
+		              >
+		                {t("Cancel")}
+		              </button>
+		        <button
+		          onClick={() => openPaymentModalForOrder(order)}
+			          className="inline-flex items-center h-8 px-3 rounded-md bg-white/80 border border-slate-300 text-base font-semibold text-slate-700 hover:text-emerald-700 hover:border-emerald-400 transition"
+		          title={t("Edit payment")}
+	          type="button"
+	        >
+	          {order.payment_method ? order.payment_method : "—"}
+	          {!isOnlinePayment && (
+	            <span className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center text-slate-400" aria-hidden="true">
+	              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+	                <path d="M12 20h9" />
+	                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+	              </svg>
+	            </span>
+		          )}
+		        </button>
+		          <span className="inline-flex items-center h-8 px-3 rounded-md bg-white/60 border border-slate-300 text-base font-extrabold text-emerald-700 whitespace-nowrap">
+		            {formatCurrency(discountedTotal)}
+		          </span>
+	      </div>
+	    )}
   </div>
 
 	  {/* BOTTOM ROW: Order Items (left) + On Road (right) */}

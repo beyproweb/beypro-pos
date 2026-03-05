@@ -50,6 +50,73 @@ export function useQrMenuCheckout({
     }
   }, []);
 
+  const parseOrderItemsPayload = useCallback((raw) => {
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw?.data)) return raw.data;
+    if (Array.isArray(raw?.items)) return raw.items;
+    if (Array.isArray(raw?.order_items)) return raw.order_items;
+    return [];
+  }, []);
+
+  const hydrateLockedCartFromOrder = useCallback(
+    async (currentOrderId) => {
+      if (!currentOrderId) return false;
+      try {
+        const token = getStoredToken();
+        let raw = null;
+        try {
+          raw = await secureFetch(appendIdentifier(`/orders/${currentOrderId}/items`), {
+            ...(token
+              ? {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                }
+              : {}),
+          });
+        } catch (primaryErr) {
+          if (!token) throw primaryErr;
+          raw = await secureFetch(appendIdentifier(`/orders/${currentOrderId}/items`));
+        }
+
+        const now36 = Date.now().toString(36);
+        const lockedItems = parseOrderItemsPayload(raw).map((item, index) => ({
+          id: item?.product_id ?? item?.external_product_id ?? item?.id ?? null,
+          name:
+            item?.order_item_name ||
+            item?.product_name ||
+            item?.name ||
+            t("Item"),
+          price: Number(item?.price || 0),
+          quantity: Number(item?.quantity || 1),
+          extras: (() => {
+            if (Array.isArray(item?.extras)) return item.extras;
+            if (typeof item?.extras !== "string") return [];
+            try {
+              const parsed = JSON.parse(item.extras);
+              return Array.isArray(parsed) ? parsed : [];
+            } catch {
+              return [];
+            }
+          })(),
+          note: item?.note || "",
+          image: null,
+          unique_id:
+            item?.unique_id ||
+            `${item?.product_id ?? item?.external_product_id ?? item?.id ?? "x"}-${now36}-${index}`,
+          locked: true,
+        }));
+
+        setCart(lockedItems);
+        return true;
+      } catch (err) {
+        console.warn("Failed to hydrate QR cart from active order:", err);
+        return false;
+      }
+    },
+    [appendIdentifier, getStoredToken, parseOrderItemsPayload, setCart, t]
+  );
+
   const buildOrderPayload = useCallback(
     ({ orderType, table, items, total, customer, takeaway, paymentMethod, tableGeo }) => {
       const itemsPayload = (items || []).map((i) => ({
@@ -371,9 +438,7 @@ export function useQrMenuCheckout({
           });
         }
 
-        if (!usingOverrideItems) {
-          setCart((prev) => toArray(prev).filter((i) => i.locked));
-        }
+        await hydrateLockedCartFromOrder(orderId);
 
         storage.setItem(
           "qr_active_order",
@@ -529,6 +594,7 @@ export function useQrMenuCheckout({
     t,
     toArray,
     buildOrderPayload,
+    hydrateLockedCartFromOrder,
     postJSON,
   ]);
 

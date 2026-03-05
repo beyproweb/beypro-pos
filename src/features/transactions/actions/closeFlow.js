@@ -1,3 +1,8 @@
+import {
+  buildReservationShadowRecord,
+  upsertReservationShadow,
+} from "../../orders/tableOrdersCache";
+
 export function createCloseFlow(deps) {
   const {
     txApiRequest,
@@ -7,75 +12,12 @@ export function createCloseFlow(deps) {
     transactionSettings,
     paymentMethods,
     selectedPaymentMethod,
-    existingReservationRef,
-    getReservationSchedule,
     broadcastTableOverviewOrderStatus,
     navigate,
     excludedItemsSet,
     excludedCategoriesSet,
+    existingReservationRef,
   } = deps;
-
-  function hasActiveReservation(orderLike) {
-    if (!orderLike || typeof orderLike !== "object") return false;
-    const reservation = orderLike?.reservation && typeof orderLike.reservation === "object"
-      ? orderLike.reservation
-      : null;
-    const reservationDate =
-      reservation?.reservation_date ??
-      orderLike?.reservation_date ??
-      orderLike?.reservationDate ??
-      null;
-    const reservationTime =
-      reservation?.reservation_time ??
-      orderLike?.reservation_time ??
-      orderLike?.reservationTime ??
-      null;
-    const reservationId = reservation?.id;
-    return Boolean(getReservationSchedule(orderLike) || reservationDate || reservationTime || reservationId != null);
-  }
-
-  function isReservationMissingError(err) {
-    const message = String(err?.message || err || "").toLowerCase();
-    return (
-      message.includes("not found") ||
-      message.includes("no reservation") ||
-      message.includes("already deleted")
-    );
-  }
-
-  async function autoDeleteReservationForPaidClose(reservationSource) {
-    const orderId = Number(order?.id ?? reservationSource?.order_id ?? reservationSource?.id);
-    const reservationId = Number(
-      reservationSource?.reservation?.id ??
-      reservationSource?.reservation_id ??
-      reservationSource?.reservationId
-    );
-
-    let lastErr = null;
-
-    if (Number.isFinite(orderId) && orderId > 0) {
-      try {
-        await txApiRequest(`/orders/${orderId}/reservations${identifier}`, { method: "DELETE" });
-        return true;
-      } catch (err) {
-        if (isReservationMissingError(err)) return true;
-        lastErr = err;
-      }
-    }
-
-    if (Number.isFinite(reservationId) && reservationId > 0) {
-      try {
-        await txApiRequest(`/orders/reservations/${reservationId}${identifier}`, { method: "DELETE" });
-        return true;
-      } catch (err) {
-        if (isReservationMissingError(err)) return true;
-        lastErr = err;
-      }
-    }
-
-    if (lastErr) throw lastErr;
-    return false;
-  }
 
   async function resetTableGuests(tableNumber) {
     const normalizedNumber =
@@ -115,6 +57,21 @@ export function createCloseFlow(deps) {
 
   async function runAutoCloseIfConfigured(shouldClose, paymentMethodIds = null) {
     if (!shouldClose || !order?.id) return;
+    const hasReservationContext = Boolean(
+      order?.reservation_id ||
+        order?.reservationId ||
+        order?.reservation?.id ||
+        order?.reservation_date ||
+        order?.reservationDate ||
+        order?.reservation_time ||
+        order?.reservationTime ||
+        ["reserved", "checked_in"].includes(String(order?.status || "").toLowerCase()) ||
+        String(order?.order_type || "").toLowerCase() === "reservation" ||
+        existingReservationRef?.current?.id ||
+        existingReservationRef?.current?.reservation_date ||
+        existingReservationRef?.current?.reservationDate
+    );
+    if (hasReservationContext) return;
 
     const shouldAutoCloseTable =
       orderType === "table" && transactionSettings.autoCloseTableAfterPay;
@@ -180,21 +137,15 @@ export function createCloseFlow(deps) {
 
     if (!shouldAutoCloseTable && !shouldAutoClosePacket) return;
 
-    if (shouldAutoCloseTable) {
-      const reservationSource = existingReservationRef.current ?? order;
-      if (hasActiveReservation(reservationSource)) {
-        try {
-          const deleted = await autoDeleteReservationForPaidClose(reservationSource);
-          if (!deleted) return;
-        } catch (err) {
-          console.warn("⚠️ Auto-delete reservation before auto-close failed:", err?.message || err);
-          return;
-        }
-      }
-    }
-
     try {
       await txApiRequest(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+      const shadow = buildReservationShadowRecord({
+        reservation: existingReservationRef?.current,
+        order,
+        tableNumber: order?.table_number ?? order?.tableNumber,
+        orderId: order?.id,
+      });
+      if (shadow) upsertReservationShadow(shadow);
       await resetTableGuests(order?.table_number ?? order?.tableNumber);
       broadcastTableOverviewOrderStatus("closed");
     } catch (err) {

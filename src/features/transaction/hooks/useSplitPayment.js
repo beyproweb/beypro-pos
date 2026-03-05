@@ -1,6 +1,10 @@
 import { useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { txIsCashLabel, txLogCashRegisterEvent, txOpenCashDrawer } from "../../transactions/services/transactionCash";
+import {
+  buildReservationShadowRecord,
+  upsertReservationShadow,
+} from "../../orders/tableOrdersCache";
 
 export const useSplitPayment = ({
   cartItems,
@@ -14,6 +18,7 @@ export const useSplitPayment = ({
   txApiRequest,
   identifier,
   order,
+  existingReservation,
   setSelectedCartItemIds,
   setOrder,
   dispatchOrdersLocalRefresh,
@@ -151,6 +156,13 @@ export const useSplitPayment = ({
           (async () => {
             const allItems = await txApiRequest(`/orders/${order.id}/items${identifier}`);
             if (Array.isArray(allItems) && allItems.every((item) => item.paid_at)) {
+              const shadow = buildReservationShadowRecord({
+                reservation: existingReservation,
+                order,
+                tableNumber: order?.table_number ?? order?.tableNumber,
+                orderId: order?.id,
+              });
+              if (shadow) upsertReservationShadow(shadow);
               await txApiRequest(`/orders/${order.id}/status${identifier}`, {
                 method: "PUT",
                 body: JSON.stringify({
@@ -187,6 +199,7 @@ export const useSplitPayment = ({
       resolvePaymentLabel,
       txApiRequest,
       identifier,
+      existingReservation,
       order?.id,
       setSelectedCartItemIds,
       dispatchOrdersLocalRefresh,

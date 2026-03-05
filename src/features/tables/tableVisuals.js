@@ -4,6 +4,9 @@ export const normalizeOrderStatus = (status) => {
   return normalized === "occupied" ? "confirmed" : normalized;
 };
 
+export const isCheckedInReservationStatus = (status) =>
+  normalizeOrderStatus(status) === "checked_in";
+
 export const hasReservationSignal = (order) => {
   if (!order || typeof order !== "object") return false;
   const reservation = order?.reservation;
@@ -19,11 +22,23 @@ export const hasReservationSignal = (order) => {
     reservation?.reservation_time ??
     reservation?.reservationTime ??
     null;
-  const nestedReservationId = reservation?.id;
+  const reservationClients =
+    order?.reservation_clients ??
+    order?.reservationClients ??
+    reservation?.reservation_clients ??
+    reservation?.reservationClients ??
+    null;
+  const reservationNotes =
+    order?.reservation_notes ??
+    order?.reservationNotes ??
+    reservation?.reservation_notes ??
+    reservation?.reservationNotes ??
+    null;
   return Boolean(
     reservationDate ||
       reservationTime ||
-      (nestedReservationId !== null && nestedReservationId !== undefined && nestedReservationId !== "")
+      reservationNotes ||
+      Number(reservationClients || 0) > 0
   );
 };
 
@@ -139,6 +154,10 @@ export const isEffectivelyFreeOrder = (order) => {
     return !isReservationDueNow(order);
   }
 
+  if (status === "checked_in" && hasSignal) {
+    return false;
+  }
+
   if (status === "draft") return true;
 
   const total = Number(order.total || 0);
@@ -182,9 +201,14 @@ export const getTableColor = (order) => {
   if (!order) return "bg-gray-400 text-black";
 
   const status = normalizeOrderStatus(order.status);
+  const hasSignal = hasReservationSignal(order);
 
   if (isOrderFullyPaid(order)) {
     return "bg-green-500 text-white";
+  }
+
+  if (status === "checked_in" && hasSignal) {
+    return "bg-emerald-500 text-white";
   }
 
   const suborders = Array.isArray(order.suborders) ? order.suborders : [];

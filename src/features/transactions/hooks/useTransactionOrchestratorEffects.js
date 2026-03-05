@@ -33,7 +33,7 @@ export function useTransactionOrchestratorEffects({
   }, []);
 
   const broadcastTableOverviewOrderStatus = useCallback(
-    (nextStatus) => {
+    (nextStatus, patchOverride = null) => {
       const tableNumberRaw =
         order?.table_number ?? order?.tableNumber ?? tableId ?? null;
       const tableNumber = Number(tableNumberRaw);
@@ -41,28 +41,80 @@ export function useTransactionOrchestratorEffects({
 
       const orderIdNum =
         order?.id === null || order?.id === undefined ? null : Number(order.id);
+      const normalizedStatus = String(nextStatus).toLowerCase();
+      const defaultPatch =
+        normalizedStatus === "paid"
+          ? {
+              status: "paid",
+              payment_status: "paid",
+              is_paid: true,
+              total: 0,
+              items: [],
+              suborders: [],
+            }
+          : {
+              status: nextStatus,
+              order_type: order?.order_type,
+              payment_status: order?.payment_status,
+              is_paid: order?.is_paid,
+              total: order?.total,
+              reservation: order?.reservation,
+              reservation_id: order?.reservation_id ?? order?.reservationId ?? order?.reservation?.id,
+              reservationId: order?.reservationId ?? order?.reservation_id ?? order?.reservation?.id,
+              reservation_date:
+                order?.reservation_date ??
+                order?.reservationDate ??
+                order?.reservation?.reservation_date ??
+                order?.reservation?.reservationDate,
+              reservationDate:
+                order?.reservationDate ??
+                order?.reservation_date ??
+                order?.reservation?.reservationDate ??
+                order?.reservation?.reservation_date,
+              reservation_time:
+                order?.reservation_time ??
+                order?.reservationTime ??
+                order?.reservation?.reservation_time ??
+                order?.reservation?.reservationTime,
+              reservationTime:
+                order?.reservationTime ??
+                order?.reservation_time ??
+                order?.reservation?.reservationTime ??
+                order?.reservation?.reservation_time,
+              reservation_clients:
+                order?.reservation_clients ??
+                order?.reservationClients ??
+                order?.reservation?.reservation_clients ??
+                order?.reservation?.reservationClients,
+              reservationClients:
+                order?.reservationClients ??
+                order?.reservation_clients ??
+                order?.reservation?.reservationClients ??
+                order?.reservation?.reservation_clients,
+              reservation_notes:
+                order?.reservation_notes ??
+                order?.reservationNotes ??
+                order?.reservation?.reservation_notes ??
+                order?.reservation?.reservationNotes,
+              reservationNotes:
+                order?.reservationNotes ??
+                order?.reservation_notes ??
+                order?.reservation?.reservationNotes ??
+                order?.reservation?.reservation_notes,
+            };
+      const patch =
+        patchOverride && typeof patchOverride === "object"
+          ? { ...defaultPatch, ...patchOverride }
+          : defaultPatch;
 
-      if (String(nextStatus).toLowerCase() === "closed") {
+      if (normalizedStatus === "closed") {
         removeTableOverviewOrderFromCache(tableNumber);
       } else {
-        const patch =
-          String(nextStatus).toLowerCase() === "paid"
-            ? {
-                status: "paid",
-                payment_status: "paid",
-                is_paid: true,
-                total: 0,
-                items: [],
-                suborders: [],
-              }
-            : {
-                status: nextStatus,
-                payment_status: order?.payment_status,
-                is_paid: order?.is_paid,
-                total: order?.total,
-              };
-
-        if (String(nextStatus).toLowerCase() !== "paid" && Array.isArray(order?.items)) {
+        if (
+          normalizedStatus !== "paid" &&
+          typeof patch.items === "undefined" &&
+          Array.isArray(order?.items)
+        ) {
           patch.items = order.items;
         }
 
@@ -78,25 +130,7 @@ export function useTransactionOrchestratorEffects({
         table_number: tableNumber,
         order_id: orderIdNum,
         status: nextStatus,
-        patch:
-          String(nextStatus).toLowerCase() === "closed"
-            ? null
-            : String(nextStatus).toLowerCase() === "paid"
-            ? {
-                status: "paid",
-                payment_status: "paid",
-                is_paid: true,
-                total: 0,
-                items: [],
-                suborders: [],
-              }
-            : {
-                status: nextStatus,
-                payment_status: order?.payment_status,
-                is_paid: order?.is_paid,
-                total: order?.total,
-                items: Array.isArray(order?.items) ? order.items : undefined,
-              },
+        patch: normalizedStatus === "closed" ? null : patch,
       });
     },
     [
@@ -104,7 +138,19 @@ export function useTransactionOrchestratorEffects({
       order?.id,
       order?.is_paid,
       order?.items,
+      order?.order_type,
       order?.payment_status,
+      order?.reservation,
+      order?.reservationClients,
+      order?.reservationDate,
+      order?.reservationId,
+      order?.reservationNotes,
+      order?.reservationTime,
+      order?.reservation_clients,
+      order?.reservation_date,
+      order?.reservation_id,
+      order?.reservation_notes,
+      order?.reservation_time,
       order?.tableNumber,
       order?.table_number,
       order?.total,

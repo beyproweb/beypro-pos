@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
   calcDiscountedTotal,
@@ -8,25 +8,18 @@ import {
 } from "../utils/paymentMath";
 import {
   isOnlinePaymentMethod,
-  normalizeDriverStatus,
 } from "../../shared/guards";
 
 export function usePaymentFlow({
   fallbackMethodLabel,
   methodOptionSource,
   transactionSettings,
-  orders,
-  emitToast,
-  t,
-  propOrders,
   actions,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [splitPayments, setSplitPayments] = useState([{ method: "", amount: "" }]);
   const [pendingCloseOrderId, setPendingCloseOrderId] = useState(null);
-  const autoClosingDeliveredRef = useRef(new Set());
-
   const grandTotal = useMemo(() => {
     if (!editingOrder) return 0;
     return calcDiscountedTotal(editingOrder);
@@ -212,43 +205,6 @@ export function usePaymentFlow({
     },
     [actions, fallbackMethodLabel, methodOptionSource, transactionSettings]
   );
-
-  useEffect(() => {
-    if (!transactionSettings?.autoClosePacketAfterPay) return;
-    if (!Array.isArray(orders) || orders.length === 0) return;
-
-    const deliveredCandidates = orders.filter((order) => {
-      const id = order?.id;
-      if (!id) return false;
-      if (autoClosingDeliveredRef.current.has(id)) return false;
-      if (normalizeDriverStatus(order?.driver_status) !== "delivered") return false;
-      return shouldAutoClosePacketOnDelivered(order);
-    });
-
-    if (deliveredCandidates.length === 0) return;
-
-    deliveredCandidates.forEach((order) => {
-      const id = order.id;
-      autoClosingDeliveredRef.current.add(id);
-      closeOrderInstantly(order).catch((err) => {
-        autoClosingDeliveredRef.current.delete(id);
-        globalThis.console.error("❌ Failed to auto-close delivered order:", err);
-        emitToast?.("error", t("Failed to close order"));
-        if (!propOrders) {
-          actions.fetchOrders?.();
-        }
-      });
-    });
-  }, [
-    actions,
-    closeOrderInstantly,
-    emitToast,
-    orders,
-    propOrders,
-    shouldAutoClosePacketOnDelivered,
-    t,
-    transactionSettings?.autoClosePacketAfterPay,
-  ]);
 
   const paymentModalProps = useMemo(
     () => ({

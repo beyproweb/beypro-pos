@@ -23,6 +23,7 @@ const CartModal = React.memo(function CartModal({
   onShowStatus,
   isOrderStatusOpen,
   onOpenCart,
+  onEditItem,
   layout = "drawer",
   storage,
   voiceListening = false,
@@ -153,6 +154,14 @@ const CartModal = React.memo(function CartModal({
   }, [paymentMethod]);
 
   useEffect(() => {
+    if (isPanel || typeof window === "undefined") return undefined;
+    window.dispatchEvent(new CustomEvent("qr:cart-visibility", { detail: { open: show } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("qr:cart-visibility", { detail: { open: false } }));
+    };
+  }, [isPanel, show]);
+
+  useEffect(() => {
     const prevOrderType = prevOrderTypeRef.current;
     if (orderType === "table" && prevOrderType !== "table" && paymentMethod) {
       setPaymentMethod("");
@@ -184,6 +193,41 @@ const CartModal = React.memo(function CartModal({
       return next;
     });
   }
+
+  function updateNewItemQuantity(idx, delta) {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    setCart((prev) => {
+      let n = -1;
+      return toArray(prev).map((item) => {
+        if (item?.locked) return item;
+        n += 1;
+        if (n !== idx) return item;
+        const nextQty = Math.max(1, (Number(item?.quantity) || 1) + delta);
+        return { ...item, quantity: nextQty };
+      });
+    });
+  }
+
+  function updateNewItemExtraQuantity(itemIdx, extraIdx, delta) {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    setCart((prev) => {
+      let n = -1;
+      return toArray(prev).map((item) => {
+        if (item?.locked) return item;
+        n += 1;
+        if (n !== itemIdx) return item;
+        const nextExtras = toArray(item?.extras)
+          .map((extra, index) => {
+            if (index !== extraIdx) return extra;
+            const nextQty = Math.max(0, (Number(extra?.quantity) || 0) + delta);
+            return { ...extra, quantity: nextQty };
+          })
+          .filter((extra) => (Number(extra?.quantity) || 0) > 0);
+        return { ...item, extras: nextExtras };
+      });
+    });
+  }
+
   const closeFromUi = useCallback(() => {
     suppressStatusAutoCloseRef.current = false;
     if (suppressStatusReleaseTimerRef.current) {
@@ -209,11 +253,11 @@ const CartModal = React.memo(function CartModal({
 
   const cartPanel = (
     <div
-      className={`${isPanel ? "h-full rounded-2xl border border-neutral-200 bg-white/95 shadow-sm" : "w-[92vw] max-w-md max-h-[88vh] overflow-hidden bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)]"} p-4 sm:p-6 flex flex-col`}
+      className={`${isPanel ? "h-full rounded-xl border border-neutral-200 bg-white/95 shadow-sm" : "w-[92vw] max-w-md max-h-[88vh] overflow-hidden rounded-2xl bg-white/95 shadow-[0_8px_40px_rgba(0,0,0,0.08)]"} p-4 sm:p-6 flex flex-col`}
       style={shakeCart ? { animation: "cartShake 420ms ease-in-out" } : undefined}
     >
       <div className="flex justify-between items-center mb-4 border-b border-neutral-200 pb-2">
-        <span className="text-base sm:text-lg font-serif font-semibold text-neutral-900 tracking-tight">
+        <span className="text-base font-serif font-semibold text-neutral-900 tracking-tight sm:text-lg">
           {t("Your Order")}
         </span>
         {!isPanel && (
@@ -242,7 +286,7 @@ const CartModal = React.memo(function CartModal({
             ) : null}
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="flex min-h-0 flex-col gap-5 pb-3">
             {prevItems.length > 0 && (
               <div>
                 <div className="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">
@@ -252,15 +296,35 @@ const CartModal = React.memo(function CartModal({
                   {prevItems.map((item, i) => (
                     <li
                       key={`prev-${i}`}
-                      className="flex justify-between gap-3 border-b border-neutral-200 pb-2 opacity-70"
+                      className="rounded-xl border border-neutral-200/80 bg-neutral-50/80 px-4 py-4 opacity-80"
                     >
-                      <div className="flex-1">
-                        <span className="font-medium text-neutral-900 block">
-                          {item.name}{" "}
-                          <span className="text-xs text-neutral-500">×{item.quantity}</span>
-                        </span>
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="block font-medium text-neutral-900">
+                              {item.name}
+                            </div>
+                            <div className="mt-1 text-sm text-neutral-500">
+                              {formatCurrency(parseFloat(item?.price) || 0)} × {item.quantity || 1}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right text-base font-semibold text-neutral-900">
+                            {formatCurrency(lineTotal(item))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end">
+                          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">
+                            {t("Locked")}
+                          </div>
+                        </div>
+
                         {item.extras?.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
+                          <div className="border-t border-neutral-200/80 pt-3">
+                            <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">
+                              {t("Extras")}
+                            </div>
+                            <div className="space-y-1.5">
                             {item.extras.map((ex, j) => {
                               const perItemQty = ex.quantity || 1;
                               const itemQty = item.quantity || 1;
@@ -269,27 +333,27 @@ const CartModal = React.memo(function CartModal({
                                 parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
                               const line = unit * totalQty;
                               return (
-                                <span
+                                <div
                                   key={j}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
+                                  className="flex items-center justify-between gap-3 text-sm text-neutral-500"
                                 >
-                                  {ex.name} ×{totalQty} {formatCurrency(line)}
-                                </span>
+                                  <span className="min-w-0 flex-1 truncate opacity-80">
+                                    • {ex.name} ×{totalQty}
+                                  </span>
+                                  <span className="shrink-0 text-right opacity-80">
+                                    {formatCurrency(line)}
+                                  </span>
+                                </div>
                               );
                             })}
                           </div>
-                        )}
-                        {item.note && (
-                          <div className="text-xs text-amber-700 mt-1 italic">
-                            📝 {t("Note")}: {item.note}
                           </div>
                         )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="font-medium text-neutral-700">
-                          {formatCurrency(lineTotal(item))}
-                        </div>
-                        <div className="text-[10px] text-neutral-400 mt-1">{t("Locked")}</div>
+                        {item.note && (
+                          <div className="border-t border-neutral-200/80 pt-3 text-xs italic text-amber-700">
+                            {t("Note")}: {item.note}
+                          </div>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -297,64 +361,139 @@ const CartModal = React.memo(function CartModal({
               </div>
             )}
 
-            <div>
+            <div className="flex min-h-0 flex-col">
               <div className="text-xs uppercase tracking-wide text-neutral-600 font-medium mb-2">
                 {t("New items")}
               </div>
               {newItems.length === 0 ? (
                 <div className="text-neutral-400 text-sm italic">{t("No new items yet.")}</div>
               ) : (
-                <ul className="space-y-3">
-                  {newItems.map((item, i) => (
-                    <li
-                      key={`new-${i}`}
-                      className="flex justify-between gap-3 border-b border-neutral-200 pb-2"
-                    >
-                      <div className="flex-1">
-                        <span className="font-medium text-neutral-900 block">
-                          {item.name}{" "}
-                          <span className="text-xs text-neutral-500">×{item.quantity}</span>
-                        </span>
-                        {item.extras?.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {item.extras.map((ex, j) => {
-                              const perItemQty = ex.quantity || 1;
-                              const itemQty = item.quantity || 1;
-                              const totalQty = perItemQty * itemQty;
-                              const unit =
-                                parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
-                              const line = unit * totalQty;
-                              return (
-                                <span
-                                  key={j}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-700"
+                <div className="pr-1" style={{ WebkitOverflowScrolling: "touch" }}>
+                  <ul className="space-y-3">
+                    {newItems.map((item, i) => (
+                      <li
+                        key={`new-${i}`}
+                        className="rounded-xl border border-neutral-200 bg-white px-4 py-4"
+                      >
+                        <div className="w-full space-y-3">
+                          <div>
+                            <div className="grid grid-cols-[minmax(0,1fr)_88px_96px] items-center gap-3">
+                              <span className="block min-w-0 truncate font-medium text-neutral-900">
+                                {item.name}
+                              </span>
+                              <div className="inline-flex w-[88px] items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1">
+                                <button
+                                  type="button"
+                                  onClick={() => updateNewItemQuantity(i, -1)}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white text-sm font-semibold text-neutral-700 transition hover:bg-neutral-100"
+                                  aria-label={`${t("Remove")} ${item.name}`}
                                 >
-                                  {ex.name} ×{totalQty} {formatCurrency(line)}
+                                  -
+                                </button>
+                                <span className="min-w-[20px] text-center text-sm font-semibold text-neutral-800">
+                                  {item.quantity}
                                 </span>
-                              );
-                            })}
+                                <button
+                                  type="button"
+                                  onClick={() => updateNewItemQuantity(i, 1)}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-white text-sm font-semibold text-neutral-700 transition hover:bg-neutral-100"
+                                  aria-label={`${t("Add")} ${item.name}`}
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <div className="w-[96px] text-right text-base font-semibold text-neutral-900">
+                                {formatCurrency(lineTotal(item))}
+                              </div>
+                            </div>
+                            <div className="mt-1 flex items-center justify-between gap-3">
+                              <div className="text-sm text-neutral-500">
+                                {formatCurrency(parseFloat(item?.price) || 0)} × {item.quantity || 1}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => removeItem(i, true)}
+                                  className="text-sm font-medium text-red-400 transition hover:text-red-600"
+                                >
+                                  {t("Remove")}
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                        )}
-                        {item.note && (
-                          <div className="text-xs text-amber-700 mt-1 italic">
-                            📝 {t("Note")}: {item.note}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="font-medium text-neutral-700">
-                          {formatCurrency(lineTotal(item))}
+
+                          {item.extras?.length > 0 ? (
+                            <div className="border-t border-neutral-200 pt-3">
+                              <div className="mb-2 flex items-center justify-between gap-3">
+                                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">
+                                  {t("Extras")}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => onEditItem?.(item)}
+                                  className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs font-medium text-neutral-600 transition hover:bg-neutral-100"
+                                >
+                                  {t("Edit")}
+                                </button>
+                              </div>
+                              <div className="space-y-2">
+                                {item.extras.map((ex, j) => {
+                                  const perItemQty = ex.quantity || 1;
+                                  const itemQty = item.quantity || 1;
+                                  const totalQty = perItemQty * itemQty;
+                                  const unit =
+                                    parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0;
+                                  const line = unit * totalQty;
+                                  return (
+                                  <div
+                                    key={j}
+                                    className="grid grid-cols-[minmax(0,1fr)_88px_96px] items-center gap-3 text-sm text-neutral-500"
+                                  >
+                                    <div className="flex min-w-0 items-center justify-between gap-2">
+                                      <div className="truncate opacity-80">• {ex.name}</div>
+                                      <div className="shrink-0 text-[11px] text-neutral-400">
+                                        1 × {formatCurrency(unit)}
+                                      </div>
+                                    </div>
+                                    <div className="inline-flex w-[88px] items-center justify-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-1.5 py-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => updateNewItemExtraQuantity(i, j, -1)}
+                                        className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white text-[10px] font-semibold text-neutral-700 transition hover:bg-neutral-100"
+                                        aria-label={`${t("Remove")} ${ex.name}`}
+                                      >
+                                        -
+                                      </button>
+                                      <span className="min-w-[14px] text-center font-semibold">
+                                        {perItemQty}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateNewItemExtraQuantity(i, j, 1)}
+                                        className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white text-[10px] font-semibold text-neutral-700 transition hover:bg-neutral-100"
+                                        aria-label={`${t("Add")} ${ex.name}`}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                    <span className="w-[96px] text-right opacity-80">
+                                      {formatCurrency(line)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                              </div>
+                            </div>
+                          ) : null}
+                          {item.note && (
+                            <div className="break-words whitespace-pre-wrap border-t border-neutral-200 pt-3 text-xs italic text-amber-700">
+                              {t("Note")}: {item.note}
+                            </div>
+                          )}
                         </div>
-                        <button
-                          onClick={() => removeItem(i, true)}
-                          className="text-xs text-red-400 hover:text-red-600 mt-1 transition"
-                        >
-                          {t("Remove")}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           </div>
@@ -362,10 +501,10 @@ const CartModal = React.memo(function CartModal({
       </div>
 
       {cartLength > 0 && (
-        <div className="mt-5 border-t border-neutral-200 pt-4 space-y-3">
-          <div className="flex justify-between items-center text-base">
-            <span className="font-medium text-neutral-700">{t("Total")}:</span>
-            <span className="text-lg font-semibold text-neutral-900">{formatCurrency(total)}</span>
+        <div className="mt-5 border-t border-neutral-200 pt-5 space-y-3">
+          <div className="flex items-center justify-between py-1 text-base">
+            <span className="font-medium text-neutral-700">{t("Total")}</span>
+            <span className="text-xl font-semibold text-neutral-900">{formatCurrency(total)}</span>
           </div>
 
           <div className="flex flex-col gap-1">

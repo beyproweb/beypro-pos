@@ -1,3 +1,8 @@
+import {
+  buildReservationShadowRecord,
+  upsertReservationShadow,
+} from "../../orders/tableOrdersCache";
+
 export function createPaymentFlow(deps) {
   const {
     order,
@@ -27,6 +32,7 @@ export function createPaymentFlow(deps) {
     fetchSubOrders,
     updateOrderStatus,
     setOrder,
+    existingReservation,
     runAutoCloseIfConfigured,
     setSelectedCartItemIds,
     txLogCashRegisterEvent,
@@ -278,6 +284,13 @@ export function createPaymentFlow(deps) {
     isFullyPaidAfter = isFullyPaid2;
 
     if (isFullyPaid2) {
+      const shadow = buildReservationShadowRecord({
+        reservation: existingReservation,
+        order,
+        tableNumber: order?.table_number ?? order?.tableNumber,
+        orderId: order?.id,
+      });
+      if (shadow) upsertReservationShadow(shadow);
       await updateOrderStatus("paid", total, method);
       setOrder((prev) => ({ ...prev, status: "paid" }));
       broadcastTableOverviewOrderStatus("paid");

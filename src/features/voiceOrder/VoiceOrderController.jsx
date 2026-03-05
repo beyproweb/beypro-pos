@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
 import { VoiceOrderFloating } from "../voiceOrderFloating";
-import DraftOrderRecapModal from "./DraftOrderRecapModal";
 import ClarificationSheet from "./ClarificationSheet";
 import useDraftOrder from "./useDraftOrder";
 import parseVoiceOrder from "./parseVoiceOrder";
@@ -220,6 +219,9 @@ export default function VoiceOrderController({
   tableId,
   products,
   onAddToCart,
+  onSyncDraftToCart,
+  onOpenSharedCart,
+  onOpenCatalogProduct,
   onConfirmOrder,
   language,
   paymentMethod,
@@ -322,6 +324,19 @@ export default function VoiceOrderController({
   const startListeningRef = useRef(null);
   const stopListeningRef = useRef(null);
 
+  const syncDraftToSharedCart = useCallback(
+    (draftItems = summary.items) => {
+      if (typeof onSyncDraftToCart !== "function") return;
+      onSyncDraftToCart(
+        (Array.isArray(draftItems) ? draftItems : []).map((item) => ({
+          ...item,
+          product: productById.get(String(item?.productId)) || null,
+        }))
+      );
+    },
+    [onSyncDraftToCart, productById, summary.items]
+  );
+
   const openPending = useCallback((nextMode, action) => {
     if (recapOpen) return;
     setMode(nextMode);
@@ -390,13 +405,11 @@ export default function VoiceOrderController({
       pushMessage(tVoice("voice.waiter.readBackEmpty", "Your draft is empty."));
       return;
     }
-    if (!recapOpen) {
-      onPaymentMethodChange?.("");
-    }
     clearPending();
-    setRecapOpen(true);
-    pushMessage(tVoice("voice.waiter.recapNow", "Okay, let me recap your order."));
-  }, [clearPending, onPaymentMethodChange, pushMessage, recapOpen, summary.items.length, tVoice]);
+    syncDraftToSharedCart(summary.items);
+    onOpenSharedCart?.();
+    pushMessage(tVoice("voice.waiter.recapNow", "Okay, opening your order."));
+  }, [clearPending, onOpenSharedCart, pushMessage, summary.items, summary.items.length, syncDraftToSharedCart, tVoice]);
 
   const handleClearDraftFromFloating = useCallback(() => {
     if (!summary.items.length) {
@@ -404,11 +417,12 @@ export default function VoiceOrderController({
       return;
     }
     clear();
+    syncDraftToSharedCart([]);
     clearPending();
     setWaiterSuggestions([]);
     setRecapOpen(false);
     pushMessage(tVoice("voice.waiter.draftCleared", "Draft order cleared."), true);
-  }, [clear, clearPending, pushMessage, summary.items.length, tVoice]);
+  }, [clear, clearPending, pushMessage, summary.items.length, syncDraftToSharedCart, tVoice]);
 
   const respondReadBack = useCallback(() => {
     if (!summary.items.length) {
@@ -943,6 +957,7 @@ export default function VoiceOrderController({
 
         if (parsed.action === "CLEAR_ITEMS") {
           clear();
+          syncDraftToSharedCart([]);
           clearWaiterSuggestions();
           setRecapOpen(false);
           pushMessage(tVoice("voice.waiter.draftCleared", "Draft order cleared."), true);
@@ -958,6 +973,7 @@ export default function VoiceOrderController({
 
         if (parsed.action === "CANCEL") {
           clear();
+          syncDraftToSharedCart([]);
           clearPending();
           clearWaiterSuggestions();
           setRecapOpen(false);
@@ -1022,6 +1038,7 @@ export default function VoiceOrderController({
 
       if (parsed.type === "CLEAR_DRAFT") {
         clear();
+        syncDraftToSharedCart([]);
         clearWaiterSuggestions();
         respondDone();
         return;
@@ -1453,6 +1470,7 @@ export default function VoiceOrderController({
         onTryAgainUnknown={handleInlineUnknownTryAgain}
         onCancelUnknown={handleInlineUnknownCancel}
         onSelectUnknownOption={handleInlineUnknownSelect}
+        onSelectCatalogProduct={onOpenCatalogProduct}
         catalogProducts={products}
         catalogTitle={menuCatalogLabel}
         allCategoriesLabel={allCategoriesLabel}
@@ -1462,34 +1480,6 @@ export default function VoiceOrderController({
         hideMiniButton={hideMiniButton}
         openEventName={openEventName}
         closeEventName={closeEventName}
-      />
-
-      <DraftOrderRecapModal
-        open={recapOpen}
-        items={items}
-        totalPrice={summary.totalPrice}
-        paymentMethod={paymentMethod}
-        paymentMethods={paymentMethods}
-        onPaymentMethodChange={onPaymentMethodChange}
-        paymentLabel={t("Payment", { lng: activeLang, defaultValue: "Payment" })}
-        paymentPlaceholder={t("Select your payment", {
-          lng: activeLang,
-          defaultValue: "Select your payment",
-        })}
-        paymentRequiredPrompt={paymentRequiredPrompt}
-        onPaymentRequired={handlePaymentRequiredPrompt}
-        onClose={() => setRecapOpen(false)}
-        onConfirm={handleConfirmRecap}
-        onContinue={() => {
-          setRecapOpen(false);
-          pushMessage(tVoice("voice.waiter.whatElseWouldYouLike", "Sure — what else would you like?"));
-        }}
-        onChangeQty={handleRecapItemQtyChange}
-        onChangeExtraQty={handleRecapExtraQtyChange}
-        onRemove={removeItem}
-        onClear={clear}
-        isSubmitting={isSubmitting}
-        title={t("Your Order", { lng: activeLang, defaultValue: "Your Order" })}
       />
 
       <ClarificationSheet

@@ -1,3 +1,8 @@
+import {
+  buildReservationShadowRecord,
+  upsertReservationShadow,
+} from "../../orders/tableOrdersCache";
+
 export function createConfirmFlow(deps) {
   const {
     order,
@@ -27,89 +32,18 @@ export function createConfirmFlow(deps) {
     hasConfirmedCartUnpaid,
     hasSuborderUnpaid,
     allPaidIncludingSuborders,
-    existingReservation,
-    getReservationSchedule,
     allItemsDelivered,
     setDiscountValue,
     setDiscountType,
     setOrder,
     setCartItems,
+    existingReservation,
   } = deps;
 
   function hasPreparingItems(orderItems) {
     return Array.isArray(orderItems)
       ? orderItems.some((item) => item.kitchen_status === "preparing")
       : false;
-  }
-
-  function hasActiveReservation(orderLike) {
-    if (!orderLike || typeof orderLike !== "object") return false;
-    const reservation = orderLike?.reservation && typeof orderLike.reservation === "object"
-      ? orderLike.reservation
-      : null;
-    const reservationDate =
-      reservation?.reservation_date ??
-      orderLike?.reservation_date ??
-      orderLike?.reservationDate ??
-      null;
-    const reservationTime =
-      reservation?.reservation_time ??
-      orderLike?.reservation_time ??
-      orderLike?.reservationTime ??
-      null;
-    const reservationId = reservation?.id;
-    return Boolean(getReservationSchedule(orderLike) || reservationDate || reservationTime || reservationId != null);
-  }
-
-  function isPaidOrderLike(orderLike) {
-    if (!orderLike || typeof orderLike !== "object") return false;
-    const status = String(orderLike?.status || "").toLowerCase();
-    const paymentStatus = String(orderLike?.payment_status || "").toLowerCase();
-    return status === "paid" || paymentStatus === "paid" || orderLike?.is_paid === true;
-  }
-
-  function isReservationMissingError(err) {
-    const message = String(err?.message || err || "").toLowerCase();
-    return (
-      message.includes("not found") ||
-      message.includes("no reservation") ||
-      message.includes("already deleted")
-    );
-  }
-
-  async function autoDeleteReservationForPaidClose(reservationSource) {
-    const orderId = Number(order?.id ?? reservationSource?.order_id ?? reservationSource?.id);
-    const reservationId = Number(
-      reservationSource?.reservation?.id ??
-      reservationSource?.reservation_id ??
-      reservationSource?.reservationId ??
-      existingReservation?.id
-    );
-
-    let lastErr = null;
-
-    if (Number.isFinite(orderId) && orderId > 0) {
-      try {
-        await txApiRequest(`/orders/${orderId}/reservations${identifier}`, { method: "DELETE" });
-        return true;
-      } catch (err) {
-        if (isReservationMissingError(err)) return true;
-        lastErr = err;
-      }
-    }
-
-    if (Number.isFinite(reservationId) && reservationId > 0) {
-      try {
-        await txApiRequest(`/orders/reservations/${reservationId}${identifier}`, { method: "DELETE" });
-        return true;
-      } catch (err) {
-        if (isReservationMissingError(err)) return true;
-        lastErr = err;
-      }
-    }
-
-    if (lastErr) throw lastErr;
-    return false;
   }
 
   async function handleMultifunction() {
@@ -124,6 +58,20 @@ export function createConfirmFlow(deps) {
     } : () => {};
 
     if (!order || !order.status) return;
+    const hasReservationContext = Boolean(
+      existingReservation?.reservation_date ||
+        existingReservation?.reservationDate ||
+        existingReservation?.id ||
+        order?.reservation_id ||
+        order?.reservationId ||
+        order?.reservation?.id ||
+        order?.reservation_date ||
+        order?.reservationDate ||
+        order?.reservation_time ||
+        order?.reservationTime ||
+        ["reserved", "checked_in"].includes(String(order?.status || "").toLowerCase()) ||
+        String(order?.order_type || "").toLowerCase() === "reservation"
+    );
 
     const selectionKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
     const hasUnconfirmedSelected = cartItems.some(
@@ -163,27 +111,17 @@ export function createConfirmFlow(deps) {
           return;
         }
       } else {
-        const reservationSource = existingReservation ?? order;
-        if (hasActiveReservation(reservationSource)) {
-          const shouldAutoDeleteReservation =
-            isPaidOrderLike(order) || isPaidOrderLike(reservationSource) || allPaidIncludingSuborders === true;
-          if (!shouldAutoDeleteReservation) {
-            showToast(t("Delete reservation first before closing table"));
-            return;
-          }
-
-          try {
-            const deleted = await autoDeleteReservationForPaidClose(reservationSource);
-            if (!deleted) {
-              showToast(t("Failed to delete reservation"));
-              return;
-            }
-          } catch (err) {
-            console.error("❌ Failed to auto-delete reservation before close:", err);
-            showToast(t("Failed to delete reservation"));
-            return;
-          }
+        if (hasReservationContext) {
+          // Reservation/check-in tables must not auto-exit from an empty-cart side effect.
+          return;
         }
+        const shadow = buildReservationShadowRecord({
+          reservation: existingReservation,
+          order,
+          tableNumber: order?.table_number ?? order?.tableNumber,
+          orderId: order?.id,
+        });
+        if (shadow) upsertReservationShadow(shadow);
         await resetTableGuests(order?.table_number ?? order?.tableNumber);
         broadcastTableOverviewOrderStatus("closed");
         navigate("/tableoverview?tab=tables");
@@ -345,10 +283,10 @@ export function createConfirmFlow(deps) {
       return;
     }
 
-    // If there are unpaid items after confirmation, this button acts as Pay Later (leave unpaid)
+    // If there are unpaid items after confirmation, keep operator on Transaction screen.
+    // Navigation/checkout must always be explicit (separate action), never automatic.
     if (hasConfirmedCartUnpaid || hasSuborderUnpaid) {
       setIsFloatingCartOpen(false);
-      navigate("/tableoverview?tab=tables");
       return;
     }
 
@@ -368,21 +306,6 @@ export function createConfirmFlow(deps) {
     // 🧠 For table orders → close ONLY when user manually presses “Close”
     // 🧠 For table orders → close ONLY when all items are delivered
     if (getPrimaryActionLabel() === "Close" && (order.status === "paid" || allPaidIncludingSuborders)) {
-      const reservationSource = existingReservation ?? order;
-      if (hasActiveReservation(reservationSource)) {
-        try {
-          const deleted = await autoDeleteReservationForPaidClose(reservationSource);
-          if (!deleted) {
-            showToast(t("Failed to delete reservation"));
-            return;
-          }
-        } catch (err) {
-          console.error("❌ Failed to auto-delete reservation before close:", err);
-          showToast(t("Failed to delete reservation"));
-          return;
-        }
-      }
-
       // Re-check against the latest backend state so we don't block close due to stale kitchen_status/category
       // (and so excluded-from-kitchen items don't show a brief "Not delivered yet" toast).
       let itemsToCheck = cartItems;
@@ -411,10 +334,17 @@ export function createConfirmFlow(deps) {
       // ✅ All delivered → close and go immediately
       try {
         await txApiRequest(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+        const shadow = buildReservationShadowRecord({
+          reservation: existingReservation,
+          order,
+          tableNumber: order?.table_number ?? order?.tableNumber,
+          orderId: order?.id,
+        });
+        if (shadow) upsertReservationShadow(shadow);
         await resetTableGuests(order?.table_number ?? order?.tableNumber);
+        broadcastTableOverviewOrderStatus("closed");
         setDiscountValue(0);
         setDiscountType("percent");
-        broadcastTableOverviewOrderStatus("closed");
         debugNavigate("/tableoverview?tab=tables"); // <— correct route
       } catch (err) {
         console.error("❌ Close failed:", err);

@@ -28,27 +28,6 @@ const normalizeGuests = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const getReservationShadowKey = (reservation) => {
-  if (!reservation || typeof reservation !== "object") return "";
-  return [
-    reservation.id ?? "",
-    reservation.table_number ?? reservation.tableNumber ?? reservation.table ?? "",
-    reservation.reservation_date ?? reservation.reservationDate ?? "",
-    reservation.reservation_time ?? reservation.reservationTime ?? "",
-    reservation.reservation_clients ?? reservation.reservationClients ?? "",
-    reservation.reservation_notes ?? reservation.reservationNotes ?? "",
-  ].join("|");
-};
-
-const buildReservationShadowOrder = (reservation, parsedTableNumber) => ({
-  ...reservation,
-  status: "reserved",
-  order_type: "reservation",
-  table_number: parsedTableNumber,
-  total: 0,
-  items: [],
-});
-
 const getReservationSortKey = (reservation) => {
   if (!reservation || typeof reservation !== "object") return "9999-99-99 99:99:99";
   const dateRaw = reservation?.reservation_date ?? reservation?.reservationDate ?? "";
@@ -83,7 +62,6 @@ const canReuseTableModel = (prev, next) => {
 
 export default function useTablesModel({ tableConfigs, ordersByTable, reservationsToday }) {
   const prevTablesByNumberRef = useRef(new Map());
-  const reservationShadowCacheRef = useRef(new Map());
   const prevGroupedTablesRef = useRef({});
 
   const reservationsByTable = useMemo(() => {
@@ -113,7 +91,6 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
     return withPerfTimer("[perf] TableList model build", () => {
       const previousByNumber = prevTablesByNumberRef.current;
       const nextByNumber = new Map();
-      const nextReservationShadowCache = new Map();
       const nowMs = Date.now();
       const configList = Array.isArray(tableConfigs)
         ? [...tableConfigs].sort((a, b) => Number(a?.number) - Number(b?.number))
@@ -128,22 +105,6 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
         let order = orderRaw;
         if (orderRaw && isReservationOrder(orderRaw, nowMs)) {
           order = orderRaw;
-        } else if (
-          (!orderRaw || isEffectivelyFreeOrder(orderRaw)) &&
-          reservationFallback &&
-          isReservationDueNow(reservationFallback, nowMs)
-        ) {
-          const reservationKey = getReservationShadowKey(reservationFallback);
-          const cacheEntry = reservationShadowCacheRef.current.get(parsedCfgNumber);
-          if (cacheEntry && cacheEntry.key === reservationKey) {
-            order = cacheEntry.order;
-            nextReservationShadowCache.set(parsedCfgNumber, cacheEntry);
-          } else {
-            const shadowOrder = buildReservationShadowOrder(reservationFallback, parsedCfgNumber);
-            const nextEntry = { key: reservationKey, order: shadowOrder };
-            nextReservationShadowCache.set(parsedCfgNumber, nextEntry);
-            order = shadowOrder;
-          }
         } else if (
           orderRaw &&
           isEffectivelyFreeOrder(orderRaw) &&
@@ -185,7 +146,6 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
       });
 
       prevTablesByNumberRef.current = nextByNumber;
-      reservationShadowCacheRef.current = nextReservationShadowCache;
 
       if (isTablePerfDebugEnabled()) {
         const reused = list.filter((table, idx) => table === previousByNumber.get(Number(configList[idx]?.number))).length;

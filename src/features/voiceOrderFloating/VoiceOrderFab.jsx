@@ -52,6 +52,7 @@ function VoiceOrderFabComponent({
   onTryAgainUnknown,
   onCancelUnknown,
   onSelectUnknownOption,
+  onSelectCatalogProduct,
   catalogProducts = [],
   catalogTitle = "Menu",
   allCategoriesLabel = "All",
@@ -366,14 +367,9 @@ function VoiceOrderFabComponent({
                 const category = String(product?.category || product?.category_name || "").trim();
                 return (
                   <button
-                        key={product?.id || `${name}-${index}`}
-                        type="button"
-                    onClick={() =>
-                      onSelectSuggestion?.({
-                        key: product?.id || `${name}-${index}`,
-                        product,
-                      })
-                    }
+                    key={product?.id || `${name}-${index}`}
+                    type="button"
+                    onClick={() => onSelectCatalogProduct?.(product)}
                     className="w-full rounded-lg border border-slate-200 bg-slate-50/90 px-2.5 py-2 text-left transition hover:bg-sky-50 hover:border-sky-200 dark:border-neutral-700 dark:bg-neutral-800/90 dark:hover:bg-sky-950/30 dark:hover:border-sky-700/60"
                   >
                     <div className="flex items-start justify-between gap-2">

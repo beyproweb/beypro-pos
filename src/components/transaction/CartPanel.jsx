@@ -26,6 +26,8 @@ const getPhoneHref = (phone) => {
   return normalized ? `tel:${normalized}` : null;
 };
 
+const CHECKED_IN_LIKE_RESERVATION_STATUSES = new Set(["checked_in"]);
+
 const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) => {
   const CART_WINDOW_INITIAL_COUNT = 80;
   const CART_WINDOW_STEP = 80;
@@ -97,6 +99,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     removeItem,
     openReservationModal,
     handleDeleteReservation,
+    handleCheckinReservation,
     openCancelModal,
     setShowDiscountModal,
     handleOpenCashRegister,
@@ -122,6 +125,19 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     order?.customer_phone ??
     order?.customerPhone ??
     "";
+  const reservationStatus = String(
+    existingReservation?.status || order?.status || ""
+  ).toLowerCase();
+  const isCheckedInReservation = CHECKED_IN_LIKE_RESERVATION_STATUSES.has(reservationStatus);
+  const reservationCardClassName = isCheckedInReservation
+    ? "mx-3 mb-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 shadow-sm dark:border-emerald-700/60 dark:bg-emerald-900/20"
+    : "mx-3 mb-1.5 rounded-xl border border-slate-200 bg-slate-50/90 px-2.5 py-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900";
+  const reservationBadgeClassName = isCheckedInReservation
+    ? "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+    : "inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200";
+  const reservationStateLabel = isCheckedInReservation ? t("Guest checked in") : t("Reserved");
+  const reservationMetaChipClassName =
+    "inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200";
   const reservationCustomerPhoneHref = useMemo(
     () => getPhoneHref(reservationCustomerPhone),
     [reservationCustomerPhone]
@@ -363,88 +379,62 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
       </header>
 
       {existingReservation && existingReservation.reservation_date && (
-        <div className="mx-3 mb-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-          <div className="flex items-start justify-between gap-3">
+        <div className={reservationCardClassName}>
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200">
-                  {t("Reserved")}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={reservationBadgeClassName}>
+                  {reservationStateLabel}
                 </span>
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">
+                <span className={reservationMetaChipClassName}>
+                  {t("Time")} {existingReservation.reservation_time || "—"}
+                </span>
+                <span className={reservationMetaChipClassName}>
+                  {t("Guests")} {existingReservation.reservation_clients || 0}
+                </span>
+                <span className={reservationMetaChipClassName}>
                   {existingReservation.reservation_date || "—"}
                 </span>
               </div>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-slate-700 dark:text-slate-200">
-                <div className="min-w-0">
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                    {t("Time")}
-                  </div>
-                  <div className="truncate font-bold">
-                    {existingReservation.reservation_time || "—"}
-                  </div>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                    {t("Guests")}
-                  </div>
-                  <div className="truncate font-bold">
-                    {existingReservation.reservation_clients || 0}
-                  </div>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                    {t("Date")}
-                  </div>
-                  <div className="truncate font-bold">
-                    {existingReservation.reservation_date || "—"}
-                  </div>
-                </div>
-              </div>
               {(reservationCustomerName || reservationCustomerPhone) && (
-                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-700 dark:text-slate-200">
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                      {t("Name")}
-                    </div>
-                    <div className="truncate font-bold">
-                      {reservationCustomerName || "—"}
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                      {t("Phone")}
-                    </div>
-                    {reservationCustomerPhone && reservationCustomerPhoneHref ? (
-                      <a
-                        href={reservationCustomerPhoneHref}
-                        className="truncate font-bold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800 dark:text-blue-300 dark:decoration-blue-500/40 dark:hover:text-blue-200"
-                      >
-                        {reservationCustomerPhone}
-                      </a>
-                    ) : (
-                      <div className="truncate font-bold">
-                        {reservationCustomerPhone || "—"}
-                      </div>
-                    )}
-                  </div>
+                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-700 dark:text-slate-200">
+                  {reservationCustomerName ? (
+                    <span className="truncate font-semibold">{reservationCustomerName}</span>
+                  ) : null}
+                  {reservationCustomerPhone && reservationCustomerPhoneHref ? (
+                    <a
+                      href={reservationCustomerPhoneHref}
+                      className="truncate font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800 dark:text-blue-300 dark:decoration-blue-500/40 dark:hover:text-blue-200"
+                    >
+                      {reservationCustomerPhone}
+                    </a>
+                  ) : reservationCustomerPhone ? (
+                    <span className="truncate font-semibold">{reservationCustomerPhone}</span>
+                  ) : null}
                 </div>
               )}
               {existingReservation.reservation_notes && (
-                <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:bg-zinc-800 dark:text-slate-200">
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">
-                    {t("Notes")}
-                  </div>
-                  <div className="line-clamp-2 break-words">
-                    {existingReservation.reservation_notes}
-                  </div>
-                </div>
+                <p className="mt-1 text-[11px] text-slate-600 line-clamp-1 dark:text-slate-200">
+                  {existingReservation.reservation_notes}
+                </p>
               )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
+              {!isCheckedInReservation && (
+                <button
+                  type="button"
+                  onClick={() => handleCheckinReservation?.()}
+                  className="inline-flex h-7 items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-900/20 dark:text-emerald-200 dark:hover:bg-emerald-900/35"
+                  title={t("Checkin Reservation")}
+                  aria-label={t("Checkin Reservation")}
+                >
+                  {t("Checkin")}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleDeleteReservation?.()}
-                className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-bold text-red-700 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-900/20 dark:text-red-200 dark:hover:bg-red-900/35"
+                className="inline-flex h-7 items-center rounded-full border border-red-200 bg-red-50 px-2.5 text-[10px] font-bold text-red-700 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-900/20 dark:text-red-200 dark:hover:bg-red-900/35"
                 title={t("Delete Reservation")}
                 aria-label={t("Delete Reservation")}
               >

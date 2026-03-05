@@ -7,6 +7,8 @@ const getRestaurantScopedCacheKey = (suffix) => {
 
 const getTableOrdersCacheKey = () => getRestaurantScopedCacheKey("tableOverview.orders.v1");
 const getTableOrdersCacheTsKey = () => getRestaurantScopedCacheKey("tableOverview.orders.ts");
+const getReservationShadowsCacheKey = () =>
+  getRestaurantScopedCacheKey("tableOverview.reservationShadows.v1");
 
 const safeParseJson = (raw) => {
   try {
@@ -33,4 +35,171 @@ export const writeTableOrdersCache = (orders) => {
   } catch {
     // ignore cache errors
   }
+};
+
+export const readReservationShadows = () => {
+  const cached = safeParseJson(
+    typeof window !== "undefined"
+      ? window?.localStorage?.getItem(getReservationShadowsCacheKey())
+      : null
+  );
+  if (!Array.isArray(cached) || cached.length === 0) return [];
+  return cached.filter((row) => row && typeof row === "object" && row.table_number != null);
+};
+
+export const writeReservationShadows = (reservations) => {
+  try {
+    if (typeof window === "undefined") return;
+    if (!Array.isArray(reservations)) return;
+    window?.localStorage?.setItem(getReservationShadowsCacheKey(), JSON.stringify(reservations));
+  } catch {
+    // ignore cache errors
+  }
+};
+
+export const buildReservationShadowRecord = ({ reservation, order, tableNumber, orderId } = {}) => {
+  const orderSource = order && typeof order === "object" ? order : null;
+  const reservationSource = reservation && typeof reservation === "object" ? reservation : null;
+  const nestedReservation =
+    orderSource?.reservation && typeof orderSource.reservation === "object"
+      ? orderSource.reservation
+      : null;
+
+  const resolvedTableNumber = Number(
+    tableNumber ??
+      orderSource?.table_number ??
+      orderSource?.tableNumber ??
+      reservationSource?.table_number ??
+      reservationSource?.tableNumber ??
+      reservationSource?.table
+  );
+  if (!Number.isFinite(resolvedTableNumber)) return null;
+
+  const resolvedReservationId =
+    reservationSource?.id ??
+    reservationSource?.reservation_id ??
+    reservationSource?.reservationId ??
+    orderSource?.reservation_id ??
+    orderSource?.reservationId ??
+    nestedReservation?.id ??
+    nestedReservation?.reservation_id ??
+    nestedReservation?.reservationId ??
+    null;
+  const resolvedOrderId =
+    orderId ??
+    orderSource?.id ??
+    reservationSource?.order_id ??
+    reservationSource?.orderId ??
+    null;
+  const reservationDate =
+    reservationSource?.reservation_date ??
+    reservationSource?.reservationDate ??
+    orderSource?.reservation_date ??
+    orderSource?.reservationDate ??
+    nestedReservation?.reservation_date ??
+    nestedReservation?.reservationDate ??
+    null;
+  const reservationTime =
+    reservationSource?.reservation_time ??
+    reservationSource?.reservationTime ??
+    orderSource?.reservation_time ??
+    orderSource?.reservationTime ??
+    nestedReservation?.reservation_time ??
+    nestedReservation?.reservationTime ??
+    null;
+  const reservationClients =
+    reservationSource?.reservation_clients ??
+    reservationSource?.reservationClients ??
+    orderSource?.reservation_clients ??
+    orderSource?.reservationClients ??
+    nestedReservation?.reservation_clients ??
+    nestedReservation?.reservationClients ??
+    0;
+  const reservationNotes =
+    reservationSource?.reservation_notes ??
+    reservationSource?.reservationNotes ??
+    orderSource?.reservation_notes ??
+    orderSource?.reservationNotes ??
+    nestedReservation?.reservation_notes ??
+    nestedReservation?.reservationNotes ??
+    "";
+
+  if (!reservationDate && !reservationTime && !reservationNotes && Number(reservationClients || 0) <= 0) {
+    return null;
+  }
+
+  const resolvedStatus =
+    reservationSource?.status ??
+    reservationSource?.order_status ??
+    orderSource?.status ??
+    nestedReservation?.status ??
+    "reserved";
+  const resolvedOrderType =
+    reservationSource?.order_type ??
+    orderSource?.order_type ??
+    nestedReservation?.order_type ??
+    "reservation";
+
+  return {
+    id: resolvedReservationId ?? null,
+    order_id: resolvedOrderId ?? null,
+    table_number: resolvedTableNumber,
+    status: resolvedStatus,
+    order_type: resolvedOrderType,
+    customer_name:
+      reservationSource?.customer_name ??
+      reservationSource?.customerName ??
+      orderSource?.customer_name ??
+      orderSource?.customerName ??
+      nestedReservation?.customer_name ??
+      nestedReservation?.customerName ??
+      "",
+    customer_phone:
+      reservationSource?.customer_phone ??
+      reservationSource?.customerPhone ??
+      orderSource?.customer_phone ??
+      orderSource?.customerPhone ??
+      nestedReservation?.customer_phone ??
+      nestedReservation?.customerPhone ??
+      "",
+    reservation_date: reservationDate,
+    reservation_time: reservationTime,
+    reservation_clients: reservationClients,
+    reservation_notes: reservationNotes,
+  };
+};
+
+export const upsertReservationShadow = (reservation) => {
+  const nextReservation = buildReservationShadowRecord({ reservation });
+  if (!nextReservation) return;
+
+  const current = readReservationShadows();
+  const next = current.filter((row) => {
+    const sameReservationId =
+      nextReservation.id != null && row?.id != null && Number(row.id) === Number(nextReservation.id);
+    const sameOrderId =
+      nextReservation.order_id != null &&
+      row?.order_id != null &&
+      Number(row.order_id) === Number(nextReservation.order_id);
+    const sameTable =
+      Number(row?.table_number ?? row?.tableNumber ?? row?.table) ===
+      Number(nextReservation.table_number);
+    return !(sameReservationId || sameOrderId || sameTable);
+  });
+  next.push(nextReservation);
+  writeReservationShadows(next);
+};
+
+export const removeReservationShadow = ({ reservationId, orderId, tableNumber } = {}) => {
+  const next = readReservationShadows().filter((row) => {
+    const sameReservationId =
+      reservationId != null && row?.id != null && Number(row.id) === Number(reservationId);
+    const sameOrderId =
+      orderId != null && row?.order_id != null && Number(row.order_id) === Number(orderId);
+    const sameTable =
+      tableNumber != null &&
+      Number(row?.table_number ?? row?.tableNumber ?? row?.table) === Number(tableNumber);
+    return !(sameReservationId || sameOrderId || sameTable);
+  });
+  writeReservationShadows(next);
 };

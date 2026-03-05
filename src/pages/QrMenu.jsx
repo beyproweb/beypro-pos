@@ -74,8 +74,21 @@ const QR_PREFIX = "qr_";
 const QR_TOKEN_KEY = "qr_token";
 const BEYPRO_APP_STORE_URL = import.meta.env.VITE_BEYPRO_APPSTORE_URL || "";
 const BEYPRO_PLAY_STORE_URL = import.meta.env.VITE_BEYPRO_PLAYSTORE_URL || "";
+const normalizeReservationStatus = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+const isCheckedInReservationStatus = (value) => {
+  const normalized = normalizeReservationStatus(value);
+  return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
+};
 const isCancelledLikeStatus = (status) =>
   ["canceled", "cancelled", "deleted", "void"].includes(
+    String(status || "").toLowerCase()
+  );
+const isFinishedLikeStatus = (status) =>
+  ["delivered", "served", "closed", "completed"].includes(
     String(status || "").toLowerCase()
   );
 const hasReservationPayload = (order) => {
@@ -89,14 +102,65 @@ const hasReservationPayload = (order) => {
       order?.reservationDate ||
       order?.reservation_time ||
       order?.reservationTime ||
+      order?.reservation_status ||
+      order?.reservationStatus ||
       nested?.id ||
       nested?.reservation_id ||
       nested?.reservationId ||
       nested?.reservation_date ||
       nested?.reservationDate ||
       nested?.reservation_time ||
-      nested?.reservationTime
+      nested?.reservationTime ||
+      nested?.status ||
+      nested?.reservation_status ||
+      nested?.reservationStatus
   );
+};
+const isReservationPendingCheckIn = (order, fallbackStatus = null) => {
+  if (!order || typeof order !== "object") return false;
+  const nested =
+    order?.reservation && typeof order.reservation === "object" ? order.reservation : null;
+  const directStatus = normalizeReservationStatus(order?.status);
+  const nestedStatus = normalizeReservationStatus(nested?.status);
+  const flatReservationStatus = normalizeReservationStatus(
+    order?.reservation_status ??
+      order?.reservationStatus ??
+      nested?.reservation_status ??
+      nested?.reservationStatus
+  );
+  const fallback = normalizeReservationStatus(fallbackStatus);
+  const status = directStatus || nestedStatus || flatReservationStatus || fallback;
+  const hasReservationContext = hasReservationPayload(order);
+  if (!hasReservationContext) return false;
+  if (
+    order?.checked_in === true ||
+    nested?.checked_in === true ||
+    [status, directStatus, nestedStatus, flatReservationStatus, fallback].some((value) =>
+      isCheckedInReservationStatus(value)
+    )
+  ) {
+    return false;
+  }
+  if (
+    isCancelledLikeStatus(status) ||
+    isCancelledLikeStatus(nestedStatus) ||
+    isCancelledLikeStatus(flatReservationStatus)
+  ) {
+    return false;
+  }
+  const orderType = String(
+    order?.order_type ?? order?.orderType ?? nested?.order_type ?? nested?.orderType ?? ""
+  ).toLowerCase();
+  if (
+    status === "reserved" ||
+    nestedStatus === "reserved" ||
+    flatReservationStatus === "reserved" ||
+    orderType === "reservation"
+  ) {
+    return true;
+  }
+  // Keep reservation lock for any pre-checkin state (including transient "paid/closed" before restore).
+  return true;
 };
 
 function computeTenantSuffix() {
@@ -694,6 +758,8 @@ const DICT = {
     "Full Name": "Full Name",
     "Phone (5XXXXXXXXX)": "Phone (5XXXXXXXXX)",
     Address: "Address",
+    "Add item": "Add item",
+    "Reserve now": "Reserve now",
     Continue: "Continue",
     "No products.": "No products.",
     "Extras Groups": "Extras Groups",
@@ -865,6 +931,8 @@ const DICT = {
     "Full Name": "Ad Soyad",
     "Phone (5XXXXXXXXX)": "Telefon (5XXXXXXXXX)",
     Address: "Adres",
+    "Add item": "Urun ekle",
+    "Reserve now": "Simdi rezerve et",
     Continue: "Devam",
     "No products.": "Ürün yok.",
     "Extras Groups": "Ekstra Grupları",
@@ -1022,6 +1090,8 @@ const DICT = {
   de: {
     Information: "Informationen",
     Date: "Datum",
+    "Add item": "Artikel hinzufugen",
+    "Reserve now": "Jetzt reservieren",
     "Select Order Type": "Bestellart wählen",
     "Choose how you'd like to continue.": "Wählen Sie, wie Sie fortfahren möchten.",
     "Select how you'd like to order this item.": "Wählen Sie, wie Sie diesen Artikel bestellen möchten.",
@@ -1096,6 +1166,8 @@ const DICT = {
   fr: {
     Information: "Informations",
     Date: "Date",
+    "Add item": "Ajouter un article",
+    "Reserve now": "Reserver maintenant",
     "Select Order Type": "Sélectionnez le type de commande",
     "Choose how you'd like to continue.": "Choisissez comment vous souhaitez continuer.",
     "Select how you'd like to order this item.": "Choisissez comment vous souhaitez commander cet article.",
@@ -2793,6 +2865,8 @@ function TakeawayOrderForm({
   t,
   onClose,
   onSubmit,
+  onAddItem,
+  initialValues,
   tables = [],
   occupiedTables = [],
   reservedTables = [],
@@ -2802,20 +2876,31 @@ function TakeawayOrderForm({
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const paymentMethods = usePaymentMethods();
+  const normalizedInitialValues = useMemo(
+    () => ({
+      name: initialValues?.name || "",
+      phone: initialValues?.phone || "",
+      pickup_date: initialValues?.pickup_date || "",
+      pickup_time: initialValues?.pickup_time || "",
+      mode: initialValues?.mode || "reservation",
+      table_number: initialValues?.table_number || "",
+      reservation_clients: initialValues?.reservation_clients || "",
+      notes: initialValues?.notes || "",
+      payment_method: initialValues?.payment_method || "",
+    }),
+    [initialValues]
+  );
   const [form, setForm] = useState({
-    name: "",
-    phone: "",
-    pickup_date: "",
-    pickup_time: "",
-    mode: "reservation", // "pickup" | "reservation"
-    table_number: "",
-    reservation_clients: "",
-    notes: "",
-    payment_method: "",
+    ...normalizedInitialValues,
   });
   const [touched, setTouched] = useState({});
   const [paymentPrompt, setPaymentPrompt] = useState(false);
   const [shakeModal, setShakeModal] = useState(false);
+
+  useEffect(() => {
+    setForm(normalizedInitialValues);
+  }, [normalizedInitialValues]);
+
   const safeTables = useMemo(() => (Array.isArray(tables) ? tables : []), [tables]);
   const unavailableTables = useMemo(() => {
     const set = new Set();
@@ -3156,12 +3241,25 @@ function TakeawayOrderForm({
           />
 
           {/* Submit */}
+          {form.mode === "reservation" ? (
+            <button
+              type="button"
+              onClick={() => onAddItem?.(form)}
+              className="w-full py-3 rounded-full border border-neutral-300 bg-white text-neutral-900 font-medium text-lg hover:bg-neutral-50 transition"
+            >
+              {t("Add item")}
+            </button>
+          ) : null}
           <button
             type="submit"
             disabled={submitting}
             className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
           >
-            {submitting ? t("Please wait...") : t("Continue")}
+            {submitting
+              ? t("Please wait...")
+              : form.mode === "reservation"
+                ? t("Reserve now")
+                : t("Continue")}
           </button>
         </form>
       </div>
@@ -3625,6 +3723,7 @@ function OrderStatusModal({
   orderType,
   table,
   onOrderAnother,
+  onCheckout,
   onClose,
   onFinished,
   t,
@@ -3635,12 +3734,14 @@ function OrderStatusModal({
   forceDark,
   forceLock = false,
   allowOrderAnotherWhenLocked = false,
+  checkoutPending = false,
 }) {
   if (!open) return null;
 
   const uiStatus = (status || "").toLowerCase(); // pending | success | fail
   const backendStatus = (orderScreenStatus || "").toLowerCase(); // confirmed | cancelled | closed | ...
   const isCancelled = isCancelledLikeStatus(backendStatus);
+  const isFinishedLikeStatus = ["delivered", "served", "closed", "completed"].includes(backendStatus);
   const isSending = uiStatus === "pending";
   const isFailed = uiStatus === "fail";
 
@@ -3687,10 +3788,13 @@ function OrderStatusModal({
 		  orderId={orderId}
 		  table={orderType === "table" ? table : null}   // now safe
 		   onOrderAnother={lockBlocksForCancelState ? null : onOrderAnother}   
+      onCheckout={onCheckout}
 		  onClose={lockBlocksForCancelState ? null : onClose}
 		  onFinished={onFinished}
+      checkoutPending={checkoutPending}
       forceLock={forceLock}
 		  forceDark={forceDark}
+      orderScreenStatus={orderScreenStatus}
 
 	  t={t}
 	  buildUrl={(path) => apiUrl(path)}
@@ -3715,9 +3819,9 @@ function OrderStatusModal({
             ) : (
               <button
                 className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
-                onClick={status === "success" ? onOrderAnother : onClose}
+                onClick={status === "success" && !isCancelled && !isFinishedLikeStatus ? onOrderAnother : onClose}
               >
-                {status === "success" ? t("Order Another") : t("Close")}
+                {status === "success" && !isCancelled && !isFinishedLikeStatus ? t("Order Another") : t("Close")}
               </button>
             )}
           </div>
@@ -3751,6 +3855,7 @@ export default function QrMenu() {
     cart,
     setCart,
     selectedProduct,
+    setSelectedProduct,
     showAddModal,
     setShowAddModal,
     showStatus,
@@ -3809,6 +3914,7 @@ export default function QrMenu() {
     qrVoiceError,
     qrVoiceModalOpen,
     setQrVoiceModalOpen,
+    takeaway,
     setTakeaway,
     showQrPrompt,
     setShowQrPrompt,
@@ -3869,9 +3975,18 @@ export default function QrMenu() {
     extractTableNumberFromQrText,
   });
 
-  const statusPortalOrderId =
-    orderId || Number(storage.getItem("qr_active_order_id")) || null;
+  const statusPortalOrderId = (() => {
+    const activeStateId = Number(orderId || 0);
+    if (Number.isFinite(activeStateId) && activeStateId > 0) return activeStateId;
+    const activeOrderId = Number(activeOrder?.id || 0);
+    if (Number.isFinite(activeOrderId) && activeOrderId > 0) return activeOrderId;
+    const storedId = Number(storage.getItem("qr_active_order_id") || 0);
+    return Number.isFinite(storedId) && storedId > 0 ? storedId : null;
+  })();
   const [callWaiterFeedback, setCallWaiterFeedback] = useState("");
+  const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
+  const [editingCartItemId, setEditingCartItemId] = useState(null);
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const callWaiterFeedbackTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -3879,6 +3994,17 @@ export default function QrMenu() {
     window.__isQrMenuPage = true;
     return () => {
       window.__isQrMenuPage = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handleCartVisibility = (event) => {
+      setIsCartDrawerOpen(Boolean(event?.detail?.open));
+    };
+    window.addEventListener("qr:cart-visibility", handleCartVisibility);
+    return () => {
+      window.removeEventListener("qr:cart-visibility", handleCartVisibility);
     };
   }, []);
 
@@ -3892,6 +4018,16 @@ export default function QrMenu() {
     null;
   const resolvedOrderTypeForActions =
     orderType || storage.getItem("qr_orderType") || (Number.isFinite(resolvedTableForActions) && resolvedTableForActions > 0 ? "table" : null);
+  const normalizedActiveOrderStatus = String(orderScreenStatus || activeOrder?.status || "").toLowerCase();
+  const reservationPendingCheckIn =
+    resolvedOrderTypeForActions === "table" &&
+    isReservationPendingCheckIn(activeOrder, normalizedActiveOrderStatus) &&
+    Number.isFinite(resolvedTableForActions) &&
+    resolvedTableForActions > 0;
+  const reservationPendingCheckInMessage = t("Items can be added after check-in.");
+  const showReservationPendingCheckInMessage = useCallback(() => {
+    alert(reservationPendingCheckInMessage);
+  }, [reservationPendingCheckInMessage]);
 
   const showCallWaiterButton =
     (!showHome || showStatus) &&
@@ -3913,16 +4049,32 @@ export default function QrMenu() {
     return Array.from({ length: max }, (_, idx) => idx + 1);
   }, [scanTargetTable]);
   const cartItems = toArray(safeCart);
+  const editingCartItem = useMemo(
+    () =>
+      editingCartItemId
+        ? cartItems.find((item) => String(item?.unique_id) === String(editingCartItemId)) || null
+        : null,
+    [cartItems, editingCartItemId]
+  );
   const cartNewItemsCount = cartItems.filter((item) => !item?.locked).length;
   const isTableOrderProductPage = !showHome && resolvedOrderTypeForActions === "table";
-  const canOpenCartFromNav = cartItems.length > 0 || hasActiveOrder || isTableOrderProductPage;
+  const takeawayMode = String(takeaway?.mode || "").toLowerCase();
+  const isReservationProductPage =
+    !showHome &&
+    resolvedOrderTypeForActions === "takeaway" &&
+    takeawayMode === "reservation";
+  const isDeliveryProductPage = !showHome && resolvedOrderTypeForActions === "online";
+  const forceBottomNavProductPage =
+    isTableOrderProductPage || isReservationProductPage || isDeliveryProductPage;
+  const canOpenCartFromNav = cartItems.length > 0 || hasActiveOrder || forceBottomNavProductPage;
   const hasBottomNavContext =
-    showStatus || hasActiveOrder || cartItems.length > 0 || isTableOrderProductPage;
+    showStatus || hasActiveOrder || cartItems.length > 0 || forceBottomNavProductPage;
   const showBottomActions =
     !isDesktopLayout &&
     !showTableSelector &&
     hasBottomNavContext &&
-    (!showHome || showStatus);
+    (!showHome || showStatus) &&
+    !isCartDrawerOpen;
   const canReOrderFromNav = Boolean(hasActiveOrder || showStatus);
   const canStartVoiceFromNavBase =
     Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus);
@@ -3956,6 +4108,50 @@ export default function QrMenu() {
     () => formatTableName(scanTargetTable || tableScanTarget),
     [formatTableName, scanTargetTable, tableScanTarget]
   );
+  const handleEditCartItem = useCallback(
+    (item) => {
+      if (!item) return;
+      if (reservationPendingCheckIn) {
+        showReservationPendingCheckInMessage();
+        return;
+      }
+      const sourceProduct =
+        toArray(safeProducts).find((product) => Number(product?.id) === Number(item?.id)) || item;
+      setEditingCartItemId(item?.unique_id || null);
+      setReturnHomeAfterAdd(false);
+      setSelectedProduct(sourceProduct);
+      setShowAddModal(true);
+    },
+    [
+      reservationPendingCheckIn,
+      safeProducts,
+      setReturnHomeAfterAdd,
+      setSelectedProduct,
+      setShowAddModal,
+      showReservationPendingCheckInMessage,
+    ]
+  );
+
+  useEffect(() => {
+    if (!reservationPendingCheckIn) return;
+    setCart((prev) => {
+      const items = Array.isArray(prev) ? prev : [];
+      return items.length > 0 ? [] : prev;
+    });
+    storage.setItem("qr_cart", "[]");
+    setEditingCartItemId(null);
+    setShowAddModal(false);
+    setSelectedProduct(null);
+    setQrVoiceModalOpen(false);
+  }, [
+    reservationPendingCheckIn,
+    setCart,
+    setEditingCartItemId,
+    setQrVoiceModalOpen,
+    setSelectedProduct,
+    setShowAddModal,
+    storage,
+  ]);
 
   const showCallWaiterFeedback = useCallback((message) => {
     setCallWaiterFeedback(message);
@@ -4011,6 +4207,79 @@ export default function QrMenu() {
     }
   }, [cartNewItemsCount, hasActiveOrder, hydrateCartFromActiveOrder, setShowStatus, storage]);
 
+  const onOpenSharedCartFromVoice = useCallback(() => {
+    window.dispatchEvent(new Event("qr:voice-order-close"));
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        onOpenCartFromNav();
+      });
+    } else {
+      onOpenCartFromNav();
+    }
+  }, [onOpenCartFromNav]);
+
+  const onOpenCatalogProductFromVoice = useCallback(
+    (product) => {
+      if (!product) return;
+      if (reservationPendingCheckIn) {
+        showReservationPendingCheckInMessage();
+        return;
+      }
+      window.dispatchEvent(new Event("qr:voice-order-close"));
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => {
+          handleMenuProductOpen(product);
+        });
+      } else {
+        handleMenuProductOpen(product);
+      }
+    },
+    [handleMenuProductOpen, reservationPendingCheckIn, showReservationPendingCheckInMessage]
+  );
+
+  const syncVoiceDraftToSharedCart = useCallback(
+    (draftItems = []) => {
+      if (reservationPendingCheckIn) {
+        showReservationPendingCheckInMessage();
+        return;
+      }
+      const mappedDraftItems = toArray(draftItems).map((item, index) => {
+        const product = item?.product || safeProducts.find((it) => String(it?.id) === String(item?.productId)) || null;
+        const extras = toArray(item?.extras).map((extra, extraIndex) => ({
+          ...(extra || {}),
+          key:
+            extra?.key ||
+            extra?.id ||
+            extra?.extraId ||
+            `${extra?.name || "extra"}-${extraIndex}`,
+          id: extra?.id ?? extra?.extraId ?? extra?.key ?? `${extra?.name || "extra"}-${extraIndex}`,
+          name: extra?.name || "",
+          price: Number(extra?.price ?? extra?.extraPrice ?? 0) || 0,
+          extraPrice: Number(extra?.price ?? extra?.extraPrice ?? 0) || 0,
+          quantity: Math.max(1, Number(extra?.quantity) || 1),
+        }));
+
+        return {
+          id: product?.id ?? item?.productId ?? null,
+          name: product?.name || item?.name || t("Unknown product"),
+          image: product?.image || null,
+          price: Number(product?.price ?? item?.unitPrice ?? 0) || 0,
+          quantity: Math.max(1, Number(item?.qty) || 1),
+          extras,
+          note: item?.notes || "",
+          unique_id: `ai-draft-${item?.key || item?.productId || index}`,
+          ai_draft: true,
+        };
+      });
+
+      setCart((prev) => {
+        const preserved = toArray(prev).filter((item) => !item?.ai_draft);
+        return [...preserved, ...mappedDraftItems];
+      });
+    },
+    [reservationPendingCheckIn, safeProducts, setCart, showReservationPendingCheckInMessage, t]
+  );
+
   const onOpenVoiceFromNav = useCallback(() => {
     window.dispatchEvent(new Event("qr:voice-order-open"));
   }, []);
@@ -4020,6 +4289,47 @@ export default function QrMenu() {
     window.dispatchEvent(new Event("qr:voice-order-close"));
     await handleOrderAnother?.();
   }, [handleOrderAnother]);
+  const handleReservationCheckout = useCallback(async () => {
+    if (!statusPortalOrderId || checkoutSubmitting) return;
+
+    if (cartNewItemsCount > 0) {
+      const openCart =
+        typeof window === "undefined"
+          ? false
+          : window.confirm(t("You still have items in cart. Open cart before checkout?"));
+      if (openCart) {
+        await onOpenCartFromNav();
+      }
+      return;
+    }
+
+    const shouldCheckoutNow =
+      typeof window === "undefined"
+        ? false
+        : window.confirm(t("Close this table and check out now?"));
+    if (!shouldCheckoutNow) return;
+
+    try {
+      setCheckoutSubmitting(true);
+      await secureFetch(appendIdentifier(`/orders/${statusPortalOrderId}/close`), {
+        method: "POST",
+      });
+      window.dispatchEvent(new Event("qr:voice-order-close"));
+      resetToTypePicker?.({ allowForceClose: true });
+    } catch (err) {
+      alert(String(err?.message || t("Unable to check out right now.")));
+    } finally {
+      setCheckoutSubmitting(false);
+    }
+  }, [
+    appendIdentifier,
+    cartNewItemsCount,
+    checkoutSubmitting,
+    onOpenCartFromNav,
+    resetToTypePicker,
+    statusPortalOrderId,
+    t,
+  ]);
   const onForceCloseStatusFromNav = useCallback(() => {
     storage.removeItem("qr_force_status_until_closed");
     storage.setItem("qr_show_status", "0");
@@ -4065,7 +4375,7 @@ export default function QrMenu() {
   const disableAuxBottomNavActions = showCloseInReorderSlot;
   const callWaiterButtonDisabled = callWaiterButtonDisabledBase || disableAuxBottomNavActions;
   const canStartVoiceFromNav =
-    canStartVoiceFromNavBase && !disableAuxBottomNavActions;
+    canStartVoiceFromNavBase && !disableAuxBottomNavActions && !reservationPendingCheckIn;
   const reorderActionLabel = showCloseInReorderSlot ? t("Close") : reOrderLabel;
   const canUseReorderSlot = showCloseInReorderSlot || canReOrderFromNav;
   const onReorderSlotClick = showCloseInReorderSlot
@@ -4081,6 +4391,7 @@ export default function QrMenu() {
           orderType={orderType}
           table={orderType === "table" ? table : null}
           onOrderAnother={forceStatusLockActive && !allowOrderAnotherWhenLocked ? null : handleOrderAnother}
+          onCheckout={handleReservationCheckout}
           onClose={handleReset}
           onFinished={resetToTypePicker}
           t={t}
@@ -4091,6 +4402,7 @@ export default function QrMenu() {
           forceDark={isDarkMain}
           forceLock={forceStatusLockActive}
           allowOrderAnotherWhenLocked={allowOrderAnotherWhenLocked}
+          checkoutPending={checkoutSubmitting}
         />,
         document.body
       )
@@ -4098,6 +4410,10 @@ export default function QrMenu() {
 
   const handleVoiceDraftAddToCart = useCallback(
     ({ product, productId, name, qty, unitPrice, extras, notes }) => {
+      if (reservationPendingCheckIn) {
+        showReservationPendingCheckInMessage();
+        return;
+      }
       const resolvedQty = Math.max(1, Number(qty) || 1);
       const resolvedProduct = product || safeProducts.find((it) => String(it?.id) === String(productId)) || null;
       const resolvedExtras = (Array.isArray(extras) ? extras : []).map((extra, index) => ({
@@ -4129,7 +4445,15 @@ export default function QrMenu() {
       ]);
       setPaymentMethod("");
     },
-    [safeProducts, setCart, storage, t, setPaymentMethod]
+    [
+      reservationPendingCheckIn,
+      safeProducts,
+      setCart,
+      setPaymentMethod,
+      showReservationPendingCheckInMessage,
+      storage,
+      t,
+    ]
   );
 
   const handleVoiceDraftConfirmOrder = useCallback(async (draftItems = [], options = {}) => {
@@ -4362,7 +4686,9 @@ export default function QrMenu() {
               searchValue={menuSearch}
               onSearchChange={setMenuSearch}
               searchPlaceholder={t("Search products")}
-              onVoiceStart={orderType === "table" ? startQrVoiceCapture : null}
+              onVoiceStart={
+                orderType === "table" && !reservationPendingCheckIn ? startQrVoiceCapture : null
+              }
               voiceListening={qrVoiceListening}
             />
 
@@ -4397,6 +4723,7 @@ export default function QrMenu() {
                         setShowStatus(false);
                         storage.setItem("qr_show_status", "0");
                       }}
+                      onEditItem={handleEditCartItem}
                       layout="panel"
                       storage={storage}
                       voiceListening={qrVoiceListening}
@@ -4411,7 +4738,13 @@ export default function QrMenu() {
                   products={productsForGrid}
                   onSelectCategory={handleMenuCategorySelect}
                   onCategoryClick={handleMenuCategoryClick}
-                  onOpenProduct={handleMenuProductOpen}
+                  onOpenProduct={(product) => {
+                    if (reservationPendingCheckIn) {
+                      showReservationPendingCheckInMessage();
+                      return;
+                    }
+                    handleMenuProductOpen(product);
+                  }}
                   t={t}
                   apiUrl={API_URL}
                 />
@@ -4449,6 +4782,7 @@ export default function QrMenu() {
             setShowStatus(false);
             storage.setItem("qr_show_status", "0");
           }}
+          onEditItem={handleEditCartItem}
           storage={storage}
           voiceListening={qrVoiceListening}
           hideFloatingButton={true}
@@ -4545,11 +4879,18 @@ export default function QrMenu() {
         tableId={resolvedTableForActions || table}
         products={safeProducts}
         onAddToCart={handleVoiceDraftAddToCart}
+        onSyncDraftToCart={syncVoiceDraftToSharedCart}
+        onOpenSharedCart={onOpenSharedCartFromVoice}
+        onOpenCatalogProduct={onOpenCatalogProductFromVoice}
         onConfirmOrder={orderType ? handleVoiceDraftConfirmOrder : undefined}
         language={lang}
         paymentMethod={paymentMethod}
         onPaymentMethodChange={setPaymentMethod}
-        canStartVoiceOrder={Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus)}
+        canStartVoiceOrder={
+          Boolean(resolvedOrderTypeForActions) &&
+          (!showHome || showStatus) &&
+          !reservationPendingCheckIn
+        }
         onRequireOrderType={handleVoiceRequireOrderType}
         forceMinimized={Boolean(showStatus)}
         hideMiniButton={true}
@@ -4686,18 +5027,34 @@ export default function QrMenu() {
           const hasCartItems = toArray(safeCart).length > 0;
           setShowAddModal(false);
           setReturnHomeAfterAdd(false);
+          setEditingCartItemId(null);
           if (hasCartItems) {
             window.dispatchEvent(new Event("qr:cart-open"));
             return;
           }
-          setForceHome(true);
+          setForceHome(false);
           setShowDeliveryForm(false);
           setShowTakeawayForm(false);
           setShowStatus(false);
         }}
         onAddToCart={(item) => {
+          if (reservationPendingCheckIn) {
+            showReservationPendingCheckInMessage();
+            return;
+          }
           storage.setItem("qr_cart_auto_open", "1");
-          setCart((prev) => [...prev, item]);
+          setCart((prev) => {
+            const prevItems = toArray(prev);
+            if (!editingCartItemId) {
+              return [...prevItems, item];
+            }
+            return prevItems.map((existingItem) =>
+              String(existingItem?.unique_id) === String(editingCartItemId)
+                ? { ...item, unique_id: editingCartItemId }
+                : existingItem
+            );
+          });
+          setEditingCartItemId(null);
           setShowAddModal(false);
           setShowStatus(false);
           if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
@@ -4717,6 +5074,10 @@ export default function QrMenu() {
         }}
         t={t}
         apiUrl={API_URL}
+        initialQuantity={editingCartItem?.quantity || 1}
+        initialExtras={editingCartItem?.extras || []}
+        initialNote={editingCartItem?.note || ""}
+        submitLabel={editingCartItem ? t("Save changes") : undefined}
       />
 
       {statusPortal}
@@ -4747,6 +5108,7 @@ export default function QrMenu() {
         <TakeawayOrderForm
           submitting={submitting}
           t={t}
+          initialValues={takeaway}
           tables={tables}
           occupiedTables={occupiedTables}
           reservedTables={safeReservedTables}
@@ -4754,6 +5116,14 @@ export default function QrMenu() {
           onClose={() => {
             setShowTakeawayForm(false);
             setOrderType(null);
+          }}
+          onAddItem={(form) => {
+            setTakeaway(form);
+            setShowTakeawayForm(false);
+            setShowStatus(false);
+            setForceHome(false);
+            window.dispatchEvent(new Event("qr:voice-order-close"));
+            setQrVoiceModalOpen(false);
           }}
           onSubmit={async (form) => {
             if (!form) {
@@ -4802,6 +5172,8 @@ export default function QrMenu() {
                 const reservationOrderId = Number(response?.reservation?.id);
                 setTakeaway(form);
                 setShowTakeawayForm(false);
+                window.dispatchEvent(new Event("qr:voice-order-close"));
+                setQrVoiceModalOpen(false);
                 setOrderType("table");
                 setTable(tableNumber);
                 storage.setItem("qr_orderType", "table");

@@ -872,37 +872,6 @@ useEffect(() => {
   });
 }, [cartItems]);
 
-// 🎫 Load existing reservation when order loads or changes
-useEffect(() => {
-  if (!order?.id) {
-    setExistingReservation(null);
-    resetReservationForm();
-    return;
-  }
-
-  const loadReservation = async () => {
-    try {
-      const resData = await txApiRequest(`/orders/reservations/${order.id}${identifier}`);
-      if (resData?.success && resData?.reservation) {
-        setExistingReservation(resData.reservation);
-        setReservationDate(resData.reservation.reservation_date || "");
-        setReservationTime(resData.reservation.reservation_time || "");
-        setReservationClients(resData.reservation.reservation_clients?.toString() || "2");
-        setReservationNotes(resData.reservation.reservation_notes || "");
-      } else {
-        setExistingReservation(null);
-        resetReservationForm();
-      }
-    } catch (err) {
-      console.warn("Failed to load existing reservation:", err);
-      setExistingReservation(null);
-      resetReservationForm();
-    }
-  };
-
-  loadReservation();
-}, [order?.id, identifier]);
-
 const imgForCategory = (category) => {
   const slug = toCategorySlug(category);
   return categoryImages[slug] || CATEGORY_FALLBACK_IMAGE;
@@ -1366,7 +1335,12 @@ useEffect(() => {
       );
       const shouldSkipEmptyResetForReservation =
         isTableLikeOrder &&
-        (orderType === "reservation" || orderStatus === "reserved" || hasReservationPayload);
+        (
+          orderType === "reservation" ||
+          orderStatus === "reserved" ||
+          orderStatus === "checked_in" ||
+          hasReservationPayload
+        );
 
       if (shouldSkipEmptyResetForReservation) return;
 
@@ -1419,6 +1393,19 @@ const fetchOrderItems = useCallback(
         orderType: orderTypeOverride ?? latestOrderRef.current?.order_type,
         orderSource: sourceOverride ?? latestOrderRef.current?.source,
       });
+
+      const currentOrderSource = sourceOverride ?? latestOrderRef.current;
+      const normalizedSourceStatus = String(currentOrderSource?.status || "").toLowerCase();
+      const isEmptyReservedCartContext =
+        (normalizedSourceStatus === "reserved" ||
+          String(currentOrderSource?.order_type || "").toLowerCase() === "reservation") &&
+        Number(currentOrderSource?.total || 0) <= 0;
+
+      if (isEmptyReservedCartContext) {
+        setCartItems([]);
+        setReceiptItems([]);
+        return [];
+      }
 
       setCartItems((prevCart) => mergeWithUnconfirmedItems(formatted, prevCart));
       setReceiptItems(formatted.filter((item) => item.paid));
@@ -1544,7 +1531,7 @@ const orderStatusFlow = useMemo(
   ]
 );
 const { updateOrderStatus } = orderStatusFlow;
-const handleReservationDeletedSync = useCallback(
+const handleReservationStateSync = useCallback(
   (nextOrder) => {
     const source = nextOrder && typeof nextOrder === "object" ? nextOrder : order;
     const tableNumber = Number(source?.table_number ?? source?.tableNumber ?? tableId);
@@ -1553,8 +1540,23 @@ const handleReservationDeletedSync = useCallback(
     const orderIdNum =
       source?.id === null || source?.id === undefined ? null : Number(source.id);
     const statusLower = String(source?.status || "").toLowerCase();
+    const reservationSource =
+      source?.reservation && typeof source.reservation === "object" ? source.reservation : source;
+    const hasReservationPayload = Boolean(
+      reservationSource?.reservation_id ??
+        reservationSource?.reservationId ??
+        reservationSource?.reservation_date ??
+        reservationSource?.reservationDate ??
+        reservationSource?.reservation_time ??
+        reservationSource?.reservationTime ??
+        reservationSource?.reservation_notes ??
+        reservationSource?.reservationNotes ??
+        (Number(
+          reservationSource?.reservation_clients ?? reservationSource?.reservationClients ?? 0
+        ) > 0)
+    );
 
-    if (statusLower === "closed") {
+    if (statusLower === "closed" && !hasReservationPayload) {
       removeTableOverviewOrderFromCache(tableNumber);
       dispatchOrdersLocalRefresh({
         kind: "tableoverview_order_status",
@@ -1566,8 +1568,7 @@ const handleReservationDeletedSync = useCallback(
       return;
     }
 
-    const normalizedStatus =
-      statusLower === "reserved" ? "confirmed" : source?.status || "confirmed";
+    const normalizedStatus = source?.status || (hasReservationPayload ? "reserved" : "confirmed");
     const normalizedStatusLower = String(normalizedStatus || "").toLowerCase();
 
     const patch = {
@@ -1579,17 +1580,88 @@ const handleReservationDeletedSync = useCallback(
       payment_status: source?.payment_status,
       is_paid: source?.is_paid,
       total: source?.total,
-      reservation: null,
-      reservation_id: null,
-      reservationId: null,
-      reservation_date: null,
-      reservationDate: null,
-      reservation_time: null,
-      reservationTime: null,
-      reservation_clients: null,
-      reservationClients: null,
-      reservation_notes: null,
-      reservationNotes: null,
+      reservation: hasReservationPayload
+        ? {
+            ...(source?.reservation && typeof source.reservation === "object"
+              ? source.reservation
+              : {}),
+            id:
+              reservationSource?.id ??
+              reservationSource?.reservation_id ??
+              reservationSource?.reservationId ??
+              source?.reservation_id ??
+              source?.reservationId ??
+              null,
+            status: normalizedStatus,
+            order_type:
+              source?.order_type ??
+              source?.reservation?.order_type ??
+              (normalizedStatusLower === "reserved" ? "reservation" : "table"),
+            table_number: tableNumber,
+            reservation_date:
+              reservationSource?.reservation_date ?? reservationSource?.reservationDate ?? null,
+            reservation_time:
+              reservationSource?.reservation_time ?? reservationSource?.reservationTime ?? null,
+            reservation_clients:
+              reservationSource?.reservation_clients ??
+              reservationSource?.reservationClients ??
+              0,
+            reservation_notes:
+              reservationSource?.reservation_notes ?? reservationSource?.reservationNotes ?? "",
+            customer_name:
+              reservationSource?.customer_name ??
+              reservationSource?.customerName ??
+              source?.customer_name ??
+              source?.customerName ??
+              "",
+            customer_phone:
+              reservationSource?.customer_phone ??
+              reservationSource?.customerPhone ??
+              source?.customer_phone ??
+              source?.customerPhone ??
+              "",
+          }
+        : null,
+      reservation_id: hasReservationPayload
+        ? reservationSource?.id ??
+          reservationSource?.reservation_id ??
+          reservationSource?.reservationId ??
+          source?.reservation_id ??
+          source?.reservationId ??
+          null
+        : null,
+      reservationId: hasReservationPayload
+        ? reservationSource?.id ??
+          reservationSource?.reservationId ??
+          reservationSource?.reservation_id ??
+          source?.reservationId ??
+          source?.reservation_id ??
+          null
+        : null,
+      reservation_date: hasReservationPayload
+        ? reservationSource?.reservation_date ?? reservationSource?.reservationDate ?? null
+        : null,
+      reservationDate: hasReservationPayload
+        ? reservationSource?.reservationDate ?? reservationSource?.reservation_date ?? null
+        : null,
+      reservation_time: hasReservationPayload
+        ? reservationSource?.reservation_time ?? reservationSource?.reservationTime ?? null
+        : null,
+      reservationTime: hasReservationPayload
+        ? reservationSource?.reservationTime ?? reservationSource?.reservation_time ?? null
+        : null,
+      reservation_clients: hasReservationPayload
+        ? reservationSource?.reservation_clients ?? reservationSource?.reservationClients ?? 0
+        : null,
+      reservationClients: hasReservationPayload
+        ? reservationSource?.reservationClients ?? reservationSource?.reservation_clients ?? 0
+        : null,
+      reservation_notes: hasReservationPayload
+        ? reservationSource?.reservation_notes ?? reservationSource?.reservationNotes ?? ""
+        : null,
+      reservationNotes: hasReservationPayload
+        ? reservationSource?.reservationNotes ?? reservationSource?.reservation_notes ?? ""
+        : null,
       items: Array.isArray(source?.items) ? source.items : undefined,
       suborders: Array.isArray(source?.suborders) ? source.suborders : undefined,
     };
@@ -1619,6 +1691,10 @@ const {
   setReservationClients,
   reservationNotes,
   setReservationNotes,
+  reservationCustomerName,
+  setReservationCustomerName,
+  reservationCustomerPhone,
+  setReservationCustomerPhone,
   existingReservation,
   setExistingReservation,
   reservationLoading,
@@ -1628,9 +1704,11 @@ const {
   resetReservationForm,
   handleSaveReservation,
   handleDeleteReservation,
+  handleCheckinReservation,
   openReservationModal,
 } = useReservation({
   order,
+  tableId,
   identifier,
   txApiRequest,
   t,
@@ -1644,7 +1722,7 @@ const {
   discountValue,
   discountType,
   setOrder,
-  onReservationDeleted: handleReservationDeletedSync,
+  onReservationStateChange: handleReservationStateSync,
 });
 
 useEffect(() => {
@@ -1766,6 +1844,7 @@ const { confirmPaymentWithSplits } = useSplitPayment({
   txApiRequest,
   identifier,
   order,
+  existingReservation,
   setOrder,
   setSelectedCartItemIds,
   dispatchOrdersLocalRefresh,
@@ -1809,6 +1888,7 @@ const paymentFlow = useMemo(
       fetchSubOrders,
       updateOrderStatus,
       setOrder,
+      existingReservation,
       runAutoCloseIfConfigured,
       setSelectedCartItemIds,
       txLogCashRegisterEvent,
@@ -1824,6 +1904,7 @@ const paymentFlow = useMemo(
     dispatchOrdersLocalRefresh,
     fetchOrderItems,
     fetchSubOrders,
+    existingReservation,
     getPaymentItemKey,
     hasSuborderUnpaid,
     hasUnconfirmedCartItems,
@@ -2364,6 +2445,7 @@ const cartPanelProps = useMemo(
     handleCartPrint,
     openReservationModal,
     handleDeleteReservation,
+    handleCheckinReservation,
     openCancelModal,
     setShowDiscountModal,
     handleOpenCashRegister,
@@ -2408,6 +2490,7 @@ const cartPanelProps = useMemo(
     getPrimaryActionLabel,
     handleCartPrint,
     handleDeleteReservation,
+    handleCheckinReservation,
     handleMultifunction,
     handleOpenCashRegister,
     handleOpenDebtModal,
@@ -2598,6 +2681,10 @@ const modalsProps = useMemo(
     setReservationClients,
     reservationNotes,
     setReservationNotes,
+    reservationCustomerName,
+    setReservationCustomerName,
+    reservationCustomerPhone,
+    setReservationCustomerPhone,
     existingReservation,
     handleDeleteReservation,
     handleSaveReservation,
@@ -2674,6 +2761,8 @@ const modalsProps = useMemo(
     reservationDate,
     reservationLoading,
     reservationNotes,
+    reservationCustomerName,
+    reservationCustomerPhone,
     reservationTime,
     selectedCartItemIds,
     selectedCartItems,
@@ -2695,6 +2784,8 @@ const modalsProps = useMemo(
     setReservationClients,
     setReservationDate,
     setReservationNotes,
+    setReservationCustomerName,
+    setReservationCustomerPhone,
     setReservationTime,
     setSelectedExtras,
     setSelectedPaymentMethod,

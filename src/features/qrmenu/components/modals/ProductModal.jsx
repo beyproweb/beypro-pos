@@ -16,6 +16,10 @@ const ProductModal = React.memo(function ProductModal({
   onAddToCart,
   t,
   apiUrl,
+  initialQuantity = 1,
+  initialExtras = [],
+  initialNote = "",
+  submitLabel,
 }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedExtras, setSelectedExtras] = useState([]);
@@ -32,11 +36,18 @@ const ProductModal = React.memo(function ProductModal({
 
   useEffect(() => {
     if (!open || !product) return;
-    setQuantity(1);
-    setSelectedExtras([]);
-    setNote("");
+    setQuantity(Math.max(1, Number(initialQuantity) || 1));
+    setSelectedExtras(
+      toArray(initialExtras)
+        .map((ex) => ({
+          ...ex,
+          quantity: Math.max(1, Number(ex?.quantity) || 1),
+        }))
+        .filter((ex) => ex?.name)
+    );
+    setNote(initialNote || "");
     setActiveGroupIdx(0);
-  }, [open, product]);
+  }, [open, product, initialExtras, initialNote, initialQuantity]);
 
   if (!open || !product) return null;
 
@@ -318,7 +329,7 @@ const ProductModal = React.memo(function ProductModal({
             }}
             className="py-2.5 px-6 rounded-full bg-neutral-900 text-white font-medium hover:bg-neutral-800 transition-all"
           >
-            {t("Add to Cart")}
+            {submitLabel || t("Add to Cart")}
           </button>
         </div>
       </div>

@@ -104,6 +104,17 @@ const normItem = (it) => ({
   paid_at: it.paid_at || it.paidAt || null,
 });
 
+const normalizeReservationStatus = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const isCheckedInReservationStatus = (value) => {
+  const normalized = normalizeReservationStatus(value);
+  return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
+};
+
 const isCancelledItemStatus = (value) => {
   const status = String(value || "").toLowerCase();
   return ["canceled", "cancelled", "void", "deleted"].includes(status);
@@ -112,6 +123,87 @@ const isCancelledItemStatus = (value) => {
 const isCancelledLikeOrderStatus = (value) => {
   const status = String(value || "").toLowerCase();
   return ["canceled", "cancelled", "void", "deleted"].includes(status);
+};
+
+const isFinishedLikeOrderStatus = (value) => {
+  const status = String(value || "").toLowerCase();
+  return ["delivered", "served", "closed", "completed"].includes(status);
+};
+
+const hasReservationData = (entry) => {
+  if (!entry || typeof entry !== "object") return false;
+  const nested =
+    entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
+  return Boolean(
+    entry?.reservation_id ||
+      entry?.reservationId ||
+      entry?.reservation_date ||
+      entry?.reservationDate ||
+      entry?.reservation_time ||
+      entry?.reservationTime ||
+      entry?.reservation_status ||
+      entry?.reservationStatus ||
+      nested?.id ||
+      nested?.reservation_id ||
+      nested?.reservationId ||
+      nested?.reservation_date ||
+      nested?.reservationDate ||
+      nested?.reservation_time ||
+      nested?.reservationTime ||
+      nested?.status ||
+      nested?.reservation_status ||
+      nested?.reservationStatus
+  );
+};
+
+const isReservationPendingCheckIn = (entry, fallbackStatus = null) => {
+  if (!entry || typeof entry !== "object") return false;
+  const nested =
+    entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
+  const directStatus = normalizeReservationStatus(entry?.status);
+  const nestedStatus = normalizeReservationStatus(nested?.status);
+  const flatReservationStatus = normalizeReservationStatus(
+    entry?.reservation_status ??
+      entry?.reservationStatus ??
+      nested?.reservation_status ??
+      nested?.reservationStatus
+  );
+  const fallback = normalizeReservationStatus(fallbackStatus);
+  const status = directStatus || nestedStatus || flatReservationStatus || fallback;
+  const hasReservationContext = hasReservationData(entry);
+  if (!hasReservationContext) return false;
+  if (entry?.checked_in === true || nested?.checked_in === true) return false;
+  if (
+    isCancelledLikeOrderStatus(status) ||
+    isCancelledLikeOrderStatus(nestedStatus) ||
+    isCancelledLikeOrderStatus(flatReservationStatus)
+  ) {
+    return false;
+  }
+  if (
+    [
+      status,
+      directStatus,
+      nestedStatus,
+      flatReservationStatus,
+      fallback,
+    ].some((value) => isCheckedInReservationStatus(value))
+  ) {
+    return false;
+  }
+  const orderType = String(
+    entry?.order_type ?? entry?.orderType ?? nested?.order_type ?? nested?.orderType ?? ""
+  ).toLowerCase();
+  if (
+    status === "reserved" ||
+    nestedStatus === "reserved" ||
+    flatReservationStatus === "reserved" ||
+    orderType === "reservation"
+  ) {
+    return true;
+  }
+  // Keep reservation lock for any pre-checkin state (including transient "paid/closed" before restore).
+  return true;
 };
 
 /* ---------- UI COMPONENTS (UI-only; no business logic) ---------- */
@@ -232,6 +324,8 @@ function OrderSummaryCard({
   t,
   title,
   statusLabel,
+  statusToneClass,
+  driverMessage,
   timerLabel,
   paymentLabel,
   createdAtLabel,
@@ -251,6 +345,11 @@ function OrderSummaryCard({
           <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
             {createdAtLabel}
           </div>
+          {driverMessage ? (
+            <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
+              {driverMessage}
+            </div>
+          ) : null}
           {reservedAtLabel ? (
             <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
               {t("Reservation Time")}: {reservedAtLabel}
@@ -265,10 +364,10 @@ function OrderSummaryCard({
 
         <div
           className={[
-            "shrink-0 text-xs px-2.5 py-1 rounded-full border font-medium",
+            "shrink-0 text-xs px-2.5 py-1 rounded-full border font-semibold shadow-sm",
             isCancelled
               ? "bg-rose-50 dark:bg-rose-950/30 text-rose-700 border-rose-200 dark:border-rose-900"
-              : "bg-neutral-50 dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-800",
+              : statusToneClass || "bg-neutral-50 dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-800",
           ].join(" ")}
         >
           {statusLabel}
@@ -294,10 +393,30 @@ function OrderSummaryCard({
             {paymentLabel}
           </div>
         </div>
-        <div className="rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 px-3 py-2">
-          <div className="text-[11px] text-neutral-500 dark:text-neutral-400">{t("Status")}</div>
-          <div className="mt-0.5 text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+        <div className={`rounded-xl border px-3 py-2 ${isCancelled ? "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900" : statusToneClass || "bg-neutral-50 dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800"}`}>
+          <div className={`text-[11px] ${isCancelled ? "text-rose-600 dark:text-rose-300" : statusToneClass ? "text-current/80" : "text-neutral-500 dark:text-neutral-400"}`}>{t("Status")}</div>
+          <div className={`mt-0.5 text-sm font-semibold truncate ${isCancelled ? "text-rose-700 dark:text-rose-200" : statusToneClass ? "text-current" : "text-neutral-900 dark:text-neutral-100"}`}>
             {statusLabel}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ReservationPendingBadge({ t }) {
+  return (
+    <section className="rounded-2xl border border-amber-200 dark:border-amber-900 bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-amber-950/40 dark:via-neutral-900 dark:to-orange-950/20 px-4 py-4">
+      <div className="flex items-start gap-3">
+        <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-amber-200 bg-white text-amber-700 shadow-sm dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+          <span className="text-base font-semibold">i</span>
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            {t("Reservation pending check-in")}
+          </div>
+          <div className="mt-1 text-sm leading-6 text-neutral-600 dark:text-neutral-300">
+            {t("Please check in at the restaurant to unlock ordering for this table.")}
           </div>
         </div>
       </div>
@@ -449,44 +568,43 @@ const OrderStatusScreen = ({
   orderId,
   table,
   onOrderAnother,
+  onCheckout,
   onClose,
   onFinished,
+  checkoutPending = false,
   forceLock = false,
   forceDark,
+  orderScreenStatus = null,
   t = (s) => s,
   buildUrl = (p) => p,
   appendIdentifier,
 }) => {
+  const normalizedOrderScreenStatus = normalizeReservationStatus(orderScreenStatus);
   const [isDarkUi, setIsDarkUi] = useState(() => (typeof forceDark === "boolean" ? forceDark : false));
   const [order, setOrder] = useState(null);
   const [items, setItems] = useState([]);
   const [timer, setTimer] = useState("00:00");
   const [order404, setOrder404] = useState(false);
+  const [checkedInSticky, setCheckedInSticky] = useState(false);
   const intervalRef = useRef(null);
   const joinedRestaurantRef = useRef(null);
+  const driversCacheRef = useRef({ fetchedAtMs: 0, byId: new Map() });
   const { formatCurrency } = useCurrency();
 
   const FINISHED_STATES = ["closed", "completed"]; // keep cancelled visible
   const hasReservationPayload = useCallback((entry) => {
-    if (!entry || typeof entry !== "object") return false;
-    const nested =
-      entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
-    return Boolean(
-      entry?.reservation_id ||
-        entry?.reservationId ||
-        entry?.reservation_date ||
-        entry?.reservationDate ||
-        entry?.reservation_time ||
-        entry?.reservationTime ||
-        nested?.id ||
-        nested?.reservation_id ||
-        nested?.reservationId ||
-        nested?.reservation_date ||
-        nested?.reservationDate ||
-        nested?.reservation_time ||
-        nested?.reservationTime
-    );
+    return hasReservationData(entry);
   }, []);
+
+  useEffect(() => {
+    setCheckedInSticky(false);
+  }, [orderId]);
+
+  useEffect(() => {
+    if (isCheckedInReservationStatus(normalizedOrderScreenStatus)) {
+      setCheckedInSticky(true);
+    }
+  }, [normalizedOrderScreenStatus]);
 
   useEffect(() => {
     if (typeof forceDark === "boolean") {
@@ -594,10 +712,68 @@ const OrderStatusScreen = ({
     [buildUrl, appendIdentifier]
   );
 
+  const hydrateOrderDriverName = useCallback(
+    async (orderData) => {
+      if (!orderData || typeof orderData !== "object") return orderData;
+
+      const directName = String(
+        orderData?.driver_name ||
+          orderData?.driverName ||
+          orderData?.driver?.name ||
+          orderData?.assigned_driver?.name ||
+          orderData?.assignedDriver?.name ||
+          ""
+      ).trim();
+      if (directName) return orderData;
+
+      const rawDriverId =
+        orderData?.driver_id ??
+        orderData?.driverId ??
+        orderData?.driver?.id ??
+        orderData?.assigned_driver_id ??
+        orderData?.assignedDriverId;
+      const driverId = Number(rawDriverId);
+      if (!Number.isFinite(driverId) || driverId <= 0) return orderData;
+
+      const cached = driversCacheRef.current || { fetchedAtMs: 0, byId: new Map() };
+      const byId = cached.byId || new Map();
+      if (byId.has(driverId)) {
+        const cachedName = String(byId.get(driverId) || "").trim();
+        return cachedName ? { ...orderData, driver_name: cachedName } : orderData;
+      }
+
+      if (Date.now() - Number(cached.fetchedAtMs || 0) < 60_000) return orderData;
+
+      try {
+        const { res, data } = await fetchJSON("/staff/drivers");
+        if (!res?.ok) return orderData;
+
+        const rows = Array.isArray(data) ? data : data?.drivers || [];
+        const nextMap = new Map();
+        for (const row of rows) {
+          const id = Number(row?.id);
+          if (!Number.isFinite(id)) continue;
+          nextMap.set(
+            id,
+            String(row?.name || row?.full_name || row?.username || "").trim() || null
+          );
+        }
+        driversCacheRef.current = { fetchedAtMs: Date.now(), byId: nextMap };
+
+        const resolvedName = String(nextMap.get(driverId) || "").trim();
+        return resolvedName ? { ...orderData, driver_name: resolvedName } : orderData;
+      } catch {
+        return orderData;
+      }
+    },
+    [fetchJSON]
+  );
+
   useEffect(() => {
     if (!order) return;
     const status = (order.status || "").toLowerCase();
-    const preserveWhileReserved = forceLock && hasReservationPayload(order);
+    const preserveWhileReserved =
+      hasReservationPayload(order) || (forceLock && hasReservationPayload(order));
     const orderCancelReason =
       order?.cancellation_reason || order?.cancel_reason || order?.cancelReason || "";
     const hasCancelledItems = items.some((item) => isCancelledItemStatus(item?.kitchen_status));
@@ -613,16 +789,37 @@ const OrderStatusScreen = ({
 
   const fetchOrder = async () => {
     if (!orderId) return;
+    let nextOrder = null;
     try {
       const { res, data } = await fetchJSON(`/orders/${orderId}`);
       if (res.ok) {
-        setOrder(data);
+        nextOrder = await hydrateOrderDriverName(data);
+        const normStatus = normalizeReservationStatus(nextOrder?.status);
+        const nestedStatus = normalizeReservationStatus(nextOrder?.reservation?.status);
+        const flatReservationStatus = normalizeReservationStatus(
+          nextOrder?.reservation_status ?? nextOrder?.reservationStatus
+        );
+        if (
+          isCheckedInReservationStatus(normStatus) ||
+          isCheckedInReservationStatus(nestedStatus) ||
+          isCheckedInReservationStatus(flatReservationStatus)
+        ) {
+          setCheckedInSticky(true);
+        }
+        setOrder(nextOrder);
         setOrder404(false);
       } else if (res.status === 404) {
         setOrder(null);
         setOrder404(true);
       }
     } catch {}
+
+    const hasCheckedInOverride =
+      checkedInSticky || isCheckedInReservationStatus(normalizedOrderScreenStatus);
+    if (!hasCheckedInOverride && isReservationPendingCheckIn(nextOrder, normalizedOrderScreenStatus)) {
+      setItems([]);
+      return;
+    }
 
     try {
       const { res, data } = await fetchJSON(`/orders/${orderId}/items?include_cancelled=1`);
@@ -637,21 +834,34 @@ const OrderStatusScreen = ({
   useEffect(() => {
     let abort = false;
     async function load() {
-      try {
-        const { res, data } = await fetchJSON(`/orders/${orderId}`);
-        if (!res.ok) return;
-        if (!abort) {
-          setOrder(data);
-          if (import.meta.env.DEV) {
-            console.info("[OrderStatusScreen] fetched order", {
-              orderId,
-              status: (data?.status || "").toLowerCase(),
-              cancel_reason:
-                data?.cancellation_reason || data?.cancel_reason || data?.cancelReason || null,
-            });
-          }
+    try {
+      const { res, data } = await fetchJSON(`/orders/${orderId}`);
+      if (!res.ok) return;
+      if (!abort) {
+        const hydrated = await hydrateOrderDriverName(data);
+        const normStatus = normalizeReservationStatus(hydrated?.status);
+        const nestedStatus = normalizeReservationStatus(hydrated?.reservation?.status);
+        const flatReservationStatus = normalizeReservationStatus(
+          hydrated?.reservation_status ?? hydrated?.reservationStatus
+        );
+        if (
+          isCheckedInReservationStatus(normStatus) ||
+          isCheckedInReservationStatus(nestedStatus) ||
+          isCheckedInReservationStatus(flatReservationStatus)
+        ) {
+          setCheckedInSticky(true);
         }
-      } catch {}
+        setOrder(hydrated);
+        if (import.meta.env.DEV) {
+          console.info("[OrderStatusScreen] fetched order", {
+            orderId,
+            status: normStatus,
+            cancel_reason:
+              hydrated?.cancellation_reason || hydrated?.cancel_reason || hydrated?.cancelReason || null,
+          });
+        }
+      }
+    } catch {}
     }
     load();
     const iv = setInterval(load, 4000);
@@ -659,12 +869,12 @@ const OrderStatusScreen = ({
       abort = true;
       clearInterval(iv);
     };
-  }, [orderId]);
+  }, [hydrateOrderDriverName, orderId]);
 
   useSocketIO(fetchOrder, orderId);
   useEffect(() => {
     fetchOrder();
-  }, [orderId]);
+  }, [orderId, normalizedOrderScreenStatus]);
 
   // Join restaurant-specific Socket.IO room once we know the restaurant_id
   useEffect(() => {
@@ -690,18 +900,33 @@ const OrderStatusScreen = ({
 
   // Timer
   useEffect(() => {
-    if (!order?.created_at) return;
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (!order?.created_at) {
+      setTimer("00:00");
+      return;
+    }
+    const startMs = new Date(order.created_at).getTime();
+    if (!Number.isFinite(startMs)) {
+      setTimer("00:00");
+      return;
+    }
     function updateTimer() {
-      const start = new Date(order.created_at);
-      const now = new Date();
-      const diff = Math.floor((now - start) / 1000);
+      const diff = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
       const mins = String(Math.floor(diff / 60)).padStart(2, "0");
       const secs = String(diff % 60).padStart(2, "0");
       setTimer(`${mins}:${secs}`);
     }
     updateTimer();
     intervalRef.current = setInterval(updateTimer, 1000);
-    return () => clearInterval(intervalRef.current);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
   }, [order?.created_at]);
 
   const tableNo = table ?? order?.table_number ?? null;
@@ -720,7 +945,20 @@ const OrderStatusScreen = ({
     return sum + ((it.price || 0) + extras) * (it.quantity || 1);
   }, 0);
 
-  const orderStatus = (order?.status || "").toLowerCase();
+  const orderStatus = normalizeReservationStatus(order?.status);
+  const reservationStatus = normalizeReservationStatus(order?.reservation?.status);
+  const flatReservationStatus = normalizeReservationStatus(
+    order?.reservation_status ?? order?.reservationStatus
+  );
+  const hasCheckedInSignal =
+    checkedInSticky ||
+    isCheckedInReservationStatus(normalizedOrderScreenStatus) ||
+    isCheckedInReservationStatus(orderStatus) ||
+    isCheckedInReservationStatus(reservationStatus) ||
+    isCheckedInReservationStatus(flatReservationStatus) ||
+    order?.checked_in === true ||
+    order?.reservation?.checked_in === true;
+  const driverStatus = String(order?.driver_status || "").toLowerCase();
   const isOrderCancelled = isCancelledLikeOrderStatus(orderStatus);
   const orderCancelReason =
     order?.cancellation_reason ||
@@ -734,22 +972,53 @@ const OrderStatusScreen = ({
   const firstItemCancelReason = String(cancelledItems[0]?.cancellation_reason || "").trim();
   const cancelReason = String(orderCancelReason || firstItemCancelReason || "").trim();
   const isCancelledFlow = isOrderCancelled || allItemsCancelled || Boolean(orderCancelReason);
+  const reservationContextStatusHint = hasCheckedInSignal
+    ? "checked_in"
+    : normalizedOrderScreenStatus || orderStatus;
   const isReservedOrderContext =
-    orderStatus === "reserved" || hasReservationPayload(order);
+    !hasCheckedInSignal && isReservationPendingCheckIn(order, reservationContextStatusHint);
+  const effectiveOrderStatus = (() => {
+    if (isReservedOrderContext) return "reserved";
+    if (hasCheckedInSignal) return "checked_in";
+    if (driverStatus === "on_road" || driverStatus === "on-road") return "on_road";
+    if (driverStatus === "delivered") return "delivered";
+    return orderStatus || reservationStatus;
+  })();
+  const isFinishedFlow = isFinishedLikeOrderStatus(effectiveOrderStatus);
+  const hasVisibleOrderItems = items.some((item) => !isCancelledItemStatus(item?.kitchen_status));
+  const hasReservationContext = hasReservationPayload(order);
+  const visibleItems = isReservedOrderContext ? [] : items;
+  const visibleTotal = visibleItems.reduce((sum, it) => {
+    if (isCancelledItemStatus(it?.kitchen_status)) return sum;
+    const extras = (it.extras || []).reduce(
+      (s, ex) => s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+      0
+    );
+    return sum + ((it.price || 0) + extras) * (it.quantity || 1);
+  }, 0);
   const showCloseButton =
     typeof onClose === "function" &&
-    items.length === 0 &&
-    !isReservedOrderContext;
+    ((!isReservedOrderContext && (visibleItems.length === 0 || isCancelledFlow || isFinishedFlow)) ||
+      (isReservedOrderContext && allItemsCancelled));
+  const showCheckoutButton =
+    typeof onCheckout === "function" &&
+    hasReservationContext &&
+    hasCheckedInSignal;
 
   const normalizeStatus = (s) => {
-    const v = (s || "").toLowerCase();
-    if (v === "delivered" || v === "served") return "ready";
+    const v = normalizeReservationStatus(s);
+    if (v === "on_road" || v === "on-road") return "on_road";
+    if (v === "checkedin" || v === "checkin") return "checked_in";
+    if (v === "served") return "delivered";
     return v;
   };
 
   const displayStatus = (s) => {
     const v = normalizeStatus(s);
+    if (v === "checked_in") return t("Guest checked in");
+    if (v === "on_road") return t("On Road");
     if (v === "ready") return t("Order ready");
+    if (v === "delivered") return t("Delivered");
     if (v === "cancelled" || v === "canceled" || v === "void" || v === "deleted") return t("Cancelled");
     if (!v) return t("Unknown");
     return t(v.charAt(0).toUpperCase() + v.slice(1));
@@ -757,6 +1026,9 @@ const OrderStatusScreen = ({
 
   const badgeColor = (status) => {
     const s = normalizeStatus(status);
+    if (s === "checked_in") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (s === "delivered") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (s === "on_road") return "bg-sky-600 text-white border-sky-700 shadow-[0_10px_24px_rgba(2,132,199,0.24)] dark:bg-sky-500 dark:text-white dark:border-sky-400";
     if (s === "ready") return "bg-blue-50 text-blue-700 border-blue-200";
     if (s === "preparing") return "bg-amber-50 text-amber-700 border-amber-200";
     if (s === "cancelled" || s === "canceled" || s === "void" || s === "deleted") {
@@ -767,6 +1039,7 @@ const OrderStatusScreen = ({
   };
 
   const getCurrentStepIndex = () => {
+    if (isReservedOrderContext) return 0;
     if (isCancelledFlow) return 0;
     const rank = (s) => {
       const v = normalizeStatus(s);
@@ -829,8 +1102,21 @@ const OrderStatusScreen = ({
   })();
 
   const paymentLabel = pmLabel(order?.payment_method || "");
+  const effectivePaymentLabel = isReservedOrderContext ? t("Pending check-in") : paymentLabel;
+  const driverName = String(
+    order?.driver_name ||
+      order?.driverName ||
+      order?.driver?.name ||
+      order?.assigned_driver?.name ||
+      order?.assignedDriver?.name ||
+      ""
+  ).trim();
+  const driverMessage =
+    !isReservedOrderContext && effectiveOrderStatus === "on_road" && driverName
+      ? `${driverName} ${t("picked up your order", { defaultValue: "picked up your order" })}`
+      : "";
 
-	  const titleLine = (() => {
+		  const titleLine = (() => {
 	    const tableLine = tableNo ? `${t("Table")} ${tableNo}` : null;
 	    const ot = String(order?.order_type || "")
 	      .trim()
@@ -862,28 +1148,48 @@ const OrderStatusScreen = ({
           <OrderSummaryCard
             t={t}
             title={titleLine || t("Your Order")}
-            statusLabel={isCancelledFlow ? t("Cancelled") : displayStatus(order?.status)}
+            statusLabel={isCancelledFlow ? t("Cancelled") : displayStatus(effectiveOrderStatus)}
+            statusToneClass={badgeColor(effectiveOrderStatus)}
+            driverMessage={driverMessage}
             timerLabel={isCancelledFlow ? t("—") : `${timer}`}
-            paymentLabel={paymentLabel}
+            paymentLabel={effectivePaymentLabel}
             createdAtLabel={createdAtLabel}
             reservedAtLabel={reservedAtLabel}
             reservationGuestsLabel={reservationGuestsLabel}
-            totalLabel={formatCurrency(total)}
+            totalLabel={formatCurrency(isReservedOrderContext ? visibleTotal : total)}
             cancelReason={cancelReason}
             isCancelled={isCancelledFlow}
           />
 
-          <OrderItemsList
-            t={t}
-            items={items}
-            totalLabel={formatCurrency(total)}
-            formatCurrency={formatCurrency}
-            badgeColor={badgeColor}
-            displayStatus={displayStatus}
-            pmLabel={pmLabel}
-          />
+          {isReservedOrderContext ? <ReservationPendingBadge t={t} /> : null}
 
-          {showCloseButton ? (
+          {!isReservedOrderContext ? (
+            <OrderItemsList
+              t={t}
+              items={visibleItems}
+              totalLabel={formatCurrency(visibleTotal)}
+              formatCurrency={formatCurrency}
+              badgeColor={badgeColor}
+              displayStatus={displayStatus}
+              pmLabel={pmLabel}
+            />
+          ) : null}
+
+          {showCheckoutButton ? (
+            <InlineBottomActions
+              t={t}
+              primaryLabel={checkoutPending ? t("Checking Out...") : t("Check Out")}
+              secondaryLabel={typeof onClose === "function" ? t("Close") : undefined}
+              onPrimary={checkoutPending ? null : onCheckout}
+              onSecondary={
+                typeof onClose === "function"
+                  ? () => onClose?.({ allowForceClose: true })
+                  : undefined
+              }
+            />
+          ) : null}
+
+          {!showCheckoutButton && showCloseButton ? (
             <InlineBottomActions
               t={t}
               primaryLabel={t("Close")}

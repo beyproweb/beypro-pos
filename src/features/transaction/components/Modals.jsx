@@ -61,6 +61,10 @@ const Modals = ({
   setReservationClients,
   reservationNotes,
   setReservationNotes,
+  reservationCustomerName,
+  setReservationCustomerName,
+  reservationCustomerPhone,
+  setReservationCustomerPhone,
   existingReservation,
   handleDeleteReservation,
   handleSaveReservation,
@@ -363,6 +367,32 @@ const Modals = ({
                   placeholder="e.g., 2"
                   value={reservationClients}
                   onChange={(e) => setReservationClients(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  {t("Customer Name")}
+                </label>
+                <input
+                  type="text"
+                  placeholder={t("e.g., John Doe")}
+                  value={reservationCustomerName}
+                  onChange={(e) => setReservationCustomerName(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  {t("Phone Number")}
+                </label>
+                <input
+                  type="tel"
+                  placeholder={t("e.g., +1 555 123 4567")}
+                  value={reservationCustomerPhone}
+                  onChange={(e) => setReservationCustomerPhone(e.target.value)}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none dark:bg-zinc-800 dark:border-zinc-700 dark:text-slate-100"
                 />
               </div>
