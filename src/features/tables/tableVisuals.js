@@ -7,6 +7,9 @@ export const normalizeOrderStatus = (status) => {
 export const isCheckedInReservationStatus = (status) =>
   normalizeOrderStatus(status) === "checked_in";
 
+export const isCheckedOutReservationStatus = (status) =>
+  normalizeOrderStatus(status) === "checked_out";
+
 export const hasReservationSignal = (order) => {
   if (!order || typeof order !== "object") return false;
   const reservation = order?.reservation;
@@ -151,6 +154,13 @@ export const isEffectivelyFreeOrder = (order) => {
 
   const hasSignal = hasReservationSignal(order);
   if ((status === "reserved" || order.order_type === "reservation") && hasSignal) {
+    // A reserved table should stop looking "free" as soon as it has any order value/items,
+    // even before check-in.
+    const total = Number(order.total || 0);
+    const items = Array.isArray(order.items) ? order.items : null;
+    if ((Array.isArray(items) && items.length > 0) || total > 0) {
+      return false;
+    }
     return !isReservationDueNow(order);
   }
 

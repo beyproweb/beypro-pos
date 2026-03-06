@@ -1318,14 +1318,22 @@ if (savedTable) {
     });
 
     const list = parseArray(q);
+    const hasReservationEntries = list.some((entry) => hasActiveReservationPayload(entry));
 
     const openOrder =
       list.find((o) => {
         const statusLower = String(o?.status || "").toLowerCase();
         if (isTerminalOrderStatus(statusLower)) return false;
+        return isCheckedInReservationEntry(o, statusLower);
+      }) ||
+      list.find((o) => {
+        const statusLower = String(o?.status || "").toLowerCase();
+        if (isTerminalOrderStatus(statusLower)) return false;
         return isReservationPendingCheckIn(o, statusLower, checkedInOrdersRef.current);
       }) ||
-      list.find((o) => !isTerminalOrderStatus((o?.status || "").toLowerCase())) ||
+      ((forceStatusOpen || hasReservationEntries)
+        ? null
+        : list.find((o) => !isTerminalOrderStatus((o?.status || "").toLowerCase()))) ||
       null;
 
 	        if (openOrder) {
@@ -1422,6 +1430,11 @@ if (savedTable) {
       if (isCheckedInReservationEntry(data, reservationAwareStatus)) {
         markOrderCheckedIn(data);
       }
+      const reservationPendingLockContext = isReservationPendingCheckIn(
+        data,
+        reservationAwareStatus,
+        checkedInOrdersRef.current
+      );
       const forceActive = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
       const wantsStatusOpen = storage.getItem("qr_show_status") === "1";
       const reservationStillActive = hasActiveReservationPayload(data);
@@ -1447,7 +1460,16 @@ if (savedTable) {
             );
             const tableOrders = parseArray(tableOrdersRaw);
             const currentOrderId = Number(orderId || data?.id || 0);
-            const replacementOrder =
+            const checkedInReplacement =
+              tableOrders.find((entry) => {
+                const entryId = Number(entry?.id);
+                if (!Number.isFinite(entryId) || entryId <= 0) return false;
+                if (Number.isFinite(currentOrderId) && entryId === currentOrderId) return false;
+                const statusLower = String(entry?.status || "").toLowerCase();
+                if (isTerminalOrderStatus(statusLower)) return false;
+                return isCheckedInReservationEntry(entry, statusLower);
+              }) || null;
+            const reservationPendingReplacement =
               tableOrders.find((entry) => {
                 const entryId = Number(entry?.id);
                 if (!Number.isFinite(entryId) || entryId <= 0) return false;
@@ -1459,13 +1481,23 @@ if (savedTable) {
                   statusLower,
                   checkedInOrdersRef.current
                 );
-              }) ||
-              tableOrders.find((entry) => {
-                const entryId = Number(entry?.id);
-                if (!Number.isFinite(entryId) || entryId <= 0) return false;
-                if (Number.isFinite(currentOrderId) && entryId === currentOrderId) return false;
-                return !isTerminalOrderStatus(String(entry?.status || "").toLowerCase());
-              }) ||
+              }) || null;
+            const keepReservationLockContext =
+              forceActive ||
+              reservationPendingLockContext ||
+              (reservationStillActive &&
+                !isCheckedInReservationEntry(data, reservationAwareStatus));
+            const replacementOrder =
+              checkedInReplacement ||
+              reservationPendingReplacement ||
+              (keepReservationLockContext
+                ? null
+                : tableOrders.find((entry) => {
+                    const entryId = Number(entry?.id);
+                    if (!Number.isFinite(entryId) || entryId <= 0) return false;
+                    if (Number.isFinite(currentOrderId) && entryId === currentOrderId) return false;
+                    return !isTerminalOrderStatus(String(entry?.status || "").toLowerCase());
+                  })) ||
               null;
 
             if (replacementOrder) {
@@ -1515,7 +1547,7 @@ if (savedTable) {
           }
         }
       }
-      if (!isTerminalStatus && isReservationPendingCheckIn(data, reservationAwareStatus, checkedInOrdersRef.current)) {
+      if (!isTerminalStatus && reservationPendingLockContext) {
         const resolvedTableNo = Number(
           data?.table_number ??
             data?.tableNumber ??
@@ -1583,13 +1615,23 @@ if (savedTable) {
         checkedInOrdersRef.current.has(Number(orderId));
       const finalStatus = stickyCheckedIn ? "checked_in" : finalReservationStatus;
       setOrderScreenStatus(finalStatus || null);
+      const keepCheckoutCompletionVisible =
+        isTerminalStatus && (s === "closed" || s === "completed");
       if (forceActive && !reservationStillActive) {
-        dismissReservationStatusLock({
-          clearActiveOrder: isTerminalStatus,
-          keepStatusOpen: !isTerminalStatus,
-        });
-        if (isTerminalStatus) {
-          return;
+        if (keepCheckoutCompletionVisible) {
+          storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
+          if (wantsStatusOpen) {
+            setShowStatus(true);
+            storage.setItem("qr_show_status", "1");
+          }
+        } else {
+          dismissReservationStatusLock({
+            clearActiveOrder: isTerminalStatus,
+            keepStatusOpen: !isTerminalStatus,
+          });
+          if (isTerminalStatus) {
+            return;
+          }
         }
       }
       if (forceActive && reservationStillActive) {

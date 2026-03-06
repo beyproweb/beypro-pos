@@ -1,5 +1,6 @@
 import {
   buildReservationShadowRecord,
+  removeReservationShadow,
   upsertReservationShadow,
 } from "../../orders/tableOrdersCache";
 
@@ -112,7 +113,13 @@ export function createConfirmFlow(deps) {
         }
       } else {
         if (hasReservationContext) {
-          // Reservation/check-in tables must not auto-exit from an empty-cart side effect.
+          // For reservation/check-in context, do not auto-close.
+          // But if user explicitly tapped "Close" on an empty cart, exit back to tables.
+          if (getPrimaryActionLabel() === "Close") {
+            await resetTableGuests(order?.table_number ?? order?.tableNumber);
+            setIsFloatingCartOpen(false);
+            navigate("/tableoverview?tab=tables");
+          }
           return;
         }
         const shadow = buildReservationShadowRecord({
@@ -286,6 +293,11 @@ export function createConfirmFlow(deps) {
     // If there are unpaid items after confirmation, keep operator on Transaction screen.
     // Navigation/checkout must always be explicit (separate action), never automatic.
     if (hasConfirmedCartUnpaid || hasSuborderUnpaid) {
+      if (getPrimaryActionLabel() === "Pay Later") {
+        setIsFloatingCartOpen(false);
+        navigate("/tableoverview?tab=tables");
+        return;
+      }
       setIsFloatingCartOpen(false);
       return;
     }
@@ -331,16 +343,45 @@ export function createConfirmFlow(deps) {
         return;
       }
 
+      const checkedInCandidates = [
+        String(order?.status || "").toLowerCase(),
+        String(order?.reservation?.status || "").toLowerCase(),
+        String(existingReservation?.status || "").toLowerCase(),
+      ];
+      const isCheckedInReservationClose =
+        hasReservationContext && checkedInCandidates.includes("checked_in");
+
+      if (isCheckedInReservationClose) {
+        const shouldProceed = window.confirm(
+          t(
+            "You are closing a checked-in reservation. This will check out the guest and remove the reservation from this table. Continue?"
+          )
+        );
+        if (!shouldProceed) return;
+      }
+
       // ✅ All delivered → close and go immediately
       try {
         await txApiRequest(`/orders/${order.id}/close${identifier}`, { method: "POST" });
-        const shadow = buildReservationShadowRecord({
-          reservation: existingReservation,
-          order,
-          tableNumber: order?.table_number ?? order?.tableNumber,
-          orderId: order?.id,
-        });
-        if (shadow) upsertReservationShadow(shadow);
+        if (isCheckedInReservationClose) {
+          removeReservationShadow({
+            reservationId:
+              existingReservation?.id ??
+              order?.reservation?.id ??
+              order?.reservation_id ??
+              order?.reservationId,
+            orderId: order?.id,
+            tableNumber: order?.table_number ?? order?.tableNumber,
+          });
+        } else {
+          const shadow = buildReservationShadowRecord({
+            reservation: existingReservation,
+            order,
+            tableNumber: order?.table_number ?? order?.tableNumber,
+            orderId: order?.id,
+          });
+          if (shadow) upsertReservationShadow(shadow);
+        }
         await resetTableGuests(order?.table_number ?? order?.tableNumber);
         broadcastTableOverviewOrderStatus("closed");
         setDiscountValue(0);

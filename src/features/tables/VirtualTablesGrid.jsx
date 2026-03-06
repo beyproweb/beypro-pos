@@ -100,10 +100,61 @@ function VirtualTablesGrid({
     [columnCount, list.length]
   );
 
+  const rowIdentitySignature = React.useMemo(() => {
+    if (rowCount <= 0) return "";
+    const cols = Math.max(1, columnCount);
+    const tokens = [];
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      const start = rowIndex * cols;
+      const rowToken = list
+        .slice(start, start + cols)
+        .map((item) => String(itemKey(item)))
+        .join(",");
+      tokens.push(rowToken);
+    }
+    return tokens.join("|");
+  }, [columnCount, itemKey, list, rowCount]);
+
+  const measureMountedRows = React.useCallback(() => {
+    setMeasuredRowHeights((prev) => {
+      let changed = false;
+      let next = prev;
+
+      rowNodesRef.current.forEach((node, rowIndex) => {
+        const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+        if (nextHeight <= 0) return;
+        const currentHeight = next[rowIndex];
+        if (currentHeight === nextHeight) return;
+
+        if (!changed) {
+          next = { ...prev };
+          changed = true;
+        }
+        next[rowIndex] = nextHeight;
+      });
+
+      if (changed) {
+        measuredRowHeightsRef.current = next;
+        return next;
+      }
+      return prev;
+    });
+  }, []);
+
   React.useEffect(() => {
     measuredRowHeightsRef.current = {};
     setMeasuredRowHeights({});
-  }, [columnCount, list.length]);
+  }, [columnCount, rowIdentitySignature]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const rafId = window.requestAnimationFrame(() => {
+      measureMountedRows();
+    });
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [measureMountedRows, rowIdentitySignature]);
 
   const rowHeights = React.useMemo(
     () =>

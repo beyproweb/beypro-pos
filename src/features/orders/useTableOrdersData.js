@@ -162,6 +162,26 @@ const getNormalizedNonReservationStatus = (order) => {
   return status;
 };
 
+const CHECKIN_REGRESSION_STATUSES = new Set([
+  "reserved",
+  "confirmed",
+  "draft",
+  "new",
+  "pending",
+  "paid",
+  "open",
+  "in_progress",
+]);
+
+const preserveCheckedInStatus = (incomingStatus, previousStatus, order) => {
+  const normalizedIncoming = normalizeOrderStatus(incomingStatus);
+  const normalizedPrevious = normalizeOrderStatus(previousStatus);
+  if (normalizedPrevious !== "checked_in") return normalizedIncoming;
+  if (!CHECKIN_REGRESSION_STATUSES.has(normalizedIncoming)) return normalizedIncoming;
+  if (!hasOrderReservationSignal(order)) return normalizedIncoming;
+  return "checked_in";
+};
+
 const mergeVisibleTableStatus = (...orders) => {
   const statuses = orders
     .map((order) =>
@@ -368,6 +388,37 @@ export default function useTableOrdersData() {
         const shadows = readReservationShadows();
         if (shadows.length === 0) return list;
 
+        const hasActiveReservationContextForShadow = (shadow) => {
+          const shadowOrderId = Number(shadow?.order_id ?? shadow?.orderId ?? shadow?.id);
+          const shadowTableNumber = Number(
+            shadow?.table_number ?? shadow?.tableNumber ?? shadow?.table
+          );
+          return (Array.isArray(data) ? data : []).some((order) => {
+            const orderStatus = normalizeOrderStatus(order?.status);
+            if (orderStatus === "closed") return false;
+            if (isOrderCancelledOrCanceled(orderStatus)) return false;
+            if (isEffectivelyFreeOrder(order)) return false;
+            const orderId = Number(order?.id);
+            const orderTableNumber = getOrderTableNumber(order);
+            if (
+              Number.isFinite(shadowOrderId) &&
+              Number.isFinite(orderId) &&
+              shadowOrderId === orderId
+            ) {
+              return true;
+            }
+            if (
+              Number.isFinite(shadowTableNumber) &&
+              Number.isFinite(orderTableNumber) &&
+              shadowTableNumber === orderTableNumber &&
+              hasOrderReservationSignal(order)
+            ) {
+              return true;
+            }
+            return false;
+          });
+        };
+
         const merged = [...list];
         shadows.forEach((shadow) => {
           const shadowReservationId = Number(shadow?.id);
@@ -375,7 +426,16 @@ export default function useTableOrdersData() {
           const shadowTableNumber = Number(
             shadow?.table_number ?? shadow?.tableNumber ?? shadow?.table
           );
-          const exists = merged.some((row) => {
+          const normalizedShadowStatus = normalizeOrderStatus(shadow?.status);
+          const shouldDowngradeCheckedInShadow =
+            normalizedShadowStatus === "checked_in" &&
+            !hasActiveReservationContextForShadow(shadow);
+          const normalizedShadow = shouldDowngradeCheckedInShadow
+            ? { ...shadow, status: "checked_out" }
+            : shadow;
+          const shadowHasIdentity =
+            Number.isFinite(shadowReservationId) || Number.isFinite(shadowOrderId);
+          const existingIndex = merged.findIndex((row) => {
             const rowReservationId = Number(row?.id);
             const rowOrderId = Number(row?.order_id ?? row?.orderId);
             const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
@@ -393,13 +453,47 @@ export default function useTableOrdersData() {
             ) {
               return true;
             }
-            return (
+            const sameTable =
               Number.isFinite(shadowTableNumber) &&
               Number.isFinite(rowTableNumber) &&
-              rowTableNumber === shadowTableNumber
-            );
+              rowTableNumber === shadowTableNumber;
+            if (!sameTable) return false;
+            const rowHasIdentity =
+              Number.isFinite(rowReservationId) || Number.isFinite(rowOrderId);
+            if (shadowHasIdentity && rowHasIdentity) return false;
+            return true;
           });
-          if (!exists) merged.push(shadow);
+          if (existingIndex < 0) {
+            const hasBackendRowForSameTable = merged.some((row) => {
+              const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+              return (
+                Number.isFinite(shadowTableNumber) &&
+                Number.isFinite(rowTableNumber) &&
+                rowTableNumber === shadowTableNumber
+              );
+            });
+            if (hasBackendRowForSameTable) {
+              return;
+            }
+            merged.push(normalizedShadow);
+            return;
+          }
+          const existing = merged[existingIndex] || {};
+          const mergedCandidate = { ...existing, ...normalizedShadow };
+          const mergedStatus = preserveCheckedInStatus(
+            existing?.status,
+            normalizedShadow?.status,
+            mergedCandidate
+          );
+          merged[existingIndex] = {
+            ...mergedCandidate,
+            status: mergedStatus,
+            order_type:
+              mergedStatus === "checked_in" &&
+              String(mergedCandidate?.order_type || "").toLowerCase() === "reservation"
+                ? "table"
+                : mergedCandidate?.order_type,
+          };
         });
         return merged;
       };
@@ -417,7 +511,10 @@ export default function useTableOrdersData() {
 
       const reservationsByOrderId = new Map();
       reservationsList.forEach((res) => {
-        if (res.order_id) reservationsByOrderId.set(Number(res.order_id), res);
+        const reservationOrderId = Number(res?.order_id ?? res?.orderId ?? res?.id);
+        if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
+          reservationsByOrderId.set(reservationOrderId, res);
+        }
       });
 
       const enrichedOrders = data.map((order) => {
@@ -520,9 +617,15 @@ export default function useTableOrdersData() {
                   ? prevMerged.items
                   : null;
               const orderWithKnownItems = knownItems ? { ...order, items: knownItems } : order;
+              const initialStatus = preserveCheckedInStatus(
+                orderWithKnownItems?.status,
+                prevMerged?.status,
+                orderWithKnownItems
+              );
               if (!acc[key]) {
                 acc[key] = {
                   ...order,
+                  status: initialStatus,
                   merged_ids: [order.id],
                   items: knownItems,
                   suborders: Array.isArray(prevMerged?.suborders)
@@ -610,8 +713,13 @@ export default function useTableOrdersData() {
                 }
                 acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
                 const nextStatus = mergeVisibleTableStatus(acc[key], order);
-                acc[key].status = nextStatus;
-                if (nextStatus !== "confirmed") {
+                const preservedStatus = preserveCheckedInStatus(
+                  nextStatus,
+                  acc[key].status,
+                  { ...acc[key], ...order }
+                );
+                acc[key].status = preservedStatus;
+                if (preservedStatus !== "confirmed") {
                   acc[key].confirmedSinceMs = null;
                   delete nextTimers[tableKey];
                 } else if (!Number.isFinite(acc[key].confirmedSinceMs)) {
@@ -730,7 +838,11 @@ export default function useTableOrdersData() {
             acc[key].items = [...(acc[key].items || []), ...(order.items || [])];
             acc[key].merged_items = acc[key].items;
             acc[key].total = Number(acc[key].total || 0) + Number(order.total || 0);
-            acc[key].status = mergeVisibleTableStatus(acc[key], order);
+            const nextStatus = mergeVisibleTableStatus(acc[key], order);
+            acc[key].status = preserveCheckedInStatus(nextStatus, acc[key].status, {
+              ...acc[key],
+              ...order,
+            });
           }
           const anyUnpaid = (acc[key].items || []).some((i) => !i.paid_at && !i.paid);
           const explicitPaid =
@@ -765,24 +877,28 @@ export default function useTableOrdersData() {
           const currentTableNumber = getOrderTableNumber(o);
           const tableKey = String(currentTableNumber);
           const prevMerged = prevByTable.get(currentTableNumber);
+          const preservedStatus = preserveCheckedInStatus(o?.status, prevMerged?.status, o);
+          const normalizedIncomingStatus = normalizeOrderStatus(o?.status);
+          const orderWithPreservedStatus =
+            preservedStatus !== normalizedIncomingStatus ? { ...o, status: preservedStatus } : o;
 
-          const itemsChanged = !areItemsEquivalent(prevMerged?.items, o.items);
+          const itemsChanged = !areItemsEquivalent(prevMerged?.items, orderWithPreservedStatus.items);
 
           const reservationUnchanged =
-            getReservationFingerprint(prevMerged) === getReservationFingerprint(o);
+            getReservationFingerprint(prevMerged) === getReservationFingerprint(orderWithPreservedStatus);
 
           if (
             !itemsChanged &&
-            prevMerged?.status === o.status &&
-            prevMerged?.total === o.total &&
+            prevMerged?.status === orderWithPreservedStatus.status &&
+            prevMerged?.total === orderWithPreservedStatus.total &&
             reservationUnchanged
           ) {
             return prevMerged;
           }
 
           return {
-            ...o,
-            confirmedSinceMs: getConfirmedSinceMs(prevMerged, o, {
+            ...orderWithPreservedStatus,
+            confirmedSinceMs: getConfirmedSinceMs(prevMerged, orderWithPreservedStatus, {
               isInitialLoad,
               tableKey,
               timers: nextTimers,

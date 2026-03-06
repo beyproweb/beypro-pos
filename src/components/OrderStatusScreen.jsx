@@ -101,6 +101,8 @@ const normItem = (it) => ({
     "",
   extras: parseMaybeJSON(it.extras),
   payment_method: it.payment_method || it.paymentMethod || null,
+  payment_status: it.payment_status || it.paymentStatus || it.payment_state || it.paymentState || null,
+  paid: it.paid === true || it.is_paid === true,
   paid_at: it.paid_at || it.paidAt || null,
 });
 
@@ -120,6 +122,14 @@ const isCancelledItemStatus = (value) => {
   return ["canceled", "cancelled", "void", "deleted"].includes(status);
 };
 
+const isPaidLikeItem = (item) => {
+  if (!item || typeof item !== "object") return false;
+  const paymentStatus = String(
+    item?.payment_status ?? item?.paymentStatus ?? item?.payment_state ?? item?.paymentState ?? ""
+  ).toLowerCase();
+  return Boolean(item?.paid === true || item?.is_paid === true || item?.paid_at || item?.paidAt || paymentStatus === "paid");
+};
+
 const isCancelledLikeOrderStatus = (value) => {
   const status = String(value || "").toLowerCase();
   return ["canceled", "cancelled", "void", "deleted"].includes(status);
@@ -127,7 +137,7 @@ const isCancelledLikeOrderStatus = (value) => {
 
 const isFinishedLikeOrderStatus = (value) => {
   const status = String(value || "").toLowerCase();
-  return ["delivered", "served", "closed", "completed"].includes(status);
+  return ["delivered", "served", "closed", "completed", "visit_completed"].includes(status);
 };
 
 const hasReservationData = (entry) => {
@@ -578,6 +588,7 @@ const OrderStatusScreen = ({
   t = (s) => s,
   buildUrl = (p) => p,
   appendIdentifier,
+  checkoutCompletedView = false,
 }) => {
   const normalizedOrderScreenStatus = normalizeReservationStatus(orderScreenStatus);
   const [isDarkUi, setIsDarkUi] = useState(() => (typeof forceDark === "boolean" ? forceDark : false));
@@ -772,8 +783,19 @@ const OrderStatusScreen = ({
   useEffect(() => {
     if (!order) return;
     const status = (order.status || "").toLowerCase();
-    const preserveWhileReserved =
-      hasReservationPayload(order) || (forceLock && hasReservationPayload(order));
+    const normalizedOrderType = String(order?.order_type || "").toLowerCase();
+    const resolvedTableNo = Number(table ?? order?.table_number ?? order?.tableNumber ?? 0);
+    const isTableContextOrder =
+      normalizedOrderType === "table" ||
+      normalizedOrderType === "reservation" ||
+      hasReservationPayload(order) ||
+      (Number.isFinite(resolvedTableNo) && resolvedTableNo > 0);
+    const keepVisibleForCheckoutCompletion =
+      checkoutCompletedView ||
+      (["closed", "completed"].includes(status) && isTableContextOrder);
+    const reservationPendingCheckIn =
+      !checkedInSticky && isReservationPendingCheckIn(order, normalizedOrderScreenStatus);
+    const preserveWhileReserved = reservationPendingCheckIn || (forceLock && reservationPendingCheckIn);
     const orderCancelReason =
       order?.cancellation_reason || order?.cancel_reason || order?.cancelReason || "";
     const hasCancelledItems = items.some((item) => isCancelledItemStatus(item?.kitchen_status));
@@ -782,10 +804,25 @@ const OrderStatusScreen = ({
       status === "canceled" ||
       Boolean(orderCancelReason) ||
       hasCancelledItems;
-    if (FINISHED_STATES.includes(status) && !preserveWhileReserved && !keepVisibleForCancellation) {
+    if (
+      FINISHED_STATES.includes(status) &&
+      !preserveWhileReserved &&
+      !keepVisibleForCancellation &&
+      !keepVisibleForCheckoutCompletion
+    ) {
       onFinished?.();
     }
-  }, [order, items, forceLock, hasReservationPayload, onFinished]);
+  }, [
+    order,
+    items,
+    forceLock,
+    onFinished,
+    checkedInSticky,
+    normalizedOrderScreenStatus,
+    hasReservationPayload,
+    checkoutCompletedView,
+    table,
+  ]);
 
   const fetchOrder = async () => {
     if (!orderId) return;
@@ -970,14 +1007,43 @@ const OrderStatusScreen = ({
   const cancelledItems = items.filter((item) => isCancelledItemStatus(item?.kitchen_status));
   const allItemsCancelled = items.length > 0 && items.every((item) => isCancelledItemStatus(item?.kitchen_status));
   const firstItemCancelReason = String(cancelledItems[0]?.cancellation_reason || "").trim();
-  const cancelReason = String(orderCancelReason || firstItemCancelReason || "").trim();
-  const isCancelledFlow = isOrderCancelled || allItemsCancelled || Boolean(orderCancelReason);
+  const isCancelledFlow = isOrderCancelled || allItemsCancelled;
+  const cancelReason = isCancelledFlow
+    ? String(orderCancelReason || firstItemCancelReason || "").trim()
+    : "";
   const reservationContextStatusHint = hasCheckedInSignal
     ? "checked_in"
     : normalizedOrderScreenStatus || orderStatus;
   const isReservedOrderContext =
     !hasCheckedInSignal && isReservationPendingCheckIn(order, reservationContextStatusHint);
+  const concertBookingPaymentStatus = normalizeReservationStatus(
+    order?.concert_booking_payment_status || order?.concertBookingPaymentStatus
+  );
+  const concertBookingStatus = normalizeReservationStatus(
+    order?.concert_booking_status || order?.concertBookingStatus
+  );
+  const hasConcertBookingContext =
+    Number(order?.concert_booking_id || order?.concertBookingId) > 0 ||
+    Boolean(concertBookingPaymentStatus || concertBookingStatus);
+  const hasReservationContext = hasReservationPayload(order);
+  const normalizedOrderType = String(order?.order_type || "").toLowerCase();
+  const isTableContextOrder =
+    normalizedOrderType === "table" ||
+    normalizedOrderType === "reservation" ||
+    hasReservationContext ||
+    (Number.isFinite(Number(tableNo)) && Number(tableNo) > 0);
+  const shouldShowCheckoutCompletedView =
+    checkoutCompletedView || (isTableContextOrder && (orderStatus === "closed" || orderStatus === "completed"));
   const effectiveOrderStatus = (() => {
+    if (shouldShowCheckoutCompletedView) return "visit_completed";
+    if (isReservedOrderContext && hasConcertBookingContext) {
+      if (concertBookingPaymentStatus === "confirmed" || concertBookingStatus === "confirmed") {
+        return "booking_confirm";
+      }
+      if (concertBookingPaymentStatus === "pending_bank_transfer") {
+        return "pending_bank_transfer";
+      }
+    }
     if (isReservedOrderContext) return "reserved";
     if (hasCheckedInSignal) return "checked_in";
     if (driverStatus === "on_road" || driverStatus === "on-road") return "on_road";
@@ -986,7 +1052,15 @@ const OrderStatusScreen = ({
   })();
   const isFinishedFlow = isFinishedLikeOrderStatus(effectiveOrderStatus);
   const hasVisibleOrderItems = items.some((item) => !isCancelledItemStatus(item?.kitchen_status));
-  const hasReservationContext = hasReservationPayload(order);
+  const hasPaidItems = items.some((item) => !isCancelledItemStatus(item?.kitchen_status) && isPaidLikeItem(item));
+  const orderPaymentStatus = normalizeReservationStatus(order?.payment_status || order?.paymentStatus);
+  const isOrderPaidLike =
+    order?.is_paid === true ||
+    orderPaymentStatus === "paid" ||
+    orderStatus === "paid" ||
+    orderStatus === "closed" ||
+    orderStatus === "completed";
+  const canFinalizeReservation = hasPaidItems || isOrderPaidLike;
   const visibleItems = isReservedOrderContext ? [] : items;
   const visibleTotal = visibleItems.reduce((sum, it) => {
     if (isCancelledItemStatus(it?.kitchen_status)) return sum;
@@ -999,11 +1073,17 @@ const OrderStatusScreen = ({
   const showCloseButton =
     typeof onClose === "function" &&
     ((!isReservedOrderContext && (visibleItems.length === 0 || isCancelledFlow || isFinishedFlow)) ||
-      (isReservedOrderContext && allItemsCancelled));
+      (isReservedOrderContext && allItemsCancelled)) &&
+    (!hasReservationContext || canFinalizeReservation);
   const showCheckoutButton =
     typeof onCheckout === "function" &&
     hasReservationContext &&
-    hasCheckedInSignal;
+    hasCheckedInSignal &&
+    canFinalizeReservation;
+  const showPaymentRequiredNotice =
+    hasReservationContext &&
+    !canFinalizeReservation &&
+    !isCancelledFlow;
 
   const normalizeStatus = (s) => {
     const v = normalizeReservationStatus(s);
@@ -1015,6 +1095,9 @@ const OrderStatusScreen = ({
 
   const displayStatus = (s) => {
     const v = normalizeStatus(s);
+    if (v === "visit_completed") return t("Order Completed");
+    if (v === "booking_confirm") return t("Booking confirm!");
+    if (v === "pending_bank_transfer") return t("Pending bank transfer");
     if (v === "checked_in") return t("Guest checked in");
     if (v === "on_road") return t("On Road");
     if (v === "ready") return t("Order ready");
@@ -1026,6 +1109,9 @@ const OrderStatusScreen = ({
 
   const badgeColor = (status) => {
     const s = normalizeStatus(status);
+    if (s === "visit_completed") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (s === "booking_confirm") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (s === "pending_bank_transfer") return "bg-amber-50 text-amber-700 border-amber-200";
     if (s === "checked_in") return "bg-emerald-50 text-emerald-700 border-emerald-200";
     if (s === "delivered") return "bg-emerald-50 text-emerald-700 border-emerald-200";
     if (s === "on_road") return "bg-sky-600 text-white border-sky-700 shadow-[0_10px_24px_rgba(2,132,199,0.24)] dark:bg-sky-500 dark:text-white dark:border-sky-400";
@@ -1175,6 +1261,14 @@ const OrderStatusScreen = ({
             />
           ) : null}
 
+          {showPaymentRequiredNotice ? (
+            <section className="rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+              <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                {t("Payment required before Close or Check Out.")}
+              </div>
+            </section>
+          ) : null}
+
           {showCheckoutButton ? (
             <InlineBottomActions
               t={t}
@@ -1182,9 +1276,13 @@ const OrderStatusScreen = ({
               secondaryLabel={typeof onClose === "function" ? t("Close") : undefined}
               onPrimary={checkoutPending ? null : onCheckout}
               onSecondary={
-                typeof onClose === "function"
-                  ? () => onClose?.({ allowForceClose: true })
-                  : undefined
+                checkoutPending
+                  ? null
+                  : typeof onCheckout === "function"
+                    ? onCheckout
+                    : typeof onClose === "function"
+                      ? () => onClose?.({ allowForceClose: true })
+                      : undefined
               }
             />
           ) : null}

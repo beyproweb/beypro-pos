@@ -128,6 +128,14 @@ const getReadyAtLabel = (order, productPrepById = {}) => {
   });
 };
 
+const getConcertEventStartMs = (event) => {
+  const datePart = String(event?.event_date || "").slice(0, 10);
+  const timePart = String(event?.event_time || "").slice(0, 8);
+  if (!datePart) return NaN;
+  const combined = `${datePart}T${timePart || "00:00:00"}`;
+  return parseLooseDateToMs(combined);
+};
+
 const TAB_LIST = [
   { id: "takeaway", label: "Pre Order", icon: "⚡" },
   { id: "tables", label: "Tables", icon: "🍽️" },
@@ -269,6 +277,30 @@ const isAbortError = (err) =>
     .toLowerCase()
     .includes("abort");
 
+const CHECKIN_REGRESSION_STATUSES = new Set([
+  "reserved",
+  "confirmed",
+  "draft",
+  "new",
+  "pending",
+  "paid",
+  "open",
+  "in_progress",
+]);
+
+const preserveCheckedInStatus = (incomingStatus, previousOrder, incomingPatch = null) => {
+  const normalizedIncoming = normalizeOrderStatus(incomingStatus);
+  const normalizedPrevious = normalizeOrderStatus(previousOrder?.status);
+  if (normalizedPrevious !== "checked_in") return normalizedIncoming;
+  if (!CHECKIN_REGRESSION_STATUSES.has(normalizedIncoming)) return normalizedIncoming;
+  const signalProbe = {
+    ...(previousOrder && typeof previousOrder === "object" ? previousOrder : {}),
+    ...(incomingPatch && typeof incomingPatch === "object" ? incomingPatch : {}),
+  };
+  if (!hasReservationSignal(signalProbe)) return normalizedIncoming;
+  return "checked_in";
+};
+
 
 
 
@@ -328,11 +360,15 @@ export default function TableOverview() {
   const canSeeTablesTab = useHasPermission("tables");
   const canSeeKitchenTab = useHasPermission("kitchen");
   const canSeeHistoryTab = useHasPermission("history");
-  const canSeePacketTab = useHasPermission("packet-orders");
+const canSeePacketTab = useHasPermission("packet-orders");
   const canSeePhoneTab = useHasPermission("phone-orders");
   const canSeeRegisterTab = useHasPermission("register");
   const canSeeTakeawayTab = useHasPermission("takeaway");
 const [activeArea, setActiveArea] = useState("ALL");
+  const [hasUpcomingConcerts, setHasUpcomingConcerts] = useState(false);
+  const [concertBookings, setConcertBookings] = useState([]);
+  const [concertBookingsLoading, setConcertBookingsLoading] = useState(false);
+  const [concertBookingUpdatingId, setConcertBookingUpdatingId] = useState(null);
   const {
     ordersByTable: ordersByTableRaw,
     setOrders,
@@ -444,7 +480,9 @@ useEffect(() => {
   };
 }, []);
 
-const handleCloseTable = async (orderOrId) => {
+const handleCloseTable = async (orderOrId, options = {}) => {
+  const preserveReservationShadow = options?.preserveReservationShadow !== false;
+  const requirePaidForClose = options?.requirePaid === true || !preserveReservationShadow;
   const order = orderOrId && typeof orderOrId === "object" ? orderOrId : null;
   const orderId = order?.id ?? orderOrId;
 
@@ -453,6 +491,48 @@ const handleCloseTable = async (orderOrId) => {
     if (!Array.isArray(items)) {
       toast.error("Failed to verify kitchen items");
       return;
+    }
+
+    if (requirePaidForClose) {
+      const isCancelledLikeItem = (item) => {
+        const status = String(
+          item?.status ?? item?.item_status ?? item?.kitchen_status ?? ""
+        ).toLowerCase();
+        return ["cancelled", "canceled", "deleted", "void"].includes(status);
+      };
+      const isPaidLikeItem = (item) => {
+        const paymentStatus = String(item?.payment_status ?? item?.paymentStatus ?? "").toLowerCase();
+        return Boolean(
+          item?.paid === true ||
+            item?.paid_at ||
+            item?.paidAt ||
+            paymentStatus === "paid"
+        );
+      };
+      const activeItems = items.filter((item) => !isCancelledLikeItem(item));
+      const hasItemPaidMarkers = activeItems.some((item) => {
+        const paymentStatus = String(item?.payment_status ?? item?.paymentStatus ?? "").toLowerCase();
+        return (
+          typeof item?.paid === "boolean" ||
+          item?.paid_at != null ||
+          item?.paidAt != null ||
+          paymentStatus === "paid" ||
+          paymentStatus === "unpaid"
+        );
+      });
+      const orderMarkedPaid = Boolean(
+        order?.is_paid ||
+          String(order?.payment_status || "").toLowerCase() === "paid" ||
+          String(order?.status || "").toLowerCase() === "paid"
+      );
+      const hasUnpaidActiveItems = hasItemPaidMarkers
+        ? activeItems.some((item) => !isPaidLikeItem(item))
+        : activeItems.length > 0 && !orderMarkedPaid;
+
+      if (hasUnpaidActiveItems) {
+        toast.warning(t("Cannot check out: some items are not paid yet."));
+        return false;
+      }
     }
 
     // ✅ Fetch current kitchen exclusion settings (same as TransactionScreen)
@@ -483,7 +563,34 @@ const handleCloseTable = async (orderOrId) => {
       tableNumber,
       orderId: order?.id ?? orderId,
     });
-    if (shadow) upsertReservationShadow(shadow);
+    if (shadow && preserveReservationShadow) upsertReservationShadow(shadow);
+    if (!preserveReservationShadow) {
+      const resolvedReservationId = Number(
+        order?.reservation?.id ??
+          order?.reservation_id ??
+          order?.reservationId ??
+          shadow?.id
+      );
+      removeReservationShadow({
+        reservationId: Number.isFinite(resolvedReservationId) ? resolvedReservationId : null,
+        orderId: order?.id ?? orderId,
+        tableNumber,
+      });
+      setReservationsToday((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        return list.filter((row) => {
+          const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+          const rowReservationId = Number(row?.id);
+          const rowOrderId = Number(row?.order_id ?? row?.orderId);
+          if (Number.isFinite(tableNumber) && rowTableNumber === tableNumber) return false;
+          if (Number.isFinite(resolvedReservationId) && rowReservationId === resolvedReservationId)
+            return false;
+          if (Number.isFinite(Number(order?.id ?? orderId)) && rowOrderId === Number(order?.id ?? orderId))
+            return false;
+          return true;
+        });
+      });
+    }
     setOrders((prev) => {
       const prevArr = Array.isArray(prev) ? prev : [];
       const next = prevArr.filter((row) => {
@@ -544,9 +651,6 @@ const handleDeleteReservation = useCallback(
       return;
     }
 
-    const ok = window.confirm(t("Delete this reservation?"));
-    if (!ok) return;
-
     const normalizedStatus = normalizeOrderStatus(table?.order?.status);
     const normalizedOrderType = String(table?.order?.order_type || "").trim().toLowerCase();
     const isReservationLikeOrder =
@@ -554,17 +658,37 @@ const handleDeleteReservation = useCallback(
       normalizedOrderType === "reservation" ||
       !!reservationInfo?.id;
 
-    let itemCount = Array.isArray(table?.order?.items) ? table.order.items.length : null;
+    const isCancelledLikeItem = (item) => {
+      const status = String(
+        item?.status ?? item?.item_status ?? item?.kitchen_status ?? ""
+      ).toLowerCase();
+      return ["cancelled", "canceled", "deleted", "void"].includes(status);
+    };
+
+    let itemCount = Array.isArray(table?.order?.items)
+      ? table.order.items.filter((item) => !isCancelledLikeItem(item)).length
+      : null;
     if (!Number.isFinite(itemCount) && Number.isFinite(orderId)) {
       try {
-        const latestItems = await secureFetch(`/orders/${orderId}/items`);
+        const latestItems = await secureFetch(`/orders/${orderId}/items?include_cancelled=1`);
         const items = Array.isArray(latestItems) ? latestItems : [];
-        itemCount = items.length;
+        itemCount = items.filter((item) => !isCancelledLikeItem(item)).length;
       } catch {
         itemCount = null;
       }
     }
     const totalAmount = Number(table?.order?.total || 0);
+    const hasAnyItemsInCartOrTable = Number(itemCount || 0) > 0 || totalAmount > 0;
+    if (hasAnyItemsInCartOrTable) {
+      window.alert(
+        t("You cannot delete this reservation while items are in cart. Please clear or close the table/cart first.")
+      );
+      return;
+    }
+
+    const ok = window.confirm(t("Delete this reservation?"));
+    if (!ok) return;
+
     const isEmptyReservationOnly =
       isReservationLikeOrder && totalAmount <= 0 && Number(itemCount || 0) === 0;
 
@@ -883,6 +1007,15 @@ const handleCheckinReservation = useCallback(
           : await secureFetch(`/orders/reservations/${reservationId}/checkin`, { method: "POST" });
       } catch (checkinErr) {
         const statusCode = Number(checkinErr?.details?.status);
+        const errorCode = String(checkinErr?.details?.body?.code || "").toLowerCase();
+        const isConcertBookingUnconfirmed =
+          statusCode === 409 && errorCode === "concert_booking_unconfirmed";
+        if (isConcertBookingUnconfirmed) {
+          window.alert(
+            t("Concert booking is not confirmed yet. Please confirm booking before check-in.")
+          );
+          return;
+        }
         const message = String(checkinErr?.message || "").toLowerCase();
         const shouldRetryAfterRestore =
           statusCode === 404 &&
@@ -1511,10 +1644,111 @@ useEffect(() => {
   setToDate(today);
 }, []);
 
+  const loadConcertBookingsForOverview = useCallback(async () => {
+    setConcertBookingsLoading(true);
+    try {
+      const eventsRes = await secureFetch("/concerts/events?include_hidden=true");
+      const allEvents = Array.isArray(eventsRes?.events) ? eventsRes.events : [];
+      const nowMs = Date.now();
+      const upcomingEvents = allEvents
+        .filter((event) => String(event?.status || "").toLowerCase() === "active")
+        .filter((event) => {
+          const startMs = getConcertEventStartMs(event);
+          return Number.isFinite(startMs) && startMs >= nowMs;
+        })
+        .sort((a, b) => {
+          const aMs = getConcertEventStartMs(a);
+          const bMs = getConcertEventStartMs(b);
+          return aMs - bMs;
+        });
+
+      if (upcomingEvents.length === 0) {
+        setHasUpcomingConcerts(false);
+        setConcertBookings([]);
+        return;
+      }
+
+      setHasUpcomingConcerts(true);
+
+      const bookingChunks = await Promise.all(
+        upcomingEvents.map(async (event) => {
+          try {
+            const res = await secureFetch(`/concerts/events/${event.id}/bookings`);
+            const rows = Array.isArray(res?.bookings) ? res.bookings : [];
+            return rows.map((booking) => ({
+              ...booking,
+              event_id: event.id,
+              event_title: event.event_title || "",
+              artist_name: event.artist_name || "",
+              event_date: event.event_date,
+              event_time: event.event_time,
+            }));
+          } catch (err) {
+            console.warn("⚠️ Failed to load concert bookings for event", event.id, err);
+            return [];
+          }
+        })
+      );
+
+      const merged = bookingChunks
+        .flat()
+        .sort((a, b) => {
+          const aEventMs = getConcertEventStartMs(a);
+          const bEventMs = getConcertEventStartMs(b);
+          if (aEventMs !== bEventMs) return aEventMs - bEventMs;
+          const aCreated = parseLooseDateToMs(a?.created_at) || 0;
+          const bCreated = parseLooseDateToMs(b?.created_at) || 0;
+          return bCreated - aCreated;
+        });
+      setConcertBookings(merged);
+    } catch (err) {
+      console.error("❌ Failed to load upcoming concert bookings for table overview:", err);
+      setHasUpcomingConcerts(false);
+      setConcertBookings([]);
+    } finally {
+      setConcertBookingsLoading(false);
+    }
+  }, []);
+
+  const updateConcertBookingStatusFromOverview = useCallback(
+    async (bookingId, paymentStatus) => {
+      const numericBookingId = Number(bookingId);
+      if (!Number.isFinite(numericBookingId) || numericBookingId <= 0) return;
+      setConcertBookingUpdatingId(numericBookingId);
+      try {
+        await secureFetch(`/concerts/bookings/${numericBookingId}/payment-status`, {
+          method: "PATCH",
+          body: JSON.stringify({ payment_status: paymentStatus }),
+        });
+        toast.success(t("Saved successfully!"));
+        await Promise.all([loadConcertBookingsForOverview(), fetchOrders()]);
+      } catch (err) {
+        console.error("❌ Failed to update concert booking from table overview:", err);
+        toast.error(err?.message || t("Failed to save changes"));
+      } finally {
+        setConcertBookingUpdatingId(null);
+      }
+    },
+    [fetchOrders, loadConcertBookingsForOverview, t]
+  );
+
+  useEffect(() => {
+    if (isStressModeActive) return;
+    if (activeTab !== "tables") return;
+    loadConcertBookingsForOverview();
+  }, [activeTab, isStressModeActive, loadConcertBookingsForOverview]);
+
   useEffect(() => {
     if (tableSettings.showAreas !== false) return;
     if (activeArea !== "ALL") setActiveArea("ALL");
   }, [tableSettings.showAreas, activeArea]);
+
+  useEffect(() => {
+    if (hasUpcomingConcerts) return;
+    if (activeArea === "__VIEW_BOOKING__") {
+      setActiveArea("ALL");
+    }
+  }, [activeArea, hasUpcomingConcerts]);
 
   // If the app stays open across midnight, refresh tables so reservations appear on their day.
   useEffect(() => {
@@ -1768,20 +2002,29 @@ useEffect(() => {
     const patch =
       nextStatus === "paid"
         ? {
-            status: "paid",
             payment_status: "paid",
             is_paid: true,
             total: 0,
             ...(incomingPatch || null),
           }
-          : {
-              status: detail.status,
-              ...(incomingPatch || null),
-            };
+        : {
+            status: detail.status,
+            ...(incomingPatch || null),
+          };
 
       const next = prevArr.map((o) => {
         if (Number(o?.table_number) !== tableNumber) return o;
         found = true;
+        const shouldPreserveCheckedInOnPaid =
+          nextStatus === "paid" &&
+          normalizeOrderStatus(o?.status) === "checked_in" &&
+          hasReservationSignal(o);
+        const resolvedStatus =
+          nextStatus === "paid"
+            ? shouldPreserveCheckedInOnPaid
+              ? "checked_in"
+              : "paid"
+            : preserveCheckedInStatus(detail.status, o, incomingPatch);
         const paidItemsSource =
           nextStatus === "paid"
             ? Array.isArray(incomingPatch?.items)
@@ -1798,6 +2041,7 @@ useEffect(() => {
           ...o,
           ...(orderId != null && Number.isFinite(orderId) ? { id: orderId } : null),
           ...patch,
+          ...(resolvedStatus ? { status: resolvedStatus } : null),
           ...(nextStatus === "paid"
             ? {
                 items: markItemsPaid(paidItemsSource),
@@ -1813,6 +2057,7 @@ useEffect(() => {
           ...(orderId != null && Number.isFinite(orderId) ? { id: orderId } : null),
           table_number: tableNumber,
           ...patch,
+          ...(nextStatus === "paid" ? { status: "paid" } : null),
           ...(nextStatus === "paid"
             ? {
                 items: markItemsPaid(incomingPatch?.items),
@@ -1875,7 +2120,6 @@ useEffect(() => {
       const basePatch =
         nextStatus === "paid"
           ? {
-              status: "paid",
               payment_status: "paid",
               is_paid: true,
               total: 0,
@@ -1888,7 +2132,17 @@ useEffect(() => {
         const sameOrder = hasOrderId && Number(o?.id) === normalizedOrderId;
         if (!sameTable && !sameOrder) return o;
         found = true;
+        const shouldPreserveCheckedInOnPaid =
+          nextStatus === "paid" &&
+          normalizeOrderStatus(o?.status) === "checked_in" &&
+          hasReservationSignal(o);
         const patchObj = patch && typeof patch === "object" ? patch : null;
+        const resolvedStatus =
+          nextStatus === "paid"
+            ? shouldPreserveCheckedInOnPaid
+              ? "checked_in"
+              : "paid"
+            : preserveCheckedInStatus(status, o, patchObj);
         const paidItemsSource =
           nextStatus === "paid"
             ? Array.isArray(patchObj?.items)
@@ -1907,9 +2161,9 @@ useEffect(() => {
           ...(hasOrderId ? { id: normalizedOrderId } : null),
           ...basePatch,
           ...(patchObj || null),
+          ...(resolvedStatus ? { status: resolvedStatus } : null),
           ...(nextStatus === "paid"
             ? {
-                status: "paid",
                 payment_status: "paid",
                 is_paid: true,
                 total: 0,
@@ -1927,9 +2181,9 @@ useEffect(() => {
           table_number: normalizedTableNumber,
           ...basePatch,
           ...(patchObj || null),
+          ...(nextStatus === "paid" ? { status: "paid" } : null),
           ...(nextStatus === "paid"
             ? {
-                status: "paid",
                 payment_status: "paid",
                 is_paid: true,
                 total: 0,
@@ -2012,12 +2266,77 @@ useEffect(() => {
     refetch();
   };
 
+  const onReservationCheckedOutSocket = (payload) => {
+    const tableNumber = Number(
+      payload?.table_number ??
+        payload?.reservation?.table_number ??
+        payload?.order?.table_number
+    );
+    if (!Number.isFinite(tableNumber)) return;
+
+    const checkedOutReservation = {
+      id:
+        payload?.reservation_id ??
+        payload?.reservationId ??
+        payload?.id ??
+        payload?.order_id ??
+        payload?.orderId ??
+        null,
+      order_id:
+        payload?.order_id ??
+        payload?.orderId ??
+        payload?.reservation_id ??
+        payload?.reservationId ??
+        payload?.id ??
+        null,
+      table_number: tableNumber,
+      status: "checked_out",
+      order_type: "reservation",
+      reservation_date: payload?.reservation_date ?? payload?.reservationDate ?? null,
+      reservation_time: payload?.reservation_time ?? payload?.reservationTime ?? null,
+      reservation_clients: payload?.reservation_clients ?? payload?.reservationClients ?? 0,
+      reservation_notes: payload?.reservation_notes ?? payload?.reservationNotes ?? "",
+      customer_name: payload?.customer_name ?? payload?.customerName ?? "",
+      customer_phone: payload?.customer_phone ?? payload?.customerPhone ?? "",
+    };
+
+    upsertReservationShadow(checkedOutReservation);
+    setReservationsToday((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const next = list.filter((row) => {
+        const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+        const rowReservationId = Number(row?.id);
+        const rowOrderId = Number(row?.order_id ?? row?.orderId);
+        if (rowTableNumber === tableNumber) return false;
+        if (
+          checkedOutReservation.id != null &&
+          Number.isFinite(Number(checkedOutReservation.id)) &&
+          rowReservationId === Number(checkedOutReservation.id)
+        ) {
+          return false;
+        }
+        if (
+          checkedOutReservation.order_id != null &&
+          Number.isFinite(Number(checkedOutReservation.order_id)) &&
+          rowOrderId === Number(checkedOutReservation.order_id)
+        ) {
+          return false;
+        }
+        return true;
+      });
+      next.push(checkedOutReservation);
+      return next.sort((a, b) => Number(a?.table_number) - Number(b?.table_number));
+    });
+    refetch();
+  };
+
   socket.on("orders_updated", refetch);
   // Some backend flows (e.g. closing empty orders) emit `order_closed` without `orders_updated`.
   socket.on("order_closed", onOrderClosedSocket);
   socket.on("order_confirmed", onOrderConfirmedSocket);
   socket.on("payment_made", onPaymentMadeSocket);
   socket.on("order_cancelled", onOrderCancelledSocket);
+  socket.on("reservation_checked_out", onReservationCheckedOutSocket);
   // ⚡ Immediate local refreshes (dispatched from TransactionScreen)
   const handleLocalRefresh = (event) => {
     const didPatch = applyLocalOrderStatusPatch(event?.detail);
@@ -2043,6 +2362,7 @@ useEffect(() => {
     socket.off("order_confirmed", onOrderConfirmedSocket);
     socket.off("payment_made", onPaymentMadeSocket);
     socket.off("order_cancelled", onOrderCancelledSocket);
+    socket.off("reservation_checked_out", onReservationCheckedOutSocket);
     window.removeEventListener("beypro:orders-local-refresh", handleLocalRefresh);
   };
 }, [activeTab, effectiveReservationsToday, loadDataForTab, fetchOrders, fetchPacketOrdersCount, isStressModeActive]);
@@ -2114,7 +2434,7 @@ const reservationsForModel = React.useMemo(() => {
       const reservationOrder = ordersForTable.find((order) => {
         const status = normalizeOrderStatus(order?.status);
         if (!hasReservationSignal(order)) return false;
-        return status === "reserved" || order?.order_type === "reservation";
+        return status === "reserved" || status === "checked_in" || order?.order_type === "reservation";
       });
       if (!reservationOrder) return;
 
@@ -2592,6 +2912,11 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       formatAreaLabel={formatAreaLabel}
       t={t}
       cardProps={tableCardProps}
+      showViewBookingTab={hasUpcomingConcerts}
+      concertBookings={concertBookings}
+      concertBookingsLoading={concertBookingsLoading}
+      concertBookingUpdatingId={concertBookingUpdatingId}
+      onConcertBookingUpdateStatus={updateConcertBookingStatusFromOverview}
     />
   )}
 

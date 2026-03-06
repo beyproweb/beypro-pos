@@ -67,7 +67,8 @@ function resolveUploadedAsset(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
   if (/^https?:\/\//i.test(value)) return value;
-  return `${API_URL}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+  const uploadsBase = API_BASE || "";
+  return `${uploadsBase}/uploads/${value.replace(/^\/?uploads\//, "")}`;
 }
 
 const QR_PREFIX = "qr_";
@@ -845,6 +846,14 @@ const DICT = {
     "Voice Order": "Voice Order",
     Categories: "Categories",
     "Loyalty Card": "Loyalty Card",
+    "Concert Tickets": "Concert Tickets",
+    "Buy Ticket": "Buy Ticket",
+    "Reserve Table": "Reserve Table",
+    "Ticket Types / Packages": "Ticket Types / Packages",
+    "Bank Transfer": "Bank Transfer",
+    "Available table": "Available table",
+    "No available concert tables in this area": "No available concert tables in this area",
+    "Bank transfer reference (optional)": "Bank transfer reference (optional)",
     "Stamp my card": "Stamp my card",
     Reward: "Reward",
     "Free Menu Item": "Free Menu Item",
@@ -1017,7 +1026,15 @@ const DICT = {
     Search: "Ara",
     "Voice Order": "Sesli Sipariş",
     Categories: "Kategoriler",
-    "Loyalty Card": "Sadakat Kartı",
+    "Loyalty Card": "Abone Kartı",
+    "Concert Tickets": "Konser Biletleri",
+    "Buy Ticket": "Bilet Al",
+    "Reserve Table": "Masa Rezerve Et",
+    "Ticket Types / Packages": "Bilet Türleri / Paketler",
+    "Bank Transfer": "Banka Havalesi",
+    "Available table": "Uygun masa",
+    "No available concert tables in this area": "Bu alanda uygun konser masası yok",
+    "Bank transfer reference (optional)": "Banka havale referansı (opsiyonel)",
     "Stamp my card": "Kartımı damgala",
     Reward: "Ödül",
     "Free Menu Item": "Ücretsiz Menü Ürünü",
@@ -1099,6 +1116,14 @@ const DICT = {
     "Voice Order": "Sprachbestellung",
     Categories: "Kategorien",
     "Loyalty Card": "Treuekarte",
+    "Concert Tickets": "Konzerttickets",
+    "Buy Ticket": "Ticket kaufen",
+    "Reserve Table": "Tisch reservieren",
+    "Ticket Types / Packages": "Ticketarten / Pakete",
+    "Bank Transfer": "Banküberweisung",
+    "Available table": "Verfügbarer Tisch",
+    "No available concert tables in this area": "Keine verfügbaren Konzerttische in diesem Bereich",
+    "Bank transfer reference (optional)": "Überweisungsreferenz (optional)",
     "Stamp my card": "Karte stempeln",
     Reward: "Belohnung",
     "Free Menu Item": "Kostenloser Menüartikel",
@@ -1175,6 +1200,14 @@ const DICT = {
     "Voice Order": "Commande vocale",
     Categories: "Catégories",
     "Loyalty Card": "Carte fidélité",
+    "Concert Tickets": "Billets de concert",
+    "Buy Ticket": "Acheter un billet",
+    "Reserve Table": "Réserver une table",
+    "Ticket Types / Packages": "Types de billets / Forfaits",
+    "Bank Transfer": "Virement bancaire",
+    "Available table": "Table disponible",
+    "No available concert tables in this area": "Aucune table de concert disponible dans cette zone",
+    "Bank transfer reference (optional)": "Référence du virement bancaire (optionnel)",
     "Stamp my card": "Tamponner ma carte",
     Reward: "Récompense",
     "Free Menu Item": "Article du menu gratuit",
@@ -1283,10 +1316,10 @@ function LanguageSwitcher({ lang, setLang, t, isDark = false }) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-[11px] font-medium transition focus:outline-none focus:ring-2 ${
+        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[12px] sm:text-[13px] font-medium transition focus:outline-none focus:ring-2 ${
           isDark
-            ? "border-white/10 bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:bg-white/[0.12] focus:ring-white/15"
-            : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:ring-slate-200"
+            ? "border-neutral-800 bg-transparent text-neutral-200 hover:bg-neutral-900/70 focus:ring-white/15"
+            : "border-gray-200/90 bg-transparent text-gray-700 hover:bg-gray-50 focus:ring-slate-200"
         }`}
         aria-label={t("Language")}
         aria-expanded={open}
@@ -1297,10 +1330,10 @@ function LanguageSwitcher({ lang, setLang, t, isDark = false }) {
 
       {open ? (
         <div
-          className={`absolute bottom-full right-0 z-[90] mb-2 w-[180px] rounded-2xl border p-2 shadow-lg ${
+          className={`absolute top-[calc(100%+10px)] right-0 z-[90] w-[180px] rounded-2xl border p-2 shadow-lg ${
             isDark
-              ? "border-white/10 bg-neutral-950/98 text-white shadow-[0_18px_45px_rgba(0,0,0,0.35)]"
-              : "border-gray-200 bg-white/98 text-gray-900 shadow-[0_18px_45px_rgba(15,23,42,0.12)]"
+              ? "border-gray-200/20 bg-neutral-950/90 text-white backdrop-blur"
+              : "border-gray-200 bg-white/95 text-gray-900 backdrop-blur"
           }`}
         >
           <div className={`px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${
@@ -1576,6 +1609,7 @@ function OrderTypeSelect({
   platform,
   onPopularClick,
   onCustomizationLoaded,
+  onConcertReservationSuccess,
 }) {
 
   /* ============================================================
@@ -1631,6 +1665,7 @@ async function load() {
   const tagline = (c.tagline ?? "").trim();
   const phoneNumber = c.phone || "";
   const allowDelivery = boolish(c.delivery_enabled, true);
+  const reservationTabEnabled = boolish(c.reservation_tab_enabled, true);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
   const logoUrl = c.logo || "/Beylogo.svg";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
@@ -2017,6 +2052,253 @@ async function load() {
     } catch {}
   };
 
+  const [concertLoading, setConcertLoading] = React.useState(false);
+  const [concertEvents, setConcertEvents] = React.useState([]);
+  const [concertModalOpen, setConcertModalOpen] = React.useState(false);
+  const [concertModalEvent, setConcertModalEvent] = React.useState(null);
+  const [concertSubmitting, setConcertSubmitting] = React.useState(false);
+  const [concertTablesLoading, setConcertTablesLoading] = React.useState(false);
+  const [concertAvailableTables, setConcertAvailableTables] = React.useState([]);
+  const [concertForm, setConcertForm] = React.useState({
+    booking_type: "ticket",
+    ticket_type_id: "",
+    table_number: "",
+    quantity: "1",
+    guests_count: "2",
+    customer_name: "",
+    customer_phone: "",
+    customer_note: "",
+    bank_reference: "",
+  });
+
+  const loadConcertEvents = React.useCallback(async () => {
+    if (!identifier) {
+      setConcertEvents([]);
+      return;
+    }
+    setConcertLoading(true);
+    try {
+      const res = await secureFetch(
+        `/public/concerts/${encodeURIComponent(identifier)}/events`
+      );
+      setConcertEvents(Array.isArray(res?.events) ? res.events : []);
+    } catch {
+      setConcertEvents([]);
+    } finally {
+      setConcertLoading(false);
+    }
+  }, [identifier]);
+
+  React.useEffect(() => {
+    loadConcertEvents();
+  }, [loadConcertEvents]);
+
+  const openConcertBookingModal = React.useCallback((event, defaults = {}) => {
+    if (!event) return;
+    const availableTicketTypes = (Array.isArray(event.ticket_types) ? event.ticket_types : []).filter(
+      (row) => Number(row?.available_count || 0) > 0
+    );
+    const preferredType = defaults.ticketTypeId
+      ? availableTicketTypes.find((row) => Number(row.id) === Number(defaults.ticketTypeId))
+      : defaults.bookingType === "table"
+      ? availableTicketTypes.find((row) => row.is_table_package)
+      : availableTicketTypes.find((row) => !row.is_table_package) || availableTicketTypes[0] || null;
+    const nextBookingType =
+      defaults.bookingType ||
+      (preferredType?.is_table_package ? "table" : "ticket");
+    setConcertModalEvent(event);
+    setConcertForm({
+      booking_type: nextBookingType === "table" ? "table" : "ticket",
+      ticket_type_id: preferredType ? String(preferredType.id) : "",
+      table_number: "",
+      quantity: nextBookingType === "table" ? "1" : "1",
+      guests_count: "2",
+      customer_name: "",
+      customer_phone: "",
+      customer_note: "",
+      bank_reference: "",
+    });
+    setConcertModalOpen(true);
+  }, []);
+
+  const closeConcertModal = React.useCallback(() => {
+    setConcertModalOpen(false);
+    setConcertModalEvent(null);
+    setConcertSubmitting(false);
+    setConcertAvailableTables([]);
+    setConcertTablesLoading(false);
+  }, []);
+
+  const selectedConcertTicketType = React.useMemo(() => {
+    const selectedId = Number(concertForm.ticket_type_id);
+    if (!Number.isFinite(selectedId) || selectedId <= 0) return null;
+    return (concertModalEvent?.ticket_types || []).find((row) => Number(row.id) === selectedId) || null;
+  }, [concertForm.ticket_type_id, concertModalEvent]);
+
+  const concertMode = selectedConcertTicketType?.is_table_package ? "table" : concertForm.booking_type;
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadAvailableTables() {
+      if (!concertModalOpen || !concertModalEvent?.id || !identifier || concertMode !== "table") {
+        setConcertAvailableTables([]);
+        setConcertTablesLoading(false);
+        return;
+      }
+
+      setConcertTablesLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (selectedConcertTicketType?.id) {
+          params.set("ticket_type_id", String(selectedConcertTicketType.id));
+        }
+        if (selectedConcertTicketType?.area_name) {
+          params.set("area_name", String(selectedConcertTicketType.area_name));
+        }
+        const query = params.toString();
+        const response = await secureFetch(
+          `/public/concerts/${encodeURIComponent(identifier)}/events/${concertModalEvent.id}/available-tables${query ? `?${query}` : ""}`
+        );
+        if (cancelled) return;
+        const tableRows = Array.isArray(response?.tables) ? response.tables : [];
+        setConcertAvailableTables(tableRows);
+        setConcertForm((prev) => {
+          const selectedTableNumber = Number(prev.table_number);
+          if (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0) {
+            return prev;
+          }
+          const stillAvailable = tableRows.some(
+            (row) => Number(row?.table_number) === selectedTableNumber
+          );
+          return stillAvailable ? prev : { ...prev, table_number: "" };
+        });
+      } catch (err) {
+        if (!cancelled) {
+          console.error("❌ Failed to load available concert tables:", err);
+          setConcertAvailableTables([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setConcertTablesLoading(false);
+        }
+      }
+    }
+
+    loadAvailableTables();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    concertModalOpen,
+    concertModalEvent?.id,
+    concertMode,
+    identifier,
+    selectedConcertTicketType?.id,
+    selectedConcertTicketType?.area_name,
+  ]);
+
+  const concertPriceLabel = React.useCallback(
+    (event) => {
+      const min = Number(event?.price_min || 0);
+      const max = Number(event?.price_max || 0);
+      if (min > 0 && max > 0 && min !== max) {
+        return `${formatCurrency(min)} - ${formatCurrency(max)}`;
+      }
+      if (max > 0) return formatCurrency(max);
+      if (min > 0) return formatCurrency(min);
+      return formatCurrency(Number(event?.ticket_price || 0));
+    },
+    [formatCurrency]
+  );
+
+  const submitConcertBooking = React.useCallback(async () => {
+    if (!concertModalEvent?.id || !identifier) return;
+    if (!concertForm.customer_name.trim() || !concertForm.customer_phone.trim()) {
+      alert(t("Please fill required fields"));
+      return;
+    }
+    if (concertMode === "table") {
+      const selectedTableNumber = Number(concertForm.table_number);
+      if (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0) {
+        alert(t("Please select an available table."));
+        return;
+      }
+    }
+    const quantity = concertMode === "table" ? 1 : Math.max(1, Number(concertForm.quantity) || 1);
+    const payload = {
+      booking_type: concertMode === "table" ? "table" : "ticket",
+      ticket_type_id: concertForm.ticket_type_id ? Number(concertForm.ticket_type_id) : null,
+      requested_table_number:
+        concertMode === "table" && concertForm.table_number
+          ? Number(concertForm.table_number)
+          : null,
+      quantity,
+      guests_count: concertMode === "table" ? Math.max(1, Number(concertForm.guests_count) || 1) : null,
+      customer_name: concertForm.customer_name.trim(),
+      customer_phone: concertForm.customer_phone.trim(),
+      customer_note: concertForm.customer_note.trim(),
+      bank_reference: concertForm.bank_reference.trim(),
+      area_name: selectedConcertTicketType?.area_name || null,
+    };
+
+    setConcertSubmitting(true);
+    try {
+      const response = await secureFetch(
+        `/public/concerts/${encodeURIComponent(identifier)}/events/${concertModalEvent.id}/bookings`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const paymentStatus = response?.booking?.payment_status || "pending_bank_transfer";
+      const instructions =
+        response?.booking?.payment_instructions ||
+        response?.event?.bank_transfer_instructions ||
+        t("Please complete bank transfer and wait for confirmation.");
+      if (concertMode === "table") {
+        const reservationOrderId = Number(
+          response?.booking?.reservation_order_id || response?.reservation?.id || 0
+        );
+        const reservedTableNumber = Number(
+          response?.booking?.reserved_table_number || concertForm.table_number || 0
+        );
+        if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
+          onConcertReservationSuccess?.({
+            reservationOrderId,
+            reservedTableNumber:
+              Number.isFinite(reservedTableNumber) && reservedTableNumber > 0
+                ? reservedTableNumber
+                : null,
+            paymentStatus,
+            instructions,
+          });
+          closeConcertModal();
+          await loadConcertEvents();
+          return;
+        }
+      }
+
+      alert(`${t("Booking created")}\n${t("Status")}: ${paymentStatus}\n\n${instructions}`);
+      closeConcertModal();
+      await loadConcertEvents();
+    } catch (err) {
+      alert(err?.message || t("Failed to save reservation"));
+    } finally {
+      setConcertSubmitting(false);
+    }
+  }, [
+    closeConcertModal,
+    concertForm,
+    concertModalEvent,
+    concertMode,
+    onConcertReservationSuccess,
+    identifier,
+    loadConcertEvents,
+    selectedConcertTicketType?.area_name,
+    t,
+  ]);
+
   const slides =
     Array.isArray(c.hero_slides) && c.hero_slides.length > 0
       ? c.hero_slides.map(s => ({
@@ -2334,10 +2616,10 @@ async function load() {
           <div className="grid grid-cols-1 items-center gap-3">
             <div className="grid grid-cols-3 gap-2 min-w-0">
               <button
-                onClick={() => openStatus.isOpen && onSelect("takeaway")}
-                disabled={!openStatus.isOpen}
+                onClick={() => reservationTabEnabled && openStatus.isOpen && onSelect("takeaway")}
+                disabled={!reservationTabEnabled || !openStatus.isOpen}
                 className={`h-10 sm:h-11 rounded-lg border px-3 text-[13px] sm:text-[15px] font-medium transition-colors ${
-                  !openStatus.isOpen
+                  !reservationTabEnabled || !openStatus.isOpen
                     ? isDark
                       ? "bg-white/[0.04] text-white/35 border-white/10 cursor-not-allowed"
                       : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
@@ -2472,23 +2754,142 @@ async function load() {
                       </div>
                     )}
                   </div>
+                  <LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />
                 </div>
               </div>
 
-			        {/* Featured products */}
-			        <div className="mt-7 space-y-4 max-w-3xl mx-auto">
-			          <FeaturedCard
-			            slides={slides}
-			            currentSlide={currentSlide}
-			            setCurrentSlide={setCurrentSlide}
-                  onTouchStart={handleTouchStart}
-                  onTouchEnd={handleTouchEnd}
-                  t={t}
-			          />
-			        </div>
-                {tagline ? (
-				          <p className="mt-4 text-sm text-gray-500 dark:text-neutral-400 max-w-xl mx-auto text-center leading-relaxed">{tagline}</p>
-                ) : null}
+              {/* CONCERT TICKETS */}
+              <div className="mt-6 max-w-3xl mx-auto">
+                {concertEvents.length === 0 ? (
+                  <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/70 px-4 py-4 text-sm text-neutral-600 dark:text-neutral-300">
+                    {concertLoading ? t("Loading...") : t("No upcoming concerts.")}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {concertEvents.map((event) => {
+                      const soldOut =
+                        String(event?.status || "").toLowerCase() === "sold_out" ||
+                        (event?.auto_sold_out === true);
+                      const eventImage = resolveUploadedAsset(event?.event_image);
+                      const artistName = String(event?.artist_name || "").trim();
+                      const eventTitle = String(event?.event_title || "").trim();
+                      const showEventTitle =
+                        eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
+                      const eventDate = String(event?.event_date || "").slice(0, 10);
+                      const eventTime = String(event?.event_time || "").slice(0, 5);
+                      const tableAvailable = Number(event?.available_table_count || 0) > 0;
+                      const ticketAvailable = Number(event?.available_ticket_count || 0) > 0;
+                      const tableTicketType = (event?.ticket_types || []).find(
+                        (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
+                      );
+                      const normalTicketType = (event?.ticket_types || []).find(
+                        (row) => !row?.is_table_package && Number(row?.available_count || 0) > 0
+                      );
+
+                      return (
+                        <div
+                          key={event.id}
+                          className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/75 p-4 shadow-sm"
+                        >
+                          {eventImage ? (
+                            <div className="mb-3 w-full aspect-[16/9] rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950">
+                              <img
+                                src={eventImage}
+                                alt={event.event_title || event.artist_name || "Concert"}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            </div>
+                          ) : null}
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="mb-2 inline-flex items-center rounded-full border border-neutral-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-300">
+                                {t("Concert Tickets")}
+                              </div>
+                              <div className="pl-2.5">
+                                <div className="text-xl sm:text-2xl font-extrabold leading-tight text-neutral-900 dark:text-neutral-100">
+                                  {artistName || eventTitle}
+                                </div>
+                                {showEventTitle ? (
+                                  <div className="mt-0.5 text-xs sm:text-sm uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                                    {eventTitle}
+                                  </div>
+                                ) : null}
+                                <div className="text-xs text-neutral-500 mt-1">
+                                  {eventDate} {eventTime} • {concertPriceLabel(event)}
+                                </div>
+                              </div>
+                            </div>
+                            <span
+                              className={`text-xs px-2.5 py-1 rounded-full border ${
+                                soldOut
+                                  ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
+                                  : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+                              }`}
+                            >
+                              {soldOut ? t("Sold Out") : t("Available")}
+                            </span>
+                          </div>
+
+                          {(event?.ticket_types || []).length > 0 ? (
+                            <div className="mt-2 pl-2.5 text-xs text-neutral-600 dark:text-neutral-300 space-y-1">
+                              {(event.ticket_types || []).slice(0, 4).map((ticketType) => (
+                                <div key={ticketType.id}>
+                                  {ticketType.name}
+                                  {ticketType.area_name ? ` • ${ticketType.area_name}` : ""}
+                                  {` • ${ticketType.available_count}/${ticketType.quantity_total}`}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          {(event?.area_allocations || []).length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {(event.area_allocations || []).slice(0, 4).map((area) => (
+                                <span
+                                  key={`${event.id}-${area.id}`}
+                                  className="text-[11px] px-2 py-0.5 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300"
+                                >
+                                  {area.area_name} • {area.allocation_type}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              disabled={soldOut || !ticketAvailable}
+                              onClick={() =>
+                                openConcertBookingModal(event, {
+                                  bookingType: "ticket",
+                                  ticketTypeId: normalTicketType?.id || "",
+                                })
+                              }
+                              className="rounded-xl border border-neutral-200 dark:border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-700 dark:text-neutral-100 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-45 disabled:cursor-not-allowed"
+                            >
+                              {t("Buy Ticket")}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={soldOut || !tableAvailable}
+                              onClick={() =>
+                                openConcertBookingModal(event, {
+                                  bookingType: "table",
+                                  ticketTypeId: tableTicketType?.id || "",
+                                })
+                              }
+                              className="rounded-xl bg-neutral-900 text-white px-3 py-2 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-45 disabled:cursor-not-allowed"
+                            >
+                              {t("Reserve Table")}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
 	      </div>
 
@@ -2609,6 +3010,21 @@ async function load() {
 	        </div>
 	      )}
 
+        {/* Featured products */}
+        <div className="mt-7 space-y-4 max-w-3xl mx-auto">
+          <FeaturedCard
+            slides={slides}
+            currentSlide={currentSlide}
+            setCurrentSlide={setCurrentSlide}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            t={t}
+          />
+        </div>
+        {tagline ? (
+          <p className="mt-4 text-sm text-gray-500 dark:text-neutral-400 max-w-xl mx-auto text-center leading-relaxed">{tagline}</p>
+        ) : null}
+
       {/* LOYALTY CARD (optional) */}
       {loyalty.enabled && (
         <div className="mt-2 rounded-3xl border border-amber-200/70 dark:border-amber-800/50 bg-white/80 dark:bg-amber-950/20 p-5 shadow-sm max-w-3xl">
@@ -2642,57 +3058,7 @@ async function load() {
         </div>
       )}
 
-	      {/* CALL + SHARE + DOWNLOAD */}
-	      <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-4 max-w-3xl">
-	        {phoneNumber ? (
-	          <a
-	            href={`tel:${phoneNumber}`}
-	            className="w-full py-3 sm:py-4 rounded-2xl bg-black text-white font-semibold shadow-md flex items-center justify-center gap-2 hover:shadow-lg hover:-translate-y-1 transition-all"
-	            style={{ backgroundColor: accent }}
-	          >
-	            <Phone className="w-5 h-5" />
-	            <span className="text-xs sm:text-sm">{t("Call Us")}</span>
-	          </a>
-	        ) : (
-	          <button
-	            type="button"
-	            disabled
-	            className="w-full py-3 sm:py-4 rounded-2xl bg-neutral-200 text-neutral-500 font-semibold shadow-sm flex items-center justify-center gap-2 cursor-not-allowed"
-	          >
-	            <Phone className="w-5 h-5" />
-	            <span className="text-xs sm:text-sm">{t("Call Us")}</span>
-	          </button>
-	        )}
-
-	        <button
-	          onClick={() => {
-	            if (navigator.share) {
-	              navigator.share({
-	                title: restaurantName,
-	                text: "Check out our menu!",
-	                url: window.location.href,
-	              });
-	            } else {
-	              navigator.clipboard.writeText(window.location.href);
-	              alert(t("Link copied."));
-	            }
-	          }}
-	          className="w-full py-3 sm:py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
-	        >
-	          <Share2 className="w-5 h-5" />
-	          <span className="text-xs sm:text-sm">{t("Share")}</span>
-	        </button>
-
-	        <button
-	          type="button"
-	          onClick={() => onDownloadQr?.()}
-	          className="w-full py-3 sm:py-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:-translate-y-1 transition-all"
-	        >
-	          <Download className="w-5 h-5" />
-	          <span className="text-xs sm:text-sm">{t("Download Qr")}</span>
-	        </button>
-	      </div>
-	      {/* Popular This Week (below Share button) */}
+	      {/* Popular This Week */}
 	      {c.enable_popular && popularProducts.length > 0 && (
 	        <div className="mt-6 max-w-3xl">
 	          <PopularCarousel
@@ -2798,7 +3164,62 @@ async function load() {
 	      </div>
 	    </section>
 
-	    {/* === SOCIAL ICONS + LANGUAGE === */}
+      {/* === BOTTOM ACTIONS === */}
+      <section className="max-w-6xl mx-auto px-4 pb-6">
+        <div className="max-w-3xl mx-auto rounded-3xl border border-neutral-200/80 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 backdrop-blur-sm p-3 sm:p-4 shadow-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
+            {phoneNumber ? (
+              <a
+                href={`tel:${phoneNumber}`}
+                className="w-full h-11 rounded-xl text-white font-semibold shadow-sm flex items-center justify-center gap-2 hover:shadow-md hover:-translate-y-0.5 transition-all"
+                style={{ backgroundColor: accent }}
+              >
+                <Phone className="w-4 h-4" />
+                <span className="text-sm">{t("Call Us")}</span>
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="w-full h-11 rounded-xl bg-neutral-200 text-neutral-500 font-semibold shadow-sm flex items-center justify-center gap-2 cursor-not-allowed dark:bg-neutral-800/60 dark:text-neutral-400"
+              >
+                <Phone className="w-4 h-4" />
+                <span className="text-sm">{t("Call Us")}</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                if (navigator.share) {
+                  navigator.share({
+                    title: restaurantName,
+                    text: "Check out our menu!",
+                    url: window.location.href,
+                  });
+                } else {
+                  navigator.clipboard.writeText(window.location.href);
+                  alert(t("Link copied."));
+                }
+              }}
+              className="w-full h-11 rounded-xl bg-white dark:bg-neutral-900 border border-gray-300/90 dark:border-neutral-700 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:shadow-md hover:-translate-y-0.5 transition-all"
+            >
+              <Share2 className="w-4 h-4" />
+              <span className="text-sm">{t("Share")}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onDownloadQr?.()}
+              className="w-full h-11 rounded-xl bg-white dark:bg-neutral-900 border border-gray-300/90 dark:border-neutral-700 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:shadow-md hover:-translate-y-0.5 transition-all"
+            >
+              <Download className="w-4 h-4" />
+              <span className="text-sm">{t("Download Qr")}</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+	    {/* === SOCIAL ICONS === */}
 	    <div className="relative w-full max-w-3xl mx-auto flex items-center justify-center pb-10 px-4 sm:px-0 min-h-[40px]">
         <div className="flex items-center justify-center gap-6 mx-auto">
 	        {c.social_instagram && (
@@ -2840,10 +3261,233 @@ async function load() {
 	          </a>
 	        )}
         </div>
-        <div className="absolute right-4 sm:right-0">
-          <LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />
-        </div>
 	    </div>
+
+      {concertModalOpen && concertModalEvent ? (
+        <div
+          className="fixed inset-0 z-[120] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !concertSubmitting) {
+              closeConcertModal();
+            }
+          }}
+        >
+          <div className="w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl p-5 space-y-4">
+            {(() => {
+              const artistName = String(concertModalEvent?.artist_name || "").trim();
+              const eventTitle = String(concertModalEvent?.event_title || "").trim();
+              const showEventTitle =
+                eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
+              return (
+                <>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="mb-1 text-xs uppercase tracking-[0.18em] text-neutral-500">{t("Concert Tickets")}</p>
+                      <h4 className="text-2xl font-extrabold leading-tight text-neutral-900 dark:text-neutral-100">
+                        {artistName || eventTitle}
+                      </h4>
+                      {showEventTitle ? (
+                        <p className="mt-0.5 text-xs uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                          {eventTitle}
+                        </p>
+                      ) : null}
+                      <p className="text-sm text-neutral-500 mt-1">
+                        {String(concertModalEvent.event_date || "").slice(0, 10)} {String(concertModalEvent.event_time || "").slice(0, 5)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeConcertModal}
+                      disabled={concertSubmitting}
+                      className="text-2xl leading-none text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 disabled:opacity-40"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+
+            {(concertModalEvent.ticket_types || []).length > 0 ? (
+              <div>
+                <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                  {t("Ticket Types / Packages")}
+                </label>
+                <select
+                  value={concertForm.ticket_type_id}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const selected = (concertModalEvent.ticket_types || []).find(
+                      (row) => Number(row.id) === Number(value)
+                    );
+                    setConcertForm((prev) => ({
+                      ...prev,
+                      ticket_type_id: value,
+                      booking_type: selected?.is_table_package ? "table" : prev.booking_type,
+                    }));
+                  }}
+                  className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                >
+                  <option value="">{t("Select")}</option>
+                  {(concertModalEvent.ticket_types || []).map((row) => (
+                    <option
+                      key={row.id}
+                      value={String(row.id)}
+                      disabled={Number(row.available_count || 0) <= 0}
+                    >
+                      {row.name}
+                      {row.area_name ? ` • ${row.area_name}` : ""}
+                      {` • ${row.available_count}/${row.quantity_total}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
+            {!selectedConcertTicketType?.is_table_package ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConcertForm((prev) => ({ ...prev, booking_type: "ticket" }))}
+                  className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                    concertMode === "ticket"
+                      ? "bg-neutral-900 text-white border-neutral-900"
+                      : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
+                  }`}
+                >
+                  {t("Buy Ticket")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConcertForm((prev) => ({ ...prev, booking_type: "table" }))}
+                  className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                    concertMode === "table"
+                      ? "bg-neutral-900 text-white border-neutral-900"
+                      : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
+                  }`}
+                >
+                  {t("Reserve Table")}
+                </button>
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-2 gap-3">
+              {concertMode === "table" ? (
+                <div>
+                  <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Guests")}</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={concertForm.guests_count}
+                    onChange={(e) => setConcertForm((prev) => ({ ...prev, guests_count: e.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Quantity")}</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={concertForm.quantity}
+                    onChange={(e) => setConcertForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Payment Method")}</label>
+                <div className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 px-3 py-2.5 text-sm font-semibold">
+                  {t("Bank Transfer")}
+                </div>
+              </div>
+            </div>
+
+            {concertMode === "table" ? (
+              <div>
+                <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                  {t("Available table")}
+                </label>
+                <select
+                  value={concertForm.table_number}
+                  onChange={(e) =>
+                    setConcertForm((prev) => ({ ...prev, table_number: e.target.value }))
+                  }
+                  className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                  disabled={concertTablesLoading}
+                >
+                  <option value="">
+                    {concertTablesLoading ? t("Loading...") : t("Select")}
+                  </option>
+                  {concertAvailableTables.map((row) => {
+                    const tableNo = Number(row?.table_number);
+                    if (!Number.isFinite(tableNo) || tableNo <= 0) return null;
+                    const seats = Number(row?.seats || 0);
+                    const area = String(row?.area_name || "").trim();
+                    return (
+                      <option key={`concert-table-${tableNo}`} value={String(tableNo)}>
+                        {`${t("Table")} ${tableNo}${area ? ` • ${area}` : ""}${seats > 0 ? ` • ${seats} ${t("Guests")}` : ""}`}
+                      </option>
+                    );
+                  })}
+                </select>
+                {!concertTablesLoading && concertAvailableTables.length === 0 ? (
+                  <div className="mt-1 text-xs text-rose-600">
+                    {t("No available concert tables in this area")}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-1 gap-3">
+              <input
+                type="text"
+                placeholder={t("Full Name")}
+                value={concertForm.customer_name}
+                onChange={(e) => setConcertForm((prev) => ({ ...prev, customer_name: e.target.value }))}
+                className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+              />
+              <input
+                type="tel"
+                placeholder={t("Phone")}
+                value={concertForm.customer_phone}
+                onChange={(e) => setConcertForm((prev) => ({ ...prev, customer_phone: e.target.value }))}
+                className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+              />
+              <input
+                type="text"
+                placeholder={t("Bank transfer reference (optional)")}
+                value={concertForm.bank_reference}
+                onChange={(e) => setConcertForm((prev) => ({ ...prev, bank_reference: e.target.value }))}
+                className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+              />
+              <textarea
+                rows={2}
+                placeholder={t("Notes (optional)")}
+                value={concertForm.customer_note}
+                onChange={(e) => setConcertForm((prev) => ({ ...prev, customer_note: e.target.value }))}
+                className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm resize-none"
+              />
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/25 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+              {concertModalEvent.bank_transfer_instructions ||
+                t("Booking will stay pending until bank transfer is confirmed by the venue.")}
+            </div>
+
+            <button
+              type="button"
+              onClick={submitConcertBooking}
+              disabled={concertSubmitting}
+              className="w-full rounded-xl bg-neutral-900 text-white px-4 py-3 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-55"
+            >
+              {concertSubmitting ? t("Please wait...") : concertMode === "table" ? t("Reserve Table") : t("Buy Ticket")}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
 	  </div>
 	  </div>
@@ -3023,30 +3667,33 @@ function TakeawayOrderForm({
   };
 
   return (
-    <div className="fixed inset-0 z-[160] flex items-start sm:items-center justify-center bg-black/40 backdrop-blur-sm p-3 sm:p-6">
+    <div className="fixed inset-0 z-[160] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div
-        className="bg-white/95 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] p-5 sm:p-8 pb-[calc(1.25rem+env(safe-area-inset-bottom))] w-full max-w-md relative max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
+        className="w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl p-5 space-y-4 relative"
         style={shakeModal ? { animation: "takeawayShake 420ms ease-in-out" } : undefined}
       >
         {/* Close */}
         <button
           onClick={onClose}
           aria-label={t("Close")}
-          className="absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:text-red-600 hover:bg-red-50 transition"
+          className="absolute right-4 top-4 text-2xl leading-none text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
         >
           ×
         </button>
 
         {/* Title */}
-        <h2 className="text-2xl font-serif font-semibold text-neutral-900 mb-6 border-b border-neutral-200 pb-2">
-          {t("Information")}
-        </h2>
+        <div className="pr-8">
+          <p className="mb-1 text-xs uppercase tracking-[0.18em] text-neutral-500">{t("Reservation")}</p>
+          <h2 className="text-2xl font-extrabold leading-tight text-neutral-900 dark:text-neutral-100">
+            {t("Information")}
+          </h2>
+        </div>
 
         {/* Form */}
         <form onSubmit={handleFormSubmit} className="flex flex-col gap-4">
           {/* Name */}
           <input
-            className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400"
+            className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
             placeholder={t("Full Name")}
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -3054,8 +3701,8 @@ function TakeawayOrderForm({
 
           {/* Phone */}
           <input
-            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 ${
-              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300"
+            className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
             }`}
             placeholder={t("Phone")}
             value={form.phone}
@@ -3073,14 +3720,14 @@ function TakeawayOrderForm({
           {/* Pickup / Reservation Date + Time */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1">
+              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
                 {t("Date")}
               </label>
               <input
                 type="date"
                 min={today}
-                className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400 ${
-                  touched.pickup_date && !form.pickup_date ? "border-red-500" : "border-neutral-300"
+                className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+                  touched.pickup_date && !form.pickup_date ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
                 }`}
                 value={form.pickup_date}
                 onChange={(e) =>
@@ -3089,13 +3736,13 @@ function TakeawayOrderForm({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1">
+              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
                 {t("Time")}
               </label>
               <input
                 type="time"
-                className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:ring-1 focus:ring-neutral-400 ${
-                  touched.pickup_time && !form.pickup_time ? "border-red-500" : "border-neutral-300"
+                className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+                  touched.pickup_time && !form.pickup_time ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
                 }`}
                 value={form.pickup_time}
                 onChange={(e) =>
@@ -3107,17 +3754,17 @@ function TakeawayOrderForm({
 
           {/* Pickup / Reservation toggle */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1">
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
               {t("Pickup / Reservation")}
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setForm((f) => ({ ...f, mode: "reservation" }))}
-                className={`py-2.5 rounded-xl text-sm font-semibold border ${
+                className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
                   form.mode === "reservation"
                     ? "bg-neutral-900 text-white border-neutral-900"
-                    : "bg-white text-neutral-700 border-neutral-300"
+                    : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
                 }`}
               >
                 🎫 {t("Reservation")}
@@ -3125,10 +3772,10 @@ function TakeawayOrderForm({
               <button
                 type="button"
                 onClick={() => setForm((f) => ({ ...f, mode: "pickup" }))}
-                className={`py-2.5 rounded-xl text-sm font-semibold border ${
+                className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
                   form.mode === "pickup"
                     ? "bg-neutral-900 text-white border-neutral-900"
-                    : "bg-white text-neutral-700 border-neutral-300"
+                    : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
                 }`}
               >
                 🛍️ {t("Pickup")}
@@ -3140,12 +3787,12 @@ function TakeawayOrderForm({
           {form.mode === "reservation" && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
                   {t("Select Table")}
                 </label>
                 <select
-                  className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
-                    touched.table_number && !hasReservationTable ? "border-red-500" : "border-neutral-300"
+                  className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+                    touched.table_number && !hasReservationTable ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
                   }`}
                   value={form.table_number}
                   onChange={(e) => setForm((f) => ({ ...f, table_number: e.target.value }))}
@@ -3176,12 +3823,12 @@ function TakeawayOrderForm({
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
                   {t("Guests")}
                 </label>
                 <select
-                  className={`w-full rounded-xl border px-4 py-3 text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
-                    touched.reservation_clients && !hasReservationClients ? "border-red-500" : "border-neutral-300"
+                  className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+                    touched.reservation_clients && !hasReservationClients ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
                   }`}
                   value={form.reservation_clients}
                   onChange={(e) => setForm((f) => ({ ...f, reservation_clients: e.target.value }))}
@@ -3206,10 +3853,10 @@ function TakeawayOrderForm({
           {/* Payment Method */}
           {requiresPayment && (
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-neutral-800">{t("Payment Method")}</label>
+              <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Payment Method")}</label>
               <select
-                className={`rounded-xl border px-4 py-3 text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
-                  paymentPrompt && !form.payment_method ? "border-red-500" : "border-neutral-300"
+                className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+                  paymentPrompt && !form.payment_method ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
                 }`}
                 value={form.payment_method}
                 onChange={(e) => handlePaymentChange(e.target.value)}
@@ -3232,7 +3879,7 @@ function TakeawayOrderForm({
 
           {/* Notes */}
           <textarea
-            className="rounded-xl border border-neutral-300 px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:ring-1 focus:ring-neutral-400 resize-none h-24"
+            className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm resize-none h-24"
             placeholder={t("Notes (optional)")}
             value={form.notes}
             onChange={(e) =>
@@ -3245,7 +3892,7 @@ function TakeawayOrderForm({
             <button
               type="button"
               onClick={() => onAddItem?.(form)}
-              className="w-full py-3 rounded-full border border-neutral-300 bg-white text-neutral-900 font-medium text-lg hover:bg-neutral-50 transition"
+              className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-100 px-4 py-3 text-sm font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition"
             >
               {t("Add item")}
             </button>
@@ -3253,7 +3900,7 @@ function TakeawayOrderForm({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
+            className="w-full rounded-xl bg-neutral-900 text-white px-4 py-3 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-55"
           >
             {submitting
               ? t("Please wait...")
@@ -3735,6 +4382,8 @@ function OrderStatusModal({
   forceLock = false,
   allowOrderAnotherWhenLocked = false,
   checkoutPending = false,
+  bookingConfirmLabel = false,
+  checkoutCompletedLabel = false,
 }) {
   if (!open) return null;
 
@@ -3744,10 +4393,12 @@ function OrderStatusModal({
   const isFinishedLikeStatus = ["delivered", "served", "closed", "completed"].includes(backendStatus);
   const isSending = uiStatus === "pending";
   const isFailed = uiStatus === "fail";
+  const isBookingConfirm = uiStatus === "booking_confirm" || Boolean(bookingConfirmLabel);
 
   const title =
     isCancelled ? t("Your order has been cancelled!")
     : isSending ? t("Sending Order...")
+    : isBookingConfirm ? t("Booking confirm!")
     : isFailed ? t("Order Failed")
     : t("Order Sent!");
 
@@ -3756,6 +4407,8 @@ function OrderStatusModal({
       ? cancelReason || t("The restaurant cancelled this order.")
       : isSending
         ? t("Please wait...")
+        : isBookingConfirm
+          ? t("Your reservation has been created.")
         : isFailed
           ? errorMessage || t("Something went wrong. Please try again.")
           : t("Thank you! Your order has been received.");
@@ -3795,11 +4448,12 @@ function OrderStatusModal({
       forceLock={forceLock}
 		  forceDark={forceDark}
       orderScreenStatus={orderScreenStatus}
+      checkoutCompletedView={checkoutCompletedLabel}
 
-	  t={t}
-	  buildUrl={(path) => apiUrl(path)}
-	  appendIdentifier={appendIdentifier}
-	/>
+		  t={t}
+		  buildUrl={(path) => apiUrl(path)}
+		  appendIdentifier={appendIdentifier}
+		/>
 
   ) : null}
 </div>
@@ -3987,6 +4641,8 @@ export default function QrMenu() {
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [editingCartItemId, setEditingCartItemId] = useState(null);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [concertBookingConfirmLabel, setConcertBookingConfirmLabel] = useState(false);
+  const [checkoutCompletedLabel, setCheckoutCompletedLabel] = useState(false);
   const callWaiterFeedbackTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -4313,9 +4969,15 @@ export default function QrMenu() {
       setCheckoutSubmitting(true);
       await secureFetch(appendIdentifier(`/orders/${statusPortalOrderId}/close`), {
         method: "POST",
+        body: JSON.stringify({ preserve_reservation_checkout_badge: true }),
       });
       window.dispatchEvent(new Event("qr:voice-order-close"));
-      resetToTypePicker?.({ allowForceClose: true });
+      storage.removeItem("qr_force_status_until_closed");
+      storage.setItem("qr_show_status", "1");
+      setOrderStatus("success");
+      setShowStatus(true);
+      setConcertBookingConfirmLabel(false);
+      setCheckoutCompletedLabel(true);
     } catch (err) {
       alert(String(err?.message || t("Unable to check out right now.")));
     } finally {
@@ -4326,17 +4988,39 @@ export default function QrMenu() {
     cartNewItemsCount,
     checkoutSubmitting,
     onOpenCartFromNav,
-    resetToTypePicker,
+    setOrderStatus,
+    setShowStatus,
     statusPortalOrderId,
+    storage,
     t,
   ]);
   const onForceCloseStatusFromNav = useCallback(() => {
     storage.removeItem("qr_force_status_until_closed");
     storage.setItem("qr_show_status", "0");
+    setConcertBookingConfirmLabel(false);
+    setCheckoutCompletedLabel(false);
     setShowStatus(false);
     window.dispatchEvent(new Event("qr:voice-order-close"));
     resetToTypePicker?.({ allowForceClose: true });
   }, [resetToTypePicker, setShowStatus, storage]);
+
+  const handleStatusModalClose = useCallback(
+    (...args) => {
+      setConcertBookingConfirmLabel(false);
+      setCheckoutCompletedLabel(false);
+      return handleReset?.(...args);
+    },
+    [handleReset]
+  );
+
+  const handleStatusModalOrderAnother = useCallback(
+    async (...args) => {
+      setConcertBookingConfirmLabel(false);
+      setCheckoutCompletedLabel(false);
+      return handleOrderAnother?.(...args);
+    },
+    [handleOrderAnother]
+  );
 
   const forceStatusLockActive = (() => {
     const forced = storage.getItem("qr_force_status_until_closed") === "1";
@@ -4390,10 +5074,10 @@ export default function QrMenu() {
           orderId={statusPortalOrderId}
           orderType={orderType}
           table={orderType === "table" ? table : null}
-          onOrderAnother={forceStatusLockActive && !allowOrderAnotherWhenLocked ? null : handleOrderAnother}
+          onOrderAnother={forceStatusLockActive && !allowOrderAnotherWhenLocked ? null : handleStatusModalOrderAnother}
           onCheckout={handleReservationCheckout}
-          onClose={handleReset}
-          onFinished={resetToTypePicker}
+          onClose={handleStatusModalClose}
+          onFinished={checkoutCompletedLabel ? null : resetToTypePicker}
           t={t}
           appendIdentifier={appendIdentifier}
           errorMessage={lastError}
@@ -4403,10 +5087,48 @@ export default function QrMenu() {
           forceLock={forceStatusLockActive}
           allowOrderAnotherWhenLocked={allowOrderAnotherWhenLocked}
           checkoutPending={checkoutSubmitting}
+          bookingConfirmLabel={concertBookingConfirmLabel}
+          checkoutCompletedLabel={checkoutCompletedLabel}
         />,
         document.body
       )
     : null;
+
+  const handleConcertReservationSuccess = useCallback(
+    ({ reservationOrderId, reservedTableNumber }) => {
+      const nextOrderId = Number(reservationOrderId || 0);
+      if (!Number.isFinite(nextOrderId) || nextOrderId <= 0) {
+        return;
+      }
+
+      const nextTableNumber = Number(reservedTableNumber || 0);
+      setOrderType("table");
+      storage.setItem("qr_orderType", "table");
+      if (Number.isFinite(nextTableNumber) && nextTableNumber > 0) {
+        setTable(nextTableNumber);
+        storage.setItem("qr_table", String(nextTableNumber));
+      }
+
+      storage.setItem("qr_show_status", "1");
+      storage.setItem("qr_force_status_until_closed", "1");
+      setOrderStatus("booking_confirm");
+      setConcertBookingConfirmLabel(true);
+      setCheckoutCompletedLabel(false);
+      setShowStatus(true);
+      setOrderId(nextOrderId);
+      storage.setItem("qr_active_order_id", String(nextOrderId));
+      storage.setItem(
+        "qr_active_order",
+        JSON.stringify({
+          orderId: nextOrderId,
+          orderType: "table",
+          table:
+            Number.isFinite(nextTableNumber) && nextTableNumber > 0 ? nextTableNumber : null,
+        })
+      );
+    },
+    [setConcertBookingConfirmLabel, setOrderId, setOrderStatus, setOrderType, setShowStatus, setTable, storage]
+  );
 
   const handleVoiceDraftAddToCart = useCallback(
     ({ product, productId, name, qty, unitPrice, extras, notes }) => {
@@ -4650,6 +5372,7 @@ export default function QrMenu() {
             onCustomizationLoaded={(next) =>
               setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
             }
+            onConcertReservationSuccess={handleConcertReservationSuccess}
           />
 
           {!orderType && showOrderTypePrompt && (
@@ -4714,6 +5437,7 @@ export default function QrMenu() {
                         if (!orderId && savedId) {
                           setOrderId(savedId);
                         }
+                        setConcertBookingConfirmLabel(false);
                         setOrderStatus("success");
                         setShowStatus(true);
                         storage.setItem("qr_show_status", "1");
@@ -4773,6 +5497,7 @@ export default function QrMenu() {
             if (!orderId && savedId) {
               setOrderId(savedId);
             }
+            setConcertBookingConfirmLabel(false);
             setOrderStatus("success");
             setShowStatus(true);
             storage.setItem("qr_show_status", "1");
@@ -5179,6 +5904,7 @@ export default function QrMenu() {
                 storage.setItem("qr_orderType", "table");
                 storage.setItem("qr_table", String(tableNumber));
                 storage.setItem("qr_show_status", "1");
+                setConcertBookingConfirmLabel(false);
                 setOrderStatus("success");
                 setShowStatus(true);
                 if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {

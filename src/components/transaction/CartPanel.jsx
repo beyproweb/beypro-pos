@@ -27,6 +27,7 @@ const getPhoneHref = (phone) => {
 };
 
 const CHECKED_IN_LIKE_RESERVATION_STATUSES = new Set(["checked_in"]);
+const CHECKED_OUT_LIKE_RESERVATION_STATUSES = new Set(["checked_out"]);
 
 const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) => {
   const CART_WINDOW_INITIAL_COUNT = 80;
@@ -129,13 +130,23 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     existingReservation?.status || order?.status || ""
   ).toLowerCase();
   const isCheckedInReservation = CHECKED_IN_LIKE_RESERVATION_STATUSES.has(reservationStatus);
-  const reservationCardClassName = isCheckedInReservation
+  const isCheckedOutReservation =
+    CHECKED_OUT_LIKE_RESERVATION_STATUSES.has(reservationStatus);
+  const reservationCardClassName = isCheckedOutReservation
+    ? "mx-3 mb-1.5 rounded-xl border border-slate-300 bg-slate-50/95 px-2.5 py-2 shadow-sm dark:border-slate-600 dark:bg-slate-900/80"
+    : isCheckedInReservation
     ? "mx-3 mb-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 shadow-sm dark:border-emerald-700/60 dark:bg-emerald-900/20"
     : "mx-3 mb-1.5 rounded-xl border border-slate-200 bg-slate-50/90 px-2.5 py-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900";
-  const reservationBadgeClassName = isCheckedInReservation
+  const reservationBadgeClassName = isCheckedOutReservation
+    ? "inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    : isCheckedInReservation
     ? "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
     : "inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200";
-  const reservationStateLabel = isCheckedInReservation ? t("Guest checked in") : t("Reserved");
+  const reservationStateLabel = isCheckedOutReservation
+    ? t("Guest checked out")
+    : isCheckedInReservation
+    ? t("Guest checked in")
+    : t("Reserved");
   const reservationMetaChipClassName =
     "inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200";
   const reservationCustomerPhoneHref = useMemo(
@@ -420,7 +431,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
               )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
-              {!isCheckedInReservation && (
+              {!isCheckedInReservation && !isCheckedOutReservation && (
                 <button
                   type="button"
                   onClick={() => handleCheckinReservation?.()}

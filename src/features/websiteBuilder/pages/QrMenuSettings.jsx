@@ -19,6 +19,39 @@ const extractIdentifierFromQrUrl = (value) => {
   }
 };
 
+const makeEmptyConcertAreaAllocation = () => ({
+  area_name: "",
+  allocation_type: "ticket",
+  price: "",
+  quantity_total: "",
+});
+
+const makeEmptyConcertTicketType = () => ({
+  name: "",
+  area_name: "",
+  price: "",
+  quantity_total: "",
+  description: "",
+  is_table_package: false,
+});
+
+const makeEmptyConcertForm = () => ({
+  artist_name: "",
+  event_title: "",
+  event_date: "",
+  event_time: "",
+  description: "",
+  event_image: "",
+  ticket_price: "",
+  total_ticket_quantity: "",
+  total_table_quantity: "",
+  reservation_payment_method: "bank_transfer",
+  bank_transfer_instructions: "",
+  status: "active",
+  area_allocations: [makeEmptyConcertAreaAllocation()],
+  ticket_types: [makeEmptyConcertTicketType()],
+});
+
 export default function QrMenuSettings() {
   const { t } = useTranslation();
   const [qrUrl, setQrUrl] = useState("");
@@ -28,6 +61,7 @@ export default function QrMenuSettings() {
   const [loadingLink, setLoadingLink] = useState(false);
   const qrRef = useRef();
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [savingReservationTab, setSavingReservationTab] = useState(false);
   const [tables, setTables] = useState([]);
   const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
   const [tableCount, setTableCount] = useState("");
@@ -84,9 +118,22 @@ export default function QrMenuSettings() {
   social_tiktok: "",
   social_website: "",
   delivery_enabled: true,
+  reservation_tab_enabled: true,
   table_geo_enabled: false,
   table_geo_radius_meters: 150,
 });
+  const [concertEvents, setConcertEvents] = useState([]);
+  const [concertAreas, setConcertAreas] = useState([]);
+  const [loadingConcerts, setLoadingConcerts] = useState(false);
+  const [savingConcert, setSavingConcert] = useState(false);
+  const [deletingConcertId, setDeletingConcertId] = useState(null);
+  const [editingConcertId, setEditingConcertId] = useState(null);
+  const concertImageInputRef = useRef(null);
+  const [uploadingConcertImage, setUploadingConcertImage] = useState(false);
+  const [concertForm, setConcertForm] = useState(makeEmptyConcertForm());
+  const [concertBookingsByEvent, setConcertBookingsByEvent] = useState({});
+  const [loadingConcertBookingsEventId, setLoadingConcertBookingsEventId] = useState(null);
+  const [updatingConcertBookingId, setUpdatingConcertBookingId] = useState(null);
 
   const uploadsBaseUrl =
     import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000";
@@ -297,6 +344,9 @@ async function saveAllCustomization() {
       setLoadingLink(true);
       const linkRes = await secureFetch("/settings/qr-link");
       if (linkRes?.success && linkRes.link) setQrUrl(linkRes.link);
+
+      // 5) Load concert/event builder data
+      await loadConcerts();
 
     } catch (err) {
       console.error("❌ Failed to load QR settings:", err);
@@ -519,6 +569,289 @@ async function saveAllCustomization() {
     }
   };
 
+  const toggleReservationTab = async () => {
+    const nextValue = !settings.reservation_tab_enabled;
+    updateField("reservation_tab_enabled", nextValue);
+    setSavingReservationTab(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({ reservation_tab_enabled: nextValue }),
+      });
+      toast.success(
+        nextValue ? t("Reservation tab is open") : t("Reservation tab is closed")
+      );
+    } catch (err) {
+      console.error("❌ Failed to toggle reservation tab:", err);
+      toast.error(t("Failed to save reservation tab setting"));
+      updateField("reservation_tab_enabled", !nextValue);
+    } finally {
+      setSavingReservationTab(false);
+    }
+  };
+
+  const resetConcertEditor = () => {
+    setEditingConcertId(null);
+    setConcertForm(makeEmptyConcertForm());
+  };
+
+  const toConcertPayload = (source) => ({
+    artist_name: String(source?.artist_name || "").trim(),
+    event_title: String(source?.event_title || "").trim(),
+    event_date: String(source?.event_date || "").trim(),
+    event_time: String(source?.event_time || "").trim(),
+    description: String(source?.description || "").trim(),
+    event_image: String(source?.event_image || "").trim(),
+    ticket_price: Number(source?.ticket_price) || 0,
+    total_ticket_quantity: Number(source?.total_ticket_quantity) || 0,
+    total_table_quantity: Number(source?.total_table_quantity) || 0,
+    reservation_payment_method: "bank_transfer",
+    bank_transfer_instructions: String(source?.bank_transfer_instructions || "").trim(),
+    status: String(source?.status || "active").toLowerCase(),
+    area_allocations: (Array.isArray(source?.area_allocations) ? source.area_allocations : [])
+      .map((row) => ({
+        area_name: String(row?.area_name || "").trim(),
+        allocation_type: String(row?.allocation_type || "ticket").toLowerCase() === "table" ? "table" : "ticket",
+        price: Number(row?.price) || 0,
+        quantity_total: Number(row?.quantity_total) || 0,
+      }))
+      .filter((row) => row.area_name),
+    ticket_types: (Array.isArray(source?.ticket_types) ? source.ticket_types : [])
+      .map((row) => ({
+        name: String(row?.name || "").trim(),
+        area_name: String(row?.area_name || "").trim(),
+        price: Number(row?.price) || 0,
+        quantity_total: Number(row?.quantity_total) || 0,
+        description: String(row?.description || "").trim(),
+        is_table_package: Boolean(row?.is_table_package),
+      }))
+      .filter((row) => row.name),
+  });
+
+  const loadConcerts = async () => {
+    setLoadingConcerts(true);
+    try {
+      const [eventsRes, areasRes] = await Promise.all([
+        secureFetch("/concerts/events?include_hidden=true"),
+        secureFetch("/concerts/areas"),
+      ]);
+      setConcertEvents(Array.isArray(eventsRes?.events) ? eventsRes.events : []);
+      setConcertAreas(Array.isArray(areasRes?.areas) ? areasRes.areas : []);
+    } catch (err) {
+      console.error("❌ Failed to load concert data:", err);
+      setConcertEvents([]);
+      setConcertAreas([]);
+    } finally {
+      setLoadingConcerts(false);
+    }
+  };
+
+  const updateConcertFormField = (key, value) => {
+    setConcertForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const addConcertAreaAllocation = () => {
+    setConcertForm((prev) => ({
+      ...prev,
+      area_allocations: [...(prev.area_allocations || []), makeEmptyConcertAreaAllocation()],
+    }));
+  };
+
+  const removeConcertAreaAllocation = (index) => {
+    setConcertForm((prev) => ({
+      ...prev,
+      area_allocations: (prev.area_allocations || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateConcertAreaAllocationField = (index, key, value) => {
+    setConcertForm((prev) => {
+      const next = [...(prev.area_allocations || [])];
+      if (!next[index]) return prev;
+      next[index] = { ...next[index], [key]: value };
+      return { ...prev, area_allocations: next };
+    });
+  };
+
+  const addConcertTicketType = () => {
+    setConcertForm((prev) => ({
+      ...prev,
+      ticket_types: [...(prev.ticket_types || []), makeEmptyConcertTicketType()],
+    }));
+  };
+
+  const removeConcertTicketType = (index) => {
+    setConcertForm((prev) => ({
+      ...prev,
+      ticket_types: (prev.ticket_types || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateConcertTicketTypeField = (index, key, value) => {
+    setConcertForm((prev) => {
+      const next = [...(prev.ticket_types || [])];
+      if (!next[index]) return prev;
+      next[index] = { ...next[index], [key]: value };
+      return { ...prev, ticket_types: next };
+    });
+  };
+
+  const startEditConcert = (event) => {
+    setEditingConcertId(event.id);
+    setConcertForm({
+      artist_name: event.artist_name || "",
+      event_title: event.event_title || "",
+      event_date: String(event.event_date || "").slice(0, 10),
+      event_time: String(event.event_time || "").slice(0, 5),
+      description: event.description || "",
+      event_image: event.event_image || "",
+      ticket_price: String(event.ticket_price ?? ""),
+      total_ticket_quantity: String(event.total_ticket_quantity ?? ""),
+      total_table_quantity: String(event.total_table_quantity ?? ""),
+      reservation_payment_method: "bank_transfer",
+      bank_transfer_instructions: event.bank_transfer_instructions || "",
+      status: event.status || "active",
+      area_allocations:
+        Array.isArray(event.area_allocations) && event.area_allocations.length > 0
+          ? event.area_allocations.map((row) => ({
+              area_name: row.area_name || "",
+              allocation_type: row.allocation_type || "ticket",
+              price: String(row.price ?? ""),
+              quantity_total: String(row.quantity_total ?? ""),
+            }))
+          : [makeEmptyConcertAreaAllocation()],
+      ticket_types:
+        Array.isArray(event.ticket_types) && event.ticket_types.length > 0
+          ? event.ticket_types.map((row) => ({
+              name: row.name || "",
+              area_name: row.area_name || "",
+              price: String(row.price ?? ""),
+              quantity_total: String(row.quantity_total ?? ""),
+              description: row.description || "",
+              is_table_package: Boolean(row.is_table_package),
+            }))
+          : [makeEmptyConcertTicketType()],
+    });
+  };
+
+  const uploadConcertImage = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingConcertImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await secureFetch("/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res?.url) {
+        toast.error(t("Upload failed"));
+        return;
+      }
+      updateConcertFormField("event_image", res.url);
+    } catch (err) {
+      console.error("❌ Failed to upload concert image:", err);
+      toast.error(t("Upload failed"));
+    } finally {
+      setUploadingConcertImage(false);
+      event.target.value = "";
+    }
+  };
+
+  const saveConcert = async () => {
+    const payload = toConcertPayload(concertForm);
+    if (!payload.artist_name || !payload.event_date || !payload.event_time) {
+      toast.error(t("Please fill required fields"));
+      return;
+    }
+    setSavingConcert(true);
+    try {
+      const endpoint = editingConcertId
+        ? `/concerts/events/${editingConcertId}`
+        : "/concerts/events";
+      const method = editingConcertId ? "PUT" : "POST";
+      await secureFetch(endpoint, {
+        method,
+        body: JSON.stringify(payload),
+      });
+      toast.success(t("Saved successfully!"));
+      resetConcertEditor();
+      await loadConcerts();
+    } catch (err) {
+      console.error("❌ Failed to save concert:", err);
+      toast.error(err?.message || t("Failed to save changes"));
+    } finally {
+      setSavingConcert(false);
+    }
+  };
+
+  const removeConcert = async (event) => {
+    if (!event?.id) return;
+    const ok = window.confirm(
+      `${t("Delete")} ${event.event_title || event.artist_name || ""}?\n\n${t("This cannot be undone.")}`
+    );
+    if (!ok) return;
+    setDeletingConcertId(event.id);
+    try {
+      await secureFetch(`/concerts/events/${event.id}`, { method: "DELETE" });
+      toast.success(t("Saved successfully!"));
+      if (editingConcertId === event.id) {
+        resetConcertEditor();
+      }
+      await loadConcerts();
+    } catch (err) {
+      console.error("❌ Failed to delete concert:", err);
+      toast.error(t("Failed to save changes"));
+    } finally {
+      setDeletingConcertId(null);
+    }
+  };
+
+  const loadConcertBookings = async (eventId) => {
+    const numericId = Number(eventId);
+    if (!Number.isFinite(numericId) || numericId <= 0) return;
+    setLoadingConcertBookingsEventId(numericId);
+    try {
+      const res = await secureFetch(`/concerts/events/${numericId}/bookings`);
+      setConcertBookingsByEvent((prev) => ({
+        ...prev,
+        [numericId]: Array.isArray(res?.bookings) ? res.bookings : [],
+      }));
+    } catch (err) {
+      console.error("❌ Failed to load concert bookings:", err);
+      toast.error(t("Failed to load settings"));
+    } finally {
+      setLoadingConcertBookingsEventId(null);
+    }
+  };
+
+  const updateConcertBookingPayment = async (eventId, bookingId, paymentStatus) => {
+    const numericBookingId = Number(bookingId);
+    if (!Number.isFinite(numericBookingId) || numericBookingId <= 0) return;
+    setUpdatingConcertBookingId(numericBookingId);
+    try {
+      await secureFetch(`/concerts/bookings/${numericBookingId}/payment-status`, {
+        method: "PATCH",
+        body: JSON.stringify({ payment_status: paymentStatus }),
+      });
+      toast.success(t("Saved successfully!"));
+      await Promise.all([loadConcerts(), loadConcertBookings(eventId)]);
+    } catch (err) {
+      console.error("❌ Failed to update concert booking payment:", err);
+      toast.error(err?.message || t("Failed to save changes"));
+    } finally {
+      setUpdatingConcertBookingId(null);
+    }
+  };
+
+  const formatConcertDateTime = (event) => {
+    const dateValue = String(event?.event_date || "").slice(0, 10);
+    const timeValue = String(event?.event_time || "").slice(0, 5);
+    return [dateValue, timeValue].filter(Boolean).join(" ");
+  };
+
   const copyLink = () => {
     if (!qrUrl) return;
     navigator.clipboard.writeText(qrUrl);
@@ -614,6 +947,12 @@ async function saveAllCustomization() {
 
   const filteredProducts = products.filter(
     (p) => !search || p.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const concertAreaOptions = Array.from(
+    new Set([
+      ...concertAreas,
+      ...tables.map((tbl) => String(tbl?.area || "").trim()).filter(Boolean),
+    ])
   );
 
   const loadTableQr = async (number) => {
@@ -1278,6 +1617,37 @@ async function saveAllCustomization() {
                 "Toggle whether delivery/online ordering appears in the QR menu order picker."
               )}
             </p>
+            <div className="mt-4">
+              <label className="font-semibold">{t("Reservation Header Tab")}</label>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    settings.reservation_tab_enabled
+                      ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                      : "bg-rose-100 text-rose-700 border border-rose-200"
+                  }`}
+                >
+                  {settings.reservation_tab_enabled
+                    ? t("Reservation tab is open")
+                    : t("Reservation tab is closed")}
+                </span>
+                <button
+                  type="button"
+                  className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
+                  onClick={toggleReservationTab}
+                  disabled={savingReservationTab}
+                >
+                  {settings.reservation_tab_enabled
+                    ? t("Close Reservation Tab")
+                    : t("Open Reservation Tab")}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {t(
+                  "This only controls the Reservation tab in the QR header. Concert reservations stay active."
+                )}
+              </p>
+            </div>
           </div>
 
           <div className="md:col-span-2">
@@ -1639,6 +2009,485 @@ async function saveAllCustomization() {
               })}
             </div>
           )}
+        </div>
+
+        {/* CONCERT TICKETS */}
+        <div className="mt-10 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-xl font-bold text-indigo-600">{t("Concert Tickets")}</h3>
+            <span className="text-xs px-3 py-1 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700">
+              {t("Payment Method")}: {t("Bank Transfer")}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            {t("Create events, ticket packages, and table reservations synced with QR table reservations.")}
+          </p>
+
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="font-semibold">{t("Artist name")}</label>
+              <input
+                type="text"
+                value={concertForm.artist_name}
+                onChange={(e) => updateConcertFormField("artist_name", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="font-semibold">{t("Event title")}</label>
+              <input
+                type="text"
+                value={concertForm.event_title}
+                onChange={(e) => updateConcertFormField("event_title", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="font-semibold">{t("Concert date")}</label>
+              <input
+                type="date"
+                value={concertForm.event_date}
+                onChange={(e) => updateConcertFormField("event_date", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="font-semibold">{t("Concert time")}</label>
+              <input
+                type="time"
+                value={concertForm.event_time}
+                onChange={(e) => updateConcertFormField("event_time", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="font-semibold">{t("Concert picture")}</label>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={concertForm.event_image}
+                  onChange={(e) => updateConcertFormField("event_image", e.target.value)}
+                  placeholder={t("Image URL or uploaded path")}
+                  className="flex-1 min-w-[220px] p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => concertImageInputRef.current?.click()}
+                  disabled={uploadingConcertImage}
+                  className="px-4 py-2 rounded-xl border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60"
+                >
+                  {uploadingConcertImage ? t("Please wait...") : t("Upload image")}
+                </button>
+                <input
+                  ref={concertImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={uploadConcertImage}
+                  className="hidden"
+                />
+              </div>
+              {concertForm.event_image ? (
+                <img
+                  src={resolveUploadSrc(concertForm.event_image)}
+                  alt={t("Concert preview")}
+                  className="mt-2 w-full max-w-sm aspect-[16/9] rounded-xl object-cover border border-gray-200"
+                />
+              ) : null}
+            </div>
+            <div>
+              <label className="font-semibold">{t("Ticket price")}</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={concertForm.ticket_price}
+                onChange={(e) => updateConcertFormField("ticket_price", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="font-semibold">{t("Status")}</label>
+              <select
+                value={concertForm.status}
+                onChange={(e) => updateConcertFormField("status", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              >
+                <option value="active">{t("active")}</option>
+                <option value="sold_out">{t("sold out")}</option>
+                <option value="hidden">{t("hidden")}</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-semibold">{t("Total ticket quantity available")}</label>
+              <input
+                type="number"
+                min="0"
+                value={concertForm.total_ticket_quantity}
+                onChange={(e) => updateConcertFormField("total_ticket_quantity", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="font-semibold">{t("Total table quantity available")}</label>
+              <input
+                type="number"
+                min="0"
+                value={concertForm.total_table_quantity}
+                onChange={(e) => updateConcertFormField("total_table_quantity", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="font-semibold">{t("Description")}</label>
+            <textarea
+              rows={3}
+              value={concertForm.description}
+              onChange={(e) => updateConcertFormField("description", e.target.value)}
+              className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none"
+            />
+          </div>
+          <div className="mt-4">
+            <label className="font-semibold">{t("Bank Transfer Instructions")}</label>
+            <textarea
+              rows={2}
+              value={concertForm.bank_transfer_instructions}
+              onChange={(e) => updateConcertFormField("bank_transfer_instructions", e.target.value)}
+              placeholder={t("Share account details and transfer note here")}
+              className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none"
+            />
+          </div>
+
+          <div className="mt-6">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-lg font-semibold">{t("Area-based allocation")}</h4>
+              <button
+                type="button"
+                onClick={addConcertAreaAllocation}
+                className="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                {t("Add")}
+              </button>
+            </div>
+            <div className="mt-3 space-y-3">
+              {(concertForm.area_allocations || []).map((row, index) => (
+                <div key={`alloc-${index}`} className="grid grid-cols-1 md:grid-cols-5 gap-3 p-3 rounded-xl border bg-white dark:bg-zinc-900">
+                  <div>
+                    <label className="text-xs font-semibold">{t("Area")}</label>
+                    <input
+                      list="concert-area-options"
+                      value={row.area_name}
+                      onChange={(e) => updateConcertAreaAllocationField(index, "area_name", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Type")}</label>
+                    <select
+                      value={row.allocation_type}
+                      onChange={(e) => updateConcertAreaAllocationField(index, "allocation_type", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    >
+                      <option value="ticket">{t("Ticket")}</option>
+                      <option value="table">{t("Table")}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Price")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={row.price}
+                      onChange={(e) => updateConcertAreaAllocationField(index, "price", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Quantity")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.quantity_total}
+                      onChange={(e) => updateConcertAreaAllocationField(index, "quantity_total", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() => removeConcertAreaAllocation(index)}
+                      className="w-full mt-1 p-2.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50"
+                    >
+                      {t("Delete")}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-lg font-semibold">{t("Ticket Types / Packages")}</h4>
+              <button
+                type="button"
+                onClick={addConcertTicketType}
+                className="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                {t("Add")}
+              </button>
+            </div>
+            <div className="mt-3 space-y-3">
+              {(concertForm.ticket_types || []).map((row, index) => (
+                <div key={`ticket-type-${index}`} className="grid grid-cols-1 md:grid-cols-6 gap-3 p-3 rounded-xl border bg-white dark:bg-zinc-900">
+                  <div>
+                    <label className="text-xs font-semibold">{t("Name")}</label>
+                    <input
+                      value={row.name}
+                      onChange={(e) => updateConcertTicketTypeField(index, "name", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Area")}</label>
+                    <input
+                      list="concert-area-options"
+                      value={row.area_name}
+                      onChange={(e) => updateConcertTicketTypeField(index, "area_name", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Price")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={row.price}
+                      onChange={(e) => updateConcertTicketTypeField(index, "price", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Quantity")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.quantity_total}
+                      onChange={(e) => updateConcertTicketTypeField(index, "quantity_total", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 mt-6">
+                    <input
+                      id={`ticket-type-table-${index}`}
+                      type="checkbox"
+                      checked={Boolean(row.is_table_package)}
+                      onChange={(e) => updateConcertTicketTypeField(index, "is_table_package", e.target.checked)}
+                    />
+                    <label htmlFor={`ticket-type-table-${index}`} className="text-xs font-semibold">
+                      {t("Table Package")}
+                    </label>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() => removeConcertTicketType(index)}
+                      className="w-full mt-1 p-2.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50"
+                    >
+                      {t("Delete")}
+                    </button>
+                  </div>
+                  <div className="md:col-span-6">
+                    <label className="text-xs font-semibold">{t("Description")}</label>
+                    <textarea
+                      rows={2}
+                      value={row.description}
+                      onChange={(e) => updateConcertTicketTypeField(index, "description", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900 resize-none"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <datalist id="concert-area-options">
+            {concertAreaOptions.map((area) => (
+              <option key={area} value={area} />
+            ))}
+          </datalist>
+
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={saveConcert}
+              disabled={savingConcert}
+              className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
+            >
+              {savingConcert ? t("Please wait...") : editingConcertId ? t("Update") : t("Create")}
+            </button>
+            {editingConcertId ? (
+              <button
+                type="button"
+                onClick={resetConcertEditor}
+                className="px-4 py-2 rounded-xl border border-gray-300 bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50"
+              >
+                {t("Cancel")}
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mt-8">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-lg font-semibold">{t("Upcoming Concerts")}</h4>
+              {loadingConcerts ? (
+                <span className="text-xs text-gray-500">{t("Loading...")}</span>
+              ) : null}
+            </div>
+            {concertEvents.length === 0 ? (
+              <div className="mt-3 text-sm text-gray-500">{t("No concerts yet.")}</div>
+            ) : (
+              <div className="mt-3 space-y-4">
+                {concertEvents.map((event) => {
+                  const bookings = concertBookingsByEvent[event.id];
+                  const isBookingOpen = Array.isArray(bookings);
+                  const eventImage = resolveUploadSrc(event.event_image);
+                  return (
+                    <div key={event.id} className="rounded-2xl border border-gray-200 bg-white dark:bg-zinc-900 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          {eventImage ? (
+                            <img
+                              src={eventImage}
+                              alt={event.event_title || event.artist_name || "Concert"}
+                              className="w-20 h-14 rounded-lg object-cover border border-gray-200"
+                            />
+                          ) : null}
+                          <div>
+                            <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                              {event.event_title || event.artist_name}
+                            </div>
+                            <div className="text-sm text-gray-600 dark:text-gray-300">
+                              {event.artist_name} • {formatConcertDateTime(event)}
+                            </div>
+                            <div className="mt-1 text-xs text-gray-500">
+                              {t("Tickets sold")}: {event.sold_ticket_count || 0} / {event.total_ticket_quantity || 0} • {t("Tables reserved")}: {event.sold_table_count || 0} / {event.total_table_quantity || 0}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            event.status === "sold_out"
+                              ? "bg-rose-100 text-rose-700 border border-rose-200"
+                              : event.status === "hidden"
+                              ? "bg-slate-100 text-slate-700 border border-slate-200"
+                              : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                          }`}>
+                            {event.status}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => startEditConcert(event)}
+                            className="px-3 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
+                          >
+                            {t("Edit")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeConcert(event)}
+                            disabled={deletingConcertId === event.id}
+                            className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-sm hover:bg-rose-50 disabled:opacity-60"
+                          >
+                            {deletingConcertId === event.id ? t("Please wait...") : t("Delete")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isBookingOpen) {
+                                setConcertBookingsByEvent((prev) => {
+                                  const next = { ...prev };
+                                  delete next[event.id];
+                                  return next;
+                                });
+                                return;
+                              }
+                              loadConcertBookings(event.id);
+                            }}
+                            className="px-3 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
+                          >
+                            {isBookingOpen ? t("Hide bookings") : t("View bookings")}
+                          </button>
+                        </div>
+                      </div>
+
+                      {Array.isArray(event.ticket_types) && event.ticket_types.length > 0 ? (
+                        <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+                          {(event.ticket_types || []).map((ticketType) => (
+                            <div key={ticketType.id} className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold">{ticketType.name}</span>
+                              {ticketType.area_name ? <span>• {ticketType.area_name}</span> : null}
+                              <span>• {ticketType.available_count}/{ticketType.quantity_total}</span>
+                              <span>• {ticketType.price}</span>
+                              {ticketType.is_table_package ? (
+                                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">{t("Table Package")}</span>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {isBookingOpen ? (
+                        <div className="mt-4 rounded-xl border border-gray-200 overflow-hidden">
+                          {loadingConcertBookingsEventId === event.id ? (
+                            <div className="p-3 text-sm text-gray-500">{t("Loading...")}</div>
+                          ) : bookings.length === 0 ? (
+                            <div className="p-3 text-sm text-gray-500">{t("No bookings yet.")}</div>
+                          ) : (
+                            <div className="divide-y divide-gray-100">
+                              {bookings.map((booking) => (
+                                <div key={booking.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+                                  <div>
+                                    <div className="font-semibold">
+                                      {booking.customer_name || "Guest"} {booking.customer_phone ? `• ${booking.customer_phone}` : ""}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {booking.booking_type} • {booking.quantity} • {booking.payment_status}
+                                      {booking.ticket_type_name ? ` • ${booking.ticket_type_name}` : ""}
+                                      {booking.reserved_table_number ? ` • ${t("Table")} ${booking.reserved_table_number}` : ""}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateConcertBookingPayment(event.id, booking.id, "confirmed")}
+                                      disabled={updatingConcertBookingId === booking.id || booking.payment_status === "confirmed"}
+                                      className="px-2.5 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 text-xs hover:bg-emerald-50 disabled:opacity-60"
+                                    >
+                                      {t("Confirm")}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => updateConcertBookingPayment(event.id, booking.id, "cancelled")}
+                                      disabled={updatingConcertBookingId === booking.id || booking.payment_status === "cancelled"}
+                                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs hover:bg-rose-50 disabled:opacity-60"
+                                    >
+                                      {t("Cancel")}
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* LOYALTY PROGRAM */}

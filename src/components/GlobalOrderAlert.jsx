@@ -767,14 +767,21 @@ export default function GlobalOrderAlert() {
         }
       }
 
-      const packetPhoneTypes = ["packet", "phone", "online"];
-      const preOrderTypes = ["takeaway"];
+      const tableReservationTypes = ["table", "reservation"];
+      const packetPhoneTypes = [
+        "packet",
+        "phone",
+        "online",
+        "delivery",
+        "pickup",
+        "takeaway",
+      ];
+      const isTableReservationType = tableReservationTypes.includes(type);
       const isPacketPhoneType = packetPhoneTypes.includes(type);
-      const isPreOrderType = preOrderTypes.includes(type);
       const skipPrint =
-        (type === "table" && transactionSettings.disableAutoPrintTable) ||
-        ((isPacketPhoneType || isPreOrderType) && transactionSettings.disableAutoPrintPacket) ||
-        (!autoConfirmOrders && (isPacketPhoneType || isPreOrderType));
+        (isTableReservationType && transactionSettings.disableAutoPrintTable) ||
+        (isPacketPhoneType && transactionSettings.disableAutoPrintPacket) ||
+        (!autoConfirmOrders && isPacketPhoneType);
 
       notify("new_order", buildNewOrderMessage(p));
       if (skipPrint) return;

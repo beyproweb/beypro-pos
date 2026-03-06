@@ -496,8 +496,23 @@ export const useReservation = ({
 
   const handleDeleteReservation = useCallback(async () => {
     if (!existingReservation?.reservation_date) return;
-    const ok = window.confirm(t("Delete this reservation?"));
-    if (!ok) return;
+    const isCancelledLikeItem = (item) => {
+      const status = String(
+        item?.status ?? item?.item_status ?? item?.kitchen_status ?? ""
+      ).toLowerCase();
+      return ["cancelled", "canceled", "deleted", "void"].includes(status);
+    };
+
+    const localCartCount = Array.isArray(safeCartItems)
+      ? safeCartItems.filter((item) => !isCancelledLikeItem(item)).length
+      : 0;
+    const hasCartItems = hasUnconfirmedCartItems || localCartCount > 0;
+    if (hasCartItems) {
+      window.alert(
+        t("You cannot delete this reservation while items are in cart. Please clear or close the table/cart first.")
+      );
+      return;
+    }
 
     const normalizedStatus = String(order?.status || "").toLowerCase();
     const normalizedType = String(order?.order_type || "").toLowerCase();
@@ -506,21 +521,39 @@ export const useReservation = ({
       normalizedType === "reservation" ||
       !!existingReservation?.id;
 
-    let itemCount = Array.isArray(order?.items) ? order.items.length : null;
+    let itemCount = Array.isArray(order?.items)
+      ? order.items.filter((item) => !isCancelledLikeItem(item)).length
+      : null;
     if (!Number.isFinite(itemCount) && order?.id) {
       try {
-        const itemsResponse = await txApiRequest(`/orders/${order.id}/items${identifier}`);
+        const includeCancelledIdentifier = String(identifier || "").startsWith("?")
+          ? `&${String(identifier).slice(1)}`
+          : String(identifier || "");
+        const itemsResponse = await txApiRequest(
+          `/orders/${order.id}/items?include_cancelled=1${includeCancelledIdentifier}`
+        );
         const latestItems = Array.isArray(itemsResponse)
           ? itemsResponse
           : Array.isArray(itemsResponse?.items)
           ? itemsResponse.items
           : [];
-        itemCount = latestItems.length;
+        itemCount = latestItems.filter((item) => !isCancelledLikeItem(item)).length;
       } catch {
         itemCount = null;
       }
     }
     const totalAmount = Number(order?.total || 0);
+    const hasAnyItemsInCartOrTable = Number(itemCount || 0) > 0 || totalAmount > 0;
+    if (hasAnyItemsInCartOrTable) {
+      window.alert(
+        t("You cannot delete this reservation while items are in cart. Please clear or close the table/cart first.")
+      );
+      return;
+    }
+
+    const ok = window.confirm(t("Delete this reservation?"));
+    if (!ok) return;
+
     const isEmptyReservationOnly =
       isReservationLikeOrder && totalAmount <= 0 && Number(itemCount || 0) === 0;
 
@@ -611,6 +644,8 @@ export const useReservation = ({
     showToast,
     t,
     txApiRequest,
+    hasUnconfirmedCartItems,
+    safeCartItems,
   ]);
 
   const handleCheckinReservation = useCallback(async () => {
@@ -819,6 +854,15 @@ export const useReservation = ({
         });
       } catch (checkinErr) {
         const statusCode = Number(checkinErr?.details?.status);
+        const errorCode = String(checkinErr?.details?.body?.code || "").toLowerCase();
+        const isConcertBookingUnconfirmed =
+          statusCode === 409 && errorCode === "concert_booking_unconfirmed";
+        if (isConcertBookingUnconfirmed) {
+          window.alert(
+            t("Concert booking is not confirmed yet. Please confirm booking before check-in.")
+          );
+          return;
+        }
         const message = String(checkinErr?.message || "").toLowerCase();
         const shouldRetryAfterRestore =
           statusCode === 404 &&

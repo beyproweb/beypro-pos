@@ -247,10 +247,10 @@ export default function TransactionsTab() {
           />
           <div>
             <div className="font-semibold text-sm">
-              {t("Disable auto-print for table orders")}
+              {t("Disable auto-print for table/reservation orders")}
             </div>
             <div className="text-xs text-slate-500">
-              {t("Skip automatic printing when new table orders are confirmed.")}
+              {t("Skip automatic printing when table or reservation orders are confirmed.")}
             </div>
           </div>
         </label>
@@ -264,10 +264,10 @@ export default function TransactionsTab() {
           />
           <div>
             <div className="font-semibold text-sm">
-              {t("Disable auto-print for packet/phone orders")}
+              {t("Disable auto-print for packet/phone/QR delivery/pickup orders")}
             </div>
             <div className="text-xs text-slate-500">
-              {t("Skip automatic printing when packet or phone orders are confirmed.")}
+              {t("Skip automatic printing when packet, phone, QR delivery, or QR pickup orders are confirmed.")}
             </div>
           </div>
         </label>

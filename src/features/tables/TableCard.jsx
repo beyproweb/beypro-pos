@@ -1,5 +1,9 @@
 import React from "react";
-import { isCheckedInReservationStatus, normalizeOrderStatus } from "./tableVisuals";
+import {
+  isCheckedInReservationStatus,
+  isCheckedOutReservationStatus,
+  normalizeOrderStatus,
+} from "./tableVisuals";
 import ElapsedTimer from "./components/ElapsedTimer";
 import {
   RenderCounter,
@@ -9,6 +13,16 @@ import {
 } from "./dev/perfDebug";
 
 const KITCHEN_STATUSES = ["new", "preparing", "ready", "delivered"];
+const CHECKIN_REGRESSION_STATUSES = new Set([
+  "reserved",
+  "confirmed",
+  "draft",
+  "new",
+  "pending",
+  "paid",
+  "open",
+  "in_progress",
+]);
 
 const getKitchenStatusToneClass = (status) => {
   if (status === "preparing") return "bg-yellow-100 text-yellow-900 border-yellow-200";
@@ -166,7 +180,29 @@ function TableCard({
   const reservationInfo = React.useMemo(() => {
     // Use fallback reservation only when no order is attached to the table
     // or when the attached order is explicitly reservation-like.
-    const canUseFallbackReservation = !tableOrder || hasExplicitReservationState;
+    // Also allow matching fallback reservation state for the same active order so
+    // reservation badge does not disappear after item confirmation.
+    const fallbackOrderId = Number(
+      table?.reservationFallback?.order_id ?? table?.reservationFallback?.orderId
+    );
+    const fallbackReservationId = Number(table?.reservationFallback?.id);
+    const currentOrderId = Number(tableOrder?.id);
+    const fallbackMatchesCurrentOrder =
+      Number.isFinite(fallbackOrderId) &&
+      Number.isFinite(currentOrderId) &&
+      fallbackOrderId === currentOrderId;
+    const fallbackMatchesCurrentReservationOrder =
+      Number.isFinite(fallbackReservationId) &&
+      Number.isFinite(currentOrderId) &&
+      fallbackReservationId === currentOrderId;
+    const fallbackCanBindToCurrentOrder =
+      !Number.isFinite(currentOrderId) ||
+      fallbackMatchesCurrentOrder ||
+      fallbackMatchesCurrentReservationOrder;
+    const canUseFallbackReservation =
+      !tableOrder ||
+      hasExplicitReservationState ||
+      fallbackCanBindToCurrentOrder;
 
     if (
       tableOrder?.reservation &&
@@ -233,15 +269,51 @@ function TableCard({
       };
     }
     return null;
-  }, [hasExplicitReservationState, hasReservationCoreData, table.reservationFallback, tableOrder]);
-  const reservationStatus = React.useMemo(
-    () => normalizeOrderStatus(reservationInfo?.status ?? tableOrder?.status),
-    [reservationInfo?.status, tableOrder?.status]
-  );
+  }, [hasExplicitReservationState, hasReservationCoreData, table?.reservationFallback, tableOrder]);
+  const reservationStatus = React.useMemo(() => {
+    const normalizedOrderLevelStatus = normalizeOrderStatus(tableOrder?.status);
+    const normalizedReservationStatus = normalizeOrderStatus(
+      normalizedOrderLevelStatus === "checked_in"
+        ? tableOrder?.status
+        : reservationInfo?.status ?? tableOrder?.status
+    );
+    if (normalizedReservationStatus === "checked_in") return "checked_in";
+
+    const fallbackStatus = normalizeOrderStatus(table?.reservationFallback?.status);
+    if (fallbackStatus !== "checked_in") return normalizedReservationStatus;
+    if (!CHECKIN_REGRESSION_STATUSES.has(normalizedReservationStatus)) {
+      return normalizedReservationStatus;
+    }
+
+    const fallbackOrderId = Number(
+      table?.reservationFallback?.order_id ?? table?.reservationFallback?.orderId
+    );
+    const fallbackReservationId = Number(table?.reservationFallback?.id);
+    const currentOrderId = Number(tableOrder?.id);
+    const currentReservationId = Number(
+      reservationInfo?.id ??
+        tableOrder?.reservation_id ??
+        tableOrder?.reservationId ??
+        tableOrder?.reservation?.id
+    );
+    const fallbackMatchesCurrentOrder =
+      Number.isFinite(fallbackOrderId) &&
+      Number.isFinite(currentOrderId) &&
+      fallbackOrderId === currentOrderId;
+    const fallbackMatchesCurrentReservation =
+      Number.isFinite(fallbackReservationId) &&
+      Number.isFinite(currentReservationId) &&
+      fallbackReservationId === currentReservationId;
+
+    return fallbackMatchesCurrentOrder || fallbackMatchesCurrentReservation
+      ? "checked_in"
+      : normalizedReservationStatus;
+  }, [reservationInfo?.id, reservationInfo?.status, table?.reservationFallback, tableOrder]);
   const isCheckedInReservation = isCheckedInReservationStatus(reservationStatus);
+  const isCheckedOutReservation = isCheckedOutReservationStatus(reservationStatus);
   const shouldShowReservedBadge = React.useMemo(() => {
     if (reservationInfo) {
-      return isCheckedInReservation || hasExplicitReservationState || isPaidTable || isFreeTable;
+      return true;
     }
     return (
       (normalizedOrderStatus === "reserved" || normalizedOrderStatus === "checked_in") &&
@@ -269,6 +341,22 @@ function TableCard({
       handleCheckinReservation?.(table, reservationInfo);
     },
     [handleCheckinReservation, reservationInfo, table]
+  );
+  const handleCheckoutReservationClick = React.useCallback(
+    (e) => {
+      e.stopPropagation();
+      const checkoutTarget =
+        tableOrder ||
+        reservationInfo?.order_id ||
+        reservationInfo?.orderId ||
+        reservationInfo?.id;
+      if (!checkoutTarget) return;
+      handleCloseTable?.(checkoutTarget, {
+        preserveReservationShadow: false,
+        requirePaid: true,
+      });
+    },
+    [handleCloseTable, reservationInfo, tableOrder]
   );
   const reservationPhoneHref = React.useMemo(
     () => getPhoneHref(reservationInfo?.customer_phone),
@@ -347,10 +435,18 @@ function TableCard({
     [table.tableColor]
   );
 
+  const hasPendingReservationActiveStatus =
+    Boolean(reservationInfo) &&
+    !isCheckedInReservation &&
+    normalizedOrderStatus !== "reserved" &&
+    normalizedOrderStatus !== "";
   const isFreeDisplay =
-    !tableOrder ||
-    (normalizedOrderStatus === "draft" && tableItems.length === 0) ||
-    (normalizedOrderStatus === "confirmed" && tableItems.length === 0 && Number(tableOrder.total || 0) <= 0);
+    !hasPendingReservationActiveStatus &&
+    (!tableOrder ||
+      (normalizedOrderStatus === "draft" && tableItems.length === 0) ||
+      (normalizedOrderStatus === "confirmed" &&
+        tableItems.length === 0 &&
+        Number(tableOrder.total || 0) <= 0));
 
   const shouldShowConfirmedTimer = normalizedOrderStatus === "confirmed" && hasOrderItems;
   const shouldRenderKitchenStatuses = Boolean(tableOrder?.items);
@@ -360,14 +456,29 @@ function TableCard({
   const orderStatusLabel = isCheckedInReservationStatus(normalizedOrderStatus)
     ? t("Guest checked in")
     : t(tableOrder?.status === "draft" ? "Free" : tableOrder?.status);
-  const showOrderStatusBadge = !shouldShowReservedBadge;
-  const reservationPanelClassName = isCheckedInReservation
+  const showOrderStatusBadge = !shouldShowReservedBadge || hasPendingReservationActiveStatus;
+  const reservationPanelClassName = isCheckedOutReservation
+    ? "mt-1.5 rounded-xl border border-slate-300 bg-slate-50 shadow-sm px-2.5 py-2"
+    : isCheckedInReservation
     ? "mt-1.5 rounded-xl border border-emerald-200 bg-white/90 shadow-sm px-2.5 py-2"
     : "mt-1.5 rounded-xl border border-sky-200 bg-white/90 shadow-sm px-2.5 py-2";
-  const reservationTitleClassName = isCheckedInReservation
+  const reservationTitleClassName = isCheckedOutReservation
+    ? "text-[13px] sm:text-[14px] font-extrabold text-slate-700 tracking-tight"
+    : isCheckedInReservation
     ? "text-[13px] sm:text-[14px] font-extrabold text-emerald-700 tracking-tight"
     : "text-[13px] sm:text-[14px] font-extrabold text-sky-700 tracking-tight";
-  const reservationStateLabel = isCheckedInReservation ? t("Guest checked in") : t("Reserved");
+  const reservationStateLabel = isCheckedOutReservation
+    ? t("Guest checked out")
+    : isCheckedInReservation
+    ? t("Guest checked in")
+    : t("Reserved");
+  const fallbackReservationStatus = normalizeOrderStatus(table?.reservationFallback?.status);
+  const showCheckoutReservationButton =
+    (!isCheckedOutReservation && isCheckedInReservation) ||
+    (Boolean(reservationInfo) &&
+      !isCheckedOutReservation &&
+      normalizedOrderStatus === "paid" &&
+      fallbackReservationStatus === "checked_in");
 
   return (
     <div
@@ -501,17 +612,30 @@ function TableCard({
                 <div className="min-w-0">
                   <div className={reservationTitleClassName}>{reservationStateLabel}</div>
                   <div className="text-[10px] text-slate-500 font-medium truncate">
-                    {isCheckedInReservation ? t("Ready for ordering") : t("Awaiting check-in")}
+                    {isCheckedOutReservation
+                      ? t("Checkout completed")
+                      : isCheckedInReservation
+                      ? t("Ready for ordering")
+                      : t("Awaiting check-in")}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {!isCheckedInReservation && (
+                  {!isCheckedInReservation && !isCheckedOutReservation && (
                     <button
                       type="button"
                       onClick={handleCheckinReservationClick}
                       className="h-7 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
                     >
                       {t("Checkin")}
+                    </button>
+                  )}
+                  {showCheckoutReservationButton && (
+                    <button
+                      type="button"
+                      onClick={handleCheckoutReservationClick}
+                      className="h-7 rounded-full border border-indigo-300 bg-indigo-50 px-2.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
+                    >
+                      {t("Check Out")}
                     </button>
                   )}
                   <button
