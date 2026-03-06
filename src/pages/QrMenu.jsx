@@ -921,6 +921,8 @@ const DICT = {
     "This QR is for table": "This QR is for table",
     "Please scan table": "Please scan table",
     "Camera permission is required.": "Camera permission is required.",
+    Copy: "Copy",
+    Copied: "Copied",
     Cancel: "Cancel",
   },
   tr: {
@@ -1102,6 +1104,8 @@ const DICT = {
     "This QR is for table": "Bu QR şu masa için",
     "Please scan table": "Lütfen şu masayı tarayın",
     "Camera permission is required.": "Kamera izni gereklidir.",
+    Copy: "Kopyala",
+    Copied: "Kopyalandı",
     Cancel: "İptal",
   },
   de: {
@@ -1186,6 +1190,8 @@ const DICT = {
     "This QR is for table": "Dieser QR ist für Tisch",
     "Please scan table": "Bitte scannen Sie Tisch",
     "Camera permission is required.": "Kameraberechtigung ist erforderlich.",
+    Copy: "Kopieren",
+    Copied: "Kopiert",
     Cancel: "Abbrechen",
   },
   fr: {
@@ -1270,6 +1276,8 @@ const DICT = {
     "This QR is for table": "Ce QR est pour la table",
     "Please scan table": "Veuillez scanner la table",
     "Camera permission is required.": "L'autorisation de la caméra est requise.",
+    Copy: "Copier",
+    Copied: "Copié",
     Cancel: "Annuler",
   },
 };
@@ -2059,6 +2067,7 @@ async function load() {
   const [concertSubmitting, setConcertSubmitting] = React.useState(false);
   const [concertTablesLoading, setConcertTablesLoading] = React.useState(false);
   const [concertAvailableTables, setConcertAvailableTables] = React.useState([]);
+  const [concertInstructionCopied, setConcertInstructionCopied] = React.useState(false);
   const [concertForm, setConcertForm] = React.useState({
     booking_type: "ticket",
     ticket_type_id: "",
@@ -2136,6 +2145,48 @@ async function load() {
   }, [concertForm.ticket_type_id, concertModalEvent]);
 
   const concertMode = selectedConcertTicketType?.is_table_package ? "table" : concertForm.booking_type;
+  const selectedConcertUnitPrice = React.useMemo(() => {
+    const price = Number(selectedConcertTicketType?.price ?? concertModalEvent?.ticket_price ?? 0);
+    return Number.isFinite(price) && price > 0 ? price : 0;
+  }, [selectedConcertTicketType, concertModalEvent?.ticket_price]);
+  const selectedConcertQuantity = concertMode === "table" ? 1 : Math.max(1, Number(concertForm.quantity) || 1);
+  const selectedConcertTotal = selectedConcertUnitPrice * selectedConcertQuantity;
+  const concertBankInstructions = React.useMemo(() => {
+    return String(
+      concertModalEvent?.bank_transfer_instructions ||
+      t("Booking will stay pending until bank transfer is confirmed by the venue.")
+    ).trim();
+  }, [concertModalEvent?.bank_transfer_instructions, t]);
+
+  const copyConcertInstructions = React.useCallback(async () => {
+    if (!concertBankInstructions) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(concertBankInstructions);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = concertBankInstructions;
+        textarea.setAttribute("readonly", "readonly");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setConcertInstructionCopied(true);
+      window.setTimeout(() => setConcertInstructionCopied(false), 1400);
+    } catch (err) {
+      console.warn("⚠️ Failed to copy bank transfer instructions:", err);
+    }
+  }, [concertBankInstructions]);
+
+  React.useEffect(() => {
+    if (!concertModalOpen) {
+      setConcertInstructionCopied(false);
+    }
+  }, [concertModalOpen, concertModalEvent?.id]);
+
   React.useEffect(() => {
     let cancelled = false;
 
@@ -3335,12 +3386,36 @@ async function load() {
                       value={String(row.id)}
                       disabled={Number(row.available_count || 0) <= 0}
                     >
-                      {row.name}
-                      {row.area_name ? ` • ${row.area_name}` : ""}
-                      {` • ${row.available_count}/${row.quantity_total}`}
+                      {`${row.name}${row.area_name ? ` • ${row.area_name}` : ""} • ${formatCurrency(Number(row?.price || concertModalEvent?.ticket_price || 0))} • ${row.available_count}/${row.quantity_total}`}
                     </option>
                   ))}
                 </select>
+              </div>
+            ) : null}
+
+            {selectedConcertTicketType ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                      {selectedConcertTicketType.name}
+                    </p>
+                    {selectedConcertTicketType.area_name ? (
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                        {selectedConcertTicketType.area_name}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{t("Price")}</p>
+                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                      {formatCurrency(selectedConcertUnitPrice)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 text-xs text-neutral-600 dark:text-neutral-300">
+                  {`${t("Quantity")}: ${selectedConcertQuantity} • ${t("Total")}: ${formatCurrency(selectedConcertTotal)}`}
+                </div>
               </div>
             ) : null}
 
@@ -3473,8 +3548,18 @@ async function load() {
             </div>
 
             <div className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/25 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-              {concertModalEvent.bank_transfer_instructions ||
-                t("Booking will stay pending until bank transfer is confirmed by the venue.")}
+              <div className="flex items-start justify-between gap-3">
+                <p className="whitespace-pre-line">
+                  {concertBankInstructions}
+                </p>
+                <button
+                  type="button"
+                  onClick={copyConcertInstructions}
+                  className="shrink-0 rounded-lg border border-amber-300/80 dark:border-amber-800 px-2 py-1 text-[11px] font-semibold hover:bg-amber-100/80 dark:hover:bg-amber-900/40 transition"
+                >
+                  {concertInstructionCopied ? t("Copied") : t("Copy")}
+                </button>
+              </div>
             </div>
 
             <button
