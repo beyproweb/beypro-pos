@@ -1097,7 +1097,7 @@ const DICT = {
     "Shop Closed": "Dükkan Kapalı",
     "Delivery Closed": "Paket Kapalı",
     Closed: "Kapalı",
-    "Open now!": "Şu an açık!",
+    "Open now!": "Açık",
     "Scan Table QR": "Masa QR'ını Tara",
     "Scan the QR code on your table to continue.": "Devam etmek için masanızdaki QR kodunu tarayın.",
     "Invalid table QR code.": "Geçersiz masa QR kodu.",
