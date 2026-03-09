@@ -81,6 +81,12 @@ export default function QrMenuSettings() {
   const [categoryImageFileName, setCategoryImageFileName] = useState("");
   const [categoryImagePreview, setCategoryImagePreview] = useState("");
   const [uploadingCategoryImage, setUploadingCategoryImage] = useState(false);
+  const appIconInputRef = useRef(null);
+  const splashLogoInputRef = useRef(null);
+  const [appIconFileName, setAppIconFileName] = useState("");
+  const [splashLogoFileName, setSplashLogoFileName] = useState("");
+  const [uploadingAppIcon, setUploadingAppIcon] = useState(false);
+  const [uploadingSplashLogo, setUploadingSplashLogo] = useState(false);
 
   const [savingProduct, setSavingProduct] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState(null);
@@ -121,6 +127,14 @@ export default function QrMenuSettings() {
   reservation_tab_enabled: true,
   table_geo_enabled: false,
   table_geo_radius_meters: 150,
+  app_icon: "",
+  app_icon_192: "",
+  app_icon_512: "",
+  apple_touch_icon: "",
+  splash_logo: "",
+  app_display_name: "",
+  pwa_primary_color: "#4F46E5",
+  pwa_background_color: "#FFFFFF",
 });
   const [concertEvents, setConcertEvents] = useState([]);
   const [concertAreas, setConcertAreas] = useState([]);
@@ -171,6 +185,40 @@ export default function QrMenuSettings() {
 
 function updateField(key, value) {
   setSettings((prev) => ({ ...prev, [key]: value }));
+}
+
+async function uploadBrandingAsset(field, file) {
+  if (!file) return;
+  const isAppIcon = field === "app_icon";
+  if (isAppIcon) setUploadingAppIcon(true);
+  else setUploadingSplashLogo(true);
+  try {
+    const formData = new FormData();
+    formData.append(field, file);
+    formData.append(
+      "pwa_background_color",
+      String(settings.pwa_background_color || "#FFFFFF")
+    );
+    const res = await secureFetch("/settings/qr-menu-branding-assets", {
+      method: "POST",
+      body: formData,
+    });
+    if (res?.success && res?.customization) {
+      setSettings((prev) => ({
+        ...prev,
+        ...res.customization,
+      }));
+      toast.success(t("Saved successfully!"));
+      return;
+    }
+    toast.error(t("Upload failed"));
+  } catch (err) {
+    console.error("❌ Failed to upload QR branding asset:", err);
+    toast.error(t("Upload failed"));
+  } finally {
+    if (isAppIcon) setUploadingAppIcon(false);
+    else setUploadingSplashLogo(false);
+  }
 }
 
 function addHeroSlide() {
@@ -1691,6 +1739,137 @@ async function saveAllCustomization() {
             <p className="text-xs text-gray-500 mt-1">
               {t("Require table orders to be within this distance of the restaurant.")}
             </p>
+          </div>
+
+          <div className="md:col-span-2 rounded-2xl border border-indigo-100 dark:border-zinc-700 bg-indigo-50/50 dark:bg-zinc-800/40 p-4">
+            <h4 className="text-lg font-bold text-indigo-700 dark:text-indigo-300 mb-3">
+              {t("QR Menu App Branding")}
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="font-semibold block mb-2">{t("Restaurant App Icon")}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={appIconInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0] || null;
+                      setAppIconFileName(file?.name || "");
+                      if (!file) return;
+                      await uploadBrandingAsset("app_icon", file);
+                      try {
+                        e.target.value = "";
+                      } catch {}
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => appIconInputRef.current?.click()}
+                    disabled={uploadingAppIcon}
+                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+                  >
+                    {uploadingAppIcon ? t("Please wait...") : t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+                    {appIconFileName ? appIconFileName : t("No file chosen")}
+                  </span>
+                </div>
+                {(settings.app_icon_512 || settings.app_icon_192 || settings.app_icon) ? (
+                  <div className="mt-2 flex items-center gap-3">
+                    <img
+                      src={resolveUploadSrc(settings.app_icon_512 || settings.app_icon_192 || settings.app_icon)}
+                      alt={t("Restaurant App Icon")}
+                      className="w-14 h-14 rounded-2xl object-cover border bg-white"
+                    />
+                    <span className="text-xs text-gray-500">
+                      {t("Auto-resized to 192px and 512px for PWA install compatibility.")}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-gray-500">
+                    {t("If not uploaded, Beypro default icon is used.")}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-2">{t("Splash Screen Logo")}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={splashLogoInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0] || null;
+                      setSplashLogoFileName(file?.name || "");
+                      if (!file) return;
+                      await uploadBrandingAsset("splash_logo", file);
+                      try {
+                        e.target.value = "";
+                      } catch {}
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => splashLogoInputRef.current?.click()}
+                    disabled={uploadingSplashLogo}
+                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+                  >
+                    {uploadingSplashLogo ? t("Please wait...") : t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+                    {splashLogoFileName ? splashLogoFileName : t("No file chosen")}
+                  </span>
+                </div>
+                {settings.splash_logo ? (
+                  <div className="mt-2 flex items-center gap-3">
+                    <img
+                      src={resolveUploadSrc(settings.splash_logo)}
+                      alt={t("Splash Screen Logo")}
+                      className="h-14 w-28 rounded-xl object-contain border bg-white px-2"
+                    />
+                    <span className="text-xs text-gray-500">
+                      {t("Used for standalone launch splash experience.")}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+
+              <div>
+                <label className="font-semibold">{t("App Display Name")}</label>
+                <input
+                  type="text"
+                  value={settings.app_display_name || ""}
+                  onChange={(e) => updateField("app_display_name", e.target.value)}
+                  placeholder={t("Restaurant name")}
+                  className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-800"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold">{t("Primary Color")}</label>
+                  <input
+                    type="color"
+                    value={settings.pwa_primary_color || "#4F46E5"}
+                    onChange={(e) => updateField("pwa_primary_color", e.target.value)}
+                    className="mt-1 w-full h-12 p-1 rounded-xl border"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold">{t("Background Color")}</label>
+                  <input
+                    type="color"
+                    value={settings.pwa_background_color || "#FFFFFF"}
+                    onChange={(e) => updateField("pwa_background_color", e.target.value)}
+                    className="mt-1 w-full h-12 p-1 rounded-xl border"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div>

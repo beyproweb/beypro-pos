@@ -27,6 +27,12 @@ export function useQrMenuCheckout({
   setLastError,
   setOccupiedTables,
 }) {
+  const normalizeStatusValue = (value) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+
   const [paymentMethod, setPaymentMethod] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -262,9 +268,41 @@ export function useQrMenuCheckout({
       }
 
       const hasActiveOnline = type === "online" && (orderId || storage.getItem("qr_active_order_id"));
+      const isNonTableConcertTicketOrder = (() => {
+        const concertBookingType = String(
+          activeOrder?.concert_booking_type ?? activeOrder?.concertBookingType ?? ""
+        )
+          .trim()
+          .toLowerCase();
+        const concertBookingPaymentStatus = normalizeStatusValue(
+          activeOrder?.concert_booking_payment_status ??
+            activeOrder?.concertBookingPaymentStatus ??
+            ""
+        );
+        const concertBookingStatus = normalizeStatusValue(
+          activeOrder?.concert_booking_status ?? activeOrder?.concertBookingStatus ?? ""
+        );
+        const concertBookingId = Number(
+          activeOrder?.concert_booking_id ?? activeOrder?.concertBookingId ?? 0
+        );
+        const hasConcertBookingContext = Boolean(
+          (Number.isFinite(concertBookingId) && concertBookingId > 0) ||
+            concertBookingType ||
+            concertBookingPaymentStatus ||
+            concertBookingStatus
+        );
+        return (
+          hasConcertBookingContext &&
+          (concertBookingType === "ticket" ||
+            (concertBookingType !== "table" &&
+              String(activeOrder?.order_type || "").toLowerCase() !== "table"))
+        );
+      })();
       let deliveryInfo = customerInfo;
       if (type === "online") {
-        if (!deliveryInfo || !deliveryInfo.address) {
+        const skipDeliveryInfoPrompt =
+          Boolean(hasActiveOnline) && isNonTableConcertTicketOrder;
+        if (!skipDeliveryInfoPrompt && (!deliveryInfo || !deliveryInfo.address)) {
           const savedDelivery = getSavedDeliveryInfo();
           if (savedDelivery && savedDelivery.address) {
             deliveryInfo = savedDelivery;

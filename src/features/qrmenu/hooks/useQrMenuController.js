@@ -443,7 +443,7 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
       try {
         const res = await secureFetch(`/public/qr-menu-customization/${encodeURIComponent(restaurantIdentifier)}`);
         const c = res?.customization || {};
-        setBrandName(c.title || c.main_title || "");
+        setBrandName(c.app_display_name || c.title || c.main_title || "");
         setOrderSelectCustomization((prev) => ({ ...prev, ...c }));
         try {
           const mode = String(c.qr_theme || "auto").toLowerCase();
@@ -547,6 +547,14 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     delivery_enabled: true,
     table_geo_enabled: false,
     table_geo_radius_meters: 150,
+    pwa_primary_color: "#4F46E5",
+    pwa_background_color: "#FFFFFF",
+    app_icon: "",
+    app_icon_192: "",
+    app_icon_512: "",
+    apple_touch_icon: "",
+    splash_logo: "",
+    app_display_name: "",
   });
 
   // Apply QR theme to the transaction/menu (mobile-first) area.

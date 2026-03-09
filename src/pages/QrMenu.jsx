@@ -71,6 +71,33 @@ function resolveUploadedAsset(raw) {
   return `${uploadsBase}/uploads/${value.replace(/^\/?uploads\//, "")}`;
 }
 
+function resolveBrandingAsset(raw, fallback = "") {
+  const value = String(raw || "").trim();
+  if (!value) return fallback;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith("/Beylogo")) return value;
+  if (value.startsWith("/uploads/")) {
+    return `${API_BASE || ""}${value}`;
+  }
+  if (value.startsWith("uploads/")) {
+    return `${API_BASE || ""}/${value}`;
+  }
+  if (value.startsWith("/")) return value;
+  return `${API_BASE || ""}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+}
+
+function normalizeHexColor(value, fallback) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!match) return fallback;
+  if (match[1].length === 6) return `#${match[1].toUpperCase()}`;
+  return `#${match[1]
+    .split("")
+    .map((ch) => `${ch}${ch}`)
+    .join("")
+    .toUpperCase()}`;
+}
+
 const QR_PREFIX = "qr_";
 const QR_TOKEN_KEY = "qr_token";
 const BEYPRO_APP_STORE_URL = import.meta.env.VITE_BEYPRO_APPSTORE_URL || "";
@@ -859,7 +886,7 @@ const DICT = {
     Reward: "Reward",
     "Free Menu Item": "Free Menu Item",
     "Popular This Week": "Popular This Week",
-    "What our guests say": "What our guests say",
+    Reviews: "Reviews",
     "No reviews yet.": "No reviews yet.",
     Featured: "Featured",
     "Order Status": "Order Status",
@@ -1044,7 +1071,7 @@ const DICT = {
     Reward: "Ödül",
     "Free Menu Item": "Ücretsiz Menü Ürünü",
     "Popular This Week": "Bu Haftanın Popülerleri",
-    "What our guests say": "Misafirlerimiz ne diyor",
+    Reviews: "Yorumlar",
     "No reviews yet.": "Henüz yorum yok.",
     Featured: "Öne Çıkan",
     "Order Status": "Sipariş Durumu",
@@ -1136,7 +1163,7 @@ const DICT = {
     Reward: "Belohnung",
     "Free Menu Item": "Kostenloser Menüartikel",
     "Popular This Week": "Diese Woche beliebt",
-    "What our guests say": "Was unsere Gäste sagen",
+    Reviews: "Bewertungen",
     "No reviews yet.": "Noch keine Bewertungen.",
     Featured: "Empfohlen",
     "Order Status": "Bestellstatus",
@@ -1224,7 +1251,7 @@ const DICT = {
     Reward: "Récompense",
     "Free Menu Item": "Article du menu gratuit",
     "Popular This Week": "Populaire cette semaine",
-    "What our guests say": "Ce que disent nos clients",
+    Reviews: "Avis",
     "No reviews yet.": "Aucun avis pour le moment.",
     Featured: "En vedette",
     "Order Status": "Statut de la commande",
@@ -1673,7 +1700,7 @@ async function load() {
   React.useEffect(() => {
     onCustomizationLoadedRef.current?.(custom || {});
   }, [custom]);
-  const restaurantName = c.title || c.main_title || "Restaurant";
+  const restaurantName = c.app_display_name || c.title || c.main_title || "Restaurant";
   const displayRestaurantName = React.useMemo(() => {
     return normalizeRestaurantDisplayName(restaurantName, "Restaurant");
   }, [restaurantName]);
@@ -1683,7 +1710,7 @@ async function load() {
   const allowDelivery = boolish(c.delivery_enabled, true);
   const reservationTabEnabled = boolish(c.reservation_tab_enabled, true);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
-  const logoUrl = c.logo || "/Beylogo.svg";
+  const logoUrl = c.splash_logo || c.logo || c.app_icon || "/Beylogo.svg";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
   const [isDark, setIsDark] = React.useState(() =>
     themeMode === "dark" || (themeMode === "auto" && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -2409,27 +2436,29 @@ async function load() {
         response?.booking?.payment_instructions ||
         response?.event?.bank_transfer_instructions ||
         t("Please complete bank transfer and wait for confirmation.");
-      if (concertMode === "table") {
-        const reservationOrderId = Number(
-          response?.booking?.reservation_order_id || response?.reservation?.id || 0
-        );
+      const linkedOrderId = Number(
+        response?.booking?.reservation_order_id ||
+          response?.linked_order?.id ||
+          response?.reservation?.id ||
+          0
+      );
+      if (Number.isFinite(linkedOrderId) && linkedOrderId > 0) {
         const reservedTableNumber = Number(
           response?.booking?.reserved_table_number || concertForm.table_number || 0
         );
-        if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
-          onConcertReservationSuccess?.({
-            reservationOrderId,
-            reservedTableNumber:
-              Number.isFinite(reservedTableNumber) && reservedTableNumber > 0
-                ? reservedTableNumber
-                : null,
-            paymentStatus,
-            instructions,
-          });
-          closeConcertModal();
-          await loadConcertEvents();
-          return;
-        }
+        onConcertReservationSuccess?.({
+          reservationOrderId: linkedOrderId,
+          reservedTableNumber:
+            Number.isFinite(reservedTableNumber) && reservedTableNumber > 0
+              ? reservedTableNumber
+              : null,
+          bookingType: concertMode,
+          paymentStatus,
+          instructions,
+        });
+        closeConcertModal();
+        await loadConcertEvents();
+        return;
       }
 
       alert(`${t("Booking created")}\n${t("Status")}: ${paymentStatus}\n\n${instructions}`);
@@ -3330,7 +3359,7 @@ async function load() {
 	    {/* === REVIEWS === */}
 	    <section id="reviews-section" className="max-w-6xl mx-auto px-4 pt-2 pb-16">
 	      <h2 className="text-3xl font-serif font-bold text-gray-900 dark:text-neutral-50 mb-4">
-	        {t("What our guests say")}
+	        {t("Reviews")}
 	      </h2>
 
 	      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3610,22 +3639,6 @@ async function load() {
                     </p>
                   </div>
                 </div>
-              </div>
-            ) : null}
-
-            {!selectedConcertTicketType?.is_table_package ? (
-              <div className="grid grid-cols-1 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConcertForm((prev) => ({ ...prev, booking_type: "ticket" }))}
-                  className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
-                    concertMode === "ticket"
-                      ? "bg-neutral-900 text-white border-neutral-700 dark:border-neutral-500"
-                      : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
-                  }`}
-                >
-                  {t("Buy Ticket")}
-                </button>
               </div>
             ) : null}
 
@@ -4903,6 +4916,8 @@ export default function QrMenu() {
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [concertBookingConfirmLabel, setConcertBookingConfirmLabel] = useState(false);
   const [checkoutCompletedLabel, setCheckoutCompletedLabel] = useState(false);
+  const [pendingNonTableConcertReorderLock, setPendingNonTableConcertReorderLock] = useState(false);
+  const [showStandaloneSplash, setShowStandaloneSplash] = useState(false);
   const callWaiterFeedbackTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -4923,6 +4938,128 @@ export default function QrMenu() {
       window.removeEventListener("qr:cart-visibility", handleCartVisibility);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const identifier =
+      String(restaurantIdentifier || "").trim() ||
+      String(slug || "").trim() ||
+      String(id || "").trim();
+    if (!identifier) return undefined;
+
+    const themeColor = normalizeHexColor(
+      orderSelectCustomization?.pwa_primary_color || orderSelectCustomization?.primary_color,
+      "#4F46E5"
+    );
+    const backgroundColor = normalizeHexColor(
+      orderSelectCustomization?.pwa_background_color,
+      "#FFFFFF"
+    );
+    const manifestVersion = encodeURIComponent(
+      String(orderSelectCustomization?.branding_updated_at || "default")
+    );
+    const manifestHref = `${API_URL}/public/manifest.json?identifier=${encodeURIComponent(
+      identifier
+    )}&v=${manifestVersion}`;
+    const appleTouchIconHref = resolveBrandingAsset(
+      orderSelectCustomization?.apple_touch_icon ||
+        orderSelectCustomization?.app_icon_192 ||
+        orderSelectCustomization?.app_icon_512 ||
+        orderSelectCustomization?.app_icon,
+      "/Beylogo.svg"
+    );
+
+    const touched = [];
+    const upsertMeta = (selector, attrs, content) => {
+      let node = document.head.querySelector(selector);
+      const created = !node;
+      if (!node) {
+        node = document.createElement("meta");
+        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+        document.head.appendChild(node);
+      }
+      touched.push({
+        node,
+        created,
+        attr: "content",
+        previous: node.getAttribute("content"),
+      });
+      node.setAttribute("content", content);
+    };
+    const upsertLink = (selector, attrs, href) => {
+      let node = document.head.querySelector(selector);
+      const created = !node;
+      if (!node) {
+        node = document.createElement("link");
+        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+        document.head.appendChild(node);
+      }
+      touched.push({
+        node,
+        created,
+        attr: "href",
+        previous: node.getAttribute("href"),
+      });
+      node.setAttribute("href", href);
+    };
+
+    upsertMeta('meta[name="theme-color"]', { name: "theme-color" }, themeColor);
+    upsertMeta(
+      'meta[name="apple-mobile-web-app-capable"]',
+      { name: "apple-mobile-web-app-capable" },
+      "yes"
+    );
+    upsertMeta(
+      'meta[name="apple-mobile-web-app-status-bar-style"]',
+      { name: "apple-mobile-web-app-status-bar-style" },
+      "default"
+    );
+    upsertMeta('meta[name="background-color"]', { name: "background-color" }, backgroundColor);
+    upsertLink('link[rel="manifest"]', { rel: "manifest" }, manifestHref);
+    upsertLink('link[rel="apple-touch-icon"]', { rel: "apple-touch-icon" }, appleTouchIconHref);
+
+    return () => {
+      touched.forEach(({ node, created, attr, previous }) => {
+        if (created) {
+          node.remove();
+          return;
+        }
+        if (previous == null) {
+          node.removeAttribute(attr);
+        } else {
+          node.setAttribute(attr, previous);
+        }
+      });
+    };
+  }, [
+    id,
+    restaurantIdentifier,
+    slug,
+    orderSelectCustomization?.app_icon,
+    orderSelectCustomization?.app_icon_192,
+    orderSelectCustomization?.app_icon_512,
+    orderSelectCustomization?.apple_touch_icon,
+    orderSelectCustomization?.branding_updated_at,
+    orderSelectCustomization?.primary_color,
+    orderSelectCustomization?.pwa_background_color,
+    orderSelectCustomization?.pwa_primary_color,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const standalone =
+      window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator?.standalone;
+    const splashLogo = resolveBrandingAsset(orderSelectCustomization?.splash_logo || "", "");
+    if (!standalone || !splashLogo) {
+      setShowStandaloneSplash(false);
+      return undefined;
+    }
+    setShowStandaloneSplash(true);
+    const timerId = window.setTimeout(() => {
+      setShowStandaloneSplash(false);
+    }, 1200);
+    return () => window.clearTimeout(timerId);
+  }, [orderSelectCustomization?.splash_logo]);
 
   const resolvedTableForActions =
     Number(table) ||
@@ -4991,7 +5128,49 @@ export default function QrMenu() {
     hasBottomNavContext &&
     (!showHome || showStatus) &&
     !isCartDrawerOpen;
-  const canReOrderFromNav = Boolean(hasActiveOrder || showStatus);
+  const shouldLockReorderForNonTableConcert = (() => {
+    const concertBookingType = String(
+      activeOrder?.concert_booking_type ?? activeOrder?.concertBookingType ?? ""
+    )
+      .trim()
+      .toLowerCase();
+    const concertPaymentStatus = normalizeReservationStatus(
+      activeOrder?.concert_booking_payment_status ?? activeOrder?.concertBookingPaymentStatus ?? ""
+    );
+    const concertBookingStatus = normalizeReservationStatus(
+      activeOrder?.concert_booking_status ?? activeOrder?.concertBookingStatus ?? ""
+    );
+    const concertBookingId = Number(
+      activeOrder?.concert_booking_id ?? activeOrder?.concertBookingId ?? 0
+    );
+    const hasConcertContextFromOrder = Boolean(
+      (Number.isFinite(concertBookingId) && concertBookingId > 0) ||
+        concertBookingType ||
+        concertPaymentStatus ||
+        concertBookingStatus
+    );
+    const isNonTableConcertFromOrder =
+      hasConcertContextFromOrder &&
+      (concertBookingType === "ticket" ||
+        (concertBookingType !== "table" &&
+          String(activeOrder?.order_type || "").toLowerCase() !== "table"));
+    const isConcertConfirmed =
+      concertPaymentStatus === "confirmed" || concertBookingStatus === "confirmed";
+    const isConcertCheckedIn =
+      activeOrder?.checked_in === true ||
+      activeOrder?.reservation?.checked_in === true ||
+      isCheckedInReservationStatus(orderScreenStatus) ||
+      isCheckedInReservationStatus(activeOrder?.status) ||
+      isCheckedInReservationStatus(concertBookingStatus);
+    const lockFromOrder =
+      isNonTableConcertFromOrder && (!isConcertConfirmed || !isConcertCheckedIn);
+
+    // Keep lock active right after booking success (before fresh order payload hydrates).
+    if (!hasConcertContextFromOrder && pendingNonTableConcertReorderLock) return true;
+    return lockFromOrder;
+  })();
+  const canReOrderFromNav =
+    Boolean(hasActiveOrder || showStatus) && !shouldLockReorderForNonTableConcert;
   const canStartVoiceFromNavBase =
     Boolean(resolvedOrderTypeForActions) && (!showHome || showStatus);
   const showTableAreas = useMemo(
@@ -5297,6 +5476,9 @@ export default function QrMenu() {
     (normalizedStatusForLock === "reserved" ||
       normalizedStatusForLock === "confirmed" ||
       reservedTableContextWhileLocked);
+  const canUseStatusOrderAnother =
+    !shouldLockReorderForNonTableConcert &&
+    !(forceStatusLockActive && !allowOrderAnotherWhenLocked);
   const activeOrderHasReservation = hasReservationPayload(activeOrder);
   const activeOrderItemCount = (() => {
     if (Array.isArray(activeOrder?.items)) return activeOrder.items.length;
@@ -5319,7 +5501,10 @@ export default function QrMenu() {
   const disableAuxBottomNavActions = showCloseInReorderSlot;
   const callWaiterButtonDisabled = callWaiterButtonDisabledBase || disableAuxBottomNavActions;
   const canStartVoiceFromNav =
-    canStartVoiceFromNavBase && !disableAuxBottomNavActions && !reservationPendingCheckIn;
+    canStartVoiceFromNavBase &&
+    !disableAuxBottomNavActions &&
+    !reservationPendingCheckIn &&
+    !shouldLockReorderForNonTableConcert;
   const reorderActionLabel = showCloseInReorderSlot ? t("Close") : reOrderLabel;
   const canUseReorderSlot = showCloseInReorderSlot || canReOrderFromNav;
   const onReorderSlotClick = showCloseInReorderSlot
@@ -5334,7 +5519,7 @@ export default function QrMenu() {
           orderId={statusPortalOrderId}
           orderType={orderType}
           table={orderType === "table" ? table : null}
-          onOrderAnother={forceStatusLockActive && !allowOrderAnotherWhenLocked ? null : handleStatusModalOrderAnother}
+          onOrderAnother={canUseStatusOrderAnother ? handleStatusModalOrderAnother : null}
           onCheckout={handleReservationCheckout}
           onClose={handleStatusModalClose}
           onFinished={checkoutCompletedLabel ? null : resetToTypePicker}
@@ -5354,13 +5539,97 @@ export default function QrMenu() {
       )
     : null;
 
+  useEffect(() => {
+    if (!pendingNonTableConcertReorderLock) return;
+
+    const concertBookingType = String(
+      activeOrder?.concert_booking_type ?? activeOrder?.concertBookingType ?? ""
+    )
+      .trim()
+      .toLowerCase();
+    const concertPaymentStatus = normalizeReservationStatus(
+      activeOrder?.concert_booking_payment_status ?? activeOrder?.concertBookingPaymentStatus ?? ""
+    );
+    const concertBookingStatus = normalizeReservationStatus(
+      activeOrder?.concert_booking_status ?? activeOrder?.concertBookingStatus ?? ""
+    );
+    const concertBookingId = Number(
+      activeOrder?.concert_booking_id ?? activeOrder?.concertBookingId ?? 0
+    );
+    const hasConcertContextFromOrder = Boolean(
+      (Number.isFinite(concertBookingId) && concertBookingId > 0) ||
+        concertBookingType ||
+        concertPaymentStatus ||
+        concertBookingStatus
+    );
+    const isNonTableConcertFromOrder =
+      hasConcertContextFromOrder &&
+      (concertBookingType === "ticket" ||
+        (concertBookingType !== "table" &&
+          String(activeOrder?.order_type || "").toLowerCase() !== "table"));
+    const isConcertConfirmed =
+      concertPaymentStatus === "confirmed" || concertBookingStatus === "confirmed";
+    const isConcertCheckedIn =
+      activeOrder?.checked_in === true ||
+      activeOrder?.reservation?.checked_in === true ||
+      isCheckedInReservationStatus(orderScreenStatus) ||
+      isCheckedInReservationStatus(activeOrder?.status) ||
+      isCheckedInReservationStatus(concertBookingStatus);
+
+    if (hasConcertContextFromOrder && !isNonTableConcertFromOrder) {
+      setPendingNonTableConcertReorderLock(false);
+      return;
+    }
+    if (isNonTableConcertFromOrder && isConcertConfirmed && isConcertCheckedIn) {
+      setPendingNonTableConcertReorderLock(false);
+      return;
+    }
+    if (!hasConcertContextFromOrder && !showStatus && !hasActiveOrder) {
+      setPendingNonTableConcertReorderLock(false);
+    }
+  }, [
+    activeOrder,
+    hasActiveOrder,
+    orderScreenStatus,
+    pendingNonTableConcertReorderLock,
+    showStatus,
+  ]);
+
   const handleConcertReservationSuccess = useCallback(
-    ({ reservationOrderId, reservedTableNumber }) => {
+    ({ reservationOrderId, reservedTableNumber, bookingType = "table", paymentStatus = "" }) => {
       const nextOrderId = Number(reservationOrderId || 0);
       if (!Number.isFinite(nextOrderId) || nextOrderId <= 0) {
         return;
       }
 
+      if (String(bookingType || "").toLowerCase() !== "table") {
+        setPendingNonTableConcertReorderLock(true);
+        setOrderType("takeaway");
+        storage.setItem("qr_orderType", "takeaway");
+        setTable(null);
+        storage.removeItem("qr_table");
+        storage.setItem("qr_show_status", "1");
+        storage.removeItem("qr_force_status_until_closed");
+        setOrderStatus("success");
+        setConcertBookingConfirmLabel(
+          String(paymentStatus || "").trim().toLowerCase() === "confirmed"
+        );
+        setCheckoutCompletedLabel(false);
+        setShowStatus(true);
+        setOrderId(nextOrderId);
+        storage.setItem("qr_active_order_id", String(nextOrderId));
+        storage.setItem(
+          "qr_active_order",
+          JSON.stringify({
+            orderId: nextOrderId,
+            orderType: "takeaway",
+            table: null,
+          })
+        );
+        return;
+      }
+
+      setPendingNonTableConcertReorderLock(false);
       const nextTableNumber = Number(reservedTableNumber || 0);
       setOrderType("table");
       storage.setItem("qr_orderType", "table");
@@ -5387,7 +5656,16 @@ export default function QrMenu() {
         })
       );
     },
-    [setConcertBookingConfirmLabel, setOrderId, setOrderStatus, setOrderType, setShowStatus, setTable, storage]
+    [
+      setConcertBookingConfirmLabel,
+      setOrderId,
+      setOrderStatus,
+      setOrderType,
+      setPendingNonTableConcertReorderLock,
+      setShowStatus,
+      setTable,
+      storage,
+    ]
   );
 
   const handleVoiceDraftAddToCart = useCallback(
@@ -5541,6 +5819,23 @@ export default function QrMenu() {
 
   return (
     <>
+      {showStandaloneSplash ? (
+        <div
+          className="fixed inset-0 z-[1200] flex items-center justify-center"
+          style={{
+            backgroundColor: normalizeHexColor(
+              orderSelectCustomization?.pwa_background_color,
+              "#FFFFFF"
+            ),
+          }}
+        >
+          <img
+            src={resolveBrandingAsset(orderSelectCustomization?.splash_logo || "", "/Beylogo.svg")}
+            alt={t("Splash Logo")}
+            className="w-36 h-36 object-contain"
+          />
+        </div>
+      ) : null}
       <InstallHelpModal
         open={showHelp}
         onClose={() => setShowHelp(false)}

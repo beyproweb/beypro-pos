@@ -1681,6 +1681,7 @@ useEffect(() => {
 }, []);
 
 const [takeawayOrders, setTakeawayOrders] = useState([]);
+const [takeawayCheckInSubmittingId, setTakeawayCheckInSubmittingId] = useState(null);
 
 const fetchTakeawayOrders = useCallback(async () => {
   try {
@@ -1698,6 +1699,13 @@ const fetchTakeawayOrders = useCallback(async () => {
     const ordersWithItems = await Promise.all(
       filtered.map(async (order) => {
         try {
+          let orderMeta = null;
+          try {
+            orderMeta = await secureFetch(`/orders/${order.id}`);
+          } catch (metaErr) {
+            console.warn("⚠️ Failed to fetch takeaway order meta", order.id, metaErr);
+          }
+
           let items = (await secureFetch(`/orders/${order.id}/items`)).map((item) => ({
             ...item,
             discount_type: item.discount_type || item.discountType || null,
@@ -1729,7 +1737,12 @@ const fetchTakeawayOrders = useCallback(async () => {
             }
           }
 
-          return { ...order, items, receiptMethods };
+          return {
+            ...order,
+            ...(orderMeta && typeof orderMeta === "object" ? orderMeta : {}),
+            items,
+            receiptMethods,
+          };
         } catch (e) {
           console.warn("⚠️ Failed to enrich takeaway order", order.id, e);
           return { ...order, items: [], receiptMethods: [] };
@@ -1743,6 +1756,70 @@ const fetchTakeawayOrders = useCallback(async () => {
     toast.error("Could not load takeaway orders");
   }
 }, []);
+
+const handleTakeawayConcertTicketCheckIn = useCallback(
+  async (order) => {
+    const orderId = Number(order?.id);
+    if (!Number.isFinite(orderId) || orderId <= 0) return;
+
+    const paymentStatus = String(
+      order?.concert_booking_payment_status ?? order?.concertBookingPaymentStatus ?? ""
+    )
+      .trim()
+      .toLowerCase();
+    const bookingStatus = String(
+      order?.concert_booking_status ?? order?.concertBookingStatus ?? ""
+    )
+      .trim()
+      .toLowerCase();
+    const isConfirmed = paymentStatus === "confirmed" || bookingStatus === "confirmed";
+    if (!isConfirmed) {
+      toast.warning(
+        t("Concert booking is not confirmed yet. Please confirm booking before check-in.")
+      );
+      return;
+    }
+
+    try {
+      setTakeawayCheckInSubmittingId(orderId);
+      const response = await secureFetch(`/orders/${orderId}/reservations/checkin`, {
+        method: "POST",
+      });
+      const updatedOrder =
+        response?.order && typeof response.order === "object" ? response.order : null;
+
+      setTakeawayOrders((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        return list.map((row) => {
+          if (Number(row?.id) !== orderId) return row;
+          return {
+            ...row,
+            ...(updatedOrder || {}),
+            status: updatedOrder?.status ?? "checked_in",
+          };
+        });
+      });
+
+      toast.success(t("Guest checked in"));
+      await Promise.all([fetchTakeawayOrders(), fetchOrders({ skipHydration: true })]);
+      setTimeout(() => fetchOrders(), 350);
+    } catch (err) {
+      const statusCode = Number(err?.details?.status);
+      const errorCode = String(err?.details?.body?.code || "").toLowerCase();
+      if (statusCode === 409 && errorCode === "concert_booking_unconfirmed") {
+        toast.warning(
+          t("Concert booking is not confirmed yet. Please confirm booking before check-in.")
+        );
+        return;
+      }
+      console.error("❌ Failed to check in pre-order concert ticket:", err);
+      toast.error(err?.message || t("Failed to check in reservation"));
+    } finally {
+      setTakeawayCheckInSubmittingId(null);
+    }
+  },
+  [fetchOrders, fetchTakeawayOrders, t]
+);
 
 /* moved below loadDataForTab to avoid TDZ */
 
@@ -2648,6 +2725,38 @@ const freeTablesCount = React.useMemo(() => {
   if (!Array.isArray(tables)) return 0;
   return tables.filter((table) => isEffectivelyFreeOrder(table.order)).length;
 }, [tables]);
+const blockedConcertTableNumbers = React.useMemo(() => {
+  const blocked = new Set();
+  const bookings = Array.isArray(concertBookings) ? concertBookings : [];
+  bookings.forEach((booking) => {
+    const paymentStatus = String(
+      booking?.payment_status ?? booking?.paymentStatus ?? ""
+    )
+      .trim()
+      .toLowerCase();
+    const reservationOrderStatus = normalizeOrderStatus(
+      booking?.reservation_order_status ?? booking?.reservationOrderStatus ?? ""
+    );
+    const isCancelled =
+      paymentStatus === "cancelled" ||
+      paymentStatus === "canceled" ||
+      reservationOrderStatus === "cancelled" ||
+      reservationOrderStatus === "canceled";
+    if (isCancelled) return;
+
+    const isTicketConfirmed = paymentStatus === "confirmed";
+    const isCheckedIn = reservationOrderStatus === "checked_in";
+    if (isTicketConfirmed || isCheckedIn) return;
+
+    const tableNumber = Number(
+      booking?.reserved_table_number ?? booking?.reservedTableNumber
+    );
+    if (Number.isFinite(tableNumber) && tableNumber > 0) {
+      blocked.add(tableNumber);
+    }
+  });
+  return blocked;
+}, [concertBookings]);
 
 useEffect(() => {
   const titlesByTab = {
@@ -2714,6 +2823,13 @@ const handleTableClick = useCallback(async (table) => {
     }
   } catch {
     // Fail-open here and let TransactionScreen/useRegisterGuard enforce access.
+  }
+  const tableNumber = Number(table?.tableNumber);
+  if (Number.isFinite(tableNumber) && blockedConcertTableNumbers.has(tableNumber)) {
+    toast.warning(
+      t("Concert ticket is not confirmed yet. Please confirm booking and check in guest before opening this table.")
+    );
+    return;
   }
 
   const requireGuests = transactionSettings.requireGuestsBeforeOpen ?? true;
@@ -2823,7 +2939,7 @@ const handleTableClick = useCallback(async (table) => {
       },
     },
   });
-}, [transactionSettings.requireGuestsBeforeOpen, t, navigate]);
+}, [blockedConcertTableNumbers, transactionSettings.requireGuestsBeforeOpen, t, navigate]);
 
   // Remove duplicate groupedByTable (already have ordersByTable memoized above)
   // const groupedByTable = orders.reduce(...) // ❌ REMOVED DUPLICATE
@@ -3076,7 +3192,53 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       </button>
 
       {/* Existing Takeaway Orders */}
-      {takeawayOrders.map(order => (
+      {takeawayOrders.map((order) => {
+        const normalizedOrderStatus = normalizeOrderStatus(order?.status);
+        const isCheckedInOrder = normalizedOrderStatus === "checked_in";
+        const concertBookingType = String(
+          order?.concert_booking_type ?? order?.concertBookingType ?? ""
+        )
+          .trim()
+          .toLowerCase();
+        const concertBookingPaymentStatus = String(
+          order?.concert_booking_payment_status ?? order?.concertBookingPaymentStatus ?? ""
+        )
+          .trim()
+          .toLowerCase();
+        const concertBookingStatus = String(
+          order?.concert_booking_status ?? order?.concertBookingStatus ?? ""
+        )
+          .trim()
+          .toLowerCase();
+        const concertBookingId = Number(
+          order?.concert_booking_id ?? order?.concertBookingId ?? 0
+        );
+        const hasConcertBookingContext = Boolean(
+          (Number.isFinite(concertBookingId) && concertBookingId > 0) ||
+            concertBookingType ||
+            concertBookingPaymentStatus ||
+            concertBookingStatus
+        );
+        const hasTicketConcertItem =
+          Array.isArray(order?.items) &&
+          order.items.some((item) => {
+            const itemName = String(
+              item?.order_item_name ?? item?.product_name ?? item?.name ?? ""
+            )
+              .trim()
+              .toLowerCase();
+            return itemName === "ticket concert";
+          });
+        const isConcertTicketPreOrder =
+          hasConcertBookingContext &&
+          (concertBookingType === "ticket" ||
+            (concertBookingType !== "table" && hasTicketConcertItem));
+        const isConcertBookingConfirmed =
+          concertBookingPaymentStatus === "confirmed" ||
+          concertBookingStatus === "confirmed";
+        const checkInPending = takeawayCheckInSubmittingId === Number(order?.id);
+
+        return (
         <div
           key={order.id}
           onClick={() => navigate(`/transaction/phone/${order.id}`, { state: { order } })}
@@ -3161,8 +3323,39 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
               </div>
             )}
           </div>
+
+          {isConcertTicketPreOrder ? (
+            <div className="mt-3 flex items-center gap-2">
+              {isCheckedInOrder ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-extrabold border bg-emerald-100 text-emerald-800 border-emerald-200">
+                  ✅ {t("Guest checked in")}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleTakeawayConcertTicketCheckIn(order);
+                  }}
+                  disabled={checkInPending}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                    isConcertBookingConfirmed
+                      ? "border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
+                  } ${checkInPending ? "cursor-not-allowed opacity-60" : ""}`}
+                  title={
+                    isConcertBookingConfirmed
+                      ? t("Check In")
+                      : t("Concert booking is not confirmed yet. Please confirm booking before check-in.")
+                  }
+                >
+                  {checkInPending ? t("Loading...") : t("Check In")}
+                </button>
+              )}
+            </div>
+          ) : null}
         </div>
-      ))}
+      )})}
     </div>
   </div>
 )}
