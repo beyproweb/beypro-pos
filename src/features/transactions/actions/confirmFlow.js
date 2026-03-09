@@ -47,7 +47,9 @@ export function createConfirmFlow(deps) {
       : false;
   }
 
-  async function handleMultifunction() {
+  async function handleMultifunction(modeOrEvent = null) {
+    const closeMode = typeof modeOrEvent === "string" ? modeOrEvent : null;
+    const isReservationCheckoutAction = closeMode === "reservation_checkout";
     console.log("ENTERED handleMultifunction()");
     console.log("order before any checks →", order);
 
@@ -350,20 +352,23 @@ export function createConfirmFlow(deps) {
       ];
       const isCheckedInReservationClose =
         hasReservationContext && checkedInCandidates.includes("checked_in");
+      const isReservationFinalizeClose = isCheckedInReservationClose || isReservationCheckoutAction;
 
-      if (isCheckedInReservationClose) {
-        const shouldProceed = window.confirm(
-          t(
-            "You are closing a checked-in reservation. This will check out the guest and remove the reservation from this table. Continue?"
-          )
-        );
-        if (!shouldProceed) return;
+      if (isCheckedInReservationClose && !isReservationCheckoutAction) {
+        window.alert(t("Please check-out before closing table"));
+        return;
       }
 
       // ✅ All delivered → close and go immediately
       try {
-        await txApiRequest(`/orders/${order.id}/close${identifier}`, { method: "POST" });
-        if (isCheckedInReservationClose) {
+        const closeRequestOptions = { method: "POST" };
+        if (isReservationFinalizeClose) {
+          closeRequestOptions.body = JSON.stringify({
+            preserve_reservation_checkout_badge: true,
+          });
+        }
+        await txApiRequest(`/orders/${order.id}/close${identifier}`, closeRequestOptions);
+        if (isReservationFinalizeClose) {
           removeReservationShadow({
             reservationId:
               existingReservation?.id ??

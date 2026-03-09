@@ -308,6 +308,44 @@ function TablesView({
                     className="rounded-xl border border-gray-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3"
                   >
                     <div className="min-w-[240px]">
+                      {(() => {
+                        const bookingGuests = Number(
+                          booking.guests_count ??
+                            booking.guestsCount ??
+                            booking.reservation_clients ??
+                            0
+                        );
+                        const guestsLabel = Number.isFinite(bookingGuests) && bookingGuests > 0
+                          ? bookingGuests
+                          : Number(booking.quantity || 0) || 0;
+                        const bookingUnitPrice = Number(
+                          booking.unit_price ?? booking.unitPrice ?? 0
+                        );
+                        const bookingTotal = Number(
+                          booking.total_amount ?? booking.totalAmount ?? 0
+                        );
+                        const normalizedBookingType = String(
+                          booking.booking_type ?? booking.bookingType ?? ""
+                        ).toLowerCase();
+                        const derivedTotal =
+                          normalizedBookingType === "table" &&
+                          Number.isFinite(bookingUnitPrice) &&
+                          bookingUnitPrice > 0 &&
+                          Number.isFinite(guestsLabel) &&
+                          guestsLabel > 0
+                            ? bookingUnitPrice * guestsLabel
+                            : bookingTotal;
+                        const totalForDisplay = Number.isFinite(derivedTotal)
+                          ? derivedTotal
+                          : bookingTotal;
+                        const totalLabel = Number.isFinite(totalForDisplay)
+                          ? totalForDisplay.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })
+                          : "0.00";
+                        return (
+                          <>
                       <div className="text-sm font-semibold text-slate-900">
                         {booking.customer_name || "Guest"}
                         {booking.customer_phone ? ` • ${booking.customer_phone}` : ""}
@@ -319,10 +357,15 @@ function TablesView({
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5">
                         {booking.booking_type} • {booking.quantity}
+                        {` • ${t("Guests")} ${guestsLabel}`}
+                        {` • ${t("Total")} ${totalLabel}`}
                         {booking.ticket_type_name ? ` • ${booking.ticket_type_name}` : ""}
                         {booking.reserved_table_number ? ` • ${t("Table")} ${booking.reserved_table_number}` : ""}
                         {booking.payment_status ? ` • ${booking.payment_status}` : ""}
                       </div>
+                          </>
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-2">
                       <button

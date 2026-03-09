@@ -598,7 +598,7 @@ return (
         onClick={async () => {
           if (isOnlinePayment) {
             try {
-              await actions.closeOrder(order.id);
+              await (actions.closeOrderIdempotent || actions.closeOrder)?.(order.id);
             } catch (err) {
               globalThis.console.error("❌ Failed to close online-paid order:", err);
               toast.error(t("Failed to close order"));

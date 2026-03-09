@@ -833,6 +833,7 @@ const DICT = {
     "Reservation saved": "Reservation saved",
     "Failed to save reservation": "Failed to save reservation",
     "Table must be closed by staff first": "Table must be closed by staff first",
+    Available: "Available",
     Pickup: "Pickup",
     "Call Us": "Call Us",
     "Call Waiter": "Call Waiter",
@@ -865,6 +866,7 @@ const DICT = {
     "Order received": "Order received",
     "Order ready": "Order ready",
     "Order Cancelled": "Order Cancelled",
+    "Sold Out": "Sold Out",
     Status: "Status",
     Items: "Items",
     Unpaid: "Unpaid",
@@ -1016,6 +1018,7 @@ const DICT = {
     "Reservation saved": "Rezervasyon kaydedildi",
     "Failed to save reservation": "Rezervasyon kaydedilemedi",
     "Table must be closed by staff first": "Önce personel masayı kapatmalıdır",
+    Available: "Uygun",
     Pickup: "Gel Al",
     "Call Us": "Bizi Ara",
     "Call Waiter": "Garson Çağır",
@@ -1048,6 +1051,7 @@ const DICT = {
     "Order received": "Sipariş alındı",
     "Order ready": "Sipariş hazır",
     "Order Cancelled": "Sipariş iptal edildi",
+    "Sold Out": "Tükendi",
     Status: "Durum",
     Items: "Ürünler",
     Unpaid: "Ödenmedi",
@@ -1141,6 +1145,7 @@ const DICT = {
     "Order ready": "Bestellung fertig",
     Delivered: "Geliefert",
     "Order Cancelled": "Bestellung storniert",
+    "Sold Out": "Ausverkauft",
     Status: "Status",
     Items: "Artikel",
     Unpaid: "Unbezahlt",
@@ -1172,6 +1177,7 @@ const DICT = {
     "Select Your Table": "Wählen Sie Ihren Tisch",
     Seats: "Sitze",
     "Reservation Time": "Reservierungszeit",
+    Available: "Verfügbar",
     Payment: "Zahlung",
     Cash: "Bar",
     Total: "Gesamt",
@@ -1227,6 +1233,7 @@ const DICT = {
     "Order ready": "Commande prête",
     Delivered: "Livré",
     "Order Cancelled": "Commande annulée",
+    "Sold Out": "Complet",
     Status: "Statut",
     Items: "Articles",
     Unpaid: "Impayé",
@@ -1258,6 +1265,7 @@ const DICT = {
     "Select Your Table": "Choisissez votre table",
     Seats: "Places",
     "Reservation Time": "Heure de réservation",
+    Available: "Disponible",
     Payment: "Paiement",
     Cash: "Espèces",
     Total: "Total",
@@ -2110,14 +2118,18 @@ async function load() {
     const preferredType = defaults.ticketTypeId
       ? availableTicketTypes.find((row) => Number(row.id) === Number(defaults.ticketTypeId))
       : defaults.bookingType === "table"
-      ? availableTicketTypes.find((row) => row.is_table_package)
-      : availableTicketTypes.find((row) => !row.is_table_package) || availableTicketTypes[0] || null;
-    const nextBookingType =
-      defaults.bookingType ||
-      (preferredType?.is_table_package ? "table" : "ticket");
+      ? availableTicketTypes.find((row) => row.is_table_package) ||
+        availableTicketTypes.find((row) => !row.is_table_package) ||
+        availableTicketTypes[0] ||
+        null
+      : availableTicketTypes.find((row) => !row.is_table_package) ||
+        availableTicketTypes.find((row) => row.is_table_package) ||
+        availableTicketTypes[0] ||
+        null;
+    const nextBookingType = preferredType?.is_table_package ? "table" : "ticket";
     setConcertModalEvent(event);
     setConcertForm({
-      booking_type: nextBookingType === "table" ? "table" : "ticket",
+      booking_type: nextBookingType,
       ticket_type_id: preferredType ? String(preferredType.id) : "",
       table_number: "",
       quantity: nextBookingType === "table" ? "1" : "1",
@@ -2144,13 +2156,62 @@ async function load() {
     return (concertModalEvent?.ticket_types || []).find((row) => Number(row.id) === selectedId) || null;
   }, [concertForm.ticket_type_id, concertModalEvent]);
 
-  const concertMode = selectedConcertTicketType?.is_table_package ? "table" : concertForm.booking_type;
+  const concertMode = selectedConcertTicketType
+    ? (selectedConcertTicketType.is_table_package ? "table" : "ticket")
+    : concertForm.booking_type;
   const selectedConcertUnitPrice = React.useMemo(() => {
     const price = Number(selectedConcertTicketType?.price ?? concertModalEvent?.ticket_price ?? 0);
     return Number.isFinite(price) && price > 0 ? price : 0;
   }, [selectedConcertTicketType, concertModalEvent?.ticket_price]);
+  const selectedConcertTicketAvailable = React.useMemo(() => {
+    const byType = Number(selectedConcertTicketType?.available_count);
+    if (Number.isFinite(byType) && byType >= 0) return byType;
+    const byEvent = Number(concertModalEvent?.available_ticket_count);
+    if (Number.isFinite(byEvent) && byEvent >= 0) return byEvent;
+    return null;
+  }, [selectedConcertTicketType?.available_count, concertModalEvent?.available_ticket_count]);
+  const selectedConcertTableStockAvailable = React.useMemo(() => {
+    const byEvent = Number(concertModalEvent?.available_table_count);
+    if (Number.isFinite(byEvent) && byEvent >= 0) return byEvent;
+    return null;
+  }, [concertModalEvent?.available_table_count]);
+  const selectedConcertTablePackageTicketAvailable = React.useMemo(() => {
+    const byType = Number(selectedConcertTicketType?.available_count);
+    if (Number.isFinite(byType) && byType >= 0) return byType;
+    return null;
+  }, [selectedConcertTicketType?.available_count]);
+  const selectedConcertTableNumber = Number(concertForm.table_number);
+  const selectedConcertTableRow = React.useMemo(() => {
+    if (!Number.isFinite(selectedConcertTableNumber) || selectedConcertTableNumber <= 0) return null;
+    return (
+      (Array.isArray(concertAvailableTables) ? concertAvailableTables : []).find(
+        (row) => Number(row?.table_number) === selectedConcertTableNumber
+      ) || null
+    );
+  }, [concertAvailableTables, selectedConcertTableNumber]);
+  const selectedConcertMaxGuests = React.useMemo(() => {
+    const rawLimit = Number(
+      selectedConcertTableRow?.seats ??
+      selectedConcertTableRow?.max_guests ??
+      selectedConcertTableRow?.guest_limit ??
+      0
+    );
+    if (Number.isFinite(rawLimit) && rawLimit > 0) {
+      return Math.max(1, Math.floor(rawLimit));
+    }
+    return 20;
+  }, [selectedConcertTableRow]);
+  const selectedConcertGuestCap = React.useMemo(() => {
+    const ticketCapRaw = Number(selectedConcertTablePackageTicketAvailable);
+    if (Number.isFinite(ticketCapRaw) && ticketCapRaw > 0) {
+      return Math.max(1, Math.min(selectedConcertMaxGuests, Math.floor(ticketCapRaw)));
+    }
+    return selectedConcertMaxGuests;
+  }, [selectedConcertMaxGuests, selectedConcertTablePackageTicketAvailable]);
+  const selectedConcertGuests = Math.max(1, Number(concertForm.guests_count) || 1);
   const selectedConcertQuantity = concertMode === "table" ? 1 : Math.max(1, Number(concertForm.quantity) || 1);
-  const selectedConcertTotal = selectedConcertUnitPrice * selectedConcertQuantity;
+  const selectedConcertTotal =
+    selectedConcertUnitPrice * (concertMode === "table" ? selectedConcertGuests : selectedConcertQuantity);
   const concertBankInstructions = React.useMemo(() => {
     return String(
       concertModalEvent?.bank_transfer_instructions ||
@@ -2186,6 +2247,17 @@ async function load() {
       setConcertInstructionCopied(false);
     }
   }, [concertModalOpen, concertModalEvent?.id]);
+
+  React.useEffect(() => {
+    if (concertMode !== "table") return;
+    setConcertForm((prev) => {
+      const currentGuests = Number(prev.guests_count) || 1;
+      const clampedGuests = Math.min(selectedConcertGuestCap, Math.max(1, currentGuests));
+      const nextGuests = String(clampedGuests);
+      if (prev.guests_count === nextGuests) return prev;
+      return { ...prev, guests_count: nextGuests };
+    });
+  }, [concertMode, selectedConcertGuestCap]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -2274,8 +2346,38 @@ async function load() {
         alert(t("Please select an available table."));
         return;
       }
+      const tableStillAvailable = (Array.isArray(concertAvailableTables) ? concertAvailableTables : []).some(
+        (row) => Number(row?.table_number) === selectedTableNumber
+      );
+      if (!tableStillAvailable) {
+        alert(t("Please select an available table."));
+        return;
+      }
+      const availableTableStock = Number(selectedConcertTableStockAvailable);
+      if (Number.isFinite(availableTableStock) && availableTableStock <= 0) {
+        const packageTickets = Number(selectedConcertTablePackageTicketAvailable);
+        const packageTicketsLabel = Number.isFinite(packageTickets) ? packageTickets : 0;
+        alert(`Concert table stock is sold out. Available table slots: ${availableTableStock}. Table-package tickets: ${packageTicketsLabel}.`);
+        return;
+      }
+      const availablePackageTickets = Number(selectedConcertTablePackageTicketAvailable);
+      if (Number.isFinite(availablePackageTickets) && selectedConcertGuests > availablePackageTickets) {
+        alert(`Only ${availablePackageTickets} table-package ticket(s) available for ${selectedConcertGuests} guest(s).`);
+        return;
+      }
     }
-    const quantity = concertMode === "table" ? 1 : Math.max(1, Number(concertForm.quantity) || 1);
+    const quantity = concertMode === "table" ? selectedConcertGuests : Math.max(1, Number(concertForm.quantity) || 1);
+    if (concertMode !== "table") {
+      const availableTickets = Number(selectedConcertTicketAvailable);
+      if (Number.isFinite(availableTickets) && availableTickets <= 0) {
+        alert(t("Sold Out"));
+        return;
+      }
+      if (Number.isFinite(availableTickets) && quantity > availableTickets) {
+        alert(`Only ${availableTickets} ticket(s) available.`);
+        return;
+      }
+    }
     const payload = {
       booking_type: concertMode === "table" ? "table" : "ticket",
       ticket_type_id: concertForm.ticket_type_id ? Number(concertForm.ticket_type_id) : null,
@@ -2284,7 +2386,7 @@ async function load() {
           ? Number(concertForm.table_number)
           : null,
       quantity,
-      guests_count: concertMode === "table" ? Math.max(1, Number(concertForm.guests_count) || 1) : null,
+      guests_count: concertMode === "table" ? selectedConcertGuests : null,
       customer_name: concertForm.customer_name.trim(),
       customer_phone: concertForm.customer_phone.trim(),
       customer_note: concertForm.customer_note.trim(),
@@ -2334,7 +2436,46 @@ async function load() {
       closeConcertModal();
       await loadConcertEvents();
     } catch (err) {
-      alert(err?.message || t("Failed to save reservation"));
+      const message = String(err?.message || "");
+      if (concertMode === "table" && /table stock is sold out/i.test(message)) {
+        const backendTableSlotsRaw = Number(
+          err?.available_count ??
+            err?.available ??
+            err?.data?.available_count ??
+            err?.response?.available_count ??
+            err?.response?.data?.available_count ??
+            err?.details?.body?.available_count
+        );
+        let tableSlotsForPrompt = Number.isFinite(backendTableSlotsRaw)
+          ? backendTableSlotsRaw
+          : null;
+        if (!Number.isFinite(tableSlotsForPrompt)) {
+          try {
+            const latest = await secureFetch(
+              `/public/concerts/${encodeURIComponent(identifier)}/events`
+            );
+            const latestEvents = Array.isArray(latest?.events) ? latest.events : [];
+            const latestEvent = latestEvents.find(
+              (row) => Number(row?.id) === Number(concertModalEvent?.id)
+            );
+            const freshSlots = Number(latestEvent?.available_table_count);
+            if (Number.isFinite(freshSlots)) {
+              tableSlotsForPrompt = freshSlots;
+            }
+          } catch {
+            // ignore and fall back to current modal value
+          }
+        }
+        if (!Number.isFinite(tableSlotsForPrompt)) {
+          const fallbackTableSlots = Number(selectedConcertTableStockAvailable);
+          tableSlotsForPrompt = Number.isFinite(fallbackTableSlots) ? fallbackTableSlots : 0;
+        }
+        const packageTickets = Number(selectedConcertTablePackageTicketAvailable);
+        const packageTicketsLabel = Number.isFinite(packageTickets) ? packageTickets : 0;
+        alert(`Concert table stock is sold out. Available table slots: ${tableSlotsForPrompt}. Table-package tickets: ${packageTicketsLabel}.`);
+      } else {
+        alert(err?.message || t("Failed to save reservation"));
+      }
     } finally {
       setConcertSubmitting(false);
     }
@@ -2343,10 +2484,14 @@ async function load() {
     concertForm,
     concertModalEvent,
     concertMode,
+    selectedConcertGuests,
     onConcertReservationSuccess,
     identifier,
     loadConcertEvents,
+    concertAvailableTables,
     selectedConcertTicketType?.area_name,
+    selectedConcertTableStockAvailable,
+    selectedConcertTablePackageTicketAvailable,
     t,
   ]);
 
@@ -2811,14 +2956,10 @@ async function load() {
 
               {/* CONCERT TICKETS */}
               <div className="mt-6 max-w-3xl mx-auto">
-                {concertEvents.length === 0 ? (
-                  <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/70 px-4 py-4 text-sm text-neutral-600 dark:text-neutral-300">
-                    {concertLoading ? t("Loading...") : t("No upcoming concerts.")}
-                  </div>
-                ) : (
+                {concertEvents.length > 0 ? (
                   <div className="space-y-3">
                     {concertEvents.map((event) => {
-                      const soldOut =
+                      const forcedSoldOut =
                         String(event?.status || "").toLowerCase() === "sold_out" ||
                         (event?.auto_sold_out === true);
                       const eventImage = resolveUploadedAsset(event?.event_image);
@@ -2828,8 +2969,20 @@ async function load() {
                         eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
                       const eventDate = String(event?.event_date || "").slice(0, 10);
                       const eventTime = String(event?.event_time || "").slice(0, 5);
-                      const tableAvailable = Number(event?.available_table_count || 0) > 0;
-                      const ticketAvailable = Number(event?.available_ticket_count || 0) > 0;
+                      const tableCountAvailable = Number(event?.available_table_count || 0) > 0;
+                      const ticketCountAvailable = Number(event?.available_ticket_count || 0) > 0;
+                      const normalTicketTypeAvailable = (event?.ticket_types || []).some(
+                        (row) => !row?.is_table_package && Number(row?.available_count || 0) > 0
+                      );
+                      const tablePackageTypeAvailable = (event?.ticket_types || []).some(
+                        (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
+                      );
+                      const ticketAvailable = ticketCountAvailable || normalTicketTypeAvailable;
+                      const tableAvailable = tableCountAvailable && tablePackageTypeAvailable;
+                      const badgeSoldOut =
+                        forcedSoldOut ||
+                        (!ticketAvailable && !tableAvailable);
+                      const fullySoldOut = badgeSoldOut;
                       const tableTicketType = (event?.ticket_types || []).find(
                         (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
                       );
@@ -2873,12 +3026,12 @@ async function load() {
                             </div>
                             <span
                               className={`text-xs px-2.5 py-1 rounded-full border ${
-                                soldOut
+                                badgeSoldOut
                                   ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
                                   : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
                               }`}
                             >
-                              {soldOut ? t("Sold Out") : t("Available")}
+                              {badgeSoldOut ? t("Sold Out") : t("Available")}
                             </span>
                           </div>
 
@@ -2907,39 +3060,29 @@ async function load() {
                             </div>
                           ) : null}
 
-                          <div className="mt-3 grid grid-cols-2 gap-2">
+                          <div className="mt-3 grid grid-cols-1 gap-2">
                             <button
                               type="button"
-                              disabled={soldOut || !ticketAvailable}
+                              disabled={fullySoldOut}
                               onClick={() =>
                                 openConcertBookingModal(event, {
-                                  bookingType: "ticket",
-                                  ticketTypeId: normalTicketType?.id || "",
+                                  bookingType: tableAvailable && tableTicketType ? "table" : "ticket",
+                                  ticketTypeId:
+                                    (tableAvailable && tableTicketType
+                                      ? tableTicketType?.id
+                                      : normalTicketType?.id || tableTicketType?.id) || "",
                                 })
                               }
-                              className="rounded-xl border border-neutral-200 dark:border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-700 dark:text-neutral-100 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-45 disabled:cursor-not-allowed"
+                              className="rounded-xl border border-neutral-800 dark:border-neutral-500 bg-neutral-900 text-white px-3 py-2 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-45 disabled:cursor-not-allowed"
                             >
                               {t("Buy Ticket")}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={soldOut || !tableAvailable}
-                              onClick={() =>
-                                openConcertBookingModal(event, {
-                                  bookingType: "table",
-                                  ticketTypeId: tableTicketType?.id || "",
-                                })
-                              }
-                              className="rounded-xl bg-neutral-900 text-white px-3 py-2 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-45 disabled:cursor-not-allowed"
-                            >
-                              {t("Reserve Table")}
                             </button>
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                )}
+                ) : null}
               </div>
 
 	      </div>
@@ -3374,7 +3517,7 @@ async function load() {
                     setConcertForm((prev) => ({
                       ...prev,
                       ticket_type_id: value,
-                      booking_type: selected?.is_table_package ? "table" : prev.booking_type,
+                      booking_type: selected?.is_table_package ? "table" : "ticket",
                     }));
                   }}
                   className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
@@ -3384,7 +3527,10 @@ async function load() {
                     <option
                       key={row.id}
                       value={String(row.id)}
-                      disabled={Number(row.available_count || 0) <= 0}
+                      disabled={
+                        Number(row.available_count || 0) <= 0 ||
+                        (row?.is_table_package && Number(selectedConcertTableStockAvailable) <= 0)
+                      }
                     >
                       {`${row.name}${row.area_name ? ` • ${row.area_name}` : ""} • ${formatCurrency(Number(row?.price || concertModalEvent?.ticket_price || 0))} • ${row.available_count}/${row.quantity_total}`}
                     </option>
@@ -3392,93 +3538,6 @@ async function load() {
                 </select>
               </div>
             ) : null}
-
-            {selectedConcertTicketType ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-3 py-2.5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                      {selectedConcertTicketType.name}
-                    </p>
-                    {selectedConcertTicketType.area_name ? (
-                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                        {selectedConcertTicketType.area_name}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{t("Price")}</p>
-                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                      {formatCurrency(selectedConcertUnitPrice)}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-2 text-xs text-neutral-600 dark:text-neutral-300">
-                  {`${t("Quantity")}: ${selectedConcertQuantity} • ${t("Total")}: ${formatCurrency(selectedConcertTotal)}`}
-                </div>
-              </div>
-            ) : null}
-
-            {!selectedConcertTicketType?.is_table_package ? (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConcertForm((prev) => ({ ...prev, booking_type: "ticket" }))}
-                  className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
-                    concertMode === "ticket"
-                      ? "bg-neutral-900 text-white border-neutral-900"
-                      : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
-                  }`}
-                >
-                  {t("Buy Ticket")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConcertForm((prev) => ({ ...prev, booking_type: "table" }))}
-                  className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
-                    concertMode === "table"
-                      ? "bg-neutral-900 text-white border-neutral-900"
-                      : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
-                  }`}
-                >
-                  {t("Reserve Table")}
-                </button>
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-2 gap-3">
-              {concertMode === "table" ? (
-                <div>
-                  <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Guests")}</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={concertForm.guests_count}
-                    onChange={(e) => setConcertForm((prev) => ({ ...prev, guests_count: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
-                  />
-                </div>
-              ) : (
-                <div>
-                  <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Quantity")}</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={concertForm.quantity}
-                    onChange={(e) => setConcertForm((prev) => ({ ...prev, quantity: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
-                  />
-                </div>
-              )}
-              <div>
-                <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Payment Method")}</label>
-                <div className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 px-3 py-2.5 text-sm font-semibold">
-                  {t("Bank Transfer")}
-                </div>
-              </div>
-            </div>
 
             {concertMode === "table" ? (
               <div>
@@ -3515,6 +3574,122 @@ async function load() {
                 ) : null}
               </div>
             ) : null}
+
+            {selectedConcertTicketType ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/20 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                      {selectedConcertTicketType.name}
+                    </p>
+                    {selectedConcertTicketType.area_name ? (
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                        {selectedConcertTicketType.area_name}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{t("Price")}</p>
+                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                      {formatCurrency(selectedConcertUnitPrice)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <div className="text-xs text-neutral-600 dark:text-neutral-300">
+                    {concertMode === "table"
+                      ? `${t("Guests")}: ${selectedConcertGuests}`
+                      : `${t("Quantity")}: ${selectedConcertQuantity}`}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                      {t("Total")}
+                    </p>
+                    <p className="text-[18px] sm:text-[22px] font-extrabold leading-tight text-emerald-700 dark:text-emerald-300">
+                      {formatCurrency(selectedConcertTotal)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {!selectedConcertTicketType?.is_table_package ? (
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConcertForm((prev) => ({ ...prev, booking_type: "ticket" }))}
+                  className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                    concertMode === "ticket"
+                      ? "bg-neutral-900 text-white border-neutral-700 dark:border-neutral-500"
+                      : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
+                  }`}
+                >
+                  {t("Buy Ticket")}
+                </button>
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-2 gap-3">
+              {concertMode === "table" ? (
+                <div>
+                  <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Guests")}</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={selectedConcertGuestCap}
+                    value={concertForm.guests_count}
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      const next =
+                        Number.isFinite(raw) && raw > 0
+                          ? Math.min(selectedConcertGuestCap, Math.max(1, Math.floor(raw)))
+                          : 1;
+                      setConcertForm((prev) => ({ ...prev, guests_count: String(next) }));
+                    }}
+                    disabled={!concertForm.table_number}
+                    className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                  />
+                  {concertForm.table_number ? (
+                    <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      {`Max ${selectedConcertGuestCap} ${t("Guests")}`}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Quantity")}</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={
+                      Number.isFinite(selectedConcertTicketAvailable) && selectedConcertTicketAvailable > 0
+                        ? Math.min(20, selectedConcertTicketAvailable)
+                        : 20
+                    }
+                    value={concertForm.quantity}
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      const safeMax =
+                        Number.isFinite(selectedConcertTicketAvailable) && selectedConcertTicketAvailable > 0
+                          ? Math.min(20, selectedConcertTicketAvailable)
+                          : 20;
+                      const next =
+                        Number.isFinite(raw) && raw > 0
+                          ? Math.min(safeMax, Math.max(1, Math.floor(raw)))
+                          : 1;
+                      setConcertForm((prev) => ({ ...prev, quantity: String(next) }));
+                    }}
+                    className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Payment Method")}</label>
+                <div className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 px-3 py-2.5 text-sm font-semibold">
+                  {t("Bank Transfer")}
+                </div>
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 gap-3">
               <input
@@ -3566,9 +3741,9 @@ async function load() {
               type="button"
               onClick={submitConcertBooking}
               disabled={concertSubmitting}
-              className="w-full rounded-xl bg-neutral-900 text-white px-4 py-3 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-55"
+              className="w-full rounded-xl border border-neutral-800 dark:border-neutral-500 bg-neutral-900 text-white px-4 py-3 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-55"
             >
-              {concertSubmitting ? t("Please wait...") : concertMode === "table" ? t("Reserve Table") : t("Buy Ticket")}
+              {concertSubmitting ? t("Please wait...") : t("Buy Ticket")}
             </button>
           </div>
         </div>

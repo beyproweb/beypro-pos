@@ -101,6 +101,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     openReservationModal,
     handleDeleteReservation,
     handleCheckinReservation,
+    handleCheckoutReservation,
     openCancelModal,
     setShowDiscountModal,
     handleOpenCashRegister,
@@ -132,6 +133,15 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
   const isCheckedInReservation = CHECKED_IN_LIKE_RESERVATION_STATUSES.has(reservationStatus);
   const isCheckedOutReservation =
     CHECKED_OUT_LIKE_RESERVATION_STATUSES.has(reservationStatus);
+  const isPaidReservation =
+    normalizedStatus === "paid" ||
+    String(order?.status || "").toLowerCase() === "paid" ||
+    Boolean(order?.is_paid) ||
+    allCartItemsPaid;
+  const showCheckoutReservationButton =
+    !isCheckedOutReservation &&
+    Boolean(existingReservation?.reservation_date) &&
+    isPaidReservation;
   const reservationCardClassName = isCheckedOutReservation
     ? "mx-3 mb-1.5 rounded-xl border border-slate-300 bg-slate-50/95 px-2.5 py-2 shadow-sm dark:border-slate-600 dark:bg-slate-900/80"
     : isCheckedInReservation
@@ -440,6 +450,17 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                   aria-label={t("Checkin Reservation")}
                 >
                   {t("Checkin")}
+                </button>
+              )}
+              {showCheckoutReservationButton && (
+                <button
+                  type="button"
+                  onClick={() => handleCheckoutReservation?.()}
+                  className="inline-flex h-7 items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-900/20 dark:text-indigo-200 dark:hover:bg-indigo-900/35"
+                  title={t("Check Out")}
+                  aria-label={t("Check Out")}
+                >
+                  {t("Check Out")}
                 </button>
               )}
               <button

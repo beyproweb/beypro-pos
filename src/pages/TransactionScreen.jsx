@@ -1831,6 +1831,10 @@ const confirmFlow = useMemo(
   ]
 );
 const { handleMultifunction } = confirmFlow;
+const handleCheckoutReservation = useCallback(
+  () => handleMultifunction("reservation_checkout"),
+  [handleMultifunction]
+);
 
 const { confirmPaymentWithSplits } = useSplitPayment({
   cartItems,
@@ -2446,6 +2450,7 @@ const cartPanelProps = useMemo(
     openReservationModal,
     handleDeleteReservation,
     handleCheckinReservation,
+    handleCheckoutReservation,
     openCancelModal,
     setShowDiscountModal,
     handleOpenCashRegister,
@@ -2491,6 +2496,7 @@ const cartPanelProps = useMemo(
     handleCartPrint,
     handleDeleteReservation,
     handleCheckinReservation,
+    handleCheckoutReservation,
     handleMultifunction,
     handleOpenCashRegister,
     handleOpenDebtModal,

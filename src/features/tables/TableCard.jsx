@@ -110,10 +110,22 @@ function TableCard({
     (e) => {
       e.stopPropagation();
       if (tableOrder) {
-        handleCloseTable(tableOrder);
+        const hasCheckedInReservationOnTable = [
+          tableOrder?.status,
+          tableOrder?.reservation?.status,
+          table?.reservationFallback?.status,
+        ].some((status) => isCheckedInReservationStatus(status));
+        if (hasCheckedInReservationOnTable) {
+          window.alert(t("Please check-out before closing table"));
+          return;
+        }
+        handleCloseTable({
+          ...tableOrder,
+          reservationFallback: table?.reservationFallback || null,
+        });
       }
     },
-    [handleCloseTable, tableOrder]
+    [handleCloseTable, t, table, tableOrder]
   );
 
   const handleResolvedClick = React.useCallback(
@@ -210,6 +222,16 @@ function TableCard({
     ) {
       return {
         id: tableOrder.reservation.id ?? null,
+        order_id:
+          tableOrder.reservation.order_id ??
+          tableOrder.reservation.orderId ??
+          tableOrder.id ??
+          null,
+        orderId:
+          tableOrder.reservation.orderId ??
+          tableOrder.reservation.order_id ??
+          tableOrder.id ??
+          null,
         status: tableOrder.reservation.status ?? tableOrder.status ?? null,
         order_type: tableOrder.reservation.order_type ?? tableOrder.order_type ?? null,
         reservation_date: tableOrder.reservation.reservation_date ?? null,
@@ -240,6 +262,8 @@ function TableCard({
     ) {
       return {
         id: tableOrder.reservation_id ?? tableOrder.reservationId ?? null,
+        order_id: tableOrder.id ?? null,
+        orderId: tableOrder.id ?? null,
         status: tableOrder.status ?? null,
         order_type: tableOrder.order_type ?? null,
         reservation_date: tableOrder.reservation_date ?? tableOrder.reservationDate ?? null,
@@ -258,6 +282,8 @@ function TableCard({
     ) {
       return {
         id: fallback.id ?? null,
+        order_id: fallback.order_id ?? fallback.orderId ?? null,
+        orderId: fallback.orderId ?? fallback.order_id ?? null,
         status: fallback.status ?? null,
         order_type: fallback.order_type ?? null,
         reservation_date: fallback.reservation_date ?? fallback.reservationDate ?? null,
@@ -345,18 +371,30 @@ function TableCard({
   const handleCheckoutReservationClick = React.useCallback(
     (e) => {
       e.stopPropagation();
+      const reservationOrderId = Number(
+        reservationInfo?.order_id ??
+          reservationInfo?.orderId
+      );
+      const activeOrderId = Number(tableOrder?.id);
       const checkoutTarget =
-        tableOrder ||
-        reservationInfo?.order_id ||
-        reservationInfo?.orderId ||
-        reservationInfo?.id;
+        Number.isFinite(reservationOrderId) && reservationOrderId > 0
+          ? reservationOrderId
+          : Number.isFinite(activeOrderId) && activeOrderId > 0
+            ? activeOrderId
+            : tableOrder ||
+            reservationInfo?.order_id ||
+            reservationInfo?.orderId ||
+            reservationInfo?.id;
       if (!checkoutTarget) return;
       handleCloseTable?.(checkoutTarget, {
         preserveReservationShadow: false,
         requirePaid: true,
+        isReservationCheckout: true,
+        tableNumber: table?.tableNumber,
+        reservationId: reservationInfo?.id ?? null,
       });
     },
-    [handleCloseTable, reservationInfo, tableOrder]
+    [handleCloseTable, reservationInfo, table, tableOrder]
   );
   const reservationPhoneHref = React.useMemo(
     () => getPhoneHref(reservationInfo?.customer_phone),
