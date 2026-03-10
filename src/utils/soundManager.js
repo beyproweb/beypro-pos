@@ -1,5 +1,7 @@
 const DEFAULT_SOUND_FILES = {
   new_order: "/sounds/new_order.mp3",
+  table_reserved: "/sounds/chime.mp3",
+  concert_ticket_purchased: "/sounds/cash.mp3",
   payment_made: "/sounds/cash.mp3",
   call_waiter: "/sounds/alert.mp3",
 };
@@ -147,14 +149,20 @@ export const attachGlobalSoundHandlers = (win = typeof window !== "undefined" ? 
 
   const prevHandlers = {
     playNewOrderSound: win.playNewOrderSound,
+    playTableReservedSound: win.playTableReservedSound,
+    playConcertTicketPurchasedSound: win.playConcertTicketPurchasedSound,
     playPaidSound: win.playPaidSound,
+    playNotificationSound: win.playNotificationSound,
     startCallWaiterSound: win.startCallWaiterSound,
     stopCallWaiterSound: win.stopCallWaiterSound,
     stopAllNotificationLoops: win.stopAllNotificationLoops,
   };
 
   win.playNewOrderSound = () => playSound("new_order");
+  win.playTableReservedSound = () => playSound("table_reserved");
+  win.playConcertTicketPurchasedSound = () => playSound("concert_ticket_purchased");
   win.playPaidSound = () => playSound("payment_made");
+  win.playNotificationSound = (eventKey) => playSound(eventKey);
   win.startCallWaiterSound = () => startLoopingSound("call_waiter");
   win.stopCallWaiterSound = () => stopLoopingSound("call_waiter");
   win.stopAllNotificationLoops = () => stopAllLoopingSounds();
@@ -165,8 +173,23 @@ export const attachGlobalSoundHandlers = (win = typeof window !== "undefined" ? 
     if (prevHandlers.playNewOrderSound) win.playNewOrderSound = prevHandlers.playNewOrderSound;
     else delete win.playNewOrderSound;
 
+    if (prevHandlers.playTableReservedSound) {
+      win.playTableReservedSound = prevHandlers.playTableReservedSound;
+    } else {
+      delete win.playTableReservedSound;
+    }
+
+    if (prevHandlers.playConcertTicketPurchasedSound) {
+      win.playConcertTicketPurchasedSound = prevHandlers.playConcertTicketPurchasedSound;
+    } else {
+      delete win.playConcertTicketPurchasedSound;
+    }
+
     if (prevHandlers.playPaidSound) win.playPaidSound = prevHandlers.playPaidSound;
     else delete win.playPaidSound;
+
+    if (prevHandlers.playNotificationSound) win.playNotificationSound = prevHandlers.playNotificationSound;
+    else delete win.playNotificationSound;
 
     if (prevHandlers.startCallWaiterSound) win.startCallWaiterSound = prevHandlers.startCallWaiterSound;
     else delete win.startCallWaiterSound;

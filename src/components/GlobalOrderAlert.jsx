@@ -31,6 +31,8 @@ const DEFAULT_SOUNDS = {
   order_preparing: "prepare.mp3",
   order_ready: "chime.mp3",
   order_delivered: "success.mp3",
+  table_reserved: "chime.mp3",
+  concert_ticket_purchased: "cash.mp3",
   order_cancelled: "warning.mp3",
   payment_made: "cash.mp3",
   stock_low: "warning.mp3",
@@ -115,6 +117,24 @@ function buildNewOrderMessage(payload) {
   const orderId = payload?.order?.id || payload?.orderId || payload?.id;
   const suffix = orderId ? ` #${orderId}` : "";
   return `New order received${suffix}`;
+}
+
+function buildTableReservedMessage(payload) {
+  const tableRef = extractTableLabel(payload);
+  if (tableRef) return `Table ${tableRef} reserved`;
+  return "Table reserved";
+}
+
+function buildConcertTicketPurchasedMessage(payload = {}) {
+  const quantity = Number(payload?.quantity ?? payload?.tickets ?? payload?.guests_count ?? 0);
+  const qtyLabel = Number.isFinite(quantity) && quantity > 0 ? ` (${quantity})` : "";
+  const ticketType = String(payload?.ticket_type_name || payload?.ticketTypeName || "").trim();
+  const eventTitle = String(payload?.event_title || payload?.eventTitle || "").trim();
+  const customerName = String(payload?.customer_name || payload?.customerName || "").trim();
+
+  const details = [eventTitle, ticketType, customerName].filter(Boolean).join(" • ");
+  if (details) return `Concert ticket purchased${qtyLabel}: ${details}`;
+  return `Concert ticket purchased${qtyLabel}`;
 }
 
 function buildKitchenDeliveredMessage(payload) {
@@ -236,6 +256,8 @@ const cooldownMillis = {
   order_preparing: 3000,
   order_ready: 3000,
   order_delivered: 3000,
+  table_reserved: 2500,
+  concert_ticket_purchased: 2500,
   order_cancelled: 3000,
   payment_made: 2500,
   stock_low: 8000,
@@ -300,6 +322,8 @@ export default function GlobalOrderAlert() {
       "order_preparing",
       "order_ready",
       "order_delivered",
+      "table_reserved",
+      "concert_ticket_purchased",
       "order_cancelled",
       "payment_made",
       "stock_low",
@@ -316,6 +340,8 @@ export default function GlobalOrderAlert() {
     stock_low: "stock_low",
     stock_restocked: "stock_restocked",
     stock_expiry: "stock_expiry",
+    table_reserved: "table_reserved",
+    concert_ticket_purchased: "concert_ticket_purchased",
   };
 
   const resolveSoundSrc = useCallback(
@@ -792,6 +818,16 @@ export default function GlobalOrderAlert() {
     const onReady = () => notify("order_ready", "✅ Order ready");
     const onDelivered = (payload) =>
       notify("order_delivered", buildKitchenDeliveredMessage(payload));
+    const onReservationCreated = (payload = {}) =>
+      notify("table_reserved", buildTableReservedMessage(payload));
+    const onReservationUpdated = (payload = {}) => {
+      const status = String(payload?.status || "").toLowerCase().trim();
+      if (status === "reserved" || status === "confirmed") {
+        notify("table_reserved", buildTableReservedMessage(payload));
+      }
+    };
+    const onConcertTicketPurchased = (payload = {}) =>
+      notify("concert_ticket_purchased", buildConcertTicketPurchasedMessage(payload));
     const onCancelled = (payload = {}) =>
       notify("order_cancelled", buildOrderCancelledMessage(payload));
     const onPaid = (p) => {
@@ -814,6 +850,9 @@ export default function GlobalOrderAlert() {
     socket.on("order_preparing", onPreparing);
     socket.on("order_ready", onReady);
     socket.on("order_delivered", onDelivered);
+    socket.on("reservation_created", onReservationCreated);
+    socket.on("reservation_updated", onReservationUpdated);
+    socket.on("concert_ticket_purchased", onConcertTicketPurchased);
     socket.on("payment_made", onPaid);
     socket.on("stock_critical", onStockLow);
     socket.on("stock_restocked", onRestocked);
@@ -825,6 +864,9 @@ export default function GlobalOrderAlert() {
       socket.off("order_preparing", onPreparing);
       socket.off("order_ready", onReady);
       socket.off("order_delivered", onDelivered);
+      socket.off("reservation_created", onReservationCreated);
+      socket.off("reservation_updated", onReservationUpdated);
+      socket.off("concert_ticket_purchased", onConcertTicketPurchased);
       socket.off("payment_made", onPaid);
       socket.off("stock_critical", onStockLow);
       socket.off("stock_restocked", onRestocked);
