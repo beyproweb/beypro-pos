@@ -5063,7 +5063,7 @@ export default function QrMenu() {
     const manifestVersion = encodeURIComponent(
       String(orderSelectCustomization?.branding_updated_at || "default")
     );
-    const manifestHref = `${API_URL}/public/manifest.json?identifier=${encodeURIComponent(
+    const manifestHref = `/api/public/manifest.json?identifier=${encodeURIComponent(
       identifier
     )}&v=${manifestVersion}`;
     const appleTouchIconHref = resolveBrandingAsset(
@@ -5112,6 +5112,11 @@ export default function QrMenu() {
     upsertMeta(
       'meta[name="apple-mobile-web-app-capable"]',
       { name: "apple-mobile-web-app-capable" },
+      "yes"
+    );
+    upsertMeta(
+      'meta[name="mobile-web-app-capable"]',
+      { name: "mobile-web-app-capable" },
       "yes"
     );
     upsertMeta(
