@@ -383,6 +383,7 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     canInstall,
     setCanInstall,
     getSavedDeliveryInfo,
+    markQrSaved,
     handleInstallClick,
     handleDownloadQr,
   } = useQrMenuStorage({
@@ -1018,30 +1019,6 @@ const loadTables = async () => {
     setTables([]);
   }
 };
-
-
-
-useEffect(() => {
-  const handler = (e) => {
-    e.preventDefault();
-    setDeferredPrompt(e);
-    setCanInstall(true);
-  };
-  window.addEventListener("beforeinstallprompt", handler);
-  return () => window.removeEventListener("beforeinstallprompt", handler);
-}, [appendIdentifier]);
-
-useEffect(() => {
-  const isStandalone =
-    (typeof window !== "undefined" &&
-      (window.matchMedia?.("(display-mode: standalone)")?.matches ||
-        window.navigator?.standalone)) ||
-    false;
-  if (!isStandalone) return;
-  storage.setItem("qr_saved", "1");
-  setShowQrPrompt(false);
-}, [storage]);
-
 useEffect(() => {
   if (!showTableScanner || !tableScanReady) return;
   let active = true;
@@ -2885,6 +2862,7 @@ function handleReset(options = null) {
     setShowQrPrompt,
     qrPromptMode,
     setQrPromptMode,
+    markQrSaved,
     deferredPrompt,
     setDeferredPrompt,
     canInstall,

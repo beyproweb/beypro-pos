@@ -69,12 +69,30 @@ export function useQrMenuStorage({
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [platform, setPlatform] = useState(getPlatform());
+  const qrSavedKey = useMemo(() => {
+    const raw =
+      restaurantIdentifierResolved ||
+      restaurantIdentifier ||
+      slug ||
+      id ||
+      "";
+    const normalized = String(raw).trim();
+    if (!normalized) return "qr_saved";
+    return `qr_saved_${normalized.toLowerCase()}`;
+  }, [id, restaurantIdentifier, restaurantIdentifierResolved, slug]);
   const [showQrPrompt, setShowQrPrompt] = useState(() => {
-    return !storage.getItem("qr_saved");
+    return !storage.getItem(qrSavedKey);
   });
   const [qrPromptMode, setQrPromptMode] = useState("default");
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [canInstall, setCanInstall] = useState(false);
+  const markQrSaved = useCallback(() => {
+    storage.setItem(qrSavedKey, "1");
+  }, [qrSavedKey, storage]);
+
+  useEffect(() => {
+    setShowQrPrompt(!storage.getItem(qrSavedKey));
+  }, [qrSavedKey, storage]);
 
   const getSavedDeliveryInfo = useCallback(() => {
     try {
@@ -108,9 +126,9 @@ export function useQrMenuStorage({
           window.navigator?.standalone)) ||
       false;
     if (!isStandalone) return;
-    storage.setItem("qr_saved", "1");
+    markQrSaved();
     setShowQrPrompt(false);
-  }, [storage]);
+  }, [markQrSaved]);
 
   const handleInstallClick = useCallback(() => {
     if (!deferredPrompt) return;
@@ -132,7 +150,7 @@ export function useQrMenuStorage({
       false;
 
     if (isStandalone) {
-      storage.setItem("qr_saved", "1");
+      markQrSaved();
       setShowQrPrompt(false);
       return;
     }
@@ -142,16 +160,16 @@ export function useQrMenuStorage({
       deferredPrompt.userChoice.finally(() => {
         setDeferredPrompt(null);
         setCanInstall(false);
-        storage.setItem("qr_saved", "1");
+        markQrSaved();
         setShowQrPrompt(false);
       });
       return;
     }
 
-    storage.setItem("qr_saved", "1");
+    markQrSaved();
     setShowQrPrompt(false);
     setShowHelp(true);
-  }, [deferredPrompt, storage]);
+  }, [deferredPrompt, markQrSaved]);
 
   return {
     lang,
@@ -172,6 +190,7 @@ export function useQrMenuStorage({
     canInstall,
     setCanInstall,
     getSavedDeliveryInfo,
+    markQrSaved,
     handleInstallClick,
     handleDownloadQr,
   };
