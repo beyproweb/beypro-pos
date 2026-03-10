@@ -1822,6 +1822,7 @@ async function load() {
   const subtitle = (c.subtitle ?? "").trim();
   const tagline = (c.tagline ?? "").trim();
   const phoneNumber = c.phone || "";
+  const callUsHref = phoneNumber ? `tel:${String(phoneNumber).replace(/\s+/g, "")}` : "";
   const allowDelivery = boolish(c.delivery_enabled, true);
   const reservationTabEnabled = boolish(c.reservation_tab_enabled, true);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
@@ -3508,7 +3509,7 @@ async function load() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
             {phoneNumber ? (
               <a
-                href={`tel:${phoneNumber}`}
+                href={callUsHref}
                 className="w-full h-11 rounded-xl text-white font-semibold shadow-sm flex items-center justify-center gap-2 hover:shadow-md hover:-translate-y-0.5 transition-all"
                 style={{ backgroundColor: accent }}
               >
@@ -3546,6 +3547,23 @@ async function load() {
           </div>
         </div>
       </section>
+
+      {phoneNumber ? (
+        <a
+          href={callUsHref}
+          className="sm:hidden fixed right-4 z-[95] inline-flex h-14 w-14 items-center justify-center rounded-full border-2 border-white/90 p-[3px] shadow-[0_14px_36px_rgba(0,0,0,0.38)] active:scale-[0.98] transition-transform"
+          style={{
+            background: `linear-gradient(145deg, ${accent}, #111827)`,
+            bottom: "calc(1rem + env(safe-area-inset-bottom))",
+          }}
+          aria-label={t("Call Us")}
+          title={t("Call Us")}
+        >
+          <span className="inline-flex h-full w-full items-center justify-center rounded-full bg-white shadow-inner">
+            <Phone className="h-5 w-5" style={{ color: accent }} />
+          </span>
+        </a>
+      ) : null}
 
 	    {/* === SOCIAL ICONS === */}
 	    <div className="relative w-full max-w-3xl mx-auto flex items-center justify-center pb-10 px-4 sm:px-0 min-h-[40px]">
@@ -5878,20 +5896,37 @@ export default function QrMenu() {
     setShowTakeawayForm,
   ]);
 
+  const brandedShareUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const identifier = String(restaurantIdentifier || slug || id || "").trim();
+    if (!identifier) return window.location.href;
+    const brandingVersion = encodeURIComponent(
+      String(orderSelectCustomization?.branding_updated_at || "default")
+    );
+    return `${window.location.origin}/api/public/share/${encodeURIComponent(
+      identifier
+    )}?v=${brandingVersion}`;
+  }, [
+    id,
+    orderSelectCustomization?.branding_updated_at,
+    restaurantIdentifier,
+    slug,
+  ]);
+
   const copyCurrentMenuLink = useCallback(() => {
     if (typeof window === "undefined") return;
-    const url = window.location.href;
+    const url = brandedShareUrl || window.location.href;
     try {
       navigator.clipboard.writeText(url);
       alert(t("Link copied."));
     } catch {
       alert(url);
     }
-  }, [t]);
+  }, [brandedShareUrl, t]);
 
   const shareCurrentMenu = useCallback(() => {
     if (typeof window === "undefined") return;
-    const url = window.location.href;
+    const url = brandedShareUrl || window.location.href;
     if (navigator.share) {
       navigator
         .share({
@@ -5903,7 +5938,7 @@ export default function QrMenu() {
       return;
     }
     copyCurrentMenuLink();
-  }, [brandName, copyCurrentMenuLink, t]);
+  }, [brandName, brandedShareUrl, copyCurrentMenuLink, t]);
 
   const handleDownloadQrImage = useCallback(async () => {
     if (typeof window === "undefined") return;
