@@ -5,77 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f172a" />
-    <script>
-      (function () {
-        try {
-          const params = new URLSearchParams(window.location.search || "");
-          const fromQuery =
-            params.get("identifier") ||
-            params.get("tenant_id") ||
-            params.get("tenant") ||
-            params.get("restaurant_id") ||
-            params.get("restaurant") ||
-            params.get("slug") ||
-            params.get("id") ||
-            "";
-
-          const path = String(window.location.pathname || "/");
-          const segments = path.split("/").filter(Boolean);
-          const reservedRootRoutes = new Set([
-            "login",
-            "staff-login",
-            "dashboard",
-            "orders",
-            "products",
-            "kitchen",
-            "suppliers",
-            "stock",
-            "production",
-            "tables",
-            "tableoverview",
-            "reports",
-            "staff",
-            "task",
-            "live-route",
-            "takeaway-overview",
-            "settings",
-            "subscription",
-            "expenses",
-            "ingredient-prices",
-            "cash-register-history",
-            "integrations",
-            "standalone",
-            "standalone-register",
-            "qr-menu-settings",
-            "register",
-            "qr",
-            "menu",
-          ]);
-
-          let fromPath = "";
-          if (segments[0] === "qr-menu" && segments[1]) {
-            fromPath = segments[1];
-          } else if (segments.length === 1 && !reservedRootRoutes.has(segments[0])) {
-            fromPath = segments[0];
-          }
-
-          let identifier = String(fromQuery || fromPath || "").trim();
-          if (!identifier && (segments[0] === "qr" || segments[0] === "menu")) {
-            try {
-              identifier = String(window.localStorage.getItem("qr_last_identifier") || "").trim();
-            } catch (_) {}
-          }
-
-          var manifestHref = identifier
-            ? "/api/public/manifest.json?identifier=" + encodeURIComponent(identifier)
-            : "/api/public/manifest.json";
-
-          document.write('<link rel="manifest" href="' + manifestHref + '">');
-        } catch (_) {
-          document.write('<link rel="manifest" href="/api/public/manifest.json">');
-        }
-      })();
-    </script>
+    <link rel="manifest" href="/api/public/manifest.json" />
     <link rel="icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/Beylogo.svg" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
