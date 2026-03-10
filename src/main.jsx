@@ -17,8 +17,13 @@ const isElectron =
 // Use hash routing in Electron so URL is file:///.../index.html#/<route>
 const Router = isElectron ? HashRouter : BrowserRouter;
 
-// PWA service worker registration (web only, production only).
-if (!isElectron && import.meta.env.PROD && "serviceWorker" in navigator) {
+// PWA service worker registration (web only).
+// Enable on production, and on localhost dev so Chrome installability can be tested.
+const isLocalHost =
+  typeof window !== "undefined" &&
+  ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+
+if (!isElectron && "serviceWorker" in navigator && (import.meta.env.PROD || isLocalHost)) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });

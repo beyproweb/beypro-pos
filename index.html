@@ -66,19 +66,13 @@
             } catch (_) {}
           }
 
-          const manifestHref = identifier
-            ? `/api/public/manifest.json?identifier=${encodeURIComponent(identifier)}`
-            : "/manifest.json";
+          var manifestHref = identifier
+            ? "/api/public/manifest.json?identifier=" + encodeURIComponent(identifier)
+            : "/api/public/manifest.json";
 
-          const link = document.createElement("link");
-          link.rel = "manifest";
-          link.href = manifestHref;
-          document.head.appendChild(link);
+          document.write('<link rel="manifest" href="' + manifestHref + '">');
         } catch (_) {
-          const fallback = document.createElement("link");
-          fallback.rel = "manifest";
-          fallback.href = "/manifest.json";
-          document.head.appendChild(fallback);
+          document.write('<link rel="manifest" href="/api/public/manifest.json">');
         }
       })();
     </script>
