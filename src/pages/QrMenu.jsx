@@ -5063,7 +5063,7 @@ export default function QrMenu() {
     const manifestVersion = encodeURIComponent(
       String(orderSelectCustomization?.branding_updated_at || "default")
     );
-    const manifestHref = `/api/public/manifest.json?identifier=${encodeURIComponent(
+    const manifestHref = `${API_URL}/public/manifest.json?identifier=${encodeURIComponent(
       identifier
     )}&v=${manifestVersion}`;
     const appleTouchIconHref = resolveBrandingAsset(
