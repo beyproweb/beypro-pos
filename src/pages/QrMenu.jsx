@@ -4952,7 +4952,6 @@ export default function QrMenu() {
     setShowQrPrompt,
     qrPromptMode,
     setQrPromptMode,
-    markQrSaved,
     canInstall,
     isDesktopLayout,
     appendIdentifier,
@@ -6077,7 +6076,6 @@ export default function QrMenu() {
                 <button
                   type="button"
                   onClick={() => {
-                    markQrSaved();
                     setShowQrPrompt(false);
                     setQrPromptMode("default");
                   }}

@@ -130,17 +130,31 @@ export function useQrMenuStorage({
     setShowQrPrompt(false);
   }, [markQrSaved]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handleInstalled = () => {
+      markQrSaved();
+      setShowQrPrompt(false);
+      setDeferredPrompt(null);
+      setCanInstall(false);
+    };
+    window.addEventListener("appinstalled", handleInstalled);
+    return () => window.removeEventListener("appinstalled", handleInstalled);
+  }, [markQrSaved]);
+
   const handleInstallClick = useCallback(() => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     deferredPrompt.userChoice.then((choice) => {
       if (choice.outcome === "accepted") {
+        markQrSaved();
+        setShowQrPrompt(false);
         console.log("✅ User installed app");
       }
       setDeferredPrompt(null);
       setCanInstall(false);
     });
-  }, [deferredPrompt]);
+  }, [deferredPrompt, markQrSaved]);
 
   const handleDownloadQr = useCallback(() => {
     const isStandalone =
@@ -157,17 +171,22 @@ export function useQrMenuStorage({
 
     if (deferredPrompt) {
       deferredPrompt.prompt();
-      deferredPrompt.userChoice.finally(() => {
+      deferredPrompt.userChoice.then((choice) => {
+        if (choice?.outcome === "accepted") {
+          markQrSaved();
+          setShowQrPrompt(false);
+        } else {
+          setShowQrPrompt(true);
+        }
+      }).finally(() => {
         setDeferredPrompt(null);
         setCanInstall(false);
-        markQrSaved();
-        setShowQrPrompt(false);
       });
       return;
     }
 
-    markQrSaved();
-    setShowQrPrompt(false);
+    // Keep prompt persistent until an actual install happens.
+    setShowQrPrompt(true);
     setShowHelp(true);
   }, [deferredPrompt, markQrSaved]);
 
@@ -190,7 +209,6 @@ export function useQrMenuStorage({
     canInstall,
     setCanInstall,
     getSavedDeliveryInfo,
-    markQrSaved,
     handleInstallClick,
     handleDownloadQr,
   };

@@ -383,7 +383,6 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     canInstall,
     setCanInstall,
     getSavedDeliveryInfo,
-    markQrSaved,
     handleInstallClick,
     handleDownloadQr,
   } = useQrMenuStorage({
@@ -2862,7 +2861,6 @@ function handleReset(options = null) {
     setShowQrPrompt,
     qrPromptMode,
     setQrPromptMode,
-    markQrSaved,
     deferredPrompt,
     setDeferredPrompt,
     canInstall,
