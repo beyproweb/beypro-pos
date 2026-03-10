@@ -50,6 +50,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        // Uploaded branding assets used by PWA manifest icons in dev.
+        "/uploads": {
+          target: backendURL,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
 
