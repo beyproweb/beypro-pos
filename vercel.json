@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/api/public/:path*",
+      "destination": "https://api.beypro.com/api/public/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "https://api.beypro.com/uploads/:path*"
+    },
+    {
       "source": "/bridge/:file",
       "destination": "https://github.com/beyproweb/bridge-mini/releases/download/v1.0.7/:file"
     },
