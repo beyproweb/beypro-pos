@@ -6,7 +6,7 @@
         {
           "type": "header",
           "key": "user-agent",
-          "value": "(WhatsApp|facebookexternalhit|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|Googlebot)"
+          "value": ".*(WhatsApp|whatsapp|facebookexternalhit|Facebot|Twitterbot|twitterbot|Slackbot|slackbot|TelegramBot|telegrambot|LinkedInBot|linkedinbot|Discordbot|discordbot|Googlebot|googlebot|Meta-ExternalAgent|meta-externalagent).*"
         }
       ],
       "missing": [
