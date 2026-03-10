@@ -11,8 +11,6 @@ export function useQrMenuStorage({
   storage,
   getStoredToken,
   getPlatform,
-  BEYPRO_APP_STORE_URL,
-  BEYPRO_PLAY_STORE_URL,
   appendIdentifier,
 }) {
   useEffect(() => {
@@ -127,19 +125,6 @@ export function useQrMenuStorage({
   }, [deferredPrompt]);
 
   const handleDownloadQr = useCallback(() => {
-    if (platform === "ios" && BEYPRO_APP_STORE_URL) {
-      window.open(BEYPRO_APP_STORE_URL, "_blank", "noopener,noreferrer");
-      storage.setItem("qr_saved", "1");
-      setShowQrPrompt(false);
-      return;
-    }
-    if (platform === "android" && BEYPRO_PLAY_STORE_URL) {
-      window.open(BEYPRO_PLAY_STORE_URL, "_blank", "noopener,noreferrer");
-      storage.setItem("qr_saved", "1");
-      setShowQrPrompt(false);
-      return;
-    }
-
     const isStandalone =
       (typeof window !== "undefined" &&
         (window.matchMedia?.("(display-mode: standalone)")?.matches ||
@@ -166,13 +151,7 @@ export function useQrMenuStorage({
     storage.setItem("qr_saved", "1");
     setShowQrPrompt(false);
     setShowHelp(true);
-  }, [
-    BEYPRO_APP_STORE_URL,
-    BEYPRO_PLAY_STORE_URL,
-    deferredPrompt,
-    platform,
-    storage,
-  ]);
+  }, [deferredPrompt, storage]);
 
   return {
     lang,

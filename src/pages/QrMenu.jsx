@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import { io } from "socket.io-client";
+import QRCode from "qrcode";
 
 function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
   const raw = String(value || "").trim();
@@ -100,8 +101,6 @@ function normalizeHexColor(value, fallback) {
 
 const QR_PREFIX = "qr_";
 const QR_TOKEN_KEY = "qr_token";
-const BEYPRO_APP_STORE_URL = import.meta.env.VITE_BEYPRO_APPSTORE_URL || "";
-const BEYPRO_PLAY_STORE_URL = import.meta.env.VITE_BEYPRO_PLAYSTORE_URL || "";
 const normalizeReservationStatus = (value) =>
   String(value ?? "")
     .trim()
@@ -939,6 +938,11 @@ const DICT = {
     "Tap here to install the menu as an app": "Tap here to install the menu as an app",
     "Add to Home Screen": "Add to Home Screen",
     "Download Qr": "Download Qr",
+    "Install App": "Install App",
+    "Download QR Image": "Download QR Image",
+    "Share this menu with your guests.": "Share this menu with your guests.",
+    "Choose what to do with this QR menu.": "Choose what to do with this QR menu.",
+    "Download failed. Please try again.": "Download failed. Please try again.",
     "Shop Hours": "Shop Hours",
     "Shop Closed": "Shop Closed",
     "Delivery Closed": "Delivery Closed",
@@ -1124,6 +1128,11 @@ const DICT = {
     "Tap here to install the menu as an app": "Menüyü uygulama olarak yüklemek için buraya dokunun",
     "Add to Home Screen": "Ana Ekrana Ekle",
     "Download Qr": "QR İndir",
+    "Install App": "Uygulamayı Yükle",
+    "Download QR Image": "QR Görselini İndir",
+    "Share this menu with your guests.": "Bu menüyü misafirlerinizle paylaşın.",
+    "Choose what to do with this QR menu.": "Bu QR menü için ne yapmak istediğinizi seçin.",
+    "Download failed. Please try again.": "İndirme başarısız oldu. Lütfen tekrar deneyin.",
     "Shop Hours": "Çalışma Saatleri",
     "Shop Closed": "Dükkan Kapalı",
     "Delivery Closed": "Paket Kapalı",
@@ -1217,6 +1226,11 @@ const DICT = {
     "Tap here to install the menu as an app": "Tippen Sie hier, um das Menü als App zu installieren",
     "Add to Home Screen": "Zum Startbildschirm hinzufügen",
     "Download Qr": "QR herunterladen",
+    "Install App": "App installieren",
+    "Download QR Image": "QR-Bild herunterladen",
+    "Share this menu with your guests.": "Teilen Sie dieses Menü mit Ihren Gästen.",
+    "Choose what to do with this QR menu.": "Wählen Sie, was Sie mit diesem QR-Menü tun möchten.",
+    "Download failed. Please try again.": "Download fehlgeschlagen. Bitte versuchen Sie es erneut.",
     "Scan Table QR": "Tisch-QR scannen",
     "Scan the QR code on your table to continue.": "Scannen Sie den QR-Code auf Ihrem Tisch, um fortzufahren.",
     "Invalid table QR code.": "Ungültiger Tisch-QR-Code.",
@@ -1305,6 +1319,11 @@ const DICT = {
     "Tap here to install the menu as an app": "Appuyez ici pour installer le menu comme une application",
     "Add to Home Screen": "Ajouter à l'écran d'accueil",
     "Download Qr": "Télécharger QR",
+    "Install App": "Installer l'application",
+    "Download QR Image": "Télécharger l'image QR",
+    "Share this menu with your guests.": "Partagez ce menu avec vos invités.",
+    "Choose what to do with this QR menu.": "Choisissez ce que vous voulez faire avec ce menu QR.",
+    "Download failed. Please try again.": "Le téléchargement a échoué. Veuillez réessayer.",
     "Scan Table QR": "Scanner le QR de la table",
     "Scan the QR code on your table to continue.": "Scannez le code QR sur votre table pour continuer.",
     "Invalid table QR code.": "Code QR de table invalide.",
@@ -1562,6 +1581,102 @@ function InstallHelpModal({ open, onClose, t, platform, onShare, onCopy }) {
   );
 }
 
+function ShareMenuModal({ open, onClose, t, onShare, onCopy }) {
+  if (!open) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+        <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
+          <div className="text-lg font-semibold text-gray-900 dark:text-neutral-100">
+            {t("Share QR Menu")}
+          </div>
+          <div className="text-sm text-gray-600 dark:text-neutral-300 mt-1">
+            {t("Share this menu with your guests.")}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-3 text-sm text-gray-700 dark:text-neutral-200">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              onClick={onShare}
+              className="flex-1 py-3 rounded-2xl bg-neutral-900 text-white font-semibold shadow-sm hover:bg-neutral-800 transition"
+            >
+              {t("Share")}
+            </button>
+            <button
+              type="button"
+              onClick={onCopy}
+              className="flex-1 py-3 rounded-2xl bg-white dark:bg-neutral-950 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
+            >
+              {t("Copy Link")}
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-gray-100 dark:border-neutral-800 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl px-4 py-2 text-sm font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-100 hover:bg-gray-200 dark:hover:bg-neutral-700 transition"
+          >
+            {t("Close")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function DownloadQrModal({ open, onClose, t, onInstall, onDownloadImage }) {
+  if (!open) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+        <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
+          <div className="text-lg font-semibold text-gray-900 dark:text-neutral-100">
+            {t("Download Qr")}
+          </div>
+          <div className="text-sm text-gray-600 dark:text-neutral-300 mt-1">
+            {t("Choose what to do with this QR menu.")}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-3 text-sm text-gray-700 dark:text-neutral-200">
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={onInstall}
+              className="w-full py-3 rounded-2xl bg-neutral-900 text-white font-semibold shadow-sm hover:bg-neutral-800 transition"
+            >
+              {t("Install App")}
+            </button>
+            <button
+              type="button"
+              onClick={onDownloadImage}
+              className="w-full py-3 rounded-2xl bg-white dark:bg-neutral-950 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
+            >
+              {t("Download QR Image")}
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-gray-100 dark:border-neutral-800 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl px-4 py-2 text-sm font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-100 hover:bg-gray-200 dark:hover:bg-neutral-700 transition"
+          >
+            {t("Close")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 
 /* ====================== HEADER ====================== */
 function QrHeader({
@@ -1643,7 +1758,7 @@ function OrderTypeSelect({
   lang,
   setLang,
   t,
-  onInstallClick,
+  onShare,
   onDownloadQr,
   onShopOpenChange,
   canInstall,
@@ -3412,18 +3527,8 @@ async function load() {
             )}
 
             <button
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: restaurantName,
-                    text: "Check out our menu!",
-                    url: window.location.href,
-                  });
-                } else {
-                  navigator.clipboard.writeText(window.location.href);
-                  alert(t("Link copied."));
-                }
-              }}
+              type="button"
+              onClick={() => onShare?.()}
               className="w-full h-11 rounded-xl bg-white dark:bg-neutral-900 border border-gray-300/90 dark:border-neutral-700 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:shadow-md hover:-translate-y-0.5 transition-all"
             >
               <Share2 className="w-4 h-4" />
@@ -4866,7 +4971,6 @@ export default function QrMenu() {
     handleOrderAnother,
     handleSubmitOrder,
     handleReset,
-    handleInstallClick,
     handleDownloadQr,
     showHome,
     showTableSelector,
@@ -4887,8 +4991,6 @@ export default function QrMenu() {
     QR_TOKEN_KEY,
     API_URL,
     API_BASE,
-    BEYPRO_APP_STORE_URL,
-    BEYPRO_PLAY_STORE_URL,
     storage,
     toArray,
     boolish,
@@ -4918,6 +5020,8 @@ export default function QrMenu() {
   const [checkoutCompletedLabel, setCheckoutCompletedLabel] = useState(false);
   const [pendingNonTableConcertReorderLock, setPendingNonTableConcertReorderLock] = useState(false);
   const [showStandaloneSplash, setShowStandaloneSplash] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [downloadQrModalOpen, setDownloadQrModalOpen] = useState(false);
   const callWaiterFeedbackTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -5769,6 +5873,97 @@ export default function QrMenu() {
     setShowTakeawayForm,
   ]);
 
+  const copyCurrentMenuLink = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const url = window.location.href;
+    try {
+      navigator.clipboard.writeText(url);
+      alert(t("Link copied."));
+    } catch {
+      alert(url);
+    }
+  }, [t]);
+
+  const shareCurrentMenu = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator
+        .share({
+          title: brandName || t("Restaurant"),
+          text: "Check out our menu!",
+          url,
+        })
+        .catch(() => {});
+      return;
+    }
+    copyCurrentMenuLink();
+  }, [brandName, copyCurrentMenuLink, t]);
+
+  const handleDownloadQrImage = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const url = window.location.href;
+    const brandingName = normalizeRestaurantDisplayName(
+      orderSelectCustomization?.app_display_name || brandName,
+      "qr-menu"
+    );
+    const safeName =
+      String(brandingName || "qr-menu")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "") || "qr-menu";
+
+    try {
+      const qrImageDataUrl = await QRCode.toDataURL(url, {
+        errorCorrectionLevel: "H",
+        width: 1024,
+        margin: 2,
+        color: {
+          dark: "#111111",
+          light: "#FFFFFF",
+        },
+      });
+
+      const anchor = document.createElement("a");
+      anchor.href = qrImageDataUrl;
+      anchor.download = `${safeName}-qr.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } catch (error) {
+      console.error("Failed to export QR image:", error);
+      alert(t("Download failed. Please try again."));
+    }
+  }, [brandName, orderSelectCustomization?.app_display_name, t]);
+
+  const openShareModal = useCallback(() => {
+    setShareModalOpen(true);
+  }, []);
+
+  const openDownloadQrModal = useCallback(() => {
+    setDownloadQrModalOpen(true);
+  }, []);
+
+  const handleShareFromModal = useCallback(() => {
+    shareCurrentMenu();
+    setShareModalOpen(false);
+  }, [shareCurrentMenu]);
+
+  const handleCopyFromModal = useCallback(() => {
+    copyCurrentMenuLink();
+    setShareModalOpen(false);
+  }, [copyCurrentMenuLink]);
+
+  const handleInstallFromModal = useCallback(() => {
+    handleDownloadQr();
+    setDownloadQrModalOpen(false);
+  }, [handleDownloadQr]);
+
+  const handleDownloadImageFromModal = useCallback(async () => {
+    await handleDownloadQrImage();
+    setDownloadQrModalOpen(false);
+  }, [handleDownloadQrImage]);
+
   if (showTableSelector) {
     return (
       <>
@@ -5841,32 +6036,22 @@ export default function QrMenu() {
         onClose={() => setShowHelp(false)}
         t={t}
         platform={platform}
-        onShare={() => {
-          const url = window.location.href;
-          if (navigator.share) {
-            navigator.share({
-              title: restaurantName,
-              text: "Check out our menu!",
-              url,
-            });
-          } else {
-            try {
-              navigator.clipboard.writeText(url);
-              alert(t("Link copied."));
-            } catch {
-              alert(url);
-            }
-          }
-        }}
-        onCopy={() => {
-          const url = window.location.href;
-          try {
-            navigator.clipboard.writeText(url);
-            alert(t("Link copied."));
-          } catch {
-            alert(url);
-          }
-        }}
+        onShare={shareCurrentMenu}
+        onCopy={copyCurrentMenuLink}
+      />
+      <ShareMenuModal
+        open={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        t={t}
+        onShare={handleShareFromModal}
+        onCopy={handleCopyFromModal}
+      />
+      <DownloadQrModal
+        open={downloadQrModalOpen}
+        onClose={() => setDownloadQrModalOpen(false)}
+        t={t}
+        onInstall={handleInstallFromModal}
+        onDownloadImage={handleDownloadImageFromModal}
       />
       {showQrPrompt && (
         <div className="fixed bottom-5 left-1/2 z-[999] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-2">
@@ -5916,8 +6101,8 @@ export default function QrMenu() {
             lang={lang}
             setLang={setLang}
             t={t}
-            onInstallClick={handleInstallClick}
-            onDownloadQr={handleDownloadQr}
+            onShare={openShareModal}
+            onDownloadQr={openDownloadQrModal}
             onShopOpenChange={setShopIsOpen}
             canInstall={canInstall}
             showHelp={showHelp}

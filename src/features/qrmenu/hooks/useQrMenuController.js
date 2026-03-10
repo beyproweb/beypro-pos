@@ -14,8 +14,6 @@ export function useQrMenuController({
   QR_TOKEN_KEY,
   API_URL,
   API_BASE,
-  BEYPRO_APP_STORE_URL,
-  BEYPRO_PLAY_STORE_URL,
   storage,
   toArray,
   boolish,
@@ -398,8 +396,6 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     storage,
     getStoredToken,
     getPlatform,
-    BEYPRO_APP_STORE_URL,
-    BEYPRO_PLAY_STORE_URL,
     appendIdentifier,
   });
 
