@@ -1,6 +1,21 @@
 {
   "rewrites": [
     {
+      "source": "/:identifier",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(WhatsApp|facebookexternalhit|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|Googlebot)"
+        }
+      ],
+      "missing": [
+        { "type": "query", "key": "from_share" },
+        { "type": "query", "key": "source" }
+      ],
+      "destination": "https://api.beypro.com/api/public/share/:identifier"
+    },
+    {
       "source": "/api/public/:path*",
       "destination": "https://api.beypro.com/api/public/:path*"
     },

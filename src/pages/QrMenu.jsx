@@ -5900,15 +5900,9 @@ export default function QrMenu() {
     if (typeof window === "undefined") return "";
     const identifier = String(restaurantIdentifier || slug || id || "").trim();
     if (!identifier) return window.location.href;
-    const brandingVersion = encodeURIComponent(
-      String(orderSelectCustomization?.branding_updated_at || "default")
-    );
-    return `${window.location.origin}/api/public/share/${encodeURIComponent(
-      identifier
-    )}?v=${brandingVersion}`;
+    return `${window.location.origin}/${encodeURIComponent(identifier)}`;
   }, [
     id,
-    orderSelectCustomization?.branding_updated_at,
     restaurantIdentifier,
     slug,
   ]);
@@ -5931,7 +5925,6 @@ export default function QrMenu() {
       navigator
         .share({
           title: brandName || t("Restaurant"),
-          text: "Check out our menu!",
           url,
         })
         .catch(() => {});
