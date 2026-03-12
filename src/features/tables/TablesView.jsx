@@ -10,6 +10,7 @@ import {
   useRenderCount,
   withPerfTimer,
 } from "./dev/perfDebug";
+import { isReservationConfirmedForCheckin } from "../../utils/reservationStatus";
 
 const AREA_FILTER_ALL = "ALL";
 const AREA_FILTER_RESERVED = "__RESERVED__";
@@ -17,6 +18,40 @@ const AREA_FILTER_UNPAID = "__UNPAID__";
 const AREA_FILTER_PAID = "__PAID__";
 const AREA_FILTER_FREE = "__FREE__";
 const AREA_FILTER_VIEW_BOOKING = "__VIEW_BOOKING__";
+const formatDateInputValue = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeBookingDate = (booking) => {
+  const isConcertBooking = booking?.booking_source === "concert";
+  const raw = String(
+    (isConcertBooking
+      ? booking?.booking_date ??
+        booking?.bookingDate ??
+        booking?.created_at ??
+        booking?.createdAt
+      : booking?.reservation_date ??
+        booking?.reservationDate ??
+        booking?.booking_date ??
+        booking?.bookingDate ??
+        booking?.created_at ??
+        booking?.createdAt ??
+        booking?.event_date ??
+        booking?.eventDate) ??
+      ""
+  ).trim();
+  if (!raw) return "";
+  const ymdMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (ymdMatch?.[1]) return ymdMatch[1];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  return Number.isFinite(parsed.getTime()) ? formatDateInputValue(parsed) : "";
+};
 
 function TablesView({
   showAreaTabs,
@@ -31,15 +66,23 @@ function TablesView({
   t,
   showViewBookingTab = false,
   concertBookings = [],
+  reservationBookings = [],
   concertBookingsLoading = false,
   concertBookingUpdatingId = null,
+  reservationBookingUpdatingKey = null,
   onConcertBookingUpdateStatus,
+  onReservationBookingUpdateStatus,
+  onClearBookings,
+  clearingBookings = false,
 }) {
   const renderCount = useRenderCount("TableList", { logEvery: 1 });
   const onTableListProfileRender = React.useMemo(() => createProfilerOnRender("TableList"), []);
   const showRenderCounter = isTablePerfDebugEnabled();
   const tableTimers = useTableTimers({ ordersByTable, productPrepById });
-  const isActiveConcertReservationFallback = React.useCallback((table) => {
+  const [bookingSearch, setBookingSearch] = React.useState("");
+  const [bookingDateFrom, setBookingDateFrom] = React.useState(() => formatDateInputValue(new Date()));
+  const [bookingDateTo, setBookingDateTo] = React.useState(() => formatDateInputValue(new Date()));
+  const isActiveReservationFallback = React.useCallback((table) => {
     const fallback = table?.reservationFallback;
     if (!fallback || typeof fallback !== "object") return false;
     const status = String(fallback?.status || "").toLowerCase();
@@ -51,14 +94,7 @@ function TablesView({
       status === "canceled" ||
       status === "deleted" ||
       status === "void";
-    if (isTerminal) return false;
-
-    const notes = String(
-      fallback?.reservation_notes ??
-        fallback?.reservationNotes ??
-        ""
-    ).toLowerCase();
-    return notes.includes("concert");
+    return !isTerminal;
   }, []);
   const concertBookedTableNumbers = React.useMemo(() => {
     const booked = new Set();
@@ -77,6 +113,41 @@ function TablesView({
     });
     return booked;
   }, [concertBookings]);
+  const combinedBookings = React.useMemo(() => {
+    const concertRows = Array.isArray(concertBookings)
+      ? concertBookings.map((booking) => ({ ...booking, booking_source: "concert" }))
+      : [];
+    const reservationRows = Array.isArray(reservationBookings)
+      ? reservationBookings.map((booking) => ({ ...booking, booking_source: "reservation" }))
+      : [];
+    return [...concertRows, ...reservationRows];
+  }, [concertBookings, reservationBookings]);
+  const rangeBookingCount = React.useMemo(() => {
+    return combinedBookings.filter((booking) => {
+      const bookingDate = normalizeBookingDate(booking);
+      if (!bookingDate) return false;
+      if (bookingDateFrom && bookingDate < bookingDateFrom) return false;
+      if (bookingDateTo && bookingDate > bookingDateTo) return false;
+      return true;
+    }).length;
+  }, [bookingDateFrom, bookingDateTo, combinedBookings]);
+  const normalizedBookingSearch = bookingSearch.trim().toLowerCase();
+  const filteredBookings = React.useMemo(() => {
+    return combinedBookings.filter((booking) => {
+      const bookingDate = normalizeBookingDate(booking);
+      if (bookingDateFrom && bookingDate && bookingDate < bookingDateFrom) return false;
+      if (bookingDateTo && bookingDate && bookingDate > bookingDateTo) return false;
+      if (!normalizedBookingSearch) return true;
+      const customerName = String(booking?.customer_name ?? booking?.customerName ?? "").toLowerCase();
+      const customerPhone = String(
+        booking?.customer_phone ?? booking?.customerPhone ?? ""
+      ).toLowerCase();
+      return (
+        customerName.includes(normalizedBookingSearch) ||
+        customerPhone.includes(normalizedBookingSearch)
+      );
+    });
+  }, [bookingDateFrom, bookingDateTo, combinedBookings, normalizedBookingSearch]);
   const isConcertBookedTable = React.useCallback(
     (table) => {
       const tableNumber = Number(table?.tableNumber);
@@ -95,7 +166,7 @@ function TablesView({
           return allTables.filter(
             (table) =>
               Boolean(table?.isReservedTable) ||
-              isActiveConcertReservationFallback(table)
+              isActiveReservationFallback(table)
           );
         }
         if (activeArea === AREA_FILTER_UNPAID) {
@@ -124,7 +195,7 @@ function TablesView({
       tables,
       groupedTables,
       isConcertBookedTable,
-      isActiveConcertReservationFallback,
+      isActiveReservationFallback,
     ]
   );
   const reservedTablesCount = React.useMemo(
@@ -133,10 +204,10 @@ function TablesView({
         ? tables.filter(
             (table) =>
               Boolean(table?.isReservedTable) ||
-              isActiveConcertReservationFallback(table)
+              isActiveReservationFallback(table)
           ).length
         : 0,
-    [tables, isActiveConcertReservationFallback]
+    [tables, isActiveReservationFallback]
   );
   const unpaidTablesCount = React.useMemo(
     () =>
@@ -282,13 +353,13 @@ function TablesView({
           {showViewBookingTab ? (
             <button
               onClick={() => handleAreaSelect(AREA_FILTER_VIEW_BOOKING)}
-              className={getAreaTabClassName(
+            className={getAreaTabClassName(
                 activeArea === AREA_FILTER_VIEW_BOOKING,
                 "bg-violet-600 text-white scale-[1.03] shadow-lg",
                 "bg-white text-gray-700 border border-gray-300 hover:bg-violet-50"
               )}
             >
-              {t("View Booking")} ({Array.isArray(concertBookings) ? concertBookings.length : 0})
+              {t("View Booking")} ({rangeBookingCount})
             </button>
           ) : null}
         </div>
@@ -297,14 +368,60 @@ function TablesView({
       {activeArea === AREA_FILTER_VIEW_BOOKING ? (
         <div className="w-full max-w-6xl px-4 sm:px-8 pb-4">
           <div className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
-            <div className="text-base font-semibold text-violet-700">{t("View Booking")}</div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-base font-semibold text-violet-700">{t("View Booking")}</div>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                <input
+                  type="date"
+                  value={bookingDateFrom}
+                  onChange={(event) => setBookingDateFrom(event.target.value)}
+                  className="w-full rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-40"
+                />
+                <input
+                  type="date"
+                  value={bookingDateTo}
+                  onChange={(event) => setBookingDateTo(event.target.value)}
+                  className="w-full rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-40"
+                />
+                <input
+                  type="text"
+                  value={bookingSearch}
+                  onChange={(event) => setBookingSearch(event.target.value)}
+                  placeholder={t("Search by name or phone")}
+                  className="w-full rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-80"
+                />
+                <button
+                  type="button"
+                  onClick={() => onClearBookings?.(filteredBookings, { from: bookingDateFrom, to: bookingDateTo })}
+                  disabled={clearingBookings || filteredBookings.length === 0}
+                  className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {clearingBookings ? t("Clearing...") : t("Clear Bookings")}
+                </button>
+              </div>
+            </div>
             {concertBookingsLoading ? (
               <div className="mt-3 text-sm text-gray-500">{t("Loading...")}</div>
-            ) : Array.isArray(concertBookings) && concertBookings.length > 0 ? (
+            ) : filteredBookings.length > 0 ? (
               <div className="mt-3 space-y-2">
-                {concertBookings.map((booking) => (
+                {filteredBookings.map((booking) => {
+                  const isConcertBooking = booking.booking_source === "concert";
+                  const reservationAlreadyConfirmed = isReservationConfirmedForCheckin(booking);
+
+                  return (
                   <div
-                    key={booking.id}
+                    key={
+                      booking.booking_source === "reservation"
+                        ? `reservation-${
+                            booking.id ??
+                            booking.order_id ??
+                            booking.orderId ??
+                            `${booking.table_number ?? booking.tableNumber ?? "x"}-${
+                              booking.reservation_date ?? booking.reservationDate ?? "na"
+                            }-${booking.reservation_time ?? booking.reservationTime ?? "na"}`
+                          }`
+                        : `concert-${booking.id}`
+                    }
                     className="rounded-xl border border-gray-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3"
                   >
                     <div className="min-w-[240px]">
@@ -344,6 +461,11 @@ function TablesView({
                               maximumFractionDigits: 2,
                             })
                           : "0.00";
+                        const reservationStatus = String(
+                          booking.status ?? booking.reservation_status ?? booking.reservationStatus ?? ""
+                        )
+                          .trim()
+                          .toLowerCase();
                         return (
                           <>
                       <div className="text-sm font-semibold text-slate-900">
@@ -351,17 +473,28 @@ function TablesView({
                         {booking.customer_phone ? ` • ${booking.customer_phone}` : ""}
                       </div>
                       <div className="text-xs text-gray-600">
-                        {(booking.event_title || booking.artist_name || t("Concert"))}
-                        {booking.event_date ? ` • ${String(booking.event_date).slice(0, 10)}` : ""}
-                        {booking.event_time ? ` ${String(booking.event_time).slice(0, 5)}` : ""}
+                        {isConcertBooking
+                          ? (booking.event_title || booking.artist_name || t("Concert"))
+                          : t("Reservation")}
+                        {(booking.event_date || booking.reservation_date)
+                          ? ` • ${String(booking.event_date || booking.reservation_date).slice(0, 10)}`
+                          : ""}
+                        {(booking.event_time || booking.reservation_time)
+                          ? ` ${String(booking.event_time || booking.reservation_time).slice(0, 5)}`
+                          : ""}
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5">
-                        {booking.booking_type} • {booking.quantity}
-                        {` • ${t("Guests")} ${guestsLabel}`}
-                        {` • ${t("Total")} ${totalLabel}`}
+                        {isConcertBooking
+                          ? `${booking.booking_type} • ${booking.quantity}`
+                          : `${t("Reserved")} • ${t("Guests")} ${guestsLabel}`}
+                        {isConcertBooking ? ` • ${t("Total")} ${totalLabel}` : ""}
                         {booking.ticket_type_name ? ` • ${booking.ticket_type_name}` : ""}
-                        {booking.reserved_table_number ? ` • ${t("Table")} ${booking.reserved_table_number}` : ""}
-                        {booking.payment_status ? ` • ${booking.payment_status}` : ""}
+                        {(booking.reserved_table_number || booking.table_number)
+                          ? ` • ${t("Table")} ${booking.reserved_table_number || booking.table_number}`
+                          : ""}
+                        {isConcertBooking
+                          ? (booking.payment_status ? ` • ${booking.payment_status}` : "")
+                          : (reservationStatus ? ` • ${reservationStatus}` : "")}
                       </div>
                           </>
                         );
@@ -370,10 +503,24 @@ function TablesView({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => onConcertBookingUpdateStatus?.(booking.id, "confirmed")}
+                        onClick={() =>
+                          booking.booking_source === "concert"
+                            ? onConcertBookingUpdateStatus?.(booking.id, "confirmed")
+                            : onReservationBookingUpdateStatus?.(booking, "confirmed")
+                        }
                         disabled={
-                          concertBookingUpdatingId === booking.id ||
-                          String(booking.payment_status || "").toLowerCase() === "confirmed"
+                          booking.booking_source === "concert"
+                            ? concertBookingUpdatingId === booking.id ||
+                              String(booking.payment_status || "").toLowerCase() === "confirmed"
+                            : reservationAlreadyConfirmed ||
+                              reservationBookingUpdatingKey ===
+                                String(
+                                  booking.id ??
+                                    booking.order_id ??
+                                    booking.orderId ??
+                                    booking.table_number ??
+                                    booking.tableNumber
+                                )
                         }
                         className="px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 text-xs font-semibold hover:bg-emerald-50 disabled:opacity-60"
                       >
@@ -381,10 +528,23 @@ function TablesView({
                       </button>
                       <button
                         type="button"
-                        onClick={() => onConcertBookingUpdateStatus?.(booking.id, "cancelled")}
+                        onClick={() =>
+                          booking.booking_source === "concert"
+                            ? onConcertBookingUpdateStatus?.(booking.id, "cancelled")
+                            : onReservationBookingUpdateStatus?.(booking, "cancelled")
+                        }
                         disabled={
-                          concertBookingUpdatingId === booking.id ||
-                          String(booking.payment_status || "").toLowerCase() === "cancelled"
+                          booking.booking_source === "concert"
+                            ? concertBookingUpdatingId === booking.id ||
+                              String(booking.payment_status || "").toLowerCase() === "cancelled"
+                            : reservationBookingUpdatingKey ===
+                              String(
+                                booking.id ??
+                                  booking.order_id ??
+                                  booking.orderId ??
+                                  booking.table_number ??
+                                  booking.tableNumber
+                              )
                         }
                         className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs font-semibold hover:bg-rose-50 disabled:opacity-60"
                       >
@@ -392,10 +552,12 @@ function TablesView({
                       </button>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             ) : (
-              <div className="mt-3 text-sm text-gray-500">{t("No bookings yet.")}</div>
+              <div className="mt-3 text-sm text-gray-500">
+                {normalizedBookingSearch ? t("No matching bookings found") : t("No bookings yet.")}
+              </div>
             )}
           </div>
         </div>
@@ -428,9 +590,14 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
     prevProps.t === nextProps.t &&
     prevProps.showViewBookingTab === nextProps.showViewBookingTab &&
     prevProps.concertBookings === nextProps.concertBookings &&
+    prevProps.reservationBookings === nextProps.reservationBookings &&
     prevProps.concertBookingsLoading === nextProps.concertBookingsLoading &&
     prevProps.concertBookingUpdatingId === nextProps.concertBookingUpdatingId &&
-    prevProps.onConcertBookingUpdateStatus === nextProps.onConcertBookingUpdateStatus;
+    prevProps.reservationBookingUpdatingKey === nextProps.reservationBookingUpdatingKey &&
+    prevProps.onConcertBookingUpdateStatus === nextProps.onConcertBookingUpdateStatus &&
+    prevProps.onReservationBookingUpdateStatus === nextProps.onReservationBookingUpdateStatus &&
+    prevProps.onClearBookings === nextProps.onClearBookings &&
+    prevProps.clearingBookings === nextProps.clearingBookings;
 
   if (!isEqual) {
     logMemoDiff({
@@ -450,9 +617,14 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
         "t",
         "showViewBookingTab",
         "concertBookings",
+        "reservationBookings",
         "concertBookingsLoading",
         "concertBookingUpdatingId",
+        "reservationBookingUpdatingKey",
         "onConcertBookingUpdateStatus",
+        "onReservationBookingUpdateStatus",
+        "onClearBookings",
+        "clearingBookings",
       ],
     });
   }

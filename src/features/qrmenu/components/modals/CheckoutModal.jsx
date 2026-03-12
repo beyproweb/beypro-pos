@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
 import secureFetch, { getAuthToken } from "../../../../utils/secureFetch";
+import { getCheckoutPrefill } from "../../header-drawer/services/customerService";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function detectBrand(num) {
   const n = (num || "").replace(/\s+/g, "");
@@ -61,7 +64,13 @@ const CheckoutModal = React.memo(function CheckoutModal({
   appendIdentifier,
   storage,
 }) {
-  const [form, setForm] = useState({ name: "", phone: "", address: "", payment_method: "" });
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
+    payment_method: "",
+  });
   const [touched, setTouched] = useState({});
   const [useSaved, setUseSaved] = useState(false);
   const [savedCard, setSavedCard] = useState(null);
@@ -77,13 +86,15 @@ const CheckoutModal = React.memo(function CheckoutModal({
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(storage.getItem("qr_delivery_info") || "null");
+      const saved = getCheckoutPrefill(storage);
       if (saved && typeof saved === "object") {
         setForm((f) => ({
           ...f,
           name: saved.name || f.name,
           phone: saved.phone || f.phone,
+          email: saved.email || f.email,
           address: saved.address || f.address,
+          payment_method: saved.payment_method || f.payment_method,
         }));
       }
     } catch {}
@@ -111,13 +122,24 @@ const CheckoutModal = React.memo(function CheckoutModal({
   async function saveDelivery() {
     const name = form.name.trim();
     const phone = form.phone.trim();
+    const email = form.email.trim().toLowerCase();
     const address = form.address.trim();
+    const emailValid = !email || EMAIL_REGEX.test(email);
 
-    if (!name || !/^5\d{9}$/.test(phone) || !address) return;
+    if (!name || !/^5\d{9}$/.test(phone) || !address || !emailValid) return;
 
     setSaving(true);
     try {
-      storage.setItem("qr_delivery_info", JSON.stringify({ name, phone, address }));
+      storage.setItem(
+        "qr_delivery_info",
+        JSON.stringify({
+          name,
+          phone,
+          email,
+          address,
+          payment_method: form.payment_method || "",
+        })
+      );
 
       const token = getAuthToken();
       if (token) {
@@ -131,8 +153,17 @@ const CheckoutModal = React.memo(function CheckoutModal({
             customer = await secureFetch(appendIdentifier("/customers"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name, phone }),
+              body: JSON.stringify({ name, phone, email: email || null }),
             });
+          } else if (email && customer.email !== email) {
+            try {
+              await secureFetch(appendIdentifier(`/customers/${customer.id}`), {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+              });
+              customer = { ...customer, email };
+            } catch {}
           }
 
           if (customer && (customer.id || customer.customer_id)) {
@@ -182,6 +213,9 @@ const CheckoutModal = React.memo(function CheckoutModal({
         if (match.name && !form.name) {
           setForm((f) => ({ ...f, name: match.name }));
         }
+        if (match.email && !form.email) {
+          setForm((f) => ({ ...f, email: match.email }));
+        }
 
         const addrs = Array.isArray(match.addresses) ? match.addresses : [];
         const def = addrs.find((a) => a.is_default) || addrs[0];
@@ -190,7 +224,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
         }
       } catch {}
     })();
-  }, [appendIdentifier, form.address, form.name, form.phone]);
+  }, [appendIdentifier, form.address, form.email, form.name, form.phone]);
 
   useEffect(() => {
     if (form.payment_method) {
@@ -198,8 +232,13 @@ const CheckoutModal = React.memo(function CheckoutModal({
     }
   }, [form.payment_method]);
 
+  const emailValid = !form.email.trim() || EMAIL_REGEX.test(form.email.trim());
   const validBase =
-    form.name && /^(5\d{9}|[578]\d{7})$/.test(form.phone) && form.address && !!form.payment_method;
+    form.name &&
+    /^(5\d{9}|[578]\d{7})$/.test(form.phone) &&
+    emailValid &&
+    form.address &&
+    !!form.payment_method;
 
   const validCard =
     form.payment_method !== "card" ||
@@ -233,7 +272,14 @@ const CheckoutModal = React.memo(function CheckoutModal({
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) {
-      setTouched({ name: true, phone: true, address: true, payment_method: true, card: true });
+      setTouched({
+        name: true,
+        phone: true,
+        email: true,
+        address: true,
+        payment_method: true,
+        card: true,
+      });
       if (!form.payment_method) {
         triggerPaymentError();
       }
@@ -290,6 +336,19 @@ const CheckoutModal = React.memo(function CheckoutModal({
               setForm((f) => ({ ...f, phone: normalized.slice(0, 10) }));
             }}
             inputMode="numeric"
+          />
+
+          <input
+            type="email"
+            className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
+              touched.email && form.email && !EMAIL_REGEX.test(form.email.trim())
+                ? "border-red-500"
+                : "border-neutral-300"
+            }`}
+            placeholder={t("Email")}
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            autoComplete="email"
           />
 
           <textarea
@@ -392,7 +451,13 @@ const CheckoutModal = React.memo(function CheckoutModal({
           <button
             type="button"
             onClick={saveDelivery}
-            disabled={saving || !form.name || !/^(5\d{9}|[578]\d{7})$/.test(form.phone) || !form.address}
+            disabled={
+              saving ||
+              !form.name ||
+              !/^(5\d{9}|[578]\d{7})$/.test(form.phone) ||
+              !emailValid ||
+              !form.address
+            }
             className="w-full py-2 rounded-xl border border-neutral-300 bg-white text-neutral-800 font-medium hover:bg-neutral-100 transition disabled:opacity-50"
           >
             {saving ? t("Saving...") : savedOnce ? `✓ ${t("Saved")}` : t("Save for next time")}

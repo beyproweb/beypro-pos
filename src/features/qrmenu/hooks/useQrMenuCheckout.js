@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import secureFetch from "../../../utils/secureFetch";
+import {
+  addCustomerOrderRecord,
+  getCustomerSession,
+} from "../header-drawer/services/customerService";
 
 export function useQrMenuCheckout({
   storage,
@@ -35,6 +39,24 @@ export function useQrMenuCheckout({
 
   const [paymentMethod, setPaymentMethod] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const trackCustomerOrder = useCallback(
+    (orderPayload, customerCandidate = null) => {
+      const session = getCustomerSession(storage);
+      const fromCandidate =
+        customerCandidate && (customerCandidate.email || customerCandidate.phone || customerCandidate.username)
+          ? {
+              email: customerCandidate.email || "",
+              phone: customerCandidate.phone || "",
+              username: customerCandidate.username || "",
+              address: customerCandidate.address || "",
+            }
+          : null;
+
+      addCustomerOrderRecord(orderPayload, fromCandidate || session, storage);
+    },
+    [storage]
+  );
 
   useEffect(() => {
     storage.setItem("qr_payment_method", paymentMethod);
@@ -181,6 +203,7 @@ export function useQrMenuCheckout({
         table_geo_lng: isTable ? tableGeo?.lng ?? null : null,
         customer_name: isTakeaway ? takeaway?.name || null : customer?.name || null,
         customer_phone: isTakeaway ? takeaway?.phone || null : customer?.phone || null,
+        customer_email: isTakeaway ? takeaway?.email || null : customer?.email || null,
         customer_address: isOnline ? customer?.address || null : null,
         pickup_time: isTakeaway && !isTakeawayReservation ? combinedPickupTime : null,
         notes: isTakeaway ? takeaway?.notes || null : null,
@@ -314,6 +337,22 @@ export function useQrMenuCheckout({
           }
         }
       }
+      const customerSnapshot =
+        type === "online"
+          ? {
+              username: deliveryInfo?.name || customerInfo?.name || "",
+              phone: deliveryInfo?.phone || customerInfo?.phone || "",
+              email: deliveryInfo?.email || customerInfo?.email || "",
+              address: deliveryInfo?.address || customerInfo?.address || "",
+            }
+          : type === "takeaway"
+          ? {
+              username: takeaway?.name || "",
+              phone: takeaway?.phone || "",
+              email: takeaway?.email || "",
+              address: "",
+            }
+          : null;
 
       if (type === "online" && !effectivePaymentMethod) {
         alert(t("Please select a payment method before continuing."));
@@ -473,6 +512,7 @@ export function useQrMenuCheckout({
             reservation_notes: takeaway?.notes || null,
             customer_name: takeaway?.name || null,
             customer_phone: takeaway?.phone || null,
+            customer_email: takeaway?.email || null,
           });
         }
 
@@ -493,6 +533,31 @@ export function useQrMenuCheckout({
         storage.setItem("qr_orderType", effectiveOrderTypeForStorage);
         storage.setItem("qr_payment_method", effectivePaymentMethod);
         storage.setItem("qr_show_status", "1");
+
+        const addedItemsTotal = newItems.reduce((sum, item) => {
+          const extrasTotal = (item.extras || []).reduce(
+            (s, ex) =>
+              s + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
+            0
+          );
+          return sum + (parseFloat(item.price) + extrasTotal) * (item.quantity || 1);
+        }, 0);
+        const fallbackOrderTotal = Number(existingOrder?.total || 0);
+        trackCustomerOrder(
+          {
+            id: orderId,
+            status: existingOrder?.status || "confirmed",
+            total: fallbackOrderTotal > 0 ? fallbackOrderTotal : addedItemsTotal,
+            items_count: newItems.length,
+            created_at: existingOrder?.created_at || existingOrder?.createdAt || new Date().toISOString(),
+            order_type: type,
+            customer_name: customerSnapshot?.username || null,
+            customer_phone: customerSnapshot?.phone || null,
+            customer_email: customerSnapshot?.email || null,
+            source: "api",
+          },
+          customerSnapshot
+        );
 
         setOrderStatus("success");
         setShowStatus(true);
@@ -540,6 +605,7 @@ export function useQrMenuCheckout({
           reservation_notes: takeaway?.notes || null,
           customer_name: takeaway?.name || null,
           customer_phone: takeaway?.phone || null,
+          customer_email: takeaway?.email || null,
         });
       }
 
@@ -588,6 +654,22 @@ export function useQrMenuCheckout({
       storage.setItem("qr_payment_method", effectivePaymentMethod);
       storage.setItem("qr_show_status", "1");
 
+      trackCustomerOrder(
+        {
+          id: newId,
+          status: effectivePaymentMethod === "online" ? "paid" : "pending",
+          total,
+          items_count: newItems.length,
+          created_at: created?.created_at || created?.createdAt || new Date().toISOString(),
+          order_type: type,
+          customer_name: customerSnapshot?.username || null,
+          customer_phone: customerSnapshot?.phone || null,
+          customer_email: customerSnapshot?.email || null,
+          source: "api",
+        },
+        customerSnapshot
+      );
+
       if (isTakeawayReservation) {
         setOrderType("table");
       }
@@ -631,6 +713,7 @@ export function useQrMenuCheckout({
     takeaway,
     t,
     toArray,
+    trackCustomerOrder,
     buildOrderPayload,
     hydrateLockedCartFromOrder,
     postJSON,

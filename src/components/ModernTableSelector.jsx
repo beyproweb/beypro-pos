@@ -13,6 +13,7 @@ export default function ModernTableSelector({
   showAreas = true,
   formatTableName,
   t = (value) => value,
+  hideTopBar = false,
 }) {
   const areaViewEnabled = showAreas !== false;
 
@@ -50,26 +51,27 @@ export default function ModernTableSelector({
 
   return (
     <div className="min-h-screen w-full px-4 py-6 bg-gradient-to-br from-[#fafafa] to-[#f0f2f5] dark:from-neutral-950 dark:to-neutral-900 text-neutral-900 dark:text-neutral-100">
-      {/* HEADER */}
-      <div className="flex items-center gap-4 mb-6">
-        <button
-          onClick={onBack}
-          className="
-            w-10 h-10 flex items-center justify-center rounded-full 
-            bg-white/80 dark:bg-neutral-900/70 backdrop-blur-md border border-gray-200 dark:border-neutral-800 
-            shadow-sm hover:bg-gray-100 dark:hover:bg-neutral-800 transition
-          "
-        >
-          <ChevronLeft size={22} className="text-gray-700 dark:text-neutral-200" />
-        </button>
+      {!hideTopBar ? (
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={onBack}
+            className="
+              w-10 h-10 flex items-center justify-center rounded-full 
+              bg-white/80 dark:bg-neutral-900/70 backdrop-blur-md border border-gray-200 dark:border-neutral-800 
+              shadow-sm hover:bg-gray-100 dark:hover:bg-neutral-800 transition
+            "
+          >
+            <ChevronLeft size={22} className="text-gray-700 dark:text-neutral-200" />
+          </button>
 
-        <h1 className="flex-1 text-center text-3xl font-serif font-bold tracking-tight text-gray-900 dark:text-neutral-50">
-          {t("Select Your Table")}
-        </h1>
+          <h1 className="flex-1 text-center text-3xl font-serif font-bold tracking-tight text-gray-900 dark:text-neutral-50">
+            {t("Select Your Table")}
+          </h1>
 
-        {/* Empty space to balance layout */}
-        <div className="w-10" />
-      </div>
+          {/* Empty space to balance layout */}
+          <div className="w-10" />
+        </div>
+      ) : null}
 
       {/* AREA TABS */}
       {areaViewEnabled && areas.length > 1 && (

@@ -30,8 +30,32 @@ export function useSocketIO(onOrderUpdate, orderId) {
     }
 
     const updateHandler = (data) => {
-      if (Array.isArray(data?.orderIds) && data.orderIds.includes(orderId)) onOrderUpdate?.();
-      if (data?.orderId === orderId) onOrderUpdate?.();
+      const targetOrderId = Number(orderId || 0);
+      if (!Number.isFinite(targetOrderId) || targetOrderId <= 0) return;
+      if (
+        Array.isArray(data?.orderIds) &&
+        data.orderIds.map((value) => Number(value)).includes(targetOrderId)
+      ) {
+        onOrderUpdate?.();
+        return;
+      }
+      const candidateIds = [
+        data?.orderId,
+        data?.order_id,
+        data?.id,
+        data?.order?.id,
+        data?.order?.order_id,
+        data?.reservation?.order_id,
+        data?.reservation?.orderId,
+        data?.reservation_id,
+        data?.reservationId,
+        data?.reservation?.id,
+      ]
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      if (candidateIds.includes(targetOrderId)) {
+        onOrderUpdate?.();
+      }
     };
 
     // Generic refresh on common kitchen events (covers /api/order-items/kitchen-status in kitchen.js)
@@ -40,12 +64,18 @@ export function useSocketIO(onOrderUpdate, orderId) {
     socket.on("order_ready", onOrderUpdate);
     socket.on("order_delivered", onOrderUpdate);
     socket.on("order_cancelled", onOrderUpdate);
+    socket.on("order_deleted", onOrderUpdate);
     socket.on("order_closed", onOrderUpdate);
+    socket.on("reservation_cancelled", onOrderUpdate);
+    socket.on("reservation_deleted", onOrderUpdate);
 
     // Also listen with a payload-aware handler (covers orders router emitting orderIds/orderId)
     socket.on("order_ready", updateHandler);
     socket.on("order_cancelled", updateHandler);
+    socket.on("order_deleted", updateHandler);
     socket.on("order_closed", updateHandler);
+    socket.on("reservation_cancelled", updateHandler);
+    socket.on("reservation_deleted", updateHandler);
 
     // Dev visibility
     const logEvent = (name, payload) => {
@@ -54,7 +84,10 @@ export function useSocketIO(onOrderUpdate, orderId) {
       }
     };
     socket.on("order_cancelled", (p) => logEvent("order_cancelled", p));
+    socket.on("order_deleted", (p) => logEvent("order_deleted", p));
     socket.on("order_closed", (p) => logEvent("order_closed", p));
+    socket.on("reservation_cancelled", (p) => logEvent("reservation_cancelled", p));
+    socket.on("reservation_deleted", (p) => logEvent("reservation_deleted", p));
     socket.on("orders_updated", (p) => logEvent("orders_updated", p));
 
     return () => {
@@ -65,10 +98,19 @@ export function useSocketIO(onOrderUpdate, orderId) {
       socket.off("order_ready", updateHandler);
       socket.off("order_cancelled", onOrderUpdate);
       socket.off("order_cancelled", updateHandler);
+      socket.off("order_deleted", onOrderUpdate);
+      socket.off("order_deleted", updateHandler);
       socket.off("order_closed", onOrderUpdate);
       socket.off("order_closed", updateHandler);
+      socket.off("reservation_cancelled", onOrderUpdate);
+      socket.off("reservation_cancelled", updateHandler);
+      socket.off("reservation_deleted", onOrderUpdate);
+      socket.off("reservation_deleted", updateHandler);
       socket.off("order_cancelled", logEvent);
+      socket.off("order_deleted", logEvent);
       socket.off("order_closed", logEvent);
+      socket.off("reservation_cancelled", logEvent);
+      socket.off("reservation_deleted", logEvent);
       socket.off("orders_updated", logEvent);
     };
   }, [onOrderUpdate, orderId]);
@@ -138,6 +180,63 @@ const isCancelledLikeOrderStatus = (value) => {
 const isFinishedLikeOrderStatus = (value) => {
   const status = String(value || "").toLowerCase();
   return ["delivered", "served", "closed", "completed", "visit_completed"].includes(status);
+};
+
+const extractCancellationReason = (source) => {
+  if (!source || typeof source !== "object") return "";
+  return String(
+    source?.cancellation_reason ||
+    source?.cancel_reason ||
+    source?.cancelReason ||
+    source?.delete_reason ||
+    source?.deletion_reason ||
+    source?.deleteReason ||
+    source?.cancellationReason ||
+    source?.payment_cancellation_reason ||
+    source?.payment_cancel_reason ||
+    source?.paymentCancellationReason ||
+    source?.paymentCancelReason ||
+    source?.cancel_note ||
+    source?.cancellation_note ||
+    source?.concert_booking_reason ||
+    source?.concertBookingReason ||
+    source?.reason ||
+    ""
+  ).trim();
+};
+
+const resolveOrderCancellationReason = (orderLike, fallback = "") => {
+  if (!orderLike || typeof orderLike !== "object") return String(fallback || "").trim();
+  const reservation =
+    orderLike?.reservation && typeof orderLike.reservation === "object"
+      ? orderLike.reservation
+      : null;
+  const concertBooking =
+    orderLike?.concert_booking && typeof orderLike.concert_booking === "object"
+      ? orderLike.concert_booking
+      : null;
+  return String(
+    extractCancellationReason(orderLike) ||
+      extractCancellationReason(reservation) ||
+      extractCancellationReason(concertBooking) ||
+      orderLike?.concert_booking_cancellation_reason ||
+      orderLike?.concert_booking_cancellationReason ||
+      orderLike?.concertBookingCancellationReason ||
+      orderLike?.concert_booking_cancel_reason ||
+      orderLike?.concert_booking_cancelReason ||
+      orderLike?.concertBookingCancelReason ||
+      orderLike?.concert_booking_delete_reason ||
+      orderLike?.concert_booking_deleteReason ||
+      orderLike?.concertBookingDeleteReason ||
+      orderLike?.concert_booking_reason ||
+      orderLike?.concertBookingReason ||
+      orderLike?.concert_booking_payment_cancellation_reason ||
+      orderLike?.concertBookingPaymentCancellationReason ||
+      orderLike?.concert_booking_payment_cancel_reason ||
+      orderLike?.concertBookingPaymentCancelReason ||
+      fallback ||
+      ""
+  ).trim();
 };
 
 const hasReservationData = (entry) => {
@@ -386,7 +485,10 @@ function OrderSummaryCard({
 
       {isCancelled && cancelReason ? (
         <div className="mt-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-sm text-rose-700">
-          {cancelReason}
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-600 dark:text-rose-300">
+            {t("Cancellation reason")}
+          </div>
+          <div className="mt-0.5 text-sm text-rose-700 dark:text-rose-200">{cancelReason}</div>
         </div>
       ) : null}
 
@@ -589,6 +691,9 @@ const OrderStatusScreen = ({
   buildUrl = (p) => p,
   appendIdentifier,
   checkoutCompletedView = false,
+  externalCancelReason = "",
+  hideNativeHeader = false,
+  offsetForAppHeader = false,
 }) => {
   const normalizedOrderScreenStatus = normalizeReservationStatus(orderScreenStatus);
   const [isDarkUi, setIsDarkUi] = useState(() => (typeof forceDark === "boolean" ? forceDark : false));
@@ -609,6 +714,9 @@ const OrderStatusScreen = ({
 
   useEffect(() => {
     setCheckedInSticky(false);
+    setOrder(null);
+    setItems([]);
+    setOrder404(false);
   }, [orderId]);
 
   useEffect(() => {
@@ -796,12 +904,10 @@ const OrderStatusScreen = ({
     const reservationPendingCheckIn =
       !checkedInSticky && isReservationPendingCheckIn(order, normalizedOrderScreenStatus);
     const preserveWhileReserved = reservationPendingCheckIn || (forceLock && reservationPendingCheckIn);
-    const orderCancelReason =
-      order?.cancellation_reason || order?.cancel_reason || order?.cancelReason || "";
+    const orderCancelReason = resolveOrderCancellationReason(order, externalCancelReason);
     const hasCancelledItems = items.some((item) => isCancelledItemStatus(item?.kitchen_status));
     const keepVisibleForCancellation =
-      status === "cancelled" ||
-      status === "canceled" ||
+      isCancelledLikeOrderStatus(status) ||
       Boolean(orderCancelReason) ||
       hasCancelledItems;
     if (
@@ -822,6 +928,7 @@ const OrderStatusScreen = ({
     hasReservationPayload,
     checkoutCompletedView,
     table,
+    externalCancelReason,
   ]);
 
   const fetchOrder = async () => {
@@ -987,35 +1094,6 @@ const OrderStatusScreen = ({
   const flatReservationStatus = normalizeReservationStatus(
     order?.reservation_status ?? order?.reservationStatus
   );
-  const hasCheckedInSignal =
-    checkedInSticky ||
-    isCheckedInReservationStatus(normalizedOrderScreenStatus) ||
-    isCheckedInReservationStatus(orderStatus) ||
-    isCheckedInReservationStatus(reservationStatus) ||
-    isCheckedInReservationStatus(flatReservationStatus) ||
-    order?.checked_in === true ||
-    order?.reservation?.checked_in === true;
-  const driverStatus = String(order?.driver_status || "").toLowerCase();
-  const isOrderCancelled = isCancelledLikeOrderStatus(orderStatus);
-  const orderCancelReason =
-    order?.cancellation_reason ||
-    order?.cancel_reason ||
-    order?.cancelReason ||
-    order?.delete_reason ||
-    order?.deletion_reason ||
-    "";
-  const cancelledItems = items.filter((item) => isCancelledItemStatus(item?.kitchen_status));
-  const allItemsCancelled = items.length > 0 && items.every((item) => isCancelledItemStatus(item?.kitchen_status));
-  const firstItemCancelReason = String(cancelledItems[0]?.cancellation_reason || "").trim();
-  const isCancelledFlow = isOrderCancelled || allItemsCancelled;
-  const cancelReason = isCancelledFlow
-    ? String(orderCancelReason || firstItemCancelReason || "").trim()
-    : "";
-  const reservationContextStatusHint = hasCheckedInSignal
-    ? "checked_in"
-    : normalizedOrderScreenStatus || orderStatus;
-  const isReservedOrderContext =
-    !hasCheckedInSignal && isReservationPendingCheckIn(order, reservationContextStatusHint);
   const concertBookingPaymentStatus = normalizeReservationStatus(
     order?.concert_booking_payment_status || order?.concertBookingPaymentStatus
   );
@@ -1025,6 +1103,61 @@ const OrderStatusScreen = ({
   const hasConcertBookingContext =
     Number(order?.concert_booking_id || order?.concertBookingId) > 0 ||
     Boolean(concertBookingPaymentStatus || concertBookingStatus);
+  const concertBookingType = String(
+    order?.concert_booking_type || order?.concertBookingType || ""
+  )
+    .trim()
+    .toLowerCase();
+  const hasTicketConcertItem = items.some((item) =>
+    String(item?.name || item?.product_name || item?.item_name || "")
+      .trim()
+      .toLowerCase() === "ticket concert"
+  );
+  const isConcertTicketContext =
+    hasConcertBookingContext &&
+    (concertBookingType === "ticket" ||
+      (concertBookingType !== "table" && !hasReservationData(order) && hasTicketConcertItem));
+  const hasBackendCheckedInSignal =
+    isCheckedInReservationStatus(orderStatus) ||
+    isCheckedInReservationStatus(reservationStatus) ||
+    isCheckedInReservationStatus(flatReservationStatus) ||
+    order?.checked_in === true ||
+    order?.reservation?.checked_in === true;
+  const hasCheckedInSignal = isConcertTicketContext
+    ? hasBackendCheckedInSignal
+    : checkedInSticky ||
+      isCheckedInReservationStatus(normalizedOrderScreenStatus) ||
+      hasBackendCheckedInSignal;
+  const driverStatus = String(order?.driver_status || "").toLowerCase();
+  const normalizedExternalCancelReason = String(externalCancelReason || "").trim();
+  const orderCancelReason = resolveOrderCancellationReason(
+    order,
+    normalizedExternalCancelReason
+  );
+  const statusHintCandidates = [
+    normalizedOrderScreenStatus,
+    orderStatus,
+    reservationStatus,
+    flatReservationStatus,
+    concertBookingPaymentStatus,
+    concertBookingStatus,
+  ];
+  const cancelledStatusHint =
+    statusHintCandidates.find((value) => isCancelledLikeOrderStatus(value)) || "";
+  const statusHint = cancelledStatusHint || orderStatus || normalizedOrderScreenStatus;
+  const isOrderCancelled = Boolean(cancelledStatusHint) || Boolean(orderCancelReason);
+  const cancelledItems = items.filter((item) => isCancelledItemStatus(item?.kitchen_status));
+  const allItemsCancelled = items.length > 0 && items.every((item) => isCancelledItemStatus(item?.kitchen_status));
+  const firstItemCancelReason = String(cancelledItems[0]?.cancellation_reason || "").trim();
+  const isCancelledFlow = isOrderCancelled || allItemsCancelled;
+  const cancelReason = isCancelledFlow
+    ? String(orderCancelReason || firstItemCancelReason || normalizedExternalCancelReason || "").trim()
+    : "";
+  const reservationContextStatusHint = hasCheckedInSignal
+    ? "checked_in"
+    : normalizedOrderScreenStatus || orderStatus;
+  const isReservedOrderContext =
+    !hasCheckedInSignal && isReservationPendingCheckIn(order, reservationContextStatusHint);
   const hasReservationContext = hasReservationPayload(order);
   const normalizedOrderType = String(order?.order_type || "").toLowerCase();
   const isTableContextOrder =
@@ -1032,10 +1165,29 @@ const OrderStatusScreen = ({
     normalizedOrderType === "reservation" ||
     hasReservationContext ||
     (Number.isFinite(Number(tableNo)) && Number(tableNo) > 0);
+  const shouldPreservePreCheckinReservationStatus =
+    hasReservationContext && !hasCheckedInSignal && isReservedOrderContext;
   const shouldShowCheckoutCompletedView =
-    checkoutCompletedView || (isTableContextOrder && (orderStatus === "closed" || orderStatus === "completed"));
+    checkoutCompletedView ||
+    (isTableContextOrder &&
+      !shouldPreservePreCheckinReservationStatus &&
+      !isOrderCancelled &&
+      (orderStatus === "closed" || orderStatus === "completed"));
   const effectiveOrderStatus = (() => {
+    if (!order && normalizedOrderScreenStatus) {
+      return normalizedOrderScreenStatus;
+    }
+    if (isOrderCancelled) return cancelledStatusHint || "cancelled";
     if (shouldShowCheckoutCompletedView) return "visit_completed";
+    if (isConcertTicketContext) {
+      if (hasBackendCheckedInSignal) return "checked_in";
+      if (concertBookingPaymentStatus === "confirmed" || concertBookingStatus === "confirmed") {
+        return "booking_confirm";
+      }
+      if (concertBookingPaymentStatus === "pending_bank_transfer") {
+        return "pending_bank_transfer";
+      }
+    }
     if (isReservedOrderContext && hasConcertBookingContext) {
       if (concertBookingPaymentStatus === "confirmed" || concertBookingStatus === "confirmed") {
         return "booking_confirm";
@@ -1213,15 +1365,23 @@ const OrderStatusScreen = ({
     return [orderTypeLabel, tableLine].filter(Boolean).join(" • ");
   })();
 
+  const rootPositionClass = offsetForAppHeader
+    ? "fixed inset-x-0 bottom-0 top-[74px] sm:top-[80px]"
+    : "fixed inset-0";
+
   return (
-    <div className={`${isDarkUi ? "dark" : ""} fixed inset-0 z-[100] bg-neutral-50 dark:bg-neutral-950 overflow-y-auto`}>
-      <OrderStatusHeader
-        t={t}
-        title={t("Order Status")}
-        subtitle={restaurantName}
-        meta={orderId ? `#${orderId}` : null}
-        onBack={null}
-      />
+    <div
+      className={`${isDarkUi ? "dark" : ""} ${rootPositionClass} z-[100] bg-neutral-50 dark:bg-neutral-950 overflow-y-auto`}
+    >
+      {!hideNativeHeader ? (
+        <OrderStatusHeader
+          t={t}
+          title={t("Order Status")}
+          subtitle={restaurantName}
+          meta={orderId ? `Invoice #${orderId}` : null}
+          onBack={typeof onClose === "function" ? () => onClose?.() : null}
+        />
+      ) : null}
 
       <main className="mx-auto w-full max-w-[640px] px-4 pt-4 pb-[calc(104px+env(safe-area-inset-bottom))] sm:pb-8">
         <div className="space-y-4">

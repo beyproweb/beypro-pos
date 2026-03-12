@@ -2,6 +2,7 @@ import {
   buildReservationShadowRecord,
   upsertReservationShadow,
 } from "../../orders/tableOrdersCache";
+import { hasConcertBookingContext } from "../../../utils/reservationStatus";
 
 export function createCloseFlow(deps) {
   const {
@@ -57,6 +58,11 @@ export function createCloseFlow(deps) {
 
   async function runAutoCloseIfConfigured(shouldClose, paymentMethodIds = null) {
     if (!shouldClose || !order?.id) return;
+    const hasConcertContext = hasConcertBookingContext(
+      order,
+      existingReservationRef?.current,
+      order?.reservation
+    );
     const hasReservationContext = Boolean(
       order?.reservation_id ||
         order?.reservationId ||
@@ -138,7 +144,13 @@ export function createCloseFlow(deps) {
     if (!shouldAutoCloseTable && !shouldAutoClosePacket) return;
 
     try {
-      await txApiRequest(`/orders/${order.id}/close${identifier}`, { method: "POST" });
+      const closeRequestOptions = { method: "POST" };
+      if (hasConcertContext) {
+        closeRequestOptions.body = JSON.stringify({
+          preserve_reservation_checkout_badge: true,
+        });
+      }
+      await txApiRequest(`/orders/${order.id}/close${identifier}`, closeRequestOptions);
       const shadow = buildReservationShadowRecord({
         reservation: existingReservationRef?.current,
         order,

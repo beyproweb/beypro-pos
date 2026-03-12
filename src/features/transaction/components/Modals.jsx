@@ -423,7 +423,7 @@ const Modals = ({
                       : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-900/20 dark:text-rose-200"
                   }`}
                 >
-                  {t("Delete Reservation")}
+                  {t("Cancel Reservation")}
                 </button>
               )}
               <button

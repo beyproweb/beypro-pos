@@ -54,13 +54,93 @@ const isCheckedInReservationStatus = (status) => {
   const normalized = normalizeReservationStatus(status);
   return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
 };
+const normalizeCancellationReason = (value) => String(value ?? "").trim();
+const resolveCancellationReason = (primary, fallback = "") =>
+  normalizeCancellationReason(primary) || normalizeCancellationReason(fallback);
+const extractCancellationReason = (source) => {
+  if (!source || typeof source !== "object") return "";
+  return resolveCancellationReason(
+    source?.cancellation_reason ||
+      source?.cancel_reason ||
+      source?.cancelReason ||
+      source?.cancellationReason ||
+      source?.delete_reason ||
+      source?.deletion_reason ||
+      source?.deleteReason ||
+      source?.deletionReason ||
+      source?.payment_cancellation_reason ||
+      source?.payment_cancel_reason ||
+      source?.paymentCancellationReason ||
+      source?.paymentCancelReason ||
+      source?.cancel_note ||
+      source?.cancellation_note ||
+      source?.reason ||
+      source?.concert_booking_cancellation_reason ||
+      source?.concertBookingCancellationReason ||
+      source?.concert_booking_cancel_reason ||
+      source?.concertBookingCancelReason ||
+      source?.concert_booking_delete_reason ||
+      source?.concertBookingDeleteReason ||
+      source?.concert_booking_reason ||
+      source?.concertBookingReason ||
+      ""
+  );
+};
 const getOrderCancellationReason = (order) =>
-  order?.cancellation_reason ||
-  order?.cancel_reason ||
-  order?.cancelReason ||
-  order?.delete_reason ||
-  order?.deletion_reason ||
-  "";
+  resolveCancellationReason(
+    extractCancellationReason(order) ||
+      extractCancellationReason(
+        order?.reservation && typeof order.reservation === "object" ? order.reservation : null
+      ) ||
+      extractCancellationReason(
+        order?.concert_booking && typeof order.concert_booking === "object"
+          ? order.concert_booking
+          : null
+      ) ||
+      ""
+  );
+const getPayloadCancellationReason = (payload) => {
+  if (!payload || typeof payload !== "object") return "";
+  const nestedOrder =
+    payload?.order && typeof payload.order === "object" ? payload.order : null;
+  const nestedReservation =
+    payload?.reservation && typeof payload.reservation === "object"
+      ? payload.reservation
+      : null;
+  const nestedConcertBooking =
+    payload?.concert_booking && typeof payload.concert_booking === "object"
+      ? payload.concert_booking
+      : null;
+  const nestedOrderConcertBooking =
+    nestedOrder?.concert_booking && typeof nestedOrder.concert_booking === "object"
+      ? nestedOrder.concert_booking
+      : null;
+  return resolveCancellationReason(
+    getOrderCancellationReason(payload) ||
+      getOrderCancellationReason(nestedOrder) ||
+      getOrderCancellationReason(nestedReservation) ||
+      extractCancellationReason(nestedConcertBooking) ||
+      extractCancellationReason(nestedOrderConcertBooking) ||
+      payload?.reason ||
+      nestedOrder?.reason ||
+      nestedReservation?.reason ||
+      ""
+  );
+};
+const resolveCancelledStatusFromPayload = (payload, fallback = "cancelled") => {
+  const candidates = [
+    payload?.status,
+    payload?.order?.status,
+    payload?.reservation?.status,
+    payload?.order_status,
+    payload?.orderStatus,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeReservationStatus(candidate);
+    if (isCancelledLikeStatus(normalized)) return normalized;
+  }
+  return fallback;
+};
 // Fix null/undefined slug
 const safeSlug =
   slug && slug !== "null" && slug !== "undefined"
@@ -474,7 +554,6 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
   const checkedInOrdersRef = useRef(new Set());
   const refreshOccupiedTablesRef = useRef(null);
   const refreshOrderScreenStatusRef = useRef(null);
-  const resetToTypePickerRef = useRef(null);
   const dismissReservationStatusLockRef = useRef(null);
   const isForcedStatusActive = useCallback(() => {
     const forced = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
@@ -798,6 +877,7 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
 const [takeaway, setTakeaway] = useState({
   name: "",
   phone: "",
+  email: "",
   pickup_date: "",
   pickup_time: "",
   mode: "reservation", // "pickup" | "reservation"
@@ -1264,9 +1344,9 @@ if (activeId) {
     setActiveOrder(order);
     setOrderScreenStatus(stickyStatus || null);
     setLoyaltyEligibilityFromOrder(order);
-    setOrderCancelReason(
+    setOrderCancelReason((prev) =>
       isCancelledLikeStatus(reservationAwareStatus)
-        ? getOrderCancellationReason(order)
+        ? resolveCancellationReason(getOrderCancellationReason(order), prev)
         : ""
     );
 
@@ -1338,9 +1418,9 @@ if (savedTable) {
 
         setActiveOrder(openOrder);
 		          setOrderScreenStatus(stickyStatus || null);
-          setOrderCancelReason(
+          setOrderCancelReason((prev) =>
             isCancelledLikeStatus(stickyStatus)
-              ? getOrderCancellationReason(openOrder)
+              ? resolveCancellationReason(getOrderCancellationReason(openOrder), prev)
               : ""
           );
 
@@ -1497,9 +1577,9 @@ if (savedTable) {
                     ? "checked_in"
                     : replacementStatus || null
                 );
-                setOrderCancelReason(
+                setOrderCancelReason((prev) =>
                   isCancelledLikeStatus(replacementStatus)
-                    ? getOrderCancellationReason(replacementOrder)
+                    ? resolveCancellationReason(getOrderCancellationReason(replacementOrder), prev)
                     : ""
                 );
                 setLoyaltyEligibilityFromOrder(replacementOrder);
@@ -1565,9 +1645,9 @@ if (savedTable) {
                   setOrderId(checkedInId);
                   setActiveOrder(checkedInOrder);
                   setOrderScreenStatus(checkedInStatus || "checked_in");
-                setOrderCancelReason(
+                setOrderCancelReason((prev) =>
                   isCancelledLikeStatus(checkedInStatus)
-                    ? getOrderCancellationReason(checkedInOrder)
+                    ? resolveCancellationReason(getOrderCancellationReason(checkedInOrder), prev)
                     : ""
                 );
                 setLoyaltyEligibilityFromOrder(checkedInOrder);
@@ -1624,9 +1704,9 @@ if (savedTable) {
           setShowStatus(false);
         }
       }
-      setOrderCancelReason(
+      setOrderCancelReason((prev) =>
         isCancelledLikeStatus(reservationAwareStatus)
-          ? getOrderCancellationReason(data)
+          ? resolveCancellationReason(getOrderCancellationReason(data), prev)
           : ""
       );
 
@@ -1735,52 +1815,10 @@ if (savedTable) {
           console.warn("⚠️ Public unavailable tables fetch failed:", err);
         }
 
-        try {
-          // Public fallback: derive reservation occupancy from table orders by identifier.
-          const ordersPayload = await secureFetch(
-            `/orders?identifier=${encodeURIComponent(restaurantIdentifier)}&type=table`
-          );
-          const orderRows = parseArray(ordersPayload);
-          const nowMs = Date.now();
-
-          const occupiedFromPublicOrders = toArray(orderRows)
-            .filter((order) => {
-              const status = String(order?.status || "").toLowerCase();
-              if (isTerminalOrderStatus(status)) {
-                return false;
-              }
-              if (isReservationLikeEntry(order)) return isReservationDueNow(order, nowMs);
-              return true;
-            })
-            .map((order) => Number(order?.table_number))
-            .filter((n) => Number.isFinite(n) && n > 0);
-
-          const reservedFromPublicOrders = toArray(orderRows)
-            .filter((order) => {
-              const status = String(order?.status || "").toLowerCase();
-              if (isCancelledLikeStatus(status)) return false;
-              if (isCheckedInReservationStatus(status)) return false;
-              if (!isReservationLikeEntry(order)) return false;
-              if (!isReservationDueNow(order, nowMs)) return false;
-              if (["closed", "completed"].includes(status)) {
-                const reservationDate =
-                  String(order?.reservation_date ?? order?.reservationDate ?? "").trim();
-                if (!reservationDate || reservationDate !== todayYmd) return false;
-              }
-              return true;
-            })
-            .map((order) => Number(order?.table_number))
-            .filter((n) => Number.isFinite(n) && n > 0);
-
-          addNumbers(nextOccupiedSet, occupiedFromPublicOrders);
-          // Public orders source is authoritative enough to prevent stale reserved badges.
-          nextReservedSet.clear();
-          addNumbers(nextReservedSet, reservedFromPublicOrders);
-          addNumbers(nextOccupiedSet, reservedFromPublicOrders);
-          hasAnySource = true;
-        } catch (err) {
-          console.warn("⚠️ Public orders fallback fetch failed:", err);
-        }
+        // Intentionally no second public fallback here.
+        // Anonymous QR availability must come from /public/unavailable-tables only,
+        // otherwise generic table orders can keep tables falsely occupied after
+        // reservation checkout/cancel/delete flows.
       }
 
       const token = getStoredToken();
@@ -1904,10 +1942,6 @@ if (savedTable) {
   useEffect(() => {
     refreshOrderScreenStatusRef.current = refreshOrderScreenStatus;
   }, [refreshOrderScreenStatus]);
-
-  useEffect(() => {
-    resetToTypePickerRef.current = resetToTypePicker;
-  }, [resetToTypePicker]);
 
   useEffect(() => {
     dismissReservationStatusLockRef.current = dismissReservationStatusLock;
@@ -2045,6 +2079,43 @@ if (savedTable) {
         }
       }
       if (Number.isFinite(orderId)) orderIdToTableRef.current.delete(orderId);
+      const activeTrackedOrderId = Number(
+        orderIdRef.current || storage.getItem("qr_active_order_id") || 0
+      );
+      if (
+        Number.isFinite(orderId) &&
+        orderId > 0 &&
+        Number.isFinite(activeTrackedOrderId) &&
+        activeTrackedOrderId === orderId
+      ) {
+        const cancelledStatus = resolveCancelledStatusFromPayload(payload, "cancelled");
+        const cancellationReason = String(getPayloadCancellationReason(payload) || "").trim();
+        storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
+        setOrderId(orderId);
+        storage.setItem("qr_active_order_id", String(orderId));
+        setOrderStatus("success");
+        setShowStatus(true);
+        storage.setItem("qr_show_status", "1");
+        setOrderScreenStatus(cancelledStatus);
+        setOrderCancelReason((prev) => resolveCancellationReason(cancellationReason, prev));
+        setActiveOrder((prev) => {
+          const prevObj = prev && typeof prev === "object" ? prev : {};
+          const payloadOrder =
+            payload?.order && typeof payload.order === "object" ? payload.order : {};
+          const nextReason =
+            cancellationReason ||
+            getOrderCancellationReason(payloadOrder) ||
+            getOrderCancellationReason(prevObj) ||
+            "";
+          return {
+            ...prevObj,
+            ...payloadOrder,
+            id: orderId,
+            status: cancelledStatus,
+            cancellation_reason: nextReason,
+          };
+        });
+      }
       scheduleRefresh();
     };
 
@@ -2130,16 +2201,62 @@ if (savedTable) {
       }
       const matchesActiveReservation = matchesActiveReservationPayload(payload, tableNo);
       if (matchesActiveReservation) {
-        const nextStatus = String(
-          payload?.status ?? payload?.order?.status ?? payload?.reservation?.status ?? ""
-        ).toLowerCase();
-        const isTerminalAfterDelete = isTerminalOrderStatus(nextStatus);
-        dismissReservationStatusLockRef.current?.({ clearActiveOrder: isTerminalAfterDelete });
-        if (isTerminalAfterDelete) {
-          resetToTypePickerRef.current?.();
-          scheduleRefresh();
-          return;
+        const nextStatus = resolveCancelledStatusFromPayload(payload, "cancelled");
+        const cancellationReason = String(getPayloadCancellationReason(payload) || "").trim();
+        dismissReservationStatusLockRef.current?.({
+          clearActiveOrder: false,
+          keepStatusOpen: true,
+        });
+        const activeTrackedOrderId = Number(
+          orderIdRef.current || storage.getItem("qr_active_order_id") || 0
+        );
+        const payloadOrderId = Number(
+          payload?.order?.id ??
+            payload?.order_id ??
+            payload?.orderId ??
+            payload?.reservation?.order_id ??
+            payload?.reservation?.orderId ??
+            0
+        );
+        const resolvedOrderId =
+          Number.isFinite(payloadOrderId) && payloadOrderId > 0
+            ? payloadOrderId
+            : activeTrackedOrderId;
+        if (Number.isFinite(resolvedOrderId) && resolvedOrderId > 0) {
+          setOrderId(resolvedOrderId);
+          storage.setItem("qr_active_order_id", String(resolvedOrderId));
         }
+        setOrderStatus("success");
+        setShowStatus(true);
+        storage.setItem("qr_show_status", "1");
+        setOrderScreenStatus(nextStatus);
+        setOrderCancelReason((prev) => resolveCancellationReason(cancellationReason, prev));
+        setActiveOrder((prev) => {
+          const prevObj = prev && typeof prev === "object" ? prev : {};
+          const payloadOrder =
+            payload?.order && typeof payload.order === "object" ? payload.order : {};
+          const payloadReservation =
+            payload?.reservation && typeof payload.reservation === "object"
+              ? payload.reservation
+              : {};
+          const nextReason =
+            cancellationReason ||
+            getOrderCancellationReason(payloadOrder) ||
+            getOrderCancellationReason(payloadReservation) ||
+            getOrderCancellationReason(prevObj) ||
+            "";
+          return {
+            ...prevObj,
+            ...payloadReservation,
+            ...payloadOrder,
+            id:
+              Number.isFinite(resolvedOrderId) && resolvedOrderId > 0
+                ? resolvedOrderId
+                : prevObj?.id,
+            status: nextStatus,
+            cancellation_reason: nextReason,
+          };
+        });
         window.setTimeout(() => {
           refreshOrderScreenStatusRef.current?.();
         }, 30);
@@ -2151,6 +2268,7 @@ if (savedTable) {
     s.on("order_confirmed", onConfirmed);
     s.on("orders_updated", onAny);
     s.on("order_cancelled", onCancelled);
+    s.on("order_deleted", onCancelled);
     s.on("order_closed", onClosed);
     s.on("reservation_created", onReservationCreated);
     s.on("reservation_updated", onReservationUpdated);
@@ -2168,6 +2286,7 @@ if (savedTable) {
         s.off("order_confirmed", onConfirmed);
         s.off("orders_updated", onAny);
         s.off("order_cancelled", onCancelled);
+        s.off("order_deleted", onCancelled);
         s.off("order_closed", onClosed);
         s.off("reservation_created", onReservationCreated);
         s.off("reservation_updated", onReservationUpdated);

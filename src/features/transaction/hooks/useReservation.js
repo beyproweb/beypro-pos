@@ -5,6 +5,12 @@ import {
   removeReservationShadow,
   upsertReservationShadow,
 } from "../../orders/tableOrdersCache";
+import {
+  hasConcertBookingContext,
+  isConcertBookingConfirmed,
+  isReservationConfirmedForCheckin,
+  isReservationPendingConfirmation,
+} from "../../../utils/reservationStatus";
 
 const CHECKIN_REGRESSION_STATUSES = new Set([
   "reserved",
@@ -509,7 +515,7 @@ export const useReservation = ({
     const hasCartItems = hasUnconfirmedCartItems || localCartCount > 0;
     if (hasCartItems) {
       window.alert(
-        t("You cannot delete this reservation while items are in cart. Please clear or close the table/cart first.")
+        t("You cannot cancel this reservation while items are in cart. Please clear or close the table/cart first.")
       );
       return;
     }
@@ -546,12 +552,12 @@ export const useReservation = ({
     const hasAnyItemsInCartOrTable = Number(itemCount || 0) > 0 || totalAmount > 0;
     if (hasAnyItemsInCartOrTable) {
       window.alert(
-        t("You cannot delete this reservation while items are in cart. Please clear or close the table/cart first.")
+        t("You cannot cancel this reservation while items are in cart. Please clear or close the table/cart first.")
       );
       return;
     }
 
-    const ok = window.confirm(t("Delete this reservation?"));
+    const ok = window.confirm(t("Cancel this reservation?"));
     if (!ok) return;
 
     const isEmptyReservationOnly =
@@ -559,7 +565,7 @@ export const useReservation = ({
 
     let deleteReason = "";
     if (isEmptyReservationOnly) {
-      const input = window.prompt(t("Please enter a reason for deleting this empty reservation"));
+      const input = window.prompt(t("Please enter a reason for cancelling this empty reservation"));
       if (input === null) return;
       const trimmed = String(input || "").trim();
       if (!trimmed) {
@@ -582,7 +588,7 @@ export const useReservation = ({
             }
           : {}),
       });
-      if (response?.success === false) throw new Error(response.message || t("Failed to delete reservation"));
+      if (response?.success === false) throw new Error(response.message || t("Failed to cancel reservation"));
 
       const responseOrder =
         response?.order && typeof response.order === "object" ? response.order : null;
@@ -625,11 +631,11 @@ export const useReservation = ({
 
       setExistingReservation(null);
       resetReservationForm();
-      showToast(t("Reservation deleted"));
+      showToast(t("Reservation cancelled"));
       setShowReservationModal(false);
     } catch (err) {
       console.error("❌ Failed to delete reservation:", err);
-      showToast(err?.message || t("Failed to delete reservation"));
+      showToast(err?.message || t("Failed to cancel reservation"));
     } finally {
       setReservationLoading(false);
     }
@@ -753,6 +759,31 @@ export const useReservation = ({
         showToast(restoreErr?.message || t("Failed to restore reservation after table close"));
         return;
       }
+    }
+
+    const isConcertReservation = hasConcertBookingContext(
+      existingReservation,
+      existingReservationRef.current,
+      order
+    );
+    const canCheckInReservation =
+      isReservationConfirmedForCheckin(
+        existingReservation,
+        existingReservationRef.current,
+        order
+      ) ||
+      (isConcertReservation &&
+        isConcertBookingConfirmed(existingReservation, existingReservationRef.current, order));
+    const isAwaitingConfirmation =
+      isReservationPendingConfirmation(existingReservation, existingReservationRef.current, order) &&
+      !canCheckInReservation;
+    if (isAwaitingConfirmation) {
+      showToast(
+        isConcertReservation
+          ? t("Concert booking is not confirmed yet. Please confirm booking before check-in.")
+          : t("Reservation is not confirmed yet. Please confirm booking before check-in.")
+      );
+      return;
     }
 
     const shouldUseOrderSnapshot =

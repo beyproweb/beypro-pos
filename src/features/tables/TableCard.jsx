@@ -491,6 +491,7 @@ function TableCard({
   const isOrderDelayed = tablePrepMeta.isDelayed;
   const displayTotal = formatCurrency(Number(table.unpaidTotal || 0));
   const paidStatusLabel = t("Unpaid");
+  const fullyPaidStatusLabel = t("Paid");
   const orderStatusLabel = isCheckedInReservationStatus(normalizedOrderStatus)
     ? t("Guest checked in")
     : t(tableOrder?.status === "draft" ? "Free" : tableOrder?.status);
@@ -681,7 +682,7 @@ function TableCard({
                     onClick={handleDeleteReservationClick}
                     className="h-7 rounded-full border border-rose-300 bg-rose-50 px-2.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100"
                   >
-                    {t("Delete")}
+                    {t("Cancel")}
                   </button>
                 </div>
               </div>
@@ -759,6 +760,18 @@ function TableCard({
                   <span className="px-3 py-1 bg-amber-50 text-amber-900 border border-amber-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
                     {paidStatusLabel}
                   </span>
+                ) : isPaidTable ? (
+                  <>
+                    <span className="px-3 py-1 bg-emerald-50 text-emerald-900 border border-emerald-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
+                      {fullyPaidStatusLabel}
+                    </span>
+                    <button
+                      onClick={handleCloseClick}
+                      className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-extrabold rounded-full shadow text-sm whitespace-nowrap hover:brightness-110 active:scale-[0.99] transition"
+                    >
+                      🔒 {t("Close")}
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={handleCloseClick}

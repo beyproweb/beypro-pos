@@ -8,6 +8,12 @@ import ProductModal from "../features/qrmenu/components/modals/ProductModal";
 import CartModal from "../features/qrmenu/components/modals/CartModal";
 import CheckoutModal from "../features/qrmenu/components/modals/CheckoutModal";
 import useQrMenuController from "../features/qrmenu/hooks/useQrMenuController";
+import { Header as QrMenuHeader } from "../features/qrmenu/header";
+import {
+  HeaderDrawer,
+  getCheckoutPrefill,
+  useHeaderDrawer,
+} from "../features/qrmenu/header-drawer";
 import { VoiceOrderController } from "../features/voiceOrder";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
@@ -38,6 +44,8 @@ import {
 import { Html5Qrcode } from "html5-qrcode";
 import { io } from "socket.io-client";
 import QRCode from "qrcode";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
   const raw = String(value || "").trim();
@@ -118,6 +126,29 @@ const isFinishedLikeStatus = (status) =>
   ["delivered", "served", "closed", "completed"].includes(
     String(status || "").toLowerCase()
   );
+const extractCancellationReason = (source) => {
+  if (!source || typeof source !== "object") return "";
+  return String(
+    source?.cancellation_reason ||
+      source?.cancel_reason ||
+      source?.cancelReason ||
+      source?.cancellationReason ||
+      source?.delete_reason ||
+      source?.deletion_reason ||
+      source?.deleteReason ||
+      source?.deletionReason ||
+      source?.payment_cancellation_reason ||
+      source?.payment_cancel_reason ||
+      source?.paymentCancellationReason ||
+      source?.paymentCancelReason ||
+      source?.cancel_note ||
+      source?.cancellation_note ||
+      source?.concert_booking_reason ||
+      source?.concertBookingReason ||
+      source?.reason ||
+      ""
+  ).trim();
+};
 const hasReservationPayload = (order) => {
   if (!order || typeof order !== "object") return false;
   const nested =
@@ -1691,61 +1722,103 @@ function QrHeader({
   searchPlaceholder,
   onVoiceStart,
   voiceListening,
+  hideSearch = false,
 }) {
   const displayRestaurantName = React.useMemo(() => {
     return normalizeRestaurantDisplayName(restaurantName, "Restaurant");
   }, [restaurantName]);
 
   return (
-    <header className="w-full sticky top-0 z-50 flex items-center justify-between gap-3 bg-white/85 dark:bg-neutral-900/85 backdrop-blur-md border-b border-gray-200 dark:border-neutral-800 px-4 md:px-6 py-3 shadow-sm">
-      <span className="text-[18px] md:text-[20px] font-serif font-bold text-gray-900 dark:text-neutral-100 tracking-tight">
-        {displayRestaurantName}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="relative w-full max-w-[520px] mx-auto">
-          <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-neutral-500">
-            <span className="text-base leading-none">⌕</span>
-          </div>
-          <input
-            value={searchValue || ""}
-            onChange={(e) => onSearchChange?.(e.target.value)}
-            placeholder={searchPlaceholder || t("Search")}
-            className="w-full h-10 pl-9 pr-3 rounded-full border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-sm text-gray-800 dark:text-neutral-100 placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 dark:focus:ring-white/10 focus:border-gray-300 dark:focus:border-neutral-700"
-            aria-label={t("Search")}
-          />
+    <>
+      <header className="w-full sticky top-0 z-50 flex items-center justify-between gap-3 bg-white/85 dark:bg-neutral-900/85 backdrop-blur-md border-b border-gray-200 dark:border-neutral-800 px-4 md:px-6 py-3 shadow-sm">
+        <span className="text-[18px] md:text-[20px] font-serif font-bold text-gray-900 dark:text-neutral-100 tracking-tight">
+          {displayRestaurantName}
+        </span>
+        <div className="flex-1 min-w-0">
+          {!hideSearch ? (
+            <>
+              <div className="relative w-full max-w-[520px] mx-auto">
+                <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-neutral-500">
+                  <span className="text-base leading-none">⌕</span>
+                </div>
+                <input
+                  value={searchValue || ""}
+                  onChange={(e) => onSearchChange?.(e.target.value)}
+                  placeholder={searchPlaceholder || t("Search")}
+                  className="w-full h-10 pl-9 pr-3 rounded-full border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-sm text-gray-800 dark:text-neutral-100 placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10 dark:focus:ring-white/10 focus:border-gray-300 dark:focus:border-neutral-700"
+                  aria-label={t("Search")}
+                />
+              </div>
+              <div className="hidden md:block text-xs text-gray-500 mt-1 text-center">
+                {orderType === "table"
+                  ? table
+                    ? typeof formatTableName === "function"
+                      ? formatTableName(table)
+                      : t("Table")
+                    : t("Table Order (short)")
+                  : t("Online Order")}
+              </div>
+            </>
+          ) : null}
         </div>
-        <div className="hidden md:block text-xs text-gray-500 mt-1 text-center">
-          {orderType === "table"
-            ? table
-              ? typeof formatTableName === "function"
-                ? formatTableName(table)
-                : t("Table")
-              : t("Table Order (short)")
-            : t("Online Order")}
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {onVoiceStart ? (
+        <div className="flex items-center gap-2">
+          {onVoiceStart ? (
+            <button
+              type="button"
+              onClick={onVoiceStart}
+              aria-label={t("Voice Order")}
+              className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                voiceListening
+                  ? "bg-emerald-600 text-white animate-pulse"
+                  : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-200 hover:bg-gray-200 dark:hover:bg-neutral-700"
+              }`}
+            >
+              <Mic className="w-5 h-5" />
+            </button>
+          ) : null}
           <button
-            type="button"
-            onClick={onVoiceStart}
-            aria-label={t("Voice Order")}
-            className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-              voiceListening
-                ? "bg-emerald-600 text-white animate-pulse"
-                : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-200 hover:bg-gray-200 dark:hover:bg-neutral-700"
-            }`}
+            onClick={onClose}
+            aria-label={t("Close")}
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-neutral-800 hover:bg-red-50 dark:hover:bg-rose-950/40 text-gray-500 dark:text-neutral-300 hover:text-red-600 transition-all"
           >
-            <Mic className="w-5 h-5" />
+            ×
           </button>
-        ) : null}
+        </div>
+      </header>
+    </>
+  );
+}
+
+function TableOrderHeader({ t, onBack, title = "Table Order" }) {
+  return (
+    <header
+      className="sticky top-0 z-50 px-4 py-3 text-white backdrop-blur-md"
+      style={{
+        background: "rgba(10, 10, 10, 0.92)",
+        borderBottom: "1px solid rgba(255, 255, 255, 0.10)",
+      }}
+    >
+      <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
         <button
-          onClick={onClose}
-          aria-label={t("Close")}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-neutral-800 hover:bg-red-50 dark:hover:bg-rose-950/40 text-gray-500 dark:text-neutral-300 hover:text-red-600 transition-all"
+          type="button"
+          onClick={onBack}
+          aria-label={t("Back")}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-white transition"
+          style={{
+            border: "1px solid rgba(255, 255, 255, 0.15)",
+            background: "rgba(255, 255, 255, 0.06)",
+          }}
         >
-          ×
+          <ChevronLeft className="h-5 w-5" />
         </button>
+
+        <div className="min-w-0 flex-1 text-center">
+          <h1 className="truncate text-[18px] font-semibold tracking-tight text-white">
+            {t(title)}
+          </h1>
+        </div>
+
+        <div className="h-10 w-10 shrink-0" aria-hidden="true" />
       </div>
     </header>
   );
@@ -1754,6 +1827,7 @@ function QrHeader({
 /* ====================== PREMIUM APPLE-STYLE HOME PAGE ====================== */
 function OrderTypeSelect({
   identifier, // 🔥 required for backend load
+  appendIdentifier,
   onSelect,
   lang,
   setLang,
@@ -1768,6 +1842,10 @@ function OrderTypeSelect({
   onPopularClick,
   onCustomizationLoaded,
   onConcertReservationSuccess,
+  statusShortcutCount = 0,
+  statusShortcutEnabled = false,
+  statusShortcutOpen = false,
+  onStatusShortcutToggle,
 }) {
 
   /* ============================================================
@@ -1828,6 +1906,11 @@ async function load() {
   const accent = c.branding_color || c.primary_color || "#4F46E5";
   const logoUrl = c.splash_logo || c.logo || c.app_icon || "/Beylogo.svg";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
+  const {
+    isOpen: isReservationHeaderDrawerOpen,
+    openDrawer: openReservationHeaderDrawer,
+    closeDrawer: closeReservationHeaderDrawer,
+  } = useHeaderDrawer();
   const [isDark, setIsDark] = React.useState(() =>
     themeMode === "dark" || (themeMode === "auto" && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
   );
@@ -2227,6 +2310,7 @@ async function load() {
     guests_count: "2",
     customer_name: "",
     customer_phone: "",
+    customer_email: "",
     customer_note: "",
     bank_reference: "",
   });
@@ -2241,7 +2325,12 @@ async function load() {
       const res = await secureFetch(
         `/public/concerts/${encodeURIComponent(identifier)}/events`
       );
-      setConcertEvents(Array.isArray(res?.events) ? res.events : []);
+      const nextEvents = Array.isArray(res?.events) ? res.events : [];
+      setConcertEvents(nextEvents);
+      setConcertModalEvent((prev) => {
+        if (!prev?.id) return prev;
+        return nextEvents.find((row) => Number(row?.id) === Number(prev.id)) || prev;
+      });
     } catch {
       setConcertEvents([]);
     } finally {
@@ -2255,6 +2344,7 @@ async function load() {
 
   const openConcertBookingModal = React.useCallback((event, defaults = {}) => {
     if (!event) return;
+    const customerPrefill = getCheckoutPrefill(storage);
     const availableTicketTypes = (Array.isArray(event.ticket_types) ? event.ticket_types : []).filter(
       (row) => Number(row?.available_count || 0) > 0
     );
@@ -2277,8 +2367,9 @@ async function load() {
       table_number: "",
       quantity: nextBookingType === "table" ? "1" : "1",
       guests_count: "2",
-      customer_name: "",
-      customer_phone: "",
+      customer_name: customerPrefill?.name || "",
+      customer_phone: customerPrefill?.phone || "",
+      customer_email: customerPrefill?.email || "",
       customer_note: "",
       bank_reference: "",
     });
@@ -2479,8 +2570,13 @@ async function load() {
 
   const submitConcertBooking = React.useCallback(async () => {
     if (!concertModalEvent?.id || !identifier) return;
+    const customerEmail = concertForm.customer_email.trim().toLowerCase();
     if (!concertForm.customer_name.trim() || !concertForm.customer_phone.trim()) {
       alert(t("Please fill required fields"));
+      return;
+    }
+    if (customerEmail && !EMAIL_REGEX.test(customerEmail)) {
+      alert(t("Please enter a valid email address"));
       return;
     }
     if (concertMode === "table") {
@@ -2532,6 +2628,7 @@ async function load() {
       guests_count: concertMode === "table" ? selectedConcertGuests : null,
       customer_name: concertForm.customer_name.trim(),
       customer_phone: concertForm.customer_phone.trim(),
+      customer_email: customerEmail || null,
       customer_note: concertForm.customer_note.trim(),
       bank_reference: concertForm.bank_reference.trim(),
       area_name: selectedConcertTicketType?.area_name || null,
@@ -2546,6 +2643,17 @@ async function load() {
           body: JSON.stringify(payload),
         }
       );
+
+      if (response?.event && Number(response?.event?.id) === Number(concertModalEvent?.id)) {
+        setConcertModalEvent(response.event);
+      }
+      if (response?.event && Number(response?.event?.id) > 0) {
+        setConcertEvents((prev) =>
+          (Array.isArray(prev) ? prev : []).map((row) =>
+            Number(row?.id) === Number(response.event.id) ? response.event : row
+          )
+        );
+      }
 
       const paymentStatus = response?.booking?.payment_status || "pending_bank_transfer";
       const instructions =
@@ -2704,6 +2812,16 @@ async function load() {
   React.useEffect(() => {
     onShopOpenChange?.(openStatus.isOpen);
   }, [onShopOpenChange, openStatus.isOpen]);
+
+  const [activeHeaderOrderType, setActiveHeaderOrderType] = React.useState("takeaway");
+  const handleHeaderOrderTypeSelect = React.useCallback(
+    (nextType) => {
+      if (!nextType) return;
+      setActiveHeaderOrderType(nextType);
+      onSelect?.(nextType);
+    },
+    [onSelect]
+  );
 
   React.useEffect(() => {
     const onDown = (e) => {
@@ -2947,158 +3065,45 @@ async function load() {
     />
 	    <div className="absolute inset-x-0 top-0 h-[420px] sm:h-[480px] -z-10 bg-gradient-to-b from-white/70 via-white/80 to-white dark:from-neutral-950/40 dark:via-neutral-950/70 dark:to-black/90" />
 
-	    {/* === TOP BAR === */}
-	    <header className={`fixed inset-x-0 top-0 z-40 border-b backdrop-blur-xl ${
-        isDark
-          ? "border-white/10 bg-neutral-950/88"
-          : "border-gray-200/80 bg-white/92"
-      }`}>
-        <div className="max-w-5xl mx-auto px-3 sm:px-5 py-3">
-          <div className="grid grid-cols-1 items-center gap-3">
-            <div className="grid grid-cols-3 gap-2 min-w-0">
-              <button
-                onClick={() => reservationTabEnabled && openStatus.isOpen && onSelect("takeaway")}
-                disabled={!reservationTabEnabled || !openStatus.isOpen}
-                className={`h-10 sm:h-11 rounded-lg border px-3 text-[13px] sm:text-[15px] font-medium transition-colors ${
-                  !reservationTabEnabled || !openStatus.isOpen
-                    ? isDark
-                      ? "bg-white/[0.04] text-white/35 border-white/10 cursor-not-allowed"
-                      : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                    : isDark
-                      ? "bg-white text-neutral-950 border-white/80 hover:bg-white/90"
-                      : "bg-slate-900 text-white border-slate-900 hover:bg-slate-800"
-                }`}
-              >
-                {t("Reservation")}
-              </button>
-
-              <button
-                onClick={() => openStatus.isOpen && onSelect("table")}
-                disabled={!openStatus.isOpen}
-                className={`h-10 sm:h-11 rounded-lg border px-3 text-[13px] sm:text-[15px] font-medium transition-colors ${
-                  !openStatus.isOpen
-                    ? isDark
-                      ? "bg-white/[0.04] text-white/35 border-white/10 cursor-not-allowed"
-                      : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                    : isDark
-                      ? "bg-white/[0.04] text-white/82 border-white/12 hover:bg-white/[0.08] hover:text-white"
-                      : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
-                }`}
-              >
-                {t("Table Order")}
-              </button>
-
-              <button
-                onClick={() => allowDelivery && openStatus.isOpen && onSelect("online")}
-                disabled={!allowDelivery || !openStatus.isOpen}
-                className={`h-10 sm:h-11 rounded-lg border px-3 text-[13px] sm:text-[15px] font-medium transition-colors ${
-                  !allowDelivery || !openStatus.isOpen
-                    ? isDark
-                      ? "bg-white/[0.04] text-white/35 border-white/10 cursor-not-allowed"
-                      : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                    : isDark
-                      ? "bg-white/[0.04] text-white/82 border-white/12 hover:bg-white/[0.08] hover:text-white"
-                      : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
-                }`}
-              >
-                {t("Delivery")}
-              </button>
-            </div>
-          </div>
-        </div>
-	    </header>
-      <div className="h-[72px] sm:h-[76px]" aria-hidden="true" />
-	
+      <QrMenuHeader
+        isDark={isDark}
+        isDrawerOpen={isReservationHeaderDrawerOpen}
+        onOpenDrawer={openReservationHeaderDrawer}
+        onSelect={handleHeaderOrderTypeSelect}
+        reservationEnabled={reservationTabEnabled && openStatus.isOpen}
+        tableEnabled={openStatus.isOpen}
+        deliveryEnabled={allowDelivery && openStatus.isOpen}
+        activeOrderType={activeHeaderOrderType}
+        statusShortcutCount={statusShortcutCount}
+        statusShortcutEnabled={statusShortcutEnabled}
+        statusShortcutOpen={statusShortcutOpen}
+        onStatusShortcutClick={onStatusShortcutToggle}
+        restaurantName={displayRestaurantName || "Apollo Cafe"}
+        tagline={subtitle || tagline || "Fresh • Local • Crafted"}
+        t={t}
+        openStatus={openStatus}
+        showShopHoursDropdown={showShopHoursDropdown}
+        onToggleShopHoursDropdown={() => setShowShopHoursDropdown((v) => !v)}
+        onCloseShopHoursDropdown={() => setShowShopHoursDropdown(false)}
+        days={days}
+        todayName={todayName}
+        shopHours={shopHours}
+        loadingShopHours={loadingShopHours}
+        shopHoursDropdownRef={shopHoursDropdownRef}
+        languageControl={<LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />}
+      />
+      <HeaderDrawer
+        isOpen={isReservationHeaderDrawerOpen}
+        onClose={closeReservationHeaderDrawer}
+        t={t}
+        appendIdentifier={appendIdentifier}
+        isDark={isDark}
+      />
+		
 	    {/* === HERO SECTION === */}
 		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-8 pb-4 space-y-10">
-	
-	      {/* TITLE & TAGLINE */}
+
 	      <div className="max-w-4xl mx-auto">
-              <div className="text-center">
-			        <h1 className="text-[2.05rem] sm:text-[2.65rem] md:text-[3.15rem] font-serif font-semibold leading-[1.04] tracking-[-0.035em] text-gray-900 dark:text-neutral-50">
-			          {displayRestaurantName}
-			        </h1>
-                {subtitle ? (
-                  <p className="mt-3 text-[16px] sm:text-[17px] font-light tracking-[0.01em] text-gray-600 dark:text-neutral-300/85">
-                    {subtitle}
-                  </p>
-                ) : null}
-                <div className="mt-5 flex flex-wrap items-center justify-center gap-3" ref={shopHoursDropdownRef}>
-                  <button
-                    type="button"
-                    onClick={() => setShowShopHoursDropdown((v) => !v)}
-                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[12px] sm:text-[13px] font-medium transition ${
-                      openStatus.isOpen
-                        ? "bg-emerald-50/90 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/25 dark:text-emerald-200 dark:border-emerald-900/30"
-                        : "bg-rose-50/90 text-rose-700 border-rose-200/80 dark:bg-rose-950/25 dark:text-rose-200 dark:border-rose-900/30"
-                    }`}
-                    aria-label={t("Shop Hours")}
-                    title={t("Shop Hours")}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${openStatus.isOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
-                    <span>{openStatus.label}</span>
-                  </button>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowShopHoursDropdown((v) => !v)}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200/90 bg-transparent text-gray-700 text-[12px] sm:text-[13px] font-medium hover:bg-gray-50 dark:text-neutral-200 dark:border-neutral-800 dark:hover:bg-neutral-900/70 transition"
-                      aria-label={t("Shop Hours")}
-                      title={t("Shop Hours")}
-                    >
-                      <span>{t("Shop Hours")}</span>
-                      <ChevronDown
-                        className={`h-3.5 w-3.5 transition-transform ${showShopHoursDropdown ? "rotate-180" : ""}`}
-                      />
-                    </button>
-
-                    {showShopHoursDropdown && (
-                      <div className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-0 top-[calc(100%+10px)] w-[min(320px,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] rounded-2xl border border-gray-200 bg-white/95 dark:bg-neutral-950/90 shadow-xl backdrop-blur p-3 z-20">
-                        <div className="flex items-center justify-between gap-2 px-1 pb-2">
-                          <div className="text-sm font-semibold text-gray-900 dark:text-neutral-100">
-                            {t("Shop Hours")}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setShowShopHoursDropdown(false)}
-                            className="text-gray-400 hover:text-gray-700 dark:hover:text-neutral-200 text-lg leading-none"
-                            aria-label={t("Close")}
-                          >
-                            ×
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-1">
-                          {days.map((day) => {
-                            const isToday = day === todayName;
-                            const open = shopHours?.[day]?.open || "";
-                            const close = shopHours?.[day]?.close || "";
-                            const enabled = shopHours?.[day]?.enabled !== false;
-                            const has = enabled && !!(open && close);
-                            return (
-                              <div
-                                key={day}
-                                className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${
-                                  isToday
-                                    ? "bg-indigo-50 text-indigo-800 border border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/30 dark:text-indigo-200"
-                                    : "bg-gray-50/80 text-gray-700 dark:bg-neutral-900/40 dark:text-neutral-200"
-                                }`}
-                              >
-                                <span className="font-semibold">{t(day)}</span>
-                                <span className="font-mono text-xs">
-                                  {loadingShopHours ? "…" : has ? `${open} - ${close}` : "—"}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />
-                </div>
-              </div>
-
               {/* CONCERT TICKETS */}
               <div className="mt-6 max-w-3xl mx-auto">
                 {concertEvents.length > 0 ? (
@@ -3843,6 +3848,14 @@ async function load() {
                 className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
               />
               <input
+                type="email"
+                placeholder={t("Email")}
+                value={concertForm.customer_email}
+                onChange={(e) => setConcertForm((prev) => ({ ...prev, customer_email: e.target.value }))}
+                className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                autoComplete="email"
+              />
+              <input
                 type="text"
                 placeholder={t("Bank transfer reference (optional)")}
                 value={concertForm.bank_reference}
@@ -3920,6 +3933,7 @@ function TakeawayOrderForm({
     () => ({
       name: initialValues?.name || "",
       phone: initialValues?.phone || "",
+      email: initialValues?.email || "",
       pickup_date: initialValues?.pickup_date || "",
       pickup_time: initialValues?.pickup_time || "",
       mode: initialValues?.mode || "reservation",
@@ -3979,6 +3993,7 @@ function TakeawayOrderForm({
   const requiresReservationTable = form.mode === "reservation";
   const requiresPayment = form.mode !== "reservation";
   const phoneValid = /^(5\d{9}|[578]\d{7})$/.test(form.phone);
+  const emailValid = !form.email.trim() || EMAIL_REGEX.test(form.email.trim());
   const selectedTableNumber = Number(form.table_number);
   const selectedTable = useMemo(
     () => safeTables.find((tbl) => Number(tbl?.tableNumber) === selectedTableNumber) || null,
@@ -4007,6 +4022,7 @@ function TakeawayOrderForm({
   const valid =
     form.name &&
     phoneValid &&
+    emailValid &&
     form.pickup_date &&
     form.pickup_time &&
     (!requiresReservationTable || (hasReservationTable && hasReservationClients)) &&
@@ -4047,6 +4063,7 @@ function TakeawayOrderForm({
       setTouched({
         name: true,
         phone: true,
+        email: true,
         pickup_date: true,
         pickup_time: true,
         table_number: requiresReservationTable,
@@ -4111,6 +4128,17 @@ function TakeawayOrderForm({
             }}
             inputMode="numeric"
             maxLength={10}
+          />
+
+          <input
+            type="email"
+            className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+              touched.email && !emailValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
+            }`}
+            placeholder={t("Email")}
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            autoComplete="email"
           />
 
           {/* Pickup / Reservation Date + Time */}
@@ -4761,7 +4789,6 @@ async function startOnlinePaymentSession(id) {
 /* ====================== ORDER STATUS MODAL ====================== */
 function OrderStatusModal({
   open,
-  status,
   orderId,
   orderType,
   table,
@@ -4771,113 +4798,41 @@ function OrderStatusModal({
   onFinished,
   t,
   appendIdentifier,
-  errorMessage,
   cancelReason,
   orderScreenStatus,
   forceDark,
   forceLock = false,
   allowOrderAnotherWhenLocked = false,
   checkoutPending = false,
-  bookingConfirmLabel = false,
   checkoutCompletedLabel = false,
 }) {
-  if (!open) return null;
+  if (!open || !orderId) return null;
 
-  const uiStatus = (status || "").toLowerCase(); // pending | success | fail
   const backendStatus = (orderScreenStatus || "").toLowerCase(); // confirmed | cancelled | closed | ...
   const isCancelled = isCancelledLikeStatus(backendStatus);
-  const isFinishedLikeStatus = ["delivered", "served", "closed", "completed"].includes(backendStatus);
-  const isSending = uiStatus === "pending";
-  const isFailed = uiStatus === "fail";
-  const isBookingConfirm = uiStatus === "booking_confirm" || Boolean(bookingConfirmLabel);
-
-  const title =
-    isCancelled ? t("Your order has been cancelled!")
-    : isSending ? t("Sending Order...")
-    : isBookingConfirm ? t("Booking confirm!")
-    : isFailed ? t("Order Failed")
-    : t("Order Sent!");
-
-  const message =
-    isCancelled
-      ? cancelReason || t("The restaurant cancelled this order.")
-      : isSending
-        ? t("Please wait...")
-        : isBookingConfirm
-          ? t("Your reservation has been created.")
-        : isFailed
-          ? errorMessage || t("Something went wrong. Please try again.")
-          : t("Thank you! Your order has been received.");
-
   const lockBlocksActions = forceLock && !allowOrderAnotherWhenLocked;
   const lockBlocksForCancelState = lockBlocksActions && !isCancelled;
 
   return (
-    <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-      onMouseDown={(e) => {
-        if (lockBlocksForCancelState) return;
-        if (e.target === e.currentTarget) onClose?.();
-      }}
-    >
-      {/* Modal container: fixed height with scrollable middle */}
-      <div className="bg-white rounded-3xl shadow-2xl w-[92vw] max-w-md max-h-[88vh] flex flex-col">
-        {/* Header */}
-        <div className="px-6 pt-6">
-          <h2 className="text-2xl font-extrabold mb-3 bg-gradient-to-r from-green-500 via-blue-500 to-indigo-500 text-transparent bg-clip-text">
-            {title}
-          </h2>
-          <div className="text-lg text-blue-900">{message}</div>
-        </div>
-
-        {/* Scrollable content */}
-       <div className="px-4 pb-2 flex-1 min-h-0 overflow-y-auto">
-  {orderId ? (
-		<OrderStatusScreen
-		  orderId={orderId}
-		  table={orderType === "table" ? table : null}   // now safe
-		   onOrderAnother={lockBlocksForCancelState ? null : onOrderAnother}   
+    <OrderStatusScreen
+      orderId={orderId}
+      table={orderType === "table" ? table : null}
+      onOrderAnother={lockBlocksForCancelState ? null : onOrderAnother}
       onCheckout={onCheckout}
-		  onClose={lockBlocksForCancelState ? null : onClose}
-		  onFinished={onFinished}
+      onClose={lockBlocksForCancelState ? null : onClose}
+      onFinished={onFinished}
       checkoutPending={checkoutPending}
       forceLock={forceLock}
-		  forceDark={forceDark}
+      forceDark={forceDark}
       orderScreenStatus={orderScreenStatus}
+      externalCancelReason={cancelReason}
       checkoutCompletedView={checkoutCompletedLabel}
-
-		  t={t}
-		  buildUrl={(path) => apiUrl(path)}
-		  appendIdentifier={appendIdentifier}
-		/>
-
-  ) : null}
-</div>
-
-
-        {/* Footer: keep only when no embedded OrderStatusScreen is rendered.
-            OrderStatusScreen already renders Close + Order Again actions. */}
-        {!orderId && (
-          <div className="p-4 border-t bg-white">
-            {lockBlocksActions ? (
-              <button
-                className="w-full py-3 rounded-xl bg-slate-200 text-slate-700 font-bold shadow cursor-not-allowed"
-                disabled
-              >
-                {t("Table must be closed by staff first")}
-              </button>
-            ) : (
-              <button
-                className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold shadow hover:bg-blue-600 transition"
-                onClick={status === "success" && !isCancelled && !isFinishedLikeStatus ? onOrderAnother : onClose}
-              >
-                {status === "success" && !isCancelled && !isFinishedLikeStatus ? t("Order Another") : t("Close")}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+      hideNativeHeader={false}
+      offsetForAppHeader={false}
+      t={t}
+      buildUrl={(path) => apiUrl(path)}
+      appendIdentifier={appendIdentifier}
+    />
   );
 }
 
@@ -5002,6 +4957,7 @@ export default function QrMenu() {
     orderCancelReason,
     activeOrder,
     orderScreenStatus,
+    setOrderScreenStatus,
     setCustomerInfo,
   } = useQrMenuController({
     slug,
@@ -5040,6 +4996,11 @@ export default function QrMenu() {
   const [showStandaloneSplash, setShowStandaloneSplash] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [downloadQrModalOpen, setDownloadQrModalOpen] = useState(false);
+  const {
+    isOpen: isAppHeaderDrawerOpen,
+    openDrawer: openAppHeaderDrawer,
+    closeDrawer: closeAppHeaderDrawer,
+  } = useHeaderDrawer();
   const callWaiterFeedbackTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -5330,6 +5291,102 @@ export default function QrMenu() {
     () => formatTableName(scanTargetTable || tableScanTarget),
     [formatTableName, scanTargetTable, tableScanTarget]
   );
+  const sharedHeaderOpenStatus = useMemo(
+    () => ({
+      isOpen: Boolean(shopIsOpen),
+      label: shopIsOpen ? t("Open") : t("Closed"),
+    }),
+    [shopIsOpen, t]
+  );
+  const [isQrHeaderDark, setIsQrHeaderDark] = useState(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return Boolean(isDarkMain);
+    }
+    const domDarkActive =
+      document.documentElement.classList.contains("dark") ||
+      document.body?.classList.contains("dark") ||
+      document.getElementById("root")?.classList.contains("dark") ||
+      Boolean(document.querySelector(".dark"));
+    const prefersDark =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const storedTheme = String(storage.getItem("qr_theme") || "")
+      .trim()
+      .toLowerCase();
+    return Boolean(isDarkMain || storedTheme === "dark" || domDarkActive || prefersDark);
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      setIsQrHeaderDark(Boolean(isDarkMain));
+      return undefined;
+    }
+
+    const resolveDark = () => {
+      const domDarkActive =
+        document.documentElement.classList.contains("dark") ||
+        document.body?.classList.contains("dark") ||
+        document.getElementById("root")?.classList.contains("dark") ||
+        Boolean(document.querySelector(".dark"));
+      const prefersDark =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const storedTheme = String(storage.getItem("qr_theme") || "")
+        .trim()
+        .toLowerCase();
+      return Boolean(isDarkMain || storedTheme === "dark" || domDarkActive || prefersDark);
+    };
+
+    const applyDark = () => setIsQrHeaderDark(resolveDark());
+    applyDark();
+
+    const observer = new MutationObserver(applyDark);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    if (document.body) {
+      observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    }
+    const root = document.getElementById("root");
+    if (root) {
+      observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    }
+
+    let mq = null;
+    const onMediaChange = () => applyDark();
+    if (typeof window.matchMedia === "function") {
+      mq = window.matchMedia("(prefers-color-scheme: dark)");
+      if (typeof mq.addEventListener === "function") {
+        mq.addEventListener("change", onMediaChange);
+      } else if (typeof mq.addListener === "function") {
+        mq.addListener(onMediaChange);
+      }
+    }
+
+    return () => {
+      observer.disconnect();
+      if (mq) {
+        if (typeof mq.removeEventListener === "function") {
+          mq.removeEventListener("change", onMediaChange);
+        } else if (typeof mq.removeListener === "function") {
+          mq.removeListener(onMediaChange);
+        }
+      }
+    };
+  }, [isDarkMain, storage]);
+  const sharedHeaderOrderType = useMemo(() => {
+    const normalized = String(orderType || "").toLowerCase();
+    if (normalized === "table") return "table";
+    if (normalized === "online") return "online";
+    return "takeaway";
+  }, [orderType]);
+  const shouldShowTableOrderHeader = !showStatus && sharedHeaderOrderType === "table";
+  const shouldShowInnerOrderHeader = !showStatus && sharedHeaderOrderType !== "table";
+  const handleSharedHeaderOrderTypeSelect = useCallback(
+    (nextType) => {
+      if (!nextType) return;
+      triggerOrderType(nextType);
+    },
+    [triggerOrderType]
+  );
   const handleEditCartItem = useCallback(
     (item) => {
       if (!item) return;
@@ -5614,18 +5671,53 @@ export default function QrMenu() {
     return 0;
   })();
   const activeOrderTotal = Number(activeOrder?.total || 0);
+  const hasStatusShortcutOrder = Boolean(statusPortalOrderId || hasActiveOrder);
+  const statusShortcutCount = hasStatusShortcutOrder
+    ? Math.max(1, Number(activeOrderItemCount) || 0)
+    : 0;
+  const statusShortcutEnabled = hasStatusShortcutOrder;
   const statusAllowsCloseSlot =
     normalizedStatusForLock === "" ||
     ["confirmed", "closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(
       normalizedStatusForLock
     );
+  const statusNavDisableCandidates = [
+    orderScreenStatus,
+    activeOrder?.status,
+    activeOrder?.reservation?.status,
+    activeOrder?.reservation_status,
+    activeOrder?.reservationStatus,
+    activeOrder?.concert_booking_payment_status,
+    activeOrder?.concertBookingPaymentStatus,
+    activeOrder?.concert_booking_status,
+    activeOrder?.concertBookingStatus,
+  ];
+  const hasCancellationReasonSignal = Boolean(
+    String(orderCancelReason || "").trim() ||
+      extractCancellationReason(activeOrder) ||
+      extractCancellationReason(
+        activeOrder?.reservation && typeof activeOrder.reservation === "object"
+          ? activeOrder.reservation
+          : null
+      ) ||
+      extractCancellationReason(
+        activeOrder?.concert_booking && typeof activeOrder.concert_booking === "object"
+          ? activeOrder.concert_booking
+          : null
+      )
+  );
+  const disableBottomNavForCancelledStatus =
+    showStatus &&
+    (statusNavDisableCandidates.some((status) => isCancelledLikeStatus(status)) ||
+      hasCancellationReasonSignal);
   const showCloseInReorderSlot =
     forceStatusLockActive &&
     statusAllowsCloseSlot &&
     !activeOrderHasReservation &&
     activeOrderItemCount === 0 &&
     activeOrderTotal <= 0;
-  const disableAuxBottomNavActions = showCloseInReorderSlot;
+  const disableAuxBottomNavActions =
+    showCloseInReorderSlot || disableBottomNavForCancelledStatus;
   const callWaiterButtonDisabled = callWaiterButtonDisabledBase || disableAuxBottomNavActions;
   const canStartVoiceFromNav =
     canStartVoiceFromNavBase &&
@@ -5637,6 +5729,23 @@ export default function QrMenu() {
   const onReorderSlotClick = showCloseInReorderSlot
     ? onForceCloseStatusFromNav
     : onReOrderFromNav;
+  const disableCallWaiterAction = !showCallWaiterButton || callWaiterButtonDisabled;
+  const disableReorderAction = !canUseReorderSlot || disableBottomNavForCancelledStatus;
+  const disableCartAction = !canOpenCartFromNav || disableBottomNavForCancelledStatus;
+  const disableVoiceAction = !canStartVoiceFromNav || disableBottomNavForCancelledStatus;
+  const savedCustomerPrefill = useMemo(
+    () => getCheckoutPrefill(storage),
+    [showTakeawayForm, showDeliveryForm, orderType]
+  );
+  const takeawayInitialValues = useMemo(
+    () => ({
+      ...takeaway,
+      name: savedCustomerPrefill?.name || takeaway?.name || "",
+      phone: savedCustomerPrefill?.phone || takeaway?.phone || "",
+      email: savedCustomerPrefill?.email || takeaway?.email || "",
+    }),
+    [savedCustomerPrefill, takeaway]
+  );
 
   const statusPortal = showStatus && statusPortalOrderId
     ? createPortal(
@@ -5655,7 +5764,7 @@ export default function QrMenu() {
           errorMessage={lastError}
           cancelReason={orderCancelReason}
           orderScreenStatus={orderScreenStatus}
-          forceDark={isDarkMain}
+          forceDark={isQrHeaderDark}
           forceLock={forceStatusLockActive}
           allowOrderAnotherWhenLocked={allowOrderAnotherWhenLocked}
           checkoutPending={checkoutSubmitting}
@@ -5665,6 +5774,32 @@ export default function QrMenu() {
         document.body
       )
     : null;
+  const handleHeaderStatusShortcutToggle = useCallback(() => {
+    if (showStatus) {
+      setShowStatus(false);
+      storage.setItem("qr_show_status", "0");
+      return;
+    }
+
+    const activeId = Number(orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0);
+    if (!Number.isFinite(activeId) || activeId <= 0) return;
+    if (!orderId) {
+      setOrderId(activeId);
+    }
+    setConcertBookingConfirmLabel(false);
+    setOrderStatus("success");
+    setShowStatus(true);
+    storage.setItem("qr_show_status", "1");
+  }, [
+    activeOrder?.id,
+    orderId,
+    setConcertBookingConfirmLabel,
+    setOrderId,
+    setOrderStatus,
+    setShowStatus,
+    showStatus,
+    storage,
+  ]);
 
   useEffect(() => {
     if (!pendingNonTableConcertReorderLock) return;
@@ -5730,6 +5865,9 @@ export default function QrMenu() {
       }
 
       if (String(bookingType || "").toLowerCase() !== "table") {
+        const normalizedConcertPaymentStatus = String(paymentStatus || "")
+          .trim()
+          .toLowerCase();
         setPendingNonTableConcertReorderLock(true);
         setOrderType("takeaway");
         storage.setItem("qr_orderType", "takeaway");
@@ -5738,8 +5876,13 @@ export default function QrMenu() {
         storage.setItem("qr_show_status", "1");
         storage.removeItem("qr_force_status_until_closed");
         setOrderStatus("success");
+        setOrderScreenStatus(
+          normalizedConcertPaymentStatus === "confirmed"
+            ? "confirmed"
+            : normalizedConcertPaymentStatus || "pending_bank_transfer"
+        );
         setConcertBookingConfirmLabel(
-          String(paymentStatus || "").trim().toLowerCase() === "confirmed"
+          normalizedConcertPaymentStatus === "confirmed"
         );
         setCheckoutCompletedLabel(false);
         setShowStatus(true);
@@ -5786,6 +5929,7 @@ export default function QrMenu() {
     [
       setConcertBookingConfirmLabel,
       setOrderId,
+      setOrderScreenStatus,
       setOrderStatus,
       setOrderType,
       setPendingNonTableConcertReorderLock,
@@ -6000,7 +6144,12 @@ export default function QrMenu() {
   if (showTableSelector) {
     return (
       <>
-        <div className={isDarkMain ? "dark" : ""}>
+        <div className={isQrHeaderDark ? "dark" : ""}>
+          <TableOrderHeader
+            t={t}
+            onBack={() => setOrderType(null)}
+            title="Table Order"
+          />
           <ModernTableSelector
             tables={tables}
             showAreas={showTableAreas}
@@ -6010,6 +6159,7 @@ export default function QrMenu() {
             occupiedLabel={t("Occupied")}
             reservedNumbers={filteredReserved}
             reservedLabel={t("Reserved")}
+            hideTopBar={true}
             onSelect={(tbl) => {
               openTableScanner(tbl?.tableNumber, Number(tbl?.guests));
             }}
@@ -6129,6 +6279,7 @@ export default function QrMenu() {
         <>
           <OrderTypeSelect
             identifier={restaurantIdentifier}
+            appendIdentifier={appendIdentifier}
             onSelect={triggerOrderType}
             lang={lang}
             setLang={setLang}
@@ -6145,6 +6296,10 @@ export default function QrMenu() {
               setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
             }
             onConcertReservationSuccess={handleConcertReservationSuccess}
+            statusShortcutCount={statusShortcutCount}
+            statusShortcutEnabled={statusShortcutEnabled}
+            statusShortcutOpen={showStatus}
+            onStatusShortcutToggle={handleHeaderStatusShortcutToggle}
           />
 
           {!orderType && showOrderTypePrompt && (
@@ -6167,25 +6322,56 @@ export default function QrMenu() {
         </>
       ) : (
         <div
-          className={`${isDarkMain ? "dark " : ""}flex-1`}
+          className={`${isQrHeaderDark ? "dark " : ""}flex-1`}
           style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
         >
           <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-50 dark:bg-neutral-900 flex flex-col">
-            <QrHeader
-              orderType={orderType}
-              table={table}
-              onClose={handleCloseOrderPage}
-              t={t}
-              restaurantName={brandName}
-              formatTableName={formatTableName}
-              searchValue={menuSearch}
-              onSearchChange={setMenuSearch}
-              searchPlaceholder={t("Search products")}
-              onVoiceStart={
-                orderType === "table" && !reservationPendingCheckIn ? startQrVoiceCapture : null
-              }
-              voiceListening={qrVoiceListening}
-            />
+            {shouldShowTableOrderHeader ? (
+              <TableOrderHeader
+                t={t}
+                onBack={handleCloseOrderPage}
+                title="Table Order"
+              />
+            ) : null}
+            {shouldShowInnerOrderHeader ? (
+              <>
+                <QrMenuHeader
+                  isDark={isQrHeaderDark}
+                  isDrawerOpen={isAppHeaderDrawerOpen}
+                  onOpenDrawer={openAppHeaderDrawer}
+                  onSelect={handleSharedHeaderOrderTypeSelect}
+                  reservationEnabled={shopIsOpen}
+                  tableEnabled={shopIsOpen}
+                  deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true) && shopIsOpen}
+                  activeOrderType={sharedHeaderOrderType}
+                  statusShortcutCount={statusShortcutCount}
+                  statusShortcutEnabled={statusShortcutEnabled}
+                  statusShortcutOpen={showStatus}
+                  onStatusShortcutClick={handleHeaderStatusShortcutToggle}
+                  restaurantName={brandName}
+                  tagline="Fresh • Local • Crafted"
+                  t={t}
+                  openStatus={sharedHeaderOpenStatus}
+                  showShopHoursDropdown={false}
+                  onToggleShopHoursDropdown={() => {}}
+                  onCloseShopHoursDropdown={() => {}}
+                  days={[]}
+                  todayName=""
+                  shopHours={{}}
+                  loadingShopHours={false}
+                  shopHoursDropdownRef={null}
+                  languageControl={null}
+                  showInfo={false}
+                />
+                <HeaderDrawer
+                  isOpen={isAppHeaderDrawerOpen}
+                  onClose={closeAppHeaderDrawer}
+                  t={t}
+                  appendIdentifier={appendIdentifier}
+                  isDark={isQrHeaderDark}
+                />
+              </>
+            ) : null}
 
             <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-32">
               <div className="grid grid-cols-1 xl:grid-cols-[320px,1fr] gap-4 lg:gap-5 xl:gap-6 items-start">
@@ -6297,9 +6483,9 @@ export default function QrMenu() {
             <button
               type="button"
               onClick={onCallWaiterClick}
-              disabled={!showCallWaiterButton || callWaiterButtonDisabled}
+              disabled={disableCallWaiterAction}
               className={`relative inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
-                !showCallWaiterButton || callWaiterButtonDisabled
+                disableCallWaiterAction
                   ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
                   : "border-red-500 bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"
               }`}
@@ -6318,9 +6504,9 @@ export default function QrMenu() {
             <button
               type="button"
               onClick={onReorderSlotClick}
-              disabled={!canUseReorderSlot}
+              disabled={disableReorderAction}
               className={`inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
-                canUseReorderSlot
+                !disableReorderAction
                   ? "border-amber-500 bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.98]"
                   : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
               }`}
@@ -6334,9 +6520,9 @@ export default function QrMenu() {
             <button
               type="button"
               onClick={onOpenCartFromNav}
-              disabled={!canOpenCartFromNav}
+              disabled={disableCartAction}
               className={`relative inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
-                canOpenCartFromNav
+                !disableCartAction
                   ? "border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
                   : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
               }`}
@@ -6355,9 +6541,9 @@ export default function QrMenu() {
             <button
               type="button"
               onClick={onOpenVoiceFromNav}
-              disabled={!canStartVoiceFromNav}
+              disabled={disableVoiceAction}
               className={`inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
-                canStartVoiceFromNav
+                !disableVoiceAction
                   ? "border-violet-500 bg-violet-600 text-white hover:bg-violet-700 active:scale-[0.98]"
                   : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
               }`}
@@ -6593,6 +6779,7 @@ export default function QrMenu() {
             setCustomerInfo({
               name: form.name,
               phone: form.phone,
+              email: form.email,
               address: form.address,
               payment_method: form.payment_method,
             });
@@ -6605,7 +6792,7 @@ export default function QrMenu() {
         <TakeawayOrderForm
           submitting={submitting}
           t={t}
-          initialValues={takeaway}
+          initialValues={takeawayInitialValues}
           tables={tables}
           occupiedTables={occupiedTables}
           reservedTables={safeReservedTables}
@@ -6627,6 +6814,7 @@ export default function QrMenu() {
               setTakeaway({
                 name: "",
                 phone: "",
+                email: "",
                 pickup_date: "",
                 pickup_time: "",
                 mode: "reservation",
@@ -6663,6 +6851,7 @@ export default function QrMenu() {
                     reservation_notes: form.notes || "",
                     customer_name: form.name || null,
                     customer_phone: form.phone || null,
+                    customer_email: form.email || null,
                   }),
                 });
 

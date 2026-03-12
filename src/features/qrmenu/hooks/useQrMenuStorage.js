@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { getCheckoutPrefill } from "../header-drawer/services/customerService";
 
 export function useQrMenuStorage({
   slug,
@@ -96,15 +97,8 @@ export function useQrMenuStorage({
 
   const getSavedDeliveryInfo = useCallback(() => {
     try {
-      const saved = JSON.parse(storage.getItem("qr_delivery_info") || "null");
-      if (saved && typeof saved === "object" && saved.address) {
-        return {
-          name: saved.name || "",
-          phone: saved.phone || "",
-          address: saved.address || "",
-          payment_method: saved.payment_method || "",
-        };
-      }
+      const profilePrefill = getCheckoutPrefill(storage);
+      if (profilePrefill && profilePrefill.address) return profilePrefill;
     } catch {}
     return null;
   }, [storage]);

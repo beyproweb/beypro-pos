@@ -3,6 +3,7 @@ import {
   removeReservationShadow,
   upsertReservationShadow,
 } from "../../orders/tableOrdersCache";
+import { hasConcertBookingContext } from "../../../utils/reservationStatus";
 
 export function createConfirmFlow(deps) {
   const {
@@ -74,6 +75,11 @@ export function createConfirmFlow(deps) {
         order?.reservationTime ||
         ["reserved", "checked_in"].includes(String(order?.status || "").toLowerCase()) ||
         String(order?.order_type || "").toLowerCase() === "reservation"
+    );
+    const hasConcertContext = hasConcertBookingContext(
+      order,
+      existingReservation,
+      order?.reservation
     );
 
     const selectionKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
@@ -362,7 +368,7 @@ export function createConfirmFlow(deps) {
       // ✅ All delivered → close and go immediately
       try {
         const closeRequestOptions = { method: "POST" };
-        if (isReservationFinalizeClose) {
+        if (isReservationFinalizeClose || hasConcertContext) {
           closeRequestOptions.body = JSON.stringify({
             preserve_reservation_checkout_badge: true,
           });

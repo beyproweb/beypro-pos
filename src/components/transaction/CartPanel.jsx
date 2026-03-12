@@ -17,6 +17,10 @@ import {
   Wallet,
   CalendarClock,
   CheckCircle2,
+  Clock3,
+  Users,
+  CalendarDays,
+  ChevronDown,
 } from "lucide-react";
 
 const getPhoneHref = (phone) => {
@@ -143,22 +147,26 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     Boolean(existingReservation?.reservation_date) &&
     isPaidReservation;
   const reservationCardClassName = isCheckedOutReservation
-    ? "mx-3 mb-1.5 rounded-xl border border-slate-300 bg-slate-50/95 px-2.5 py-2 shadow-sm dark:border-slate-600 dark:bg-slate-900/80"
+    ? "mx-3 mb-1.5 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2.5 shadow-[0_8px_24px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-slate-900"
     : isCheckedInReservation
-    ? "mx-3 mb-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 shadow-sm dark:border-emerald-700/60 dark:bg-emerald-900/20"
-    : "mx-3 mb-1.5 rounded-xl border border-slate-200 bg-slate-50/90 px-2.5 py-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900";
+    ? "mx-3 mb-1.5 overflow-hidden rounded-2xl border border-emerald-200 bg-white p-2.5 shadow-[0_8px_24px_rgba(16,185,129,0.08)] dark:border-emerald-700/60 dark:bg-slate-900"
+    : "mx-3 mb-1.5 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2.5 shadow-[0_8px_24px_rgba(99,102,241,0.08)] dark:border-zinc-700 dark:bg-zinc-900";
   const reservationBadgeClassName = isCheckedOutReservation
-    ? "inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    ? "inline-flex h-8 items-center rounded-full bg-slate-800 px-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-white dark:bg-slate-100 dark:text-slate-900"
     : isCheckedInReservation
-    ? "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-    : "inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200";
+    ? "inline-flex h-8 items-center rounded-full bg-emerald-600 px-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-white dark:bg-emerald-500 dark:text-white"
+    : "inline-flex h-8 items-center rounded-full bg-indigo-600 px-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-white dark:bg-indigo-500 dark:text-white";
   const reservationStateLabel = isCheckedOutReservation
     ? t("Guest checked out")
     : isCheckedInReservation
     ? t("Guest checked in")
     : t("Reserved");
   const reservationMetaChipClassName =
-    "inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200";
+    "flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 dark:border-slate-700 dark:bg-slate-800/70";
+  const reservationSecondaryActionClassName =
+    "inline-flex h-8 items-center justify-center rounded-full border px-3 text-[11px] font-semibold transition-colors";
+  const reservationEditActionClassName =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white";
   const reservationCustomerPhoneHref = useMemo(
     () => getPhoneHref(reservationCustomerPhone),
     [reservationCustomerPhone]
@@ -171,6 +179,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     [cartWindowingOverscan]
   );
   const [windowingFallback, setWindowingFallback] = useState(false);
+  const [isReservationExpanded, setIsReservationExpanded] = useState(false);
   const expandedFallbackWarnedRef = useRef(false);
   const pendingScrollHeightRef = useRef(0);
   const shouldWindowCart =
@@ -224,6 +233,12 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
       expandedFallbackWarnedRef.current = false;
     }
   }, [enableCartVirtualization, hasExpandedCartItems]);
+
+  useEffect(() => {
+    if (!existingReservation?.reservation_date) {
+      setIsReservationExpanded(false);
+    }
+  }, [existingReservation?.reservation_date]);
 
   useEffect(() => {
     if (!shouldWindowUnpaid) {
@@ -308,6 +323,372 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
     pendingScrollHeightRef.current = 0;
   }, [cartScrollRef, visiblePaidCount, visibleUnpaidCount]);
 
+  const cartSection = (
+    <div
+      ref={cartScrollRef}
+      onScroll={shouldWindowCart ? handleCartScroll : undefined}
+      className={existingReservation?.reservation_date ? "max-h-[280px] overflow-y-auto" : "min-h-0 flex-1 overflow-y-auto"}
+    >
+      <div
+        className={`scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent ${
+          existingReservation?.reservation_date
+            ? "px-0 pb-0"
+            : "min-h-full px-3 pb-2 grid grid-rows-[auto_1fr] gap-1.5"
+        }`}
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >
+        <div>
+          {cartItemsLength === 0 ? (
+            <div
+              className={`grid place-items-center rounded-2xl border border-dashed border-slate-200 bg-transparent text-center text-xs font-medium text-slate-500 dark:border-slate-700 dark:text-slate-400 ${
+                existingReservation?.reservation_date ? "py-5" : "h-full py-8"
+              }`}
+            >
+              <div>
+                <div className="mx-auto mb-2 h-12 w-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 text-2xl leading-[48px] dark:from-slate-800 dark:to-slate-700">
+                  🛒
+                </div>
+                {t("Cart is empty.")}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {unpaidGroups.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-xs font-medium text-slate-400">
+                  {t("No unpaid items")}
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {renderedUnpaidGroups.map((item) => (
+                    <li
+                      data-cart-item="true"
+                      key={item.itemKey}
+                      className={`relative flex flex-col gap-0.5 overflow-hidden rounded-lg border border-slate-200 p-1.5 pl-2.5 text-[13px] shadow-xs transition border-l-[3px] ${item.cardGradient}`}
+                      style={{ borderLeftColor: item.borderLeftColor }}
+                      onClick={item.onCardClick}
+                    >
+                      <div className="flex items-center justify-between gap-0.5">
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              checked={item.isSelected}
+                              disabled={item.isPaid}
+                              onChange={item.onSelectToggle}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            {item.isSelected && item.isEditable && item.availableQuantities.length > 1 && (
+                              <select
+                                className="h-7 rounded-md border border-slate-300 bg-white px-1 text-xs font-semibold text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                                value={item.selectedQuantityValue}
+                                onChange={item.onQuantityChange}
+                                onClick={(e) => e.stopPropagation()}
+                                title={t("Select quantity to pay")}
+                              >
+                                {item.availableQuantities.map((n) => (
+                                  <option key={n} value={n}>
+                                    {n}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span
+                              className="truncate font-semibold text-slate-800 block text-[12px]"
+                              onClick={item.onNameClick}
+                            >
+                              {item.name}
+                              <span className="ml-1.5 text-[10px] font-semibold text-slate-600 whitespace-nowrap">
+                                {item.basePriceLabel} ×{item.quantity}
+                              </span>
+                            </span>
+                            {item.hasProductDiscountMeta && (
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
+                                <span className={item.discountBadgeClass}>
+                                  {item.discountLabel}
+                                </span>
+                                {item.isDiscountApplied && item.originalUnitPriceLabel && (
+                                  <span className="whitespace-nowrap">
+                                    <span className="line-through text-slate-400">
+                                      {item.originalUnitPriceLabel}
+                                    </span>{" "}
+                                    <span className="font-semibold text-fuchsia-700">
+                                      {item.basePriceLabel}
+                                    </span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          {item.paidBadge && (
+                            <span
+                              className="inline-flex items-center rounded-full bg-emerald-600/90 px-1.5 py-0.5 text-[9px] font-extrabold tracking-wide text-white shadow-sm"
+                              title={item.paidBadge}
+                            >
+                              ✓
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={item.onToggleExpand}
+                            className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] text-slate-500 hover:border-slate-300 transition-all"
+                            title={item.isExpanded ? t("Hide details") : t("Show details")}
+                          >
+                            {item.isExpanded ? "▲" : "▼"}
+                          </button>
+                          <span className="font-semibold text-indigo-600 whitespace-nowrap text-[12px]">
+                            {item.baseTotalLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {!item.isExpanded && item.hasExtrasTotal && (
+                        <div className="flex flex-col gap-0.5 pl-6 pr-1 text-[11px] text-slate-600">
+                          <div className="flex items-center justify-between">
+                            <span>{t("Extras total")}</span>
+                            <span className="font-semibold text-slate-700">{item.extrasTotalLabel}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[12px] font-semibold text-indigo-700">
+                            <span>{t("Total w/ extras")}</span>
+                            <span>{item.totalWithExtrasLabel}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {item.isExpanded && (
+                        <div className="mt-0.5 rounded-lg bg-white/60 p-1.5 text-[11px] text-slate-600 space-y-1">
+                          {item.extrasDetails?.length > 0 && (
+                            <div className="space-y-0.5">
+                              <ul className="space-y-0.5 text-xs text-slate-600">
+                                {item.extrasDetails.map((ex) => (
+                                  <li key={ex.key} className="flex justify-between">
+                                    <span>{ex.label}</span>
+                                    <span className="font-semibold text-slate-700">{ex.totalLabel}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                              <div className="flex items-center justify-between pt-1 text-xs font-semibold text-slate-700">
+                                <span>{t("Extras total")}</span>
+                                <span>{item.extrasTotalLabel}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {item.showNote && (
+                            <div className="rounded border border-yellow-200 bg-yellow-50 px-1.5 py-0.5 text-[10px] text-yellow-800">
+                              {item.note}
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 border-t border-slate-200/50">
+                            <div className="flex items-center gap-0.5">
+                              <span className="text-[9px]">{t("Qty")}: </span>
+                              <button
+                                onClick={item.onDecrement}
+                                className="h-4 w-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 font-bold text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                disabled={!item.isEditable}
+                              >
+                                −
+                              </button>
+                              <span className="min-w-[16px] text-center text-[10px]">{item.quantity}</span>
+                              <button
+                                onClick={item.onIncrement}
+                                className="h-4 w-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 font-bold text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                disabled={!item.isEditable}
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            {item.isEditable && (
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  onClick={item.onEdit}
+                                  className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
+                                  title={t("Edit item")}
+                                >
+                                  {t("Edit")}
+                                </button>
+                                <button
+                                  onClick={item.onRemove}
+                                  className="rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[9px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                                  title={t("Remove item")}
+                                >
+                                  {t("Delete")}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {paidGroups.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white/70">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-700"
+                    onClick={() => setShowPaidCartItems((prev) => !prev)}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                        {t("Paid")}
+                      </span>
+                      <span className="text-slate-500">
+                        {paidGroups.length} {t("items")}
+                      </span>
+                    </span>
+                    <span className="text-slate-400">{showPaidCartItems ? "▲" : "▼"}</span>
+                  </button>
+                  {showPaidCartItems && (
+                    <ul className="flex flex-col gap-1.5 px-2 pb-2">
+                      {renderedPaidGroups.map((item) => (
+                        <li
+                          data-cart-item="true"
+                          key={item.itemKey}
+                          className={`relative flex flex-col gap-1 overflow-hidden rounded-lg border border-slate-200 p-2 text-[13px] shadow-sm transition ${item.cardGradient}`}
+                          onClick={item.onToggleExpand}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                checked={item.isSelected}
+                                onChange={item.onSelectToggle}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              {item.isSelected && item.availableQuantities.length > 1 && (
+                                <select
+                                  className="h-7 rounded-md border border-slate-300 bg-white px-1 text-xs font-semibold text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                                  value={item.selectedQuantityValue}
+                                  onChange={item.onQuantityChange}
+                                  onClick={(e) => e.stopPropagation()}
+                                  title={t("Select quantity to refund")}
+                                >
+                                  {item.availableQuantities.map((n) => (
+                                    <option key={n} value={n}>
+                                      {n}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="truncate font-semibold text-slate-800 block">
+                                {item.name}
+                                <span className="ml-2 text-[11px] font-medium text-slate-600">
+                                  {item.basePriceLabel} ×{item.quantity}
+                                </span>
+                              </span>
+                              {item.hasProductDiscountMeta && (
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
+                                  <span className={item.discountBadgeClass}>{item.discountLabel}</span>
+                                </div>
+                              )}
+                            </div>
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                              {t("paid")}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex flex-col gap-1 text-xs text-slate-600">
+                            {item.paidMethod && (
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold">{t("Paid via")}: </span>
+                                <span className="font-semibold text-indigo-700">{item.paidMethod}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between border-t border-slate-200 pt-1 text-[12px] text-slate-500">
+                              <span>{t("Amount paid")}</span>
+                              <span className="font-semibold text-slate-900">{item.totalPaidLabel}</span>
+                            </div>
+                            {item.hasExtrasTotal && (
+                              <div className="flex items-center justify-between text-[12px] text-slate-500">
+                                <span>{t("Extras paid")}</span>
+                                <span className="font-semibold text-slate-800">{item.extrasTotalLabel}</span>
+                              </div>
+                            )}
+                          </div>
+                          {item.isExpanded && (
+                            <div className="mt-1 rounded-md bg-white/70 px-2 py-1 text-[11px] text-slate-700">
+                              {item.showNote && (
+                                <div className="break-words">
+                                  <span className="font-semibold">{t("Note")}: </span>
+                                  {item.note}
+                                </div>
+                              )}
+                              {item.extrasSummary && (
+                                <div className="mt-1">
+                                  <span className="font-semibold">{t("Extras")}: </span>
+                                  {item.extrasSummary}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {!existingReservation?.reservation_date && <div aria-hidden="true" className="min-h-0" />}
+      </div>
+    </div>
+  );
+
+  const totalsSection = variant === "desktop" ? (
+    <footer className={`flex-none ${existingReservation?.reservation_date ? "space-y-2 border-t border-slate-200 pt-3 dark:border-slate-700" : `sticky bottom-0 z-10 space-y-2 border-t border-slate-200 bg-slate-50 ${footerPadding} dark:border-slate-800 dark:bg-slate-950/70`}`}>
+      <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
+        <span>{t("Subtotal")}:</span>
+        <span className="text-slate-900 dark:text-slate-100">{subtotalLabel}</span>
+      </div>
+
+      {hasDiscount && (
+        <div className="flex justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-300">
+          <span>{discountLabel}</span>
+          <span>{discountValueLabel}</span>
+        </div>
+      )}
+
+      <div
+        className={`flex justify-between items-center rounded-2xl bg-white/90 px-3 py-3 text-lg font-bold shadow-[0_10px_20px_rgba(99,102,241,0.18)] mb-[3px] dark:bg-slate-900/60 dark:shadow-[0_10px_20px_rgba(0,0,0,0.45)]
+        ${hasSelection ? "text-emerald-700 border border-emerald-200 bg-emerald-50/80 dark:text-emerald-200 dark:border-emerald-500/30 dark:bg-emerald-950/25" : "text-indigo-700 border border-indigo-100 dark:text-indigo-200 dark:border-indigo-500/25"}`}
+      >
+        <span>{hasSelection ? t("Selected Total") : t("Total")}: </span>
+        <span>{hasSelection ? selectedTotalLabel : totalLabel}</span>
+      </div>
+    </footer>
+  ) : (
+    <div className={existingReservation?.reservation_date ? "pt-3" : "lg:hidden px-4 pb-3 pt-2"}>
+      <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-inner dark:border-slate-700/70 dark:bg-slate-950/60">
+        <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
+          <span>{t("Subtotal")}:</span>
+          <span className="text-slate-900 dark:text-slate-100">{subtotalLabel}</span>
+        </div>
+        {hasDiscount && (
+          <div className="flex justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-300">
+            <span>{discountLabel}</span>
+            <span>{discountValueLabel}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between text-sm font-bold text-indigo-700 mt-2 dark:text-indigo-200">
+          <span>{hasSelection ? t("Selected Total") : t("Total")}:</span>
+          <span>{hasSelection ? selectedTotalLabel : totalLabel}</span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <aside className={containerClasses}>
       <header className={`flex-none items-start justify-between bg-transparent ${headerPadding}`}>
@@ -359,23 +740,36 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
               </div>
             </div>
           </div>
-          <p className="text-[0.94rem] text-slate-500 dark:text-slate-300">
-            {orderId ? t("Phone Order") : `${tableLabelText} ${tableId}`}
-          </p>
-          {invoiceNumber && (
-            <div className="flex items-center gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
-                {t("Invoice")} #{invoiceNumber}
-              </p>
-              <button
-                type="button"
-                onClick={handleCartPrint}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-sm text-slate-700 shadow hover:bg-slate-200 transition dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-                title={t("Print Receipt")}
-                aria-label={t("Print Receipt")}
-              >
-                🖨️
-              </button>
+          {orderId && (
+            <p className="text-[0.94rem] text-slate-500 dark:text-slate-300">
+              {t("Phone Order")}
+            </p>
+          )}
+          {(!orderId || invoiceNumber) && (
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="min-w-0">
+                {!orderId && (
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                    {tableLabelText} {tableId}
+                  </p>
+                )}
+              </div>
+              {invoiceNumber && (
+                <div className="ml-auto flex items-center gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                    {t("Invoice")} #{invoiceNumber}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleCartPrint}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-sm text-slate-700 shadow hover:bg-slate-200 transition dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                    title={t("Print Receipt")}
+                    aria-label={t("Print Receipt")}
+                  >
+                    🖨️
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -401,444 +795,171 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
 
       {existingReservation && existingReservation.reservation_date && (
         <div className={reservationCardClassName}>
-          <div className="flex items-start justify-between gap-2">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setIsReservationExpanded((prev) => !prev)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setIsReservationExpanded((prev) => !prev);
+              }
+            }}
+            className="flex w-full items-center gap-3 text-left"
+            aria-expanded={isReservationExpanded}
+          >
+            <span className={reservationBadgeClassName}>{reservationStateLabel}</span>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className={reservationBadgeClassName}>
-                  {reservationStateLabel}
-                </span>
-                <span className={reservationMetaChipClassName}>
-                  {t("Time")} {existingReservation.reservation_time || "—"}
-                </span>
-                <span className={reservationMetaChipClassName}>
-                  {t("Guests")} {existingReservation.reservation_clients || 0}
-                </span>
-                <span className={reservationMetaChipClassName}>
-                  {existingReservation.reservation_date || "—"}
-                </span>
-              </div>
-              {(reservationCustomerName || reservationCustomerPhone) && (
-                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-700 dark:text-slate-200">
-                  {reservationCustomerName ? (
-                    <span className="truncate font-semibold">{reservationCustomerName}</span>
-                  ) : null}
-                  {reservationCustomerPhone && reservationCustomerPhoneHref ? (
-                    <a
-                      href={reservationCustomerPhoneHref}
-                      className="truncate font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800 dark:text-blue-300 dark:decoration-blue-500/40 dark:hover:text-blue-200"
-                    >
-                      {reservationCustomerPhone}
-                    </a>
-                  ) : reservationCustomerPhone ? (
-                    <span className="truncate font-semibold">{reservationCustomerPhone}</span>
-                  ) : null}
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="truncate text-[13px] font-bold text-slate-900 dark:text-slate-100">
+                  {reservationCustomerName || "—"}
                 </div>
-              )}
-              {existingReservation.reservation_notes && (
-                <p className="mt-1 text-[11px] text-slate-600 line-clamp-1 dark:text-slate-200">
-                  {existingReservation.reservation_notes}
-                </p>
-              )}
+                {reservationCustomerPhone && reservationCustomerPhoneHref ? (
+                  <a
+                    href={reservationCustomerPhoneHref}
+                    onClick={(e) => e.stopPropagation()}
+                    className="ml-auto inline-flex min-w-0 max-w-[45%] shrink truncate text-[11px] font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800 dark:text-blue-300 dark:decoration-blue-500/40 dark:hover:text-blue-200"
+                  >
+                    {reservationCustomerPhone}
+                  </a>
+                ) : reservationCustomerPhone ? (
+                  <div className="ml-auto min-w-0 max-w-[45%] shrink truncate text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                    {reservationCustomerPhone}
+                  </div>
+                ) : null}
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {!isCheckedInReservation && !isCheckedOutReservation && (
-                <button
-                  type="button"
-                  onClick={() => handleCheckinReservation?.()}
-                  className="inline-flex h-7 items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-900/20 dark:text-emerald-200 dark:hover:bg-emerald-900/35"
-                  title={t("Checkin Reservation")}
-                  aria-label={t("Checkin Reservation")}
-                >
-                  {t("Checkin")}
-                </button>
-              )}
-              {showCheckoutReservationButton && (
-                <button
-                  type="button"
-                  onClick={() => handleCheckoutReservation?.()}
-                  className="inline-flex h-7 items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-900/20 dark:text-indigo-200 dark:hover:bg-indigo-900/35"
-                  title={t("Check Out")}
-                  aria-label={t("Check Out")}
-                >
-                  {t("Check Out")}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => handleDeleteReservation?.()}
-                className="inline-flex h-7 items-center rounded-full border border-red-200 bg-red-50 px-2.5 text-[10px] font-bold text-red-700 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-900/20 dark:text-red-200 dark:hover:bg-red-900/35"
-                title={t("Delete Reservation")}
-                aria-label={t("Delete Reservation")}
-              >
-                {t("Delete")}
-              </button>
-              <button
-                type="button"
-                onClick={() => openReservationModal()}
-                className="flex items-center justify-center h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-colors dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
-                title={t("Edit Reservation")}
-                aria-label={t("Edit Reservation")}
-              >
-                <Edit2 className="h-4 w-4" />
-              </button>
+            <span
+              className={`flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-transform dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 ${
+                isReservationExpanded ? "rotate-180" : ""
+              }`}
+            >
+              <ChevronDown className="h-4 w-4" />
+            </span>
+          </div>
+
+          <div
+            className={`grid overflow-hidden transition-all duration-300 ease-out ${
+              isReservationExpanded ? "mt-2 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+            }`}
+          >
+            <div className="min-h-0">
+              <div className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <span className="inline-flex h-8 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300">
+                    <CalendarClock className="h-3.5 w-3.5" strokeWidth={2.2} />
+                    {t("Reservation")}
+                  </span>
+                  <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
+                    {!isCheckedInReservation && !isCheckedOutReservation && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCheckinReservation?.();
+                        }}
+                        className={`${reservationSecondaryActionClassName} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-900/20 dark:text-emerald-200 dark:hover:bg-emerald-900/35`}
+                        title={t("Checkin Reservation")}
+                        aria-label={t("Checkin Reservation")}
+                      >
+                        {t("Checkin")}
+                      </button>
+                    )}
+                    {showCheckoutReservationButton && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCheckoutReservation?.();
+                        }}
+                        className={`${reservationSecondaryActionClassName} border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-900/20 dark:text-indigo-200 dark:hover:bg-indigo-900/35`}
+                        title={t("Check Out")}
+                        aria-label={t("Check Out")}
+                      >
+                        {t("Check Out")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteReservation?.();
+                      }}
+                      className={`${reservationSecondaryActionClassName} border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-900/20 dark:text-red-200 dark:hover:bg-red-900/35`}
+                      title={t("Delete Reservation")}
+                      aria-label={t("Delete Reservation")}
+                    >
+                      {t("Delete")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openReservationModal();
+                      }}
+                      className={reservationEditActionClassName}
+                      title={t("Edit Reservation")}
+                      aria-label={t("Edit Reservation")}
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className={reservationMetaChipClassName}>
+                    <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" strokeWidth={2.1} />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+                        {t("Time")}
+                      </div>
+                      <div className="truncate text-[12px] font-bold text-slate-900 dark:text-slate-100">
+                        {existingReservation.reservation_time || "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={reservationMetaChipClassName}>
+                    <Users className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" strokeWidth={2.1} />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+                        {t("Guests")}
+                      </div>
+                      <div className="truncate text-[12px] font-bold text-slate-900 dark:text-slate-100">
+                        {existingReservation.reservation_clients || 0}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={reservationMetaChipClassName}>
+                    <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" strokeWidth={2.1} />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+                        {t("Date")}
+                      </div>
+                      <div className="truncate text-[12px] font-bold text-slate-900 dark:text-slate-100">
+                        {existingReservation.reservation_date || "—"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {existingReservation.reservation_notes && (
+                  <div className="flex items-start gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <p className="line-clamp-1">{existingReservation.reservation_notes}</p>
+                  </div>
+                )}
+
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      <div
-        ref={cartScrollRef}
-        onScroll={shouldWindowCart ? handleCartScroll : undefined}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
-        <div
-          className="min-h-full px-3 pb-2 grid grid-rows-[auto_1fr] gap-1.5 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
-          style={{ WebkitOverflowScrolling: "touch" }}
-        >
-          <div>
-            {cartItemsLength === 0 ? (
-              <div className="h-full rounded-2xl border border-dashed border-slate-200 bg-transparent py-8 text-center text-xs font-medium text-slate-500 grid place-items-center dark:border-slate-700 dark:text-slate-400">
-                <div>
-                  <div className="mx-auto mb-2 h-12 w-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 text-2xl leading-[48px] dark:from-slate-800 dark:to-slate-700">
-                    🛒
-                  </div>
-                  {t("Cart is empty.")}
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {unpaidGroups.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 py-4 text-center text-xs font-medium text-slate-400">
-                    {t("No unpaid items")}
-                  </div>
-                ) : (
-                  <ul className="flex flex-col gap-1.5">
-                    {renderedUnpaidGroups.map((item) => (
-                      <li
-                        data-cart-item="true"
-                        key={item.itemKey}
-                        className={`relative flex flex-col gap-0.5 overflow-hidden rounded-lg border border-slate-200 p-1.5 pl-2.5 text-[13px] shadow-xs transition border-l-[3px] ${item.cardGradient}`}
-                        style={{ borderLeftColor: item.borderLeftColor }}
-                        onClick={item.onCardClick}
-                      >
-                        <div className="flex items-center justify-between gap-0.5">
-                          <div className="flex items-center gap-1.5 flex-1">
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                checked={item.isSelected}
-                                disabled={item.isPaid}
-                                onChange={item.onSelectToggle}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              {item.isSelected && item.isEditable && item.availableQuantities.length > 1 && (
-                                <select
-                                  className="h-7 rounded-md border border-slate-300 bg-white px-1 text-xs font-semibold text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                                  value={item.selectedQuantityValue}
-                                  onChange={item.onQuantityChange}
-                                  onClick={(e) => e.stopPropagation()}
-                                  title={t("Select quantity to pay")}
-                                >
-                                  {item.availableQuantities.map((n) => (
-                                    <option key={n} value={n}>
-                                      {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <span
-                                className="truncate font-semibold text-slate-800 block text-[12px]"
-                                onClick={item.onNameClick}
-                              >
-                                {item.name}
-                                <span className="ml-1.5 text-[10px] font-semibold text-slate-600 whitespace-nowrap">
-                                  {item.basePriceLabel} ×{item.quantity}
-                                </span>
-                              </span>
-                              {item.hasProductDiscountMeta && (
-                                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
-                                  <span className={item.discountBadgeClass}>
-                                    {item.discountLabel}
-                                  </span>
-                                  {item.isDiscountApplied && item.originalUnitPriceLabel && (
-                                    <span className="whitespace-nowrap">
-                                      <span className="line-through text-slate-400">
-                                        {item.originalUnitPriceLabel}
-                                      </span>{" "}
-                                      <span className="font-semibold text-fuchsia-700">
-                                        {item.basePriceLabel}
-                                      </span>
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-0.5 flex-shrink-0">
-                            {item.paidBadge && (
-                              <span
-                                className="inline-flex items-center rounded-full bg-emerald-600/90 px-1.5 py-0.5 text-[9px] font-extrabold tracking-wide text-white shadow-sm"
-                                title={item.paidBadge}
-                              >
-                                ✓
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={item.onToggleExpand}
-                              className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] text-slate-500 hover:border-slate-300 transition-all"
-                              title={item.isExpanded ? t("Hide details") : t("Show details")}
-                            >
-                              {item.isExpanded ? "▲" : "▼"}
-                            </button>
-                            <span className="font-semibold text-indigo-600 whitespace-nowrap text-[12px]">
-                              {item.baseTotalLabel}
-                            </span>
-                          </div>
-                        </div>
+      {cartSection}
 
-                        {!item.isExpanded && item.hasExtrasTotal && (
-                          <div className="flex flex-col gap-0.5 pl-6 pr-1 text-[11px] text-slate-600">
-                            <div className="flex items-center justify-between">
-                              <span>{t("Extras total")}</span>
-                              <span className="font-semibold text-slate-700">{item.extrasTotalLabel}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-[12px] font-semibold text-indigo-700">
-                              <span>{t("Total w/ extras")}</span>
-                              <span>{item.totalWithExtrasLabel}</span>
-                            </div>
-                          </div>
-                        )}
+      {totalsSection}
 
-                        {item.isExpanded && (
-                          <div className="mt-0.5 rounded-lg bg-white/60 p-1.5 text-[11px] text-slate-600 space-y-1">
-                            {item.extrasDetails?.length > 0 && (
-                              <div className="space-y-0.5">
-                                <ul className="space-y-0.5 text-xs text-slate-600">
-                                  {item.extrasDetails.map((ex) => (
-                                    <li key={ex.key} className="flex justify-between">
-                                      <span>{ex.label}</span>
-                                      <span className="font-semibold text-slate-700">{ex.totalLabel}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                                <div className="flex items-center justify-between pt-1 text-xs font-semibold text-slate-700">
-                                  <span>{t("Extras total")}</span>
-                                  <span>{item.extrasTotalLabel}</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {item.showNote && (
-                              <div className="rounded border border-yellow-200 bg-yellow-50 px-1.5 py-0.5 text-[10px] text-yellow-800">
-                                {item.note}
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 border-t border-slate-200/50">
-                              <div className="flex items-center gap-0.5">
-                                <span className="text-[9px]">{t("Qty")}: </span>
-                                <button
-                                  onClick={item.onDecrement}
-                                  className="h-4 w-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 font-bold text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                                  disabled={!item.isEditable}
-                                >
-                                  −
-                                </button>
-                                <span className="min-w-[16px] text-center text-[10px]">{item.quantity}</span>
-                                <button
-                                  onClick={item.onIncrement}
-                                  className="h-4 w-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 font-bold text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                                  disabled={!item.isEditable}
-                                >
-                                  +
-                                </button>
-                              </div>
-
-                              {item.isEditable && (
-                                <div className="flex items-center gap-0.5">
-                                  <button
-                                    onClick={item.onEdit}
-                                    className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
-                                    title={t("Edit item")}
-                                  >
-                                    {t("Edit")}
-                                  </button>
-                                  <button
-                                    onClick={item.onRemove}
-                                    className="rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[9px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
-                                    title={t("Remove item")}
-                                  >
-                                    {t("Delete")}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {paidGroups.length > 0 && (
-                  <div className="rounded-xl border border-slate-200 bg-white/70">
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-700"
-                      onClick={() => setShowPaidCartItems((prev) => !prev)}
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-                          {t("Paid")}
-                        </span>
-                        <span className="text-slate-500">
-                          {paidGroups.length} {t("items")}
-                        </span>
-                      </span>
-                      <span className="text-slate-400">{showPaidCartItems ? "▲" : "▼"}</span>
-                    </button>
-                    {showPaidCartItems && (
-                      <ul className="flex flex-col gap-1.5 px-2 pb-2">
-                    {renderedPaidGroups.map((item) => (
-                      <li
-                        data-cart-item="true"
-                        key={item.itemKey}
-                        className={`relative flex flex-col gap-1 overflow-hidden rounded-lg border border-slate-200 p-2 text-[13px] shadow-sm transition ${item.cardGradient}`}
-                        onClick={item.onToggleExpand}
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                              checked={item.isSelected}
-                              onChange={item.onSelectToggle}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                            {item.isSelected && item.availableQuantities.length > 1 && (
-                              <select
-                                className="h-7 rounded-md border border-slate-300 bg-white px-1 text-xs font-semibold text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                                value={item.selectedQuantityValue}
-                                onChange={item.onQuantityChange}
-                                onClick={(e) => e.stopPropagation()}
-                                title={t("Select quantity to refund")}
-                              >
-                                {item.availableQuantities.map((n) => (
-                                  <option key={n} value={n}>
-                                    {n}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <span className="truncate font-semibold text-slate-800 block">
-                              {item.name}
-                              <span className="ml-2 text-[11px] font-medium text-slate-600">
-                                {item.basePriceLabel} ×{item.quantity}
-                              </span>
-                            </span>
-                            {item.hasProductDiscountMeta && (
-                              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
-                                <span className={item.discountBadgeClass}>{item.discountLabel}</span>
-                              </div>
-                            )}
-                          </div>
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-                            {t("paid")}
-                          </span>
-                        </div>
-                            <div className="mt-1 flex flex-col gap-1 text-xs text-slate-600">
-                              {item.paidMethod && (
-                                <div className="flex items-center justify-between">
-                                  <span className="font-semibold">{t("Paid via")}: </span>
-                                  <span className="font-semibold text-indigo-700">{item.paidMethod}</span>
-                                </div>
-                              )}
-                              <div className="flex items-center justify-between border-t border-slate-200 pt-1 text-[12px] text-slate-500">
-                                <span>{t("Amount paid")}</span>
-                                <span className="font-semibold text-slate-900">{item.totalPaidLabel}</span>
-                              </div>
-                              {item.hasExtrasTotal && (
-                                <div className="flex items-center justify-between text-[12px] text-slate-500">
-                                  <span>{t("Extras paid")}</span>
-                                  <span className="font-semibold text-slate-800">{item.extrasTotalLabel}</span>
-                                </div>
-                              )}
-                            </div>
-                            {item.isExpanded && (
-                              <div className="mt-1 rounded-md bg-white/70 px-2 py-1 text-[11px] text-slate-700">
-                                {item.showNote && (
-                                  <div className="break-words">
-                                    <span className="font-semibold">{t("Note")}: </span>
-                                    {item.note}
-                                  </div>
-                                )}
-                                {item.extrasSummary && (
-                                  <div className="mt-1">
-                                    <span className="font-semibold">{t("Extras")}: </span>
-                                    {item.extrasSummary}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          <div aria-hidden="true" className="min-h-0" />
-        </div>
-      </div>
-
-      {variant === "desktop" ? (
-        <footer className={`flex-none sticky bottom-0 z-10 space-y-2 border-t border-slate-200 bg-slate-50 ${footerPadding} dark:border-slate-800 dark:bg-slate-950/70`}>
-          <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-            <span>{t("Subtotal")}:</span>
-            <span className="text-slate-900 dark:text-slate-100">{subtotalLabel}</span>
-          </div>
-
-          {hasDiscount && (
-            <div className="flex justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-300">
-              <span>{discountLabel}</span>
-              <span>{discountValueLabel}</span>
-            </div>
-          )}
-
-          <div
-            className={`flex justify-between items-center rounded-2xl bg-white/90 px-3 py-3 text-lg font-bold shadow-[0_10px_20px_rgba(99,102,241,0.18)] mb-[3px] dark:bg-slate-900/60 dark:shadow-[0_10px_20px_rgba(0,0,0,0.45)]
-            ${hasSelection ? "text-emerald-700 border border-emerald-200 bg-emerald-50/80 dark:text-emerald-200 dark:border-emerald-500/30 dark:bg-emerald-950/25" : "text-indigo-700 border border-indigo-100 dark:text-indigo-200 dark:border-indigo-500/25"}`}
-          >
-            <span>{hasSelection ? t("Selected Total") : t("Total")}: </span>
-            <span>{hasSelection ? selectedTotalLabel : totalLabel}</span>
-          </div>
-        </footer>
-      ) : (
-        <div className="lg:hidden px-4 pb-3 pt-2">
-          <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-inner dark:border-slate-700/70 dark:bg-slate-950/60">
-            <div className="flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-              <span>{t("Subtotal")}:</span>
-              <span className="text-slate-900 dark:text-slate-100">{subtotalLabel}</span>
-            </div>
-            {hasDiscount && (
-              <div className="flex justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-300">
-                <span>{discountLabel}</span>
-                <span>{discountValueLabel}</span>
-              </div>
-            )}
-            <div className="flex items-center justify-between text-sm font-bold text-indigo-700 mt-2 dark:text-indigo-200">
-              <span>{hasSelection ? t("Selected Total") : t("Total")}:</span>
-              <span>{hasSelection ? selectedTotalLabel : totalLabel}</span>
-            </div>
-          </div>
+      <div className="lg:hidden px-4 pb-3 pt-2">
           <div className="mt-3 flex gap-2">
             <button
               type="button"
@@ -906,8 +1027,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
               {t("Register")}
             </button>
           </div>
-        </div>
-      )}
+      </div>
     </aside>
   );
 };
