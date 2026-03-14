@@ -66,6 +66,23 @@ function extractDriverIdCandidatesFromDriver(driver) {
     .filter(Boolean);
 }
 
+function extractDriverIdCandidatesFromUser(user) {
+  return [
+    user?.id,
+    user?.driver_id,
+    user?.staff_id,
+    user?.user_id,
+    user?.assigned_driver_id,
+    user?.assignedDriverId,
+    user?.user?.id,
+    user?.user?.driver_id,
+    user?.user?.staff_id,
+    user?.user?.user_id,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
 function extractCoordsFromOrder(order) {
   const lat = Number(
     order?.delivery_lat ??
@@ -144,38 +161,7 @@ export default function LiveRouteMap({
       ? `https://api.mapbox.com/v4/mapbox.mapbox-traffic-v1/{z}/{x}/{y}.png?access_token=${import.meta.env.VITE_MAPBOX_TOKEN}`
       : null);
   const canShowTraffic = Boolean(TRAFFIC_TILE_URL);
-  const hasSelectedDriver = String(driverId || "").trim() !== "";
-  const effectiveDriverName = driverNameOverride || resolvedDriverName || "";
-  const headerDriverLabel = hasSelectedDriver
-    ? effectiveDriverName || t("Driver")
-    : t("All Drivers");
-  const baseRoute = stopsOverride && stopsOverride.length > 1 ? stopsOverride : [];
-  const routeKey = useMemo(() => JSON.stringify(baseRoute || []), [baseRoute]);
-  const displayRoute = optimizedRoute.length ? optimizedRoute : baseRoute;
-  const displayRouteKey = useMemo(() => JSON.stringify(displayRoute || []), [displayRoute]);
-  const trackedDriverIds = useMemo(() => {
-    const explicit = String(driverId || "").trim();
-    if (explicit) return [explicit];
-
-    const fromDrivers = Array.from(
-      new Set(
-        (Array.isArray(drivers) ? drivers : [])
-          .map((driver) => extractDriverIdFromDriver(driver))
-          .filter(Boolean)
-      )
-    );
-
-    const fromOrders = Array.from(
-      new Set(
-        (Array.isArray(orders) ? orders : [])
-          .map((order) => extractDriverIdFromOrder(order))
-          .filter(Boolean)
-      )
-    );
-
-    if (fromDrivers.length) return fromDrivers;
-    return fromOrders;
-  }, [driverId, drivers, orders]);
+  const currentUserRoleRaw = String(currentUser?.role || "").trim().toLowerCase();
   const knownDriverIds = useMemo(
     () =>
       Array.from(
@@ -198,9 +184,70 @@ export default function LiveRouteMap({
       ),
     [orders]
   );
-  const selectedDriverRaw = String(driverId || "").trim();
+  const currentUserDriverIds = useMemo(() => {
+    const authIds = extractDriverIdCandidatesFromUser(currentUser);
+    if (authIds.length) return Array.from(new Set(authIds));
+
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = JSON.parse(
+        window.sessionStorage?.getItem("beyproUser") ||
+          window.localStorage?.getItem("beyproUser") ||
+          "{}"
+      );
+      return Array.from(new Set(extractDriverIdCandidatesFromUser(stored)));
+    } catch {
+      return [];
+    }
+  }, [currentUser]);
+  const inferredDriverId = useMemo(() => {
+    const explicit = String(driverId || "").trim();
+    if (explicit) return "";
+    if (currentUserRoleRaw !== "driver") return "";
+    if (!currentUserDriverIds.length) return "";
+
+    const preferredId =
+      [...knownOrderDriverIds, ...knownDriverIds].find((id) => currentUserDriverIds.includes(id)) ||
+      "";
+    return preferredId || currentUserDriverIds[0] || "";
+  }, [currentUserDriverIds, currentUserRoleRaw, driverId, knownDriverIds, knownOrderDriverIds]);
+  const selectedDriverRaw = String(driverId || inferredDriverId || "").trim();
+  const hasSelectedDriver = selectedDriverRaw !== "";
+  const effectiveDriverName = driverNameOverride || resolvedDriverName || "";
+  const headerDriverLabel = hasSelectedDriver
+    ? effectiveDriverName || t("Driver")
+    : t("All Drivers");
+  const baseRoute = stopsOverride && stopsOverride.length > 1 ? stopsOverride : [];
+  const routeKey = useMemo(() => JSON.stringify(baseRoute || []), [baseRoute]);
+  const displayRoute = optimizedRoute.length ? optimizedRoute : baseRoute;
+  const displayRouteKey = useMemo(() => JSON.stringify(displayRoute || []), [displayRoute]);
+  const trackedDriverIds = useMemo(() => {
+    if (selectedDriverRaw) return [selectedDriverRaw];
+
+    const fromDrivers = Array.from(
+      new Set(
+        (Array.isArray(drivers) ? drivers : [])
+          .map((driver) => extractDriverIdFromDriver(driver))
+          .filter(Boolean)
+      )
+    );
+
+    const fromOrders = Array.from(
+      new Set(
+        (Array.isArray(orders) ? orders : [])
+          .map((order) => extractDriverIdFromOrder(order))
+          .filter(Boolean)
+      )
+    );
+
+    if (fromOrders.length) return fromOrders;
+    return fromDrivers;
+  }, [drivers, orders, selectedDriverRaw]);
   const locationDebugKeyRef = useRef("");
-  const currentUserIdRaw = String(currentUser?.id ?? "").trim();
+  const isCurrentUserSelectedDriver = useMemo(() => {
+    if (!selectedDriverRaw) return false;
+    return currentUserDriverIds.includes(selectedDriverRaw);
+  }, [currentUserDriverIds, selectedDriverRaw]);
 
   const nearbyCounts = useMemo(() => {
     if (!stops.length) return [];
@@ -555,6 +602,7 @@ export default function LiveRouteMap({
       ) || null;
 
     const payload = {
+      inferredDriverId,
       selectedDriverId: selectedDriverRaw,
       trackedDriverIds,
       selectedDriverFoundInDrivers: knownDriverIds.includes(selectedDriverRaw),
@@ -586,6 +634,7 @@ export default function LiveRouteMap({
     hasSelectedDriver,
     knownDriverIds,
     knownOrderDriverIds,
+    inferredDriverId,
     selectedDriverRaw,
     trackedDriverIds,
   ]);
@@ -593,10 +642,33 @@ export default function LiveRouteMap({
   useEffect(() => {
     if (!hasSelectedDriver) return;
     if (!selectedDriverRaw) return;
-    if (!currentUserIdRaw || currentUserIdRaw !== selectedDriverRaw) return;
     if (typeof window === "undefined") return;
-    if (!window.isSecureContext) return;
-    if (!navigator?.geolocation) return;
+    if (!isCurrentUserSelectedDriver) {
+      if (import.meta.env.DEV) {
+        console.info("🧭 [LiveRouteMap] Skipping browser GPS: selected driver does not match current user", {
+          selectedDriverId: selectedDriverRaw,
+          currentUserDriverIds,
+        });
+      }
+      return;
+    }
+    if (!window.isSecureContext) {
+      if (import.meta.env.DEV) {
+        console.warn("⚠️ [LiveRouteMap] Browser GPS requires localhost or HTTPS", {
+          origin: window.location.origin,
+          isSecureContext: window.isSecureContext,
+        });
+      }
+      return;
+    }
+    if (!navigator?.geolocation) {
+      if (import.meta.env.DEV) {
+        console.warn("⚠️ [LiveRouteMap] Browser geolocation API unavailable", {
+          userAgent: navigator?.userAgent || "",
+        });
+      }
+      return;
+    }
 
     let isMounted = true;
     let watchId = null;
@@ -688,7 +760,7 @@ export default function LiveRouteMap({
         navigator.geolocation.clearWatch(watchId);
       }
     };
-  }, [currentUserIdRaw, hasSelectedDriver, selectedDriverRaw]);
+  }, [currentUserDriverIds, hasSelectedDriver, isCurrentUserSelectedDriver, selectedDriverRaw]);
 
   useEffect(() => {
     const map = mapRef.current;
