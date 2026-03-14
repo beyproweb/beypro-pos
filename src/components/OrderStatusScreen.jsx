@@ -1,8 +1,10 @@
 // src/components/OrderStatusScreen.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { io } from "socket.io-client";
+import { Navigation } from "lucide-react";
 import secureFetch, { getAuthToken, BASE_URL } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
+import CustomerOrderTrackingView from "./CustomerOrderTrackingView";
 // Use the same base as secureFetch to avoid env drift
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
@@ -434,6 +436,8 @@ function OrderSummaryCard({
   title,
   statusLabel,
   statusToneClass,
+  headerActionLabel,
+  onHeaderAction,
   driverMessage,
   timerLabel,
   paymentLabel,
@@ -447,7 +451,7 @@ function OrderSummaryCard({
   return (
     <section className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-4">
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
             {title}
           </div>
@@ -471,15 +475,28 @@ function OrderSummaryCard({
           ) : null}
         </div>
 
-        <div
-          className={[
-            "shrink-0 text-xs px-2.5 py-1 rounded-full border font-semibold shadow-sm",
-            isCancelled
-              ? "bg-rose-50 dark:bg-rose-950/30 text-rose-700 border-rose-200 dark:border-rose-900"
-              : statusToneClass || "bg-neutral-50 dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-800",
-          ].join(" ")}
-        >
-          {statusLabel}
+        <div className="shrink-0 flex items-center gap-2">
+          {typeof onHeaderAction === "function" && headerActionLabel ? (
+            <button
+              type="button"
+              onClick={onHeaderAction}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-sky-400/18 bg-slate-950/96 px-3 text-[11px] font-semibold text-sky-100 shadow-[0_14px_30px_rgba(2,8,23,0.52)] transition hover:bg-slate-900"
+            >
+              <Navigation className="h-3.5 w-3.5" />
+              <span>{headerActionLabel}</span>
+            </button>
+          ) : null}
+
+          <div
+            className={[
+              "shrink-0 text-xs px-2.5 py-1 rounded-full border font-semibold shadow-sm",
+              isCancelled
+                ? "bg-rose-50 dark:bg-rose-950/30 text-rose-700 border-rose-200 dark:border-rose-900"
+                : statusToneClass || "bg-neutral-50 dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-800",
+            ].join(" ")}
+          >
+            {statusLabel}
+          </div>
         </div>
       </div>
 
@@ -702,6 +719,7 @@ const OrderStatusScreen = ({
   const [timer, setTimer] = useState("00:00");
   const [order404, setOrder404] = useState(false);
   const [checkedInSticky, setCheckedInSticky] = useState(false);
+  const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const intervalRef = useRef(null);
   const joinedRestaurantRef = useRef(null);
   const driversCacheRef = useRef({ fetchedAtMs: 0, byId: new Map() });
@@ -717,6 +735,7 @@ const OrderStatusScreen = ({
     setOrder(null);
     setItems([]);
     setOrder404(false);
+    setIsTrackingOpen(false);
   }, [orderId]);
 
   useEffect(() => {
@@ -1353,14 +1372,19 @@ const OrderStatusScreen = ({
     !isReservedOrderContext && effectiveOrderStatus === "on_road" && driverName
       ? `${driverName} ${t("picked up your order", { defaultValue: "picked up your order" })}`
       : "";
+  const deliveryAddress = String(order?.customer_address || "").trim();
+  const isDeliveryOrderContext =
+    !isTableContextOrder &&
+    (["packet", "delivery", "online", "phone"].includes(normalizedOrderType) || Boolean(deliveryAddress));
+  const shouldShowFollowOrder = isDeliveryOrderContext && !isReservedOrderContext && !isCancelledFlow;
 
-		  const titleLine = (() => {
-	    const tableLine = tableNo ? `${t("Table")} ${tableNo}` : null;
-	    const ot = String(order?.order_type || "")
-	      .trim()
-	      .toLowerCase();
-	    if (ot === "table") {
-	      return tableLine || t("Table");
+  const titleLine = (() => {
+    const tableLine = tableNo ? `${t("Table")} ${tableNo}` : null;
+    const ot = String(order?.order_type || "")
+      .trim()
+      .toLowerCase();
+    if (ot === "table") {
+      return tableLine || t("Table");
     }
     return [orderTypeLabel, tableLine].filter(Boolean).join(" • ");
   })();
@@ -1396,6 +1420,8 @@ const OrderStatusScreen = ({
             title={titleLine || t("Your Order")}
             statusLabel={isCancelledFlow ? t("Cancelled") : displayStatus(effectiveOrderStatus)}
             statusToneClass={badgeColor(effectiveOrderStatus)}
+            headerActionLabel={shouldShowFollowOrder ? t("Follow my order") : ""}
+            onHeaderAction={shouldShowFollowOrder ? () => setIsTrackingOpen(true) : null}
             driverMessage={driverMessage}
             timerLabel={isCancelledFlow ? t("—") : `${timer}`}
             paymentLabel={effectivePaymentLabel}
@@ -1457,6 +1483,16 @@ const OrderStatusScreen = ({
 
         </div>
       </main>
+
+      <CustomerOrderTrackingView
+        open={isTrackingOpen}
+        orderId={orderId}
+        buildUrl={buildUrl}
+        appendIdentifier={appendIdentifier}
+        socketInstance={socket}
+        onClose={() => setIsTrackingOpen(false)}
+        t={t}
+      />
     </div>
   );
 };

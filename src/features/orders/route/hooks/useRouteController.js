@@ -93,6 +93,7 @@ export function useRouteController({
     () => ({
       open: routeOpen,
       stops,
+      drivers,
       selectedDriver: selectedDriverMeta.selectedDriver,
       selectedDriverId,
       orders: ordersForRouteMap,
@@ -100,6 +101,7 @@ export function useRouteController({
     }),
     [
       closeRoute,
+      drivers,
       ordersForRouteMap,
       routeOpen,
       selectedDriverId,

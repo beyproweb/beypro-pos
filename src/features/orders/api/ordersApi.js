@@ -11,7 +11,25 @@ export async function fetchDriversApi(secureFetch, requestOptions = {}) {
 }
 
 export async function fetchCurrentRestaurantApi(secureFetch, requestOptions = {}) {
-  return secureFetch("/me", requestOptions);
+  const skipProbe =
+    typeof window !== "undefined" &&
+    window.localStorage?.getItem("__beypro_skip_me_probe") === "1";
+  if (skipProbe) return {};
+
+  try {
+    return await secureFetch("/me", requestOptions);
+  } catch (err) {
+    const status = Number(err?.details?.status ?? err?.status);
+    if (status === 404) {
+      try {
+        window.localStorage?.setItem("__beypro_skip_me_probe", "1");
+      } catch {
+        // ignore storage failures
+      }
+      return {};
+    }
+    throw err;
+  }
 }
 
 export async function fetchIntegrationsSettingsApi(secureFetch, requestOptions = {}) {

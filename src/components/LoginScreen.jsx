@@ -81,6 +81,11 @@ export default function LoginScreen() {
       } catch {}
 
       authStorage.setItem("token", data.token);
+      try {
+        localStorage.removeItem("__beypro_skip_me_probe");
+      } catch {
+        // ignore storage errors
+      }
       if (normalizedUser.restaurant_id) {
         localStorage.setItem("restaurant_id", normalizedUser.restaurant_id);
       } else {

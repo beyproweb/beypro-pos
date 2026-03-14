@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { MapContainer, TileLayer, Polyline, Marker, Popup, WMSTileLayer, Tooltip } from "react-leaflet";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import polyline from "@mapbox/polyline";
 import "leaflet/dist/leaflet.css";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 import socket from "../utils/socket";
+import { useAuth } from "../context/AuthContext";
+import RouteSummaryCard from "./RouteSummaryCard";
+import { getRouteLegSummaries } from "./liveRouteSummary";
 
 // Custom marker colors
 const MARKER_COLORS = {
@@ -15,6 +18,74 @@ const MARKER_COLORS = {
   completed: "#8B5CF6", // Purple
   restaurant: "#3B82F6", // Blue
 };
+
+function extractDriverIdFromOrder(order) {
+  const direct = order?.driver_id;
+  const directCandidates =
+    direct && typeof direct === "object"
+      ? [direct.id, direct.driver_id, direct.staff_id, direct.user_id]
+      : [direct];
+  const nestedDriver = order?.driver;
+  const nestedCandidates =
+    nestedDriver && typeof nestedDriver === "object"
+      ? [nestedDriver.id, nestedDriver.driver_id, nestedDriver.staff_id, nestedDriver.user_id]
+      : [];
+
+  return (
+    [...directCandidates, order?.driverId, order?.assigned_driver_id, order?.assignedDriverId, ...nestedCandidates]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || ""
+  );
+}
+
+function extractDriverIdFromDriver(driver) {
+  return (
+    [
+      driver?.id,
+      driver?.driver_id,
+      driver?.staff_id,
+      driver?.user_id,
+      driver?.assigned_driver_id,
+      driver?.assignedDriverId,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || ""
+  );
+}
+
+function extractDriverIdCandidatesFromDriver(driver) {
+  return [
+    driver?.id,
+    driver?.driver_id,
+    driver?.staff_id,
+    driver?.user_id,
+    driver?.assigned_driver_id,
+    driver?.assignedDriverId,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+function extractCoordsFromOrder(order) {
+  const lat = Number(
+    order?.delivery_lat ??
+      order?.delivery_latitude ??
+      order?.lat ??
+      order?.latitude ??
+      order?.pickup_lat ??
+      order?.pickup_latitude
+  );
+  const lng = Number(
+    order?.delivery_lng ??
+      order?.delivery_longitude ??
+      order?.lng ??
+      order?.longitude ??
+      order?.pickup_lng ??
+      order?.pickup_longitude
+  );
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
 
 /**
  * Professional Google Maps-style delivery map interface
@@ -31,13 +102,21 @@ export default function LiveRouteMap({
   driverNameOverride,
   driverId,
   orders = [],
+  drivers = [],
   onClose,
   onOrderDelivered,
 }) {
   const [driverPos, setDriverPos] = useState(null);
+  const [driverPositions, setDriverPositions] = useState([]);
+  const [resolvedDriverName, setResolvedDriverName] = useState("");
   const [routeCoords, setRouteCoords] = useState(null);
+  const [routeDirections, setRouteDirections] = useState(null);
+  const [routeMetricsLoading, setRouteMetricsLoading] = useState(false);
   const [nextStop, setNextStop] = useState(null);
   const [liveRouteCoords, setLiveRouteCoords] = useState(null);
+  const [firstLegOverride, setFirstLegOverride] = useState(null);
+  const [firstLegMetricsLoading, setFirstLegMetricsLoading] = useState(false);
+  const [activeStopIndex, setActiveStopIndex] = useState(null);
   const [selectedMarker, setSelectedMarker] = useState(null);
   const [mapType, setMapType] = useState("standard"); // "standard" or "satellite"
   const [showTraffic, setShowTraffic] = useState(false);
@@ -45,11 +124,18 @@ export default function LiveRouteMap({
   const [stops, setStops] = useState([]);
   const [optimizedRoute, setOptimizedRoute] = useState([]);
   const [showStopsPanel, setShowStopsPanel] = useState(false);
+  const [showSidebarStops, setShowSidebarStops] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [markingDelivered, setMarkingDelivered] = useState(false);
   const [lastUpdateAt, setLastUpdateAt] = useState(() => Date.now());
   
   const mapRef = useRef(null);
   const scooterMarkerRef = useRef(null);
+  const autoSelectedRouteKeyRef = useRef("");
+  const fittedViewportKeyRef = useRef("");
+  const failedLocationIdsRef = useRef(new Map());
+  const auth = useAuth();
+  const currentUser = auth?.currentUser || null;
   const { t } = useTranslation();
   // traffic tile URL can be configured via env: VITE_TRAFFIC_TILE_URL or use Mapbox token
   const TRAFFIC_TILE_URL =
@@ -57,9 +143,64 @@ export default function LiveRouteMap({
     (import.meta.env.VITE_MAPBOX_TOKEN
       ? `https://api.mapbox.com/v4/mapbox.mapbox-traffic-v1/{z}/{x}/{y}.png?access_token=${import.meta.env.VITE_MAPBOX_TOKEN}`
       : null);
+  const canShowTraffic = Boolean(TRAFFIC_TILE_URL);
   const hasSelectedDriver = String(driverId || "").trim() !== "";
+  const effectiveDriverName = driverNameOverride || resolvedDriverName || "";
+  const headerDriverLabel = hasSelectedDriver
+    ? effectiveDriverName || t("Driver")
+    : t("All Drivers");
   const baseRoute = stopsOverride && stopsOverride.length > 1 ? stopsOverride : [];
   const routeKey = useMemo(() => JSON.stringify(baseRoute || []), [baseRoute]);
+  const displayRoute = optimizedRoute.length ? optimizedRoute : baseRoute;
+  const displayRouteKey = useMemo(() => JSON.stringify(displayRoute || []), [displayRoute]);
+  const trackedDriverIds = useMemo(() => {
+    const explicit = String(driverId || "").trim();
+    if (explicit) return [explicit];
+
+    const fromDrivers = Array.from(
+      new Set(
+        (Array.isArray(drivers) ? drivers : [])
+          .map((driver) => extractDriverIdFromDriver(driver))
+          .filter(Boolean)
+      )
+    );
+
+    const fromOrders = Array.from(
+      new Set(
+        (Array.isArray(orders) ? orders : [])
+          .map((order) => extractDriverIdFromOrder(order))
+          .filter(Boolean)
+      )
+    );
+
+    if (fromDrivers.length) return fromDrivers;
+    return fromOrders;
+  }, [driverId, drivers, orders]);
+  const knownDriverIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (Array.isArray(drivers) ? drivers : []).flatMap((driver) =>
+            extractDriverIdCandidatesFromDriver(driver)
+          )
+        )
+      ),
+    [drivers]
+  );
+  const knownOrderDriverIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (Array.isArray(orders) ? orders : [])
+            .map((order) => extractDriverIdFromOrder(order))
+            .filter(Boolean)
+        )
+      ),
+    [orders]
+  );
+  const selectedDriverRaw = String(driverId || "").trim();
+  const locationDebugKeyRef = useRef("");
+  const currentUserIdRaw = String(currentUser?.id ?? "").trim();
 
   const nearbyCounts = useMemo(() => {
     if (!stops.length) return [];
@@ -123,9 +264,14 @@ export default function LiveRouteMap({
 
   // Initialize stops with status info
   useEffect(() => {
-    if (!optimizedRoute.length) return;
+    if (!displayRoute.length) {
+      setStops([]);
+      setActiveStopIndex(null);
+      setSelectedMarker(null);
+      return;
+    }
 
-    const stopsWithStatus = optimizedRoute.map((stop, idx) => {
+    const stopsWithStatus = displayRoute.map((stop, idx) => {
       // Try multiple matching strategies to find the corresponding order
       let order = null;
       
@@ -171,7 +317,21 @@ export default function LiveRouteMap({
       return {
         ...stop,
         index: idx,
-        status: order?.status || order?.delivery_status || "ready",
+        driverId: extractDriverIdFromOrder(order) || null,
+        hasKitchenExcludedItem: Array.isArray(order?.items)
+          ? order.items.some(
+              (item) => item?.kitchen_excluded === true || item?.excluded === true
+            )
+          : false,
+        status:
+          order?.driver_status ||
+          (order?.delivered_at ? "delivered" : "") ||
+          order?.delivery_status ||
+          order?.status ||
+          "ready",
+        kitchenStatus: order?.kitchen_status || order?.overallKitchenStatus || "",
+        externalSource: order?.external_source || "",
+        externalId: order?.external_id || null,
         orderId: order?.id || order?.order_id || stop.orderId,
         customerName: order?.customer_name || order?.customer || stop.label || `Stop ${idx}`,
         address: order?.customer_address || order?.address || stop.address || stop.label || "Unknown Address",
@@ -180,16 +340,21 @@ export default function LiveRouteMap({
         phone: order?.customer_phone || order?.phone,
       };
     });
-    
+
     setStops(stopsWithStatus);
-    // Auto-select the first customer stop (index 1) so address/details are visible immediately
-    if (!selectedMarker && stopsWithStatus.length > 1) {
+    const autoSelectKey = JSON.stringify(
+      stopsWithStatus.map((stop) => [stop.orderId || null, stop.lat, stop.lng, stop.status || ""])
+    );
+
+    if (autoSelectedRouteKeyRef.current !== autoSelectKey && stopsWithStatus.length > 1) {
       const firstCustomer = stopsWithStatus[1];
       if (firstCustomer) {
-        setSelectedMarker({ ...firstCustomer, index: 1 });
+        autoSelectedRouteKeyRef.current = autoSelectKey;
+        setActiveStopIndex(1);
+        setSelectedMarker(null);
       }
     }
-  }, [optimizedRoute, orders, selectedMarker]);
+  }, [displayRoute, orders]);
 
   // Optimize route ordering (when route changes)
   useEffect(() => {
@@ -207,6 +372,7 @@ export default function LiveRouteMap({
         if (isMounted) setOptimizedRoute(baseRoute);
         return;
       }
+      if (isMounted) setOptimizedRoute(baseRoute);
       try {
         const optimizeBody = {
           waypoints: baseRoute.map((pt) => ({
@@ -237,38 +403,101 @@ export default function LiveRouteMap({
     };
   }, [hasSelectedDriver, routeKey]);
 
-  // Fetch driver's real-time location
+  // Fetch real-time driver location(s)
   useEffect(() => {
-    if (!driverId) return;
+    if (!trackedDriverIds.length) {
+      setDriverPos(null);
+      setDriverPositions([]);
+      return;
+    }
     let isMounted = true;
 
-    const fetchLocation = async () => {
+    const fetchLocations = async () => {
+      const now = Date.now();
+      const retryDelayMs = 60_000;
+      const idsToQuery = trackedDriverIds.filter((id) => {
+        const failedAt = failedLocationIdsRef.current.get(String(id));
+        return !failedAt || now - failedAt >= retryDelayMs;
+      });
+
+      if (!idsToQuery.length) {
+        if (isMounted) setLastUpdateAt(Date.now());
+        return;
+      }
+
       try {
-        const data = await secureFetch(`drivers/location/${driverId}`);
-        if (isMounted && typeof data?.lat === "number" && typeof data?.lng === "number") {
-          setDriverPos({ lat: data.lat, lng: data.lng });
-          setLastUpdateAt(Date.now());
-        } else if (isMounted) {
+        const results = await Promise.all(
+          idsToQuery.map(async (id) => {
+            try {
+              const data = await secureFetch(`drivers/location/${id}`);
+              if (typeof data?.lat === "number" && typeof data?.lng === "number") {
+                failedLocationIdsRef.current.delete(String(id));
+                return { driverId: String(id), lat: data.lat, lng: data.lng };
+              }
+            } catch (err) {
+              const status = Number(err?.details?.status ?? err?.status);
+              if (status === 404) {
+                failedLocationIdsRef.current.set(String(id), Date.now());
+                if (import.meta.env.DEV) {
+                  console.warn("⚠️ [LiveRouteMap] /drivers/location returned 404", {
+                    requestedDriverId: String(id),
+                    selectedDriverId: selectedDriverRaw,
+                    trackedDriverIds,
+                    knownDriverIds,
+                    knownOrderDriverIds,
+                    message:
+                      "No location key found for this driver id. Check if mobile app posts /drivers/location with same driver_id value.",
+                  });
+                }
+              }
+              return null;
+            }
+            return null;
+          })
+        );
+
+        if (!isMounted) return;
+        const nextPositions = results.filter(Boolean);
+        setDriverPositions(nextPositions);
+        if (nextPositions.length === 1) {
+          setDriverPos({ lat: nextPositions[0].lat, lng: nextPositions[0].lng });
+        } else {
           setDriverPos(null);
-          setLastUpdateAt(Date.now());
         }
+        setLastUpdateAt(Date.now());
       } catch {
         if (isMounted) {
           setDriverPos(null);
+          setDriverPositions([]);
           setLastUpdateAt(Date.now());
         }
       }
     };
 
-    fetchLocation();
-    const interval = setInterval(fetchLocation, 5000);
+    fetchLocations();
+    const interval = setInterval(fetchLocations, 5000);
 
     // Socket.io real-time updates
     const handleDriverUpdate = (data) => {
-      if (data.driver_id === Number(driverId) && isMounted) {
+      const rawDriverId = String(data?.driver_id || "").trim();
+      if (!rawDriverId || !trackedDriverIds.includes(rawDriverId) || !isMounted) return;
+      failedLocationIdsRef.current.delete(rawDriverId);
+
+      setDriverPositions((prev) => {
+        const next = [...prev];
+        const index = next.findIndex((entry) => String(entry.driverId) === rawDriverId);
+        const entry = { driverId: rawDriverId, lat: data.lat, lng: data.lng };
+        if (index >= 0) next[index] = entry;
+        else next.push(entry);
+        return next;
+      });
+
+      if (trackedDriverIds.length === 1) {
         setDriverPos({ lat: data.lat, lng: data.lng });
-        setLastUpdateAt(Date.now());
+      } else {
+        setDriverPos(null);
       }
+      setLastUpdateAt(Date.now());
     };
 
     socket.on("driver_location_updated", handleDriverUpdate);
@@ -278,19 +507,232 @@ export default function LiveRouteMap({
       clearInterval(interval);
       socket.off("driver_location_updated", handleDriverUpdate);
     };
-  }, [driverId]);
+  }, [knownDriverIds, knownOrderDriverIds, selectedDriverRaw, trackedDriverIds]);
 
-  // Update next stop and live route
+  const visibleDriverPositions = useMemo(
+    () =>
+      driverPositions.filter(
+        (entry) => typeof entry?.lat === "number" && typeof entry?.lng === "number"
+      ),
+    [driverPositions]
+  );
+  const fallbackDriverPositions = useMemo(() => {
+    const liveIds = new Set(visibleDriverPositions.map((entry) => String(entry.driverId || "").trim()));
+    const fallbackByDriver = new Map();
+
+    (Array.isArray(orders) ? orders : []).forEach((order) => {
+      const id = extractDriverIdFromOrder(order);
+      if (!id || liveIds.has(id) || fallbackByDriver.has(id)) return;
+      const coords = extractCoordsFromOrder(order);
+      if (!coords) return;
+      fallbackByDriver.set(id, { driverId: id, lat: coords.lat, lng: coords.lng, approximate: true });
+    });
+
+    return Array.from(fallbackByDriver.values());
+  }, [orders, visibleDriverPositions]);
+  const allDriverMarkerPositions = useMemo(
+    () => [...visibleDriverPositions, ...fallbackDriverPositions],
+    [fallbackDriverPositions, visibleDriverPositions]
+  );
+  const selectedDriverFallbackPos = useMemo(() => {
+    if (!hasSelectedDriver) return null;
+    const explicit = String(driverId || "").trim();
+    if (!explicit) return null;
+    const match = (Array.isArray(orders) ? orders : []).find(
+      (order) => extractDriverIdFromOrder(order) === explicit
+    );
+    if (!match) return null;
+    return extractCoordsFromOrder(match);
+  }, [driverId, hasSelectedDriver, orders]);
+
   useEffect(() => {
-    if (stops.length >= 2) {
-      const nextUndelivered = stops.find((s, idx) => idx > 0 && !s.delivered);
-      setNextStop(nextUndelivered || stops[stops.length - 1]);
+    if (!import.meta.env.DEV) return;
+    if (!hasSelectedDriver) return;
+
+    const matchedDriver =
+      (Array.isArray(drivers) ? drivers : []).find((driver) =>
+        extractDriverIdCandidatesFromDriver(driver).includes(selectedDriverRaw)
+      ) || null;
+
+    const payload = {
+      selectedDriverId: selectedDriverRaw,
+      trackedDriverIds,
+      selectedDriverFoundInDrivers: knownDriverIds.includes(selectedDriverRaw),
+      knownDriverIds,
+      knownOrderDriverIds,
+      matchedDriver: matchedDriver
+        ? {
+            id: matchedDriver.id,
+            staff_id: matchedDriver.staff_id,
+            user_id: matchedDriver.user_id,
+            driver_id: matchedDriver.driver_id,
+            name:
+              matchedDriver.name ||
+              matchedDriver.full_name ||
+              matchedDriver.driver_name ||
+              matchedDriver.username ||
+              "",
+          }
+        : null,
+    };
+
+    const payloadKey = JSON.stringify(payload);
+    if (locationDebugKeyRef.current === payloadKey) return;
+    locationDebugKeyRef.current = payloadKey;
+
+    console.info("🧭 [LiveRouteMap] Driver location debug snapshot", payload);
+  }, [
+    drivers,
+    hasSelectedDriver,
+    knownDriverIds,
+    knownOrderDriverIds,
+    selectedDriverRaw,
+    trackedDriverIds,
+  ]);
+
+  useEffect(() => {
+    if (!hasSelectedDriver) return;
+    if (!selectedDriverRaw) return;
+    if (!currentUserIdRaw || currentUserIdRaw !== selectedDriverRaw) return;
+    if (typeof window === "undefined") return;
+    if (!window.isSecureContext) return;
+    if (!navigator?.geolocation) return;
+
+    let isMounted = true;
+    let watchId = null;
+
+    const postPosition = async (position, source) => {
+      if (!isMounted || !position?.coords) return;
+      const lat = Number(position.coords.latitude);
+      const lng = Number(position.coords.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      try {
+        await secureFetch("/drivers/location", {
+          method: "POST",
+          body: JSON.stringify({
+            driver_id: selectedDriverRaw,
+            lat,
+            lng,
+          }),
+        });
+        failedLocationIdsRef.current.delete(selectedDriverRaw);
+        setDriverPos({ lat, lng });
+        setDriverPositions((prev) => {
+          const next = [...prev];
+          const idx = next.findIndex((entry) => String(entry?.driverId) === selectedDriverRaw);
+          const payload = { driverId: selectedDriverRaw, lat, lng };
+          if (idx >= 0) next[idx] = payload;
+          else next.push(payload);
+          return next;
+        });
+        if (import.meta.env.DEV) {
+          console.info("📡 [LiveRouteMap] Published browser GPS for selected driver", {
+            driverId: selectedDriverRaw,
+            source,
+            lat,
+            lng,
+          });
+        }
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.warn("⚠️ [LiveRouteMap] Failed to publish browser GPS", {
+            driverId: selectedDriverRaw,
+            source,
+            error: String(err?.message || err),
+          });
+        }
+      }
+    };
+
+    const onError = (err) => {
+      if (import.meta.env.DEV) {
+        console.warn("⚠️ [LiveRouteMap] Browser geolocation failed", {
+          driverId: selectedDriverRaw,
+          code: err?.code,
+          message: err?.message,
+        });
+      }
+    };
+
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 10000,
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => postPosition(position, "getCurrentPosition"),
+      onError,
+      options
+    );
+
+    watchId = navigator.geolocation.watchPosition(
+      (position) => postPosition(position, "watchPosition"),
+      onError,
+      options
+    );
+
+    const heartbeat = window.setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => postPosition(position, "heartbeat"),
+        onError,
+        options
+      );
+    }, 15000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(heartbeat);
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [currentUserIdRaw, hasSelectedDriver, selectedDriverRaw]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (hasSelectedDriver) return;
+    if (!allDriverMarkerPositions.length) return;
+
+    const points = [...displayRoute, ...allDriverMarkerPositions].filter(
+      (point) => typeof point?.lat === "number" && typeof point?.lng === "number"
+    );
+    if (!points.length) return;
+
+    const viewportKey = JSON.stringify({
+      driverIds: trackedDriverIds,
+      stopCount: displayRoute.length,
+      driverCount: allDriverMarkerPositions.length,
+    });
+    if (fittedViewportKeyRef.current === viewportKey) return;
+    fittedViewportKeyRef.current = viewportKey;
+
+    try {
+      const bounds = L.latLngBounds(points.map((point) => [point.lat, point.lng]));
+      map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 });
+    } catch {
+      // ignore fitBounds failures
     }
-  }, [stops]);
+  }, [allDriverMarkerPositions, displayRoute, hasSelectedDriver, trackedDriverIds]);
 
-  // Fetch live driver route to next stop
+  // Keep the single-driver live route only when exactly one driver is being tracked.
   useEffect(() => {
-    if (!driverPos || !nextStop) return;
+    if (trackedDriverIds.length !== 1) {
+      setLiveRouteCoords(null);
+      setFirstLegOverride(null);
+      setFirstLegMetricsLoading(false);
+    }
+  }, [trackedDriverIds.length]);
+
+  useEffect(() => {
+    if (trackedDriverIds.length !== 1) return;
+    if (!driverPos || !nextStop) {
+      setFirstLegOverride(null);
+      setFirstLegMetricsLoading(false);
+      return;
+    }
 
     let isMounted = true;
 
@@ -305,8 +747,29 @@ export default function LiveRouteMap({
       });
 
       try {
+        if (isMounted) setFirstLegMetricsLoading(true);
         const data = await secureFetch(`drivers/google-directions?${params.toString()}`);
+        const liveRoute = data?.routes?.[0] || null;
+        const liveLeg = liveRoute?.legs?.[0] || null;
+        if (isMounted) {
+          setFirstLegOverride({
+            leg: liveLeg,
+            approximate: false,
+            startPoint: driverPos,
+            sourceLabel: effectiveDriverName || t("Driver"),
+            targetOrderId: nextStop?.orderId || null,
+            targetLat: nextStop?.lat,
+            targetLng: nextStop?.lng,
+          });
+        }
         if (
+          isMounted &&
+          data.decoded_polyline &&
+          Array.isArray(data.decoded_polyline) &&
+          data.decoded_polyline.length > 0
+        ) {
+          setLiveRouteCoords(data.decoded_polyline);
+        } else if (
           isMounted &&
           data.routes &&
           data.routes[0] &&
@@ -315,14 +778,90 @@ export default function LiveRouteMap({
           const points = polyline.decode(data.routes[0].overview_polyline.points);
           const latlngs = points.map(([lat, lng]) => ({ lat, lng }));
           setLiveRouteCoords(latlngs);
+        } else if (isMounted) {
+          setLiveRouteCoords([
+            { lat: driverPos.lat, lng: driverPos.lng },
+            { lat: nextStop.lat, lng: nextStop.lng },
+          ]);
         }
       } catch (err) {
-        if (isMounted) console.error("Failed to fetch live driver route:", err);
+        if (isMounted) {
+          console.error("Failed to fetch live driver route:", err);
+          setFirstLegOverride({
+            leg: null,
+            approximate: true,
+            startPoint: driverPos,
+            sourceLabel: effectiveDriverName || t("Driver"),
+            targetOrderId: nextStop?.orderId || null,
+            targetLat: nextStop?.lat,
+            targetLng: nextStop?.lng,
+          });
+          setLiveRouteCoords([
+            { lat: driverPos.lat, lng: driverPos.lng },
+            { lat: nextStop.lat, lng: nextStop.lng },
+          ]);
+        }
+      } finally {
+        if (isMounted) setFirstLegMetricsLoading(false);
       }
     };
 
     fetchLiveRoute();
-  }, [driverPos, nextStop]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [driverPos, effectiveDriverName, nextStop, t, trackedDriverIds.length]);
+
+  // Update next stop
+  useEffect(() => {
+    if (stops.length >= 2) {
+      const nextUndelivered = stops.find((s, idx) => idx > 0 && !s.delivered);
+      setNextStop(nextUndelivered || stops[stops.length - 1]);
+    }
+  }, [stops]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadDriverName = async () => {
+      if (driverNameOverride) {
+        if (isMounted) setResolvedDriverName("");
+        return;
+      }
+
+      const driverIdRaw = String(driverId || "").trim();
+      if (!driverIdRaw) {
+        if (isMounted) setResolvedDriverName("");
+        return;
+      }
+
+      try {
+        const data = await secureFetch("/staff/drivers");
+        const drivers = Array.isArray(data) ? data : data?.drivers || [];
+        const match =
+          drivers.find((driver) =>
+            [driver?.id, driver?.staff_id, driver?.driver_id, driver?.user_id]
+              .map((value) => String(value || "").trim())
+              .filter(Boolean)
+              .includes(driverIdRaw)
+          ) || null;
+
+        if (!isMounted) return;
+        setResolvedDriverName(
+          match?.name || match?.full_name || match?.driver_name || match?.username || ""
+        );
+      } catch {
+        if (isMounted) setResolvedDriverName("");
+      }
+    };
+
+    loadDriverName();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [driverId, driverNameOverride]);
 
   // Create a dedicated pane for traffic tiles so they render above base layers but below markers/popups
   useEffect(() => {
@@ -342,19 +881,17 @@ export default function LiveRouteMap({
 
   // Fetch the optimized route from Google Directions API
   useEffect(() => {
-    if (!hasSelectedDriver) {
+    if (!displayRoute || displayRoute.length < 2) {
       setRouteCoords(null);
-      return;
-    }
-    if (!optimizedRoute || optimizedRoute.length < 2) {
-      setRouteCoords(null);
+      setRouteDirections(null);
+      setRouteMetricsLoading(false);
       return;
     }
 
     let isMounted = true;
 
     const fetchRoute = async () => {
-      const workingRoute = optimizedRoute;
+      const workingRoute = displayRoute;
 
       const origin = `${workingRoute[0].lat},${workingRoute[0].lng}`;
       const destination = `${workingRoute[workingRoute.length - 1].lat},${workingRoute[workingRoute.length - 1].lng}`;
@@ -370,7 +907,11 @@ export default function LiveRouteMap({
       });
 
       try {
+        if (isMounted) setRouteMetricsLoading(true);
         const data = await secureFetch(`drivers/google-directions?${params.toString()}`);
+        if (isMounted) {
+          setRouteDirections(data?.routes?.[0] || null);
+        }
         
         // Prefer backend-decoded polyline (more reliable)
         if (isMounted && data.decoded_polyline && Array.isArray(data.decoded_polyline) && data.decoded_polyline.length > 0) {
@@ -396,14 +937,17 @@ export default function LiveRouteMap({
       } catch (err) {
         // On error, still fallback to direct route so UI remains useful
         if (isMounted) {
+          setRouteDirections(null);
           const fallback = workingRoute.map(pt => ({ lat: pt.lat, lng: pt.lng }));
           setRouteCoords(fallback);
         }
+      } finally {
+        if (isMounted) setRouteMetricsLoading(false);
       }
     };
 
     fetchRoute();
-  }, [hasSelectedDriver, JSON.stringify(optimizedRoute)]);
+  }, [displayRouteKey]);
 
   // Get marker color based on status
   const getMarkerColor = useCallback((status, index) => {
@@ -473,14 +1017,37 @@ export default function LiveRouteMap({
       iconAnchor: [20, 20],
       popupAnchor: [0, -20],
     });
-  }, [driverNameOverride]);
+  }, [effectiveDriverName]);
 
   const scooterPos =
     hasSelectedDriver && driverPos && typeof driverPos.lat === "number" && typeof driverPos.lng === "number"
       ? driverPos
-      : optimizedRoute[0];
+      : selectedDriverFallbackPos || displayRoute[0];
+  const mapCenter =
+    scooterPos ||
+    displayRoute[0] ||
+    allDriverMarkerPositions[0] ||
+    stops[0] || {
+      lat: 38.089497,
+      lng: 27.7318214,
+    };
+  const canRenderMap =
+    displayRoute.length > 0 ||
+    allDriverMarkerPositions.length > 0 ||
+    (scooterPos && typeof scooterPos.lat === "number" && typeof scooterPos.lng === "number");
+  const routeSummary = useMemo(
+    () =>
+      getRouteLegSummaries({
+        stops,
+        directionsRoute: routeDirections,
+        firstLegOverride,
+      }),
+    [firstLegOverride, routeDirections, stops]
+  );
+  const routeSummaryLoading =
+    (routeMetricsLoading || firstLegMetricsLoading) && routeSummary.legs.length === 0;
 
-  if (optimizedRoute.length < 2) {
+  if (!canRenderMap) {
     return (
       <div className="relative flex items-center justify-center h-96 bg-slate-50 rounded-lg border border-slate-200">
         {typeof onClose === "function" && (
@@ -502,13 +1069,53 @@ export default function LiveRouteMap({
   const stopCount = Math.max(stops.length - 1, 0);
   const selectedStopIsCustomer = selectedMarker && Number(selectedMarker.index) > 0;
   const lastUpdateLabel = new Date(lastUpdateAt).toLocaleTimeString();
+  const restaurantStop = stops[0] || null;
+  const restaurantTitle = restaurantStop?.label || t("Restaurant");
+  const restaurantAddress = restaurantStop?.address || t("Restaurant");
+  const customerStops = stops.filter((_, idx) => idx > 0);
 
   const handleSelectStop = (stop, idx) => {
     const marker = { ...stop, index: idx };
+    setActiveStopIndex(idx);
+    if (Number(selectedMarker?.index) === idx) {
+      setSelectedMarker(null);
+      if (typeof window !== "undefined" && window.innerWidth < 768) {
+        setShowStopsPanel(false);
+      }
+      return;
+    }
     setSelectedMarker(marker);
     focusStopOnMap(marker);
-    setShowStopsPanel(false);
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setShowStopsPanel(false);
+    }
   };
+
+  const handleSelectSummaryLeg = (leg) => {
+    const idx = Number(leg?.stopIndex);
+    if (!Number.isFinite(idx) || idx <= 0) return;
+    const stop = stops[idx];
+    if (!stop) return;
+    handleSelectStop(stop, idx);
+  };
+
+  const handleToggleTraffic = () => {
+    if (!canShowTraffic) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          "Traffic overlay unavailable: set VITE_TRAFFIC_TILE_URL or VITE_MAPBOX_TOKEN to enable it."
+        );
+      }
+      return;
+    }
+    setShowTraffic((value) => !value);
+  };
+
+  useEffect(() => {
+    if (!canShowTraffic && showTraffic) {
+      setShowTraffic(false);
+    }
+  }, [canShowTraffic, showTraffic]);
 
   const openNavigation = (stop) => {
     if (!stop) return;
@@ -525,27 +1132,62 @@ export default function LiveRouteMap({
     window.location.href = `tel:${cleaned}`;
   };
 
+  const externalSource = String(selectedMarker?.externalSource || "").toLowerCase();
+  const isSelectedMarkerYemeksepetiOrder =
+    externalSource === "yemeksepeti" || Boolean(selectedMarker?.externalId);
+  const isSelectedMarkerPickupOrder =
+    isSelectedMarkerYemeksepetiOrder &&
+    String(selectedMarker?.address || "").toLowerCase().trim() === "pickup order";
+  const kitchenStatus = String(selectedMarker?.kitchenStatus || "").trim().toLowerCase();
+  const isSelectedMarkerKitchenReady =
+    kitchenStatus === "ready" || kitchenStatus === "delivered";
+  const hasSelectedMarkerKitchenExcludedItem = Boolean(selectedMarker?.hasKitchenExcludedItem);
+  const onRoadAllowed = isSelectedMarkerKitchenReady || hasSelectedMarkerKitchenExcludedItem;
+  const onRoadActionDisabled =
+    !selectedMarker ||
+    markingDelivered ||
+    Boolean(selectedMarker.delivered) ||
+    selectedMarker.status === "delivered" ||
+    selectedMarker.status === "completed" ||
+    (selectedMarker.status !== "on_road" &&
+      ((!selectedMarker.driverId && !isSelectedMarkerPickupOrder) || !onRoadAllowed));
+
   const markAsDelivered = async () => {
     if (!selectedStopIsCustomer) return;
     if (!selectedMarker?.orderId) return;
     if (selectedMarker.delivered || selectedMarker.status === "delivered" || selectedMarker.status === "completed") return;
+    const nextStatus = selectedMarker.status === "on_road" ? "delivered" : "on_road";
     setMarkingDelivered(true);
     try {
       await secureFetch(`orders/${selectedMarker.orderId}/driver-status`, {
         method: "PATCH",
-        body: JSON.stringify({ driver_status: "delivered" }),
+        body: JSON.stringify({ driver_status: nextStatus }),
       });
 
-      const deliveredAt = new Date().toISOString();
+      const deliveredAt = nextStatus === "delivered" ? new Date().toISOString() : null;
       setStops((prev) =>
         prev.map((s, idx) =>
           idx === Number(selectedMarker.index)
-            ? { ...s, status: "delivered", delivered: s.delivered || deliveredAt }
+            ? {
+                ...s,
+                status: nextStatus,
+                delivered: nextStatus === "delivered" ? s.delivered || deliveredAt : s.delivered,
+              }
             : s
         )
       );
-      setSelectedMarker((prev) => (prev ? { ...prev, status: "delivered", delivered: prev.delivered || deliveredAt } : prev));
-      if (typeof onOrderDelivered === "function") onOrderDelivered(selectedMarker.orderId);
+      setSelectedMarker((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: nextStatus,
+              delivered: nextStatus === "delivered" ? prev.delivered || deliveredAt : prev.delivered,
+            }
+          : prev
+      );
+      if (nextStatus === "delivered" && typeof onOrderDelivered === "function") {
+        onOrderDelivered(selectedMarker.orderId);
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("Failed to mark order delivered:", err);
@@ -565,7 +1207,7 @@ export default function LiveRouteMap({
             <div>
               <h2 className="text-xl font-bold leading-tight">{t("Live Delivery Route")}</h2>
               <p className="text-sm text-slate-300">
-                {t("Driver")}: {driverNameOverride || t("Driver")}
+                {t("Driver")}: {headerDriverLabel}
               </p>
             </div>
           </div>
@@ -580,9 +1222,17 @@ export default function LiveRouteMap({
             </button>
 
             <button
-              onClick={() => setShowTraffic(!showTraffic)}
+              onClick={handleToggleTraffic}
+              disabled={!canShowTraffic}
+              title={
+                canShowTraffic
+                  ? t("Traffic")
+                  : t("Traffic overlay requires a configured traffic tile provider")
+              }
               className={`px-4 py-2 rounded-xl border transition text-sm font-semibold flex items-center gap-2 ${
-                showTraffic
+                !canShowTraffic
+                  ? "bg-white/5 border-white/10 text-slate-400 cursor-not-allowed"
+                  : showTraffic
                   ? "bg-amber-600 border-amber-500/40"
                   : "bg-white/10 hover:bg-white/15 border-white/10"
               }`}
@@ -624,76 +1274,216 @@ export default function LiveRouteMap({
 
       <div className="flex-1 min-h-0 flex bg-slate-100 dark:bg-slate-950">
         {/* Desktop Stops Sidebar */}
-        <aside className="hidden md:flex w-80 shrink-0 bg-white border-r border-slate-200 dark:bg-slate-950 dark:border-slate-800 flex-col">
-          <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <div className="text-xs font-black tracking-[0.22em] text-slate-600 dark:text-slate-300">
-              {t("Stops").toUpperCase()}
+        <aside
+          className={`hidden md:flex shrink-0 bg-white border-r border-slate-200 dark:bg-slate-950 dark:border-slate-800 flex-col transition-all duration-200 ${
+            isSidebarCollapsed ? "w-20" : "w-96"
+          }`}
+        >
+          <div className={`border-b border-slate-200 dark:border-slate-800 ${isSidebarCollapsed ? "px-3 py-4" : "px-5 py-4"}`}>
+            <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-between"}`}>
+              {!isSidebarCollapsed ? (
+                <div className="text-xs font-black tracking-[0.22em] text-slate-600 dark:text-slate-300">
+                  {t("Route").toUpperCase()}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed((value) => !value)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+                aria-label={isSidebarCollapsed ? t("Expand sidebar") : t("Collapse sidebar")}
+                title={isSidebarCollapsed ? t("Expand sidebar") : t("Collapse sidebar")}
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d={isSidebarCollapsed ? "M9 6L15 12L9 18" : "M15 6L9 12L15 18"}
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
             </div>
-            <button
-              className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 transition dark:bg-slate-900/50 dark:border-slate-800 dark:hover:bg-slate-900"
-              title={t("Stops")}
-              onClick={() => setShowStopsPanel((v) => !v)}
-              type="button"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none">
-                <path d="M4 7H20M4 12H20M4 17H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {stops.map((stop, idx) => {
-              const isSelected = Number(selectedMarker?.index) === idx;
-              const isCompleted = stop.delivered || stop.status === "completed" || stop.status === "delivered";
-              const markerColor = getMarkerColor(stop.status, idx);
-              const title = idx === 0 ? (stop.label || t("Restaurant")) : (stop.customerName || stop.label || `${t("Stop")} ${idx}`);
-              const subtitle = idx === 0 ? (stop.address || t("Restaurant")) : (stop.address || "");
-
-              return (
+          {isSidebarCollapsed ? (
+            <>
+              <div className="flex-1 flex flex-col items-center gap-3 px-3 py-4">
                 <button
-                  key={`stop-sidebar-${idx}`}
                   type="button"
-                  onClick={() => handleSelectStop(stop, idx)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition text-left ${
-                    isSelected
-                      ? "bg-slate-50 border-slate-300 shadow-sm dark:bg-slate-900/50 dark:border-slate-700"
-                      : "bg-white border-slate-200 hover:bg-slate-50 dark:bg-slate-950 dark:border-slate-800 dark:hover:bg-slate-900/40"
-                  }`}
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-blue-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/60 dark:text-blue-300 dark:hover:bg-slate-900"
+                  title={restaurantTitle}
+                  aria-label={restaurantTitle}
                 >
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-base shadow-sm"
-                    style={{ backgroundColor: markerColor }}
-                  >
-                    {idx}
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M12 21C12 21 5 13.8 5 9A7 7 0 0 1 19 9C19 13.8 12 21 12 21Z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="2" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:bg-slate-900"
+                  title={t("Route Summary")}
+                  aria-label={t("Route Summary")}
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M4 7H20M4 12H16M4 17H13"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSidebarCollapsed(false);
+                    setShowSidebarStops(true);
+                  }}
+                  className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:bg-slate-900"
+                  title={t("Stops")}
+                  aria-label={t("Stops")}
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M8 6H20M8 12H20M8 18H20M4 6H4.01M4 12H4.01M4 18H4.01"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                    {stopCount}
+                  </span>
+                </button>
+              </div>
+
+              <div className="px-2 pb-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-2 py-3 text-center dark:border-slate-800 dark:bg-slate-900/60">
+                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                    {t("Live")}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
-                        {title}
-                      </div>
-                      {idx > 0 && isCompleted ? (
-                        <span className="ml-auto text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full dark:bg-emerald-950/35 dark:text-emerald-200 dark:border-emerald-500/30">
-                          {t("Delivered")}
-                        </span>
-                      ) : null}
+                  <div className="mt-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                    {lastUpdateLabel}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <button
+                  type="button"
+                  onClick={() => setShowSidebarStops((value) => !value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/60 dark:hover:bg-slate-900"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-sm font-black text-white shadow-sm">
+                      0
                     </div>
-                    {subtitle ? (
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</div>
-                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {restaurantTitle}
+                      </div>
+                      <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        {restaurantAddress}
+                      </div>
+                    </div>
+                    <svg
+                      className={`mt-1 h-5 w-5 shrink-0 text-slate-400 transition-transform ${showSidebarStops ? "rotate-180" : ""}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M6 9L12 15L18 9"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </div>
                 </button>
-              );
-            })}
-          </div>
 
-          <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800">
-            <div className="text-sm text-slate-700 dark:text-slate-200">
-              {stopCount} {t("stops")} • {deliveredCount} {t("delivered")}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              {t("Live updates every 5s")} • {t("Last")}: {lastUpdateLabel}
-            </div>
-          </div>
+                <RouteSummaryCard
+                  summary={routeSummary}
+                  loading={routeSummaryLoading || routeMetricsLoading || firstLegMetricsLoading}
+                  t={t}
+                  className="w-full"
+                  onLegClick={handleSelectSummaryLeg}
+                />
+
+                {showSidebarStops ? (
+                  <div className="space-y-2">
+                    {customerStops.map((stop, listIdx) => {
+                      const idx = listIdx + 1;
+                      const isSelected = Number(activeStopIndex) === idx;
+                      const isCompleted = stop.delivered || stop.status === "completed" || stop.status === "delivered";
+                      const markerColor = getMarkerColor(stop.status, idx);
+                      const title = stop.customerName || stop.label || `${t("Stop")} ${idx}`;
+                      const subtitle = stop.address || "";
+
+                      return (
+                        <button
+                          key={`stop-sidebar-${idx}`}
+                          type="button"
+                          onClick={() => handleSelectStop(stop, idx)}
+                          className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition text-left ${
+                            isSelected
+                              ? "bg-slate-50 border-slate-300 shadow-sm dark:bg-slate-900/50 dark:border-slate-700"
+                              : "bg-white border-slate-200 hover:bg-slate-50 dark:bg-slate-950 dark:border-slate-800 dark:hover:bg-slate-900/40"
+                          }`}
+                        >
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-base shadow-sm"
+                            style={{ backgroundColor: markerColor }}
+                          >
+                            {idx}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                                {title}
+                              </div>
+                              {isCompleted ? (
+                                <span className="ml-auto text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full dark:bg-emerald-950/35 dark:text-emerald-200 dark:border-emerald-500/30">
+                                  {t("Delivered")}
+                                </span>
+                              ) : null}
+                            </div>
+                            {subtitle ? (
+                              <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</div>
+                            ) : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800">
+                <div className="text-sm text-slate-700 dark:text-slate-200">
+                  {stopCount} {t("stops")} • {deliveredCount} {t("delivered")}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  {t("Live updates every 5s")} • {t("Last")}: {lastUpdateLabel}
+                </div>
+              </div>
+            </>
+          )}
         </aside>
 
         {/* Map Container */}
@@ -727,32 +1517,79 @@ export default function LiveRouteMap({
                   </button>
                 </div>
                 <div className="p-4 space-y-2 overflow-y-auto" style={{ maxHeight: "calc(100vh - 72px)" }}>
-                  {stops.map((stop, idx) => {
-                    const markerColor = getMarkerColor(stop.status, idx);
-                    const title = idx === 0 ? (stop.label || t("Restaurant")) : (stop.customerName || stop.label || `${t("Stop")} ${idx}`);
-                    const subtitle = idx === 0 ? (stop.address || t("Restaurant")) : (stop.address || "");
-                    return (
-                      <button
-                        key={`stop-mobile-${idx}`}
-                        type="button"
-                        onClick={() => handleSelectStop(stop, idx)}
-                        className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 bg-white text-left dark:bg-slate-950 dark:border-slate-800"
+                  <button
+                    type="button"
+                    onClick={() => setShowSidebarStops((value) => !value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/60 dark:hover:bg-slate-900"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-sm font-black text-white shadow-sm">
+                        0
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {restaurantTitle}
+                        </div>
+                        <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          {restaurantAddress}
+                        </div>
+                      </div>
+                      <svg
+                        className={`mt-1 h-5 w-5 shrink-0 text-slate-400 transition-transform ${showSidebarStops ? "rotate-180" : ""}`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        aria-hidden="true"
                       >
-                        <div
-                          className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-base shadow-sm"
-                          style={{ backgroundColor: markerColor }}
-                        >
-                          {idx}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">{title}</div>
-                          {subtitle ? (
-                            <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</div>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
+                        <path
+                          d="M6 9L12 15L18 9"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                  </button>
+
+                  <RouteSummaryCard
+                    summary={routeSummary}
+                    loading={routeSummaryLoading || routeMetricsLoading || firstLegMetricsLoading}
+                    t={t}
+                    className="w-full"
+                    onLegClick={handleSelectSummaryLeg}
+                  />
+
+                  {showSidebarStops ? (
+                    <div className="space-y-2">
+                      {customerStops.map((stop, listIdx) => {
+                        const idx = listIdx + 1;
+                        const markerColor = getMarkerColor(stop.status, idx);
+                        const title = stop.customerName || stop.label || `${t("Stop")} ${idx}`;
+                        const subtitle = stop.address || "";
+                        return (
+                          <button
+                            key={`stop-mobile-${idx}`}
+                            type="button"
+                            onClick={() => handleSelectStop(stop, idx)}
+                            className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 bg-white text-left dark:bg-slate-950 dark:border-slate-800"
+                          >
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-base shadow-sm"
+                              style={{ backgroundColor: markerColor }}
+                            >
+                              {idx}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">{title}</div>
+                              {subtitle ? (
+                                <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</div>
+                              ) : null}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -760,7 +1597,7 @@ export default function LiveRouteMap({
 
           <MapContainer
             ref={mapRef}
-            center={scooterPos}
+            center={mapCenter}
             zoom={14}
             scrollWheelZoom={true}
             zoomControl={true}
@@ -773,6 +1610,7 @@ export default function LiveRouteMap({
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   attribution="&copy; OpenStreetMap"
+                  maxZoom={19}
                 />
                 {showTraffic && TRAFFIC_TILE_URL ? (
                   <TileLayer
@@ -782,15 +1620,6 @@ export default function LiveRouteMap({
                     opacity={0.75}
                   />
                 ) : null}
-                {showTraffic && !TRAFFIC_TILE_URL && (
-                  <WMSTileLayer
-                    url="https://ows.mundialis.de/services/service?"
-                    layers="TRAFFIC"
-                    transparent={true}
-                    format="image/png"
-                    pane="trafficPane"
-                  />
-                )}
               </>
             ) : (
               <TileLayer
@@ -800,7 +1629,7 @@ export default function LiveRouteMap({
             )}
 
             {/* Optimized Route Path */}
-            {hasSelectedDriver && routeCoords && routeCoords.length > 1 && (
+            {routeCoords && routeCoords.length > 1 && (
               <Polyline
                 positions={routeCoords.map((pt) => [pt.lat, pt.lng])}
                 color="#2563EB"
@@ -811,7 +1640,7 @@ export default function LiveRouteMap({
             )}
 
             {/* Live Driver Route */}
-            {hasSelectedDriver && liveRouteCoords && liveRouteCoords.length > 1 && (
+            {liveRouteCoords && liveRouteCoords.length > 1 && (
               <Polyline
                 positions={liveRouteCoords.map((pt) => [pt.lat, pt.lng])}
                 color="#10B981"
@@ -832,7 +1661,7 @@ export default function LiveRouteMap({
                   position={[stop.lat, stop.lng]}
                   icon={createNumberedMarker(idx, markerColor)}
                   eventHandlers={{
-                    click: () => setSelectedMarker({ ...stop, index: idx }),
+                    click: () => handleSelectStop(stop, idx),
                   }}
                 >
                   <Tooltip direction="right" offset={[12, 0]} opacity={0.95}>
@@ -847,52 +1676,6 @@ export default function LiveRouteMap({
                       ) : null}
                     </div>
                   </Tooltip>
-                  <Popup closeButton={true} className="delivery-popup" maxWidth={350} minWidth={280}>
-                    <div className="p-3 min-w-60 bg-white text-slate-900">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-bold text-slate-600">
-                          {t("Stop")} #{idx}
-                        </span>
-                        <span className="px-2 py-1 rounded text-xs font-semibold bg-slate-900 text-white">
-                          {getStopStatusLabel(stop).toUpperCase()}
-                        </span>
-                      </div>
-
-                      <div className="border-t pt-2 space-y-2 text-slate-900">
-                        {stop.orderId && (
-                          <div>
-                            <p className="text-xs text-slate-600 font-semibold">{t("Order ID")}</p>
-                            <p className="font-mono font-bold text-slate-900">#{stop.orderId}</p>
-                          </div>
-                        )}
-                        {stop.customerName && (
-                          <div>
-                            <p className="text-xs text-slate-600 font-semibold">{t("Customer")}</p>
-                            <p className="font-semibold text-slate-900">{stop.customerName}</p>
-                          </div>
-                        )}
-                        {stop.phone && (
-                          <div>
-                            <p className="text-xs text-slate-600 font-semibold">{t("Phone")}</p>
-                            <p className="text-sm text-slate-900 font-mono">{stop.phone}</p>
-                          </div>
-                        )}
-                        {stop.address && (
-                          <div>
-                            <p className="text-xs text-slate-600 font-semibold">{t("Address")}</p>
-                            <p className="text-sm text-slate-900">{stop.address}</p>
-                          </div>
-                        )}
-                        {stop.delivered && (
-                          <div className="bg-green-50 border border-green-200 rounded px-2 py-1">
-                            <p className="text-xs text-green-700">
-                              ✓ {t("Delivered at")} {new Date(stop.delivered).toLocaleTimeString()}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </Popup>
                 </Marker>
               );
             })}
@@ -906,7 +1689,7 @@ export default function LiveRouteMap({
               >
                 <Popup closeButton={true}>
                   <div className="p-2 min-w-48">
-                    <p className="font-bold text-slate-900">{driverNameOverride || t("Driver")}</p>
+                    <p className="font-bold text-slate-900">{effectiveDriverName || t("Driver")}</p>
                     <p className="text-xs text-slate-600 mt-1">
                       📍 {scooterPos.lat.toFixed(4)}, {scooterPos.lng.toFixed(4)}
                     </p>
@@ -915,6 +1698,28 @@ export default function LiveRouteMap({
                 </Popup>
               </Marker>
             )}
+
+            {!hasSelectedDriver &&
+              allDriverMarkerPositions.map((entry) => (
+                <Marker
+                  key={`driver-${entry.driverId}-${entry.approximate ? "approx" : "live"}`}
+                  position={[entry.lat, entry.lng]}
+                  icon={createNumberedMarker(0, MARKER_COLORS.restaurant, true)}
+                >
+                  <Popup closeButton={true}>
+                    <div className="p-2 min-w-48">
+                      <p className="font-bold text-slate-900">{t("Driver")} #{entry.driverId}</p>
+                      {entry.approximate ? (
+                        <p className="text-xs text-amber-700 mt-1">~ {t("Estimated position")}</p>
+                      ) : null}
+                      <p className="text-xs text-slate-600 mt-1">
+                        📍 {entry.lat.toFixed(4)}, {entry.lng.toFixed(4)}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-2">🕒 {new Date().toLocaleTimeString()}</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
           </MapContainer>
 
           {/* Stop Details Panel */}
@@ -927,6 +1732,18 @@ export default function LiveRouteMap({
                 <span className={`ml-auto px-3 py-1 rounded-full text-xs font-black ${getStopStatusPillClass(selectedMarker)}`}>
                   {getStopStatusLabel(selectedMarker).toUpperCase()}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveStopIndex(Number(selectedMarker?.index));
+                    setSelectedMarker(null);
+                  }}
+                  className="h-8 w-8 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition dark:bg-slate-900 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
+                  aria-label={t("Close")}
+                  title={t("Close")}
+                >
+                  ×
+                </button>
               </div>
 
               <div className="px-5 py-4 space-y-3 text-slate-900 dark:text-slate-100">
@@ -963,10 +1780,23 @@ export default function LiveRouteMap({
                 <button
                   type="button"
                   onClick={markAsDelivered}
-                  disabled={markingDelivered || Boolean(selectedMarker?.delivered) || selectedMarker?.status === "delivered" || selectedMarker?.status === "completed"}
-                  className="w-full h-11 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-sm"
+                  disabled={onRoadActionDisabled}
+                  title={
+                    !onRoadAllowed && selectedMarker?.status !== "on_road"
+                      ? t("Available after kitchen delivered or excluded items")
+                      : undefined
+                  }
+                  className={`w-full h-11 rounded-xl font-bold text-white disabled:opacity-60 disabled:cursor-not-allowed transition shadow-sm ${
+                    selectedMarker?.status === "on_road"
+                      ? "bg-sky-800 hover:bg-sky-900"
+                      : "bg-red-600 hover:bg-red-700"
+                  }`}
                 >
-                  {markingDelivered ? t("Loading...") : t("Mark as Delivered")}
+                  {markingDelivered
+                    ? t("Loading...")
+                    : selectedMarker?.status === "on_road"
+                    ? t("Delivered")
+                    : t("On Road")}
                 </button>
 
                 <div className="mt-3 grid grid-cols-2 gap-3">
@@ -1028,20 +1858,6 @@ export default function LiveRouteMap({
           100% { transform: scale(1); opacity: 1; }
         }
 
-        .delivery-popup .leaflet-popup-content {
-          border-radius: 12px;
-          padding: 0 !important;
-        }
-
-        .delivery-popup .leaflet-popup-content-wrapper {
-          border-radius: 12px;
-          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-        }
-
-        .delivery-popup .leaflet-popup-tip {
-          background-color: white;
-          border-radius: 4px;
-        }
       `}</style>
     </div>
   );

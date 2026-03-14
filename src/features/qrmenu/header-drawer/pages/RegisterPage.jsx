@@ -38,7 +38,7 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack }) {
         >
           {t("Back")}
         </button>
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-neutral-100">Register</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-neutral-100">{t("Register")}</h3>
       </div>
 
       <form className="p-4 space-y-3" onSubmit={submit}>
@@ -46,28 +46,28 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack }) {
           type="email"
           value={form.email}
           onChange={(e) => onChange("email", e.target.value)}
-          placeholder="Email"
+          placeholder={t("Email")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
           autoComplete="email"
         />
         <input
           value={form.username}
           onChange={(e) => onChange("username", e.target.value)}
-          placeholder="Username"
+          placeholder={t("Username")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
           autoComplete="username"
         />
         <input
           value={form.phone}
           onChange={(e) => onChange("phone", e.target.value)}
-          placeholder="Phone"
+          placeholder={t("Phone")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
           autoComplete="tel"
         />
         <input
           value={form.address}
           onChange={(e) => onChange("address", e.target.value)}
-          placeholder="Address"
+          placeholder={t("Address")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
           autoComplete="street-address"
         />
@@ -75,19 +75,19 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack }) {
           type="password"
           value={form.password}
           onChange={(e) => onChange("password", e.target.value)}
-          placeholder="Password"
+          placeholder={t("Password")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
           autoComplete="new-password"
         />
 
-        {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+        {error ? <p className="text-xs text-rose-600">{t(error)}</p> : null}
 
         <button
           type="submit"
           disabled={loading}
           className="w-full h-10 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60"
         >
-          {loading ? "..." : "Create Account"}
+          {loading ? "..." : t("Create Account")}
         </button>
 
         <button
@@ -95,7 +95,7 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack }) {
           onClick={onGoLogin}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-semibold"
         >
-          Login instead
+          {t("Login instead")}
         </button>
       </form>
     </div>

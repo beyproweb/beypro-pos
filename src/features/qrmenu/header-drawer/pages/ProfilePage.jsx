@@ -57,37 +57,37 @@ function ProfilePage({ t, customer, onSave, onBack }) {
           type="email"
           value={form.email}
           onChange={(e) => onChange("email", e.target.value)}
-          placeholder="Email"
+          placeholder={t("Email")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
         />
         <input
           value={form.username}
           onChange={(e) => onChange("username", e.target.value)}
-          placeholder="Username"
+          placeholder={t("Username")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
         />
         <input
           value={form.phone}
           onChange={(e) => onChange("phone", e.target.value)}
-          placeholder="Phone"
+          placeholder={t("Phone")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
         />
         <input
           value={form.address}
           onChange={(e) => onChange("address", e.target.value)}
-          placeholder="Address"
+          placeholder={t("Address")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
         />
 
-        {error ? <p className="text-xs text-rose-600">{error}</p> : null}
-        {saved ? <p className="text-xs text-emerald-600">Profile updated.</p> : null}
+        {error ? <p className="text-xs text-rose-600">{t(error)}</p> : null}
+        {saved ? <p className="text-xs text-emerald-600">{t("Profile updated.")}</p> : null}
 
         <button
           type="submit"
           disabled={saving}
           className="w-full h-10 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60"
         >
-          {saving ? "..." : "Save"}
+          {saving ? "..." : t("Save")}
         </button>
       </form>
     </div>

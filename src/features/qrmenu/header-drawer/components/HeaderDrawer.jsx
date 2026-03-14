@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ChevronLeft,
   CircleUserRound,
   ClipboardList,
   LifeBuoy,
@@ -107,15 +108,27 @@ function HeaderDrawer({ isOpen, onClose, t, appendIdentifier, isDark = false }) 
     setView(VIEW_MENU);
   };
 
+  const isSubPage = view !== VIEW_MENU;
+  const currentTitle =
+    view === VIEW_ORDERS
+      ? t("My Orders")
+      : view === VIEW_PROFILE
+      ? t("My Profile")
+      : view === VIEW_REGISTER
+      ? t("Register")
+      : view === VIEW_LOGIN
+      ? t("Login / Register")
+      : t("Menu");
+
   const menuContent = (
     <div className="h-full flex flex-col">
       <div className="px-4 py-4 border-b border-gray-200 dark:border-neutral-800">
-        <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-neutral-400">QR Menu</div>
+        <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-neutral-400">{t("QR Menu")}</div>
         <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-neutral-100">
-          {isLoggedIn ? customer?.username || customer?.email : "Guest"}
+          {isLoggedIn ? customer?.username || customer?.email : t("Guest")}
         </div>
         <div className="text-xs text-gray-500 dark:text-neutral-400">
-          {isLoggedIn ? customer?.email : "Login to sync profile and orders"}
+          {isLoggedIn ? customer?.email : t("Login to sync profile and orders")}
         </div>
       </div>
 
@@ -123,21 +136,28 @@ function HeaderDrawer({ isOpen, onClose, t, appendIdentifier, isDark = false }) 
         <DrawerItem
           icon={ClipboardList}
           label={t("My Orders")}
-          description="Active and past orders"
+          description={t("Active and past orders")}
           onClick={onOpenOrders}
         />
         <DrawerItem
           icon={UserRound}
           label={t("My Profile")}
-          description="Saved checkout details"
+          description={t("Saved checkout details")}
           onClick={onOpenProfile}
+        />
+
+        <DrawerItem
+          icon={LifeBuoy}
+          label={t("Support / Contact")}
+          description={t("Contact support for help")}
+          onClick={() => window.alert(t("Support section will be available soon."))}
         />
 
         {isLoggedIn ? (
           <DrawerItem
             icon={LogOut}
-            label="Logout"
-            description="Sign out from this device"
+            label={t("Logout")}
+            description={t("Sign out from this device")}
             onClick={onLogout}
             danger
           />
@@ -145,17 +165,10 @@ function HeaderDrawer({ isOpen, onClose, t, appendIdentifier, isDark = false }) 
           <DrawerItem
             icon={LogIn}
             label={t("Login / Register")}
-            description="Access your account"
+            description={t("Access your account")}
             onClick={() => setView(VIEW_LOGIN)}
           />
         )}
-
-        <DrawerItem
-          icon={LifeBuoy}
-          label="Support / Contact"
-          description="Placeholder"
-          onClick={() => window.alert("Support section will be available soon.")}
-        />
       </div>
     </div>
   );
@@ -182,13 +195,33 @@ function HeaderDrawer({ isOpen, onClose, t, appendIdentifier, isDark = false }) 
         }`}
         role="dialog"
         aria-modal="true"
-        aria-label="Header drawer"
+        aria-label={t("Header drawer")}
       >
         <div className="h-14 border-b border-gray-100 dark:border-neutral-800 px-3 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-gray-700 dark:text-neutral-200">
-            <CircleUserRound className="w-4 h-4" />
-            <span className="text-sm font-semibold">Menu</span>
-          </div>
+          {isSubPage ? (
+            <button
+              type="button"
+              onClick={() => setView(VIEW_MENU)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm font-semibold transition ${
+                isDark
+                  ? "text-neutral-200 hover:bg-neutral-800"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>{t("Back")}</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 text-gray-700 dark:text-neutral-200">
+              <CircleUserRound className="w-4 h-4" />
+              <span className="text-sm font-semibold">{t("Menu")}</span>
+            </div>
+          )}
+          {isSubPage ? (
+            <div className="absolute left-1/2 -translate-x-1/2 text-sm font-semibold text-gray-900 dark:text-neutral-100 pointer-events-none">
+              {currentTitle}
+            </div>
+          ) : null}
           <button
             type="button"
             onClick={onClose}

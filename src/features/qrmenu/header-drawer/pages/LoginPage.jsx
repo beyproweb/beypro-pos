@@ -36,7 +36,7 @@ function LoginPage({ t, onLogin, onGoRegister, onBack }) {
         <input
           value={login}
           onChange={(e) => setLogin(e.target.value)}
-          placeholder="Email or username"
+          placeholder={t("Email or username")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
           autoComplete="username"
         />
@@ -44,19 +44,19 @@ function LoginPage({ t, onLogin, onGoRegister, onBack }) {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
+          placeholder={t("Password")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
           autoComplete="current-password"
         />
 
-        {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+        {error ? <p className="text-xs text-rose-600">{t(error)}</p> : null}
 
         <button
           type="submit"
           disabled={loading}
           className="w-full h-10 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60"
         >
-          {loading ? "..." : "Login"}
+          {loading ? "..." : t("Login")}
         </button>
 
         <button
@@ -64,7 +64,7 @@ function LoginPage({ t, onLogin, onGoRegister, onBack }) {
           onClick={onGoRegister}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-semibold"
         >
-          Register
+          {t("Register")}
         </button>
       </form>
     </div>

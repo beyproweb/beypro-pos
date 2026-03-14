@@ -65,6 +65,10 @@ export const AuthProvider = ({ children }) => {
 useEffect(() => {
   const rawToken = getAuthToken();
   if (!rawToken) return;
+  const shouldSkipMeProbe =
+    typeof window !== "undefined" &&
+    window.localStorage?.getItem("__beypro_skip_me_probe") === "1";
+  if (shouldSkipMeProbe) return;
 
   const authHeader = rawToken.startsWith("Bearer ")
     ? rawToken
@@ -76,6 +80,13 @@ useEffect(() => {
       headers: { Authorization: authHeader },
     })
       .then((res) => {
+        if (res.status === 404) {
+          console.warn("⚠️ /me endpoint not available on this backend; skipping further probes");
+          try {
+            localStorage.setItem("__beypro_skip_me_probe", "1");
+          } catch {}
+          return null;
+        }
         if (res.status === 401) {
           console.warn("🔒 Token expired or invalid — logging out");
           // ✅ Preserve restaurant_id for staff PIN login
@@ -106,6 +117,9 @@ useEffect(() => {
       })
       .then((res) => {
         if (!res) return;
+        try {
+          localStorage.removeItem("__beypro_skip_me_probe");
+        } catch {}
         if (res.error) {
           console.warn("⚠️ /me responded with error:", res.error);
           return;

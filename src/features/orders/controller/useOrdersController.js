@@ -225,8 +225,17 @@ export function useOrdersController({
     try {
       const data = await fetchDriversApi(secureFetch);
       const list = Array.isArray(data) ? data : data?.drivers || [];
-      setDrivers(list);
-      return list;
+      const normalized = list.map((driver) => ({
+        ...driver,
+        name:
+          driver?.name ||
+          driver?.full_name ||
+          driver?.driver_name ||
+          driver?.username ||
+          "",
+      }));
+      setDrivers(normalized);
+      return normalized;
     } catch {
       setDrivers([]);
       return [];
@@ -570,6 +579,27 @@ export function useOrdersController({
       const selectedRaw = effectiveDriverId.trim();
       const selectedId = Number(selectedRaw);
       const hasSelectedDriver = selectedRaw !== "";
+      const knownDriverIds = Array.from(
+        new Set(
+          (Array.isArray(drivers) ? drivers : [])
+            .flatMap((driver) => [driver?.id, driver?.driver_id, driver?.staff_id, driver?.user_id])
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+      if (hasSelectedDriver && import.meta.env.DEV && !knownDriverIds.includes(selectedRaw)) {
+        log.warn("⚠️ [RouteDebug] Selected driver id not found in /staff/drivers list", {
+          selectedDriverId: selectedRaw,
+          knownDriverIds,
+          scopedOrderDriverIds: Array.from(
+            new Set(
+              (orders || [])
+                .map((order) => String(order?.driver_id ?? "").trim())
+                .filter(Boolean)
+            )
+          ),
+        });
+      }
 
       const scopedOrders = hasSelectedDriver
         ? (orders || []).filter((order) => {
@@ -586,7 +616,7 @@ export function useOrdersController({
     } finally {
       routeRefreshingRef.current = false;
     }
-  }, [fetchOrderStops, mapStops, orders, selectedDriverId]);
+  }, [drivers, fetchOrderStops, mapStops, orders, selectedDriverId]);
 
   const assignDriverToOrder = useCallback(
     async (order, driverId) => {

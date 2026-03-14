@@ -183,6 +183,11 @@ export default function StaffPINLogin({ switchMode = false }) {
       sessionStorage.setItem("token", token);
       sessionStorage.setItem("beyproUser", JSON.stringify(userData));
       sessionStorage.removeItem("pin_lockout");
+      try {
+        localStorage.removeItem("__beypro_skip_me_probe");
+      } catch {
+        // ignore storage errors
+      }
 
       // ✅ Ensure restaurant_id is in localStorage
       if (userData.restaurant_id) {
