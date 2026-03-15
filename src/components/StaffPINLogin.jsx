@@ -7,6 +7,7 @@ import "./StaffPINLogin.css";
 import secureFetch from "../utils/secureFetch";
 import { toast } from "react-toastify";
 import { normalizeUser } from "../utils/normalizeUser";
+import { requestDriverLocationPermission } from "../utils/driverLocationPermission";
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 300000; // 5 minutes in ms
@@ -201,6 +202,7 @@ export default function StaffPINLogin({ switchMode = false }) {
       const normalizedUser = normalizeUser(userData, { roles: {} });
       console.log("✅ Normalized user:", normalizedUser);
       setCurrentUser(normalizedUser);
+      requestDriverLocationPermission(normalizedUser);
 
       // ✅ Reset attempts
       setAttempts(0);

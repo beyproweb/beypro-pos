@@ -1368,9 +1368,12 @@ const OrderStatusScreen = ({
       order?.assignedDriver?.name ||
       ""
   ).trim();
+  const hasAssignedDriver = !isReservedOrderContext && Boolean(driverName);
   const driverMessage =
-    !isReservedOrderContext && effectiveOrderStatus === "on_road" && driverName
+    hasAssignedDriver && effectiveOrderStatus === "on_road"
       ? `${driverName} ${t("picked up your order", { defaultValue: "picked up your order" })}`
+      : hasAssignedDriver
+        ? `${t("Driver")}: ${driverName}`
       : "";
   const deliveryAddress = String(order?.customer_address || "").trim();
   const isDeliveryOrderContext =

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import secureFetch from "../../utils/secureFetch";
-const API_URL = import.meta.env.VITE_API_URL || "";
+import { getCurrentPathname, isPublicShellPath, isStandalonePath } from "../../utils/routeScope";
 
 const hasLocalStorage = () =>
   typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -42,6 +42,8 @@ const writeCachedSetting = (section, data) => {
 // ✅ Load settings with DEEP fallback
 // ✅ Load settings with DEEP fallback
 export const useSetting = (section, setState, defaults = {}) => {
+  const pathname = getCurrentPathname();
+
   useEffect(() => {
     let mounted = true;
 
@@ -60,11 +62,7 @@ export const useSetting = (section, setState, defaults = {}) => {
       setState(cachedMerged);
     }
 
-    const isStandalone =
-      typeof window !== "undefined" &&
-      typeof window.location?.pathname === "string" &&
-      window.location.pathname.startsWith("/standalone");
-    if (isStandalone) {
+    if (isStandalonePath(pathname) || isPublicShellPath(pathname)) {
       setState(defaults);
       return () => {
         mounted = false;
@@ -98,7 +96,7 @@ export const useSetting = (section, setState, defaults = {}) => {
     return () => {
       mounted = false;
     };
-  }, [section]);
+  }, [pathname, section]);
 };
 
 // ✅ Save setting

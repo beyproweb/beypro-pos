@@ -53,6 +53,7 @@ import StandaloneStaffApp from "./pages/standalone/StandaloneStaffApp";
 import { setNavigator } from "./utils/navigation";
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
 import { PlanModulesProvider } from "./context/PlanModulesContext";
+import { isPublicShellPath, isStandalonePath } from "./utils/routeScope";
 
 
 const SETTINGS_TAB_PERMISSIONS = {
@@ -193,11 +194,7 @@ function AppShell() {
 
   useEffect(() => {
     const loadSettings = async () => {
-      const isStandalone =
-        typeof window !== "undefined" &&
-        typeof window.location?.pathname === "string" &&
-        window.location.pathname.startsWith("/standalone");
-      if (isStandalone) return;
+      if (isStandalonePath() || isPublicShellPath()) return;
       try {
         const data = await secureFetch("/settings/notifications");
         window.notificationSettings = data;
@@ -207,7 +204,7 @@ function AppShell() {
       }
     };
     loadSettings();
-  }, []);
+  }, [location.pathname]);
 
   useEffect(() => attachGlobalSoundHandlers(), []);
 

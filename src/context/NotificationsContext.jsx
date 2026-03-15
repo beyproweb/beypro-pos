@@ -10,12 +10,9 @@ import React, {
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import socket from "../utils/socket";
 import { useCurrency } from "./CurrencyContext";
+import { getCurrentPathname, isPublicShellPath, isStandalonePath } from "../utils/routeScope";
 
 const NotificationsContext = createContext(null);
-const isStandalone =
-  typeof window !== "undefined" &&
-  typeof window.location?.pathname === "string" &&
-  window.location.pathname.startsWith("/standalone");
 
 function safeJsonParse(value, fallback) {
   try {
@@ -367,6 +364,9 @@ function dedupe(items, next) {
 }
 
 export function NotificationsProvider({ children }) {
+  const pathname = getCurrentPathname();
+  const isStandalone = isStandalonePath(pathname);
+  const isPublicShell = isPublicShellPath(pathname);
   const [items, setItems] = useState([]);
   const [customerCalls, setCustomerCalls] = useState({});
   const [bellOpen, setBellOpen] = useState(false);
@@ -398,7 +398,7 @@ export function NotificationsProvider({ children }) {
       delete next[key];
       return next;
     });
-  }, []);
+  }, [isPublicShell, isStandalone]);
 
   const upsertCustomerCall = useCallback((payload = {}) => {
     const tableNumber = extractTableNumberFromPayload(payload);
@@ -416,7 +416,7 @@ export function NotificationsProvider({ children }) {
       },
     }));
     return tableNumber;
-  }, []);
+  }, [isPublicShell, isStandalone]);
 
   const acknowledgeCustomerCall = useCallback((tableNumber) => {
     const tableNum = Number(tableNumber);
@@ -556,11 +556,7 @@ export function NotificationsProvider({ children }) {
 
   // Register open/close notifications
   useEffect(() => {
-    const isStandalone =
-      typeof window !== "undefined" &&
-      typeof window.location?.pathname === "string" &&
-      window.location.pathname.startsWith("/standalone");
-    if (isStandalone) {
+    if (isStandalone || isPublicShell) {
       return () => {};
     }
 
@@ -638,12 +634,13 @@ export function NotificationsProvider({ children }) {
       isActive = false;
       if (timeoutId) window.clearTimeout(timeoutId);
     };
-  }, [pushNotification]);
+  }, [isPublicShell, isStandalone, pushNotification]);
 
   const refresh = useCallback(async () => {
-    if (isStandalone) return;
+    if (isStandalone || isPublicShell) return;
     const rid = getRestaurantId();
-    if (!rid) return;
+    const hasToken = !!getAuthToken();
+    if (!rid || !hasToken) return;
     try {
       const rows = await secureFetch("/notifications?limit=120");
       if (!Array.isArray(rows)) return;
@@ -660,10 +657,10 @@ export function NotificationsProvider({ children }) {
     } catch (err) {
       console.warn("⚠️ Failed to refresh notifications", err?.message || err);
     }
-  }, []);
+  }, [isPublicShell, isStandalone]);
 
   const clearAll = useCallback(async () => {
-    if (isStandalone) {
+    if (isStandalone || isPublicShell) {
       setItems([]);
       markAllRead();
       return;
@@ -676,7 +673,7 @@ export function NotificationsProvider({ children }) {
       setItems([]);
       markAllRead();
     }
-  }, [markAllRead]);
+  }, [isPublicShell, isStandalone, markAllRead]);
 
   const syncCustomerCallSound = useCallback(() => {
     const activeCalls = Object.values(customerCalls || {});
@@ -731,7 +728,7 @@ export function NotificationsProvider({ children }) {
   }, []);
 
   const loadSummaries = useCallback(async () => {
-    if (isStandalone) return;
+    if (isStandalone || isPublicShell || !getAuthToken()) return;
     try {
       const [criticalStock, openMaintenance, inProgressTasks] = await Promise.all([
         secureFetch("/stock/critical").catch(() => null),
@@ -746,7 +743,7 @@ export function NotificationsProvider({ children }) {
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [isPublicShell, isStandalone]);
 
   // Handle restaurant switches or late login
   useEffect(() => {
@@ -768,18 +765,18 @@ export function NotificationsProvider({ children }) {
 
   // Initial load
   useEffect(() => {
-    if (!isStandalone) {
+    if (!isStandalone && !isPublicShell) {
       refresh();
     }
-  }, [refresh]);
+  }, [isPublicShell, isStandalone, refresh]);
 
   // When the bell opens, mark read and load quick summaries.
   useEffect(() => {
-    if (!bellOpen || isStandalone) return;
+    if (!bellOpen || isStandalone || isPublicShell) return;
     markAllRead();
     refresh();
     loadSummaries();
-  }, [bellOpen, loadSummaries, markAllRead, refresh]);
+  }, [bellOpen, isPublicShell, isStandalone, loadSummaries, markAllRead, refresh]);
 
   // Socket listeners → bell
   useEffect(() => {

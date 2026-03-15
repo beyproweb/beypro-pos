@@ -6,6 +6,7 @@ import { useSessionLock } from "../context/SessionLockContext";
 import { normalizeUser } from "../utils/normalizeUser";
 import { BASE_URL } from "../utils/secureFetch";
 import { useTranslation } from "react-i18next";
+import { requestDriverLocationPermission } from "../utils/driverLocationPermission";
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -94,6 +95,7 @@ export default function LoginScreen() {
 
       authStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
       setCurrentUser(normalizedUser);
+      requestDriverLocationPermission(normalizedUser);
       
       // Lock session immediately for admin users to require password re-entry
       if (normalizedUser.role === "admin" || normalizedUser.role === "Admin") {

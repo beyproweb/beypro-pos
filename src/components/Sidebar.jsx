@@ -43,6 +43,7 @@ import { useCurrency } from "../context/CurrencyContext";
 export const SIDEBAR_WIDTH_OPEN = 224;
 export const SIDEBAR_WIDTH_COLLAPSED = 72;
 export const DASHBOARD_ITEM_DRAG_TYPE = "application/x-dashboard-shortcut";
+const MAX_VISIBLE_SIDEBAR_TABS = 9;
 
 const MENU = [
   { labelKey: "Dashboard", defaultLabel: "Dashboard", path: "/dashboard", icon: Home, permission: "dashboard", moduleKey: "page.dashboard" },
@@ -294,8 +295,25 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
       return hasPermission(permKey, currentUser);
     });
 
-    return [...filteredMenu, dynamicItem];
-  }, [currentUser, hasDashboardPermission, hiddenKeys, isLoggedIn, isModuleAllowed, orderedMenu]);
+    const limitedMenu = filteredMenu.slice(0, MAX_VISIBLE_SIDEBAR_TABS);
+    const activePath = location.pathname + location.search;
+    const activeItem = filteredMenu.find((item) => item.path === activePath);
+
+    if (activeItem && !limitedMenu.some((item) => item.labelKey === activeItem.labelKey)) {
+      limitedMenu[limitedMenu.length - 1] = activeItem;
+    }
+
+    return [...limitedMenu, dynamicItem];
+  }, [
+    currentUser,
+    hasDashboardPermission,
+    hiddenKeys,
+    isLoggedIn,
+    isModuleAllowed,
+    location.pathname,
+    location.search,
+    orderedMenu,
+  ]);
 
   const canSeeLocalization = useMemo(() => {
     if (!currentUser) return false;

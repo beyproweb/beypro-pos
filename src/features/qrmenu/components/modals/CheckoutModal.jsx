@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import secureFetch, { getAuthToken } from "../../../../utils/secureFetch";
+import secureFetch from "../../../../utils/secureFetch";
 import { getCheckoutPrefill } from "../../header-drawer/services/customerService";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -141,55 +141,64 @@ const CheckoutModal = React.memo(function CheckoutModal({
         })
       );
 
-      const token = getAuthToken();
-      if (token) {
-        try {
-          let customer = await secureFetch(appendIdentifier(`/customers?phone=${phone}`), {
+      try {
+        let customer = await secureFetch(
+          appendIdentifier(`/public/customers/by-phone/${encodeURIComponent(phone)}`),
+          {
             method: "GET",
             headers: { "Content-Type": "application/json" },
-          });
-
-          if (!customer || !customer.id) {
-            customer = await secureFetch(appendIdentifier("/customers"), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name, phone, email: email || null }),
-            });
-          } else if (email && customer.email !== email) {
-            try {
-              await secureFetch(appendIdentifier(`/customers/${customer.id}`), {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email }),
-              });
-              customer = { ...customer, email };
-            } catch {}
           }
+        );
 
-          if (customer && (customer.id || customer.customer_id)) {
-            const cid = customer.id ?? customer.customer_id;
-            const addrs = Array.isArray(customer.addresses) ? customer.addresses : [];
+        if (!customer || !customer.id) {
+          customer = await secureFetch(appendIdentifier("/public/customers"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, phone, email: email || null, address }),
+          });
+        } else if (
+          name !== customer.name ||
+          (email && customer.email !== email) ||
+          address !== (customer.address || "")
+        ) {
+          try {
+            customer = await secureFetch(appendIdentifier(`/public/customers/${customer.id}`), {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name, email: email || null, address }),
+            });
+          } catch {}
+        }
 
-            const existing = addrs.find((a) => (a.address || "").trim() === address);
-            if (existing) {
-              if (!existing.is_default) {
-                await secureFetch(appendIdentifier(`/customer-addresses/${existing.id}`), {
+        if (customer && (customer.id || customer.customer_id)) {
+          const cid = customer.id ?? customer.customer_id;
+          const addrs = Array.isArray(customer.addresses) ? customer.addresses : [];
+
+          const existing = addrs.find((a) => (a.address || "").trim() === address);
+          if (existing) {
+            if (!existing.is_default) {
+              await secureFetch(
+                appendIdentifier(`/public/customer-addresses/customer-addresses/${existing.id}`),
+                {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ is_default: true }),
-                });
-              }
-            } else {
-              await secureFetch(appendIdentifier(`/customers/${cid}/addresses`), {
+                }
+              );
+            }
+          } else {
+            await secureFetch(
+              appendIdentifier(`/public/customer-addresses/customers/${cid}/addresses`),
+              {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ label: "Default", address, is_default: true }),
-              });
-            }
+              }
+            );
           }
-        } catch (err) {
-          console.warn("⚠️ Backend sync failed:", err);
         }
+      } catch (err) {
+        console.warn("⚠️ Backend sync failed:", err);
       }
 
       setSavedOnce(true);
@@ -204,10 +213,13 @@ const CheckoutModal = React.memo(function CheckoutModal({
 
     (async () => {
       try {
-        const match = await secureFetch(appendIdentifier(`/customers?phone=${form.phone}`), {
+        const match = await secureFetch(
+          appendIdentifier(`/public/customers/by-phone/${encodeURIComponent(form.phone)}`),
+          {
           method: "GET",
           headers: { "Content-Type": "application/json" },
-        });
+          }
+        );
         if (!match) return;
 
         if (match.name && !form.name) {

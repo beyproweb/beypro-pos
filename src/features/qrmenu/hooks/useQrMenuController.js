@@ -1230,9 +1230,15 @@ useEffect(() => {
     try {
       const activeId = storage.getItem("qr_active_order_id");
       const hasSavedActiveOrder = Boolean(activeId);
+      const savedOrderType = String(storage.getItem("qr_orderType") || "").toLowerCase();
       const forceStatusOpen = storage.getItem(FORCE_STATUS_UNTIL_CLOSE_KEY) === "1";
+      const shouldAutoOpenSavedStatus =
+        hasSavedActiveOrder &&
+        (qrMode === "table" ||
+          savedOrderType === "table" ||
+          (Number.isFinite(Number(initialTableFromUrl)) && Number(initialTableFromUrl) > 0));
       const wantsStatusOpen =
-        forceStatusOpen || storage.getItem("qr_show_status") === "1" || hasSavedActiveOrder;
+        forceStatusOpen || storage.getItem("qr_show_status") === "1" || shouldAutoOpenSavedStatus;
       const skipRestoreOnRefresh = !qrMode && !initialTableFromUrl;
 
       // On a normal refresh (no explicit table/delivery mode), always land on the home page
