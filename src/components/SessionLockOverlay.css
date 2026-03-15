@@ -13,6 +13,7 @@
   z-index: 10000;
   animation: fadeIn 0.2s ease-out;
   padding: 24px;
+  overflow-y: auto;
 }
 
 @keyframes fadeIn {
@@ -25,8 +26,9 @@
 }
 
 .session-lock-card {
+  position: relative;
   background: white;
-  border-radius: 16px;
+  border-radius: 24px;
   padding: 40px;
   max-width: 800px;
   width: 100%;
@@ -58,7 +60,7 @@
 /* Header */
 .session-lock-header {
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: 32px;
 }
 
 .lock-icon {
@@ -69,8 +71,9 @@
   height: 80px;
   background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
   border-radius: 50%;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   color: white;
+  box-shadow: 0 18px 32px rgba(99, 102, 241, 0.24);
 }
 
 .session-lock-header h2 {
@@ -86,22 +89,23 @@
   font-size: 15px;
   color: #64748b;
   font-weight: 500;
+  line-height: 1.45;
 }
 
 /* Two Column Layout */
 .session-lock-content {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 40px;
-  align-items: center;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 36px;
+  align-items: start;
 }
 
 .session-lock-left {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  align-items: center;
-  justify-content: center;
+  gap: 18px;
+  align-items: stretch;
+  justify-content: flex-start;
 }
 
 .session-lock-right {
@@ -114,11 +118,14 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 16px 18px;
   background: #f8fafc;
-  border-radius: 12px;
-  margin-bottom: 24px;
+  border-radius: 18px;
   border: 2px solid #e2e8f0;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .user-avatar {
@@ -168,7 +175,8 @@
   display: flex;
   justify-content: center;
   gap: 12px;
-  margin-bottom: 24px;
+  margin: 6px 0 0;
+  flex-wrap: nowrap;
 }
 
 .pin-dot {
@@ -197,7 +205,10 @@
   color: #dc2626;
   font-size: 14px;
   font-weight: 500;
-  margin-bottom: 20px;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 360px;
+  box-sizing: border-box;
 }
 
 .error-message svg {
@@ -208,10 +219,9 @@
 .logout-btn {
   width: 100%;
   padding: 12px 20px;
-  margin-top: 20px;
   font-size: 14px;
   font-weight: 600;
-  border-radius: 8px;
+  border-radius: 14px;
   border: 2px solid #e2e8f0;
   background: #ffffff;
   color: #64748b;
@@ -223,6 +233,8 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  max-width: 360px;
+  margin: 8px auto 0;
 }
 
 .logout-btn:hover {
@@ -260,9 +272,27 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+  .session-lock-overlay {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .session-lock-card {
+    min-height: 100dvh;
+    border-radius: 0;
+    padding: max(20px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+
+  .session-lock-header {
+    margin-bottom: 20px;
+  }
+
   .session-lock-content {
     grid-template-columns: 1fr;
-    gap: 32px;
+    gap: 22px;
   }
 
   .session-lock-right {
@@ -271,33 +301,85 @@
 
   .session-lock-left {
     order: 1;
+    gap: 16px;
   }
 
   .pin-display {
     justify-content: center;
+    gap: 10px;
   }
 
-  .different-user-link {
-    text-align: center;
+  .pin-dot {
+    width: 14px;
+    height: 14px;
+  }
+
+  .current-user-badge {
+    max-width: 100%;
+    padding: 14px 16px;
+  }
+
+  .logout-btn,
+  .error-message {
+    max-width: 100%;
   }
 }
 
 @media (max-width: 640px) {
-  .session-lock-card {
-    padding: 32px 24px;
-  }
-
-  .session-lock-header h2 {
-    font-size: 24px;
-  }
-
   .lock-icon {
-    width: 64px;
-    height: 64px;
+    width: 58px;
+    height: 58px;
   }
 
   .lock-icon svg {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .lock-message {
+    font-size: 14px;
+  }
+
+  .user-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+
+  .user-name {
+    font-size: 15px;
+  }
+
+  .user-role {
+    font-size: 12px;
+  }
+
+  .logout-btn {
+    min-height: 52px;
+  }
+}
+
+@media (max-width: 380px) {
+  .session-lock-card {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .session-lock-header {
+    margin-bottom: 16px;
+  }
+
+  .current-user-badge {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .pin-display {
+    gap: 8px;
+  }
+
+  .pin-dot {
+    width: 12px;
+    height: 12px;
   }
 }

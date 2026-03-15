@@ -1,22 +1,21 @@
 /* src/components/PINKeypad.css */
 
 .pin-keypad {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+  width: 100%;
   max-width: 360px;
   margin: 0 auto;
 }
 
 .pin-keypad-row {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
+  display: contents;
 }
 
 .pin-key {
-  flex: 1;
-  min-width: 80px;
+  width: 100%;
+  min-width: 0;
   height: 72px;
   font-size: 28px;
   font-weight: 600;
@@ -82,8 +81,11 @@
 
 /* Touch-friendly sizing for tablets */
 @media (min-width: 768px) {
+  .pin-keypad {
+    max-width: 372px;
+  }
+
   .pin-key {
-    min-width: 100px;
     height: 84px;
     font-size: 32px;
   }
@@ -96,8 +98,27 @@
   }
 
   .pin-key {
-    min-width: 110px;
     height: 92px;
     font-size: 34px;
+  }
+}
+
+@media (max-width: 640px) {
+  .pin-keypad {
+    gap: 10px;
+    max-width: 100%;
+  }
+
+  .pin-key {
+    height: 68px;
+    font-size: 26px;
+    border-radius: 14px;
+  }
+}
+
+@media (max-width: 380px) {
+  .pin-key {
+    height: 62px;
+    font-size: 24px;
   }
 }
