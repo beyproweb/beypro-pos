@@ -29,6 +29,15 @@ function getStorage(storage) {
   return null;
 }
 
+function emitSessionChange(customer) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("qr:customer-session-changed", {
+      detail: { customer: sanitizeCustomer(customer) },
+    })
+  );
+}
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -73,9 +82,11 @@ function saveSession(customer, storageArg) {
   const sanitized = sanitizeCustomer(customer);
   if (!sanitized) {
     storage.removeItem(STORAGE_KEYS.session);
+    emitSessionChange(null);
     return;
   }
   storage.setItem(STORAGE_KEYS.session, JSON.stringify(sanitized));
+  emitSessionChange(sanitized);
 }
 
 function getSession(storageArg) {
@@ -253,6 +264,7 @@ export function logoutCustomer(storageArg) {
   const storage = getStorage(storageArg);
   if (!storage) return;
   storage.removeItem(STORAGE_KEYS.session);
+  emitSessionChange(null);
 }
 
 export function updateCustomerProfile(payload, storageArg) {

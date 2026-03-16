@@ -23,7 +23,14 @@ const VIEW_REGISTER = "register";
 const VIEW_PROFILE = "profile";
 const VIEW_ORDERS = "orders";
 
-function HeaderDrawer({ isOpen, onClose, t, appendIdentifier, isDark = false }) {
+function HeaderDrawer({
+  isOpen,
+  onClose,
+  t,
+  appendIdentifier,
+  isDark = false,
+  initialView = VIEW_MENU,
+}) {
   const storage = typeof window !== "undefined" ? window.localStorage : null;
   const { customer, isLoggedIn, login, register, logout, updateProfile } = useCustomerAuth(storage);
 
@@ -36,8 +43,11 @@ function HeaderDrawer({ isOpen, onClose, t, appendIdentifier, isDark = false }) 
     if (!isOpen) {
       setView(VIEW_MENU);
       setOrdersError("");
+      return;
     }
-  }, [isOpen]);
+    setView(initialView || VIEW_MENU);
+    setOrdersError("");
+  }, [initialView, isOpen]);
 
   const fetcher = React.useCallback(
     async (path) => {

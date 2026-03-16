@@ -12,6 +12,9 @@ import { Header as QrMenuHeader } from "../features/qrmenu/header";
 import {
   HeaderDrawer,
   getCheckoutPrefill,
+  LoginPage,
+  RegisterPage,
+  useCustomerAuth,
   useHeaderDrawer,
 } from "../features/qrmenu/header-drawer";
 import { VoiceOrderController } from "../features/voiceOrder";
@@ -101,6 +104,117 @@ function showQrCartToast(message) {
       secondary: "#fff",
     },
   });
+}
+
+function GuestWelcomeAuthModal({
+  open,
+  view,
+  onViewChange,
+  onClose,
+  onLogin,
+  onRegister,
+  t,
+  brandName,
+}) {
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[1400]">
+      <button
+        type="button"
+        aria-label={t("Close")}
+        onClick={onClose}
+        className="absolute inset-0 bg-[rgba(15,23,42,0.58)] backdrop-blur-md"
+      />
+
+      <div className="relative z-[1401] flex min-h-full items-center justify-center p-3 sm:p-5">
+        <div className="relative flex max-h-[92vh] w-full max-w-[1040px] overflow-hidden rounded-[34px] border border-white/40 bg-white/90 shadow-[0_40px_120px_rgba(15,23,42,0.35)] backdrop-blur-2xl dark:border-white/10 dark:bg-neutral-950/92">
+          <div className="relative hidden w-[42%] overflow-hidden border-r border-white/40 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.96),_rgba(224,242,254,0.92)_46%,_rgba(186,230,253,0.74)_100%)] p-7 lg:flex lg:flex-col dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.22),_transparent_36%),linear-gradient(180deg,_rgba(15,23,42,0.98),_rgba(2,6,23,1))]">
+            <div className="pointer-events-none absolute -left-10 top-0 h-40 w-40 rounded-full bg-sky-200/60 blur-3xl dark:bg-sky-500/20" />
+            <div className="pointer-events-none absolute bottom-0 right-0 h-40 w-40 rounded-full bg-cyan-200/60 blur-3xl dark:bg-cyan-400/15" />
+            <div className="relative">
+              <div className="inline-flex items-center gap-2 rounded-full border border-sky-200/90 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700 shadow-sm dark:border-sky-400/20 dark:bg-white/10 dark:text-sky-200">
+                <Sparkles className="h-3.5 w-3.5" />
+                {t("Welcome, guest")}
+              </div>
+              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                {brandName || t("QR Menu")}
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                {t("Sign in to sync your profile, orders, and checkout details across visits.")}
+              </p>
+              <div className="mt-6 space-y-3">
+                <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                  {t("My Orders")}
+                </div>
+                <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                  {t("Saved checkout details")}
+                </div>
+                <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                  {t("Active and past orders")}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative flex min-w-0 flex-1 flex-col">
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute right-4 top-4 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 transition hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:text-white"
+              aria-label={t("Close")}
+            >
+              ×
+            </button>
+
+            <div className="min-h-0 flex-1">
+              {view === "register" ? (
+                <RegisterPage
+                  t={t}
+                  onRegister={async (payload) => {
+                    await onRegister?.(payload);
+                    onClose?.();
+                  }}
+                  onGoLogin={() => onViewChange?.("login")}
+                  onBack={onClose}
+                />
+              ) : (
+                <LoginPage
+                  t={t}
+                  onLogin={async (payload) => {
+                    await onLogin?.(payload);
+                    onClose?.();
+                  }}
+                  onGoRegister={() => onViewChange?.("register")}
+                  onBack={onClose}
+                />
+              )}
+            </div>
+
+            <div className="border-t border-slate-200/80 bg-white/85 px-4 py-3 dark:border-white/10 dark:bg-neutral-950/88">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-white/20 dark:hover:bg-white/10"
+              >
+                {t("Continue as Guest")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
 }
 
 function resolveBrandingAsset(raw, fallback = "") {
@@ -1024,6 +1138,10 @@ const DICT = {
     Register: "Register",
     Menu: "Menu",
     "Header drawer": "Header drawer",
+    "Member access": "Member access",
+    "Welcome, guest": "Welcome, guest",
+    "Sign in to sync your profile, orders, and checkout details across visits.": "Sign in to sync your profile, orders, and checkout details across visits.",
+    "Continue as Guest": "Continue as Guest",
     "My Orders": "My Orders",
     "My Profile": "My Profile",
     "Login / Register": "Login / Register",
@@ -1314,6 +1432,10 @@ const DICT = {
     Register: "Kayıt Ol",
     Menu: "Menü",
     "Header drawer": "Yan menü",
+    "Member access": "Üye girişi",
+    "Welcome, guest": "Hos geldiniz, misafir",
+    "Sign in to sync your profile, orders, and checkout details across visits.": "Profilinizi, siparişlerinizi ve ödeme bilgilerinizi ziyaretler arasında senkronize etmek için giriş yapın.",
+    "Continue as Guest": "Misafir olarak devam et",
     "My Orders": "Siparişlerim",
     "My Profile": "Profilim",
     "Login / Register": "Giriş / Kayıt",
@@ -1511,6 +1633,10 @@ const DICT = {
     Register: "Registrieren",
     Menu: "Menü",
     "Header drawer": "Seitenmenü",
+    "Member access": "Mitgliederzugang",
+    "Welcome, guest": "Willkommen, Gast",
+    "Sign in to sync your profile, orders, and checkout details across visits.": "Melden Sie sich an, um Profil, Bestellungen und Checkout-Daten zwischen Besuchen zu synchronisieren.",
+    "Continue as Guest": "Als Gast fortfahren",
     "My Orders": "Meine Bestellungen",
     "My Profile": "Mein Profil",
     "Login / Register": "Anmelden / Registrieren",
@@ -1700,6 +1826,10 @@ const DICT = {
     Register: "Inscription",
     Menu: "Menu",
     "Header drawer": "Menu latéral",
+    "Member access": "Accès membre",
+    "Welcome, guest": "Bienvenue, invité",
+    "Sign in to sync your profile, orders, and checkout details across visits.": "Connectez-vous pour synchroniser votre profil, vos commandes et vos informations de paiement entre vos visites.",
+    "Continue as Guest": "Continuer en invité",
     "My Orders": "Mes commandes",
     "My Profile": "Mon profil",
     "Login / Register": "Connexion / Inscription",
@@ -5428,7 +5558,41 @@ export default function QrMenu() {
     openDrawer: openAppHeaderDrawer,
     closeDrawer: closeAppHeaderDrawer,
   } = useHeaderDrawer();
+  const {
+    isLoggedIn: isCustomerLoggedIn,
+    login: loginCustomerSession,
+    register: registerCustomerSession,
+  } = useCustomerAuth(storage);
+  const [appHeaderDrawerInitialView, setAppHeaderDrawerInitialView] = useState("menu");
+  const [isAuthWelcomeDismissed, setIsAuthWelcomeDismissed] = useState(false);
+  const [authWelcomeView, setAuthWelcomeView] = useState("login");
   const callWaiterFeedbackTimeoutRef = useRef(null);
+  const authPromptWasLoggedInRef = useRef(isCustomerLoggedIn);
+
+  useEffect(() => {
+    if (isCustomerLoggedIn) {
+      setIsAuthWelcomeDismissed(false);
+      setAuthWelcomeView("login");
+    } else if (authPromptWasLoggedInRef.current) {
+      setIsAuthWelcomeDismissed(false);
+      setAuthWelcomeView("login");
+    }
+    authPromptWasLoggedInRef.current = isCustomerLoggedIn;
+  }, [isCustomerLoggedIn]);
+
+  const openMenuHeaderDrawer = useCallback(() => {
+    setAppHeaderDrawerInitialView("menu");
+    openAppHeaderDrawer();
+  }, [openAppHeaderDrawer]);
+
+  const handleCloseAppHeaderDrawer = useCallback(() => {
+    closeAppHeaderDrawer();
+    setAppHeaderDrawerInitialView("menu");
+  }, [closeAppHeaderDrawer]);
+
+  const handleCloseAuthWelcomeModal = useCallback(() => {
+    setIsAuthWelcomeDismissed(true);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -5644,6 +5808,14 @@ export default function QrMenu() {
     hasBottomNavContext &&
     (!showHome || showStatus) &&
     !isCartDrawerOpen;
+  const showCustomerAuthWelcomeModal =
+    !showStatus &&
+    !showDeliveryForm &&
+    !showTakeawayForm &&
+    !showTableScanner &&
+    !isCustomerLoggedIn &&
+    !isAppHeaderDrawerOpen &&
+    !isAuthWelcomeDismissed;
   const shouldLockReorderForNonTableConcert = (() => {
     const concertBookingType = String(
       activeOrder?.concert_booking_type ?? activeOrder?.concertBookingType ?? ""
@@ -5903,16 +6075,16 @@ export default function QrMenu() {
     setSelectedProduct(null);
     setQrVoiceModalOpen(false);
     setForceHome(true);
-    closeAppHeaderDrawer();
+    handleCloseAppHeaderDrawer();
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("qr:cart-close"));
       window.dispatchEvent(new Event("qr:voice-order-close"));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }, [
-    closeAppHeaderDrawer,
     setEditingCartItemId,
     setForceHome,
+    handleCloseAppHeaderDrawer,
     setPendingPopularProduct,
     setQrVoiceModalOpen,
     setSelectedProduct,
@@ -6798,6 +6970,16 @@ export default function QrMenu() {
           </div>
         </div>
       )}
+      <GuestWelcomeAuthModal
+        open={showCustomerAuthWelcomeModal}
+        view={authWelcomeView}
+        onViewChange={setAuthWelcomeView}
+        onClose={handleCloseAuthWelcomeModal}
+        onLogin={loginCustomerSession}
+        onRegister={registerCustomerSession}
+        t={t}
+        brandName={brandName}
+      />
       {showHome ? (
         <>
           <OrderTypeSelect
@@ -6865,7 +7047,7 @@ export default function QrMenu() {
                 <QrMenuHeader
                   isDark={isQrHeaderDark}
                   isDrawerOpen={isAppHeaderDrawerOpen}
-                  onOpenDrawer={openAppHeaderDrawer}
+                  onOpenDrawer={openMenuHeaderDrawer}
                   onSelect={handleSharedHeaderOrderTypeSelect}
                   reservationEnabled={shopIsOpen && !hasActiveDeliveryLock}
                   tableEnabled={shopIsOpen && !hasActiveDeliveryLock}
@@ -6892,10 +7074,11 @@ export default function QrMenu() {
                 />
                 <HeaderDrawer
                   isOpen={isAppHeaderDrawerOpen}
-                  onClose={closeAppHeaderDrawer}
+                  onClose={handleCloseAppHeaderDrawer}
                   t={t}
                   appendIdentifier={appendIdentifier}
                   isDark={isQrHeaderDark}
+                  initialView={appHeaderDrawerInitialView}
                 />
               </>
             ) : null}

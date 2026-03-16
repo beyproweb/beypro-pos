@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getCustomerSession,
   loginCustomer,
@@ -9,6 +9,35 @@ import {
 
 export default function useCustomerAuth(storage) {
   const [customer, setCustomer] = useState(() => getCustomerSession(storage));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const syncCustomer = () => {
+      setCustomer(getCustomerSession(storage));
+    };
+
+    const handleSessionChange = (event) => {
+      const nextCustomer = event?.detail?.customer;
+      if (nextCustomer === undefined) {
+        syncCustomer();
+        return;
+      }
+      setCustomer(nextCustomer || null);
+    };
+
+    const handleStorage = (event) => {
+      if (event?.key && event.key !== "qr_customer_session") return;
+      syncCustomer();
+    };
+
+    window.addEventListener("qr:customer-session-changed", handleSessionChange);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("qr:customer-session-changed", handleSessionChange);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [storage]);
 
   const isLoggedIn = useMemo(() => Boolean(customer?.id), [customer]);
 
