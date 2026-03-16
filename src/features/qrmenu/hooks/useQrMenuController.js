@@ -675,10 +675,15 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
   const safeOccupiedTables = useMemo(() => toArray(occupiedTables), [occupiedTables]);
   const safeReservedTables = useMemo(() => toArray(reservedTables), [reservedTables]);
   const hasActiveOrder = useMemo(() => {
-    if (!activeOrder) return false;
-    const s = (activeOrder.status || "").toLowerCase();
-    return !isTerminalOrderStatus(s);
-  }, [activeOrder]);
+    if (activeOrder) {
+      const s = (activeOrder.status || "").toLowerCase();
+      if (!isTerminalOrderStatus(s)) return true;
+    }
+    const activeOrderId = Number(
+      orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0
+    );
+    return Number.isFinite(activeOrderId) && activeOrderId > 0;
+  }, [activeOrder, orderId, storage]);
   const [qrVoiceListening, setQrVoiceListening] = useState(false);
   const [qrVoiceParsing, setQrVoiceParsing] = useState(false);
   const [qrVoiceTranscript, setQrVoiceTranscript] = useState("");
@@ -2856,10 +2861,22 @@ function handleReset(options = null) {
 				  // Check if order is delivered or cancelled - if so, navigate to home
 				  const status = (orderScreenStatus || "").toLowerCase();
 				  const isFinished = ["delivered", "served", "closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(status);
+          const hasCartItems = Array.isArray(cart) && cart.length > 0;
+          const activeFlowType = String(
+            activeOrder?.order_type || orderType || storage.getItem("qr_orderType") || ""
+          )
+            .trim()
+            .toLowerCase();
 
 		  if (isFinished) {
 		    // Order is complete - navigate to home and clear everything
 		    resetToTypePicker();
+		  } else if (!hasCartItems && activeFlowType !== "table" && activeFlowType !== "reservation") {
+		    setShowStatus(false);
+		    storage.setItem("qr_show_status", "0");
+        setForceHome(true);
+        window.dispatchEvent(new Event("qr:cart-close"));
+        window.dispatchEvent(new Event("qr:voice-order-close"));
 		  } else {
 		    // Order still active - just hide status to return to menu
 		    setShowStatus(false);

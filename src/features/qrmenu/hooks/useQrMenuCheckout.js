@@ -568,6 +568,10 @@ export function useQrMenuCheckout({
         storage.setItem("qr_orderType", effectiveOrderTypeForStorage);
         storage.setItem("qr_payment_method", effectivePaymentMethod);
         storage.setItem("qr_show_status", "1");
+        storage.setItem("qr_cart_auto_open", "0");
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("qr:cart-close"));
+        }
 
         const addedItemsTotal = newItems.reduce((sum, item) => {
           const extrasTotal = (item.extras || []).reduce(
@@ -691,6 +695,10 @@ export function useQrMenuCheckout({
       storage.setItem("qr_orderType", effectiveOrderTypeForStorage);
       storage.setItem("qr_payment_method", effectivePaymentMethod);
       storage.setItem("qr_show_status", "1");
+      storage.setItem("qr_cart_auto_open", "0");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("qr:cart-close"));
+      }
 
       trackCustomerOrder(
         {
