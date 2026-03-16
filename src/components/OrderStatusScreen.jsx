@@ -10,6 +10,8 @@ const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
   String(BASE_URL).replace(/\/api\/?$/, "") ||
   (typeof window !== "undefined" ? window.location.origin : "");
+const QR_PREFIX = "qr_";
+const DELIVERY_REORDER_CONTEXT_KEY = "qr_delivery_reorder_context";
 
 /* ---------- SOCKET.IO HOOK ---------- */
 let socket;
@@ -129,8 +131,15 @@ const parseMaybeJSON = (v) => {
     return [];
   }
 };
+const normalizeComparableText = (value) => String(value || "").trim().toLowerCase();
+const isDeliveryLikeOrderType = (value) =>
+  ["packet", "delivery", "online", "phone"].includes(normalizeComparableText(value));
 const normItem = (it) => ({
-  id: it.id || it.item_id || it.unique_id || `${it.product_id || Math.random()}`,
+  id:
+    it.id ||
+    it.item_id ||
+    it.unique_id ||
+    `${it.suborder_id || it.order_id || "main"}-${it.product_id || Math.random()}`,
   name: it.name || it.product_name || it.item_name || "",
   price: Number(it.price || 0),
   quantity: Number(it.quantity || 1),
@@ -149,6 +158,128 @@ const normItem = (it) => ({
   paid: it.paid === true || it.is_paid === true,
   paid_at: it.paid_at || it.paidAt || null,
 });
+
+const collectOrderItemsWithSuborders = (orderLike) => {
+  if (!orderLike || typeof orderLike !== "object") return [];
+
+  const mainItems = toArray(orderLike.items).map((item, index) => ({
+    ...item,
+    order_id: item?.order_id ?? orderLike?.id ?? null,
+    unique_id:
+      item?.unique_id ||
+      item?.item_id ||
+      item?.id ||
+      `order-${orderLike?.id || "main"}-${item?.product_id || index}`,
+  }));
+
+  const suborderItems = toArray(orderLike.suborders).flatMap((suborder, suborderIndex) =>
+    toArray(suborder?.items).map((item, itemIndex) => ({
+      ...item,
+      order_id: item?.order_id ?? suborder?.id ?? orderLike?.id ?? null,
+      suborder_id: item?.suborder_id ?? suborder?.id ?? null,
+      unique_id:
+        item?.unique_id ||
+        item?.item_id ||
+        item?.id ||
+        `suborder-${suborder?.id || suborderIndex}-${item?.product_id || itemIndex}`,
+    }))
+  );
+
+  const seen = new Set();
+  return [...mainItems, ...suborderItems].filter((item, index) => {
+    const key = String(
+      item?.unique_id ||
+        item?.item_id ||
+        item?.id ||
+        `${item?.suborder_id || item?.order_id || "main"}-${item?.product_id || index}`
+    );
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const computeTenantSuffix = () => {
+  if (typeof window === "undefined") return "";
+  try {
+    const native = window.localStorage;
+    if (!native) return "";
+    const storedId = native.getItem("restaurant_id");
+    if (storedId && storedId !== "undefined" && storedId !== "null") {
+      return `${storedId}_`;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const queryTenant =
+      params.get("tenant_id") ||
+      params.get("tenant") ||
+      params.get("restaurant_id") ||
+      params.get("restaurant");
+
+    if (queryTenant && queryTenant !== "undefined" && queryTenant !== "null") {
+      return `${queryTenant}_`;
+    }
+
+    const pathSegments = (window.location.pathname || "")
+      .split("/")
+      .filter(Boolean);
+    const qrIndex = pathSegments.indexOf("qr-menu");
+    if (qrIndex !== -1 && pathSegments[qrIndex + 1]) {
+      return `${pathSegments[qrIndex + 1]}_`;
+    }
+  } catch {
+    // Ignore local storage/path parsing failures and fall back to the legacy key.
+  }
+  return "";
+};
+
+const resolveQrKey = (key) => {
+  if (!key?.startsWith?.(QR_PREFIX)) return key;
+  const suffix = computeTenantSuffix();
+  if (!suffix) return key;
+  const base = key.slice(QR_PREFIX.length);
+  return `${QR_PREFIX}${suffix}${base}`;
+};
+
+const getQrKeyVariants = (key) => {
+  if (!key?.startsWith?.(QR_PREFIX)) return [key];
+  const scoped = resolveQrKey(key);
+  if (scoped === key) return [key];
+  return [scoped, key];
+};
+
+const readDeliveryReorderContext = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const native = window.localStorage;
+    if (!native) return null;
+    let raw = null;
+    for (const candidate of getQrKeyVariants(DELIVERY_REORDER_CONTEXT_KEY)) {
+      raw = native.getItem(candidate);
+      if (raw) break;
+    }
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const sourceOrderIds = Array.isArray(parsed?.sourceOrderIds)
+      ? parsed.sourceOrderIds
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0)
+      : [];
+    const targetOrderIds = Array.isArray(parsed?.targetOrderIds)
+      ? parsed.targetOrderIds
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0)
+      : [];
+    if (sourceOrderIds.length === 0 || targetOrderIds.length === 0) return null;
+    return {
+      mode: String(parsed?.mode || "").trim().toLowerCase(),
+      sourceOrderIds,
+      targetOrderIds,
+    };
+  } catch {
+    return null;
+  }
+};
 
 const normalizeReservationStatus = (value) =>
   String(value ?? "")
@@ -436,6 +567,8 @@ function OrderSummaryCard({
   title,
   statusLabel,
   statusToneClass,
+  secondaryStatusLabel,
+  secondaryStatusToneClass,
   headerActionLabel,
   onHeaderAction,
   driverMessage,
@@ -497,6 +630,17 @@ function OrderSummaryCard({
           >
             {statusLabel}
           </div>
+          {secondaryStatusLabel ? (
+            <div
+              className={[
+                "shrink-0 text-xs px-2.5 py-1 rounded-full border font-semibold shadow-sm",
+                secondaryStatusToneClass ||
+                  "bg-neutral-50 dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-800",
+              ].join(" ")}
+            >
+              {secondaryStatusLabel}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -567,6 +711,7 @@ function OrderItemsList({ t, items, totalLabel, formatCurrency, badgeColor, disp
           const basePrice = Number(item.price || 0);
           const baseTotal = basePrice * quantity;
           const isItemPaid = !!item.paid_at;
+          const isLocked = item.locked === true;
           const itemPm = pmLabel(item.payment_method);
           const isItemCancelled = isCancelledItemStatus(item.kitchen_status);
           const itemCancelReason = String(item.cancellation_reason || "").trim();
@@ -604,6 +749,11 @@ function OrderItemsList({ t, items, totalLabel, formatCurrency, badgeColor, disp
                             {t("Unpaid")}
                           </span>
                         )}
+                        {isLocked ? (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full border bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border-neutral-200 dark:border-neutral-700">
+                            {t("Locked")}
+                          </span>
+                        ) : null}
                       </div>
 
                       {item.extras?.length > 0 ? (
@@ -907,6 +1057,104 @@ const OrderStatusScreen = ({
     [fetchJSON]
   );
 
+  const hydrateOrderItems = useCallback(
+    async (orderData) => {
+      if (!orderData || typeof orderData !== "object") return orderData;
+      const orderDataId = Number(orderData?.id || 0);
+      if (!Number.isFinite(orderDataId) || orderDataId <= 0) return orderData;
+      if (Array.isArray(orderData.items) && orderData.items.length > 0) return orderData;
+
+      try {
+        const { res, data } = await fetchJSON(`/orders/${orderDataId}/items?include_cancelled=1`);
+        if (!res?.ok) return orderData;
+        return { ...orderData, items: toArray(data) };
+      } catch {
+        return orderData;
+      }
+    },
+    [fetchJSON]
+  );
+
+  const hydrateOrderSuborders = useCallback(
+    async (orderData) => {
+      if (!orderData || typeof orderData !== "object") return orderData;
+      if (Array.isArray(orderData.suborders) && orderData.suborders.length > 0) return orderData;
+
+      const orderDataId = Number(orderData?.id || 0);
+      if (!Number.isFinite(orderDataId) || orderDataId <= 0) return orderData;
+
+      try {
+        const { res, data } = await fetchJSON(`/orders/${orderDataId}/suborders`);
+        if (!res?.ok) return orderData;
+        const suborders = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data?.suborders)
+          ? data.suborders
+          : [];
+        return suborders.length > 0 ? { ...orderData, suborders } : orderData;
+      } catch {
+        return orderData;
+      }
+    },
+    [fetchJSON]
+  );
+
+  const fetchRelatedOrdersForStatus = useCallback(
+    async (orderData) => {
+      if (!orderData || typeof orderData !== "object") return orderData;
+      if (Array.isArray(orderData.suborders) && orderData.suborders.length > 0) return orderData;
+      if (!isDeliveryLikeOrderType(orderData?.order_type)) return orderData;
+
+      const currentId = Number(orderData?.id || 0);
+      if (!Number.isFinite(currentId) || currentId <= 0) return orderData;
+
+      const reorderContext = readDeliveryReorderContext();
+      if (!reorderContext || reorderContext.mode !== "online") return orderData;
+      if (!reorderContext.targetOrderIds.includes(currentId)) return orderData;
+
+      const relatedIds = reorderContext.sourceOrderIds.filter((value) => value !== currentId);
+      if (relatedIds.length === 0) return orderData;
+
+      const hydratedSuborders = await Promise.all(
+        relatedIds.map(async (relatedId) => {
+          try {
+            const { res, data } = await fetchJSON(`/orders/${relatedId}`);
+            if (!res?.ok || !data || !isDeliveryLikeOrderType(data?.order_type)) return null;
+            const hydrated = await hydrateOrderItems(await hydrateOrderDriverName(data));
+            return {
+              ...hydrated,
+              items: toArray(hydrated?.items).map((item) => ({
+                ...item,
+                locked: true,
+                source_order_id: relatedId,
+              })),
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const nextSuborders = hydratedSuborders
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aTime = Date.parse(a?.created_at || a?.createdAt || 0) || 0;
+          const bTime = Date.parse(b?.created_at || b?.createdAt || 0) || 0;
+          return aTime - bTime;
+        });
+
+      if (nextSuborders.length === 0) return orderData;
+
+      return {
+        ...orderData,
+        suborders: nextSuborders,
+      };
+    },
+    [fetchJSON, hydrateOrderDriverName, hydrateOrderItems]
+  );
+
   useEffect(() => {
     if (!order) return;
     const status = (order.status || "").toLowerCase();
@@ -957,6 +1205,9 @@ const OrderStatusScreen = ({
       const { res, data } = await fetchJSON(`/orders/${orderId}`);
       if (res.ok) {
         nextOrder = await hydrateOrderDriverName(data);
+        nextOrder = await hydrateOrderItems(nextOrder);
+        nextOrder = await hydrateOrderSuborders(nextOrder);
+        nextOrder = await fetchRelatedOrdersForStatus(nextOrder);
         const normStatus = normalizeReservationStatus(nextOrder?.status);
         const nestedStatus = normalizeReservationStatus(nextOrder?.reservation?.status);
         const flatReservationStatus = normalizeReservationStatus(
@@ -981,6 +1232,12 @@ const OrderStatusScreen = ({
       checkedInSticky || isCheckedInReservationStatus(normalizedOrderScreenStatus);
     if (!hasCheckedInOverride && isReservationPendingCheckIn(nextOrder, normalizedOrderScreenStatus)) {
       setItems([]);
+      return;
+    }
+
+    const orderPayloadItems = collectOrderItemsWithSuborders(nextOrder);
+    if (orderPayloadItems.length > 0) {
+      setItems(orderPayloadItems.map(normItem));
       return;
     }
 
@@ -1294,6 +1551,37 @@ const OrderStatusScreen = ({
     if (s === "new") return "bg-neutral-50 text-neutral-700 border-neutral-200";
     return "bg-neutral-50 text-neutral-600 border-neutral-200";
   };
+  const suborders = Array.isArray(order?.suborders) ? order.suborders : [];
+  const effectiveSuborderStatus = (() => {
+    const statuses = suborders
+      .map((suborder) => normalizeStatus(suborder?.status || suborder?.order_status))
+      .filter(Boolean);
+    if (!statuses.length) return "";
+
+    const nonCancelled = statuses.filter(
+      (status) => !["cancelled", "canceled", "void", "deleted"].includes(status)
+    );
+    const statusPool = nonCancelled.length > 0 ? nonCancelled : statuses;
+    const rank = (status) => {
+      const value = normalizeStatus(status);
+      if (value === "on_road") return 6;
+      if (value === "delivered") return 5;
+      if (value === "ready") return 4;
+      if (value === "preparing") return 3;
+      if (value === "confirmed" || value === "pending" || value === "open") return 2;
+      if (value === "new") return 1;
+      return 0;
+    };
+
+    return statusPool.reduce(
+      (bestStatus, currentStatus) =>
+        rank(currentStatus) >= rank(bestStatus) ? currentStatus : bestStatus,
+      statusPool[0]
+    );
+  })();
+  const secondaryStatusLabel = effectiveSuborderStatus
+    ? `${t("Sub Orders")}: ${displayStatus(effectiveSuborderStatus)}`
+    : "";
 
   const getCurrentStepIndex = () => {
     if (isReservedOrderContext) return 0;
@@ -1423,6 +1711,8 @@ const OrderStatusScreen = ({
             title={titleLine || t("Your Order")}
             statusLabel={isCancelledFlow ? t("Cancelled") : displayStatus(effectiveOrderStatus)}
             statusToneClass={badgeColor(effectiveOrderStatus)}
+            secondaryStatusLabel={secondaryStatusLabel}
+            secondaryStatusToneClass={effectiveSuborderStatus ? badgeColor(effectiveSuborderStatus) : ""}
             headerActionLabel={shouldShowFollowOrder ? t("Follow my order") : ""}
             onHeaderAction={shouldShowFollowOrder ? () => setIsTrackingOpen(true) : null}
             driverMessage={driverMessage}

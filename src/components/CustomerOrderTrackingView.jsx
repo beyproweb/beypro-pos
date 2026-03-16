@@ -105,11 +105,39 @@ function formatRestaurantMarkerLabel(value) {
   return [words[0], words.slice(1).join(" ")];
 }
 
+function normalizeTrackingValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveTrackingStage(tracking) {
+  const rawStage = normalizeTrackingValue(tracking?.tracking_stage) || "confirmed";
+  const kitchenStatus = normalizeTrackingValue(
+    tracking?.kitchen_status ||
+      tracking?.kitchenStatus ||
+      tracking?.order?.kitchen_status ||
+      tracking?.order?.kitchenStatus
+  );
+
+  if (rawStage === "confirmed" && kitchenStatus === "new") {
+    return "new";
+  }
+
+  return rawStage;
+}
+
 function getStageCopy(stage, tracking, t) {
   const hasDriverAssigned = Boolean(tracking?.driver?.assigned);
   const hasLiveLocation = Boolean(tracking?.driver?.has_live_location);
 
   switch (stage) {
+    case "new":
+      return {
+        badge: t("new"),
+        title: t("Your order is in the kitchen"),
+        detail: t("We will keep the ETA updated while everything is being prepared."),
+      };
     case "preparing":
       return {
         badge: t("Preparing order"),
@@ -430,8 +458,9 @@ export default function CustomerOrderTrackingView({
   const displayEtaMinutes = Number.isFinite(Number(tracking?.eta_minutes))
     ? Number(tracking.eta_minutes)
     : fallbackEtaMinutes;
-  const stage = String(tracking?.tracking_stage || "confirmed");
+  const stage = resolveTrackingStage(tracking);
   const stageCopy = getStageCopy(stage, tracking, t);
+  const shouldShowDriverMarker = Boolean(tracking?.driver?.assigned) && Boolean(driverPoint);
   const driverLocationTimestamp = tracking?.driver?.location?.timestamp || tracking?.updated_at || null;
   const routeDistanceMeters = Number.isFinite(Number(tracking?.route?.distance_meters))
     ? Number(tracking.route.distance_meters)
@@ -442,7 +471,9 @@ export default function CustomerOrderTrackingView({
   const restaurantMarkerLabel = String(tracking?.restaurant?.name || t("Restaurant")).trim() || t("Restaurant");
   const restaurantMarkerLines = formatRestaurantMarkerLabel(restaurantMarkerLabel);
   const restaurantMarkerSubtext =
-    stage === "preparing" || stage === "confirmed" || stage === "ready" || stage === "driver_assigned"
+    stage === "new"
+      ? t("new")
+      : stage === "preparing" || stage === "confirmed" || stage === "ready" || stage === "driver_assigned"
       ? t("Preparing your order")
       : stage === "on_road" || stage === "arriving"
         ? t("Order picked up")
@@ -614,7 +645,7 @@ export default function CustomerOrderTrackingView({
                   </Marker>
                 ) : null}
 
-                {driverPoint ? (
+                {shouldShowDriverMarker ? (
                   <Marker position={[driverPoint.lat, driverPoint.lng]} icon={driverIcon}>
                     <Tooltip direction="top" offset={[0, -12]} permanent={false}>
                       {tracking?.driver?.name || t("Driver")}

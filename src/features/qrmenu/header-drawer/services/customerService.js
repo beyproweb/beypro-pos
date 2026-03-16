@@ -399,9 +399,6 @@ export async function fetchCustomerOrders({
         }
       });
 
-      if (remote.length > 0 && path !== "/orders") {
-        break;
-      }
     } catch {
       // Continue with other endpoints and fallback storage.
     }

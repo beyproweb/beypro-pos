@@ -33,6 +33,7 @@ import {
   RotateCcw,
   Loader2,
   Bell,
+  House,
   ShoppingCart,
   Sparkles,
   Instagram,
@@ -44,6 +45,7 @@ import {
 import { Html5Qrcode } from "html5-qrcode";
 import { io } from "socket.io-client";
 import QRCode from "qrcode";
+import { Toaster, toast } from "react-hot-toast";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -78,6 +80,27 @@ function resolveUploadedAsset(raw) {
   if (/^https?:\/\//i.test(value)) return value;
   const uploadsBase = API_BASE || "";
   return `${uploadsBase}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+}
+
+function showQrCartToast(message) {
+  toast.success(message, {
+    duration: 2400,
+    position: "top-center",
+    style: {
+      borderRadius: "16px",
+      border: "1px solid rgba(15, 23, 42, 0.08)",
+      background: "rgba(15, 23, 42, 0.96)",
+      color: "#fff",
+      padding: "12px 16px",
+      boxShadow: "0 20px 50px rgba(15, 23, 42, 0.22)",
+      fontSize: "14px",
+      fontWeight: 600,
+    },
+    iconTheme: {
+      primary: "#10B981",
+      secondary: "#fff",
+    },
+  });
 }
 
 function resolveBrandingAsset(raw, fallback = "") {
@@ -892,6 +915,7 @@ const DICT = {
     "Table must be closed by staff first": "Table must be closed by staff first",
     Available: "Available",
     Pickup: "Pickup",
+    Home: "Home",
     "Call Us": "Call Us",
     "Call Waiter": "Call Waiter",
     "Calling Waiter...": "Calling Waiter...",
@@ -1181,6 +1205,7 @@ const DICT = {
     "Table must be closed by staff first": "Önce personel masayı kapatmalıdır",
     Available: "Uygun",
     Pickup: "Gel Al",
+    Home: "Ana Sayfa",
     "Call Us": "Bizi Ara",
     "Call Waiter": "Garson Çağır",
     "Calling Waiter...": "Garson Çağırılıyor...",
@@ -1432,6 +1457,7 @@ const DICT = {
     Table: "Tisch",
     Pickup: "Abholung",
     Delivery: "Lieferung",
+    Home: "Startseite",
     Time: "Zeit",
     Guests: "Gäste",
     "Select Guests": "Gäste wählen",
@@ -1557,8 +1583,6 @@ const DICT = {
     "Live coordinates are temporarily unavailable. Showing fallback ETA and status in the meantime.": "Live-Koordinaten sind vorübergehend nicht verfügbar. In der Zwischenzeit werden Ersatz-ETA und Status angezeigt.",
     "Preparing your order": "Ihre Bestellung wird vorbereitet",
     "Order picked up": "Bestellung abgeholt",
-    DRV: "KUR",
-    YOU: "DU",
     items: "Artikel",
     new: "Neu",
     confirmed: "Bestätigt",
@@ -1626,6 +1650,7 @@ const DICT = {
     Table: "Table",
     Pickup: "À emporter",
     Delivery: "Livraison",
+    Home: "Accueil",
     Time: "Temps",
     Guests: "Invités",
     "Select Guests": "Choisir des invités",
@@ -2244,6 +2269,8 @@ function OrderTypeSelect({
   statusShortcutEnabled = false,
   statusShortcutOpen = false,
   onStatusShortcutToggle,
+  reservationEnabled = true,
+  tableEnabled = true,
 }) {
 
   /* ============================================================
@@ -3468,8 +3495,8 @@ async function load() {
         isDrawerOpen={isReservationHeaderDrawerOpen}
         onOpenDrawer={openReservationHeaderDrawer}
         onSelect={handleHeaderOrderTypeSelect}
-        reservationEnabled={reservationTabEnabled && openStatus.isOpen}
-        tableEnabled={openStatus.isOpen}
+        reservationEnabled={reservationEnabled && reservationTabEnabled && openStatus.isOpen}
+        tableEnabled={tableEnabled && openStatus.isOpen}
         deliveryEnabled={allowDelivery && openStatus.isOpen}
         activeOrderType={activeHeaderOrderType}
         statusShortcutCount={statusShortcutCount}
@@ -4751,6 +4778,8 @@ function OrderTypePromptModal({
   onClose,
   t,
   deliveryEnabled = true,
+  reservationEnabled = true,
+  tableEnabled = true,
   shopIsOpen = true,
 }) {
   const productName = String(product?.name || "").trim();
@@ -4781,10 +4810,10 @@ function OrderTypePromptModal({
 
         <div className="space-y-3">
           <button
-            onClick={() => shopIsOpen && onSelect?.("takeaway")}
-            disabled={!shopIsOpen}
+            onClick={() => shopIsOpen && reservationEnabled && onSelect?.("takeaway")}
+            disabled={!shopIsOpen || !reservationEnabled}
             className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm transition ${
-              shopIsOpen
+              shopIsOpen && reservationEnabled
                 ? "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-100 hover:border-neutral-900 dark:hover:border-white hover:text-neutral-900"
                 : "border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed"
             }`}
@@ -4793,10 +4822,10 @@ function OrderTypePromptModal({
             {shopIsOpen ? t("Reservation") : t("Shop Closed")}
           </button>
           <button
-            onClick={() => shopIsOpen && onSelect?.("table")}
-            disabled={!shopIsOpen}
+            onClick={() => shopIsOpen && tableEnabled && onSelect?.("table")}
+            disabled={!shopIsOpen || !tableEnabled}
             className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg transition ${
-              shopIsOpen
+              shopIsOpen && tableEnabled
                 ? "border-neutral-200 dark:border-neutral-700 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white hover:opacity-95"
                 : "border-neutral-200 dark:border-neutral-800 bg-neutral-200 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed shadow-sm"
             }`}
@@ -5574,6 +5603,7 @@ export default function QrMenu() {
     Number.isFinite(resolvedTableForActions) &&
     resolvedTableForActions > 0;
   const callWaiterButtonDisabledBase = callingWaiter || callWaiterCooldownSeconds > 0;
+  const homeLabel = t("Home");
   const callWaiterLabel = t("Call Waiter");
   const reOrderLabel = "Re-Order";
   const aiOrderLabel = t("AI Order");
@@ -5862,6 +5892,37 @@ export default function QrMenu() {
     showCallWaiterFeedback(t("Unable to call waiter right now."));
   }, [handleCallWaiter, showCallWaiterFeedback, t]);
 
+  const onGoHomeFromNav = useCallback(() => {
+    setShowStatus(false);
+    storage.setItem("qr_show_status", "0");
+    setShowDeliveryForm(false);
+    setShowTakeawayForm(false);
+    setShowOrderTypePrompt(false);
+    setPendingPopularProduct(null);
+    setEditingCartItemId(null);
+    setSelectedProduct(null);
+    setQrVoiceModalOpen(false);
+    setForceHome(true);
+    closeAppHeaderDrawer();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("qr:cart-close"));
+      window.dispatchEvent(new Event("qr:voice-order-close"));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [
+    closeAppHeaderDrawer,
+    setEditingCartItemId,
+    setForceHome,
+    setPendingPopularProduct,
+    setQrVoiceModalOpen,
+    setSelectedProduct,
+    setShowDeliveryForm,
+    setShowOrderTypePrompt,
+    setShowStatus,
+    setShowTakeawayForm,
+    storage,
+  ]);
+
   const onOpenCartFromNav = useCallback(async () => {
     // Ensure status overlay is dismissed before opening cart to avoid open/close flicker.
     setShowStatus(false);
@@ -6062,6 +6123,23 @@ export default function QrMenu() {
     !shouldLockReorderForNonTableConcert &&
     !(forceStatusLockActive && !allowOrderAnotherWhenLocked);
   const activeOrderHasReservation = hasReservationPayload(activeOrder);
+  const activeDeliveryLockOrderId = Number(
+    orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0
+  );
+  const activeDeliveryLockType = String(
+    activeOrder?.order_type || orderType || storage.getItem("qr_orderType") || ""
+  )
+    .trim()
+    .toLowerCase();
+  const activeDeliveryLockStatus = String(orderScreenStatus || activeOrder?.status || "")
+    .trim()
+    .toLowerCase();
+  const hasActiveDeliveryLock =
+    Number.isFinite(activeDeliveryLockOrderId) &&
+    activeDeliveryLockOrderId > 0 &&
+    ["online", "packet", "delivery", "phone"].includes(activeDeliveryLockType) &&
+    !["closed", "completed"].includes(activeDeliveryLockStatus) &&
+    !isCancelledLikeStatus(activeDeliveryLockStatus);
   const activeOrderItemCount = (() => {
     if (Array.isArray(activeOrder?.items)) return activeOrder.items.length;
     const countFromPayload = Number(activeOrder?.items_count ?? activeOrder?.item_count);
@@ -6131,6 +6209,7 @@ export default function QrMenu() {
   const disableReorderAction = !canUseReorderSlot || disableBottomNavForCancelledStatus;
   const disableCartAction = !canOpenCartFromNav || disableBottomNavForCancelledStatus;
   const disableVoiceAction = !canStartVoiceFromNav || disableBottomNavForCancelledStatus;
+  const shouldAnimateCartNavButton = cartNewItemsCount > 0 && !disableCartAction;
   const savedCustomerPrefill = useMemo(
     () => getCheckoutPrefill(storage),
     [showTakeawayForm, showDeliveryForm, orderType]
@@ -6345,6 +6424,7 @@ export default function QrMenu() {
       }
       const resolvedQty = Math.max(1, Number(qty) || 1);
       const resolvedProduct = product || safeProducts.find((it) => String(it?.id) === String(productId)) || null;
+      const resolvedName = resolvedProduct?.name || name || t("Unknown product");
       const resolvedExtras = (Array.isArray(extras) ? extras : []).map((extra, index) => ({
         ...(extra || {}),
         key:
@@ -6358,12 +6438,12 @@ export default function QrMenu() {
         extraPrice: Number(extra?.price ?? extra?.extraPrice ?? 0) || 0,
         quantity: Math.max(1, Number(extra?.quantity) || 1),
       }));
-      storage.setItem("qr_cart_auto_open", "1");
+      storage.setItem("qr_cart_auto_open", "0");
       setCart((prev) => [
         ...(Array.isArray(prev) ? prev : []),
         {
           id: resolvedProduct?.id ?? productId ?? null,
-          name: resolvedProduct?.name || name || t("Unknown product"),
+          name: resolvedName,
           image: resolvedProduct?.image || null,
           price: Number(resolvedProduct?.price ?? unitPrice ?? 0) || 0,
           quantity: resolvedQty,
@@ -6373,6 +6453,7 @@ export default function QrMenu() {
         },
       ]);
       setPaymentMethod("");
+      showQrCartToast(`${resolvedQty} ${resolvedName} added to Cart`);
     },
     [
       reservationPendingCheckIn,
@@ -6595,6 +6676,50 @@ export default function QrMenu() {
 
   return (
     <>
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          success: {
+            style: {
+              borderRadius: "16px",
+              border: "1px solid rgba(15, 23, 42, 0.08)",
+              background: "rgba(15, 23, 42, 0.96)",
+              color: "#fff",
+              padding: "12px 16px",
+              boxShadow: "0 20px 50px rgba(15, 23, 42, 0.22)",
+              fontSize: "14px",
+              fontWeight: 600,
+            },
+          },
+        }}
+      />
+      <style>{`
+        @keyframes qr-cart-nav-pulse {
+          0%, 100% {
+            transform: translateY(0) scale(1);
+            box-shadow: 0 10px 24px rgba(5, 150, 105, 0.18);
+          }
+          35% {
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 16px 30px rgba(16, 185, 129, 0.3);
+          }
+          65% {
+            transform: translateY(0) scale(1.01);
+            box-shadow: 0 12px 26px rgba(5, 150, 105, 0.22);
+          }
+        }
+        @keyframes qr-cart-icon-bob {
+          0%, 100% {
+            transform: translateY(0) rotate(0deg);
+          }
+          30% {
+            transform: translateY(-2px) rotate(-6deg);
+          }
+          60% {
+            transform: translateY(0) rotate(6deg);
+          }
+        }
+      `}</style>
       {showStandaloneSplash ? (
         <div
           className="fixed inset-0 z-[1200] flex items-center justify-center"
@@ -6698,6 +6823,8 @@ export default function QrMenu() {
             statusShortcutEnabled={statusShortcutEnabled}
             statusShortcutOpen={showStatus}
             onStatusShortcutToggle={handleHeaderStatusShortcutToggle}
+            reservationEnabled={!hasActiveDeliveryLock}
+            tableEnabled={!hasActiveDeliveryLock}
           />
 
           {!orderType && showOrderTypePrompt && (
@@ -6715,6 +6842,8 @@ export default function QrMenu() {
                 setShowOrderTypePrompt(false);
               }}
               deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}
+              reservationEnabled={!hasActiveDeliveryLock}
+              tableEnabled={!hasActiveDeliveryLock}
             />
           )}
         </>
@@ -6723,7 +6852,7 @@ export default function QrMenu() {
           className={`${isQrHeaderDark ? "dark " : ""}flex-1`}
           style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
         >
-          <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-50 dark:bg-neutral-900 flex flex-col">
+          <div className="min-h-screen w-full max-w-full bg-neutral-50 dark:bg-neutral-900 flex flex-col">
             {shouldShowTableOrderHeader ? (
               <TableOrderHeader
                 t={t}
@@ -6738,8 +6867,8 @@ export default function QrMenu() {
                   isDrawerOpen={isAppHeaderDrawerOpen}
                   onOpenDrawer={openAppHeaderDrawer}
                   onSelect={handleSharedHeaderOrderTypeSelect}
-                  reservationEnabled={shopIsOpen}
-                  tableEnabled={shopIsOpen}
+                  reservationEnabled={shopIsOpen && !hasActiveDeliveryLock}
+                  tableEnabled={shopIsOpen && !hasActiveDeliveryLock}
                   deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true) && shopIsOpen}
                   activeOrderType={sharedHeaderOrderType}
                   statusShortcutCount={statusShortcutCount}
@@ -6877,7 +7006,18 @@ export default function QrMenu() {
               {callWaiterFeedback}
             </div>
           ) : null}
-          <div className="mx-auto grid w-full max-w-md grid-cols-4 gap-2 rounded-2xl border border-neutral-200 bg-white/95 p-2 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur">
+          <div className="mx-auto grid w-full max-w-xl grid-cols-5 gap-2 rounded-2xl border border-neutral-200 bg-white/95 p-2 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur">
+            <button
+              type="button"
+              onClick={onGoHomeFromNav}
+              className="inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border border-slate-300 bg-gradient-to-b from-slate-100 to-white px-1 text-[11px] font-semibold leading-none text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[0.98]"
+              title={homeLabel}
+              aria-label={homeLabel}
+            >
+              <House className="h-4 w-4" aria-hidden="true" />
+              <span className="block whitespace-nowrap">{homeLabel}</span>
+            </button>
+
             <button
               type="button"
               onClick={onCallWaiterClick}
@@ -6923,14 +7063,27 @@ export default function QrMenu() {
                 !disableCartAction
                   ? "border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
                   : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-              }`}
+              } ${shouldAnimateCartNavButton ? "will-change-transform" : ""}`}
+              style={
+                shouldAnimateCartNavButton
+                  ? { animation: "qr-cart-nav-pulse 1.8s ease-in-out infinite" }
+                  : undefined
+              }
               title={cartLabel}
               aria-label={cartLabel}
             >
-              <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+              <ShoppingCart
+                className="h-4 w-4"
+                aria-hidden="true"
+                style={
+                  shouldAnimateCartNavButton
+                    ? { animation: "qr-cart-icon-bob 1.15s ease-in-out infinite" }
+                    : undefined
+                }
+              />
               <span className="block whitespace-nowrap">{cartLabel}</span>
               {cartNewItemsCount > 0 ? (
-                <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-sky-700 px-1 text-[9px] font-bold leading-none text-white">
+                <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-sky-700 px-1 text-[9px] font-bold leading-none text-white animate-pulse">
                   {cartNewItemsCount}
                 </span>
               ) : null}
@@ -7123,7 +7276,7 @@ export default function QrMenu() {
             showReservationPendingCheckInMessage();
             return;
           }
-          storage.setItem("qr_cart_auto_open", "1");
+          storage.setItem("qr_cart_auto_open", "0");
           setCart((prev) => {
             const prevItems = toArray(prev);
             if (!editingCartItemId) {
@@ -7135,15 +7288,14 @@ export default function QrMenu() {
                 : existingItem
             );
           });
+          const isEditingCartItem = Boolean(editingCartItemId);
           setEditingCartItemId(null);
           setShowAddModal(false);
           setShowStatus(false);
-          if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-            window.requestAnimationFrame(() => {
-              window.dispatchEvent(new Event("qr:cart-open"));
-            });
+          if (isEditingCartItem) {
+            showQrCartToast(t("Save changes"));
           } else {
-            window.dispatchEvent(new Event("qr:cart-open"));
+            showQrCartToast(`${Math.max(1, Number(item?.quantity) || 1)} ${item?.name || t("Unknown product")} added to Cart`);
           }
           if (returnHomeAfterAdd) {
             // Home-product flow should return home with cart open.

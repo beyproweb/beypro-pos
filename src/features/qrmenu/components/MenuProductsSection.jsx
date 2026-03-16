@@ -192,8 +192,8 @@ const MenuProductsSection = React.memo(function MenuProductsSection({
   apiUrl,
 }) {
   return (
-    <section className="order-2 xl:order-none">
-      <div className="mb-4">
+    <section className="order-2 xl:order-none min-w-0">
+      <div className="sticky top-[74px] sm:top-[80px] z-30 mb-4 -mx-1 px-1 py-1 bg-neutral-50/88 dark:bg-neutral-900/88 backdrop-blur-md">
         <CategoryTopBar
           categories={categories}
           activeCategory={activeCategory}

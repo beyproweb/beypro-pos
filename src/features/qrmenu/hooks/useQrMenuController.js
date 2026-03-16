@@ -27,6 +27,7 @@ export function useQrMenuController({
   extractTableNumberFromQrText,
 }) {
 const FORCE_STATUS_UNTIL_CLOSE_KEY = "qr_force_status_until_closed";
+const DELIVERY_REORDER_CONTEXT_KEY = "qr_delivery_reorder_context";
 const clampGuestCount = (value, fallback = 1) => {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
@@ -1025,6 +1026,7 @@ const handleTableScanSuccess = useCallback(
     setShowStatus(false);
     storage.setItem("qr_show_status", "0");
     storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
+    storage.removeItem(DELIVERY_REORDER_CONTEXT_KEY);
     storage.removeItem("qr_active_order_id");
     storage.removeItem("qr_active_order");
     setOrderStatus("pending");
@@ -2337,6 +2339,30 @@ const triggerOrderType = useCallback(
       alert(t("Closed"));
       return;
     }
+    const activeOrderTypeForLock = String(
+      activeOrder?.order_type || orderType || storage.getItem("qr_orderType") || ""
+    )
+      .trim()
+      .toLowerCase();
+    const activeOrderStatusForLock = String(orderScreenStatus || activeOrder?.status || "")
+      .trim()
+      .toLowerCase();
+    const activeOrderIdForLock = Number(
+      orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0
+    );
+    const hasActiveDeliveryLock =
+      Number.isFinite(activeOrderIdForLock) &&
+      activeOrderIdForLock > 0 &&
+      ["online", "packet", "delivery", "phone"].includes(activeOrderTypeForLock) &&
+      !isTerminalOrderStatus(activeOrderStatusForLock) &&
+      !isCancelledLikeStatus(activeOrderStatusForLock);
+    if (hasActiveDeliveryLock && type !== "online") {
+      alert("Reservation and table orders are disabled while an active delivery order is open.");
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("qr:voice-order-close"));
+    }
     setForceHome(false);
     setOrderType(type);
     if (type === "online") {
@@ -2346,7 +2372,19 @@ const triggerOrderType = useCallback(
       setShowTakeawayForm(true);
     }
   },
-  [setForceHome, setOrderType, setShowDeliveryForm, setShowTakeawayForm, shopIsOpen, t]
+  [
+    activeOrder,
+    orderId,
+    orderScreenStatus,
+    orderType,
+    setForceHome,
+    setOrderType,
+    setShowDeliveryForm,
+    setShowTakeawayForm,
+    shopIsOpen,
+    storage,
+    t,
+  ]
 );
 
 const handlePopularProductClick = useCallback(
@@ -2718,9 +2756,47 @@ async function handleOrderAnother() {
 
     // ONLINE branch: rehydrate previous (locked) items too
     if (type === "online" && id) {
+      try {
+        const rawContext = storage.getItem(DELIVERY_REORDER_CONTEXT_KEY);
+        const parsedContext = rawContext ? JSON.parse(rawContext) : null;
+        const existingSourceIds = Array.isArray(parsedContext?.sourceOrderIds)
+          ? parsedContext.sourceOrderIds
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value > 0)
+          : [];
+        const nextSourceIds = Array.from(
+          new Set(
+            [...existingSourceIds, Number(id)].filter(
+              (value) => Number.isFinite(value) && value > 0
+            )
+          )
+        );
+        storage.setItem(
+          DELIVERY_REORDER_CONTEXT_KEY,
+          JSON.stringify({
+            mode: "online",
+            sourceOrderIds: nextSourceIds,
+            targetOrderIds: [],
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      } catch {
+        storage.setItem(
+          DELIVERY_REORDER_CONTEXT_KEY,
+          JSON.stringify({
+            mode: "online",
+            sourceOrderIds: [Number(id)],
+            targetOrderIds: [],
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      }
       await rehydrateCartFromOrder(id, resolvedOrderSnapshot); // sets locked: true items
+      setOrderId(null);
+      setActiveOrder(resolvedOrderSnapshot || null);
       setOrderType("online");
-      storage.setItem("qr_active_order_id", String(id));
+      storage.removeItem("qr_active_order_id");
+      storage.removeItem("qr_active_order");
       storage.setItem("qr_orderType", "online");
       storage.setItem("qr_show_status", "0");
       setShowDeliveryForm(false); // don’t ask details again

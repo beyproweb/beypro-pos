@@ -31,6 +31,7 @@ export function useQrMenuCheckout({
   setLastError,
   setOccupiedTables,
 }) {
+  const DELIVERY_REORDER_CONTEXT_KEY = "qr_delivery_reorder_context";
   const normalizeStatusValue = (value) =>
     String(value ?? "")
       .trim()
@@ -85,6 +86,40 @@ export function useQrMenuCheckout({
     if (Array.isArray(raw?.order_items)) return raw.order_items;
     return [];
   }, []);
+
+  const attachDeliveryReorderTarget = useCallback(
+    (nextOrderId) => {
+      const normalizedOrderId = Number(nextOrderId);
+      if (!Number.isFinite(normalizedOrderId) || normalizedOrderId <= 0) return;
+      try {
+        const rawContext = storage.getItem(DELIVERY_REORDER_CONTEXT_KEY);
+        const parsedContext = rawContext ? JSON.parse(rawContext) : null;
+        const sourceOrderIds = Array.isArray(parsedContext?.sourceOrderIds)
+          ? parsedContext.sourceOrderIds
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value > 0)
+          : [];
+        if (sourceOrderIds.length === 0) return;
+        const targetOrderIds = Array.isArray(parsedContext?.targetOrderIds)
+          ? parsedContext.targetOrderIds
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value > 0)
+          : [];
+        storage.setItem(
+          DELIVERY_REORDER_CONTEXT_KEY,
+          JSON.stringify({
+            mode: "online",
+            sourceOrderIds,
+            targetOrderIds: Array.from(new Set([...targetOrderIds, normalizedOrderId])),
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      } catch {
+        // Ignore malformed local storage and proceed with checkout success.
+      }
+    },
+    [storage]
+  );
 
   const hydrateLockedCartFromOrder = useCallback(
     async (currentOrderId) => {
@@ -589,6 +624,9 @@ export function useQrMenuCheckout({
 
       const newId = created?.id;
       if (!newId) throw new Error("Server did not return order id.");
+      if (type === "online") {
+        attachDeliveryReorderTarget(newId);
+      }
 
       if (
         isTakeawayReservation &&
@@ -690,6 +728,7 @@ export function useQrMenuCheckout({
   }, [
     activeOrder,
     appendIdentifier,
+    attachDeliveryReorderTarget,
     cart,
     customerInfo,
     getSavedDeliveryInfo,
