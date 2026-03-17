@@ -6,8 +6,6 @@ import secureFetch from "../utils/secureFetch";
 import { toast } from "react-hot-toast";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
-
 const getRestaurantScopedCacheKey = (suffix) => {
   const restaurantId =
     (typeof window !== "undefined" &&

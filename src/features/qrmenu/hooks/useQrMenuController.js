@@ -7,6 +7,7 @@ import useQrMenuProducts from "./useQrMenuProducts";
 import useQrMenuCart from "./useQrMenuCart";
 import useQrMenuCheckout from "./useQrMenuCheckout";
 import useQrMenuStorage from "./useQrMenuStorage";
+import { hasConcertBookingContext } from "../../../utils/reservationStatus";
 
 export function useQrMenuController({
   slug,
@@ -341,6 +342,9 @@ const isReservationLikeEntry = (entry) => {
 
 const isReservationDueNow = (entry, nowMs = Date.now()) => {
   if (!isReservationLikeEntry(entry)) return false;
+  // Concert-linked reservations (including free concert reservations)
+  // must lock their table immediately, even if event time is in the future.
+  if (hasConcertBookingContext(entry, entry?.reservation)) return true;
   const reservationDate = entry?.reservation_date ?? entry?.reservationDate ?? null;
   const reservationTime = entry?.reservation_time ?? entry?.reservationTime ?? null;
   if (!reservationDate) return true;
@@ -621,6 +625,9 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
   const [showTakeawayForm, setShowTakeawayForm] = useState(false);
   const [orderSelectCustomization, setOrderSelectCustomization] = useState({
     delivery_enabled: true,
+    reservation_pickup_enabled: true,
+    table_order_enabled: true,
+    disable_all_products: false,
     table_geo_enabled: false,
     table_geo_radius_meters: 150,
     pwa_primary_color: "#4F46E5",
@@ -630,6 +637,7 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     app_icon_512: "",
     apple_touch_icon: "",
     splash_logo: "",
+    main_title_logo: "",
     app_display_name: "",
   });
 
@@ -2064,16 +2072,25 @@ if (savedTable) {
 
     const onConfirmed = (payload) => {
       const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
-      const tableNo =
+      const tableNoFromPayload =
         payload?.table_number ??
         payload?.order?.table_number ??
+        payload?.reservation?.table_number ??
         payload?.tableNumber ??
         null;
+      const cachedTableNo =
+        Number.isFinite(orderId) && orderId > 0 ? orderIdToTableRef.current.get(orderId) : null;
+      const tableNo = tableNoFromPayload ?? cachedTableNo ?? null;
       if (Number.isFinite(orderId)) {
         const tno = Number(tableNo);
         if (Number.isFinite(tno) && tno > 0) orderIdToTableRef.current.set(orderId, tno);
       }
-      if (tableNo) upsertOccupied(tableNo);
+      if (tableNo) {
+        upsertOccupied(tableNo);
+        if (hasActiveReservationPayload(payload?.order || payload)) {
+          upsertReserved(tableNo);
+        }
+      }
       scheduleRefresh();
     };
 
@@ -2365,6 +2382,10 @@ const triggerOrderType = useCallback(
       alert("Reservation and table orders are disabled while an active delivery order is open.");
       return;
     }
+    if (type === "table" && !boolish(orderSelectCustomization?.table_order_enabled, true)) {
+      alert("Table order is closed.");
+      return;
+    }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("qr:voice-order-close"));
     }
@@ -2387,6 +2408,7 @@ const triggerOrderType = useCallback(
     setShowDeliveryForm,
     setShowTakeawayForm,
     shopIsOpen,
+    orderSelectCustomization?.table_order_enabled,
     storage,
     t,
   ]

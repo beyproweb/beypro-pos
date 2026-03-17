@@ -5,7 +5,6 @@ import secureFetch from "../utils/secureFetch";
 import { useHeader } from "../context/HeaderContext";
 import KitchenSettingsModal from "../modals/KitchenSettingsModal";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
 const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v2";
 
 export default function KitchenNew() {

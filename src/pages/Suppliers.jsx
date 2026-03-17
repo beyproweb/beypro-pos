@@ -14,6 +14,7 @@ import {
   SUPPLIER_CARTS_API,
   SUPPLIER_CART_ITEMS_API,
   TRANSACTIONS_API,
+  API_ORIGIN,
 } from "../utils/api";
 import socket from "../utils/socket";
 import secureFetch from "../utils/secureFetch";
@@ -2899,7 +2900,6 @@ const parseSupplierInvoiceText = (text) => {
     rejectedLines,
   };
 };
-const API_URL = import.meta.env.VITE_API_URL || "";
 const SUPPLIER_AI_ASSIST_STORAGE_KEY = "beypro_supplier_ai_assist";
 const SUPPLIER_AI_THRESHOLD_STORAGE_KEY = "beypro_supplier_ai_threshold";
 const DEFAULT_SUPPLIER_AI_THRESHOLD = 0.7;
@@ -2914,15 +2914,7 @@ const [newTransaction, setNewTransaction] = useState({
   paymentMethod: "Due",
 });
 
-  const BACKEND_URL =
-    (
-      import.meta.env.VITE_API_URL ||
-      (import.meta.env.MODE === "development"
-        ? "http://localhost:5000"
-        : "https://api.beypro.com")
-    )
-      .replace(/\/api\/?$/, "")
-      .replace(/\/+$/, "");
+  const BACKEND_URL = API_ORIGIN || "";
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
@@ -3198,7 +3190,7 @@ const fetchCartItems = async (cartId) => {
     const data = await secureFetch(`/supplier-carts/items?cart_id=${cartId}`);
     setCartItems(Array.isArray(data?.items) ? data.items : []);
 
-console.log("🔗 fetch from:", API_URL, "repeat_days:", data.repeat_days);
+    console.log("🔗 fetch from:", BACKEND_URL || "/api", "repeat_days:", data.repeat_days);
 
     // ✅ Only update repeatDays if backend actually has them
     if (Array.isArray(data.repeat_days) && data.repeat_days.length > 0) {

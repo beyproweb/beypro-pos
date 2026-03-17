@@ -16,6 +16,7 @@ function Header({
   statusShortcutOpen = false,
   onStatusShortcutClick,
   restaurantName,
+  mainTitleLogo,
   tagline,
   t,
   openStatus,
@@ -30,39 +31,49 @@ function Header({
   languageControl,
   showInfo = true,
 }) {
+  const hasActiveOrderTypeButton =
+    Boolean(reservationEnabled) ||
+    Boolean(tableEnabled) ||
+    Boolean(deliveryEnabled);
+
   return (
     <>
-      <header
-        className={`fixed inset-x-0 top-0 z-40 border-b backdrop-blur-xl shadow-[0_8px_24px_rgba(0,0,0,0.08)] ${
-          isDark
-            ? "border-white/10 bg-neutral-950/76"
-            : "border-white/60 bg-white/70"
-        }`}
-      >
-        <div className="max-w-5xl mx-auto px-3 sm:px-5 py-3">
-          <HeaderTabs
-            isDark={isDark}
-            isDrawerOpen={isDrawerOpen}
-            onOpenDrawer={onOpenDrawer}
-            onSelect={onSelect}
-            reservationEnabled={reservationEnabled}
-            tableEnabled={tableEnabled}
-            deliveryEnabled={deliveryEnabled}
-            activeOrderType={activeOrderType}
-            statusShortcutCount={statusShortcutCount}
-            statusShortcutEnabled={statusShortcutEnabled}
-            statusShortcutOpen={statusShortcutOpen}
-            onStatusShortcutClick={onStatusShortcutClick}
-            t={t}
-          />
-        </div>
-      </header>
+      {hasActiveOrderTypeButton ? (
+        <header
+          className={`fixed inset-x-0 top-0 z-40 border-b backdrop-blur-xl shadow-[0_8px_24px_rgba(0,0,0,0.08)] ${
+            isDark
+              ? "border-white/10 bg-neutral-950/76"
+              : "border-white/60 bg-white/70"
+          }`}
+        >
+          <div className="max-w-5xl mx-auto px-3 sm:px-5 py-3">
+            <HeaderTabs
+              isDark={isDark}
+              isDrawerOpen={isDrawerOpen}
+              onOpenDrawer={onOpenDrawer}
+              onSelect={onSelect}
+              reservationEnabled={reservationEnabled}
+              tableEnabled={tableEnabled}
+              deliveryEnabled={deliveryEnabled}
+              activeOrderType={activeOrderType}
+              statusShortcutCount={statusShortcutCount}
+              statusShortcutEnabled={statusShortcutEnabled}
+              statusShortcutOpen={statusShortcutOpen}
+              onStatusShortcutClick={onStatusShortcutClick}
+              t={t}
+            />
+          </div>
+        </header>
+      ) : null}
 
-      <div className="h-[74px] sm:h-[80px]" aria-hidden="true" />
+      {hasActiveOrderTypeButton ? (
+        <div className="h-[74px] sm:h-[80px]" aria-hidden="true" />
+      ) : null}
 
       {showInfo ? (
         <HeaderInfo
           restaurantName={restaurantName}
+          mainTitleLogo={mainTitleLogo}
           tagline={tagline}
           t={t}
           openStatus={openStatus}

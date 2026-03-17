@@ -49,6 +49,7 @@ import { Html5Qrcode } from "html5-qrcode";
 import { io } from "socket.io-client";
 import QRCode from "qrcode";
 import { Toaster, toast } from "react-hot-toast";
+import { API_BASE as API_URL, API_ORIGIN as API_BASE, SOCKET_BASE } from "../utils/api";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -68,12 +69,6 @@ function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
   return candidate;
 }
 
-const RAW_API = import.meta.env.VITE_API_URL || "";
-const API_ROOT = RAW_API.replace(/\/+$/, "");
-const API_BASE = API_ROOT.endsWith("/api")
-  ? API_ROOT.slice(0, -4)
-  : API_ROOT || "";
-const API_URL = API_BASE ? `${API_BASE}/api` : "/api";
 const apiUrl = (path) =>
   `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
 
@@ -1043,6 +1038,7 @@ const DICT = {
     Categories: "Categories",
     "Loyalty Card": "Loyalty Card",
     "Concert Tickets": "Concert Tickets",
+    "Free concert": "Free concert",
     "Buy Ticket": "Buy Ticket",
     "Reserve Table": "Reserve Table",
     "Ticket Types / Packages": "Ticket Types / Packages",
@@ -1337,6 +1333,7 @@ const DICT = {
     Categories: "Kategoriler",
     "Loyalty Card": "Abone Kartı",
     "Concert Tickets": "Konser Biletleri",
+    "Free concert": "Ucretsiz konser",
     "Buy Ticket": "Bilet Al",
     "Reserve Table": "Masa Rezerve Et",
     "Ticket Types / Packages": "Bilet Türleri / Paketler",
@@ -1537,6 +1534,7 @@ const DICT = {
     Categories: "Kategorien",
     "Loyalty Card": "Treuekarte",
     "Concert Tickets": "Konzerttickets",
+    "Free concert": "Kostenloses Konzert",
     "Buy Ticket": "Ticket kaufen",
     "Reserve Table": "Tisch reservieren",
     "Ticket Types / Packages": "Ticketarten / Pakete",
@@ -1734,6 +1732,7 @@ const DICT = {
     Categories: "Catégories",
     "Loyalty Card": "Carte fidélité",
     "Concert Tickets": "Billets de concert",
+    "Free concert": "Concert gratuit",
     "Buy Ticket": "Acheter un billet",
     "Reserve Table": "Réserver une table",
     "Ticket Types / Packages": "Types de billets / Forfaits",
@@ -2395,6 +2394,7 @@ function OrderTypeSelect({
   onPopularClick,
   onCustomizationLoaded,
   onConcertReservationSuccess,
+  onFreeConcertReservationStart,
   statusShortcutCount = 0,
   statusShortcutEnabled = false,
   statusShortcutOpen = false,
@@ -2454,10 +2454,12 @@ async function load() {
   }, [restaurantName]);
   const subtitle = (c.subtitle ?? "").trim();
   const tagline = (c.tagline ?? "").trim();
+  const mainTitleLogo = resolveUploadedAsset(c.main_title_logo);
   const phoneNumber = c.phone || "";
   const callUsHref = phoneNumber ? `tel:${String(phoneNumber).replace(/\s+/g, "")}` : "";
   const allowDelivery = boolish(c.delivery_enabled, true);
   const reservationTabEnabled = boolish(c.reservation_tab_enabled, true);
+  const hideAllProducts = boolish(c.disable_all_products, false);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
   const logoUrl = c.splash_logo || c.logo || c.app_icon || "/Beylogo.svg";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
@@ -2553,7 +2555,10 @@ async function load() {
     let cancelled = false;
     async function loadPopular() {
       try {
-        if (!identifier || !c.enable_popular) return;
+        if (!identifier || !c.enable_popular || hideAllProducts) {
+          setPopularProducts([]);
+          return;
+        }
         const [prodRes, popRes] = await Promise.all([
           fetch(`${API_URL}/public/products/${encodeURIComponent(identifier)}`),
           fetch(`${API_URL}/public/popular/${encodeURIComponent(identifier)}`),
@@ -2573,7 +2578,7 @@ async function load() {
     }
     loadPopular();
     return () => { cancelled = true; };
-  }, [identifier, c.enable_popular]);
+  }, [identifier, c.enable_popular, hideAllProducts]);
 
   // ===== Categories strip (always) =====
   const { formatCurrency } = useCurrency();
@@ -2599,7 +2604,7 @@ async function load() {
 
     async function loadHomeCategories() {
       try {
-        if (!identifier) {
+        if (!identifier || hideAllProducts) {
           setHomeCategories([]);
           setHomeCategoryImages({});
           setActiveHomeCategory("");
@@ -2661,7 +2666,7 @@ async function load() {
     return () => {
       cancelled = true;
     };
-  }, [identifier]);
+  }, [identifier, hideAllProducts]);
 
   React.useEffect(() => {
     if (!activeHomeCategory) return;
@@ -2765,6 +2770,7 @@ async function load() {
   }, [getSpeechRecognition, parseVoiceTranscript, qrLang, t]);
 
   const homeVisibleProducts = React.useMemo(() => {
+    if (hideAllProducts) return [];
     const list = Array.isArray(homeProducts) ? homeProducts : [];
     const q = (homeSearch || "").trim().toLowerCase();
     if (q) {
@@ -2776,7 +2782,7 @@ async function load() {
     const active = (activeHomeCategory || "").trim().toLowerCase();
     if (!active) return list;
     return list.filter((p) => (p?.category || "").trim().toLowerCase() === active);
-  }, [homeProducts, activeHomeCategory, homeSearch]);
+  }, [homeProducts, activeHomeCategory, homeSearch, hideAllProducts]);
 
   // ===== Loyalty (optional) =====
   const [deviceId, setDeviceId] = React.useState(() => {
@@ -2896,6 +2902,14 @@ async function load() {
   React.useEffect(() => {
     loadConcertEvents();
   }, [loadConcertEvents]);
+
+  const openFreeConcertReservationModal = React.useCallback((event) => {
+    if (typeof onFreeConcertReservationStart === "function") {
+      onFreeConcertReservationStart(event);
+      return;
+    }
+    onSelect?.("takeaway");
+  }, [onFreeConcertReservationStart, onSelect]);
 
   const openConcertBookingModal = React.useCallback((event, defaults = {}) => {
     if (!event) return;
@@ -3464,10 +3478,7 @@ async function load() {
     window.addEventListener("storage", onStorage);
 
     try {
-      const SOCKET_URL =
-        import.meta.env.VITE_SOCKET_URL ||
-        (API_BASE ? String(API_BASE) : "") ||
-        (typeof window !== "undefined" ? window.location.origin : "");
+      const SOCKET_URL = SOCKET_BASE;
       const socketRestaurantId = parseRestaurantIdFromIdentifier(identifier);
 
       realtimeSocket = io(SOCKET_URL, {
@@ -3634,6 +3645,7 @@ async function load() {
         statusShortcutOpen={statusShortcutOpen}
         onStatusShortcutClick={onStatusShortcutToggle}
         restaurantName={displayRestaurantName || "Apollo Cafe"}
+        mainTitleLogo={mainTitleLogo}
         tagline={subtitle || tagline || "Fresh • Local • Crafted"}
         t={t}
         openStatus={openStatus}
@@ -3664,6 +3676,7 @@ async function load() {
                 {concertEvents.length > 0 ? (
                   <div className="space-y-3">
                     {concertEvents.map((event) => {
+                      const isFreeConcert = boolish(event?.free_concert, false);
                       const forcedSoldOut =
                         String(event?.status || "").toLowerCase() === "sold_out" ||
                         (event?.auto_sold_out === true);
@@ -3686,7 +3699,7 @@ async function load() {
                       const tableAvailable = tableCountAvailable && tablePackageTypeAvailable;
                       const badgeSoldOut =
                         forcedSoldOut ||
-                        (!ticketAvailable && !tableAvailable);
+                        (!isFreeConcert && !ticketAvailable && !tableAvailable);
                       const fullySoldOut = badgeSoldOut;
                       const tableTicketType = (event?.ticket_types || []).find(
                         (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
@@ -3715,6 +3728,11 @@ async function load() {
                               <div className="mb-2 inline-flex items-center rounded-full border border-neutral-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-300">
                                 {t("Concert Tickets")}
                               </div>
+                              {isFreeConcert ? (
+                                <div className="mb-2 ml-2 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                                  {t("Free concert")}
+                                </div>
+                              ) : null}
                               <div className="pl-2.5">
                                 <div className="text-xl sm:text-2xl font-extrabold leading-tight text-neutral-900 dark:text-neutral-100">
                                   {artistName || eventTitle}
@@ -3769,18 +3787,22 @@ async function load() {
                             <button
                               type="button"
                               disabled={fullySoldOut}
-                              onClick={() =>
+                              onClick={() => {
+                                if (isFreeConcert) {
+                                  openFreeConcertReservationModal(event);
+                                  return;
+                                }
                                 openConcertBookingModal(event, {
                                   bookingType: tableAvailable && tableTicketType ? "table" : "ticket",
                                   ticketTypeId:
                                     (tableAvailable && tableTicketType
                                       ? tableTicketType?.id
                                       : normalTicketType?.id || tableTicketType?.id) || "",
-                                })
-                              }
+                                });
+                              }}
                               className="rounded-xl border border-neutral-800 dark:border-neutral-500 bg-neutral-900 text-white px-3 py-2 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-45 disabled:cursor-not-allowed"
                             >
-                              {t("Buy Ticket")}
+                              {isFreeConcert ? t("Reservation") : t("Buy Ticket")}
                             </button>
                           </div>
                         </div>
@@ -3793,7 +3815,7 @@ async function load() {
 	      </div>
 
       {/* CATEGORIES (scrollable 1 row) */}
-      {homeCategories.length > 0 && (
+      {!hideAllProducts && homeCategories.length > 0 && (
         <div className="mt-3 max-w-3xl">
 		          {/* Search */}
 		          <div className="mt-3 mb-4">
@@ -3851,7 +3873,7 @@ async function load() {
       )}
 
       {/* PRODUCTS (2 columns) */}
-      {homeVisibleProducts.length > 0 && (
+      {!hideAllProducts && homeVisibleProducts.length > 0 && (
         <div className="mt-5 max-w-3xl">
           <div className="grid grid-cols-2 gap-3">
             {homeVisibleProducts.map((product) => {
@@ -3901,14 +3923,6 @@ async function load() {
           </div>
         </div>
       )}
-	      {homeVisibleProducts.length === 0 && homeSearch.trim() !== "" && (
-	        <div className="mt-5 max-w-3xl">
-	          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/70 px-4 py-4 text-sm text-neutral-600 dark:text-neutral-300">
-	            {t("No products available.")}
-	          </div>
-	        </div>
-	      )}
-
         {/* Featured products */}
         <div className="mt-7 space-y-4 max-w-3xl mx-auto">
           <FeaturedCard
@@ -3958,7 +3972,7 @@ async function load() {
       )}
 
 	      {/* Popular This Week */}
-	      {c.enable_popular && popularProducts.length > 0 && (
+	      {!hideAllProducts && c.enable_popular && popularProducts.length > 0 && (
 	        <div className="mt-6 max-w-3xl">
 	          <PopularCarousel
 	            title={`⭐ ${t("Popular This Week")}`}
@@ -4478,6 +4492,7 @@ function TakeawayOrderForm({
   tables = [],
   occupiedTables = [],
   reservedTables = [],
+  pickupEnabled = true,
   paymentMethod,
   setPaymentMethod,
   formatTableName,
@@ -4491,13 +4506,15 @@ function TakeawayOrderForm({
       email: initialValues?.email || "",
       pickup_date: initialValues?.pickup_date || "",
       pickup_time: initialValues?.pickup_time || "",
-      mode: initialValues?.mode || "reservation",
+      mode: pickupEnabled
+        ? (initialValues?.mode || "reservation")
+        : "reservation",
       table_number: initialValues?.table_number || "",
       reservation_clients: initialValues?.reservation_clients || "",
       notes: initialValues?.notes || "",
       payment_method: initialValues?.payment_method || "",
     }),
-    [initialValues]
+    [initialValues, pickupEnabled]
   );
   const [form, setForm] = useState({
     ...normalizedInitialValues,
@@ -4546,7 +4563,7 @@ function TakeawayOrderForm({
     paymentMethods.length > 0 ? paymentMethods : fallbackPaymentMethods;
 
   const requiresReservationTable = form.mode === "reservation";
-  const requiresPayment = form.mode !== "reservation";
+  const requiresPayment = pickupEnabled && form.mode !== "reservation";
   const phoneValid = /^(5\d{9}|[578]\d{7})$/.test(form.phone);
   const emailValid = !form.email.trim() || EMAIL_REGEX.test(form.email.trim());
   const selectedTableNumber = Number(form.table_number);
@@ -4598,6 +4615,13 @@ function TakeawayOrderForm({
       return { ...prev, reservation_clients: next };
     });
   }, [requiresReservationTable, selectedTableNumber, maxGuestsForSelectedTable]);
+
+  useEffect(() => {
+    if (pickupEnabled) return;
+    if (form.mode !== "reservation") {
+      setForm((prev) => ({ ...prev, mode: "reservation" }));
+    }
+  }, [pickupEnabled, form.mode]);
 
   const triggerPaymentError = () => {
     setPaymentPrompt(true);
@@ -4732,7 +4756,8 @@ function TakeawayOrderForm({
           </div>
 
           {/* Pickup / Reservation toggle */}
-          <div>
+          {pickupEnabled ? (
+            <div>
             <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
               {t("Pickup / Reservation")}
             </label>
@@ -4760,7 +4785,8 @@ function TakeawayOrderForm({
                 🛍️ {t("Pickup")}
               </button>
             </div>
-          </div>
+            </div>
+          ) : null}
 
           {/* Table select (only for reservation) */}
           {form.mode === "reservation" && (
@@ -4867,15 +4893,6 @@ function TakeawayOrderForm({
           />
 
           {/* Submit */}
-          {form.mode === "reservation" ? (
-            <button
-              type="button"
-              onClick={() => onAddItem?.(form)}
-              className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-100 px-4 py-3 text-sm font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition"
-            >
-              {t("Add item")}
-            </button>
-          ) : null}
           <button
             type="submit"
             disabled={submitting}
@@ -5782,6 +5799,12 @@ export default function QrMenu() {
     return Array.from({ length: max }, (_, idx) => idx + 1);
   }, [scanTargetTable]);
   const cartItems = toArray(safeCart);
+  const allowReservationPickup = boolish(
+    orderSelectCustomization?.reservation_pickup_enabled,
+    true
+  );
+  const allowTableOrder = boolish(orderSelectCustomization?.table_order_enabled, true);
+  const hideAllQrProducts = boolish(orderSelectCustomization?.disable_all_products, false);
   const editingCartItem = useMemo(
     () =>
       editingCartItemId
@@ -6380,7 +6403,8 @@ export default function QrMenu() {
   const disableCallWaiterAction = !showCallWaiterButton || callWaiterButtonDisabled;
   const disableReorderAction = !canUseReorderSlot || disableBottomNavForCancelledStatus;
   const disableCartAction = !canOpenCartFromNav || disableBottomNavForCancelledStatus;
-  const disableVoiceAction = !canStartVoiceFromNav || disableBottomNavForCancelledStatus;
+  const disableVoiceAction =
+    !canStartVoiceFromNav || disableBottomNavForCancelledStatus || hideAllQrProducts;
   const shouldAnimateCartNavButton = cartNewItemsCount > 0 && !disableCartAction;
   const savedCustomerPrefill = useMemo(
     () => getCheckoutPrefill(storage),
@@ -6395,6 +6419,19 @@ export default function QrMenu() {
     }),
     [savedCustomerPrefill, takeaway]
   );
+
+  useEffect(() => {
+    if (allowTableOrder) return;
+    if (orderType !== "table") return;
+    setOrderType(null);
+    setTable(null);
+    try {
+      storage.removeItem("qr_orderType");
+      storage.removeItem("qr_table");
+    } catch {
+      // ignore storage errors
+    }
+  }, [allowTableOrder, orderType, setOrderType, setTable, storage]);
 
   const statusPortal = showStatus && statusPortalOrderId
     ? createPortal(
@@ -6586,6 +6623,35 @@ export default function QrMenu() {
       setTable,
       storage,
     ]
+  );
+
+  const handleFreeConcertReservationStart = useCallback(
+    (event) => {
+      const customerPrefill = getCheckoutPrefill(storage);
+      const concertDate = String(event?.event_date || "").slice(0, 10);
+      const concertTime = String(event?.event_time || "").slice(0, 5);
+      const eventLabel = [
+        String(event?.event_title || "").trim(),
+        String(event?.artist_name || "").trim(),
+      ]
+        .filter(Boolean)
+        .join(" - ");
+
+      setTakeaway({
+        name: customerPrefill?.name || "",
+        phone: customerPrefill?.phone || "",
+        email: customerPrefill?.email || "",
+        pickup_date: concertDate,
+        pickup_time: concertTime,
+        mode: "reservation",
+        table_number: "",
+        reservation_clients: "",
+        notes: eventLabel ? `Concert: ${eventLabel}` : "",
+        payment_method: "",
+      });
+      triggerOrderType("takeaway");
+    },
+    [setTakeaway, storage, triggerOrderType]
   );
 
   const handleVoiceDraftAddToCart = useCallback(
@@ -7001,12 +7067,13 @@ export default function QrMenu() {
               setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
             }
             onConcertReservationSuccess={handleConcertReservationSuccess}
+            onFreeConcertReservationStart={handleFreeConcertReservationStart}
             statusShortcutCount={statusShortcutCount}
             statusShortcutEnabled={statusShortcutEnabled}
             statusShortcutOpen={showStatus}
             onStatusShortcutToggle={handleHeaderStatusShortcutToggle}
             reservationEnabled={!hasActiveDeliveryLock}
-            tableEnabled={!hasActiveDeliveryLock}
+            tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
           />
 
           {!orderType && showOrderTypePrompt && (
@@ -7025,7 +7092,7 @@ export default function QrMenu() {
               }}
               deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}
               reservationEnabled={!hasActiveDeliveryLock}
-              tableEnabled={!hasActiveDeliveryLock}
+              tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
             />
           )}
         </>
@@ -7050,7 +7117,7 @@ export default function QrMenu() {
                   onOpenDrawer={openMenuHeaderDrawer}
                   onSelect={handleSharedHeaderOrderTypeSelect}
                   reservationEnabled={shopIsOpen && !hasActiveDeliveryLock}
-                  tableEnabled={shopIsOpen && !hasActiveDeliveryLock}
+                  tableEnabled={shopIsOpen && !hasActiveDeliveryLock && allowTableOrder}
                   deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true) && shopIsOpen}
                   activeOrderType={sharedHeaderOrderType}
                   statusShortcutCount={statusShortcutCount}
@@ -7124,10 +7191,10 @@ export default function QrMenu() {
                 )}
 
                 <MenuProductsSection
-                  categories={categories}
+                  categories={hideAllQrProducts ? [] : categories}
                   activeCategory={activeCategory}
                   categoryImages={categoryImages}
-                  products={productsForGrid}
+                  products={hideAllQrProducts ? [] : productsForGrid}
                   onSelectCategory={handleMenuCategorySelect}
                   onCategoryClick={handleMenuCategoryClick}
                   onOpenProduct={(product) => {
@@ -7294,7 +7361,7 @@ export default function QrMenu() {
       <VoiceOrderController
         restaurantId={restaurantIdentifier || id || slug}
         tableId={resolvedTableForActions || table}
-        products={safeProducts}
+        products={hideAllQrProducts ? [] : safeProducts}
         onAddToCart={handleVoiceDraftAddToCart}
         onSyncDraftToCart={syncVoiceDraftToSharedCart}
         onOpenSharedCart={onOpenSharedCartFromVoice}
@@ -7529,6 +7596,7 @@ export default function QrMenu() {
           tables={tables}
           occupiedTables={occupiedTables}
           reservedTables={safeReservedTables}
+          pickupEnabled={allowReservationPickup}
           formatTableName={formatTableName}
           onClose={() => {
             setShowTakeawayForm(false);

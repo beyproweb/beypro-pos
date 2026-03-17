@@ -1,12 +1,7 @@
 import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ||
-  String(import.meta.env.VITE_API_URL || "")
-    .replace(/\/api\/?$/, "")
-    .replace(/\/+$/, "") ||
-  (typeof window !== "undefined" ? window.location.origin : "");
+import secureFetch from "../utils/secureFetch";
+import { SOCKET_BASE as SOCKET_URL } from "../utils/api";
 let socket;
 
 export default function useOrderAutoClose(orderId, onResetToTypePicker) {
@@ -48,25 +43,9 @@ useEffect(() => {
 
   const timer = setInterval(async () => {
     try {
-      const res = await secureFetch('orders/${orderId}`, {
+      const order = await secureFetch(`/orders/${orderId}`, {
         headers: { Accept: "application/json" },
       });
-
-      // If order is gone (404) or any non-OK, don't try to parse JSON
-      if (!res.ok) {
-        if (res.status === 404) {
-          try {
-            localStorage.removeItem("qr_active_order_id");
-            localStorage.removeItem("qr_table");
-            localStorage.removeItem("qr_orderType"); // <- camelCase
-            localStorage.removeItem("qr_cart");
-          } catch {}
-          onResetToTypePicker?.();
-        }
-        return;
-      }
-
-      const order = await res.json();
       const status = (order?.status || "").toLowerCase();
       if (["closed", "completed", "paid", "delivered", "canceled", "cancelled"].includes(status)) {
         try {
@@ -77,7 +56,17 @@ useEffect(() => {
         } catch {}
         onResetToTypePicker?.();
       }
-    } catch {
+    } catch (err) {
+      const status = err?.details?.status;
+      if (status === 404) {
+        try {
+          localStorage.removeItem("qr_active_order_id");
+          localStorage.removeItem("qr_table");
+          localStorage.removeItem("qr_orderType"); // <- camelCase
+          localStorage.removeItem("qr_cart");
+        } catch {}
+        onResetToTypePicker?.();
+      }
       // network/HTML error → ignore one tick; next poll will retry
     }
   }, 10000);

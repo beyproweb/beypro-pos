@@ -1,10 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { AppearanceContext } from "../context/AppearanceContext";
-import axios from "axios";
 import secureFetch from "../utils/secureFetch";
-
-const API_URL = import.meta.env.VITE_API_URL || "";
 
 const DEFAULT_APPEARANCE = {
   theme: "light",

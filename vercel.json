@@ -13,15 +13,15 @@
         { "type": "query", "key": "from_share" },
         { "type": "query", "key": "source" }
       ],
-      "destination": "https://api.beypro.com/api/public/share/:identifier"
+      "destination": "https://hurrypos-backend.onrender.com/api/public/share/:identifier"
     },
     {
       "source": "/api/public/:path*",
-      "destination": "https://api.beypro.com/api/public/:path*"
+      "destination": "https://hurrypos-backend.onrender.com/api/public/:path*"
     },
     {
       "source": "/uploads/:path*",
-      "destination": "https://api.beypro.com/uploads/:path*"
+      "destination": "https://hurrypos-backend.onrender.com/uploads/:path*"
     },
     {
       "source": "/bridge/:file",

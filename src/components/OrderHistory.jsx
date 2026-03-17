@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
-const API_URL = import.meta.env.VITE_API_URL || "";
 import secureFetch from "../utils/secureFetch";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { useCurrency } from "../context/CurrencyContext";

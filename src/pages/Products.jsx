@@ -8,6 +8,7 @@ import { useCurrency } from "../context/CurrencyContext";
 import ModernHeader from "../components/ModernHeader";
 import { useOutletContext } from "react-router-dom";
 import socket from "../utils/socket";
+import { API_ORIGIN } from "../utils/api";
 
 const toNumber = (value) => {
   if (value === null || value === undefined) return 0;
@@ -71,7 +72,7 @@ const parseJsonDeep = (value, fallback) => {
   }
 };
 
-const API_URL = import.meta.env.VITE_API_URL || "https://api.beypro.com/api";
+const UPLOADS_BASE = API_ORIGIN || "";
 
 /**
  * Gradient colors for product cards (rotating)
@@ -972,7 +973,7 @@ const handleRenameCategory = async (original, value) => {
                         product.image
                           ? product.image?.startsWith("http")
                             ? product.image
-                            : `${API_URL}/uploads/${product.image}`
+                            : `${UPLOADS_BASE}/uploads/${product.image}`
                           : "/Productsfallback.jpg"
                       }
                       onError={(e) => {

@@ -10,7 +10,10 @@ import {
   useRenderCount,
   withPerfTimer,
 } from "./dev/perfDebug";
-import { isReservationConfirmedForCheckin } from "../../utils/reservationStatus";
+import {
+  hasConcertBookingContext,
+  isReservationConfirmedForCheckin,
+} from "../../utils/reservationStatus";
 
 const AREA_FILTER_ALL = "ALL";
 const AREA_FILTER_RESERVED = "__RESERVED__";
@@ -28,9 +31,10 @@ const formatDateInputValue = (value = new Date()) => {
 };
 
 const normalizeBookingDate = (booking) => {
-  const isConcertBooking = booking?.booking_source === "concert";
+  const source = String(booking?.booking_source || "").toLowerCase();
+  const isConcertLikeBooking = source === "concert" || hasConcertBookingContext(booking);
   const raw = String(
-    (isConcertBooking
+    (isConcertLikeBooking
       ? booking?.booking_date ??
         booking?.bookingDate ??
         booking?.created_at ??
@@ -405,8 +409,16 @@ function TablesView({
             ) : filteredBookings.length > 0 ? (
               <div className="mt-3 space-y-2">
                 {filteredBookings.map((booking) => {
-                  const isConcertBooking = booking.booking_source === "concert";
+                  const source = String(booking?.booking_source || "").toLowerCase();
+                  const isConcertBooking = source === "concert";
+                  const isConcertLikeBooking = isConcertBooking || hasConcertBookingContext(booking);
                   const reservationAlreadyConfirmed = isReservationConfirmedForCheckin(booking);
+                  const reservationNotes = String(
+                    booking?.reservation_notes ?? booking?.reservationNotes ?? ""
+                  ).trim();
+                  const freeConcertTitle = reservationNotes.toLowerCase().startsWith("concert:")
+                    ? reservationNotes.slice(8).trim()
+                    : reservationNotes;
 
                   return (
                   <div
@@ -473,8 +485,8 @@ function TablesView({
                         {booking.customer_phone ? ` • ${booking.customer_phone}` : ""}
                       </div>
                       <div className="text-xs text-gray-600">
-                        {isConcertBooking
-                          ? (booking.event_title || booking.artist_name || t("Concert"))
+                        {isConcertLikeBooking
+                          ? (booking.event_title || booking.artist_name || freeConcertTitle || t("Concert"))
                           : t("Reservation")}
                         {(booking.event_date || booking.reservation_date)
                           ? ` • ${String(booking.event_date || booking.reservation_date).slice(0, 10)}`
@@ -484,8 +496,12 @@ function TablesView({
                           : ""}
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5">
-                        {isConcertBooking
-                          ? `${booking.booking_type} • ${booking.quantity}`
+                        {isConcertLikeBooking
+                          ? `${booking.booking_type || t("Reservation")} • ${
+                              Number(booking.quantity || 0) > 0
+                                ? booking.quantity
+                                : `${t("Guests")} ${guestsLabel}`
+                            }`
                           : `${t("Reserved")} • ${t("Guests")} ${guestsLabel}`}
                         {isConcertBooking ? ` • ${t("Total")} ${totalLabel}` : ""}
                         {booking.ticket_type_name ? ` • ${booking.ticket_type_name}` : ""}

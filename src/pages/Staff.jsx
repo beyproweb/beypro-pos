@@ -12,7 +12,6 @@ import secureFetch from "../utils/secureFetch";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useCurrency } from "../context/CurrencyContext";
 import { useHeader } from "../context/HeaderContext";
-const API_URL = import.meta.env.VITE_API_URL || "";
 Modal.setAppElement('#root');
 
 const Staff = () => {

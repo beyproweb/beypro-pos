@@ -634,7 +634,6 @@ const quantity = selectedProduct ? selectedProduct.quantity || 1 : 1;
 const perItemTotal = basePrice + extrasPricePerProduct;
 const fullTotal = perItemTotal * quantity;
 const { setHeader } = useHeader();
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 // 1. Add drinksList state at the top
 const [drinksList, setDrinksList] = useState([]);

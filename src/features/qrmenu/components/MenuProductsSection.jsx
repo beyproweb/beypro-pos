@@ -191,18 +191,22 @@ const MenuProductsSection = React.memo(function MenuProductsSection({
   t,
   apiUrl,
 }) {
+  const hasCategories = Array.isArray(categories) && categories.length > 0;
+
   return (
     <section className="order-2 xl:order-none min-w-0">
-      <div className="sticky top-[74px] sm:top-[80px] z-30 mb-4 -mx-1 px-1 py-1 bg-neutral-50/88 dark:bg-neutral-900/88 backdrop-blur-md">
-        <CategoryTopBar
-          categories={categories}
-          activeCategory={activeCategory}
-          onSelectCategory={onSelectCategory}
-          categoryImages={categoryImages}
-          onCategoryClick={onCategoryClick}
-          apiUrl={apiUrl}
-        />
-      </div>
+      {hasCategories ? (
+        <div className="sticky top-[74px] sm:top-[80px] z-30 mb-4 -mx-1 px-1 py-1 bg-neutral-50/88 dark:bg-neutral-900/88 backdrop-blur-md">
+          <CategoryTopBar
+            categories={categories}
+            activeCategory={activeCategory}
+            onSelectCategory={onSelectCategory}
+            categoryImages={categoryImages}
+            onCategoryClick={onCategoryClick}
+            apiUrl={apiUrl}
+          />
+        </div>
+      ) : null}
       <ProductGrid products={products} onProductClick={onOpenProduct} t={t} apiUrl={apiUrl} />
     </section>
   );

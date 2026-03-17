@@ -4,6 +4,7 @@ import secureFetch from "../../../utils/secureFetch";
 import { Eye, EyeOff, Search, Copy, Download, Printer, QrCode, Trash2, ChevronDown } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
+import { API_ORIGIN } from "../../../utils/api";
 
 const extractIdentifierFromQrUrl = (value) => {
   const raw = String(value || "").trim();
@@ -48,6 +49,7 @@ const makeEmptyConcertForm = () => ({
   reservation_payment_method: "bank_transfer",
   bank_transfer_instructions: "",
   status: "active",
+  free_concert: false,
   area_allocations: [makeEmptyConcertAreaAllocation()],
   ticket_types: [makeEmptyConcertTicketType()],
 });
@@ -61,7 +63,10 @@ export default function QrMenuSettings() {
   const [loadingLink, setLoadingLink] = useState(false);
   const qrRef = useRef();
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [savingReservationPickup, setSavingReservationPickup] = useState(false);
+  const [savingTableOrder, setSavingTableOrder] = useState(false);
   const [savingReservationTab, setSavingReservationTab] = useState(false);
+  const [savingDisableAllProducts, setSavingDisableAllProducts] = useState(false);
   const [tables, setTables] = useState([]);
   const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
   const [tableCount, setTableCount] = useState("");
@@ -83,10 +88,13 @@ export default function QrMenuSettings() {
   const [uploadingCategoryImage, setUploadingCategoryImage] = useState(false);
   const appIconInputRef = useRef(null);
   const splashLogoInputRef = useRef(null);
+  const mainTitleLogoInputRef = useRef(null);
   const [appIconFileName, setAppIconFileName] = useState("");
   const [splashLogoFileName, setSplashLogoFileName] = useState("");
+  const [mainTitleLogoFileName, setMainTitleLogoFileName] = useState("");
   const [uploadingAppIcon, setUploadingAppIcon] = useState(false);
   const [uploadingSplashLogo, setUploadingSplashLogo] = useState(false);
+  const [uploadingMainTitleLogo, setUploadingMainTitleLogo] = useState(false);
 
   const [savingProduct, setSavingProduct] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState(null);
@@ -124,6 +132,9 @@ export default function QrMenuSettings() {
   social_tiktok: "",
   social_website: "",
   delivery_enabled: true,
+  reservation_pickup_enabled: true,
+  table_order_enabled: true,
+  disable_all_products: false,
   reservation_tab_enabled: true,
   table_geo_enabled: false,
   table_geo_radius_meters: 150,
@@ -132,6 +143,7 @@ export default function QrMenuSettings() {
   app_icon_512: "",
   apple_touch_icon: "",
   splash_logo: "",
+  main_title_logo: "",
   app_display_name: "",
   pwa_primary_color: "#4F46E5",
   pwa_background_color: "#FFFFFF",
@@ -149,8 +161,7 @@ export default function QrMenuSettings() {
   const [loadingConcertBookingsEventId, setLoadingConcertBookingsEventId] = useState(null);
   const [updatingConcertBookingId, setUpdatingConcertBookingId] = useState(null);
 
-  const uploadsBaseUrl =
-    import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000";
+  const uploadsBaseUrl = API_ORIGIN || "";
 
   const resolveUploadSrc = (raw) => {
     const value = String(raw || "").trim();
@@ -190,9 +201,38 @@ function updateField(key, value) {
 async function uploadBrandingAsset(field, file) {
   if (!file) return;
   const isAppIcon = field === "app_icon";
+  const isSplashLogo = field === "splash_logo";
+  const isMainTitleLogo = field === "main_title_logo";
   if (isAppIcon) setUploadingAppIcon(true);
-  else setUploadingSplashLogo(true);
+  if (isSplashLogo) setUploadingSplashLogo(true);
+  if (isMainTitleLogo) setUploadingMainTitleLogo(true);
   try {
+    if (isMainTitleLogo) {
+      const uploadForm = new FormData();
+      uploadForm.append("file", file);
+      const uploadRes = await secureFetch("/upload", {
+        method: "POST",
+        body: uploadForm,
+      });
+      const uploadedPath = String(uploadRes?.url || "").trim();
+      if (!uploadedPath) {
+        toast.error(t("Upload failed"));
+        return;
+      }
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({
+          main_title_logo: uploadedPath,
+        }),
+      });
+      setSettings((prev) => ({
+        ...prev,
+        main_title_logo: uploadedPath,
+      }));
+      toast.success(t("Saved successfully!"));
+      return;
+    }
+
     const formData = new FormData();
     formData.append(field, file);
     formData.append(
@@ -217,7 +257,8 @@ async function uploadBrandingAsset(field, file) {
     toast.error(t("Upload failed"));
   } finally {
     if (isAppIcon) setUploadingAppIcon(false);
-    else setUploadingSplashLogo(false);
+    if (isSplashLogo) setUploadingSplashLogo(false);
+    if (isMainTitleLogo) setUploadingMainTitleLogo(false);
   }
 }
 
@@ -617,6 +658,44 @@ async function saveAllCustomization() {
     }
   };
 
+  const toggleReservationPickup = async () => {
+    const nextValue = !settings.reservation_pickup_enabled;
+    updateField("reservation_pickup_enabled", nextValue);
+    setSavingReservationPickup(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({ reservation_pickup_enabled: nextValue }),
+      });
+      toast.success(nextValue ? t("Pickup is open") : t("Pickup is closed"));
+    } catch (err) {
+      console.error("❌ Failed to toggle reservation pickup:", err);
+      toast.error(t("Failed to save pickup setting"));
+      updateField("reservation_pickup_enabled", !nextValue);
+    } finally {
+      setSavingReservationPickup(false);
+    }
+  };
+
+  const toggleTableOrder = async () => {
+    const nextValue = !settings.table_order_enabled;
+    updateField("table_order_enabled", nextValue);
+    setSavingTableOrder(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({ table_order_enabled: nextValue }),
+      });
+      toast.success(nextValue ? t("Table order is open") : t("Table order is closed"));
+    } catch (err) {
+      console.error("❌ Failed to toggle table order:", err);
+      toast.error(t("Failed to save table order setting"));
+      updateField("table_order_enabled", !nextValue);
+    } finally {
+      setSavingTableOrder(false);
+    }
+  };
+
   const toggleReservationTab = async () => {
     const nextValue = !settings.reservation_tab_enabled;
     updateField("reservation_tab_enabled", nextValue);
@@ -638,6 +717,27 @@ async function saveAllCustomization() {
     }
   };
 
+  const toggleDisableAllProducts = async () => {
+    const nextValue = !settings.disable_all_products;
+    updateField("disable_all_products", nextValue);
+    setSavingDisableAllProducts(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({ disable_all_products: nextValue }),
+      });
+      toast.success(
+        nextValue ? t("All products are now hidden") : t("All products are now visible")
+      );
+    } catch (err) {
+      console.error("❌ Failed to toggle disable all products:", err);
+      toast.error(t("Failed to save product visibility setting"));
+      updateField("disable_all_products", !nextValue);
+    } finally {
+      setSavingDisableAllProducts(false);
+    }
+  };
+
   const resetConcertEditor = () => {
     setEditingConcertId(null);
     setConcertForm(makeEmptyConcertForm());
@@ -656,6 +756,7 @@ async function saveAllCustomization() {
     reservation_payment_method: "bank_transfer",
     bank_transfer_instructions: String(source?.bank_transfer_instructions || "").trim(),
     status: String(source?.status || "active").toLowerCase(),
+    free_concert: Boolean(source?.free_concert),
     area_allocations: (Array.isArray(source?.area_allocations) ? source.area_allocations : [])
       .map((row) => ({
         area_name: String(row?.area_name || "").trim(),
@@ -759,6 +860,7 @@ async function saveAllCustomization() {
       reservation_payment_method: "bank_transfer",
       bank_transfer_instructions: event.bank_transfer_instructions || "",
       status: event.status || "active",
+      free_concert: Boolean(event.free_concert),
       area_allocations:
         Array.isArray(event.area_allocations) && event.area_allocations.length > 0
           ? event.area_allocations.map((row) => ({
@@ -1666,6 +1768,64 @@ async function saveAllCustomization() {
               )}
             </p>
             <div className="mt-4">
+              <label className="font-semibold">{t("Reservation Modal Pickup")}</label>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    settings.reservation_pickup_enabled
+                      ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                      : "bg-rose-100 text-rose-700 border border-rose-200"
+                  }`}
+                >
+                  {settings.reservation_pickup_enabled
+                    ? t("Pickup is open")
+                    : t("Pickup is closed")}
+                </span>
+                <button
+                  type="button"
+                  className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
+                  onClick={toggleReservationPickup}
+                  disabled={savingReservationPickup}
+                >
+                  {settings.reservation_pickup_enabled
+                    ? t("Close Pickup")
+                    : t("Open Pickup")}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {t("Toggle pickup option inside the reservation modal (Pickup / Reservation).")}
+              </p>
+            </div>
+            <div className="mt-4">
+              <label className="font-semibold">{t("Table Order")}</label>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    settings.table_order_enabled
+                      ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                      : "bg-rose-100 text-rose-700 border border-rose-200"
+                  }`}
+                >
+                  {settings.table_order_enabled
+                    ? t("Table order is open")
+                    : t("Table order is closed")}
+                </span>
+                <button
+                  type="button"
+                  className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
+                  onClick={toggleTableOrder}
+                  disabled={savingTableOrder}
+                >
+                  {settings.table_order_enabled
+                    ? t("Close Table Order")
+                    : t("Open Table Order")}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {t("Toggle whether table order appears in QR menu order type options.")}
+              </p>
+            </div>
+            <div className="mt-4">
               <label className="font-semibold">{t("Reservation Header Tab")}</label>
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <span
@@ -1693,6 +1853,38 @@ async function saveAllCustomization() {
               <p className="text-xs text-gray-500 mt-1">
                 {t(
                   "This only controls the Reservation tab in the QR header. Concert reservations stay active."
+                )}
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label className="font-semibold">{t("All Product Visibility")}</label>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    settings.disable_all_products
+                      ? "bg-rose-100 text-rose-700 border border-rose-200"
+                      : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                  }`}
+                >
+                  {settings.disable_all_products
+                    ? t("All products are hidden")
+                    : t("All products are visible")}
+                </span>
+                <button
+                  type="button"
+                  className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
+                  onClick={toggleDisableAllProducts}
+                  disabled={savingDisableAllProducts}
+                >
+                  {settings.disable_all_products
+                    ? t("Enable All Products")
+                    : t("Disable All Products")}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {t(
+                  "When enabled, categories and products are hidden on QR home and in all QR menu product lists."
                 )}
               </p>
             </div>
@@ -1745,6 +1937,9 @@ async function saveAllCustomization() {
             <h4 className="text-lg font-bold text-indigo-700 dark:text-indigo-300 mb-3">
               {t("QR Menu App Branding")}
             </h4>
+            <p className="mb-4 text-xs text-gray-500">
+              {t("Branding upload guide: App Icon 1024 x 1024 px (square), Splash Logo 1600 x 900 px, Main Title Logo 1200 x 320 px.")}
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="font-semibold block mb-2">{t("Restaurant App Icon")}</label>
@@ -1792,6 +1987,9 @@ async function saveAllCustomization() {
                     {t("If not uploaded, Beypro default icon is used.")}
                   </p>
                 )}
+                <p className="mt-2 text-xs text-gray-500">
+                  {t("Recommended: 1024 x 1024 px (square), PNG/SVG, transparent background.")}
+                </p>
               </div>
 
               <div>
@@ -1836,6 +2034,56 @@ async function saveAllCustomization() {
                     </span>
                   </div>
                 ) : null}
+                <p className="mt-2 text-xs text-gray-500">
+                  {t("Recommended: 1600 x 900 px (16:9), minimum 1200 x 675 px.")}
+                </p>
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-2">{t("Main Title Logo")}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={mainTitleLogoInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0] || null;
+                      setMainTitleLogoFileName(file?.name || "");
+                      if (!file) return;
+                      await uploadBrandingAsset("main_title_logo", file);
+                      try {
+                        e.target.value = "";
+                      } catch {}
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => mainTitleLogoInputRef.current?.click()}
+                    disabled={uploadingMainTitleLogo}
+                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+                  >
+                    {uploadingMainTitleLogo ? t("Please wait...") : t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+                    {mainTitleLogoFileName ? mainTitleLogoFileName : t("No file chosen")}
+                  </span>
+                </div>
+                {settings.main_title_logo ? (
+                  <div className="mt-2 flex items-center gap-3">
+                    <img
+                      src={resolveUploadSrc(settings.main_title_logo)}
+                      alt={t("Main Title Logo")}
+                      className="h-14 w-36 rounded-xl object-contain border bg-white px-2"
+                    />
+                    <span className="text-xs text-gray-500">
+                      {t("Shown at the top of QR menu as the main title logo.")}
+                    </span>
+                  </div>
+                ) : null}
+                <p className="mt-2 text-xs text-gray-500">
+                  {t("Recommended size: 1200 x 320 px (minimum 600 x 160 px), PNG/SVG with transparent background.")}
+                </p>
               </div>
 
               <div>
@@ -1886,6 +2134,9 @@ async function saveAllCustomization() {
         {/* HERO SLIDER */}
         <div className="mt-10">
           <h3 className="text-xl font-bold mb-3 text-indigo-600">{t("Hero Slider")}</h3>
+          <p className="mb-3 text-xs text-gray-500">
+            {t("Recommended slide image size: 1600 x 900 px (16:9), minimum 1200 x 675 px.")}
+          </p>
 
           {settings.hero_slides.map((slide, index) => (
             <div
@@ -2265,6 +2516,9 @@ async function saveAllCustomization() {
                   className="hidden"
                 />
               </div>
+              <p className="mt-2 text-xs text-gray-500">
+                {t("Recommended concert picture size: 1600 x 900 px (16:9), minimum 1200 x 675 px.")}
+              </p>
               {concertForm.event_image ? (
                 <img
                   src={resolveUploadSrc(concertForm.event_image)}
@@ -2295,6 +2549,16 @@ async function saveAllCustomization() {
                 <option value="sold_out">{t("sold out")}</option>
                 <option value="hidden">{t("hidden")}</option>
               </select>
+            </div>
+            <div className="flex items-end">
+              <label className="inline-flex items-center gap-2 rounded-xl border bg-white dark:bg-zinc-900 px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={Boolean(concertForm.free_concert)}
+                  onChange={(e) => updateConcertFormField("free_concert", e.target.checked)}
+                />
+                <span className="text-sm font-semibold">{t("Free concert")}</span>
+              </label>
             </div>
             <div>
               <label className="font-semibold">{t("Total ticket quantity available")}</label>
@@ -2566,6 +2830,11 @@ async function saveAllCustomization() {
                           }`}>
                             {event.status}
                           </span>
+                          {event.free_concert ? (
+                            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                              {t("Free concert")}
+                            </span>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => startEditConcert(event)}
@@ -2728,6 +2997,9 @@ async function saveAllCustomization() {
               <span>{t("Enable Story Section")}</span>
             </label>
           </div>
+          <p className="mb-4 text-xs text-gray-500 dark:text-zinc-400">
+            {t("Recommended story image size: 1600 x 900 px (16:9), minimum 1200 x 675 px.")}
+          </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

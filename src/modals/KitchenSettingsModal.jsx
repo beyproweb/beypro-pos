@@ -2,7 +2,6 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
 // Accept all your existing state and handlers as props!
 export default function KitchenSettingsModal({
   allIngredients,

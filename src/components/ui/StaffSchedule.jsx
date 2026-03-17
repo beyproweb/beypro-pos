@@ -12,9 +12,7 @@ import 'react-clock/dist/Clock.css';
 import { DesktopTimePicker } from '@mui/x-date-pickers/DesktopTimePicker';
 import { DesktopDatePicker } from '@mui/x-date-pickers/DesktopDatePicker';
 import { useTranslation } from "react-i18next";
-import secureFetch from "../../utils/secureFetch";
-
-const API_URL = import.meta.env.VITE_API_URL || "";
+import secureFetch, { BASE_URL } from "../../utils/secureFetch";
 
 
 Modal.setAppElement('#root');
@@ -497,10 +495,7 @@ const handleSaveShift = async () => {
       const payload = { ...schedule, days: updatedDays };
 
       // Update the schedule via API
-      const response = await axios.put(
-        `${BASE_URL}/api/staff/schedule/${schedule.id}`,
-        payload
-      );
+      const response = await axios.put(`${BASE_URL}/staff/schedule/${schedule.id}`, payload);
 
       // Update state with the modified schedule
       setStaffSchedules((prev) =>
@@ -545,10 +540,7 @@ setStaffSchedules((prev) =>
       const updatedDays = daysArr.filter((day) => day !== dayToDelete);
       const payload = { ...schedule, days: updatedDays };
 
-      const response = await axios.put(
-        `${BASE_URL}/api/staff/schedule/${shiftId}`,
-        payload
-      );
+      const response = await axios.put(`${BASE_URL}/staff/schedule/${shiftId}`, payload);
 
       setStaffSchedules((prev) =>
         prev.map((sched) =>
@@ -868,10 +860,7 @@ for (const copiedShift of copiedWeekShifts) {
       days: destDay,
     };
     try {
-      const response = await axios.put(
-        `${BASE_URL}/api/staff/schedule/${scheduleToUpdate.id}`,
-        payload
-      );
+      const response = await axios.put(`${BASE_URL}/staff/schedule/${scheduleToUpdate.id}`, payload);
       setStaffSchedules((prev) =>
         prev.map((sched) =>
           sched.id === scheduleToUpdate.id ? response.data.schedule : sched

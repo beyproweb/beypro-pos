@@ -1,30 +1,8 @@
 // secureFetch.js — FINAL FIX FOR ELECTRON + DEV + PROD
+import { API_BASE } from "./api";
 
-const isElectron =
-  typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "");
-
-// Electron defaults to production, but allow overriding for local dev via VITE_API_URL
-// Examples:
-// - VITE_API_URL=/api (use Vite dev-server proxy)
-// - VITE_API_URL=http://localhost:5000 (direct local backend)
-// - VITE_API_URL=https://api.beypro.com/api (production)
-const ELECTRON_API = import.meta.env.VITE_API_URL || "https://api.beypro.com/api";
-
-// For browser:
-const BROWSER_API =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.MODE === "development"
-    ? "/api"
-    : "https://api.beypro.com/api");
-
-// FINAL API CHOICE:
-const RAW = isElectron ? ELECTRON_API : BROWSER_API;
-
-// Normalize to exactly one /api
-export const BASE_URL =
-  String(RAW)
-    .replace(/\/api\/?$/, "")
-    .replace(/\/+$/, "") + "/api";
+// Normalized base always ends with /api
+export const BASE_URL = API_BASE;
 
 if (import.meta.env.DEV && typeof window !== "undefined") {
   window.__BEYPRO_API_URL__ = BASE_URL;

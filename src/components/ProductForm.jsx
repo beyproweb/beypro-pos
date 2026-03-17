@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { INGREDIENT_PRICES_API } from "../utils/api";
+import { INGREDIENT_PRICES_API, API_ORIGIN } from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+const UPLOADS_BASE = API_ORIGIN || "";
+
 const toNumber = (value) => {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -630,7 +632,7 @@ useEffect(() => {
         setCategoryImagePreview(
           img.startsWith("http")
             ? img
-            : `${import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "http://localhost:5000"}/uploads/${img}`
+            : `${UPLOADS_BASE || ""}/uploads/${img}`
         );
       } else {
         setCategoryImagePreview(null);
@@ -1122,10 +1124,7 @@ return (
                           setCategoryImagePreview(
                             img.startsWith("http")
                               ? img
-                              : `${
-                                  import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") ||
-                                  "http://localhost:5000"
-                                }/uploads/${img}`
+                              : `${UPLOADS_BASE || ""}/uploads/${img}`
                           );
                         }
                       } catch (err) {

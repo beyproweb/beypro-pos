@@ -2118,9 +2118,18 @@ useEffect(() => {
         : [];
       const normalized = rows
         .filter((booking) => {
+          const hasConcertContext = hasConcertBookingContext(booking);
           const status = normalizeOrderStatus(
             booking?.status ?? booking?.reservation_status ?? booking?.reservationStatus
           );
+          if (hasConcertContext) {
+            return (
+              status !== "cancelled" &&
+              status !== "canceled" &&
+              status !== "deleted" &&
+              status !== "void"
+            );
+          }
           return (
             status === "reserved" ||
             status === "confirmed" ||

@@ -4,7 +4,6 @@ import socket from "../utils/socket"; // adjust path as needed!
 import secureFetch from "../utils/secureFetch";
 import { useHeader } from "../context/HeaderContext";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
 const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v1";
 const ONLINE_SOURCE_DISPLAY_NAMES = {
   yemeksepeti: "Yemeksepeti",

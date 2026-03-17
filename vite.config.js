@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
   const backendURL = isDev
     // Use IPv4 localhost to avoid ::1 ECONNREFUSED when backend isn't bound on IPv6.
     ? "http://127.0.0.1:5000"
-    : "https://api.beypro.com";
+    : "https://hurrypos-backend.onrender.com";
 
   /**
    * IMPORTANT:
