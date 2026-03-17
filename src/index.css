@@ -19,6 +19,60 @@ body {
   color: rgb(var(--base-text-color) / 1);
 }
 
+@font-face {
+  font-family: "Gotham";
+  src: local("Gotham Light"), local("Gotham-Light");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Gotham";
+  src: local("Gotham Book"), local("Gotham"), local("Gotham-Book");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Gotham";
+  src: local("Gotham Bold"), local("Gotham-Bold");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* QR menu typography theme */
+body.qrmenu-gotham-theme {
+  font-family: "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 300;
+}
+
+body.qrmenu-gotham-theme h1,
+body.qrmenu-gotham-theme h2,
+body.qrmenu-gotham-theme h3,
+body.qrmenu-gotham-theme h4,
+body.qrmenu-gotham-theme h5,
+body.qrmenu-gotham-theme h6,
+body.qrmenu-gotham-theme strong,
+body.qrmenu-gotham-theme b,
+body.qrmenu-gotham-theme button,
+body.qrmenu-gotham-theme .font-semibold,
+body.qrmenu-gotham-theme .font-bold,
+body.qrmenu-gotham-theme .font-extrabold {
+  font-family: "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
+}
+
+body.qrmenu-gotham-theme button *,
+body.qrmenu-gotham-theme .font-semibold *,
+body.qrmenu-gotham-theme .font-bold *,
+body.qrmenu-gotham-theme .font-extrabold * {
+  font-family: "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  font-weight: inherit;
+}
+
 /* ✅ Accent gradient background helper
    - Keeps `text-accent` / `border-accent` as solid accent color via Tailwind config.
    - Makes `bg-accent` (and hover:bg-accent) use a gradient for richer UI. */

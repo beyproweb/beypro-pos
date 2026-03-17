@@ -227,6 +227,25 @@ function resolveBrandingAsset(raw, fallback = "") {
   return `${API_BASE || ""}/uploads/${value.replace(/^\/?uploads\//, "")}`;
 }
 
+function formatConcertDisplayDateWithoutYear(value, locale) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const source = raw.includes("T") ? raw : `${raw}T00:00:00`;
+  const parsed = new Date(source);
+
+  if (!Number.isNaN(parsed.getTime())) {
+    return new Intl.DateTimeFormat(locale || undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(parsed);
+  }
+
+  const normalized = raw.slice(0, 10);
+  const [year, month, day] = normalized.split("-");
+  if (year && month && day) return `${day}/${month}`;
+  return normalized;
+}
+
 function normalizeHexColor(value, fallback) {
   const raw = String(value || "").trim();
   const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
@@ -3685,7 +3704,7 @@ async function load() {
                       const eventTitle = String(event?.event_title || "").trim();
                       const showEventTitle =
                         eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
-                      const eventDate = String(event?.event_date || "").slice(0, 10);
+                      const eventDate = formatConcertDisplayDateWithoutYear(event?.event_date, lang);
                       const eventTime = String(event?.event_time || "").slice(0, 5);
                       const tableCountAvailable = Number(event?.available_table_count || 0) > 0;
                       const ticketCountAvailable = Number(event?.available_ticket_count || 0) > 0;
@@ -3725,12 +3744,9 @@ async function load() {
                           ) : null}
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <div className="mb-2 inline-flex items-center rounded-full border border-neutral-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-300">
-                                {t("Concert Tickets")}
-                              </div>
-                              {isFreeConcert ? (
-                                <div className="mb-2 ml-2 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                                  {t("Free concert")}
+                              {!isFreeConcert ? (
+                                <div className="mb-2 inline-flex items-center rounded-full border border-neutral-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-300">
+                                  {t("Concert Tickets")}
                                 </div>
                               ) : null}
                               <div className="pl-2.5">
@@ -4196,13 +4212,16 @@ async function load() {
             {(() => {
               const artistName = String(concertModalEvent?.artist_name || "").trim();
               const eventTitle = String(concertModalEvent?.event_title || "").trim();
+              const isFreeConcert = boolish(concertModalEvent?.free_concert, false);
               const showEventTitle =
                 eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
               return (
                 <>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="mb-1 text-xs uppercase tracking-[0.18em] text-neutral-500">{t("Concert Tickets")}</p>
+                      {!isFreeConcert ? (
+                        <p className="mb-1 text-xs uppercase tracking-[0.18em] text-neutral-500">{t("Concert Tickets")}</p>
+                      ) : null}
                       <h4 className="text-2xl font-extrabold leading-tight text-neutral-900 dark:text-neutral-100">
                         {artistName || eventTitle}
                       </h4>
@@ -4212,7 +4231,8 @@ async function load() {
                         </p>
                       ) : null}
                       <p className="text-sm text-neutral-500 mt-1">
-                        {String(concertModalEvent.event_date || "").slice(0, 10)} {String(concertModalEvent.event_time || "").slice(0, 5)}
+                        {formatConcertDisplayDateWithoutYear(concertModalEvent.event_date, lang)}{" "}
+                        {String(concertModalEvent.event_time || "").slice(0, 5)}
                       </p>
                     </div>
                     <button
@@ -5614,8 +5634,14 @@ export default function QrMenu() {
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     window.__isQrMenuPage = true;
+    if (typeof document !== "undefined") {
+      document.body.classList.add("qrmenu-gotham-theme");
+    }
     return () => {
       window.__isQrMenuPage = false;
+      if (typeof document !== "undefined") {
+        document.body.classList.remove("qrmenu-gotham-theme");
+      }
     };
   }, []);
 
