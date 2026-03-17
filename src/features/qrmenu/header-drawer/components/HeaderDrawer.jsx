@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ChevronDown,
   ChevronLeft,
   CircleUserRound,
   ClipboardList,
@@ -30,6 +31,12 @@ function HeaderDrawer({
   appendIdentifier,
   isDark = false,
   initialView = VIEW_MENU,
+  openStatus = null,
+  days = [],
+  todayName = "",
+  shopHours = {},
+  loadingShopHours = false,
+  languageControl = null,
 }) {
   const storage = typeof window !== "undefined" ? window.localStorage : null;
   const { customer, isLoggedIn, login, register, logout, updateProfile } = useCustomerAuth(storage);
@@ -38,16 +45,24 @@ function HeaderDrawer({
   const [orders, setOrders] = React.useState([]);
   const [ordersLoading, setOrdersLoading] = React.useState(false);
   const [ordersError, setOrdersError] = React.useState("");
+  const [showShopHoursDropdown, setShowShopHoursDropdown] = React.useState(false);
 
   React.useEffect(() => {
     if (!isOpen) {
       setView(VIEW_MENU);
       setOrdersError("");
+      setShowShopHoursDropdown(false);
       return;
     }
     setView(initialView || VIEW_MENU);
     setOrdersError("");
   }, [initialView, isOpen]);
+
+  React.useEffect(() => {
+    if (view !== VIEW_MENU) {
+      setShowShopHoursDropdown(false);
+    }
+  }, [view]);
 
   const fetcher = React.useCallback(
     async (path) => {
@@ -140,6 +155,88 @@ function HeaderDrawer({
         <div className="text-xs text-gray-500 dark:text-neutral-400">
           {isLoggedIn ? customer?.email : t("Login to sync profile and orders")}
         </div>
+      </div>
+
+      <div className="px-3 pt-3 pb-2 border-b border-gray-100 dark:border-neutral-800 space-y-2">
+        <div
+          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+            openStatus?.isOpen
+              ? "border-emerald-200/80 bg-emerald-50/90 text-emerald-700 dark:border-emerald-900/30 dark:bg-emerald-950/25 dark:text-emerald-200"
+              : "border-rose-200/80 bg-rose-50/90 text-rose-700 dark:border-rose-900/30 dark:bg-rose-950/25 dark:text-rose-200"
+          }`}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              openStatus?.isOpen ? "bg-emerald-500" : "bg-rose-500"
+            }`}
+          />
+          <span>{openStatus?.label || t("Closed")}</span>
+        </div>
+
+        {Array.isArray(days) && days.length > 0 ? (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowShopHoursDropdown((prev) => !prev)}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200/90 bg-transparent px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              aria-label={t("Shop Hours")}
+              title={t("Shop Hours")}
+            >
+              <span>{t("Shop Hours")}</span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${
+                  showShopHoursDropdown ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {showShopHoursDropdown ? (
+              <div className="mt-2 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-xl backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
+                <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                  <div className="text-sm font-semibold text-gray-900 dark:text-neutral-100">
+                    {t("Shop Hours")}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowShopHoursDropdown(false)}
+                    className="text-lg leading-none text-gray-400 hover:text-gray-700 dark:hover:text-neutral-200"
+                    aria-label={t("Close")}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1">
+                  {days.map((day) => {
+                    const isToday = day === todayName;
+                    const open = shopHours?.[day]?.open || "";
+                    const close = shopHours?.[day]?.close || "";
+                    const enabled = shopHours?.[day]?.enabled !== false;
+                    const hasHours = enabled && Boolean(open && close);
+
+                    return (
+                      <div
+                        key={day}
+                        className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${
+                          isToday
+                            ? "border border-indigo-100 bg-indigo-50 text-indigo-800 dark:border-indigo-900/30 dark:bg-indigo-950/30 dark:text-indigo-200"
+                            : "bg-gray-50/80 text-gray-700 dark:bg-neutral-900/40 dark:text-neutral-200"
+                        }`}
+                      >
+                        <span className="font-semibold">{t(day)}</span>
+                        <span className="font-mono text-xs">
+                          {loadingShopHours ? "…" : hasHours ? `${open} - ${close}` : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {languageControl ? <div className="pt-0.5">{languageControl}</div> : null}
       </div>
 
       <div className="p-3 space-y-2 overflow-y-auto">

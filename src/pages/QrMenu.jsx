@@ -3355,8 +3355,6 @@ async function load() {
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const [shopHours, setShopHours] = React.useState({});
   const [loadingShopHours, setLoadingShopHours] = React.useState(true);
-  const [showShopHoursDropdown, setShowShopHoursDropdown] = React.useState(false);
-  const shopHoursDropdownRef = React.useRef(null);
 
   const todayName = React.useMemo(() => {
     const map = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -3410,17 +3408,6 @@ async function load() {
     },
     [onSelect]
   );
-
-  React.useEffect(() => {
-    const onDown = (e) => {
-      const el = shopHoursDropdownRef.current;
-      if (!el) return;
-      if (el.contains(e.target)) return;
-      setShowShopHoursDropdown(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
 
   React.useEffect(() => {
     let active = true;
@@ -3667,16 +3654,6 @@ async function load() {
         mainTitleLogo={mainTitleLogo}
         tagline={subtitle || tagline || "Fresh • Local • Crafted"}
         t={t}
-        openStatus={openStatus}
-        showShopHoursDropdown={showShopHoursDropdown}
-        onToggleShopHoursDropdown={() => setShowShopHoursDropdown((v) => !v)}
-        onCloseShopHoursDropdown={() => setShowShopHoursDropdown(false)}
-        days={days}
-        todayName={todayName}
-        shopHours={shopHours}
-        loadingShopHours={loadingShopHours}
-        shopHoursDropdownRef={shopHoursDropdownRef}
-        languageControl={<LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />}
       />
       <HeaderDrawer
         isOpen={isReservationHeaderDrawerOpen}
@@ -3684,6 +3661,12 @@ async function load() {
         t={t}
         appendIdentifier={appendIdentifier}
         isDark={isDark}
+        openStatus={openStatus}
+        days={days}
+        todayName={todayName}
+        shopHours={shopHours}
+        loadingShopHours={loadingShopHours}
+        languageControl={<LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />}
       />
 		
 	    {/* === HERO SECTION === */}

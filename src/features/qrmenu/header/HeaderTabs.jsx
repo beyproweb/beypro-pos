@@ -55,7 +55,11 @@ function HeaderTabs({
   const hasVisibleSegments = visibleSegments.length > 0;
 
   return (
-    <div className={`flex items-center min-w-0 ${hasVisibleSegments ? "gap-6" : ""}`}>
+    <div
+      className={`flex w-full items-center min-w-0 ${
+        hasVisibleSegments ? "gap-6" : "justify-between"
+      }`}
+    >
       <DrawerButton onClick={onOpenDrawer} isDark={isDark} isOpen={isDrawerOpen} />
 
       {hasVisibleSegments ? (
@@ -83,7 +87,7 @@ function HeaderTabs({
         </div>
       ) : null}
 
-      {hasVisibleSegments && statusShortcutEnabled ? (
+      {statusShortcutEnabled ? (
         <button
           type="button"
           onClick={onStatusShortcutClick}
