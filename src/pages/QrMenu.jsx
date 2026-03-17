@@ -2582,6 +2582,19 @@ async function load() {
       : storyVideoSource === "upload"
       ? storyVideoUpload || storyVideoYoutubeEmbed
       : storyVideoYoutubeEmbed || storyVideoUpload;
+  const storyVideoYoutubeAutoplay = React.useMemo(() => {
+    if (!storyVideoYoutubeEmbed) return "";
+    try {
+      const url = new URL(storyVideoYoutubeEmbed);
+      url.searchParams.set("autoplay", "1");
+      url.searchParams.set("mute", "1");
+      url.searchParams.set("playsinline", "1");
+      url.searchParams.set("rel", "0");
+      return url.toString();
+    } catch {
+      return storyVideoYoutubeEmbed;
+    }
+  }, [storyVideoYoutubeEmbed]);
   const showStoryVideoSection = Boolean(activeStoryVideo);
   const storyImages = React.useMemo(() => {
     const orderedImages = Array.isArray(c.story_images) ? c.story_images : [];
@@ -4021,7 +4034,7 @@ async function load() {
             <div className="aspect-video w-full bg-black">
               {activeStoryVideo === storyVideoYoutubeEmbed ? (
                 <iframe
-                  src={storyVideoYoutubeEmbed}
+                  src={storyVideoYoutubeAutoplay || storyVideoYoutubeEmbed}
                   title={t("Story Video")}
                   className="h-full w-full"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -4031,6 +4044,10 @@ async function load() {
               ) : (
                 <video
                   src={activeStoryVideo}
+                  autoPlay
+                  muted
+                  playsInline
+                  loop
                   controls
                   preload="metadata"
                   className="h-full w-full object-cover"
