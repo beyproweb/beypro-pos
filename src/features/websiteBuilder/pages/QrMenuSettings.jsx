@@ -20,6 +20,28 @@ const extractIdentifierFromQrUrl = (value) => {
   }
 };
 
+const resolveYouTubeEmbedUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const host = String(url.hostname || "").toLowerCase();
+    let videoId = "";
+    if (host.includes("youtu.be")) {
+      videoId = url.pathname.split("/").filter(Boolean)[0] || "";
+    } else if (host.includes("youtube.com")) {
+      videoId =
+        url.searchParams.get("v") ||
+        url.pathname.split("/").filter(Boolean).slice(-1)[0] ||
+        "";
+    }
+    if (!videoId) return "";
+    return `https://www.youtube.com/embed/${videoId}`;
+  } catch {
+    return "";
+  }
+};
+
 const makeEmptyConcertAreaAllocation = () => ({
   area_name: "",
   allocation_type: "ticket",
@@ -107,6 +129,7 @@ export default function QrMenuSettings() {
   const [showShopHoursDropdown, setShowShopHoursDropdown] = useState(false);
   const shopHoursDropdownRef = useRef(null);
   const [uploadingStoryImages, setUploadingStoryImages] = useState(false);
+  const [uploadingStoryVideo, setUploadingStoryVideo] = useState(false);
   const [draggedStoryImageIndex, setDraggedStoryImageIndex] = useState(null);
   const [settings, setSettings] = useState({
   main_title: "",
@@ -127,6 +150,9 @@ export default function QrMenuSettings() {
   story_text: "",
   story_images: [],
   story_image: "",
+  story_video_source: "none",
+  story_video_youtube_url: "",
+  story_video_upload: "",
   reviews: [],
   social_instagram: "",
   social_tiktok: "",
@@ -340,6 +366,45 @@ async function uploadStoryImages(e) {
     setUploadingStoryImages(false);
     e.target.value = "";
   }
+}
+
+async function uploadStoryVideo(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  setUploadingStoryVideo(true);
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await secureFetch("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    const uploadedVideo = String(res?.url || "").trim();
+    if (!uploadedVideo) {
+      toast.error(t("Upload failed"));
+      return;
+    }
+    setSettings((prev) => ({
+      ...prev,
+      story_video_upload: uploadedVideo,
+      story_video_source: "upload",
+    }));
+  } catch (err) {
+    console.error("❌ Failed to upload story video:", err);
+    toast.error(t("Upload failed"));
+  } finally {
+    setUploadingStoryVideo(false);
+    e.target.value = "";
+  }
+}
+
+function removeStoryVideoUpload() {
+  setSettings((prev) => ({
+    ...prev,
+    story_video_upload: "",
+    story_video_source: prev.story_video_source === "upload" ? "none" : prev.story_video_source,
+  }));
 }
 
 function removeStoryImage(index) {
@@ -3000,6 +3065,93 @@ async function saveAllCustomization() {
           <p className="mb-4 text-xs text-gray-500 dark:text-zinc-400">
             {t("Recommended story image size: 1600 x 900 px (16:9), minimum 1200 x 675 px.")}
           </p>
+
+          <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="font-semibold">{t("Story Video Source")}</label>
+              <select
+                value={String(settings.story_video_source || "none")}
+                onChange={(e) => updateField("story_video_source", e.target.value)}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              >
+                <option value="none">{t("None")}</option>
+                <option value="youtube">{t("YouTube URL")}</option>
+                <option value="upload">{t("Upload Video")}</option>
+              </select>
+            </div>
+
+            {String(settings.story_video_source || "").toLowerCase() === "youtube" ? (
+              <div>
+                <label className="font-semibold">{t("YouTube Video Link")}</label>
+                <input
+                  type="url"
+                  value={settings.story_video_youtube_url || ""}
+                  onChange={(e) => updateField("story_video_youtube_url", e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
+                  {t("Paste a YouTube watch/share URL to show this video above the story section.")}
+                </p>
+              </div>
+            ) : null}
+
+            {String(settings.story_video_source || "").toLowerCase() === "upload" ? (
+              <div>
+                <label className="font-semibold">{t("Story Video Upload")}</label>
+                <input
+                  type="file"
+                  accept="video/*"
+                  onChange={uploadStoryVideo}
+                  className="w-full mt-1"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
+                  {uploadingStoryVideo
+                    ? t("Uploading story video...")
+                    : t("Recommended: MP4 (H.264), 1920 x 1080 px, max 30-60 seconds for best mobile performance.")}
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          {String(settings.story_video_source || "").toLowerCase() === "youtube" &&
+          resolveYouTubeEmbedUrl(settings.story_video_youtube_url) ? (
+            <div className="mb-5 rounded-2xl border bg-white dark:bg-zinc-900 p-3">
+              <div className="aspect-video w-full overflow-hidden rounded-xl border border-gray-200 dark:border-zinc-700 bg-black">
+                <iframe
+                  src={resolveYouTubeEmbedUrl(settings.story_video_youtube_url)}
+                  title={t("Story Video Preview")}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {String(settings.story_video_source || "").toLowerCase() === "upload" &&
+          settings.story_video_upload ? (
+            <div className="mb-5 rounded-2xl border bg-white dark:bg-zinc-900 p-3">
+              <div className="aspect-video w-full overflow-hidden rounded-xl border border-gray-200 dark:border-zinc-700 bg-black">
+                <video
+                  src={resolveUploadSrc(settings.story_video_upload)}
+                  controls
+                  preload="metadata"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={removeStoryVideoUpload}
+                  className="px-3 py-1.5 rounded-lg border text-xs font-medium text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900/40 dark:hover:bg-red-950/30"
+                >
+                  {t("Remove Video")}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

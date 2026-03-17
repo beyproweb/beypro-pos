@@ -80,6 +80,28 @@ function resolveUploadedAsset(raw) {
   return `${uploadsBase}/uploads/${value.replace(/^\/?uploads\//, "")}`;
 }
 
+function resolveYouTubeEmbedUrl(rawUrl) {
+  const raw = String(rawUrl || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const host = String(url.hostname || "").toLowerCase();
+    let videoId = "";
+    if (host.includes("youtu.be")) {
+      videoId = url.pathname.split("/").filter(Boolean)[0] || "";
+    } else if (host.includes("youtube.com")) {
+      videoId =
+        url.searchParams.get("v") ||
+        url.pathname.split("/").filter(Boolean).slice(-1)[0] ||
+        "";
+    }
+    if (!videoId) return "";
+    return `https://www.youtube.com/embed/${videoId}`;
+  } catch {
+    return "";
+  }
+}
+
 function showQrCartToast(message) {
   toast.success(message, {
     duration: 2400,
@@ -2551,6 +2573,16 @@ async function load() {
 
   const storyTitle = c.story_title || "Our Story";
   const storyText = c.story_text || "";
+  const storyVideoSource = String(c.story_video_source || "").trim().toLowerCase();
+  const storyVideoYoutubeEmbed = resolveYouTubeEmbedUrl(c.story_video_youtube_url);
+  const storyVideoUpload = resolveUploadedAsset(c.story_video_upload);
+  const activeStoryVideo =
+    storyVideoSource === "youtube"
+      ? storyVideoYoutubeEmbed || storyVideoUpload
+      : storyVideoSource === "upload"
+      ? storyVideoUpload || storyVideoYoutubeEmbed
+      : storyVideoYoutubeEmbed || storyVideoUpload;
+  const showStoryVideoSection = Boolean(activeStoryVideo);
   const storyImages = React.useMemo(() => {
     const orderedImages = Array.isArray(c.story_images) ? c.story_images : [];
     const legacyImage = c.story_image ? [c.story_image] : [];
@@ -3983,9 +4015,35 @@ async function load() {
 	      )}
 	    </section>
 
+      {showStoryVideoSection ? (
+        <section id="story-video-section" className="max-w-6xl mx-auto px-4 pt-2 pb-3">
+          <div className="max-w-4xl mx-auto overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+            <div className="aspect-video w-full bg-black">
+              {activeStoryVideo === storyVideoYoutubeEmbed ? (
+                <iframe
+                  src={storyVideoYoutubeEmbed}
+                  title={t("Story Video")}
+                  className="h-full w-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              ) : (
+                <video
+                  src={activeStoryVideo}
+                  controls
+                  preload="metadata"
+                  className="h-full w-full object-cover"
+                />
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
     {/* === STORY SECTION === */}
       {showStorySection && (
-	      <section id="story-section" className="max-w-6xl mx-auto px-4 pt-3 pb-14">
+		      <section id="story-section" className="max-w-6xl mx-auto px-4 pt-3 pb-14">
 	        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] gap-6 lg:gap-10 items-center">
 	          <div className="max-w-xl">
 	            <h2 className="text-[2rem] sm:text-[2.35rem] font-serif font-semibold tracking-[-0.03em] text-gray-900 dark:text-neutral-50">
