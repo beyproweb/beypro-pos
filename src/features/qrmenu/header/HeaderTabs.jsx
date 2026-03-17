@@ -52,39 +52,38 @@ function HeaderTabs({
     },
   ];
   const visibleSegments = segments.filter((segment) => segment.enabled);
-
-  if (visibleSegments.length === 0) {
-    return null;
-  }
+  const hasVisibleSegments = visibleSegments.length > 0;
 
   return (
-    <div className="flex items-center gap-6 min-w-0">
+    <div className={`flex items-center min-w-0 ${hasVisibleSegments ? "gap-6" : ""}`}>
       <DrawerButton onClick={onOpenDrawer} isDark={isDark} isOpen={isDrawerOpen} />
 
-      <div className={`min-w-0 flex-1 rounded-2xl border backdrop-blur-xl p-1 ${containerClass}`}>
-        <div
-          className="grid gap-1"
-          style={{ gridTemplateColumns: `repeat(${visibleSegments.length}, minmax(0, 1fr))` }}
-        >
-          {visibleSegments.map((segment) => {
-            const isActive = activeOrderType === segment.key;
-            const nextClass = isActive ? activeTabClass : inactiveTabClass;
+      {hasVisibleSegments ? (
+        <div className={`min-w-0 flex-1 rounded-2xl border backdrop-blur-xl p-1 ${containerClass}`}>
+          <div
+            className="grid gap-1"
+            style={{ gridTemplateColumns: `repeat(${visibleSegments.length}, minmax(0, 1fr))` }}
+          >
+            {visibleSegments.map((segment) => {
+              const isActive = activeOrderType === segment.key;
+              const nextClass = isActive ? activeTabClass : inactiveTabClass;
 
-            return (
-              <button
-                key={segment.key}
-                type="button"
-                onClick={() => onSelect?.(segment.key)}
-                className={`${baseTabClass} ${nextClass}`}
-              >
-                {segment.label}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={segment.key}
+                  type="button"
+                  onClick={() => onSelect?.(segment.key)}
+                  className={`${baseTabClass} ${nextClass}`}
+                >
+                  {segment.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      {statusShortcutEnabled ? (
+      {hasVisibleSegments && statusShortcutEnabled ? (
         <button
           type="button"
           onClick={onStatusShortcutClick}

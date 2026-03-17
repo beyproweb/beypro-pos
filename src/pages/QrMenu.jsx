@@ -3759,7 +3759,8 @@ async function load() {
                                   </div>
                                 ) : null}
                                 <div className="text-xs text-neutral-500 mt-1">
-                                  {eventDate} {eventTime} • {concertPriceLabel(event)}
+                                  {eventDate} {eventTime}
+                                  {!isFreeConcert ? ` • ${concertPriceLabel(event)}` : ""}
                                 </div>
                               </div>
                             </div>
