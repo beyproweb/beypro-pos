@@ -3780,9 +3780,9 @@ async function load() {
 
 	      <div className="max-w-4xl mx-auto">
               {/* CONCERT TICKETS */}
-              <div className="mt-6 max-w-3xl mx-auto">
-                {concertEvents.length > 0 ? (
-                  <div className="space-y-3">
+	              <div className="mt-6 max-w-3xl mx-auto">
+	                {concertEvents.length > 0 ? (
+	                  <div className="space-y-3">
                     {concertEvents.map((event) => {
                       const isFreeConcert = boolish(event?.free_concert, false);
                       const forcedSoldOut =
@@ -3914,11 +3914,46 @@ async function load() {
                         </div>
                       );
                     })}
-                  </div>
-                ) : null}
-              </div>
+	                  </div>
+	                ) : null}
+	              </div>
 
-	      </div>
+              {showStoryVideoSection ? (
+                <div id="story-video-section" className="mt-6">
+                  {storyVideoTitle ? (
+                    <h2 className="mb-3 text-center text-[1.4rem] sm:text-[1.7rem] font-serif font-semibold tracking-[-0.02em] text-gray-900 dark:text-neutral-50">
+                      {storyVideoTitle}
+                    </h2>
+                  ) : null}
+                  <div className="max-w-4xl mx-auto overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+                    <div className="aspect-video w-full bg-black">
+                      {activeStoryVideo === storyVideoYoutubeEmbed ? (
+                        <iframe
+                          src={storyVideoYoutubePlayerUrl || storyVideoYoutubeEmbed}
+                          title={t("Story Video")}
+                          className="h-full w-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <video
+                          src={activeStoryVideo}
+                          autoPlay
+                          muted
+                          playsInline
+                          loop
+                          controls
+                          preload="metadata"
+                          className="h-full w-full object-cover"
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+		      </div>
 
       {/* CATEGORIES (scrollable 1 row) */}
       {!hideAllProducts && homeCategories.length > 0 && (
@@ -4088,41 +4123,6 @@ async function load() {
 	        </div>
 	      )}
 	    </section>
-
-      {showStoryVideoSection ? (
-        <section id="story-video-section" className="max-w-6xl mx-auto px-4 pt-2 pb-3">
-          {storyVideoTitle ? (
-            <h2 className="mb-3 text-center text-[1.4rem] sm:text-[1.7rem] font-serif font-semibold tracking-[-0.02em] text-gray-900 dark:text-neutral-50">
-              {storyVideoTitle}
-            </h2>
-          ) : null}
-          <div className="max-w-4xl mx-auto overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-            <div className="aspect-video w-full bg-black">
-              {activeStoryVideo === storyVideoYoutubeEmbed ? (
-                <iframe
-                  src={storyVideoYoutubePlayerUrl || storyVideoYoutubeEmbed}
-                  title={t("Story Video")}
-                  className="h-full w-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  referrerPolicy="strict-origin-when-cross-origin"
-                  allowFullScreen
-                />
-              ) : (
-                <video
-                  src={activeStoryVideo}
-                  autoPlay
-                  muted
-                  playsInline
-                  loop
-                  controls
-                  preload="metadata"
-                  className="h-full w-full object-cover"
-                />
-              )}
-            </div>
-          </div>
-        </section>
-      ) : null}
 
     {/* === STORY SECTION === */}
       {showStorySection && (
