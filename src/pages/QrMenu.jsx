@@ -2576,25 +2576,47 @@ async function load() {
   const storyVideoSource = String(c.story_video_source || "").trim().toLowerCase();
   const storyVideoYoutubeEmbed = resolveYouTubeEmbedUrl(c.story_video_youtube_url);
   const storyVideoUpload = resolveUploadedAsset(c.story_video_upload);
+  const [isMobileStoryVideoViewport, setIsMobileStoryVideoViewport] = React.useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(max-width: 767px)").matches;
+  });
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobileStoryVideoViewport(mq.matches);
+    update();
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", update);
+      return () => mq.removeEventListener("change", update);
+    }
+    mq.addListener(update);
+    return () => mq.removeListener(update);
+  }, []);
   const activeStoryVideo =
     storyVideoSource === "youtube"
       ? storyVideoYoutubeEmbed || storyVideoUpload
       : storyVideoSource === "upload"
       ? storyVideoUpload || storyVideoYoutubeEmbed
       : storyVideoYoutubeEmbed || storyVideoUpload;
-  const storyVideoYoutubeAutoplay = React.useMemo(() => {
+  const storyVideoYoutubePlayerUrl = React.useMemo(() => {
     if (!storyVideoYoutubeEmbed) return "";
     try {
       const url = new URL(storyVideoYoutubeEmbed);
-      url.searchParams.set("autoplay", "1");
-      url.searchParams.set("mute", "1");
       url.searchParams.set("playsinline", "1");
       url.searchParams.set("rel", "0");
+      url.searchParams.set("controls", "1");
+      if (isMobileStoryVideoViewport) {
+        url.searchParams.delete("autoplay");
+        url.searchParams.delete("mute");
+      } else {
+        url.searchParams.set("autoplay", "1");
+        url.searchParams.set("mute", "1");
+      }
       return url.toString();
     } catch {
       return storyVideoYoutubeEmbed;
     }
-  }, [storyVideoYoutubeEmbed]);
+  }, [isMobileStoryVideoViewport, storyVideoYoutubeEmbed]);
   const showStoryVideoSection = Boolean(activeStoryVideo);
   const storyImages = React.useMemo(() => {
     const orderedImages = Array.isArray(c.story_images) ? c.story_images : [];
@@ -4034,7 +4056,7 @@ async function load() {
             <div className="aspect-video w-full bg-black">
               {activeStoryVideo === storyVideoYoutubeEmbed ? (
                 <iframe
-                  src={storyVideoYoutubeAutoplay || storyVideoYoutubeEmbed}
+                  src={storyVideoYoutubePlayerUrl || storyVideoYoutubeEmbed}
                   title={t("Story Video")}
                   className="h-full w-full"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
