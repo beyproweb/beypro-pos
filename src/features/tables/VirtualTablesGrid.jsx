@@ -220,6 +220,7 @@ function VirtualTablesGrid({
 
   React.useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    const scrollEventTarget = typeof document !== "undefined" ? document : window;
 
     const scheduleViewportCalc = () => {
       if (rafRef.current != null) return;
@@ -229,12 +230,18 @@ function VirtualTablesGrid({
       });
     };
 
-    window.addEventListener("scroll", scheduleViewportCalc, { passive: true });
+    // Listen in capture phase so scrolls from nested containers (Layout main area) are observed.
+    scrollEventTarget.addEventListener("scroll", scheduleViewportCalc, {
+      passive: true,
+      capture: true,
+    });
     window.addEventListener("resize", scheduleViewportCalc);
     calculateViewport();
 
     return () => {
-      window.removeEventListener("scroll", scheduleViewportCalc);
+      scrollEventTarget.removeEventListener("scroll", scheduleViewportCalc, {
+        capture: true,
+      });
       window.removeEventListener("resize", scheduleViewportCalc);
       if (rafRef.current != null) {
         window.cancelAnimationFrame(rafRef.current);

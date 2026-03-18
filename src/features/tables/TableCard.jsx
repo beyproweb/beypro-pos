@@ -516,6 +516,11 @@ function TableCard({
     : isCheckedInReservation
     ? t("Guest checked in")
     : t("Reserved");
+  const reservationMetaLabel = isCheckedOutReservation
+    ? t("Checkout completed")
+    : isCheckedInReservation
+    ? t("Ready for ordering")
+    : t("Awaiting check-in");
   const isConcertReservation = hasConcertBookingContext(
     tableOrder,
     reservationInfo,
@@ -569,22 +574,17 @@ function TableCard({
             <span className="text-base sm:text-lg font-extrabold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl px-2 py-0.5">
               {String(table.tableNumber).padStart(2, "0")}
             </span>
-            {hasOrderItems && (
-              <button
-                type="button"
-                onClick={handlePrintClick}
-                className="text-base sm:text-lg font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2 py-0.5 hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              >
-                🖨️
-              </button>
-            )}
           </div>
-
-          {shouldShowConfirmedTimer && (
-            <span className="shrink-0 bg-blue-600 text-white rounded-full px-3 py-1 font-mono text-[11px] sm:text-sm shadow-md">
-              ⏱ <ElapsedTimer startTime={confirmedStartTime} />
-            </span>
+          {hasOrderItems && (
+            <button
+              type="button"
+              onClick={handlePrintClick}
+              className="shrink-0 text-base sm:text-lg font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2 py-0.5 hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            >
+              🖨️
+            </button>
           )}
+
         </div>
 
         {table.label && (
@@ -594,7 +594,7 @@ function TableCard({
         )}
 
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          {showAreas && (
+          {showAreas && !hasUnpaidItems && (
             <div className="text-[11px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600 max-w-full truncate">
               📍 {formatAreaLabel(table.area)}
             </div>
@@ -656,34 +656,30 @@ function TableCard({
                 </div>
               </div>
 
-              {shouldRenderKitchenStatuses && <div className="flex flex-wrap gap-1.5 mt-1">{kitchenStatusBadges}</div>}
+              {shouldRenderKitchenStatuses && (
+                <div className="mt-1 flex items-start justify-between gap-2 min-w-0">
+                  <div className="flex flex-wrap gap-1.5 min-w-0">{kitchenStatusBadges}</div>
+                  {shouldShowConfirmedTimer && (
+                    <span className="shrink-0 bg-blue-600 text-white rounded-full px-3 py-1 font-mono text-[11px] sm:text-sm shadow-md whitespace-nowrap">
+                      ⏱ <ElapsedTimer startTime={confirmedStartTime} />
+                    </span>
+                  )}
+                </div>
+              )}
             </>
           )}
 
           {shouldShowReservedBadge && (
             <div className={reservationPanelClassName}>
               <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
                   <div className={reservationTitleClassName}>{reservationStateLabel}</div>
-                  <div className="text-[10px] text-slate-500 font-medium truncate">
-                    {isCheckedOutReservation
-                      ? t("Checkout completed")
-                      : isCheckedInReservation
-                      ? t("Ready for ordering")
-                      : t("Awaiting check-in")}
+                  <div className="text-[10px] text-slate-500 font-medium truncate text-right">
+                    {reservationMetaLabel}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {!isCheckedInReservation && !isCheckedOutReservation && (
-                    <button
-                      type="button"
-                      onClick={handleCheckinReservationClick}
-                      className="h-7 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
-                    >
-                      {checkinButtonLabel}
-                    </button>
-                  )}
-                  {showCheckoutReservationButton && (
+                {showCheckoutReservationButton && (
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={handleCheckoutReservationClick}
@@ -691,15 +687,8 @@ function TableCard({
                     >
                       {t("Check Out")}
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleDeleteReservationClick}
-                    className="h-7 rounded-full border border-rose-300 bg-rose-50 px-2.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100"
-                  >
-                    {t("Cancel")}
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
               {reservationInfo ? (
                 <div className="mt-2 space-y-1.5">
@@ -749,10 +738,38 @@ function TableCard({
               )}
             </div>
           )}
+          {shouldShowReservedBadge && (
+            <div className="mt-2 flex items-center justify-center">
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                {!isCheckedInReservation && !isCheckedOutReservation && (
+                  <button
+                    type="button"
+                    onClick={handleCheckinReservationClick}
+                    className="h-7 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-[12px] font-extrabold leading-none text-emerald-700 shadow-sm scale-110 origin-center transition-transform hover:bg-emerald-100 active:scale-105"
+                  >
+                    {checkinButtonLabel}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleDeleteReservationClick}
+                  className="h-7 rounded-full border border-rose-300 bg-rose-50 px-2.5 text-[12px] font-extrabold leading-none text-rose-700 shadow-sm scale-110 origin-center transition-transform hover:bg-rose-100 active:scale-105"
+                >
+                  {t("Cancel")}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-end justify-between mt-3 sm:mt-4">
-          {isOrderDelayed && <span className="text-amber-600 font-extrabold animate-pulse">⚠️</span>}
+          {showAreas && hasUnpaidItems ? (
+            <div className="text-[11px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600 max-w-full truncate">
+              📍 {formatAreaLabel(table.area)}
+            </div>
+          ) : isOrderDelayed ? (
+            <span className="text-amber-600 font-extrabold animate-pulse">⚠️</span>
+          ) : null}
 
           <div className="flex flex-col items-end gap-2 ml-auto">
             {isCallingWaiter && (
