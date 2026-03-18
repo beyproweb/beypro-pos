@@ -1999,7 +1999,13 @@ const LANGS = [
 
 
 /* ====================== LANGUAGE SWITCHER ====================== */
-function LanguageSwitcher({ lang, setLang, t, isDark = false }) {
+function LanguageSwitcher({
+  lang,
+  setLang,
+  t,
+  isDark = false,
+  dropdownDirection = "down",
+}) {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef(null);
   const current = LANGS.find((item) => item.code === lang) || LANGS[0];
@@ -2040,7 +2046,7 @@ function LanguageSwitcher({ lang, setLang, t, isDark = false }) {
 
       {open ? (
         <div
-          className={`absolute top-[calc(100%+10px)] right-0 z-[90] w-[180px] rounded-2xl border p-2 shadow-lg ${
+          className={`absolute ${dropdownDirection === "up" ? "bottom-[calc(100%+10px)]" : "top-[calc(100%+10px)]"} right-0 z-[180] w-[180px] rounded-2xl border p-2 shadow-lg ${
             isDark
               ? "border-gray-200/20 bg-neutral-950/90 text-white backdrop-blur"
               : "border-gray-200 bg-white/95 text-gray-900 backdrop-blur"
@@ -3758,7 +3764,15 @@ async function load() {
         todayName={todayName}
         shopHours={shopHours}
         loadingShopHours={loadingShopHours}
-        languageControl={<LanguageSwitcher lang={lang} setLang={setLang} t={t} isDark={isDark} />}
+        languageControl={
+          <LanguageSwitcher
+            lang={lang}
+            setLang={setLang}
+            t={t}
+            isDark={isDark}
+            dropdownDirection="up"
+          />
+        }
       />
 		
 	    {/* === HERO SECTION === */}
@@ -6492,7 +6506,7 @@ export default function QrMenu() {
   const statusShortcutCount = hasStatusShortcutOrder
     ? Math.max(1, Number(activeOrderItemCount) || 0)
     : 0;
-  const statusShortcutEnabled = hasStatusShortcutOrder;
+  const statusShortcutEnabled = true;
   const statusAllowsCloseSlot =
     normalizedStatusForLock === "" ||
     ["confirmed", "closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(
@@ -6614,7 +6628,10 @@ export default function QrMenu() {
     }
 
     const activeId = Number(orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0);
-    if (!Number.isFinite(activeId) || activeId <= 0) return;
+    if (!Number.isFinite(activeId) || activeId <= 0) {
+      onOpenCartFromNav();
+      return;
+    }
     if (!orderId) {
       setOrderId(activeId);
     }
@@ -6630,6 +6647,7 @@ export default function QrMenu() {
     setOrderStatus,
     setShowStatus,
     showStatus,
+    onOpenCartFromNav,
     storage,
   ]);
 
@@ -7218,8 +7236,8 @@ export default function QrMenu() {
             statusShortcutEnabled={statusShortcutEnabled}
             statusShortcutOpen={showStatus}
             onStatusShortcutToggle={handleHeaderStatusShortcutToggle}
-            reservationEnabled={!hasActiveDeliveryLock}
-            tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
+            reservationEnabled={true}
+            tableEnabled={allowTableOrder}
           />
 
           {!orderType && showOrderTypePrompt && (
