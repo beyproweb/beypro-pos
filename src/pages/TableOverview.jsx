@@ -1191,6 +1191,16 @@ const handleCheckinReservation = useCallback(
     const isConcertReservation =
       hasConcertBookingContext(table?.order, reservationInfo, table?.reservationFallback) ||
       hasConcertBookingOnTable;
+    const isReservationAwaitingConfirmation = isReservationPendingConfirmation(
+      table?.order,
+      reservationInfo,
+      table?.reservationFallback
+    );
+    const isConcertBookingReadyForCheckin =
+      isConcertBookingConfirmed(table?.order, reservationInfo, table?.reservationFallback) ||
+      hasConfirmedConcertBookingOnTable;
+    const needsConcertConfirmationFirst =
+      isConcertReservation && !isConcertBookingReadyForCheckin;
     const canCheckInReservation =
       isReservationConfirmedForCheckin(
         table?.order,
@@ -1198,17 +1208,196 @@ const handleCheckinReservation = useCallback(
         table?.reservationFallback
       ) ||
       (isConcertReservation &&
-        (isConcertBookingConfirmed(table?.order, reservationInfo, table?.reservationFallback) ||
-          hasConfirmedConcertBookingOnTable));
-    const isAwaitingConfirmation =
-      isReservationPendingConfirmation(table?.order, reservationInfo, table?.reservationFallback) &&
-      !canCheckInReservation;
-    if (isAwaitingConfirmation) {
-      toast.warning(
-        isConcertReservation
-          ? t("Concert booking is not confirmed yet. Please confirm booking before check-in.")
-          : t("Reservation is not confirmed yet. Please confirm booking before check-in.")
-      );
+        isConcertBookingReadyForCheckin);
+    const needsConfirmationFirst =
+      needsConcertConfirmationFirst ||
+      (isReservationAwaitingConfirmation && !canCheckInReservation);
+    if (needsConfirmationFirst) {
+      const confirmReservationOrder = async () => {
+        const targetOrderId = Number(
+          reservationInfo?.order_id ??
+            reservationInfo?.orderId ??
+            table?.order?.id ??
+            table?.reservationFallback?.order_id ??
+            table?.reservationFallback?.orderId ??
+            orderId
+        );
+        if (!Number.isFinite(targetOrderId) || targetOrderId <= 0) {
+          toast.warning(t("Reservation record not found"));
+          return false;
+        }
+        await secureFetch(`/orders/${targetOrderId}/status`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "confirmed",
+            total:
+              Number(
+                table?.order?.total ??
+                  reservationInfo?.total ??
+                  table?.reservationFallback?.total ??
+                  0
+              ) || 0,
+            payment_method:
+              table?.order?.payment_method ??
+              table?.order?.paymentMethod ??
+              reservationInfo?.payment_method ??
+              reservationInfo?.paymentMethod ??
+              table?.reservationFallback?.payment_method ??
+              table?.reservationFallback?.paymentMethod ??
+              "Unknown",
+          }),
+        });
+        return true;
+      };
+      try {
+        if (needsConcertConfirmationFirst) {
+          const explicitConcertBookingId = Number(
+            reservationInfo?.concert_booking_id ??
+              reservationInfo?.concertBookingId ??
+              table?.order?.concert_booking_id ??
+              table?.order?.concertBookingId ??
+              table?.order?.reservation?.concert_booking_id ??
+              table?.order?.reservation?.concertBookingId ??
+              table?.reservationFallback?.concert_booking_id ??
+              table?.reservationFallback?.concertBookingId
+          );
+          const candidateOrderIds = Array.from(
+            new Set(
+              [
+                orderId,
+                Number(table?.order?.id),
+                Number(reservationInfo?.order_id ?? reservationInfo?.orderId),
+                Number(table?.reservationFallback?.order_id ?? table?.reservationFallback?.orderId),
+              ].filter((id) => Number.isFinite(id) && id > 0)
+            )
+          );
+          const resolveConcertBookingId = (rows = []) => {
+            const fromExplicit =
+              Number.isFinite(explicitConcertBookingId) && explicitConcertBookingId > 0
+                ? explicitConcertBookingId
+                : null;
+            if (fromExplicit) return fromExplicit;
+
+            const matches = (Array.isArray(rows) ? rows : [])
+              .filter((booking) => {
+                const status = String(booking?.payment_status ?? booking?.paymentStatus ?? "")
+                  .trim()
+                  .toLowerCase();
+                if (status === "cancelled" || status === "canceled") return false;
+                const bookingOrderId = Number(
+                  booking?.reservation_order_id ?? booking?.reservationOrderId
+                );
+                const bookingTable = Number(
+                  booking?.reserved_table_number ?? booking?.reservedTableNumber
+                );
+                if (candidateOrderIds.some((id) => id === bookingOrderId)) return true;
+                return Number.isFinite(tableNumber) && bookingTable === tableNumber;
+              })
+              .sort((a, b) => {
+                const aMs =
+                  parseLooseDateToMs(a?.updated_at) ||
+                  parseLooseDateToMs(a?.created_at) ||
+                  Number(a?.id) ||
+                  0;
+                const bMs =
+                  parseLooseDateToMs(b?.updated_at) ||
+                  parseLooseDateToMs(b?.created_at) ||
+                  Number(b?.id) ||
+                  0;
+                return bMs - aMs;
+              });
+            const idFromList = Number(matches?.[0]?.id);
+            return Number.isFinite(idFromList) && idFromList > 0 ? idFromList : null;
+          };
+
+          let targetConcertBookingId = resolveConcertBookingId(concertBookings);
+          if (!Number.isFinite(targetConcertBookingId) || targetConcertBookingId <= 0) {
+            const freshConcertBookings = await loadConcertBookingsForOverview();
+            targetConcertBookingId = resolveConcertBookingId(freshConcertBookings);
+          }
+          if ((!Number.isFinite(targetConcertBookingId) || targetConcertBookingId <= 0) && candidateOrderIds.length > 0) {
+            for (const candidateOrderId of candidateOrderIds) {
+              try {
+                const orderMeta = await secureFetch(`/orders/${candidateOrderId}`);
+                const metaConcertBookingId = Number(
+                  orderMeta?.concert_booking_id ??
+                    orderMeta?.concertBookingId ??
+                    orderMeta?.concert_booking?.id ??
+                    orderMeta?.concertBooking?.id
+                );
+                if (Number.isFinite(metaConcertBookingId) && metaConcertBookingId > 0) {
+                  targetConcertBookingId = metaConcertBookingId;
+                  break;
+                }
+              } catch (metaErr) {
+                console.warn(
+                  "⚠️ Failed to resolve concert booking from order metadata:",
+                  candidateOrderId,
+                  metaErr
+                );
+              }
+            }
+          }
+          if (!Number.isFinite(targetConcertBookingId) || targetConcertBookingId <= 0) {
+            const fallbackOrderId = candidateOrderIds[0] || null;
+            try {
+              await secureFetch(`/concerts/bookings/confirm`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                  reservation_order_id: fallbackOrderId,
+                  table_number: Number.isFinite(tableNumber) ? tableNumber : null,
+                  event_id:
+                    Number(reservationInfo?.event_id ?? reservationInfo?.eventId) ||
+                    Number(table?.order?.event_id ?? table?.order?.eventId) ||
+                    Number(
+                      table?.reservationFallback?.event_id ??
+                        table?.reservationFallback?.eventId
+                    ) ||
+                    null,
+                }),
+              });
+            } catch (confirmConcertErr) {
+              const statusCode = Number(confirmConcertErr?.details?.status);
+              const errorText = String(confirmConcertErr?.message || "").toLowerCase();
+              const isBookingNotFound =
+                statusCode === 404 && errorText.includes("booking not found");
+              if (!isBookingNotFound) throw confirmConcertErr;
+              const didConfirmReservation = await confirmReservationOrder();
+              if (!didConfirmReservation) return;
+            }
+          } else {
+            try {
+              await secureFetch(`/concerts/bookings/${targetConcertBookingId}/payment-status`, {
+                method: "PATCH",
+                body: JSON.stringify({ payment_status: "confirmed" }),
+              });
+            } catch (confirmConcertErr) {
+              const statusCode = Number(confirmConcertErr?.details?.status);
+              const errorText = String(confirmConcertErr?.message || "").toLowerCase();
+              const isBookingNotFound =
+                statusCode === 404 && errorText.includes("booking not found");
+              if (!isBookingNotFound) throw confirmConcertErr;
+              const didConfirmReservation = await confirmReservationOrder();
+              if (!didConfirmReservation) return;
+            }
+          }
+        } else {
+          const didConfirmReservation = await confirmReservationOrder();
+          if (!didConfirmReservation) return;
+        }
+
+        toast.success(t("Booking confirmed"));
+        await Promise.all([
+          fetchOrders({ skipHydration: true }),
+          loadConcertBookingsForOverview(),
+          loadReservationBookingsForOverview(),
+        ]);
+        setTimeout(() => fetchOrders(), 350);
+      } catch (confirmErr) {
+        console.error("❌ Failed to confirm booking from table card:", confirmErr);
+        toast.error(confirmErr?.message || t("Failed to confirm booking"));
+      }
       return;
     }
 
@@ -2055,7 +2244,7 @@ useEffect(() => {
       if (eventsForOverview.length === 0) {
         setHasUpcomingConcerts(false);
         setConcertBookings([]);
-        return;
+        return [];
       }
 
       const bookingChunks = await Promise.all(
@@ -2098,10 +2287,12 @@ useEffect(() => {
         });
       setHasUpcomingConcerts(merged.length > 0);
       setConcertBookings(merged);
+      return merged;
     } catch (err) {
       console.error("❌ Failed to load concert bookings for table overview:", err);
       setHasUpcomingConcerts(false);
       setConcertBookings([]);
+      return [];
     } finally {
       setConcertBookingsLoading(false);
     }
@@ -3464,7 +3655,7 @@ const handleTableClick = useCallback(async (table) => {
   // const groupedByTable = orders.reduce(...) // ❌ REMOVED DUPLICATE
 
 const areaKeys = React.useMemo(() => Object.keys(groupedTables), [groupedTables]);
-const showAreaTabs = tableSettings.showAreas !== false && areaKeys.length > 1;
+const showAreaTabs = tableSettings.showAreas !== false && areaKeys.length > 0;
 
 const formatAreaLabel = useCallback((area) => {
   const raw = area || "Main Hall";

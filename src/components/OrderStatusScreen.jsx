@@ -1458,22 +1458,31 @@ const OrderStatusScreen = ({
     if (isConcertTicketContext) {
       if (hasBackendCheckedInSignal) return "checked_in";
       if (concertBookingPaymentStatus === "confirmed" || concertBookingStatus === "confirmed") {
-        return "booking_confirm";
+        return "confirmed";
       }
       if (concertBookingPaymentStatus === "pending_bank_transfer") {
-        return "pending_bank_transfer";
+        return "awaiting_confirm";
       }
     }
     if (isReservedOrderContext && hasConcertBookingContext) {
       if (concertBookingPaymentStatus === "confirmed" || concertBookingStatus === "confirmed") {
-        return "booking_confirm";
+        return "confirmed";
       }
       if (concertBookingPaymentStatus === "pending_bank_transfer") {
-        return "pending_bank_transfer";
+        return "awaiting_confirm";
       }
     }
-    if (isReservedOrderContext) return "reserved";
     if (hasCheckedInSignal) return "checked_in";
+    if (isReservedOrderContext) {
+      const hasConfirmedSignal = [
+        normalizedOrderScreenStatus,
+        orderStatus,
+        reservationStatus,
+        flatReservationStatus,
+      ].includes("confirmed");
+      if (hasConfirmedSignal) return "confirmed";
+      return "awaiting_confirm";
+    }
     if (driverStatus === "on_road" || driverStatus === "on-road") return "on_road";
     if (driverStatus === "delivered") return "delivered";
     return orderStatus || reservationStatus;
@@ -1524,7 +1533,9 @@ const OrderStatusScreen = ({
   const displayStatus = (s) => {
     const v = normalizeStatus(s);
     if (v === "visit_completed") return t("Order Completed");
-    if (v === "booking_confirm") return t("Booking confirm!");
+    if (v === "booking_confirm") return t("Confirmed");
+    if (v === "awaiting_confirm") return t("Awaiting confirm");
+    if (v === "confirmed") return t("Confirmed");
     if (v === "pending_bank_transfer") return t("Pending bank transfer");
     if (v === "checked_in") return t("Guest checked in");
     if (v === "on_road") return t("On Road");
@@ -1539,6 +1550,8 @@ const OrderStatusScreen = ({
     const s = normalizeStatus(status);
     if (s === "visit_completed") return "bg-emerald-50 text-emerald-700 border-emerald-200";
     if (s === "booking_confirm") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (s === "confirmed") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (s === "awaiting_confirm") return "bg-amber-50 text-amber-700 border-amber-200";
     if (s === "pending_bank_transfer") return "bg-amber-50 text-amber-700 border-amber-200";
     if (s === "checked_in") return "bg-emerald-50 text-emerald-700 border-emerald-200";
     if (s === "delivered") return "bg-emerald-50 text-emerald-700 border-emerald-200";
@@ -1693,7 +1706,7 @@ const OrderStatusScreen = ({
           t={t}
           title={t("Order Status")}
           subtitle={restaurantName}
-          meta={orderId ? `Invoice #${orderId}` : null}
+          meta={orderId ? t("Invoice #{{id}}", { id: orderId }) : null}
           onBack={typeof onClose === "function" ? () => onClose?.() : null}
         />
       ) : null}

@@ -45,6 +45,15 @@ const resolveYouTubeEmbedUrl = (value) => {
 const MAX_STORY_VIDEO_UPLOAD_MB = 95;
 const QR_MENU_FONT_OPTIONS = [
   { value: "gotham", label: "Gotham", family: '"Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-thin", label: "Gotham Thin", family: '"Gotham Thin", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-light", label: "Gotham Light", family: '"Gotham Light", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-book", label: "Gotham Book", family: '"Gotham Book", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-medium", label: "Gotham Medium", family: '"Gotham Medium", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-ultra", label: "Gotham Ultra", family: '"Gotham Ultra", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-narrow-thin", label: "Gotham Narrow Thin", family: '"Gotham Narrow Thin", "Gotham Narrow", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-narrow-book", label: "Gotham Narrow Book", family: '"Gotham Narrow Book", "Gotham Narrow", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-narrow-black", label: "Gotham Narrow Black", family: '"Gotham Narrow Black", "Gotham Narrow", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "gotham-narrow-ultra", label: "Gotham Narrow Ultra", family: '"Gotham Narrow Ultra", "Gotham Narrow", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
   { value: "system", label: "System UI", family: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' },
   { value: "segoe", label: "Segoe UI", family: '"Segoe UI", "Helvetica Neue", Arial, sans-serif' },
   { value: "avenir", label: "Avenir Next", family: '"Avenir Next", Avenir, "Helvetica Neue", Arial, sans-serif' },

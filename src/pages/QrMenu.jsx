@@ -282,6 +282,15 @@ function normalizeHexColor(value, fallback) {
 
 const QR_MENU_FONT_FAMILIES = {
   gotham: '"Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-thin": '"Gotham Thin", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-light": '"Gotham Light", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-book": '"Gotham Book", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-medium": '"Gotham Medium", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-ultra": '"Gotham Ultra", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-narrow-thin": '"Gotham Narrow Thin", "Gotham Narrow", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-narrow-book": '"Gotham Narrow Book", "Gotham Narrow", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-narrow-black": '"Gotham Narrow Black", "Gotham Narrow", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  "gotham-narrow-ultra": '"Gotham Narrow Ultra", "Gotham Narrow", "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
   system: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   segoe: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
   avenir: '"Avenir Next", Avenir, "Helvetica Neue", Arial, sans-serif',
@@ -1137,9 +1146,15 @@ const DICT = {
     Restaurant: "Restaurant",
     New: "New",
     Confirmed: "Confirmed",
+    "Awaiting confirm": "Awaiting confirm",
     Pending: "Pending",
     Open: "Open",
     Completed: "Completed",
+    "Reservation pending check-in": "Reservation pending check-in",
+    "Please check in at the restaurant to unlock ordering for this table.": "Please check in at the restaurant to unlock ordering for this table.",
+    "Payment required before Close or Check Out.": "Payment required before Close or Check Out.",
+    "Pending check-in": "Pending check-in",
+    "Invoice #{{id}}": "Invoice #{{id}}",
     "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)": "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)",
     "Pickup Time": "Pickup Time",
     "Notes (optional)": "Notes (optional)",
@@ -1432,9 +1447,15 @@ const DICT = {
     Restaurant: "Restoran",
     New: "Yeni",
     Confirmed: "Onaylandı",
+    "Awaiting confirm": "Onay bekleniyor",
     Pending: "Bekliyor",
     Open: "Açık",
     Completed: "Tamamlandı",
+    "Reservation pending check-in": "Rezervasyon check-in bekliyor",
+    "Please check in at the restaurant to unlock ordering for this table.": "Bu masa için siparişi açmak üzere lütfen restoranda check-in yapın.",
+    "Payment required before Close or Check Out.": "Kapatma veya Check Out işleminden önce ödeme gerekli.",
+    "Pending check-in": "Check-in bekleniyor",
+    "Invoice #{{id}}": "Fatura #{{id}}",
     "Phone (🇹🇷 5XXXXXXXXX or 🇲🇺 7/8XXXXXXX)": "Telefon (🇹🇷 5XXXXXXXXX veya 🇲🇺 7/8XXXXXXX)",
     "Pickup Time": "Alış Zamanı",
     "Notes (optional)": "Notlar (opsiyonel)",
@@ -1635,9 +1656,15 @@ const DICT = {
     Restaurant: "Restaurant",
     New: "Neu",
     Confirmed: "Bestätigt",
+    "Awaiting confirm": "Bestätigung ausstehend",
     Pending: "Ausstehend",
     Open: "Offen",
     Completed: "Abgeschlossen",
+    "Reservation pending check-in": "Reservierung wartet auf Check-in",
+    "Please check in at the restaurant to unlock ordering for this table.": "Bitte checken Sie im Restaurant ein, um die Bestellung für diesen Tisch freizuschalten.",
+    "Payment required before Close or Check Out.": "Vor dem Schließen oder Check-out ist eine Zahlung erforderlich.",
+    "Pending check-in": "Check-in ausstehend",
+    "Invoice #{{id}}": "Rechnung #{{id}}",
     Closed: "Geschlossen",
     Table: "Tisch",
     Pickup: "Abholung",
@@ -1833,9 +1860,15 @@ const DICT = {
     Restaurant: "Restaurant",
     New: "Nouveau",
     Confirmed: "Confirmé",
+    "Awaiting confirm": "En attente de confirmation",
     Pending: "En attente",
     Open: "Ouvert",
     Completed: "Terminé",
+    "Reservation pending check-in": "Réservation en attente de check-in",
+    "Please check in at the restaurant to unlock ordering for this table.": "Veuillez effectuer le check-in au restaurant pour activer la commande de cette table.",
+    "Payment required before Close or Check Out.": "Paiement requis avant Fermer ou Check-out.",
+    "Pending check-in": "Check-in en attente",
+    "Invoice #{{id}}": "Facture n°{{id}}",
     Closed: "Fermé",
     Table: "Table",
     Pickup: "À emporter",
@@ -1986,7 +2019,18 @@ const DICT = {
 
 function makeT(lang) {
   const base = DICT.en;
-  return (key) => (DICT[lang]?.[key] ?? base[key] ?? key);
+  const interpolate = (template, params) => {
+    if (typeof template !== "string") return template;
+    if (!params || typeof params !== "object") return template;
+    return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, token) => {
+      const value = params[token];
+      return value === undefined || value === null ? "" : String(value);
+    });
+  };
+  return (key, params) => {
+    const template = DICT[lang]?.[key] ?? base[key] ?? key;
+    return interpolate(template, params);
+  };
 }
 
 /* ====================== SUPPORTED LANGS ====================== */

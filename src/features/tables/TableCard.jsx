@@ -4,6 +4,11 @@ import {
   isCheckedOutReservationStatus,
   normalizeOrderStatus,
 } from "./tableVisuals";
+import {
+  hasConcertBookingContext,
+  isConcertBookingConfirmed,
+  isReservationPendingConfirmation,
+} from "../../utils/reservationStatus";
 import ElapsedTimer from "./components/ElapsedTimer";
 import {
   RenderCounter,
@@ -511,6 +516,16 @@ function TableCard({
     : isCheckedInReservation
     ? t("Guest checked in")
     : t("Reserved");
+  const isConcertReservation = hasConcertBookingContext(
+    tableOrder,
+    reservationInfo,
+    table?.reservationFallback
+  );
+  const needsReservationConfirmation =
+    isReservationPendingConfirmation(tableOrder, reservationInfo, table?.reservationFallback) ||
+    (isConcertReservation &&
+      !isConcertBookingConfirmed(tableOrder, reservationInfo, table?.reservationFallback));
+  const checkinButtonLabel = needsReservationConfirmation ? t("Confirm") : t("Checkin");
   const fallbackReservationStatus = normalizeOrderStatus(table?.reservationFallback?.status);
   const showCheckoutReservationButton =
     (!isCheckedOutReservation && isCheckedInReservation) ||
@@ -665,7 +680,7 @@ function TableCard({
                       onClick={handleCheckinReservationClick}
                       className="h-7 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
                     >
-                      {t("Checkin")}
+                      {checkinButtonLabel}
                     </button>
                   )}
                   {showCheckoutReservationButton && (
