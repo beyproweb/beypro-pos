@@ -294,6 +294,31 @@ function formatConcertDisplayDateWithoutYear(value, locale) {
   return normalized;
 }
 
+function formatConcertDisplayWeekday(value, locale) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const source = raw.includes("T") ? raw : `${raw}T00:00:00`;
+  const parsed = new Date(source);
+
+  if (!Number.isNaN(parsed.getTime())) {
+    return new Intl.DateTimeFormat(locale || undefined, {
+      weekday: "long",
+    }).format(parsed);
+  }
+
+  const normalized = raw.slice(0, 10);
+  const [year, month, day] = normalized.split("-").map(Number);
+  if (Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)) {
+    const fallbackDate = new Date(year, month - 1, day);
+    if (!Number.isNaN(fallbackDate.getTime())) {
+      return new Intl.DateTimeFormat(locale || undefined, {
+        weekday: "long",
+      }).format(fallbackDate);
+    }
+  }
+  return "";
+}
+
 function normalizeHexColor(value, fallback) {
   const raw = String(value || "").trim();
   const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
@@ -3868,6 +3893,7 @@ async function load() {
                       const showEventTitle =
                         eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
                       const eventDate = formatConcertDisplayDateWithoutYear(event?.event_date, lang);
+                      const eventWeekday = formatConcertDisplayWeekday(event?.event_date, lang);
                       const eventTime = String(event?.event_time || "").slice(0, 5);
                       const tableCountAvailable = Number(event?.available_table_count || 0) > 0;
                       const ticketCountAvailable = Number(event?.available_ticket_count || 0) > 0;
@@ -3922,7 +3948,9 @@ async function load() {
                                   </div>
                                 ) : null}
                                 <div className="mt-1 text-sm sm:text-base font-medium text-neutral-700 dark:text-white/90">
-                                  {eventDate} {eventTime}
+                                  {eventDate}
+                                  {eventWeekday ? ` • ${eventWeekday}` : ""}
+                                  {eventTime ? ` ${eventTime}` : ""}
                                   {!isFreeConcert ? ` • ${concertPriceLabel(event)}` : ""}
                                 </div>
                               </div>
@@ -4414,6 +4442,9 @@ async function load() {
               const isFreeConcert = boolish(concertModalEvent?.free_concert, false);
               const showEventTitle =
                 eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
+              const eventDate = formatConcertDisplayDateWithoutYear(concertModalEvent?.event_date, lang);
+              const eventWeekday = formatConcertDisplayWeekday(concertModalEvent?.event_date, lang);
+              const eventTime = String(concertModalEvent?.event_time || "").slice(0, 5);
               return (
                 <>
                   <div className="flex items-start justify-between gap-3">
@@ -4430,8 +4461,9 @@ async function load() {
                         </p>
                       ) : null}
                       <p className="mt-1 text-base sm:text-lg font-medium text-neutral-700 dark:text-white/90">
-                        {formatConcertDisplayDateWithoutYear(concertModalEvent.event_date, lang)}{" "}
-                        {String(concertModalEvent.event_time || "").slice(0, 5)}
+                        {eventDate}
+                        {eventWeekday ? ` • ${eventWeekday}` : ""}
+                        {eventTime ? ` ${eventTime}` : ""}
                       </p>
                     </div>
                     <button
