@@ -44,8 +44,9 @@ body {
 }
 
 /* QR menu typography theme */
-body.qrmenu-gotham-theme {
-  font-family: "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+body.qrmenu-gotham-theme,
+body.qrmenu-font-theme {
+  font-family: var(--qrmenu-font-family, "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif);
   font-weight: 300;
 }
 
@@ -60,16 +61,32 @@ body.qrmenu-gotham-theme b,
 body.qrmenu-gotham-theme button,
 body.qrmenu-gotham-theme .font-semibold,
 body.qrmenu-gotham-theme .font-bold,
-body.qrmenu-gotham-theme .font-extrabold {
-  font-family: "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+body.qrmenu-gotham-theme .font-extrabold,
+body.qrmenu-font-theme h1,
+body.qrmenu-font-theme h2,
+body.qrmenu-font-theme h3,
+body.qrmenu-font-theme h4,
+body.qrmenu-font-theme h5,
+body.qrmenu-font-theme h6,
+body.qrmenu-font-theme strong,
+body.qrmenu-font-theme b,
+body.qrmenu-font-theme button,
+body.qrmenu-font-theme .font-semibold,
+body.qrmenu-font-theme .font-bold,
+body.qrmenu-font-theme .font-extrabold {
+  font-family: var(--qrmenu-font-family, "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif);
   font-weight: 700;
 }
 
 body.qrmenu-gotham-theme button *,
 body.qrmenu-gotham-theme .font-semibold *,
 body.qrmenu-gotham-theme .font-bold *,
-body.qrmenu-gotham-theme .font-extrabold * {
-  font-family: "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+body.qrmenu-gotham-theme .font-extrabold *,
+body.qrmenu-font-theme button *,
+body.qrmenu-font-theme .font-semibold *,
+body.qrmenu-font-theme .font-bold *,
+body.qrmenu-font-theme .font-extrabold * {
+  font-family: var(--qrmenu-font-family, "Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif);
   font-weight: inherit;
 }
 

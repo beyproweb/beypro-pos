@@ -280,6 +280,30 @@ function normalizeHexColor(value, fallback) {
     .toUpperCase()}`;
 }
 
+const QR_MENU_FONT_FAMILIES = {
+  gotham: '"Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif',
+  system: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  segoe: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+  avenir: '"Avenir Next", Avenir, "Helvetica Neue", Arial, sans-serif',
+  helvetica: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+  arial: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
+  verdana: "Verdana, Geneva, sans-serif",
+  tahoma: 'Tahoma, "Segoe UI", sans-serif',
+  trebuchet: '"Trebuchet MS", Helvetica, sans-serif',
+  georgia: 'Georgia, "Times New Roman", serif',
+  times: '"Times New Roman", Times, serif',
+  garamond: 'Garamond, "Times New Roman", serif',
+  palatino: '"Palatino Linotype", Palatino, serif',
+  courier: '"Courier New", Courier, monospace',
+  lucida: '"Lucida Sans Unicode", "Lucida Grande", "Segoe UI", sans-serif',
+  mono: 'Menlo, Consolas, Monaco, "Liberation Mono", "Courier New", monospace',
+};
+
+function resolveQrMenuFontFamily(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return QR_MENU_FONT_FAMILIES[key] || QR_MENU_FONT_FAMILIES.gotham;
+}
+
 const QR_PREFIX = "qr_";
 const QR_TOKEN_KEY = "qr_token";
 const normalizeReservationStatus = (value) =>
@@ -2573,6 +2597,7 @@ async function load() {
 
   const storyTitle = c.story_title || "Our Story";
   const storyText = c.story_text || "";
+  const storyVideoTitle = String(c.story_video_title || "").trim();
   const storyVideoSource = String(c.story_video_source || "").trim().toLowerCase();
   const storyVideoYoutubeEmbed = resolveYouTubeEmbedUrl(c.story_video_youtube_url);
   const storyVideoUpload = resolveUploadedAsset(c.story_video_upload);
@@ -3808,7 +3833,7 @@ async function load() {
                                     {eventTitle}
                                   </div>
                                 ) : null}
-                                <div className="text-xs text-neutral-500 mt-1">
+                                <div className="mt-1 text-sm sm:text-base font-medium text-neutral-700 dark:text-white/90">
                                   {eventDate} {eventTime}
                                   {!isFreeConcert ? ` • ${concertPriceLabel(event)}` : ""}
                                 </div>
@@ -4052,6 +4077,11 @@ async function load() {
 
       {showStoryVideoSection ? (
         <section id="story-video-section" className="max-w-6xl mx-auto px-4 pt-2 pb-3">
+          {storyVideoTitle ? (
+            <h2 className="mb-3 text-center text-[1.4rem] sm:text-[1.7rem] font-serif font-semibold tracking-[-0.02em] text-gray-900 dark:text-neutral-50">
+              {storyVideoTitle}
+            </h2>
+          ) : null}
           <div className="max-w-4xl mx-auto overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
             <div className="aspect-video w-full bg-black">
               {activeStoryVideo === storyVideoYoutubeEmbed ? (
@@ -4083,22 +4113,22 @@ async function load() {
     {/* === STORY SECTION === */}
       {showStorySection && (
 		      <section id="story-section" className="max-w-6xl mx-auto px-4 pt-3 pb-14">
-	        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] gap-6 lg:gap-10 items-center">
-	          <div className="max-w-xl">
-	            <h2 className="text-[2rem] sm:text-[2.35rem] font-serif font-semibold tracking-[-0.03em] text-gray-900 dark:text-neutral-50">
-	              {storyTitle}
-	            </h2>
-	            {storyText ? (
-	              <p className="mt-3 text-[15px] sm:text-base text-gray-600 dark:text-neutral-300 leading-relaxed whitespace-pre-line">
-	                {storyText}
-	              </p>
-	            ) : null}
-	          </div>
-
-	          <div className="w-full">
-	            <div
-	              className="relative overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
-	              onTouchStart={storyImages.length > 1 ? handleStoryTouchStart : undefined}
+		        <div className="grid grid-cols-1 gap-6 lg:gap-10 items-center">
+		          <div className="max-w-2xl mx-auto text-center">
+		            <h2 className="text-[2rem] sm:text-[2.35rem] font-serif font-semibold tracking-[-0.03em] text-gray-900 dark:text-neutral-50">
+		              {storyTitle}
+		            </h2>
+		            {storyText ? (
+		              <p className="mt-3 text-[15px] sm:text-base text-gray-600 dark:text-neutral-300 leading-relaxed whitespace-pre-line">
+		                {storyText}
+		              </p>
+		            ) : null}
+		          </div>
+	
+		          <div className="w-full max-w-4xl mx-auto">
+		            <div
+		              className="relative overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
+		              onTouchStart={storyImages.length > 1 ? handleStoryTouchStart : undefined}
 	              onTouchEnd={storyImages.length > 1 ? handleStoryTouchEnd : undefined}
 	              style={{ touchAction: "pan-y" }}
 	            >
@@ -4311,7 +4341,7 @@ async function load() {
                           {eventTitle}
                         </p>
                       ) : null}
-                      <p className="text-sm text-neutral-500 mt-1">
+                      <p className="mt-1 text-base sm:text-lg font-medium text-neutral-700 dark:text-white/90">
                         {formatConcertDisplayDateWithoutYear(concertModalEvent.event_date, lang)}{" "}
                         {String(concertModalEvent.event_time || "").slice(0, 5)}
                       </p>
@@ -5716,15 +5746,24 @@ export default function QrMenu() {
     if (typeof window === "undefined") return undefined;
     window.__isQrMenuPage = true;
     if (typeof document !== "undefined") {
-      document.body.classList.add("qrmenu-gotham-theme");
+      document.body.classList.add("qrmenu-font-theme");
     }
     return () => {
       window.__isQrMenuPage = false;
       if (typeof document !== "undefined") {
-        document.body.classList.remove("qrmenu-gotham-theme");
+        document.body.classList.remove("qrmenu-font-theme");
+        document.body.style.removeProperty("--qrmenu-font-family");
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.style.setProperty(
+      "--qrmenu-font-family",
+      resolveQrMenuFontFamily(orderSelectCustomization?.qrmenu_font_family)
+    );
+  }, [orderSelectCustomization?.qrmenu_font_family]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

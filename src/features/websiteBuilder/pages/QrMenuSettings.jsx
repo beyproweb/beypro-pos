@@ -42,6 +42,31 @@ const resolveYouTubeEmbedUrl = (value) => {
   }
 };
 
+const MAX_STORY_VIDEO_UPLOAD_MB = 95;
+const QR_MENU_FONT_OPTIONS = [
+  { value: "gotham", label: "Gotham", family: '"Gotham", "Avenir Next", "Helvetica Neue", Arial, sans-serif' },
+  { value: "system", label: "System UI", family: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' },
+  { value: "segoe", label: "Segoe UI", family: '"Segoe UI", "Helvetica Neue", Arial, sans-serif' },
+  { value: "avenir", label: "Avenir Next", family: '"Avenir Next", Avenir, "Helvetica Neue", Arial, sans-serif' },
+  { value: "helvetica", label: "Helvetica Neue", family: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+  { value: "arial", label: "Arial", family: 'Arial, "Helvetica Neue", Helvetica, sans-serif' },
+  { value: "verdana", label: "Verdana", family: "Verdana, Geneva, sans-serif" },
+  { value: "tahoma", label: "Tahoma", family: 'Tahoma, "Segoe UI", sans-serif' },
+  { value: "trebuchet", label: "Trebuchet MS", family: '"Trebuchet MS", Helvetica, sans-serif' },
+  { value: "georgia", label: "Georgia", family: 'Georgia, "Times New Roman", serif' },
+  { value: "times", label: "Times New Roman", family: '"Times New Roman", Times, serif' },
+  { value: "garamond", label: "Garamond", family: 'Garamond, "Times New Roman", serif' },
+  { value: "palatino", label: "Palatino", family: '"Palatino Linotype", Palatino, serif' },
+  { value: "courier", label: "Courier New", family: '"Courier New", Courier, monospace' },
+  { value: "lucida", label: "Lucida Sans", family: '"Lucida Sans Unicode", "Lucida Grande", "Segoe UI", sans-serif' },
+  { value: "mono", label: "Modern Mono", family: 'Menlo, Consolas, Monaco, "Liberation Mono", "Courier New", monospace' },
+];
+const resolveQrMenuFontFamily = (value) => {
+  const key = String(value || "").trim().toLowerCase();
+  const found = QR_MENU_FONT_OPTIONS.find((item) => item.value === key);
+  return found?.family || QR_MENU_FONT_OPTIONS[0].family;
+};
+
 const makeEmptyConcertAreaAllocation = () => ({
   area_name: "",
   allocation_type: "ticket",
@@ -150,6 +175,7 @@ export default function QrMenuSettings() {
   story_text: "",
   story_images: [],
   story_image: "",
+  story_video_title: "",
   story_video_source: "none",
   story_video_youtube_url: "",
   story_video_upload: "",
@@ -173,6 +199,7 @@ export default function QrMenuSettings() {
   app_display_name: "",
   pwa_primary_color: "#4F46E5",
   pwa_background_color: "#FFFFFF",
+  qrmenu_font_family: "gotham",
 });
   const [concertEvents, setConcertEvents] = useState([]);
   const [concertAreas, setConcertAreas] = useState([]);
@@ -371,6 +398,14 @@ async function uploadStoryImages(e) {
 async function uploadStoryVideo(e) {
   const file = e.target.files?.[0];
   if (!file) return;
+  const fileSizeMb = Number(file.size || 0) / (1024 * 1024);
+  if (fileSizeMb > MAX_STORY_VIDEO_UPLOAD_MB) {
+    toast.error(
+      t(`Video is too large. Max allowed is ${MAX_STORY_VIDEO_UPLOAD_MB} MB.`)
+    );
+    e.target.value = "";
+    return;
+  }
 
   setUploadingStoryVideo(true);
   try {
@@ -392,7 +427,7 @@ async function uploadStoryVideo(e) {
     }));
   } catch (err) {
     console.error("❌ Failed to upload story video:", err);
-    toast.error(t("Upload failed"));
+    toast.error(err?.message || t("Upload failed"));
   } finally {
     setUploadingStoryVideo(false);
     e.target.value = "";
@@ -2162,6 +2197,32 @@ async function saveAllCustomization() {
                 />
               </div>
 
+              <div>
+                <label className="font-semibold">{t("QR Menu Font Family")}</label>
+                <select
+                  value={String(settings.qrmenu_font_family || "gotham")}
+                  onChange={(e) => updateField("qrmenu_font_family", e.target.value)}
+                  className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-800"
+                  style={{ fontFamily: resolveQrMenuFontFamily(settings.qrmenu_font_family) }}
+                >
+                  {QR_MENU_FONT_OPTIONS.map((fontOption) => (
+                    <option
+                      key={fontOption.value}
+                      value={fontOption.value}
+                      style={{ fontFamily: fontOption.family }}
+                    >
+                      {fontOption.label}
+                    </option>
+                  ))}
+                </select>
+                <p
+                  className="mt-2 text-xs text-gray-500"
+                  style={{ fontFamily: resolveQrMenuFontFamily(settings.qrmenu_font_family) }}
+                >
+                  {t("Preview text for selected QR menu font")}
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold">{t("Primary Color")}</label>
@@ -3068,6 +3129,17 @@ async function saveAllCustomization() {
 
           <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
+              <label className="font-semibold">{t("Story Video Title")}</label>
+              <input
+                type="text"
+                value={settings.story_video_title || ""}
+                onChange={(e) => updateField("story_video_title", e.target.value)}
+                placeholder={t("Title above the video")}
+                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+            </div>
+
+            <div>
               <label className="font-semibold">{t("Story Video Source")}</label>
               <select
                 value={String(settings.story_video_source || "none")}
@@ -3108,7 +3180,7 @@ async function saveAllCustomization() {
                 <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
                   {uploadingStoryVideo
                     ? t("Uploading story video...")
-                    : t("Recommended: MP4 (H.264), 1920 x 1080 px, max 30-60 seconds for best mobile performance.")}
+                    : t(`Recommended: MP4 (H.264), 1920 x 1080 px, max ${MAX_STORY_VIDEO_UPLOAD_MB} MB, 30-60 seconds for best mobile performance.`)}
                 </p>
               </div>
             ) : null}

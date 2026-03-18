@@ -639,6 +639,7 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     splash_logo: "",
     main_title_logo: "",
     app_display_name: "",
+    qrmenu_font_family: "gotham",
   });
 
   // Apply QR theme to the transaction/menu (mobile-first) area.
