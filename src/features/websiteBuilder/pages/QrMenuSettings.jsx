@@ -2939,7 +2939,7 @@ async function saveAllCustomization() {
                           {eventImage ? (
                             <img
                               src={eventImage}
-                              alt={event.event_title || event.artist_name || "Concert"}
+                              alt={event.event_title || event.artist_name || t("Concert Tickets")}
                               className="w-20 h-14 rounded-lg object-cover border border-gray-200"
                             />
                           ) : null}
@@ -3033,7 +3033,7 @@ async function saveAllCustomization() {
                                 <div key={booking.id} className="p-3 flex flex-wrap items-center justify-between gap-2 text-sm">
                                   <div>
                                     <div className="font-semibold">
-                                      {booking.customer_name || "Guest"} {booking.customer_phone ? `• ${booking.customer_phone}` : ""}
+                                      {booking.customer_name || t("Guest")} {booking.customer_phone ? `• ${booking.customer_phone}` : ""}
                                     </div>
                                     <div className="text-xs text-gray-500">
                                       {booking.booking_type} • {booking.quantity} • {booking.payment_status}
@@ -3168,7 +3168,7 @@ async function saveAllCustomization() {
                   type="url"
                   value={settings.story_video_youtube_url || ""}
                   onChange={(e) => updateField("story_video_youtube_url", e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder={t("YouTube Video Link")}
                   className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
                 />
                 <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">

@@ -3,6 +3,32 @@ import secureFetch from "../../../../utils/secureFetch";
 import { getCheckoutPrefill } from "../../header-drawer/services/customerService";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
+
+function normalizePhoneValue(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("90") && digits.length > 2) digits = digits.slice(2);
+  if (digits.startsWith("0") && digits.length > 1) digits = digits.slice(1);
+
+  if (digits.startsWith("5")) return digits.slice(0, 10);
+  if (digits.startsWith("7") || digits.startsWith("8")) return digits.slice(0, 8);
+  return digits.slice(0, 10);
+}
+
+function formatPhoneForInput(value) {
+  const normalized = normalizePhoneValue(value);
+  if (!normalized) return "";
+  if (/^5\d{0,9}$/.test(normalized)) {
+    const a = normalized.slice(0, 3);
+    const b = normalized.slice(3, 6);
+    const c = normalized.slice(6, 8);
+    const d = normalized.slice(8, 10);
+    return ["+90", a, b, c, d].filter(Boolean).join(" ");
+  }
+  return normalized;
+}
 
 function detectBrand(num) {
   const n = (num || "").replace(/\s+/g, "");
@@ -83,6 +109,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
   const [savedOnce, setSavedOnce] = useState(false);
   const [paymentPrompt, setPaymentPrompt] = useState(false);
   const [shakeModal, setShakeModal] = useState(false);
+  const normalizedPhone = normalizePhoneValue(form.phone);
 
   useEffect(() => {
     try {
@@ -91,7 +118,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
         setForm((f) => ({
           ...f,
           name: saved.name || f.name,
-          phone: saved.phone || f.phone,
+          phone: saved.phone ? formatPhoneForInput(saved.phone) : f.phone,
           email: saved.email || f.email,
           address: saved.address || f.address,
           payment_method: saved.payment_method || f.payment_method,
@@ -101,7 +128,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
   }, [appendIdentifier, storage]);
 
   useEffect(() => {
-    const phoneOk = /^(5\d{9}|[578]\d{7})$/.test(form.phone);
+    const phoneOk = PHONE_REGEX.test(normalizedPhone);
     if (!phoneOk) {
       setSavedCard(null);
       setUseSaved(false);
@@ -110,23 +137,23 @@ const CheckoutModal = React.memo(function CheckoutModal({
 
     try {
       const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
-      const arr = Array.isArray(store[form.phone]) ? store[form.phone] : [];
+      const arr = Array.isArray(store[normalizedPhone]) ? store[normalizedPhone] : [];
       setSavedCard(arr[0] || null);
       setUseSaved(!!arr[0]);
     } catch {
       setSavedCard(null);
       setUseSaved(false);
     }
-  }, [form.phone, storage]);
+  }, [normalizedPhone, storage]);
 
   async function saveDelivery() {
     const name = form.name.trim();
-    const phone = form.phone.trim();
+    const phone = normalizedPhone;
     const email = form.email.trim().toLowerCase();
     const address = form.address.trim();
     const emailValid = !email || EMAIL_REGEX.test(email);
 
-    if (!name || !/^5\d{9}$/.test(phone) || !address || !emailValid) return;
+    if (!name || !PHONE_REGEX.test(phone) || !address || !emailValid) return;
 
     setSaving(true);
     try {
@@ -208,13 +235,13 @@ const CheckoutModal = React.memo(function CheckoutModal({
   }
 
   useEffect(() => {
-    const phoneOk = /^(5\d{9}|[578]\d{7})$/.test(form.phone);
+    const phoneOk = PHONE_REGEX.test(normalizedPhone);
     if (!phoneOk) return;
 
     (async () => {
       try {
         const match = await secureFetch(
-          appendIdentifier(`/public/customers/by-phone/${encodeURIComponent(form.phone)}`),
+          appendIdentifier(`/public/customers/by-phone/${encodeURIComponent(normalizedPhone)}`),
           {
           method: "GET",
           headers: { "Content-Type": "application/json" },
@@ -236,7 +263,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
         }
       } catch {}
     })();
-  }, [appendIdentifier, form.address, form.email, form.name, form.phone]);
+  }, [appendIdentifier, form.address, form.email, form.name, normalizedPhone]);
 
   useEffect(() => {
     if (form.payment_method) {
@@ -247,7 +274,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
   const emailValid = !form.email.trim() || EMAIL_REGEX.test(form.email.trim());
   const validBase =
     form.name &&
-    /^(5\d{9}|[578]\d{7})$/.test(form.phone) &&
+    PHONE_REGEX.test(normalizedPhone) &&
     emailValid &&
     form.address &&
     !!form.payment_method;
@@ -274,9 +301,9 @@ const CheckoutModal = React.memo(function CheckoutModal({
     if (!saveCard) return;
     try {
       const store = JSON.parse(storage.getItem("qr_saved_cards") || "{}");
-      const list = Array.isArray(store[form.phone]) ? store[form.phone] : [];
+      const list = Array.isArray(store[normalizedPhone]) ? store[normalizedPhone] : [];
       if (!list.some((c) => c.token === meta.token || c.last4 === meta.last4)) list.unshift(meta);
-      store[form.phone] = list.slice(0, 3);
+      store[normalizedPhone] = list.slice(0, 3);
       storage.setItem("qr_saved_cards", JSON.stringify(store));
     } catch {}
   }
@@ -300,7 +327,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
     try {
       await saveDelivery();
     } catch {}
-    onSubmit({ ...form });
+    onSubmit({ ...form, phone: normalizedPhone });
   };
 
   const showNewCard = !savedCard || !useSaved;
@@ -336,18 +363,16 @@ const CheckoutModal = React.memo(function CheckoutModal({
 
           <input
             className={`rounded-xl border px-4 py-3 text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 ${
-              touched.phone && !/^(5\d{9}|[578]\d{7})$/.test(form.phone)
+              touched.phone && !PHONE_REGEX.test(normalizedPhone)
                 ? "border-red-500"
                 : "border-neutral-300"
             }`}
-            placeholder={t("Phone")}
+            placeholder={t("Phone (+90 555 555 55 55)")}
             value={form.phone}
             onChange={(e) => {
-              const onlyDigits = e.target.value.replace(/[^\d]/g, "");
-              const normalized = onlyDigits.startsWith("0") ? onlyDigits.slice(1) : onlyDigits;
-              setForm((f) => ({ ...f, phone: normalized.slice(0, 10) }));
+              setForm((f) => ({ ...f, phone: formatPhoneForInput(e.target.value) }));
             }}
-            inputMode="numeric"
+            inputMode="tel"
           />
 
           <input
@@ -466,7 +491,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
             disabled={
               saving ||
               !form.name ||
-              !/^(5\d{9}|[578]\d{7})$/.test(form.phone) ||
+              !PHONE_REGEX.test(normalizedPhone) ||
               !emailValid ||
               !form.address
             }

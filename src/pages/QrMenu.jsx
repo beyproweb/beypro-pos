@@ -52,6 +52,32 @@ import { Toaster, toast } from "react-hot-toast";
 import { API_BASE as API_URL, API_ORIGIN as API_BASE, SOCKET_BASE } from "../utils/api";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const QR_PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
+
+function normalizeQrPhone(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("90") && digits.length > 2) digits = digits.slice(2);
+  if (digits.startsWith("0") && digits.length > 1) digits = digits.slice(1);
+
+  if (digits.startsWith("5")) return digits.slice(0, 10);
+  if (digits.startsWith("7") || digits.startsWith("8")) return digits.slice(0, 8);
+  return digits.slice(0, 10);
+}
+
+function formatQrPhoneForInput(value) {
+  const normalized = normalizeQrPhone(value);
+  if (!normalized) return "";
+  if (/^5\d{0,9}$/.test(normalized)) {
+    const a = normalized.slice(0, 3);
+    const b = normalized.slice(3, 6);
+    const c = normalized.slice(6, 8);
+    const d = normalized.slice(8, 10);
+    return ["+90", a, b, c, d].filter(Boolean).join(" ");
+  }
+  return normalized;
+}
 
 function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
   const raw = String(value || "").trim();
@@ -1021,6 +1047,7 @@ const DICT = {
     "Delivery Info": "Delivery Info",
     "Full Name": "Full Name",
     "Phone (5XXXXXXXXX)": "Phone (5XXXXXXXXX)",
+    "Phone (+90 555 555 55 55)": "Phone (+90 555 555 55 55)",
     Address: "Address",
     "Add item": "Add item",
     "Reserve now": "Reserve now",
@@ -1322,6 +1349,7 @@ const DICT = {
     "Delivery Info": "Teslimat Bilgileri",
     "Full Name": "Ad Soyad",
     "Phone (5XXXXXXXXX)": "Telefon (5XXXXXXXXX)",
+    "Phone (+90 555 555 55 55)": "Telefon (+90 555 555 55 55)",
     Address: "Adres",
     "Add item": "Urun ekle",
     "Reserve now": "Simdi rezerve et",
@@ -1713,6 +1741,7 @@ const DICT = {
     Cancel: "Abbrechen",
     Email: "E-Mail",
     Phone: "Telefon",
+    "Phone (+90 555 555 55 55)": "Telefon (+90 555 555 55 55)",
     Username: "Benutzername",
     Password: "Passwort",
     Save: "Speichern",
@@ -1913,6 +1942,7 @@ const DICT = {
     Cancel: "Annuler",
     Email: "E-mail",
     Phone: "Téléphone",
+    "Phone (+90 555 555 55 55)": "Téléphone (+90 555 555 55 55)",
     Username: "Nom d'utilisateur",
     Password: "Mot de passe",
     Save: "Enregistrer",
@@ -4691,7 +4721,7 @@ function TakeawayOrderForm({
   const normalizedInitialValues = useMemo(
     () => ({
       name: initialValues?.name || "",
-      phone: initialValues?.phone || "",
+      phone: formatQrPhoneForInput(initialValues?.phone || ""),
       email: initialValues?.email || "",
       pickup_date: initialValues?.pickup_date || "",
       pickup_time: initialValues?.pickup_time || "",
@@ -4753,7 +4783,8 @@ function TakeawayOrderForm({
 
   const requiresReservationTable = form.mode === "reservation";
   const requiresPayment = pickupEnabled && form.mode !== "reservation";
-  const phoneValid = /^(5\d{9}|[578]\d{7})$/.test(form.phone);
+  const normalizedPhone = normalizeQrPhone(form.phone);
+  const phoneValid = QR_PHONE_REGEX.test(normalizedPhone);
   const emailValid = !form.email.trim() || EMAIL_REGEX.test(form.email.trim());
   const selectedTableNumber = Number(form.table_number);
   const selectedTable = useMemo(
@@ -4844,7 +4875,7 @@ function TakeawayOrderForm({
       }
       return;
     }
-    onSubmit(form);
+    onSubmit({ ...form, phone: normalizedPhone });
   };
 
   return (
@@ -4885,17 +4916,13 @@ function TakeawayOrderForm({
             className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
               touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
             }`}
-            placeholder={t("Phone")}
+            placeholder={t("Phone (+90 555 555 55 55)")}
             value={form.phone}
             onChange={(e) => {
-              const clean = e.target.value.replace(/[^\d]/g, ""); // allow only digits
-              let maxLen = 10;
-              if (/^[78]/.test(clean)) maxLen = 8;
-              const trimmed = clean.slice(0, maxLen);
-              setForm((f) => ({ ...f, phone: trimmed }));
+              setForm((f) => ({ ...f, phone: formatQrPhoneForInput(e.target.value) }));
             }}
-            inputMode="numeric"
-            maxLength={10}
+            inputMode="tel"
+            maxLength={18}
           />
 
           <input
