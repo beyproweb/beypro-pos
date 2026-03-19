@@ -30,6 +30,40 @@ const getPhoneHref = (phone) => {
   return normalized ? `tel:${normalized}` : null;
 };
 
+const formatReservationDateLabel = (value, t) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "—";
+
+  let didReplace = false;
+  const replaced = raw.replace(
+    /(-?\d+(?:\.\d+)?)\s*(year|years|yr|yrs|day|days)\b/gi,
+    (_, numeric, unitToken) => {
+      const numericValue = Number(numeric);
+      if (!Number.isFinite(numericValue)) return `${numeric} ${unitToken}`;
+      const unit = String(unitToken || "").toLowerCase();
+      const asDays =
+        unit.startsWith("year") || unit === "yr" || unit === "yrs"
+          ? Math.max(0, Math.round(numericValue * 365))
+          : Math.max(0, Math.round(numericValue));
+      const dayLabel = asDays === 1 ? t("day") : t("days");
+      didReplace = true;
+      return `${asDays} ${dayLabel}`;
+    }
+  );
+
+  return didReplace ? replaced : raw;
+};
+
+const formatReservationTimeLabel = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "—";
+  const hhmmssMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (hhmmssMatch) {
+    return `${hhmmssMatch[1].padStart(2, "0")}:${hhmmssMatch[2]}`;
+  }
+  return raw.length >= 5 ? raw.slice(0, 5) : raw;
+};
+
 const CHECKED_IN_LIKE_RESERVATION_STATUSES = new Set(["checked_in"]);
 const CHECKED_OUT_LIKE_RESERVATION_STATUSES = new Set(["checked_out"]);
 
@@ -159,7 +193,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
   const reservationStateLabel = isCheckedOutReservation
     ? t("Guest checked out")
     : isCheckedInReservation
-    ? t("Guest checked in")
+    ? t("Checked-in")
     : t("Reserved");
   const reservationMetaChipClassName =
     "flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 dark:border-slate-700 dark:bg-slate-800/70";
@@ -170,6 +204,14 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
   const reservationCustomerPhoneHref = useMemo(
     () => getPhoneHref(reservationCustomerPhone),
     [reservationCustomerPhone]
+  );
+  const reservationDateLabel = useMemo(
+    () => formatReservationDateLabel(existingReservation?.reservation_date, t),
+    [existingReservation?.reservation_date, t]
+  );
+  const reservationTimeLabel = useMemo(
+    () => formatReservationTimeLabel(existingReservation?.reservation_time),
+    [existingReservation?.reservation_time]
   );
   const cartWindowingOverscan = Number.isFinite(Number(virtualizationCartOverscan))
     ? Math.max(0, Number(virtualizationCartOverscan))
@@ -914,7 +956,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                         {t("Time")}
                       </div>
                       <div className="truncate text-[12px] font-bold text-slate-900 dark:text-slate-100">
-                        {existingReservation.reservation_time || "—"}
+                        {reservationTimeLabel}
                       </div>
                     </div>
                   </div>
@@ -936,7 +978,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                         {t("Date")}
                       </div>
                       <div className="truncate text-[12px] font-bold text-slate-900 dark:text-slate-100">
-                        {existingReservation.reservation_date || "—"}
+                        {reservationDateLabel}
                       </div>
                     </div>
                   </div>

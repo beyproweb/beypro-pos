@@ -17,7 +17,7 @@ import {
   useRenderCount,
 } from "./dev/perfDebug";
 
-const KITCHEN_STATUSES = ["new", "preparing", "ready", "delivered"];
+const KITCHEN_STATUSES = ["preparing", "ready", "delivered"];
 const CHECKIN_REGRESSION_STATUSES = new Set([
   "reserved",
   "confirmed",
@@ -29,11 +29,21 @@ const CHECKIN_REGRESSION_STATUSES = new Set([
   "in_progress",
 ]);
 
+const CARD_RADIUS_CLASS = "rounded-xl";
+const BADGE_BASE_CLASS =
+  "inline-flex h-6 items-center justify-center rounded-md border px-2.5 text-xs font-semibold leading-none whitespace-nowrap";
+const PANEL_BASE_CLASS =
+  "rounded-lg border bg-white p-2 shadow-[0_1px_2px_rgba(15,23,42,0.08)]";
+const ACTION_BUTTON_BASE_CLASS =
+  "inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium leading-none shadow-sm transition duration-150 hover:brightness-95 active:scale-[0.99]";
+
+const cx = (...classes) => classes.filter(Boolean).join(" ");
+
 const getKitchenStatusToneClass = (status) => {
-  if (status === "preparing") return "bg-yellow-100 text-yellow-900 border-yellow-200";
-  if (status === "ready") return "bg-blue-600 text-white border-blue-700";
-  if (status === "delivered") return "bg-green-600 text-white border-green-700";
-  return "bg-slate-400 text-white border-slate-500";
+  if (status === "preparing") return "bg-amber-600 text-white border-amber-700";
+  if (status === "ready") return "bg-indigo-700 text-white border-indigo-800";
+  if (status === "delivered") return "bg-indigo-600 text-white border-indigo-700";
+  return "bg-slate-700 text-white border-slate-800";
 };
 
 const getPhoneHref = (phone) => {
@@ -42,6 +52,22 @@ const getPhoneHref = (phone) => {
   const normalized = value.replace(/[^\d+]/g, "");
   return normalized ? `tel:${normalized}` : null;
 };
+
+function Pill({ as: Component = "span", className = "", children, ...props }) {
+  return (
+    <Component className={cx(BADGE_BASE_CLASS, className)} {...props}>
+      {children}
+    </Component>
+  );
+}
+
+function ActionButton({ className = "", children, type = "button", ...props }) {
+  return (
+    <button type={type} className={cx(ACTION_BUTTON_BASE_CLASS, className)} {...props}>
+      {children}
+    </button>
+  );
+}
 
 function TableCard({
   table,
@@ -87,16 +113,6 @@ function TableCard({
   const handleCardClick = React.useCallback(() => {
     handleTableClick(table);
   }, [handleTableClick, table]);
-
-  const handlePrintClick = React.useCallback(
-    (e) => {
-      e.stopPropagation();
-      if (tableOrder?.id != null) {
-        handlePrintOrder(tableOrder.id);
-      }
-    },
-    [handlePrintOrder, tableOrder]
-  );
 
   const stopPropagation = React.useCallback((e) => {
     e.stopPropagation();
@@ -174,16 +190,25 @@ function TableCard({
         (Number(value.reservation_clients ?? value.reservationClients ?? 0) > 0)
     );
   }, []);
+  const fallbackReservationToneStatus = normalizeOrderStatus(table?.reservationFallback?.status);
   const shouldUseReservedTone = isReservedTable && normalizedOrderStatus === "reserved";
-  const cardToneClass = isFreeTable
-    ? "bg-blue-100 border-sky-300 shadow-sky-500/15"
-    : hasUnpaidItems
-    ? "bg-red-200 border-red-500 shadow-red-500/25"
-    : shouldUseReservedTone
-    ? "bg-indigo-100 border-indigo-500 shadow-indigo-500/20"
-    : isPaidTable
-    ? "bg-green-100 border-green-300 shadow-green-500/15"
-    : "bg-indigo-100 border-indigo-500 shadow-indigo-500/20";
+  const hasReservedVisualTone =
+    shouldUseReservedTone ||
+    normalizedOrderStatus === "reserved" ||
+    fallbackReservationToneStatus === "reserved";
+  const hasCheckedInVisualTone =
+    normalizedOrderStatus === "checked_in" || fallbackReservationToneStatus === "checked_in";
+  const cardToneClass = hasUnpaidItems
+      ? "bg-red-100 border-red-500"
+      : normalizedOrderStatus === "confirmed"
+        ? "bg-red-100 border-red-500"
+        : hasReservedVisualTone
+          ? "bg-blue-100 border-blue-500"
+          : hasCheckedInVisualTone
+            ? "bg-emerald-100 border-emerald-500"
+            : isPaidTable
+              ? "bg-emerald-100 border-emerald-500"
+              : "bg-slate-100 border-slate-400";
   const hasPreparingItems = tableItems.some((i) => i.kitchen_status === "preparing");
   const isKitchenDelivered =
     Boolean(tableOrder?.kitchen_delivered_at) ||
@@ -221,10 +246,7 @@ function TableCard({
       hasExplicitReservationState ||
       fallbackCanBindToCurrentOrder;
 
-    if (
-      tableOrder?.reservation &&
-      hasReservationCoreData(tableOrder.reservation)
-    ) {
+    if (tableOrder?.reservation && hasReservationCoreData(tableOrder.reservation)) {
       return {
         id: tableOrder.reservation.id ?? null,
         order_id:
@@ -262,9 +284,7 @@ function TableCard({
           "",
       };
     }
-    if (
-      hasReservationCoreData(tableOrder)
-    ) {
+    if (hasReservationCoreData(tableOrder)) {
       return {
         id: tableOrder.reservation_id ?? tableOrder.reservationId ?? null,
         order_id: tableOrder.id ?? null,
@@ -273,18 +293,14 @@ function TableCard({
         order_type: tableOrder.order_type ?? null,
         reservation_date: tableOrder.reservation_date ?? tableOrder.reservationDate ?? null,
         reservation_time: tableOrder.reservation_time ?? tableOrder.reservationTime ?? null,
-        reservation_clients:
-          tableOrder.reservation_clients ?? tableOrder.reservationClients ?? 0,
+        reservation_clients: tableOrder.reservation_clients ?? tableOrder.reservationClients ?? 0,
         reservation_notes: tableOrder.reservation_notes ?? tableOrder.reservationNotes ?? "",
         customer_name: tableOrder.customer_name ?? tableOrder.customerName ?? "",
         customer_phone: tableOrder.customer_phone ?? tableOrder.customerPhone ?? "",
       };
     }
     const fallback = canUseFallbackReservation ? table.reservationFallback : null;
-    if (
-      fallback &&
-      hasReservationCoreData(fallback)
-    ) {
+    if (fallback && hasReservationCoreData(fallback)) {
       return {
         id: fallback.id ?? null,
         order_id: fallback.order_id ?? fallback.orderId ?? null,
@@ -376,10 +392,7 @@ function TableCard({
   const handleCheckoutReservationClick = React.useCallback(
     (e) => {
       e.stopPropagation();
-      const reservationOrderId = Number(
-        reservationInfo?.order_id ??
-          reservationInfo?.orderId
-      );
+      const reservationOrderId = Number(reservationInfo?.order_id ?? reservationInfo?.orderId);
       const activeOrderId = Number(tableOrder?.id);
       const checkoutTarget =
         Number.isFinite(reservationOrderId) && reservationOrderId > 0
@@ -387,9 +400,9 @@ function TableCard({
           : Number.isFinite(activeOrderId) && activeOrderId > 0
             ? activeOrderId
             : tableOrder ||
-            reservationInfo?.order_id ||
-            reservationInfo?.orderId ||
-            reservationInfo?.id;
+              reservationInfo?.order_id ||
+              reservationInfo?.orderId ||
+              reservationInfo?.id;
       if (!checkoutTarget) return;
       handleCloseTable?.(checkoutTarget, {
         preserveReservationShadow: false,
@@ -452,30 +465,37 @@ function TableCard({
     return counts;
   }, [tableItems]);
 
-  const kitchenStatusBadges = React.useMemo(
+  const compactKitchenStatusBadges = React.useMemo(
     () =>
       KITCHEN_STATUSES.reduce((badges, status) => {
         const count = kitchenStatusCounts[status];
         if (!count) return badges;
         badges.push(
-          <span
-            key={status}
-            className={`px-2 py-0.5 rounded-full text-[11px] font-bold border shadow-sm whitespace-nowrap ${getKitchenStatusToneClass(
-              status
-            )}`}
+          <Pill
+            key={`header-${status}`}
+            className={cx("h-4 shrink-0 px-1 text-[9px] shadow-none", getKitchenStatusToneClass(status))}
           >
             {count} {t(status)}
-          </span>
+          </Pill>
         );
         return badges;
       }, []),
     [kitchenStatusCounts, t]
   );
 
+  const tableStatusToneClass = React.useMemo(() => {
+    if (normalizedOrderStatus === "confirmed") return "bg-red-700 text-white border-red-800";
+    if (normalizedOrderStatus === "reserved") return "bg-blue-700 text-white border-blue-800";
+    if (normalizedOrderStatus === "checked_in") return "bg-emerald-700 text-white border-emerald-800";
+    if (normalizedOrderStatus === "paid") return "bg-emerald-700 text-white border-emerald-800";
+    if (normalizedOrderStatus === "draft") return "bg-slate-600 text-white border-slate-700";
+    if (hasUnpaidItems) return "bg-red-700 text-white border-red-800";
+    return "bg-slate-700 text-white border-slate-800";
+  }, [hasUnpaidItems, normalizedOrderStatus]);
+
   const tableStatusClassName = React.useMemo(
-    () =>
-      `inline-flex items-center px-3 py-1 rounded-full text-sm font-extrabold shadow-sm whitespace-nowrap ${table.tableColor}`,
-    [table.tableColor]
+    () => cx(BADGE_BASE_CLASS, "shadow-none", tableStatusToneClass),
+    [tableStatusToneClass]
   );
 
   const hasPendingReservationActiveStatus =
@@ -483,13 +503,23 @@ function TableCard({
     !isCheckedInReservation &&
     normalizedOrderStatus !== "reserved" &&
     normalizedOrderStatus !== "";
+  const hasZeroValueTableState =
+    !isPaidTable &&
+    !hasUnpaidItems &&
+    !hasReceiptHistory &&
+    !hasSuborderItems &&
+    tableItems.length === 0 &&
+    Number(tableOrder?.total || 0) <= 0;
   const isFreeDisplay =
-    !hasPendingReservationActiveStatus &&
-    (!tableOrder ||
-      (normalizedOrderStatus === "draft" && tableItems.length === 0) ||
-      (normalizedOrderStatus === "confirmed" &&
-        tableItems.length === 0 &&
-        Number(tableOrder.total || 0) <= 0));
+    isFreeTable ||
+    (!isCheckedInReservation &&
+      !isCheckedOutReservation &&
+      hasZeroValueTableState &&
+      (Boolean(reservationInfo) ||
+        normalizedOrderStatus === "" ||
+        normalizedOrderStatus === "draft" ||
+        normalizedOrderStatus === "reserved" ||
+        normalizedOrderStatus === "confirmed"));
 
   const shouldShowConfirmedTimer = normalizedOrderStatus === "confirmed" && hasOrderItems;
   const shouldRenderKitchenStatuses = Boolean(tableOrder?.items);
@@ -498,29 +528,38 @@ function TableCard({
   const paidStatusLabel = t("Unpaid");
   const fullyPaidStatusLabel = t("Paid");
   const orderStatusLabel = isCheckedInReservationStatus(normalizedOrderStatus)
-    ? t("Guest checked in")
+    ? t("Checked-in")
     : t(tableOrder?.status === "draft" ? "Free" : tableOrder?.status);
-  const showOrderStatusBadge = !shouldShowReservedBadge || hasPendingReservationActiveStatus;
+  const showOrderStatusBadge =
+    normalizedOrderStatus !== "confirmed" &&
+    !isPaidTable &&
+    (!shouldShowReservedBadge || hasPendingReservationActiveStatus);
   const reservationPanelClassName = isCheckedOutReservation
-    ? "mt-1.5 rounded-xl border border-slate-300 bg-slate-50 shadow-sm px-2.5 py-2"
+    ? cx(PANEL_BASE_CLASS, "border-slate-400 bg-slate-100")
     : isCheckedInReservation
-    ? "mt-1.5 rounded-xl border border-emerald-200 bg-white/90 shadow-sm px-2.5 py-2"
-    : "mt-1.5 rounded-xl border border-sky-200 bg-white/90 shadow-sm px-2.5 py-2";
-  const reservationTitleClassName = isCheckedOutReservation
-    ? "text-[13px] sm:text-[14px] font-extrabold text-slate-700 tracking-tight"
+      ? cx(PANEL_BASE_CLASS, "border-emerald-500 bg-emerald-100")
+      : cx(PANEL_BASE_CLASS, "border-blue-400 bg-blue-100");
+  const reservationCompactStateLabel = isCheckedOutReservation
+    ? t("Checked out")
     : isCheckedInReservation
-    ? "text-[13px] sm:text-[14px] font-extrabold text-emerald-700 tracking-tight"
-    : "text-[13px] sm:text-[14px] font-extrabold text-sky-700 tracking-tight";
-  const reservationStateLabel = isCheckedOutReservation
-    ? t("Guest checked out")
+      ? t("Checked-in")
+      : `${t("Reserved")}!`;
+  const reservationCompactBadgeToneClass = isCheckedOutReservation
+    ? "border-slate-700 bg-slate-700 text-white"
     : isCheckedInReservation
-    ? t("Guest checked in")
-    : t("Reserved");
-  const reservationMetaLabel = isCheckedOutReservation
-    ? t("Checkout completed")
+      ? "border-emerald-800 bg-emerald-700 text-white"
+      : "border-blue-700/20 bg-blue-600 px-2 tracking-wide text-white";
+  const reservationMetaPillClass = isCheckedOutReservation
+    ? "border-slate-300 bg-white text-slate-700 shadow-none"
     : isCheckedInReservation
-    ? t("Ready for ordering")
-    : t("Awaiting check-in");
+      ? "border-emerald-300 bg-white text-emerald-900 shadow-none"
+      : "border-blue-300 bg-white text-blue-900 shadow-none";
+  const reservationActionButtonClass = "h-[22px] min-w-0 px-2 text-xs font-semibold";
+  const reservationContactFrameClass = isCheckedOutReservation
+    ? "rounded-lg border border-slate-300 bg-slate-50 p-2 text-[10px] text-slate-800"
+    : isCheckedInReservation
+      ? "rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-[10px] text-emerald-950"
+      : "rounded-lg border border-blue-300 bg-blue-50 p-2 text-[10px] text-blue-950";
   const isConcertReservation = hasConcertBookingContext(
     tableOrder,
     reservationInfo,
@@ -543,77 +582,87 @@ function TableCard({
     <div
       key={table.tableNumber}
       onClick={handleCardClick}
-      className={`
-              group relative cursor-pointer
-              rounded-3xl
-              border-2
-              ${cardToneClass}
-              shadow-xl
-              hover:shadow-2xl
-              transition-all duration-200
-              flex flex-col justify-between
-              w-full
-              max-w-[380px]
-              min-h-[220px]
-              overflow-hidden
-              ${isCallingWaiter ? "ring-2 ring-red-500/70 animate-[pulse_2.4s_ease-in-out_infinite]" : ""}
-            `}
+      className={cx(
+        "group relative flex h-[276px] w-full max-w-[380px] self-start cursor-pointer flex-col justify-between overflow-hidden border-2 shadow-sm transition-all duration-150 hover:shadow-md",
+        CARD_RADIUS_CLASS,
+        cardToneClass,
+        isCallingWaiter && "ring-2 ring-red-500/80 animate-[pulse_2.4s_ease-in-out_infinite]"
+      )}
     >
       {isCallingWaiter && (
         <div className="pointer-events-none absolute inset-0 bg-red-500/10 animate-pulse" />
       )}
-      <div className="p-3 sm:p-5 flex flex-col h-full">
+      <div className="relative flex h-full flex-col p-3">
         {showRenderCounter && (
-          <div className="mb-1 flex justify-end">
+          <div className="mb-2 flex justify-end">
             <RenderCounter label={`Card ${table.tableNumber}`} value={renderCount} />
           </div>
         )}
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-slate-800 text-base sm:text-lg font-extrabold">{tableLabelText}</span>
-            <span className="text-base sm:text-lg font-extrabold text-blue-600 bg-blue-50 border border-blue-200 rounded-xl px-2 py-0.5">
-              {String(table.tableNumber).padStart(2, "0")}
-            </span>
-          </div>
-          {hasOrderItems && (
-            <button
-              type="button"
-              onClick={handlePrintClick}
-              className="shrink-0 text-base sm:text-lg font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2 py-0.5 hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-            >
-              🖨️
-            </button>
-          )}
 
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex flex-1 items-start">
+            {isFreeDisplay ? (
+              <div className="flex min-w-0 items-center gap-2">
+                {shouldShowReservedBadge ? (
+                  <span className="truncate text-sm font-bold tracking-tight text-black sm:text-[15px]">
+                    {tableLabelText} {String(table.tableNumber).padStart(2, "0")}
+                  </span>
+                ) : null}
+                <Pill className="border-slate-400 bg-slate-100 text-slate-700 shadow-none">
+                  {t("Free")}
+                </Pill>
+              </div>
+            ) : (
+              <div className="min-w-0 text-center">
+                <span className="truncate text-sm font-bold tracking-tight text-slate-800 sm:text-[15px]">
+                  {tableLabelText} {String(table.tableNumber).padStart(2, "0")}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-start gap-2">
+            <div className="text-right">
+              <div className="inline-flex items-center justify-center rounded-md bg-slate-900 px-2 py-1">
+                <div className="text-xs font-semibold tracking-tight text-white">
+                  {displayTotal}
+                </div>
+              </div>
+              {isPaidTable ? (
+                <div className="mt-2 flex justify-end">
+                  <Pill className="border-emerald-700 bg-emerald-700 text-white shadow-none">
+                    {fullyPaidStatusLabel}
+                  </Pill>
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
 
         {table.label && (
-          <div className="text-[11px] sm:text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded-full px-2 py-0.5 mb-1 w-fit max-w-full truncate">
+          <Pill className="mt-2 max-w-full justify-start truncate border-slate-300 bg-slate-100 text-slate-600 shadow-none">
             {table.label}
-          </div>
+          </Pill>
         )}
 
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          {showAreas && !hasUnpaidItems && (
-            <div className="text-[11px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600 max-w-full truncate">
-              📍 {formatAreaLabel(table.area)}
-            </div>
-          )}
-
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           {table.seats && (
-            <div className="inline-flex items-center text-sm bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 text-indigo-700 whitespace-nowrap font-semibold">
+            <Pill className="border-slate-300 bg-slate-100 text-slate-700 shadow-none">
               {table.seats} {t("Seats")}
-            </div>
+            </Pill>
           )}
 
           {table.seats && (
             <div
-              className="inline-flex items-center text-sm bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1 text-emerald-800 whitespace-nowrap gap-2 font-semibold"
+              className={cx(
+                BADGE_BASE_CLASS,
+                "gap-2 border-slate-400 bg-slate-100 pr-1.5 text-slate-700 shadow-none"
+              )}
               onClick={stopPropagation}
             >
-              <span>👥</span>
+              <span className="text-[11px] leading-none">👥</span>
               <select
-                className="bg-transparent outline-none font-bold pr-1"
+                className="min-w-[2rem] bg-transparent pr-0.5 text-[10px] sm:text-[11px] font-bold text-slate-700 outline-none"
                 value={Number.isFinite(clampedGuests) ? String(clampedGuests) : ""}
                 onChange={handleGuestsSelectChange}
                 onClick={stopPropagation}
@@ -621,196 +670,210 @@ function TableCard({
                 <option value="">—</option>
                 {guestOptionElements}
               </select>
-              <span className="text-emerald-700/70">/{seats}</span>
+              <span className="text-slate-500">/{seats}</span>
             </div>
           )}
         </div>
 
-        <div className="flex flex-col gap-2 flex-grow">
-          {isFreeDisplay ? (
-            <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-900 border border-green-200 font-extrabold text-sm shadow-sm whitespace-nowrap">
-                {t("Free")}
-              </span>
-              <span className="text-[15px] sm:text-lg font-extrabold text-indigo-700 whitespace-nowrap">
-                {displayTotal}
-              </span>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-start justify-between gap-2 min-w-0">
-                {showOrderStatusBadge ? (
-                  <span className={tableStatusClassName}>{orderStatusLabel}</span>
-                ) : (
-                  <span />
-                )}
-                <div className="flex flex-col items-end min-w-0">
-                  <span className="text-[15px] sm:text-lg font-extrabold text-indigo-700 whitespace-nowrap">
-                    {displayTotal}
-                  </span>
-                  {showReadyAt && (
-                    <span className="mt-1 inline-flex max-w-full items-center text-[11px] sm:text-xs font-extrabold bg-yellow-100 text-yellow-900 border border-yellow-200 px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
-                      {t("Ready at")} {readyAtLabel}
-                    </span>
-                  )}
-                </div>
+        <div className="mt-2 flex h-6 items-center justify-between gap-2">
+          <div className="min-w-0 flex flex-1 items-center gap-2 overflow-hidden">
+            {!isFreeDisplay && !shouldShowReservedBadge && showOrderStatusBadge ? (
+              <span className={tableStatusClassName}>{orderStatusLabel}</span>
+            ) : null}
+            {!isFreeDisplay &&
+            !shouldShowReservedBadge &&
+            shouldRenderKitchenStatuses &&
+            compactKitchenStatusBadges.length > 0 ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-1 overflow-hidden">
+                {compactKitchenStatusBadges}
               </div>
+            ) : null}
+          </div>
 
-              {shouldRenderKitchenStatuses && (
-                <div className="mt-1 flex items-start justify-between gap-2 min-w-0">
-                  <div className="flex flex-wrap gap-1.5 min-w-0">{kitchenStatusBadges}</div>
-                  {shouldShowConfirmedTimer && (
-                    <span className="shrink-0 bg-blue-600 text-white rounded-full px-3 py-1 font-mono text-[11px] sm:text-sm shadow-md whitespace-nowrap">
-                      ⏱ <ElapsedTimer startTime={confirmedStartTime} />
-                    </span>
-                  )}
-                </div>
-              )}
-            </>
+          <div className="flex shrink-0 items-center gap-2">
+            {!isFreeDisplay && !shouldShowReservedBadge && shouldShowConfirmedTimer ? (
+              <Pill className="mt-1 border-indigo-900 bg-indigo-900 px-2 font-mono text-white">
+                <ElapsedTimer startTime={confirmedStartTime} />
+              </Pill>
+            ) : null}
+            {!isFreeDisplay && !shouldShowReservedBadge && showReadyAt ? (
+              <Pill
+                className={cx(
+                  "max-w-full font-bold",
+                  isOrderDelayed
+                    ? "border-amber-700 bg-amber-600 text-white"
+                    : "border-amber-600 bg-amber-500 text-white"
+                )}
+              >
+                {t("Ready at")} {readyAtLabel}
+              </Pill>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          className={cx(
+            "relative flex min-h-0 flex-1 flex-col",
+            isFreeDisplay && shouldShowReservedBadge ? "mt-0 gap-1" : "mt-2 gap-2"
           )}
+        >
+          {isFreeDisplay && !shouldShowReservedBadge ? (
+            <div className="flex items-center justify-center">
+              <div className="min-w-0 text-center">
+                <span className="truncate text-base font-medium tracking-tight text-slate-500 sm:text-[24px]">
+                  {tableLabelText} {String(table.tableNumber).padStart(2, "0")}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          {isFreeDisplay && !shouldShowReservedBadge ? (
+            <div className="min-h-0 flex-1" />
+          ) : null}
 
           {shouldShowReservedBadge && (
-            <div className={reservationPanelClassName}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
-                  <div className={reservationTitleClassName}>{reservationStateLabel}</div>
-                  <div className="text-[10px] text-slate-500 font-medium truncate text-right">
-                    {reservationMetaLabel}
-                  </div>
+            <div
+              className={cx(
+                reservationPanelClassName,
+                isFreeDisplay && shouldShowReservedBadge && "-mt-3"
+              )}
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="min-w-0 flex items-center gap-2">
+                  <Pill className={reservationCompactBadgeToneClass}>
+                    {reservationCompactStateLabel}
+                  </Pill>
                 </div>
-                {showCheckoutReservationButton && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={handleCheckoutReservationClick}
-                      className="h-7 rounded-full border border-indigo-300 bg-indigo-50 px-2.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
-                    >
-                      {t("Check Out")}
-                    </button>
-                  </div>
-                )}
+                {reservationInfo ? (
+                  <Pill className={reservationMetaPillClass}>
+                    {reservationInfo.reservation_clients || 0} {t("guests")}
+                  </Pill>
+                ) : null}
               </div>
-              {reservationInfo ? (
-                <div className="mt-2 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                      {reservationInfo.reservation_time || "—"}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                      {reservationInfo.reservation_date || "—"}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                      {reservationInfo.reservation_clients || 0} {t("guests")}
-                    </span>
-                  </div>
 
+              {reservationInfo ? (
+                <div className="space-y-2">
                   {(reservationInfo.customer_name || reservationInfo.customer_phone) && (
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-700">
-                      {reservationInfo.customer_name && (
-                        <span className="truncate font-semibold">{reservationInfo.customer_name}</span>
+                    <div
+                      className={cx(
+                        "flex min-w-0 flex-wrap items-center gap-2",
+                        reservationContactFrameClass
                       )}
-                      {reservationInfo.customer_phone && (
-                        reservationPhoneHref ? (
+                    >
+                      {reservationInfo.customer_name && (
+                        <span className="truncate font-bold text-slate-800">
+                          {reservationInfo.customer_name}
+                        </span>
+                      )}
+                      {reservationInfo.customer_phone &&
+                        (reservationPhoneHref ? (
                           <a
                             href={reservationPhoneHref}
                             onClick={handlePhoneLinkClick}
-                            className="truncate font-semibold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800"
+                            className={cx(
+                              "truncate font-bold underline underline-offset-2",
+                              isCheckedInReservation
+                                ? "text-emerald-800 decoration-emerald-300 hover:text-emerald-900"
+                                : "text-blue-800 decoration-blue-300 hover:text-blue-900"
+                            )}
                           >
                             {reservationInfo.customer_phone}
                           </a>
                         ) : (
-                          <span className="truncate font-semibold">{reservationInfo.customer_phone}</span>
-                        )
-                      )}
+                          <span className="truncate font-bold">
+                            {reservationInfo.customer_phone}
+                          </span>
+                        ))}
                     </div>
-                  )}
-
-                  {reservationInfo.reservation_notes && (
-                    <p className="text-[11px] text-slate-600 line-clamp-1">
-                      {reservationInfo.reservation_notes}
-                    </p>
                   )}
                 </div>
               ) : (
-                <p className="mt-1 text-[11px] font-medium text-slate-600">
+                <p className="text-[10px] font-semibold text-slate-700 truncate">
                   {t("This table has an active reservation")}
                 </p>
               )}
-            </div>
-          )}
-          {shouldShowReservedBadge && (
-            <div className="mt-2 flex items-center justify-center">
-              <div className="flex flex-wrap items-center justify-center gap-3">
+
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                 {!isCheckedInReservation && !isCheckedOutReservation && (
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={handleCheckinReservationClick}
-                    className="h-7 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-[12px] font-extrabold leading-none text-emerald-700 shadow-sm scale-110 origin-center transition-transform hover:bg-emerald-100 active:scale-105"
+                    className={cx(
+                      reservationActionButtonClass,
+                      "border-emerald-800 bg-emerald-700 text-white hover:bg-emerald-800"
+                    )}
                   >
                     {checkinButtonLabel}
-                  </button>
+                  </ActionButton>
                 )}
-                <button
-                  type="button"
+                {showCheckoutReservationButton && (
+                  <ActionButton
+                    onClick={handleCheckoutReservationClick}
+                    className={cx(
+                      reservationActionButtonClass,
+                      "border-blue-800 bg-blue-700 text-white hover:bg-blue-800"
+                    )}
+                  >
+                    {t("Check Out")}
+                  </ActionButton>
+                )}
+                <ActionButton
                   onClick={handleDeleteReservationClick}
-                  className="h-7 rounded-full border border-rose-300 bg-rose-50 px-2.5 text-[12px] font-extrabold leading-none text-rose-700 shadow-sm scale-110 origin-center transition-transform hover:bg-rose-100 active:scale-105"
+                  className={cx(
+                    reservationActionButtonClass,
+                    "border-rose-800 bg-rose-700 text-white hover:bg-rose-800"
+                  )}
                 >
                   {t("Cancel")}
-                </button>
+                </ActionButton>
               </div>
             </div>
           )}
         </div>
 
-        <div className="flex items-end justify-between mt-3 sm:mt-4">
-          {showAreas && hasUnpaidItems ? (
-            <div className="text-[11px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-600 max-w-full truncate">
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200 pt-2">
+          {showAreas ? (
+            <Pill className="h-6 max-w-[55%] justify-start truncate border-slate-300 bg-slate-100 px-2 text-xs font-semibold text-slate-700 shadow-none">
               📍 {formatAreaLabel(table.area)}
-            </div>
-          ) : isOrderDelayed ? (
-            <span className="text-amber-600 font-extrabold animate-pulse">⚠️</span>
-          ) : null}
+            </Pill>
+          ) : (
+            <span />
+          )}
 
-          <div className="flex flex-col items-end gap-2 ml-auto">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {isCallingWaiter && (
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <span className="px-3 py-1.5 bg-red-600 text-white font-extrabold rounded-full shadow text-xs whitespace-nowrap animate-pulse">
+                <Pill className="border-red-700 bg-red-600 text-white animate-pulse">
                   🔴 {t("Calling")}
-                </span>
-                <button
-                  type="button"
+                </Pill>
+                <ActionButton
                   onClick={handleResolvedClick}
-                  className="px-3 py-1.5 bg-emerald-600 text-white font-extrabold rounded-full shadow text-xs whitespace-nowrap hover:bg-emerald-700 active:scale-[0.99] transition"
+                  className="border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
                 >
                   {t("Resolved")}
-                </button>
+                </ActionButton>
               </div>
             )}
+
             {hasOrderActivity && (
-              <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 {hasUnpaidItems ? (
-                  <span className="px-3 py-1 bg-amber-50 text-amber-900 border border-amber-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
+                  <Pill className="border-red-700 bg-red-600 text-white shadow-none">
                     {paidStatusLabel}
-                  </span>
+                  </Pill>
                 ) : isPaidTable ? (
-                  <>
-                    <span className="px-3 py-1 bg-emerald-50 text-emerald-900 border border-emerald-200 font-extrabold rounded-full shadow-sm text-sm whitespace-nowrap">
-                      {fullyPaidStatusLabel}
-                    </span>
-                    <button
-                      onClick={handleCloseClick}
-                      className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-extrabold rounded-full shadow text-sm whitespace-nowrap hover:brightness-110 active:scale-[0.99] transition"
-                    >
-                      🔒 {t("Close")}
-                    </button>
-                  </>
-                ) : (
-                  <button
+                  <ActionButton
                     onClick={handleCloseClick}
-                    className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-extrabold rounded-full shadow text-sm whitespace-nowrap hover:brightness-110 active:scale-[0.99] transition"
+                    className="h-6 border-indigo-900 bg-indigo-900 px-2 text-xs font-semibold text-white hover:bg-indigo-950"
                   >
                     🔒 {t("Close")}
-                  </button>
+                  </ActionButton>
+                ) : (
+                  <ActionButton
+                    onClick={handleCloseClick}
+                    className="h-6 border-indigo-900 bg-indigo-900 px-2 text-xs font-semibold text-white hover:bg-indigo-950"
+                  >
+                    🔒 {t("Close")}
+                  </ActionButton>
                 )}
               </div>
             )}
