@@ -1092,6 +1092,15 @@ const OrderStatusScreen = ({
     setSongRequests(rows);
   }, [fetchJSON, order, table]);
 
+  const hasActiveSongRequest = React.useMemo(
+    () =>
+      (Array.isArray(songRequests) ? songRequests : []).some((request) => {
+        const status = String(request?.status || "").trim().toLowerCase();
+        return status === "pending" || status === "approved";
+      }),
+    [songRequests]
+  );
+
   const handleSongRequestSubmit = useCallback(async () => {
     const restaurantId = Number(
       order?.restaurant_id ?? order?.reservation?.restaurant_id ?? order?.reservation?.restaurantId ?? 0
@@ -1102,6 +1111,7 @@ const OrderStatusScreen = ({
     if (!trimmedSongName) return;
     if (!Number.isFinite(restaurantId) || restaurantId <= 0) return;
     if (!Number.isFinite(resolvedTableNo) || resolvedTableNo <= 0) return;
+    if (hasActiveSongRequest) return;
 
     setSongRequestSubmitting(true);
     try {
@@ -1119,7 +1129,7 @@ const OrderStatusScreen = ({
     } finally {
       setSongRequestSubmitting(false);
     }
-  }, [fetchJSON, fetchSongRequests, order, songRequestName, table]);
+  }, [fetchJSON, fetchSongRequests, hasActiveSongRequest, order, songRequestName, table]);
 
   const hydrateOrderDriverName = useCallback(
     async (orderData) => {
@@ -1977,8 +1987,8 @@ const OrderStatusScreen = ({
               ) : null}
 
               {showPaymentRequiredNotice ? (
-                <section className="rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
-                  <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                <section className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/70 px-4 py-3">
+                  <div className="text-sm font-semibold text-amber-800 dark:text-white">
                     {t("Payment required before Close or Check Out.")}
                   </div>
                 </section>

@@ -28,10 +28,18 @@ function RequestSongTab({
   const t = typeof providedT === "function" ? providedT : hookT;
   const isInteractive =
     typeof onSongNameChange === "function" && typeof onSubmit === "function";
+  const hasActiveSongRequest = React.useMemo(
+    () =>
+      (Array.isArray(requests) ? requests : []).some((request) => {
+        const status = String(request?.status || "").trim().toLowerCase();
+        return status === "pending" || status === "approved";
+      }),
+    [requests]
+  );
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (!isInteractive || submitting) return;
+    if (!isInteractive || submitting || hasActiveSongRequest) return;
     onSubmit();
   };
 
@@ -60,6 +68,11 @@ function RequestSongTab({
 
         {isInteractive ? (
           <form onSubmit={handleSubmit} className="space-y-3">
+            {hasActiveSongRequest ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                {t("You can request a new song after the current one is cancelled or closed.")}
+              </div>
+            ) : null}
             <label className="block text-sm font-medium text-slate-700 dark:text-neutral-100">
               {t("Song name")}
             </label>
@@ -67,12 +80,17 @@ function RequestSongTab({
               <input
                 value={songName}
                 onChange={(event) => onSongNameChange(event.target.value)}
-                placeholder={t("Enter song name")}
-                className="h-16 w-full min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 md:h-12 md:text-sm dark:border-neutral-700 dark:bg-neutral-950 dark:text-white dark:focus:border-sky-400 dark:focus:ring-sky-500/20"
+                placeholder={
+                  hasActiveSongRequest
+                    ? t("Current song request is still active")
+                    : t("Enter song name")
+                }
+                disabled={hasActiveSongRequest}
+                className="h-24 w-full min-w-0 flex-1 rounded-3xl border-2 border-slate-300 bg-slate-50 px-5 text-[17px] text-slate-900 shadow-inner outline-none transition placeholder:text-slate-500 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 md:h-12 md:rounded-2xl md:border md:border-slate-200 md:bg-white md:px-4 md:text-sm md:shadow-none dark:border-neutral-600 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-400 dark:focus:border-sky-400 dark:focus:ring-sky-500/20 md:dark:border-neutral-700 md:dark:bg-neutral-950"
               />
               <button
                 type="submit"
-                disabled={submitting || !String(songName || "").trim()}
+                disabled={submitting || hasActiveSongRequest || !String(songName || "").trim()}
                 className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
               >
                 {submitting ? t("Sending...") : t("Send Request")}

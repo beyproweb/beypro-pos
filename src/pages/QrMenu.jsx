@@ -1238,6 +1238,8 @@ const DICT = {
     "Send Request": "Send Request",
     "Sending...": "Sending...",
     "Song request controls will appear here for checked-in guests.": "Song request controls will appear here for checked-in guests.",
+    "You can request a new song after the current one is cancelled or closed.": "You can request a new song after the current one is cancelled or closed.",
+    "Current song request is still active": "Current song request is still active",
     "Requests": "Requests",
     "No song requests yet.": "No song requests yet.",
     "Unknown song": "Unknown song",
@@ -1552,6 +1554,8 @@ const DICT = {
     "Send Request": "İsteği Gönder",
     "Sending...": "Gönderiliyor...",
     "Song request controls will appear here for checked-in guests.": "Şarkı istek kontrolleri check-in yapan misafirler için burada görünecek.",
+    "You can request a new song after the current one is cancelled or closed.": "Mevcut şarkı iptal edilene veya kapanana kadar yeni bir şarkı isteyemezsiniz.",
+    "Current song request is still active": "Mevcut şarkı isteği hâlâ aktif",
     "Requests": "İstekler",
     "No song requests yet.": "Henüz şarkı isteği yok.",
     "Unknown song": "Bilinmeyen şarkı",
@@ -1877,6 +1881,8 @@ const DICT = {
     "Send Request": "Anfrage senden",
     "Sending...": "Wird gesendet...",
     "Song request controls will appear here for checked-in guests.": "Die Songwunsch-Steuerung erscheint hier für eingecheckte Gäste.",
+    "You can request a new song after the current one is cancelled or closed.": "Du kannst erst dann einen neuen Song anfragen, wenn der aktuelle storniert oder geschlossen wurde.",
+    "Current song request is still active": "Der aktuelle Songwunsch ist noch aktiv",
     "Requests": "Anfragen",
     "No song requests yet.": "Noch keine Songwünsche.",
     "Unknown song": "Unbekannter Song",
@@ -2090,6 +2096,8 @@ const DICT = {
     "Send Request": "Envoyer la demande",
     "Sending...": "Envoi...",
     "Song request controls will appear here for checked-in guests.": "Les commandes de demande de chanson apparaîtront ici pour les clients enregistrés.",
+    "You can request a new song after the current one is cancelled or closed.": "Vous pourrez demander une nouvelle chanson une fois la demande actuelle annulée ou clôturée.",
+    "Current song request is still active": "La demande de chanson actuelle est encore active",
     "Requests": "Demandes",
     "No song requests yet.": "Aucune demande de chanson pour le moment.",
     "Unknown song": "Chanson inconnue",
@@ -7610,10 +7618,9 @@ export default function QrMenu() {
               type="button"
               onClick={onGoHomeFromNav}
               className="inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border border-slate-300 bg-gradient-to-b from-slate-100 to-white px-1 text-[11px] font-semibold leading-none text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[0.98]"
-              title={homeLabel}
               aria-label={homeLabel}
             >
-              <House className="h-4 w-4" aria-hidden="true" />
+              <House className="h-[18px] w-[18px]" aria-hidden="true" />
               <span className="block whitespace-nowrap">{homeLabel}</span>
             </button>
 
@@ -7626,10 +7633,13 @@ export default function QrMenu() {
                   ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
                   : "border-red-500 bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"
               }`}
-              title={callWaiterLabel}
               aria-label={callWaiterLabel}
             >
-              {callingWaiter ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" aria-hidden="true" />}
+              {callingWaiter ? (
+                <Loader2 className="h-[18px] w-[18px] animate-spin" />
+              ) : (
+                <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
+              )}
               <span className="block whitespace-nowrap">{callWaiterLabel}</span>
               {!callingWaiter && callWaiterCooldownSeconds > 0 ? (
                 <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full border border-red-200 bg-white px-1 text-[9px] font-bold leading-none text-red-600">
@@ -7647,10 +7657,9 @@ export default function QrMenu() {
                   ? "border-amber-500 bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.98]"
                   : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
               }`}
-              title={reorderActionLabel}
               aria-label={reorderActionLabel}
             >
-              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              <RotateCcw className="h-[18px] w-[18px]" aria-hidden="true" />
               <span className="block whitespace-nowrap">{reorderActionLabel}</span>
             </button>
 
@@ -7668,11 +7677,10 @@ export default function QrMenu() {
                   ? { animation: "qr-cart-nav-pulse 1.8s ease-in-out infinite" }
                   : undefined
               }
-              title={cartLabel}
               aria-label={cartLabel}
             >
               <ShoppingCart
-                className="h-4 w-4"
+                className="h-[18px] w-[18px]"
                 aria-hidden="true"
                 style={
                   shouldAnimateCartNavButton
@@ -7697,10 +7705,9 @@ export default function QrMenu() {
                   ? "border-violet-500 bg-violet-600 text-white hover:bg-violet-700 active:scale-[0.98]"
                   : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
               }`}
-              title={aiOrderLabel}
               aria-label={aiOrderLabel}
             >
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              <Sparkles className="h-[18px] w-[18px]" aria-hidden="true" />
               <span className="block whitespace-nowrap">{aiOrderLabel}</span>
             </button>
           </div>
