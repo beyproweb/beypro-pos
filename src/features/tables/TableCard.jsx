@@ -4,11 +4,6 @@ import {
   isCheckedOutReservationStatus,
   normalizeOrderStatus,
 } from "./tableVisuals";
-import {
-  hasConcertBookingContext,
-  isConcertBookingConfirmed,
-  isReservationPendingConfirmation,
-} from "../../utils/reservationStatus";
 import ElapsedTimer from "./components/ElapsedTimer";
 import {
   RenderCounter,
@@ -33,7 +28,7 @@ const CARD_RADIUS_CLASS = "rounded-xl";
 const BADGE_BASE_CLASS =
   "inline-flex h-6 items-center justify-center rounded-md border px-2.5 text-xs font-semibold leading-none whitespace-nowrap";
 const PANEL_BASE_CLASS =
-  "rounded-lg border bg-white p-2 shadow-[0_1px_2px_rgba(15,23,42,0.08)]";
+  "rounded-lg border bg-white p-2 shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
 const ACTION_BUTTON_BASE_CLASS =
   "inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium leading-none shadow-sm transition duration-150 hover:brightness-95 active:scale-[0.99]";
 
@@ -78,14 +73,12 @@ function TableCard({
   t,
   formatCurrency,
   handleTableClick,
-  handlePrintOrder,
   handleGuestsChange,
   handleCloseTable,
-  handleDeleteReservation,
   handleCheckinReservation,
+  handleOpenViewBooking,
   getTablePrepMeta,
   waiterCallsByTable,
-  handleAcknowledgeWaiterCall,
   handleResolveWaiterCall,
 }) {
   const renderCount = useRenderCount("TableCard", {
@@ -248,7 +241,12 @@ function TableCard({
           tableOrder.reservation.order_id ??
           tableOrder.id ??
           null,
-        status: tableOrder.reservation.status ?? tableOrder.status ?? null,
+        status:
+          tableOrder.reservation.status ??
+          tableOrder.reservation.reservation_status ??
+          tableOrder.reservation.reservationStatus ??
+          table?.reservationFallback?.status ??
+          null,
         order_type: tableOrder.reservation.order_type ?? tableOrder.order_type ?? null,
         reservation_date: tableOrder.reservation.reservation_date ?? null,
         reservation_time:
@@ -278,7 +276,11 @@ function TableCard({
         id: tableOrder.reservation_id ?? tableOrder.reservationId ?? null,
         order_id: tableOrder.id ?? null,
         orderId: tableOrder.id ?? null,
-        status: tableOrder.status ?? null,
+        status:
+          tableOrder.reservation_status ??
+          tableOrder.reservationStatus ??
+          table?.reservationFallback?.status ??
+          null,
         order_type: tableOrder.order_type ?? null,
         reservation_date: tableOrder.reservation_date ?? tableOrder.reservationDate ?? null,
         reservation_time: tableOrder.reservation_time ?? tableOrder.reservationTime ?? null,
@@ -309,9 +311,9 @@ function TableCard({
   const reservationStatus = React.useMemo(() => {
     const normalizedOrderLevelStatus = normalizeOrderStatus(tableOrder?.status);
     const normalizedReservationStatus = normalizeOrderStatus(
-      normalizedOrderLevelStatus === "checked_in"
-        ? tableOrder?.status
-        : reservationInfo?.status ?? tableOrder?.status
+      reservationInfo?.status ??
+        table?.reservationFallback?.status ??
+        (normalizedOrderLevelStatus === "checked_in" ? tableOrder?.status : null)
     );
     if (normalizedReservationStatus === "checked_in") return "checked_in";
 
@@ -349,6 +351,10 @@ function TableCard({
   const isCheckedOutReservation = isCheckedOutReservationStatus(reservationStatus);
   const reservationStatusForCheckinFlow = normalizeOrderStatus(
     tableOrder?.reservation?.status ??
+      tableOrder?.reservation?.reservation_status ??
+      tableOrder?.reservation?.reservationStatus ??
+      tableOrder?.reservation_status ??
+      tableOrder?.reservationStatus ??
       table?.reservationFallback?.status ??
       reservationInfo?.status
   );
@@ -373,13 +379,10 @@ function TableCard({
     reservationInfo,
     reservationStatusForCheckinFlow,
   ]);
-  const handleDeleteReservationClick = React.useCallback(
-    (e) => {
-      e.stopPropagation();
-      handleDeleteReservation?.(table, reservationInfo);
-    },
-    [handleDeleteReservation, reservationInfo, table]
-  );
+  const handleOpenViewBookingClick = React.useCallback((e) => {
+    e.stopPropagation();
+    handleOpenViewBooking?.();
+  }, [handleOpenViewBooking]);
   const handleCheckoutReservationClick = React.useCallback(
     (e) => {
       e.stopPropagation();
@@ -405,13 +408,46 @@ function TableCard({
     },
     [handleCloseTable, reservationInfo, table, tableOrder]
   );
-  const reservationPhoneHref = React.useMemo(
-    () => getPhoneHref(reservationInfo?.customer_phone),
-    [reservationInfo?.customer_phone]
+  const reservationActionLifecycleStatus = normalizeOrderStatus(
+    tableOrder?.reservation?.reservation_status ??
+      tableOrder?.reservation?.reservationStatus ??
+      tableOrder?.reservation?.status ??
+      tableOrder?.reservation_status ??
+      tableOrder?.reservationStatus ??
+      reservationInfo?.status ??
+      table?.reservationFallback?.reservation_status ??
+      table?.reservationFallback?.reservationStatus ??
+      table?.reservationFallback?.status
   );
-  const handlePhoneLinkClick = React.useCallback((e) => {
-    e.stopPropagation();
-  }, []);
+  const needsReservationConfirmation =
+    reservationActionLifecycleStatus !== "confirmed" &&
+    reservationActionLifecycleStatus !== "checked_in" &&
+    reservationActionLifecycleStatus !== "checked_out";
+  const shouldDisableReservationCheckin =
+    !needsReservationConfirmation &&
+    !isCheckedInReservation &&
+    !isCheckedOutReservation &&
+    hasOrderActivity;
+  const reservationPrimaryActionLabel = needsReservationConfirmation
+    ? t("Confirm")
+    : t("Checkin");
+  const handleReservationPrimaryActionClick = React.useCallback(
+    (e) => {
+      if (needsReservationConfirmation) {
+        handleOpenViewBookingClick(e);
+        return;
+      }
+      e.stopPropagation();
+      handleCheckinReservation?.(table, reservationInfo);
+    },
+    [
+      handleCheckinReservation,
+      handleOpenViewBookingClick,
+      needsReservationConfirmation,
+      reservationInfo,
+      table,
+    ]
+  );
 
   const confirmedStartTime = tablePrepMeta.startedAt;
 
@@ -514,6 +550,7 @@ function TableCard({
 
   const shouldShowConfirmedTimer = normalizedOrderStatus === "confirmed" && hasOrderItems;
   const shouldRenderKitchenStatuses = Boolean(tableOrder?.items);
+  const shouldShowKitchenStatusSlot = !isFreeDisplay && shouldRenderKitchenStatuses;
   const isOrderDelayed = tablePrepMeta.isDelayed;
   const displayTotal = formatCurrency(Number(table.unpaidTotal || 0));
   const tableDisplayLabel = `${tableLabelText} ${String(table.tableNumber).padStart(2, "0")}`;
@@ -528,114 +565,34 @@ function TableCard({
     !isPaidTable &&
     (!shouldShowReservedBadge || hasPendingReservationActiveStatus);
   const reservationPanelClassName = isCheckedOutReservation
-    ? cx(PANEL_BASE_CLASS, "border-slate-400 bg-slate-100")
+    ? cx(PANEL_BASE_CLASS, "border-slate-200 bg-slate-50/80")
     : isCheckedInReservation
-      ? cx(PANEL_BASE_CLASS, "border-emerald-500 bg-emerald-100")
-      : cx(PANEL_BASE_CLASS, "border-blue-400 bg-blue-100");
+      ? cx(PANEL_BASE_CLASS, "border-emerald-200 bg-emerald-50/70")
+      : cx(PANEL_BASE_CLASS, "border-sky-200 bg-sky-50/70");
   const reservationCompactStateLabel = isCheckedOutReservation
     ? t("Checked out")
-    : isCheckedInReservation
-      ? t("Checked-in")
-      : `${t("Reserved")}!`;
-  const reservationCompactBadgeToneClass = isCheckedOutReservation
-    ? "border-slate-700 bg-slate-700 text-white"
-    : isCheckedInReservation
-      ? "border-emerald-800 bg-emerald-700 text-white"
-      : "border-blue-700/20 bg-blue-600 px-2 tracking-wide text-white";
-  const reservationMetaPillClass = isCheckedOutReservation
-    ? "border-slate-300 bg-white text-slate-700 shadow-none"
-    : isCheckedInReservation
-      ? "border-emerald-300 bg-white text-emerald-900 shadow-none"
-      : "border-blue-300 bg-white text-blue-900 shadow-none";
-  const reservationActionButtonClass = "h-[22px] min-w-0 px-2 text-xs font-semibold";
-  const reservationContactFrameClass = isCheckedOutReservation
-    ? "rounded-lg border border-slate-300 bg-slate-50 p-2 text-[10px] text-slate-800"
-    : isCheckedInReservation
-      ? "rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-[10px] text-emerald-950"
-      : "rounded-lg border border-blue-300 bg-blue-50 p-2 text-[10px] text-blue-950";
-  const reservationConfirmationSources = [
-    tableOrder,
-    tableOrder?.reservation,
-    table?.reservationFallback,
-    reservationInfo,
-  ];
-  const isConcertReservation = hasConcertBookingContext(...reservationConfirmationSources);
-  const needsReservationConfirmation =
-    reservationStatusForCheckinFlow === "reserved" ||
-    (isConcertReservation &&
-      !isConcertBookingConfirmed(...reservationConfirmationSources));
-  const checkinButtonLabel = needsReservationConfirmation ? t("Confirm") : t("Checkin");
-  const fallbackReservationStatus = normalizeOrderStatus(table?.reservationFallback?.status);
-  const showCheckoutReservationButton =
-    (!isCheckedOutReservation && isCheckedInReservation) ||
-    (Boolean(reservationInfo) &&
-      !isCheckedOutReservation &&
-      normalizedOrderStatus === "paid" &&
-      fallbackReservationStatus === "checked_in");
-
-  const handleCheckinReservationClick = React.useCallback(
-    (e) => {
-      e.stopPropagation();
-      console.log("[reservation-confirm-debug] reserved badge click", {
-        tableNumber: table?.tableNumber,
-        buttonLabel: checkinButtonLabel,
-        needsReservationConfirmation,
-        reservationStatusForCheckinFlow,
-        reservationStatus,
-        normalizedOrderStatus,
-        reservationInfo,
-        reservationFallback: table?.reservationFallback,
-        tableOrderId: tableOrder?.id ?? null,
-        tableOrderStatus: tableOrder?.status ?? null,
-      });
-      handleCheckinReservation?.(table, reservationInfo);
-    },
-    [
-      checkinButtonLabel,
-      handleCheckinReservation,
-      needsReservationConfirmation,
-      normalizedOrderStatus,
-      reservationInfo,
-      reservationStatus,
-      reservationStatusForCheckinFlow,
-      table,
-      tableOrder?.id,
-      tableOrder?.status,
-    ]
+    : `${t("Reserved")}!`;
+  const reservationCustomerName = String(
+    reservationInfo?.customer_name ?? reservationInfo?.customerName ?? ""
+  ).trim();
+  const reservationCustomerPhone = String(
+    reservationInfo?.customer_phone ?? reservationInfo?.customerPhone ?? ""
+  ).trim();
+  const reservationCustomerPhoneHref = React.useMemo(
+    () => getPhoneHref(reservationCustomerPhone),
+    [reservationCustomerPhone]
   );
-
-  React.useEffect(() => {
-    if (!shouldShowReservedBadge) return;
-    console.log("[reservation-confirm-debug] reserved badge state", {
-      tableNumber: table?.tableNumber,
-      checkinButtonLabel,
-      needsReservationConfirmation,
-      reservationStatusForCheckinFlow,
-      reservationStatus,
-      normalizedOrderStatus,
-      shouldShowReservedBadge,
-      isCheckedInReservation,
-      isCheckedOutReservation,
-      reservationInfo,
-      reservationFallback: table?.reservationFallback,
-      tableOrderId: tableOrder?.id ?? null,
-      tableOrderStatus: tableOrder?.status ?? null,
-    });
-  }, [
-    checkinButtonLabel,
-    isCheckedInReservation,
-    isCheckedOutReservation,
-    needsReservationConfirmation,
-    normalizedOrderStatus,
-    reservationInfo,
-    reservationStatus,
-    reservationStatusForCheckinFlow,
-    shouldShowReservedBadge,
-    table?.reservationFallback,
-    table?.tableNumber,
-    tableOrder?.id,
-    tableOrder?.status,
-  ]);
+  const reservationControlClass =
+    "flex h-7 min-h-7 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-xs font-medium leading-none text-ellipsis whitespace-nowrap sm:h-8 sm:min-h-8 sm:w-[120px] sm:min-w-[120px] sm:px-3 sm:text-sm";
+  const reservationDetailsFrameClass =
+    "order-1 flex min-h-[58px] w-full min-w-0 max-w-full flex-col justify-center gap-2 rounded-lg border border-slate-200 bg-white/70 px-3 text-left shadow-none sm:order-none sm:row-span-2 sm:h-[68px] sm:min-h-[68px] sm:w-[120px] sm:min-w-[120px]";
+  const reservationCompactBadgeToneClass = isCheckedOutReservation
+    ? cx(reservationControlClass, "border-slate-700 bg-slate-700 text-white")
+    : cx(reservationControlClass, "border-amber-300 bg-amber-500 tracking-wide text-white");
+  const reservationPrimaryActionClass = cx(
+    reservationControlClass,
+    "bg-blue-600 text-white hover:bg-blue-700"
+  );
 
   return (
     <div
@@ -661,7 +618,7 @@ function TableCard({
         <div
           className={
             shouldLeftAlignHeaderLabel
-              ? "flex items-start justify-between gap-2"
+              ? "flex items-center justify-between gap-2"
               : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2"
           }
         >
@@ -689,8 +646,8 @@ function TableCard({
 
           <div className="flex min-w-0 shrink-0 justify-end">
             <div className="flex shrink-0 items-center gap-2">
-              <div className="inline-flex items-center justify-center rounded-md bg-slate-900 px-2 py-1">
-                <div className="text-xs font-semibold tracking-tight text-white">
+              <div className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300/80 bg-white/75 px-3 py-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)] backdrop-blur-sm">
+                <div className="text-[13px] font-semibold leading-none tracking-tight text-slate-700">
                   {displayTotal}
                 </div>
               </div>
@@ -736,25 +693,27 @@ function TableCard({
 
         <div className="mt-2 flex min-h-6 items-center gap-2">
           <div className="min-w-0 flex flex-1 items-center gap-2 overflow-hidden">
+            {shouldShowKitchenStatusSlot ? (
+              <div className="flex min-w-[64px] items-center gap-1 overflow-hidden">
+                {compactKitchenStatusBadges.length > 0 ? (
+                  compactKitchenStatusBadges
+                ) : (
+                  <span className="invisible inline-flex h-4 items-center px-2 text-[9px] font-semibold">
+                    1 New
+                  </span>
+                )}
+              </div>
+            ) : null}
             {!isFreeDisplay && !shouldShowReservedBadge && showOrderStatusBadge ? (
               <span className={tableStatusClassName}>{orderStatusLabel}</span>
             ) : null}
           </div>
-          {!isFreeDisplay &&
-          shouldRenderKitchenStatuses &&
-          compactKitchenStatusBadges.length > 0 ? (
-            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-hidden">
-              {compactKitchenStatusBadges}
-            </div>
-          ) : null}
         </div>
 
         <div
           className={cx(
             "relative flex min-h-0 flex-1 flex-col",
-            isFreeDisplay && shouldShowReservedBadge
-                ? "mt-0 gap-1"
-                : "mt-2 gap-2"
+            shouldShowReservedBadge ? "mt-2 gap-1" : isFreeDisplay ? "mt-0 gap-1" : "mt-2 gap-2"
           )}
         >
           {isFreeDisplay && !shouldShowReservedBadge ? <div className="min-h-0 flex-1" /> : null}
@@ -763,96 +722,52 @@ function TableCard({
             <div
               className={cx(
                 reservationPanelClassName,
-                isFreeDisplay && shouldShowReservedBadge && "-mt-3"
+                "grid w-full max-w-full grid-cols-1 justify-items-start gap-2 overflow-hidden sm:grid-cols-[120px_120px] sm:grid-rows-[32px_32px] sm:items-start sm:justify-start sm:gap-x-3 sm:gap-y-1"
               )}
             >
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="min-w-0 flex items-center gap-2">
-                  <Pill className={reservationCompactBadgeToneClass}>
-                    {reservationCompactStateLabel}
-                  </Pill>
-                </div>
-                {reservationInfo ? (
-                  <Pill className={reservationMetaPillClass}>
-                    {reservationInfo.reservation_clients || 0} {t("guests")}
-                  </Pill>
+              <div className={reservationDetailsFrameClass}>
+                {reservationCustomerName ? (
+                  <div className="truncate text-[13px] font-semibold leading-none text-slate-800">
+                    {reservationCustomerName}
+                  </div>
+                ) : null}
+                {reservationCustomerPhone ? (
+                  reservationCustomerPhoneHref ? (
+                    <a
+                      href={reservationCustomerPhoneHref}
+                      onClick={stopPropagation}
+                      className="truncate -mt-1 text-[12px] font-medium leading-none text-slate-700 underline underline-offset-2 hover:text-slate-900"
+                    >
+                      {reservationCustomerPhone}
+                    </a>
+                  ) : (
+                    <div className="truncate -mt-1 text-[12px] font-medium leading-none text-slate-700">
+                      {reservationCustomerPhone}
+                    </div>
+                  )
                 ) : null}
               </div>
-
-              {reservationInfo ? (
-                <div className="space-y-2">
-                  {(reservationInfo.customer_name || reservationInfo.customer_phone) && (
-                    <div
-                      className={cx(
-                        "flex min-w-0 flex-col items-center justify-center gap-1 text-center",
-                        reservationContactFrameClass
-                      )}
-                    >
-                      {reservationInfo.customer_name && (
-                        <span className="max-w-full truncate font-bold text-slate-800">
-                          {reservationInfo.customer_name}
-                        </span>
-                      )}
-                      {reservationInfo.customer_phone &&
-                        (reservationPhoneHref ? (
-                          <a
-                            href={reservationPhoneHref}
-                            onClick={handlePhoneLinkClick}
-                            className={cx(
-                              "max-w-full truncate font-bold underline underline-offset-2",
-                              isCheckedInReservation
-                                ? "text-emerald-800 decoration-emerald-300 hover:text-emerald-900"
-                                : "text-blue-800 decoration-blue-300 hover:text-blue-900"
-                            )}
-                          >
-                            {reservationInfo.customer_phone}
-                          </a>
-                        ) : (
-                          <span className="max-w-full truncate font-bold">
-                            {reservationInfo.customer_phone}
-                          </span>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-[10px] font-semibold text-slate-700 truncate">
-                  {t("This table has an active reservation")}
-                </p>
-              )}
-
-              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-                {!isCheckedInReservation && !isCheckedOutReservation && (
-                  <ActionButton
-                    onClick={handleCheckinReservationClick}
+              <div className="order-2 grid w-full min-w-0 grid-cols-2 gap-2 sm:contents">
+                <span className={reservationCompactBadgeToneClass}>
+                  {reservationCompactStateLabel}
+                </span>
+                {!isCheckedOutReservation && (
+                  <button
+                    type="button"
+                    disabled={shouldDisableReservationCheckin}
+                    onClick={
+                      isCheckedInReservation
+                        ? handleCheckoutReservationClick
+                        : handleReservationPrimaryActionClick
+                    }
                     className={cx(
-                      reservationActionButtonClass,
-                      "border-emerald-800 bg-emerald-700 text-white hover:bg-emerald-800"
+                      reservationPrimaryActionClass,
+                      "disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:bg-blue-600"
                     )}
                   >
-                    {checkinButtonLabel}
-                  </ActionButton>
+                    {isCheckedInReservation ? t("Check Out") : reservationPrimaryActionLabel}
+                  </button>
                 )}
-                {showCheckoutReservationButton && (
-                  <ActionButton
-                    onClick={handleCheckoutReservationClick}
-                    className={cx(
-                      reservationActionButtonClass,
-                      "border-blue-800 bg-blue-700 text-white hover:bg-blue-800"
-                    )}
-                  >
-                    {t("Check Out")}
-                  </ActionButton>
-                )}
-                <ActionButton
-                  onClick={handleDeleteReservationClick}
-                  className={cx(
-                    reservationActionButtonClass,
-                    "border-rose-800 bg-rose-700 text-white hover:bg-rose-800"
-                  )}
-                >
-                  {t("Cancel")}
-                </ActionButton>
               </div>
             </div>
           )}
@@ -960,14 +875,12 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
     prevProps.t === nextProps.t &&
     prevProps.formatCurrency === nextProps.formatCurrency &&
     prevProps.handleTableClick === nextProps.handleTableClick &&
-    prevProps.handlePrintOrder === nextProps.handlePrintOrder &&
     prevProps.handleGuestsChange === nextProps.handleGuestsChange &&
     prevProps.handleCloseTable === nextProps.handleCloseTable &&
-    prevProps.handleDeleteReservation === nextProps.handleDeleteReservation &&
     prevProps.handleCheckinReservation === nextProps.handleCheckinReservation &&
+    prevProps.handleOpenViewBooking === nextProps.handleOpenViewBooking &&
     prevProps.getTablePrepMeta === nextProps.getTablePrepMeta &&
     prevProps.waiterCallsByTable === nextProps.waiterCallsByTable &&
-    prevProps.handleAcknowledgeWaiterCall === nextProps.handleAcknowledgeWaiterCall &&
     prevProps.handleResolveWaiterCall === nextProps.handleResolveWaiterCall;
 
   if (!isEqual) {
@@ -984,14 +897,12 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
         "t",
         "formatCurrency",
         "handleTableClick",
-        "handlePrintOrder",
         "handleGuestsChange",
         "handleCloseTable",
-        "handleDeleteReservation",
         "handleCheckinReservation",
+        "handleOpenViewBooking",
         "getTablePrepMeta",
         "waiterCallsByTable",
-        "handleAcknowledgeWaiterCall",
         "handleResolveWaiterCall",
       ],
     });

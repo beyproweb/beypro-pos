@@ -1545,9 +1545,6 @@ const handleReservationStateSync = useCallback(
     const source = nextOrder && typeof nextOrder === "object" ? nextOrder : order;
     const tableNumber = Number(source?.table_number ?? source?.tableNumber ?? tableId);
     if (!Number.isFinite(tableNumber)) return;
-
-    const orderIdNum =
-      source?.id === null || source?.id === undefined ? null : Number(source.id);
     const statusLower = String(source?.status || "").toLowerCase();
     const reservationSource =
       source?.reservation && typeof source.reservation === "object" ? source.reservation : source;
@@ -1561,9 +1558,20 @@ const handleReservationStateSync = useCallback(
         reservationSource?.reservation_notes ??
         reservationSource?.reservationNotes ??
         (Number(
-          reservationSource?.reservation_clients ?? reservationSource?.reservationClients ?? 0
+        reservationSource?.reservation_clients ?? reservationSource?.reservationClients ?? 0
         ) > 0)
     );
+    const orderIdNum = hasReservationPayload
+      ? Number(
+          reservationSource?.order_id ??
+            reservationSource?.orderId ??
+            reservationSource?.id ??
+            source?.id ??
+            null
+        ) || null
+      : source?.id === null || source?.id === undefined
+        ? null
+        : Number(source.id);
 
     if (statusLower === "closed" && !hasReservationPayload) {
       removeTableOverviewOrderFromCache(tableNumber);

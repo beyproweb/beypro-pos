@@ -3959,8 +3959,6 @@ const tableLabelText = String(tableSettings.tableLabelText || "").trim() || t("T
 
 const handlePrintOrderRef = useRef(handlePrintOrder);
 const handleCloseTableRef = useRef(handleCloseTable);
-const handleDeleteReservationRef = useRef(handleDeleteReservation);
-const handleCheckinReservationRef = useRef(handleCheckinReservation);
 
 useEffect(() => {
   handlePrintOrderRef.current = handlePrintOrder;
@@ -3970,28 +3968,12 @@ useEffect(() => {
   handleCloseTableRef.current = handleCloseTable;
 }, [handleCloseTable]);
 
-useEffect(() => {
-  handleDeleteReservationRef.current = handleDeleteReservation;
-}, [handleDeleteReservation]);
-
-useEffect(() => {
-  handleCheckinReservationRef.current = handleCheckinReservation;
-}, [handleCheckinReservation]);
-
 const stableHandlePrintOrder = useCallback((...args) => {
   return handlePrintOrderRef.current?.(...args);
 }, []);
 
 const stableHandleCloseTable = useCallback((...args) => {
   return handleCloseTableRef.current?.(...args);
-}, []);
-
-const stableHandleDeleteReservation = useCallback((...args) => {
-  return handleDeleteReservationRef.current?.(...args);
-}, []);
-
-const stableHandleCheckinReservation = useCallback((...args) => {
-  return handleCheckinReservationRef.current?.(...args);
 }, []);
 
 const handleAcknowledgeWaiterCall = useCallback(
@@ -4008,6 +3990,10 @@ const handleResolveWaiterCall = useCallback(
   [resolveCustomerCall]
 );
 
+const handleOpenViewBooking = useCallback(() => {
+  setActiveArea("__VIEW_BOOKING__");
+}, [setActiveArea]);
+
 const tableCardProps = React.useMemo(
   () => ({
     tableLabelText,
@@ -4019,8 +4005,8 @@ const tableCardProps = React.useMemo(
     handlePrintOrder: stableHandlePrintOrder,
     handleGuestsChange,
     handleCloseTable: stableHandleCloseTable,
-    handleDeleteReservation: stableHandleDeleteReservation,
-    handleCheckinReservation: stableHandleCheckinReservation,
+    handleCheckinReservation,
+    handleOpenViewBooking,
     waiterCallsByTable: customerCalls || {},
     handleAcknowledgeWaiterCall,
     handleResolveWaiterCall,
@@ -4035,8 +4021,8 @@ const tableCardProps = React.useMemo(
     handleGuestsChange,
     stableHandlePrintOrder,
     stableHandleCloseTable,
-    stableHandleDeleteReservation,
-    stableHandleCheckinReservation,
+    handleCheckinReservation,
+    handleOpenViewBooking,
     customerCalls,
     handleAcknowledgeWaiterCall,
     handleResolveWaiterCall,
@@ -4069,7 +4055,6 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
   return map;
 }, [kitchenOpenOrders, productPrepById]);
 
-	
   return (
     <div className="min-h-screen bg-transparent px-0 pt-4 relative">
       {PERF_DEBUG_ENABLED && (
@@ -4421,7 +4406,6 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
 
 {activeTab === "kitchen" && (
   <div className="px-3 md:px-8 py-6">
- 
     {kitchenOpenOrdersLoading ? (
       <div className="flex flex-col items-center mt-10">
         <span className="text-5xl mb-3">⏳</span>
