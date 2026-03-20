@@ -70,6 +70,7 @@ export function useSocketIO(onOrderUpdate, orderId) {
     socket.on("order_cancelled", onOrderUpdate);
     socket.on("order_deleted", onOrderUpdate);
     socket.on("order_closed", onOrderUpdate);
+    socket.on("reservation_checked_out", onOrderUpdate);
     socket.on("reservation_cancelled", onOrderUpdate);
     socket.on("reservation_deleted", onOrderUpdate);
 
@@ -78,6 +79,7 @@ export function useSocketIO(onOrderUpdate, orderId) {
     socket.on("order_cancelled", updateHandler);
     socket.on("order_deleted", updateHandler);
     socket.on("order_closed", updateHandler);
+    socket.on("reservation_checked_out", updateHandler);
     socket.on("reservation_cancelled", updateHandler);
     socket.on("reservation_deleted", updateHandler);
 
@@ -90,6 +92,7 @@ export function useSocketIO(onOrderUpdate, orderId) {
     socket.on("order_cancelled", (p) => logEvent("order_cancelled", p));
     socket.on("order_deleted", (p) => logEvent("order_deleted", p));
     socket.on("order_closed", (p) => logEvent("order_closed", p));
+    socket.on("reservation_checked_out", (p) => logEvent("reservation_checked_out", p));
     socket.on("reservation_cancelled", (p) => logEvent("reservation_cancelled", p));
     socket.on("reservation_deleted", (p) => logEvent("reservation_deleted", p));
     socket.on("orders_updated", (p) => logEvent("orders_updated", p));
@@ -106,6 +109,8 @@ export function useSocketIO(onOrderUpdate, orderId) {
       socket.off("order_deleted", updateHandler);
       socket.off("order_closed", onOrderUpdate);
       socket.off("order_closed", updateHandler);
+      socket.off("reservation_checked_out", onOrderUpdate);
+      socket.off("reservation_checked_out", updateHandler);
       socket.off("reservation_cancelled", onOrderUpdate);
       socket.off("reservation_cancelled", updateHandler);
       socket.off("reservation_deleted", onOrderUpdate);
@@ -113,6 +118,7 @@ export function useSocketIO(onOrderUpdate, orderId) {
       socket.off("order_cancelled", logEvent);
       socket.off("order_deleted", logEvent);
       socket.off("order_closed", logEvent);
+      socket.off("reservation_checked_out", logEvent);
       socket.off("reservation_cancelled", logEvent);
       socket.off("reservation_deleted", logEvent);
       socket.off("orders_updated", logEvent);
@@ -292,6 +298,11 @@ const isCheckedInReservationStatus = (value) => {
   return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
 };
 
+const isCheckedOutReservationStatus = (value) => {
+  const normalized = normalizeReservationStatus(value);
+  return normalized === "checked_out" || normalized === "checkedout" || normalized === "checkout";
+};
+
 const isCancelledItemStatus = (value) => {
   const status = String(value || "").toLowerCase();
   return ["canceled", "cancelled", "void", "deleted"].includes(status);
@@ -312,7 +323,7 @@ const isCancelledLikeOrderStatus = (value) => {
 
 const isFinishedLikeOrderStatus = (value) => {
   const status = String(value || "").toLowerCase();
-  return ["delivered", "served", "closed", "completed", "visit_completed"].includes(status);
+  return ["delivered", "served", "closed", "completed", "visit_completed", "checked_out"].includes(status);
 };
 
 const extractCancellationReason = (source) => {
@@ -863,12 +874,16 @@ const OrderStatusScreen = ({
   offsetForAppHeader = false,
 }) => {
   const normalizedOrderScreenStatus = normalizeReservationStatus(orderScreenStatus);
+  const hasReservedStatusHint = ["reserved", "awaiting_confirm", "booking_confirm"].includes(
+    normalizedOrderScreenStatus
+  );
   const [isDarkUi, setIsDarkUi] = useState(() => (typeof forceDark === "boolean" ? forceDark : false));
   const [order, setOrder] = useState(null);
   const [items, setItems] = useState([]);
   const [timer, setTimer] = useState("00:00");
   const [order404, setOrder404] = useState(false);
   const [checkedInSticky, setCheckedInSticky] = useState(false);
+  const [checkedOutSticky, setCheckedOutSticky] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const intervalRef = useRef(null);
   const joinedRestaurantRef = useRef(null);
@@ -882,6 +897,7 @@ const OrderStatusScreen = ({
 
   useEffect(() => {
     setCheckedInSticky(false);
+    setCheckedOutSticky(false);
     setOrder(null);
     setItems([]);
     setOrder404(false);
@@ -893,6 +909,12 @@ const OrderStatusScreen = ({
       setCheckedInSticky(true);
     }
   }, [normalizedOrderScreenStatus]);
+
+  useEffect(() => {
+    if (checkoutCompletedView || isCheckedOutReservationStatus(normalizedOrderScreenStatus)) {
+      setCheckedOutSticky(true);
+    }
+  }, [checkoutCompletedView, normalizedOrderScreenStatus]);
 
   useEffect(() => {
     if (typeof forceDark === "boolean") {
@@ -1166,11 +1188,15 @@ const OrderStatusScreen = ({
       hasReservationPayload(order) ||
       (Number.isFinite(resolvedTableNo) && resolvedTableNo > 0);
     const keepVisibleForCheckoutCompletion =
+      checkedOutSticky ||
       checkoutCompletedView ||
       (["closed", "completed"].includes(status) && isTableContextOrder);
     const reservationPendingCheckIn =
       !checkedInSticky && isReservationPendingCheckIn(order, normalizedOrderScreenStatus);
-    const preserveWhileReserved = reservationPendingCheckIn || (forceLock && reservationPendingCheckIn);
+    const preserveWhileReserved =
+      reservationPendingCheckIn ||
+      (!checkedInSticky && hasReservedStatusHint) ||
+      (forceLock && (reservationPendingCheckIn || hasReservedStatusHint));
     const orderCancelReason = resolveOrderCancellationReason(order, externalCancelReason);
     const hasCancelledItems = items.some((item) => isCancelledItemStatus(item?.kitchen_status));
     const keepVisibleForCancellation =
@@ -1191,7 +1217,9 @@ const OrderStatusScreen = ({
     forceLock,
     onFinished,
     checkedInSticky,
+    checkedOutSticky,
     normalizedOrderScreenStatus,
+    hasReservedStatusHint,
     hasReservationPayload,
     checkoutCompletedView,
     table,
@@ -1219,6 +1247,13 @@ const OrderStatusScreen = ({
           isCheckedInReservationStatus(flatReservationStatus)
         ) {
           setCheckedInSticky(true);
+        }
+        if (
+          isCheckedOutReservationStatus(normStatus) ||
+          isCheckedOutReservationStatus(nestedStatus) ||
+          isCheckedOutReservationStatus(flatReservationStatus)
+        ) {
+          setCheckedOutSticky(true);
         }
         setOrder(nextOrder);
         setOrder404(false);
@@ -1270,6 +1305,13 @@ const OrderStatusScreen = ({
           isCheckedInReservationStatus(flatReservationStatus)
         ) {
           setCheckedInSticky(true);
+        }
+        if (
+          isCheckedOutReservationStatus(normStatus) ||
+          isCheckedOutReservationStatus(nestedStatus) ||
+          isCheckedOutReservationStatus(flatReservationStatus)
+        ) {
+          setCheckedOutSticky(true);
         }
         setOrder(hydrated);
         if (import.meta.env.DEV) {
@@ -1404,6 +1446,16 @@ const OrderStatusScreen = ({
     : checkedInSticky ||
       isCheckedInReservationStatus(normalizedOrderScreenStatus) ||
       hasBackendCheckedInSignal;
+  const hasBackendCheckedOutSignal =
+    isCheckedOutReservationStatus(orderStatus) ||
+    isCheckedOutReservationStatus(reservationStatus) ||
+    isCheckedOutReservationStatus(flatReservationStatus) ||
+    order?.checked_out === true ||
+    order?.reservation?.checked_out === true;
+  const hasCheckedOutSignal =
+    checkedOutSticky ||
+    isCheckedOutReservationStatus(normalizedOrderScreenStatus) ||
+    hasBackendCheckedOutSignal;
   const driverStatus = String(order?.driver_status || "").toLowerCase();
   const normalizedExternalCancelReason = String(externalCancelReason || "").trim();
   const orderCancelReason = resolveOrderCancellationReason(
@@ -1421,7 +1473,8 @@ const OrderStatusScreen = ({
   const cancelledStatusHint =
     statusHintCandidates.find((value) => isCancelledLikeOrderStatus(value)) || "";
   const statusHint = cancelledStatusHint || orderStatus || normalizedOrderScreenStatus;
-  const isOrderCancelled = Boolean(cancelledStatusHint) || Boolean(orderCancelReason);
+  const isOrderCancelled =
+    !hasCheckedOutSignal && (Boolean(cancelledStatusHint) || Boolean(orderCancelReason));
   const cancelledItems = items.filter((item) => isCancelledItemStatus(item?.kitchen_status));
   const allItemsCancelled = items.length > 0 && items.every((item) => isCancelledItemStatus(item?.kitchen_status));
   const firstItemCancelReason = String(cancelledItems[0]?.cancellation_reason || "").trim();
@@ -1433,7 +1486,8 @@ const OrderStatusScreen = ({
     ? "checked_in"
     : normalizedOrderScreenStatus || orderStatus;
   const isReservedOrderContext =
-    !hasCheckedInSignal && isReservationPendingCheckIn(order, reservationContextStatusHint);
+    !hasCheckedInSignal &&
+    (isReservationPendingCheckIn(order, reservationContextStatusHint) || hasReservedStatusHint);
   const hasReservationContext = hasReservationPayload(order);
   const normalizedOrderType = String(order?.order_type || "").toLowerCase();
   const isTableContextOrder =
@@ -1441,9 +1495,9 @@ const OrderStatusScreen = ({
     normalizedOrderType === "reservation" ||
     hasReservationContext ||
     (Number.isFinite(Number(tableNo)) && Number(tableNo) > 0);
-  const shouldPreservePreCheckinReservationStatus =
-    hasReservationContext && !hasCheckedInSignal && isReservedOrderContext;
+  const shouldPreservePreCheckinReservationStatus = !hasCheckedInSignal && isReservedOrderContext;
   const shouldShowCheckoutCompletedView =
+    hasCheckedOutSignal ||
     checkoutCompletedView ||
     (isTableContextOrder &&
       !shouldPreservePreCheckinReservationStatus &&
@@ -1453,8 +1507,9 @@ const OrderStatusScreen = ({
     if (!order && normalizedOrderScreenStatus) {
       return normalizedOrderScreenStatus;
     }
+    if (hasCheckedOutSignal) return "checked_out";
     if (isOrderCancelled) return cancelledStatusHint || "cancelled";
-    if (shouldShowCheckoutCompletedView) return "visit_completed";
+    if (shouldShowCheckoutCompletedView) return "checked_out";
     if (isConcertTicketContext) {
       if (hasBackendCheckedInSignal) return "checked_in";
       if (concertBookingPaymentStatus === "confirmed" || concertBookingStatus === "confirmed") {
@@ -1526,6 +1581,7 @@ const OrderStatusScreen = ({
     const v = normalizeReservationStatus(s);
     if (v === "on_road" || v === "on-road") return "on_road";
     if (v === "checkedin" || v === "checkin") return "checked_in";
+    if (v === "checkedout" || v === "checkout") return "checked_out";
     if (v === "served") return "delivered";
     return v;
   };
@@ -1533,6 +1589,7 @@ const OrderStatusScreen = ({
   const displayStatus = (s) => {
     const v = normalizeStatus(s);
     if (v === "visit_completed") return t("Order Completed");
+    if (v === "checked_out") return t("Guest checked out");
     if (v === "booking_confirm") return t("Confirmed");
     if (v === "awaiting_confirm") return t("Awaiting confirm");
     if (v === "confirmed") return t("Confirmed");
@@ -1549,6 +1606,7 @@ const OrderStatusScreen = ({
   const badgeColor = (status) => {
     const s = normalizeStatus(status);
     if (s === "visit_completed") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (s === "checked_out") return "bg-emerald-50 text-emerald-700 border-emerald-200";
     if (s === "booking_confirm") return "bg-emerald-50 text-emerald-700 border-emerald-200";
     if (s === "confirmed") return "bg-emerald-50 text-emerald-700 border-emerald-200";
     if (s === "awaiting_confirm") return "bg-amber-50 text-amber-700 border-amber-200";
@@ -1604,7 +1662,13 @@ const OrderStatusScreen = ({
       if (v === "ready") return 2;
       if (v === "preparing") return 1;
       if (v === "new" || v === "confirmed" || v === "pending" || v === "open") return 0;
-      if (v === "delivered" || v === "served" || v === "completed" || v === "closed")
+      if (
+        v === "delivered" ||
+        v === "served" ||
+        v === "completed" ||
+        v === "closed" ||
+        v === "checked_out"
+      )
         return 3;
       return 0;
     };

@@ -35,6 +35,61 @@ export const isReservationConfirmedForCheckin = (...sources) => {
 export const isReservationPendingConfirmation = (...sources) =>
   getReservationLifecycleStatus(...sources) === "reserved";
 
+export const isReservationServiceOrder = (order) => {
+  if (!order || typeof order !== "object") return false;
+
+  const orderStatus = normalizeStatus(order?.status);
+  const orderType = normalizeStatus(order?.order_type ?? order?.orderType);
+
+  if (orderStatus === "checked_in" || orderStatus === "reserved") return true;
+  if (orderType === "reservation") return true;
+  return false;
+};
+
+export const isCheckedInReservationServiceOrder = (order) => {
+  if (!order || typeof order !== "object") return false;
+
+  const lifecycleStatus = getReservationLifecycleStatus(order);
+  const orderStatus = normalizeStatus(order?.status);
+  return lifecycleStatus === "checked_in" || orderStatus === "checked_in";
+};
+
+export const hasReservationServiceActivity = (order) => {
+  if (!order || typeof order !== "object") return false;
+
+  const total = Number(order?.total || 0);
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const suborders = Array.isArray(order?.suborders) ? order.suborders : [];
+  const paymentStatus = normalizeStatus(order?.payment_status ?? order?.paymentStatus);
+  const orderStatus = normalizeStatus(order?.status);
+
+  return (
+    items.length > 0 ||
+    suborders.length > 0 ||
+    total > 0 ||
+    Boolean(order?.is_paid) ||
+    paymentStatus === "paid" ||
+    orderStatus === "paid"
+  );
+};
+
+export const isPendingReservationOnlyOrder = (order) => {
+  if (!isReservationServiceOrder(order)) return false;
+  if (isCheckedInReservationServiceOrder(order)) return false;
+  return !hasReservationServiceActivity(order);
+};
+
+export const getVisibleServiceOrderStatus = (order) => {
+  const status = normalizeStatus(order?.status);
+  if (!order || typeof order !== "object") return status;
+  if (status !== "reserved") return status;
+  if (isCheckedInReservationServiceOrder(order)) return "checked_in";
+  if (!hasReservationServiceActivity(order)) return status;
+
+  const paymentStatus = normalizeStatus(order?.payment_status ?? order?.paymentStatus);
+  return Boolean(order?.is_paid) || paymentStatus === "paid" ? "paid" : "confirmed";
+};
+
 const hasConcertTicketItem = (items) =>
   Array.isArray(items) &&
   items.some((item) => {

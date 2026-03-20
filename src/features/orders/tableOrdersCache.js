@@ -10,6 +10,16 @@ const getTableOrdersCacheTsKey = () => getRestaurantScopedCacheKey("tableOvervie
 const getReservationShadowsCacheKey = () =>
   getRestaurantScopedCacheKey("tableOverview.reservationShadows.v1");
 
+const TERMINAL_RESERVATION_STATUSES = new Set([
+  "checked_out",
+  "closed",
+  "completed",
+  "cancelled",
+  "canceled",
+  "deleted",
+  "void",
+]);
+
 const safeParseJson = (raw) => {
   try {
     return JSON.parse(raw);
@@ -44,7 +54,11 @@ export const readReservationShadows = () => {
       : null
   );
   if (!Array.isArray(cached) || cached.length === 0) return [];
-  return cached.filter((row) => row && typeof row === "object" && row.table_number != null);
+  return cached.filter((row) => {
+    if (!row || typeof row !== "object" || row.table_number == null) return false;
+    const status = String(row?.status || "").trim().toLowerCase();
+    return !TERMINAL_RESERVATION_STATUSES.has(status);
+  });
 };
 
 export const writeReservationShadows = (reservations) => {
@@ -134,6 +148,10 @@ export const buildReservationShadowRecord = ({ reservation, order, tableNumber, 
     orderSource?.status ??
     nestedReservation?.status ??
     "reserved";
+  const normalizedResolvedStatus = String(resolvedStatus || "").trim().toLowerCase();
+  if (TERMINAL_RESERVATION_STATUSES.has(normalizedResolvedStatus)) {
+    return null;
+  }
   const resolvedOrderType =
     reservationSource?.order_type ??
     orderSource?.order_type ??

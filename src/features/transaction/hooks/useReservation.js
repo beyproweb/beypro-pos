@@ -24,6 +24,15 @@ const CHECKIN_REGRESSION_STATUSES = new Set([
 ]);
 
 const toLowerStatus = (value) => String(value || "").trim().toLowerCase();
+const TERMINAL_RESERVATION_STATUSES = new Set([
+  "checked_out",
+  "closed",
+  "completed",
+  "cancelled",
+  "canceled",
+  "deleted",
+  "void",
+]);
 
 const shouldPreserveCheckedInStatus = (incomingStatus, previousStatus) => {
   if (previousStatus !== "checked_in") return false;
@@ -216,6 +225,16 @@ export const useReservation = ({
   const getOrderReservationFallback = useCallback(() => {
     if (!order || typeof order !== "object") return null;
 
+    const statusCandidates = [
+      order?.status,
+      order?.reservation?.status,
+      order?.reservation_status,
+      order?.reservationStatus,
+    ].map(toLowerStatus);
+    if (statusCandidates.some((status) => TERMINAL_RESERVATION_STATUSES.has(status))) {
+      return null;
+    }
+
     const reservationDate =
       order?.reservation_date ??
       order?.reservationDate ??
@@ -391,6 +410,58 @@ export const useReservation = ({
 
       setExistingReservation(finalSavedReservation);
       upsertReservationShadow(finalSavedReservation);
+      const savedReservationId = Number(finalSavedReservation?.id);
+      const currentOrderId = Number(order?.id);
+      const savedIntoCurrentOrder =
+        Number.isFinite(savedReservationId) &&
+        savedReservationId > 0 &&
+        Number.isFinite(currentOrderId) &&
+        currentOrderId > 0 &&
+        savedReservationId === currentOrderId;
+      if (savedIntoCurrentOrder) {
+        const reservationClientCount =
+          finalSavedReservation.reservation_clients ??
+          (parseInt(reservationClients, 10) || 0);
+        const syncedOrder = {
+          ...(order || {}),
+          status: finalSavedReservation.status || "reserved",
+          order_type: finalSavedReservation.order_type || order?.order_type || "table",
+          reservation: {
+            ...(order?.reservation && typeof order.reservation === "object"
+              ? order.reservation
+              : {}),
+            id: finalSavedReservation.id ?? null,
+            order_id: finalSavedReservation.id ?? order?.id ?? null,
+            table_number: finalSavedReservation.table_number ?? resolvedTableNumber ?? null,
+            status: finalSavedReservation.status || "reserved",
+            order_type: finalSavedReservation.order_type || "reservation",
+            reservation_date: finalSavedReservation.reservation_date || reservationDate,
+            reservation_time: finalSavedReservation.reservation_time || reservationTime,
+            reservation_clients: reservationClientCount,
+            reservation_notes: finalSavedReservation.reservation_notes || reservationNotes,
+            customer_name:
+              finalSavedReservation.customer_name ||
+              finalSavedReservation.customerName ||
+              typedCustomerName,
+            customer_phone:
+              finalSavedReservation.customer_phone ||
+              finalSavedReservation.customerPhone ||
+              typedCustomerPhone,
+          },
+          reservation_id: finalSavedReservation.id ?? null,
+          reservationId: finalSavedReservation.id ?? null,
+          reservation_date: finalSavedReservation.reservation_date || reservationDate,
+          reservationDate: finalSavedReservation.reservation_date || reservationDate,
+          reservation_time: finalSavedReservation.reservation_time || reservationTime,
+          reservationTime: finalSavedReservation.reservation_time || reservationTime,
+          reservation_clients: reservationClientCount,
+          reservationClients: reservationClientCount,
+          reservation_notes: finalSavedReservation.reservation_notes || reservationNotes,
+          reservationNotes: finalSavedReservation.reservation_notes || reservationNotes,
+        };
+        setOrder((prev) => ({ ...(prev || {}), ...syncedOrder }));
+        onReservationStateChange?.(syncedOrder);
+      }
       setReservationDate(finalSavedReservation.reservation_date || reservationDate);
       setReservationTime(finalSavedReservation.reservation_time || reservationTime);
       setReservationClients(
@@ -409,64 +480,7 @@ export const useReservation = ({
       );
       showToast(t("Reservation saved"));
       setShowReservationModal(false);
-
-      if (!existingReservation) {
-        if (hasUnconfirmedCartItems) {
-          const cartTotal = safeCartItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-          const updated = await updateOrderStatus("confirmed", cartTotal);
-          if (updated) {
-            const unconfirmedItems = safeCartItems.filter((i) => !i.confirmed);
-            if (unconfirmedItems.length > 0) {
-              await txApiRequest(`/orders/order-items${identifier}`, {
-                method: "POST",
-                body: JSON.stringify({
-                  order_id: updated.id,
-                  receipt_id: null,
-                  items: unconfirmedItems.map((i) => ({
-                    product_id: i.id,
-                    quantity: i.quantity,
-                    price: i.price,
-                    ingredients: i.ingredients,
-                    extras: (i.extras || []).map((ex) => ({
-                      ...ex,
-                      amount: Number(ex.amount) || 1,
-                      unit: (ex.unit && ex.unit.trim() !== "" ? ex.unit : "").toLowerCase(),
-                    })),
-                    unique_id: i.unique_id,
-                    note: i.note || null,
-                    confirmed: true,
-                    kitchen_status: "new",
-                    payment_method: null,
-                    receipt_id: null,
-                    discountType: discountValue > 0 ? discountType : null,
-                    discountValue: discountValue > 0 ? discountValue : 0,
-                  })),
-                }),
-              });
-            }
-            setOrder((prev) => ({ ...prev, status: "reserved" }));
-            await fetchOrderItems(updated.id);
-          } else {
-            showToast(t("Failed to confirm order items"));
-          }
-        } else if (order?.id) {
-          await updateOrderStatus("reserved", 0);
-          setOrder((prev) => ({ ...prev, status: "reserved" }));
-          try {
-            const cacheKey = `table_orders_${restaurantId}_v1`;
-            window?.localStorage?.removeItem(cacheKey);
-            window?.localStorage?.removeItem(`${cacheKey}_ts`);
-          } catch {
-            // ignore cache errors
-          }
-          showToast(t("✅ Table reserved successfully"));
-          setShowReservationModal(false);
-          resetReservationForm();
-          setReservationLoading(false);
-          debugNavigate("/tableoverview?tab=tables");
-          return;
-        }
-      }
+      resetReservationForm();
     } catch (err) {
       console.error("❌ Failed to save reservation:", err);
       showToast(err.message || t("Failed to save reservation"));
@@ -484,17 +498,12 @@ export const useReservation = ({
     existingReservation,
     txApiRequest,
     identifier,
+    onReservationStateChange,
+    order,
+    resolvedTableNumber,
+    setOrder,
     showToast,
     t,
-    hasUnconfirmedCartItems,
-    safeCartItems,
-    updateOrderStatus,
-    fetchOrderItems,
-    setOrder,
-    discountValue,
-    discountType,
-    restaurantId,
-    debugNavigate,
     resetReservationForm,
     normalizeReservationCandidate,
     reservationDebugEnabled,

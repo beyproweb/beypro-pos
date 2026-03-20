@@ -4,7 +4,6 @@ import secureFetch from "../../utils/secureFetch";
 import {
   formatLocalYmd,
   isEffectivelyFreeOrder,
-  isReservationDueNow,
   isOrderCancelledOrCanceled,
   normalizeOrderStatus,
   parseLooseDateToMs,
@@ -15,6 +14,10 @@ import {
   writeTableOrdersCache,
 } from "./tableOrdersCache";
 import useConfirmedTimers from "../tables/useConfirmedTimers";
+import {
+  getVisibleServiceOrderStatus,
+  isPendingReservationOnlyOrder,
+} from "../../utils/reservationStatus";
 
 const pickLatestTimestampValue = (existingValue, nextValue) => {
   if (!existingValue) return nextValue;
@@ -55,6 +58,16 @@ const isAbortError = (err) =>
     .toLowerCase()
     .includes("abort");
 
+const TERMINAL_RESERVATION_STATUSES = new Set([
+  "checked_out",
+  "closed",
+  "completed",
+  "cancelled",
+  "canceled",
+  "deleted",
+  "void",
+]);
+
 const areItemsEquivalent = (prevItems, nextItems) => {
   if (prevItems === nextItems) return true;
   const previous = Array.isArray(prevItems) ? prevItems : [];
@@ -79,6 +92,17 @@ const areItemsEquivalent = (prevItems, nextItems) => {
   return true;
 };
 
+const areMergedIdsEquivalent = (prevIds, nextIds) => {
+  if (prevIds === nextIds) return true;
+  const previous = Array.isArray(prevIds) ? prevIds : [];
+  const next = Array.isArray(nextIds) ? nextIds : [];
+  if (previous.length !== next.length) return false;
+  for (let i = 0; i < next.length; i += 1) {
+    if (Number(previous[i]) !== Number(next[i])) return false;
+  }
+  return true;
+};
+
 const getReservationFingerprint = (order) => {
   if (!order || typeof order !== "object") return "";
   const r = order.reservation && typeof order.reservation === "object" ? order.reservation : null;
@@ -93,6 +117,34 @@ const getReservationFingerprint = (order) => {
     r?.reservation_notes ?? r?.reservationNotes ?? "",
     order.order_type ?? "",
   ].join("|");
+};
+
+const canReuseMergedTableOrder = (prevOrder, nextOrder) => {
+  if (!prevOrder || !nextOrder) return false;
+  return (
+    Number(prevOrder?.id ?? 0) === Number(nextOrder?.id ?? 0) &&
+    Number(getOrderTableNumber(prevOrder)) === Number(getOrderTableNumber(nextOrder)) &&
+    prevOrder?.status === nextOrder?.status &&
+    prevOrder?.order_type === nextOrder?.order_type &&
+    prevOrder?.payment_status === nextOrder?.payment_status &&
+    prevOrder?.is_paid === nextOrder?.is_paid &&
+    prevOrder?.receipt_id === nextOrder?.receipt_id &&
+    prevOrder?.invoice_number === nextOrder?.invoice_number &&
+    prevOrder?.receipt_number === nextOrder?.receipt_number &&
+    prevOrder?.order_number === nextOrder?.order_number &&
+    prevOrder?.customer_name === nextOrder?.customer_name &&
+    prevOrder?.customer_phone === nextOrder?.customer_phone &&
+    prevOrder?.created_at === nextOrder?.created_at &&
+    prevOrder?.updated_at === nextOrder?.updated_at &&
+    prevOrder?.prep_started_at === nextOrder?.prep_started_at &&
+    prevOrder?.estimated_ready_at === nextOrder?.estimated_ready_at &&
+    prevOrder?.kitchen_delivered_at === nextOrder?.kitchen_delivered_at &&
+    Number(prevOrder?.total || 0) === Number(nextOrder?.total || 0) &&
+    Number(prevOrder?.confirmedSinceMs || 0) === Number(nextOrder?.confirmedSinceMs || 0) &&
+    areMergedIdsEquivalent(prevOrder?.merged_ids, nextOrder?.merged_ids) &&
+    areItemsEquivalent(prevOrder?.items, nextOrder?.items) &&
+    getReservationFingerprint(prevOrder) === getReservationFingerprint(nextOrder)
+  );
 };
 
 const hasOrderReservationSignal = (order) => {
@@ -141,23 +193,8 @@ const getOrderTableNumber = (order) => {
   return Number.isFinite(parsed) ? parsed : NaN;
 };
 
-const isReservationLikeOrder = (order, nowMs = Date.now()) => {
-  if (!order || typeof order !== "object") return false;
-  const hasSignal = hasOrderReservationSignal(order);
-  if (!hasSignal) return false;
-
-  const status = normalizeOrderStatus(order?.status);
-  const hasExplicitReservationState = status === "reserved" || order?.order_type === "reservation";
-  if (hasExplicitReservationState) return true;
-
-  // Treat signal-only rows as reservations only when the row is effectively free
-  // (empty reservation tables), so normal active orders keep their real status.
-  if (!isEffectivelyFreeOrder(order)) return false;
-  return isReservationDueNow(order, nowMs);
-};
-
 const getNormalizedNonReservationStatus = (order) => {
-  const status = normalizeOrderStatus(order?.status);
+  const status = getVisibleServiceOrderStatus(order);
   if (status === "reserved" && !hasOrderReservationSignal(order)) return "confirmed";
   return status;
 };
@@ -324,8 +361,6 @@ export default function useTableOrdersData() {
     const t0 = isDev ? performance.now() : 0;
     const controller = new AbortController();
     const signal = controller.signal;
-    const nowMs = Date.now();
-
     try {
       activeFetchControllerRef.current?.abort?.();
       activeFetchControllerRef.current = controller;
@@ -369,11 +404,17 @@ export default function useTableOrdersData() {
       }
 
       const normalizeReservationList = (value) => {
-        const list = Array.isArray(value?.reservations)
+        const rawList = Array.isArray(value?.reservations)
           ? value.reservations
           : Array.isArray(value)
           ? value
           : [];
+        const list = rawList.filter((row) => {
+          const status = normalizeOrderStatus(
+            row?.status ?? row?.reservation_status ?? row?.reservationStatus
+          );
+          return !TERMINAL_RESERVATION_STATUSES.has(status);
+        });
         if (isDev) {
           console.log(
             `📋 [TableOverview] Fetched ${list.length} total reservations:`,
@@ -568,6 +609,7 @@ export default function useTableOrdersData() {
           const status = normalizeOrderStatus(o.status);
           if (status === "closed") return false;
           if (isOrderCancelledOrCanceled(status)) return false;
+          if (isPendingReservationOnlyOrder(o)) return false;
           if (isEffectivelyFreeOrder(o)) return false;
           return true;
         })
@@ -734,9 +776,13 @@ export default function useTableOrdersData() {
             }, {})
           );
 
-          const sorted = merged.sort(
-            (a, b) => getOrderTableNumber(a) - getOrderTableNumber(b)
-          );
+          const sorted = merged
+            .sort((a, b) => getOrderTableNumber(a) - getOrderTableNumber(b))
+            .map((order) => {
+              const tableNumber = getOrderTableNumber(order);
+              const prevMerged = prevByTable.get(tableNumber);
+              return canReuseMergedTableOrder(prevMerged, order) ? prevMerged : order;
+            });
           persistTimers(nextTimers);
           writeTableOrdersCache(sorted);
           if (import.meta.env.DEV) console.timeEnd("[Phase1] setOrders");

@@ -3,7 +3,10 @@ import {
   removeReservationShadow,
   upsertReservationShadow,
 } from "../../orders/tableOrdersCache";
-import { hasConcertBookingContext } from "../../../utils/reservationStatus";
+import {
+  hasConcertBookingContext,
+  isCheckedInReservationServiceOrder,
+} from "../../../utils/reservationStatus";
 
 export function createConfirmFlow(deps) {
   const {
@@ -81,6 +84,8 @@ export function createConfirmFlow(deps) {
       existingReservation,
       order?.reservation
     );
+    const shouldPreserveReservationStatus =
+      hasReservationContext && isCheckedInReservationServiceOrder(order);
 
     const selectionKeys = new Set(Array.from(selectedCartItemIds, (key) => String(key)));
     const hasUnconfirmedSelected = cartItems.some(
@@ -120,27 +125,59 @@ export function createConfirmFlow(deps) {
           return;
         }
       } else {
-        if (hasReservationContext) {
-          // For reservation/check-in context, do not auto-close.
-          // But if user explicitly tapped "Close" on an empty cart, exit back to tables.
-          if (getPrimaryActionLabel() === "Close") {
-            await resetTableGuests(order?.table_number ?? order?.tableNumber);
-            setIsFloatingCartOpen(false);
-            navigate("/tableoverview?tab=tables");
-          }
+        if (!order?.id) {
+          setIsFloatingCartOpen(false);
+          navigate("/tableoverview?tab=tables");
           return;
         }
-        const shadow = buildReservationShadowRecord({
-          reservation: existingReservation,
-          order,
-          tableNumber: order?.table_number ?? order?.tableNumber,
-          orderId: order?.id,
-        });
-        if (shadow) upsertReservationShadow(shadow);
-        await resetTableGuests(order?.table_number ?? order?.tableNumber);
-        broadcastTableOverviewOrderStatus("closed");
-        navigate("/tableoverview?tab=tables");
-        return;
+
+        const isCheckedInReservationClose =
+          hasReservationContext && isCheckedInReservationServiceOrder(order);
+        const isReservationFinalizeClose =
+          isCheckedInReservationClose || isReservationCheckoutAction;
+
+        if (isCheckedInReservationClose && !isReservationCheckoutAction) {
+          window.alert(t("Please check-out before closing table"));
+          return;
+        }
+
+        try {
+          const closeRequestOptions = { method: "POST" };
+          if (isReservationFinalizeClose || hasConcertContext) {
+            closeRequestOptions.body = JSON.stringify({
+              preserve_reservation_checkout_badge: true,
+            });
+          }
+          await txApiRequest(`/orders/${order.id}/close${identifier}`, closeRequestOptions);
+          if (isReservationFinalizeClose) {
+            removeReservationShadow({
+              reservationId:
+                existingReservation?.id ??
+                order?.reservation?.id ??
+                order?.reservation_id ??
+                order?.reservationId,
+              orderId: order?.id,
+              tableNumber: order?.table_number ?? order?.tableNumber,
+            });
+          } else {
+            const shadow = buildReservationShadowRecord({
+              reservation: existingReservation,
+              order,
+              tableNumber: order?.table_number ?? order?.tableNumber,
+              orderId: order?.id,
+            });
+            if (shadow) upsertReservationShadow(shadow);
+          }
+          await resetTableGuests(order?.table_number ?? order?.tableNumber);
+          broadcastTableOverviewOrderStatus("closed");
+          setIsFloatingCartOpen(false);
+          navigate("/tableoverview?tab=tables");
+          return;
+        } catch (err) {
+          console.error("❌ Failed to close empty table order:", err);
+          showToast(t("Failed to close table"));
+          return;
+        }
       }
     }
 
@@ -161,8 +198,12 @@ export function createConfirmFlow(deps) {
       const previousCartSnapshot = Array.isArray(cartItems) ? [...cartItems] : [];
       const unconfirmedItems = safeCartItems.filter((i) => !i.confirmed);
 
+      const nextStatus = shouldPreserveReservationStatus
+        ? "checked_in"
+        : "confirmed";
+
       // ✅ STEP 1: Instant optimistic UI (do not wait for network)
-      setOrder((prev) => (prev ? { ...prev, status: "confirmed" } : prev));
+      setOrder((prev) => (prev ? { ...prev, status: nextStatus } : prev));
       setCartItems((prev) =>
         (Array.isArray(prev) ? prev : []).map((i) => (i.confirmed ? i : { ...i, confirmed: true }))
       );
@@ -219,20 +260,20 @@ export function createConfirmFlow(deps) {
         if (hasCurrentOrderId) {
           if (isPhoneConfirmAction) {
             // Prioritize instant navigation for phone flow: don't block on kitchen POST.
-            updated = await updateOrderStatus("confirmed", confirmTotal);
+            updated = await updateOrderStatus(nextStatus, confirmTotal);
             sendUnconfirmedItemsToKitchen(currentOrderId).catch((err) => {
               console.warn("⚠️ Phone confirm background kitchen sync failed:", err);
             });
           } else {
             // Run in parallel to avoid additive latency from two sequential requests.
             const results = await Promise.all([
-              updateOrderStatus("confirmed", confirmTotal),
+              updateOrderStatus(nextStatus, confirmTotal),
               sendUnconfirmedItemsToKitchen(currentOrderId),
             ]);
             updated = results[0];
           }
         } else {
-          updated = await updateOrderStatus("confirmed", confirmTotal);
+          updated = await updateOrderStatus(nextStatus, confirmTotal);
           if (updated?.id) {
             if (isPhoneConfirmAction) {
               sendUnconfirmedItemsToKitchen(updated.id).catch((err) => {

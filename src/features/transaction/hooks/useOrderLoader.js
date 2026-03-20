@@ -2,10 +2,37 @@ import { useCallback, useEffect, useMemo } from "react";
 import { txApiRequest } from "../../transactions/services/transactionApi";
 import { isActiveTableStatus } from "../utils/transactionUtils";
 import {
+  isCheckedInReservationServiceOrder,
+  isPendingReservationOnlyOrder,
+  isReservationServiceOrder,
+} from "../../../utils/reservationStatus";
+import {
   formatOrderItems,
   hydrateCartState,
   normalizePaidFlag,
 } from "../utils/orderFormatting";
+
+const hasReservationSignal = (order) => {
+  if (!order || typeof order !== "object") return false;
+  const reservation = order?.reservation && typeof order.reservation === "object"
+    ? order.reservation
+    : null;
+  return Boolean(
+    order?.reservation_id ||
+      order?.reservationId ||
+      order?.reservation_date ||
+      order?.reservationDate ||
+      order?.reservation_time ||
+      order?.reservationTime ||
+      reservation?.id ||
+      reservation?.reservation_id ||
+      reservation?.reservationId ||
+      reservation?.reservation_date ||
+      reservation?.reservationDate ||
+      reservation?.reservation_time ||
+      reservation?.reservationTime
+  );
+};
 
 export const useOrderLoader = ({
   orderId,
@@ -125,12 +152,29 @@ export const useOrderLoader = ({
           return bTime - aTime;
         });
 
-        const activeOrder = sortedOrders.find((candidate) => isActiveTableStatus(candidate.status));
+        const activeCandidates = sortedOrders.filter((candidate) => {
+          if (!isActiveTableStatus(candidate.status)) return false;
+          if (isPendingReservationOnlyOrder(candidate)) return false;
+
+          const normalizedStatus = String(candidate?.status ?? "").trim().toLowerCase();
+          const isPaidReservationCarryover =
+            normalizedStatus === "paid" && isCheckedInReservationServiceOrder(candidate);
+
+          return !isPaidReservationCarryover;
+        });
+        const activeOrder =
+          activeCandidates.find((candidate) => !isReservationServiceOrder(candidate)) ||
+          activeCandidates[0] ||
+          null;
         let currentOrder = activeOrder || null;
 
         if (!currentOrder) {
           const unpaidClosed = sortedOrders.find(
-            (candidate) => (candidate.status || "").toLowerCase() === "closed" && !candidate.is_paid
+            (candidate) =>
+              (candidate.status || "").toLowerCase() === "closed" &&
+              !candidate.is_paid &&
+              !hasReservationSignal(candidate) &&
+              !isReservationServiceOrder(candidate)
           );
           if (unpaidClosed) {
             const reopened = await reopenOrderIfNeeded(unpaidClosed);

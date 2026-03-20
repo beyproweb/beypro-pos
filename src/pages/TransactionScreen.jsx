@@ -1322,6 +1322,15 @@ useEffect(() => {
       const orderType = String(currentOrder.order_type || "").toLowerCase();
       const orderStatus = String(currentOrder.status || "").toLowerCase();
       const isTableLikeOrder = orderType === "table" || orderType === "reservation";
+      const currentReservation = existingReservationRef.current;
+      const reservationRowId = Number(currentReservation?.id);
+      const currentOrderId = Number(currentOrder?.id);
+      const reservationWasSavedIntoCurrentOrder =
+        Number.isFinite(reservationRowId) &&
+        reservationRowId > 0 &&
+        Number.isFinite(currentOrderId) &&
+        currentOrderId > 0 &&
+        reservationRowId === currentOrderId;
       const hasReservationPayload = Boolean(
         getReservationSchedule(currentOrder) ||
           currentOrder?.reservation_id ||
@@ -1338,7 +1347,8 @@ useEffect(() => {
           orderType === "reservation" ||
           orderStatus === "reserved" ||
           orderStatus === "checked_in" ||
-          hasReservationPayload
+          hasReservationPayload ||
+          reservationWasSavedIntoCurrentOrder
         );
 
       if (shouldSkipEmptyResetForReservation) return;

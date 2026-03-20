@@ -2,7 +2,10 @@ import {
   buildReservationShadowRecord,
   upsertReservationShadow,
 } from "../../orders/tableOrdersCache";
-import { hasConcertBookingContext } from "../../../utils/reservationStatus";
+import {
+  hasConcertBookingContext,
+  isCheckedInReservationServiceOrder,
+} from "../../../utils/reservationStatus";
 
 export function createCloseFlow(deps) {
   const {
@@ -63,21 +66,8 @@ export function createCloseFlow(deps) {
       existingReservationRef?.current,
       order?.reservation
     );
-    const hasReservationContext = Boolean(
-      order?.reservation_id ||
-        order?.reservationId ||
-        order?.reservation?.id ||
-        order?.reservation_date ||
-        order?.reservationDate ||
-        order?.reservation_time ||
-        order?.reservationTime ||
-        ["reserved", "checked_in"].includes(String(order?.status || "").toLowerCase()) ||
-        String(order?.order_type || "").toLowerCase() === "reservation" ||
-        existingReservationRef?.current?.id ||
-        existingReservationRef?.current?.reservation_date ||
-        existingReservationRef?.current?.reservationDate
-    );
-    if (hasReservationContext) return;
+    const shouldKeepReservationServiceOpen = isCheckedInReservationServiceOrder(order);
+    if (shouldKeepReservationServiceOpen) return;
 
     const shouldAutoCloseTable =
       orderType === "table" && transactionSettings.autoCloseTableAfterPay;

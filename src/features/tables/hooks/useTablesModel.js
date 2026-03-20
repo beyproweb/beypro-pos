@@ -1,26 +1,9 @@
 import { useMemo, useRef } from "react";
 import {
   getMemoizedTableDerivedFields,
-  hasReservationSignal,
-  isReservationDueNow,
-  isEffectivelyFreeOrder,
-  normalizeOrderStatus,
 } from "../tableVisuals";
 import { isTablePerfDebugEnabled, withPerfTimer } from "../dev/perfDebug";
-
-const isReservationOrder = (order, nowMs = Date.now()) => {
-  if (!order) return false;
-  const hasSignal = hasReservationSignal(order);
-  if (!hasSignal) return false;
-
-  const hasExplicitReservationState =
-    normalizeOrderStatus(order.status) === "reserved" || order.order_type === "reservation";
-  if (hasExplicitReservationState) return true;
-
-  // Signal-only rows should behave as reservation only for effectively free tables.
-  if (!isEffectivelyFreeOrder(order)) return false;
-  return isReservationDueNow(order, nowMs);
-};
+import { isPendingReservationOnlyOrder } from "../../../utils/reservationStatus";
 
 const normalizeGuests = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -36,6 +19,41 @@ const getReservationSortKey = (reservation) => {
   const timeRaw = reservation?.reservation_time ?? reservation?.reservationTime ?? "00:00:00";
   const time = String(timeRaw || "00:00:00").trim() || "00:00:00";
   return `${date} ${time}`;
+};
+
+const getReservationStatusPriority = (reservation) => {
+  const status = String(reservation?.status || "").trim().toLowerCase();
+  if (status === "checked_in") return 0;
+  if (status === "confirmed") return 1;
+  if (status === "reserved") return 2;
+  return 3;
+};
+
+const shouldPreferReservation = (nextReservation, currentReservation) => {
+  if (!currentReservation) return true;
+  const currentKey = getReservationSortKey(currentReservation);
+  const nextKey = getReservationSortKey(nextReservation);
+  if (nextKey !== currentKey) return nextKey < currentKey;
+
+  const currentStatusPriority = getReservationStatusPriority(currentReservation);
+  const nextStatusPriority = getReservationStatusPriority(nextReservation);
+  if (nextStatusPriority !== currentStatusPriority) {
+    return nextStatusPriority < currentStatusPriority;
+  }
+
+  const currentUpdatedAt = Date.parse(
+    currentReservation?.updated_at ?? currentReservation?.created_at ?? 0
+  ) || 0;
+  const nextUpdatedAt = Date.parse(
+    nextReservation?.updated_at ?? nextReservation?.created_at ?? 0
+  ) || 0;
+  if (nextUpdatedAt !== currentUpdatedAt) {
+    return nextUpdatedAt > currentUpdatedAt;
+  }
+
+  const currentId = Number(currentReservation?.id) || 0;
+  const nextId = Number(nextReservation?.id) || 0;
+  return nextId > currentId;
 };
 
 const canReuseTableModel = (prev, next) => {
@@ -73,13 +91,7 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
         );
         if (!Number.isFinite(tableNumber)) continue;
         const existing = map.get(tableNumber);
-        if (!existing) {
-          map.set(tableNumber, reservation);
-          continue;
-        }
-        const existingKey = getReservationSortKey(existing);
-        const nextKey = getReservationSortKey(reservation);
-        if (nextKey < existingKey) {
+        if (shouldPreferReservation(reservation, existing)) {
           map.set(tableNumber, reservation);
         }
       }
@@ -91,7 +103,6 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
     return withPerfTimer("[perf] TableList model build", () => {
       const previousByNumber = prevTablesByNumberRef.current;
       const nextByNumber = new Map();
-      const nowMs = Date.now();
       const configList = Array.isArray(tableConfigs)
         ? [...tableConfigs].sort((a, b) => Number(a?.number) - Number(b?.number))
         : [];
@@ -102,18 +113,7 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
         const orderRaw = ordersByTable instanceof Map ? ordersByTable.get(parsedCfgNumber) || null : null;
         const reservationFallback = reservationsByTable.get(parsedCfgNumber) || null;
 
-        let order = orderRaw;
-        if (orderRaw && isReservationOrder(orderRaw, nowMs)) {
-          order = orderRaw;
-        } else if (
-          orderRaw &&
-          isEffectivelyFreeOrder(orderRaw) &&
-          hasReservationSignal(orderRaw) &&
-          !isReservationDueNow(orderRaw, nowMs)
-        ) {
-          // Future reservation should not block free-table UI before reservation time.
-          order = null;
-        }
+        const order = orderRaw && isPendingReservationOnlyOrder(orderRaw) ? null : orderRaw;
 
         const derived = getMemoizedTableDerivedFields(order);
 

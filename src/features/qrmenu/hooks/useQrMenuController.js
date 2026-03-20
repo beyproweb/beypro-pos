@@ -1785,12 +1785,6 @@ if (savedTable) {
     const nextOccupiedSet = new Set();
     const nextReservedSet = new Set();
     let hasAnySource = false;
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
-    const todayYmd = `${yyyy}-${mm}-${dd}`;
-
     const addNumbers = (targetSet, values) => {
       toArray(values).forEach((value) => {
         const n = Number(value);
@@ -1847,7 +1841,7 @@ if (savedTable) {
       if (token) {
         const [ordersRes, reservationsRes] = await Promise.allSettled([
           sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } }),
-          sFetch(`/orders/reservations?start_date=${todayYmd}`, {
+          sFetch("/orders/reservations", {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ]);
@@ -1873,13 +1867,12 @@ if (savedTable) {
           });
           orderIdToTableRef.current = nextMap;
         } catch {}
-        const nowMs = Date.now();
         const occupiedFromOrders = toArray(list)
           .filter((order) => {
             if (!order?.table_number) return false;
             const status = String(order?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
-            if (isReservationLikeEntry(order)) return isReservationDueNow(order, nowMs);
+            if (isReservationLikeEntry(order)) return true;
             return true;
           })
           .map((order) => Number(order.table_number))
@@ -1888,7 +1881,7 @@ if (savedTable) {
           .filter((reservation) => {
             const status = String(reservation?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
-            return isReservationDueNow(reservation, nowMs);
+            return true;
           })
           .map((reservation) =>
             Number(
@@ -1902,7 +1895,7 @@ if (savedTable) {
             if (isTerminalOrderStatus(status)) return false;
             if (isCheckedInReservationStatus(status)) return false;
             if (!isReservationLikeEntry(order)) return false;
-            return isReservationDueNow(order, nowMs);
+            return true;
           })
           .map((order) => Number(order?.table_number))
           .filter((n) => Number.isFinite(n) && n > 0);
@@ -1911,7 +1904,7 @@ if (savedTable) {
             const status = String(reservation?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
             if (isCheckedInReservationStatus(status)) return false;
-            return isReservationDueNow(reservation, nowMs);
+            return true;
           })
           .map((reservation) =>
             Number(
@@ -1921,8 +1914,7 @@ if (savedTable) {
           .filter((n) => Number.isFinite(n) && n > 0);
         addNumbers(nextOccupiedSet, occupiedFromOrders);
         addNumbers(nextOccupiedSet, occupiedFromReservations);
-        // Authenticated orders/reservations are authoritative for reserved state.
-        nextReservedSet.clear();
+        // Preserve public reserved state and augment it with authenticated data.
         addNumbers(nextReservedSet, reservedFromOrders);
         addNumbers(nextReservedSet, reservedFromReservations);
         hasAnySource = true;
@@ -2515,12 +2507,8 @@ const myTable =
   null;
 
 
-const filteredOccupied = myTable
-  ? safeOccupiedTables.filter((n) => n !== myTable)
-  : safeOccupiedTables;
-const filteredReserved = myTable
-  ? safeReservedTables.filter((n) => n !== myTable)
-  : safeReservedTables;
+const filteredOccupied = safeOccupiedTables;
+const filteredReserved = safeReservedTables;
 const showTableSelector = !forceHome && orderType === "table" && !table;
 
 

@@ -100,6 +100,7 @@ export default function ModernTableSelector({
         {visibleTables.map((tbl) => {
           const isOcc = occupiedSet.has(Number(tbl.tableNumber));
           const isReserved = reservedSet.has(Number(tbl.tableNumber));
+          const isDisabled = isOcc || isReserved;
           const tableTitle =
             typeof formatTableName === "function"
               ? formatTableName(tbl)
@@ -108,15 +109,15 @@ export default function ModernTableSelector({
           <button
             key={tbl.tableNumber}
             onClick={() => {
-              if (!isOcc) onSelect(tbl);
+              if (!isDisabled) onSelect(tbl);
             }}
-            disabled={isOcc}
+            disabled={isDisabled}
             className={`
               w-full p-5 rounded-3xl bg-white/70 dark:bg-neutral-900/70 backdrop-blur-xl border border-gray-200 dark:border-neutral-800 
               shadow-[0_3px_12px_rgba(0,0,0,0.06)] hover:shadow-xl
               hover:-translate-y-1 transition-all duration-300
               text-left flex flex-col gap-3
-              ${isOcc ? 'opacity-60 cursor-not-allowed ring-1 ring-red-200 dark:ring-rose-900 hover:translate-y-0 hover:shadow-[0_3px_12px_rgba(0,0,0,0.06)]' : ''}
+              ${isDisabled ? 'opacity-60 cursor-not-allowed ring-1 ring-red-200 dark:ring-rose-900 hover:translate-y-0 hover:shadow-[0_3px_12px_rgba(0,0,0,0.06)]' : ''}
             `}
           >
             {/* TABLE TITLE */}
@@ -125,7 +126,7 @@ export default function ModernTableSelector({
                 {tableTitle}
               </span>
 
-              {isOcc ? (
+              {isDisabled ? (
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-semibold text-white ${
                     isReserved ? "bg-amber-600" : "bg-red-600"

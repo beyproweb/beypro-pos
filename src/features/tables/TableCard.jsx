@@ -17,7 +17,7 @@ import {
   useRenderCount,
 } from "./dev/perfDebug";
 
-const KITCHEN_STATUSES = ["preparing", "ready", "delivered"];
+const KITCHEN_STATUSES = ["new", "preparing", "ready", "delivered"];
 const CHECKIN_REGRESSION_STATUSES = new Set([
   "reserved",
   "confirmed",
@@ -40,6 +40,7 @@ const ACTION_BUTTON_BASE_CLASS =
 const cx = (...classes) => classes.filter(Boolean).join(" ");
 
 const getKitchenStatusToneClass = (status) => {
+  if (status === "new") return "bg-blue-600 text-white border-blue-700";
   if (status === "preparing") return "bg-amber-600 text-white border-amber-700";
   if (status === "ready") return "bg-indigo-700 text-white border-indigo-800";
   if (status === "delivered") return "bg-indigo-600 text-white border-indigo-700";
@@ -104,7 +105,12 @@ function TableCard({
     tableOrder?.receiptId != null ||
     (Array.isArray(tableOrder?.receiptMethods) && tableOrder.receiptMethods.length > 0);
   const hasOrderActivity =
-    hasOrderItems || hasSuborderItems || hasReceiptHistory || Number(tableOrder?.total || 0) > 0;
+    hasOrderItems ||
+    hasSuborderItems ||
+    hasReceiptHistory ||
+    Number(tableOrder?.total || 0) > 0 ||
+    normalizeOrderStatus(tableOrder?.payment_status ?? tableOrder?.paymentStatus) === "paid" ||
+    Boolean(table.isFullyPaid);
   const normalizedOrderStatus = normalizeOrderStatus(tableOrder?.status);
   const tablePrepMeta = getTablePrepMeta(table.tableNumber);
   const waiterCall = waiterCallsByTable?.[String(table.tableNumber)] || null;
@@ -159,7 +165,16 @@ function TableCard({
 
   const isReservedTable = Boolean(table.isReservedTable);
   const isFreeTable = Boolean(table.isFreeTable);
-  const isPaidTable = !isFreeTable && Boolean(table.isFullyPaid);
+  const normalizedPaymentStatus = normalizeOrderStatus(
+    tableOrder?.payment_status ?? tableOrder?.paymentStatus
+  );
+  const isPaidTable =
+    !isFreeTable &&
+    (Boolean(table.isFullyPaid) ||
+      normalizedOrderStatus === "paid" ||
+      normalizedPaymentStatus === "paid" ||
+      Boolean(tableOrder?.is_paid) ||
+      Boolean(tableOrder?.isPaid));
   const hasUnpaidItems = !isFreeTable && Boolean(table.hasUnpaidItems);
   const hasReservationSignalOnOrder = Boolean(
     tableOrder?.reservation_id ||
@@ -220,32 +235,6 @@ function TableCard({
     (hasPreparingItems || !!tableOrder?.estimated_ready_at || !!tableOrder?.prep_started_at);
 
   const reservationInfo = React.useMemo(() => {
-    // Use fallback reservation only when no order is attached to the table
-    // or when the attached order is explicitly reservation-like.
-    // Also allow matching fallback reservation state for the same active order so
-    // reservation badge does not disappear after item confirmation.
-    const fallbackOrderId = Number(
-      table?.reservationFallback?.order_id ?? table?.reservationFallback?.orderId
-    );
-    const fallbackReservationId = Number(table?.reservationFallback?.id);
-    const currentOrderId = Number(tableOrder?.id);
-    const fallbackMatchesCurrentOrder =
-      Number.isFinite(fallbackOrderId) &&
-      Number.isFinite(currentOrderId) &&
-      fallbackOrderId === currentOrderId;
-    const fallbackMatchesCurrentReservationOrder =
-      Number.isFinite(fallbackReservationId) &&
-      Number.isFinite(currentOrderId) &&
-      fallbackReservationId === currentOrderId;
-    const fallbackCanBindToCurrentOrder =
-      !Number.isFinite(currentOrderId) ||
-      fallbackMatchesCurrentOrder ||
-      fallbackMatchesCurrentReservationOrder;
-    const canUseFallbackReservation =
-      !tableOrder ||
-      hasExplicitReservationState ||
-      fallbackCanBindToCurrentOrder;
-
     if (tableOrder?.reservation && hasReservationCoreData(tableOrder.reservation)) {
       return {
         id: tableOrder.reservation.id ?? null,
@@ -299,7 +288,7 @@ function TableCard({
         customer_phone: tableOrder.customer_phone ?? tableOrder.customerPhone ?? "",
       };
     }
-    const fallback = canUseFallbackReservation ? table.reservationFallback : null;
+    const fallback = table?.reservationFallback ?? null;
     if (fallback && hasReservationCoreData(fallback)) {
       return {
         id: fallback.id ?? null,
@@ -316,7 +305,7 @@ function TableCard({
       };
     }
     return null;
-  }, [hasExplicitReservationState, hasReservationCoreData, table?.reservationFallback, tableOrder]);
+  }, [hasReservationCoreData, table?.reservationFallback, tableOrder]);
   const reservationStatus = React.useMemo(() => {
     const normalizedOrderLevelStatus = normalizeOrderStatus(tableOrder?.status);
     const normalizedReservationStatus = normalizeOrderStatus(
@@ -358,8 +347,16 @@ function TableCard({
   }, [reservationInfo?.id, reservationInfo?.status, table?.reservationFallback, tableOrder]);
   const isCheckedInReservation = isCheckedInReservationStatus(reservationStatus);
   const isCheckedOutReservation = isCheckedOutReservationStatus(reservationStatus);
+  const reservationStatusForCheckinFlow = normalizeOrderStatus(
+    tableOrder?.reservation?.status ??
+      table?.reservationFallback?.status ??
+      reservationInfo?.status
+  );
   const shouldShowReservedBadge = React.useMemo(() => {
     if (reservationInfo) {
+      return true;
+    }
+    if (reservationStatusForCheckinFlow === "reserved" || reservationStatusForCheckinFlow === "checked_in") {
       return true;
     }
     return (
@@ -374,6 +371,7 @@ function TableCard({
     isPaidTable,
     normalizedOrderStatus,
     reservationInfo,
+    reservationStatusForCheckinFlow,
   ]);
   const handleDeleteReservationClick = React.useCallback(
     (e) => {
@@ -381,13 +379,6 @@ function TableCard({
       handleDeleteReservation?.(table, reservationInfo);
     },
     [handleDeleteReservation, reservationInfo, table]
-  );
-  const handleCheckinReservationClick = React.useCallback(
-    (e) => {
-      e.stopPropagation();
-      handleCheckinReservation?.(table, reservationInfo);
-    },
-    [handleCheckinReservation, reservationInfo, table]
   );
   const handleCheckoutReservationClick = React.useCallback(
     (e) => {
@@ -475,7 +466,7 @@ function TableCard({
             key={`header-${status}`}
             className={cx("h-4 shrink-0 px-1 text-[9px] shadow-none", getKitchenStatusToneClass(status))}
           >
-            {count} {t(status)}
+            {count} {t(status === "new" ? "New" : status)}
           </Pill>
         );
         return badges;
@@ -525,6 +516,8 @@ function TableCard({
   const shouldRenderKitchenStatuses = Boolean(tableOrder?.items);
   const isOrderDelayed = tablePrepMeta.isDelayed;
   const displayTotal = formatCurrency(Number(table.unpaidTotal || 0));
+  const tableDisplayLabel = `${tableLabelText} ${String(table.tableNumber).padStart(2, "0")}`;
+  const shouldLeftAlignHeaderLabel = true;
   const paidStatusLabel = t("Unpaid");
   const fullyPaidStatusLabel = t("Paid");
   const orderStatusLabel = isCheckedInReservationStatus(normalizedOrderStatus)
@@ -560,15 +553,17 @@ function TableCard({
     : isCheckedInReservation
       ? "rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-[10px] text-emerald-950"
       : "rounded-lg border border-blue-300 bg-blue-50 p-2 text-[10px] text-blue-950";
-  const isConcertReservation = hasConcertBookingContext(
+  const reservationConfirmationSources = [
     tableOrder,
+    tableOrder?.reservation,
+    table?.reservationFallback,
     reservationInfo,
-    table?.reservationFallback
-  );
+  ];
+  const isConcertReservation = hasConcertBookingContext(...reservationConfirmationSources);
   const needsReservationConfirmation =
-    isReservationPendingConfirmation(tableOrder, reservationInfo, table?.reservationFallback) ||
+    reservationStatusForCheckinFlow === "reserved" ||
     (isConcertReservation &&
-      !isConcertBookingConfirmed(tableOrder, reservationInfo, table?.reservationFallback));
+      !isConcertBookingConfirmed(...reservationConfirmationSources));
   const checkinButtonLabel = needsReservationConfirmation ? t("Confirm") : t("Checkin");
   const fallbackReservationStatus = normalizeOrderStatus(table?.reservationFallback?.status);
   const showCheckoutReservationButton =
@@ -578,12 +573,76 @@ function TableCard({
       normalizedOrderStatus === "paid" &&
       fallbackReservationStatus === "checked_in");
 
+  const handleCheckinReservationClick = React.useCallback(
+    (e) => {
+      e.stopPropagation();
+      console.log("[reservation-confirm-debug] reserved badge click", {
+        tableNumber: table?.tableNumber,
+        buttonLabel: checkinButtonLabel,
+        needsReservationConfirmation,
+        reservationStatusForCheckinFlow,
+        reservationStatus,
+        normalizedOrderStatus,
+        reservationInfo,
+        reservationFallback: table?.reservationFallback,
+        tableOrderId: tableOrder?.id ?? null,
+        tableOrderStatus: tableOrder?.status ?? null,
+      });
+      handleCheckinReservation?.(table, reservationInfo);
+    },
+    [
+      checkinButtonLabel,
+      handleCheckinReservation,
+      needsReservationConfirmation,
+      normalizedOrderStatus,
+      reservationInfo,
+      reservationStatus,
+      reservationStatusForCheckinFlow,
+      table,
+      tableOrder?.id,
+      tableOrder?.status,
+    ]
+  );
+
+  React.useEffect(() => {
+    if (!shouldShowReservedBadge) return;
+    console.log("[reservation-confirm-debug] reserved badge state", {
+      tableNumber: table?.tableNumber,
+      checkinButtonLabel,
+      needsReservationConfirmation,
+      reservationStatusForCheckinFlow,
+      reservationStatus,
+      normalizedOrderStatus,
+      shouldShowReservedBadge,
+      isCheckedInReservation,
+      isCheckedOutReservation,
+      reservationInfo,
+      reservationFallback: table?.reservationFallback,
+      tableOrderId: tableOrder?.id ?? null,
+      tableOrderStatus: tableOrder?.status ?? null,
+    });
+  }, [
+    checkinButtonLabel,
+    isCheckedInReservation,
+    isCheckedOutReservation,
+    needsReservationConfirmation,
+    normalizedOrderStatus,
+    reservationInfo,
+    reservationStatus,
+    reservationStatusForCheckinFlow,
+    shouldShowReservedBadge,
+    table?.reservationFallback,
+    table?.tableNumber,
+    tableOrder?.id,
+    tableOrder?.status,
+  ]);
+
   return (
     <div
       key={table.tableNumber}
       onClick={handleCardClick}
       className={cx(
-        "group relative flex h-[276px] w-full max-w-[380px] self-start cursor-pointer flex-col justify-between overflow-hidden border-2 shadow-sm transition-all duration-150 hover:shadow-md",
+        "group relative flex h-[264px] w-full max-w-[380px] self-start cursor-pointer flex-col justify-between overflow-hidden border-2 shadow-sm transition-all duration-150 hover:shadow-md",
         CARD_RADIUS_CLASS,
         cardToneClass,
         isCallingWaiter && "ring-2 ring-red-500/80 animate-[pulse_2.4s_ease-in-out_infinite]"
@@ -599,42 +658,42 @@ function TableCard({
           </div>
         )}
 
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex flex-1 items-start">
-            {isFreeDisplay ? (
-              <div className="flex min-w-0 items-center gap-2">
-                {shouldShowReservedBadge ? (
-                  <span className="truncate text-sm font-bold tracking-tight text-black sm:text-[15px]">
-                    {tableLabelText} {String(table.tableNumber).padStart(2, "0")}
-                  </span>
-                ) : null}
-                <Pill className="border-slate-400 bg-slate-100 text-slate-700 shadow-none">
-                  {t("Free")}
-                </Pill>
-              </div>
-            ) : (
-              <div className="min-w-0 text-center">
-                <span className="truncate text-sm font-bold tracking-tight text-slate-800 sm:text-[15px]">
-                  {tableLabelText} {String(table.tableNumber).padStart(2, "0")}
+        <div
+          className={
+            shouldLeftAlignHeaderLabel
+              ? "flex items-start justify-between gap-2"
+              : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2"
+          }
+        >
+          <div className="flex min-w-0 flex-1 items-center">
+            {shouldLeftAlignHeaderLabel ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="min-w-0 text-sm font-semibold tracking-tight text-slate-700 sm:text-[17px]">
+                  {tableDisplayLabel}
                 </span>
               </div>
+            ) : isFreeDisplay ? (
+              <Pill className="border-slate-400 bg-slate-100 text-slate-700 shadow-none">
+                {t("Free")}
+              </Pill>
+            ) : null}
+          </div>
+
+          <div className="min-w-0 self-center text-center">
+            {!shouldLeftAlignHeaderLabel && (
+              <span className="block truncate text-sm font-bold tracking-tight text-slate-800 sm:text-[15px]">
+                {tableDisplayLabel}
+              </span>
             )}
           </div>
 
-          <div className="flex shrink-0 items-start gap-2">
-            <div className="text-right">
+          <div className="flex min-w-0 shrink-0 justify-end">
+            <div className="flex shrink-0 items-center gap-2">
               <div className="inline-flex items-center justify-center rounded-md bg-slate-900 px-2 py-1">
                 <div className="text-xs font-semibold tracking-tight text-white">
                   {displayTotal}
                 </div>
               </div>
-              {isPaidTable ? (
-                <div className="mt-2 flex justify-end">
-                  <Pill className="border-emerald-700 bg-emerald-700 text-white shadow-none">
-                    {fullyPaidStatusLabel}
-                  </Pill>
-                </div>
-              ) : null}
             </div>
           </div>
         </div>
@@ -675,61 +734,30 @@ function TableCard({
           )}
         </div>
 
-        <div className="mt-2 flex h-6 items-center justify-between gap-2">
+        <div className="mt-2 flex min-h-6 items-center gap-2">
           <div className="min-w-0 flex flex-1 items-center gap-2 overflow-hidden">
             {!isFreeDisplay && !shouldShowReservedBadge && showOrderStatusBadge ? (
               <span className={tableStatusClassName}>{orderStatusLabel}</span>
             ) : null}
-            {!isFreeDisplay &&
-            !shouldShowReservedBadge &&
-            shouldRenderKitchenStatuses &&
-            compactKitchenStatusBadges.length > 0 ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-1 overflow-hidden">
-                {compactKitchenStatusBadges}
-              </div>
-            ) : null}
           </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            {!isFreeDisplay && !shouldShowReservedBadge && shouldShowConfirmedTimer ? (
-              <Pill className="mt-1 border-indigo-900 bg-indigo-900 px-2 font-mono text-white">
-                <ElapsedTimer startTime={confirmedStartTime} />
-              </Pill>
-            ) : null}
-            {!isFreeDisplay && !shouldShowReservedBadge && showReadyAt ? (
-              <Pill
-                className={cx(
-                  "max-w-full font-bold",
-                  isOrderDelayed
-                    ? "border-amber-700 bg-amber-600 text-white"
-                    : "border-amber-600 bg-amber-500 text-white"
-                )}
-              >
-                {t("Ready at")} {readyAtLabel}
-              </Pill>
-            ) : null}
-          </div>
+          {!isFreeDisplay &&
+          shouldRenderKitchenStatuses &&
+          compactKitchenStatusBadges.length > 0 ? (
+            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-hidden">
+              {compactKitchenStatusBadges}
+            </div>
+          ) : null}
         </div>
 
         <div
           className={cx(
             "relative flex min-h-0 flex-1 flex-col",
-            isFreeDisplay && shouldShowReservedBadge ? "mt-0 gap-1" : "mt-2 gap-2"
+            isFreeDisplay && shouldShowReservedBadge
+                ? "mt-0 gap-1"
+                : "mt-2 gap-2"
           )}
         >
-          {isFreeDisplay && !shouldShowReservedBadge ? (
-            <div className="flex items-center justify-center">
-              <div className="min-w-0 text-center">
-                <span className="truncate text-base font-medium tracking-tight text-slate-500 sm:text-[24px]">
-                  {tableLabelText} {String(table.tableNumber).padStart(2, "0")}
-                </span>
-              </div>
-            </div>
-          ) : null}
-
-          {isFreeDisplay && !shouldShowReservedBadge ? (
-            <div className="min-h-0 flex-1" />
-          ) : null}
+          {isFreeDisplay && !shouldShowReservedBadge ? <div className="min-h-0 flex-1" /> : null}
 
           {shouldShowReservedBadge && (
             <div
@@ -756,12 +784,12 @@ function TableCard({
                   {(reservationInfo.customer_name || reservationInfo.customer_phone) && (
                     <div
                       className={cx(
-                        "flex min-w-0 flex-wrap items-center gap-2",
+                        "flex min-w-0 flex-col items-center justify-center gap-1 text-center",
                         reservationContactFrameClass
                       )}
                     >
                       {reservationInfo.customer_name && (
-                        <span className="truncate font-bold text-slate-800">
+                        <span className="max-w-full truncate font-bold text-slate-800">
                           {reservationInfo.customer_name}
                         </span>
                       )}
@@ -771,7 +799,7 @@ function TableCard({
                             href={reservationPhoneHref}
                             onClick={handlePhoneLinkClick}
                             className={cx(
-                              "truncate font-bold underline underline-offset-2",
+                              "max-w-full truncate font-bold underline underline-offset-2",
                               isCheckedInReservation
                                 ? "text-emerald-800 decoration-emerald-300 hover:text-emerald-900"
                                 : "text-blue-800 decoration-blue-300 hover:text-blue-900"
@@ -780,7 +808,7 @@ function TableCard({
                             {reservationInfo.customer_phone}
                           </a>
                         ) : (
-                          <span className="truncate font-bold">
+                          <span className="max-w-full truncate font-bold">
                             {reservationInfo.customer_phone}
                           </span>
                         ))}
@@ -830,18 +858,48 @@ function TableCard({
           )}
         </div>
 
+        {!isFreeDisplay &&
+        !shouldShowReservedBadge &&
+        (shouldShowConfirmedTimer || showReadyAt) ? (
+          <div className="mt-2 flex min-h-6 items-center justify-end gap-2">
+            {shouldShowConfirmedTimer ? (
+              <Pill className="border-indigo-900 bg-indigo-900 px-2 font-mono text-white">
+                <ElapsedTimer startTime={confirmedStartTime} />
+              </Pill>
+            ) : null}
+            {showReadyAt ? (
+              <Pill
+                className={cx(
+                  "max-w-full font-bold",
+                  isOrderDelayed
+                    ? "border-amber-700 bg-amber-600 text-white"
+                    : "border-amber-600 bg-amber-500 text-white"
+                )}
+              >
+                {t("Ready at")} {readyAtLabel}
+              </Pill>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200 pt-2">
           {showAreas ? (
             <Pill className="h-6 max-w-[55%] justify-start truncate border-slate-300 bg-slate-100 px-2 text-xs font-semibold text-slate-700 shadow-none">
-              📍 {formatAreaLabel(table.area)}
+              {formatAreaLabel(table.area)}
             </Pill>
           ) : (
             <span />
           )}
 
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <div className="ml-auto flex items-center justify-end gap-2 flex-nowrap">
+            {isFreeDisplay && !shouldShowReservedBadge && (
+              <Pill className="border-slate-400 bg-slate-100 text-slate-700 shadow-none">
+                {t("Free")}
+              </Pill>
+            )}
+
             {isCallingWaiter && (
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex items-center justify-end gap-2 flex-nowrap">
                 <Pill className="border-red-700 bg-red-600 text-white animate-pulse">
                   🔴 {t("Calling")}
                 </Pill>
@@ -855,24 +913,33 @@ function TableCard({
             )}
 
             {hasOrderActivity && (
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex items-center justify-end gap-2 flex-nowrap">
                 {hasUnpaidItems ? (
                   <Pill className="border-red-700 bg-red-600 text-white shadow-none">
                     {paidStatusLabel}
                   </Pill>
                 ) : isPaidTable ? (
-                  <ActionButton
-                    onClick={handleCloseClick}
-                    className="h-6 border-indigo-900 bg-indigo-900 px-2 text-xs font-semibold text-white hover:bg-indigo-950"
-                  >
-                    🔒 {t("Close")}
-                  </ActionButton>
+                  <div className="flex items-center gap-2 flex-nowrap">
+                    <Pill className="h-6 border-emerald-700 bg-emerald-700 text-white shadow-none">
+                      {fullyPaidStatusLabel}
+                    </Pill>
+                    <button
+                      type="button"
+                      onClick={handleCloseClick}
+                      className={cx(
+                        BADGE_BASE_CLASS,
+                        "border-indigo-900 bg-indigo-900 text-white shadow-none transition duration-150 hover:bg-indigo-950 active:scale-[0.99]"
+                      )}
+                    >
+                      {t("Close")}
+                    </button>
+                  </div>
                 ) : (
                   <ActionButton
                     onClick={handleCloseClick}
                     className="h-6 border-indigo-900 bg-indigo-900 px-2 text-xs font-semibold text-white hover:bg-indigo-950"
                   >
-                    🔒 {t("Close")}
+                    {t("Close")}
                   </ActionButton>
                 )}
               </div>
