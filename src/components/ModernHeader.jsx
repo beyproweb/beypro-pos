@@ -199,6 +199,7 @@ export default function ModernHeader({
   }, [
     t,
     tableLabelText,
+    canSeeDashboardTab,
     canSeeTakeawayTab,
     canSeeTablesTab,
     canSeeKitchenTab,
@@ -257,6 +258,7 @@ export default function ModernHeader({
       const base = "/tableoverview";
       const params = new URLSearchParams(location.search);
       params.set("tab", tabId);
+      params.delete("area");
       navigate(`${base}?${params.toString()}`);
     },
     [isExpensesRoute, location.search, navigate]

@@ -116,7 +116,7 @@ function TableOverviewRouteWrapper() {
   const tab = String(params.get("tab") || "tables").toLowerCase();
 
   const permissionByTab = {
-    tables: "tables",
+    tables: ["tables", "view-booking", "song-request"],
     kitchen: "kitchen",
     history: "history",
     packet: "packet-orders",

@@ -47,7 +47,7 @@ const MAX_VISIBLE_SIDEBAR_TABS = 9;
 
 const MENU = [
   { labelKey: "Dashboard", defaultLabel: "Dashboard", path: "/dashboard", icon: Home, permission: "dashboard", moduleKey: "page.dashboard" },
-  { labelKey: "Orders", defaultLabel: "Tables", path: "/tableoverview?tab=tables", icon: Grid2x2, permission: "tables", moduleKey: "page.tables" },
+  { labelKey: "Orders", defaultLabel: "Tables", path: "/tableoverview?tab=tables", icon: Grid2x2, permission: ["tables", "view-booking", "song-request"], moduleKey: "page.tables" },
   { labelKey: "Packet", defaultLabel: "Packet", path: "/tableoverview?tab=packet", icon: ShoppingBag, permission: "packet-orders", moduleKey: "page.packet_orders" },
   { labelKey: "History", defaultLabel: "History", path: "/tableoverview?tab=history", icon: BookOpen, permission: "history", moduleKey: "page.history" },
   { labelKey: "Phone", defaultLabel: "Phone", path: "/tableoverview?tab=phone", icon: Phone, permission: "phone-orders", moduleKey: "page.phone_orders" },

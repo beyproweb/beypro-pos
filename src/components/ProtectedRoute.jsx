@@ -33,8 +33,10 @@ export default function ProtectedRoute({ children, permission, moduleKey }) {
 
   // ✅ Direct permission check
   const perms = expandPermissionAliases(normalizePermissionList(currentUser.permissions));
-  const required = normalizePermissionKey(permission);
-  const allowed = perms.includes("all") || perms.includes(required);
+  const required = (Array.isArray(permission) ? permission : [permission])
+    .map((entry) => normalizePermissionKey(entry))
+    .filter(Boolean);
+  const allowed = perms.includes("all") || required.some((target) => perms.includes(target));
 
   console.log("   Result:", allowed ? "✅ Access granted" : "❌ Access denied");
 

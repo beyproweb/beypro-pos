@@ -1,10 +1,12 @@
 // src/components/OrderStatusScreen.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { io } from "socket.io-client";
-import { Navigation } from "lucide-react";
+import { Music2, Navigation } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import secureFetch, { getAuthToken, BASE_URL } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import CustomerOrderTrackingView from "./CustomerOrderTrackingView";
+import RequestSongTab from "../features/qrmenu/components/RequestSongTab";
 // Use the same base as secureFetch to avoid env drift
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
@@ -497,6 +499,41 @@ function OrderStatusHeader({ t, title, subtitle, meta, onBack }) {
   );
 }
 
+function StatusScreenTabs({ t, activeView, onSelect, showRequestSong }) {
+  if (!showRequestSong) return null;
+
+  const baseClass =
+    "inline-flex h-10 items-center justify-center rounded-xl px-3 text-sm font-medium transition";
+  const activeClass =
+    "bg-slate-900 text-white shadow-sm border border-slate-900";
+  const inactiveClass =
+    "border border-transparent bg-transparent text-slate-600 hover:bg-white hover:text-slate-900 dark:text-white dark:hover:bg-white/10 dark:hover:text-white";
+
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white/90 p-1 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="grid grid-cols-2 gap-1">
+        <button
+          type="button"
+          onClick={() => onSelect("status")}
+          className={[baseClass, activeView === "status" ? activeClass : inactiveClass].join(" ")}
+        >
+          {t("Order Status")}
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelect("request_song")}
+          className={[baseClass, activeView === "request_song" ? activeClass : inactiveClass].join(" ")}
+        >
+          <span className="inline-flex items-center gap-2">
+            <Music2 className="h-4 w-4" />
+            <span>{t("Request Song")}</span>
+          </span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function OrderProgressStepper({ t, currentStepIndex = 0, isCancelled = false }) {
   const steps = [
     { key: "received", label: t("Order received") },
@@ -865,7 +902,7 @@ const OrderStatusScreen = ({
   forceLock = false,
   forceDark,
   orderScreenStatus = null,
-  t = (s) => s,
+  t: providedT = null,
   buildUrl = (p) => p,
   appendIdentifier,
   checkoutCompletedView = false,
@@ -873,6 +910,8 @@ const OrderStatusScreen = ({
   hideNativeHeader = false,
   offsetForAppHeader = false,
 }) => {
+  const { t: hookT } = useTranslation();
+  const t = typeof providedT === "function" ? providedT : hookT;
   const normalizedOrderScreenStatus = normalizeReservationStatus(orderScreenStatus);
   const hasReservedStatusHint = ["reserved", "awaiting_confirm", "booking_confirm"].includes(
     normalizedOrderScreenStatus
@@ -885,6 +924,10 @@ const OrderStatusScreen = ({
   const [checkedInSticky, setCheckedInSticky] = useState(false);
   const [checkedOutSticky, setCheckedOutSticky] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+  const [activeScreenView, setActiveScreenView] = useState("status");
+  const [songRequests, setSongRequests] = useState([]);
+  const [songRequestName, setSongRequestName] = useState("");
+  const [songRequestSubmitting, setSongRequestSubmitting] = useState(false);
   const intervalRef = useRef(null);
   const joinedRestaurantRef = useRef(null);
   const driversCacheRef = useRef({ fetchedAtMs: 0, byId: new Map() });
@@ -902,6 +945,10 @@ const OrderStatusScreen = ({
     setItems([]);
     setOrder404(false);
     setIsTrackingOpen(false);
+    setActiveScreenView("status");
+    setSongRequests([]);
+    setSongRequestName("");
+    setSongRequestSubmitting(false);
   }, [orderId]);
 
   useEffect(() => {
@@ -1021,6 +1068,58 @@ const OrderStatusScreen = ({
     },
     [buildUrl, appendIdentifier]
   );
+
+  const fetchSongRequests = useCallback(async () => {
+    const restaurantId = Number(
+      order?.restaurant_id ?? order?.reservation?.restaurant_id ?? order?.reservation?.restaurantId ?? 0
+    );
+    const resolvedTableNo = Number(table ?? order?.table_number ?? order?.tableNumber ?? 0);
+
+    if (!Number.isFinite(restaurantId) || restaurantId <= 0) {
+      setSongRequests([]);
+      return;
+    }
+    if (!Number.isFinite(resolvedTableNo) || resolvedTableNo <= 0) {
+      setSongRequests([]);
+      return;
+    }
+
+    const { res, data } = await fetchJSON(
+      `/song-requests?restaurant_id=${restaurantId}&table_number=${resolvedTableNo}`
+    );
+    if (!res?.ok) return;
+    const rows = Array.isArray(data) ? data : Array.isArray(data?.requests) ? data.requests : [];
+    setSongRequests(rows);
+  }, [fetchJSON, order, table]);
+
+  const handleSongRequestSubmit = useCallback(async () => {
+    const restaurantId = Number(
+      order?.restaurant_id ?? order?.reservation?.restaurant_id ?? order?.reservation?.restaurantId ?? 0
+    );
+    const resolvedTableNo = Number(table ?? order?.table_number ?? order?.tableNumber ?? 0);
+    const trimmedSongName = String(songRequestName || "").trim();
+
+    if (!trimmedSongName) return;
+    if (!Number.isFinite(restaurantId) || restaurantId <= 0) return;
+    if (!Number.isFinite(resolvedTableNo) || resolvedTableNo <= 0) return;
+
+    setSongRequestSubmitting(true);
+    try {
+      const { res } = await fetchJSON("/song-requests", {
+        method: "POST",
+        body: JSON.stringify({
+          restaurant_id: restaurantId,
+          table_number: resolvedTableNo,
+          song_name: trimmedSongName,
+        }),
+      });
+      if (!res?.ok) return;
+      setSongRequestName("");
+      await fetchSongRequests();
+    } finally {
+      setSongRequestSubmitting(false);
+    }
+  }, [fetchJSON, fetchSongRequests, order, songRequestName, table]);
 
   const hydrateOrderDriverName = useCallback(
     async (orderData) => {
@@ -1576,6 +1675,48 @@ const OrderStatusScreen = ({
     hasReservationContext &&
     !canFinalizeReservation &&
     !isCancelledFlow;
+  const canShowRequestSongTab =
+    hasCheckedInSignal &&
+    isTableContextOrder &&
+    !hasCheckedOutSignal &&
+    !isCancelledFlow;
+
+  useEffect(() => {
+    if (canShowRequestSongTab) return;
+    setActiveScreenView("status");
+  }, [canShowRequestSongTab]);
+
+  useEffect(() => {
+    if (!canShowRequestSongTab) {
+      setSongRequests([]);
+      return;
+    }
+    fetchSongRequests();
+  }, [canShowRequestSongTab, fetchSongRequests]);
+
+  useEffect(() => {
+    if (!canShowRequestSongTab || !socket) return undefined;
+    const restaurantId = Number(
+      order?.restaurant_id ?? order?.reservation?.restaurant_id ?? order?.reservation?.restaurantId ?? 0
+    );
+    const handler = (payload = {}) => {
+      const payloadRestaurantId = Number(payload?.restaurant_id ?? payload?.restaurantId ?? 0);
+      if (
+        Number.isFinite(payloadRestaurantId) &&
+        payloadRestaurantId > 0 &&
+        Number.isFinite(restaurantId) &&
+        restaurantId > 0 &&
+        payloadRestaurantId !== restaurantId
+      ) {
+        return;
+      }
+      fetchSongRequests();
+    };
+    socket.on("song_request_updated", handler);
+    return () => {
+      socket.off("song_request_updated", handler);
+    };
+  }, [canShowRequestSongTab, fetchSongRequests, order]);
 
   const normalizeStatus = (s) => {
     const v = normalizeReservationStatus(s);
@@ -1768,8 +1909,8 @@ const OrderStatusScreen = ({
       {!hideNativeHeader ? (
         <OrderStatusHeader
           t={t}
-          title={t("Order Status")}
-          subtitle={restaurantName}
+          title={restaurantName || t("Order Status")}
+          subtitle=""
           meta={orderId ? t("Invoice #{{id}}", { id: orderId }) : null}
           onBack={typeof onClose === "function" ? () => onClose?.() : null}
         />
@@ -1777,80 +1918,99 @@ const OrderStatusScreen = ({
 
       <main className="mx-auto w-full max-w-[640px] px-4 pt-4 pb-[calc(104px+env(safe-area-inset-bottom))] sm:pb-8">
         <div className="space-y-4">
-          <OrderProgressStepper
+          <StatusScreenTabs
             t={t}
-            currentStepIndex={getCurrentStepIndex()}
-            isCancelled={isCancelledFlow}
+            activeView={activeScreenView}
+            onSelect={setActiveScreenView}
+            showRequestSong={canShowRequestSongTab}
           />
 
-          <OrderSummaryCard
-            t={t}
-            title={titleLine || t("Your Order")}
-            statusLabel={isCancelledFlow ? t("Cancelled") : displayStatus(effectiveOrderStatus)}
-            statusToneClass={badgeColor(effectiveOrderStatus)}
-            secondaryStatusLabel={secondaryStatusLabel}
-            secondaryStatusToneClass={effectiveSuborderStatus ? badgeColor(effectiveSuborderStatus) : ""}
-            headerActionLabel={shouldShowFollowOrder ? t("Follow my order") : ""}
-            onHeaderAction={shouldShowFollowOrder ? () => setIsTrackingOpen(true) : null}
-            driverMessage={driverMessage}
-            timerLabel={isCancelledFlow ? t("—") : `${timer}`}
-            paymentLabel={effectivePaymentLabel}
-            createdAtLabel={createdAtLabel}
-            reservedAtLabel={reservedAtLabel}
-            reservationGuestsLabel={reservationGuestsLabel}
-            totalLabel={formatCurrency(isReservedOrderContext ? visibleTotal : total)}
-            cancelReason={cancelReason}
-            isCancelled={isCancelledFlow}
-          />
-
-          {isReservedOrderContext ? <ReservationPendingBadge t={t} /> : null}
-
-          {!isReservedOrderContext ? (
-            <OrderItemsList
+          {activeScreenView === "request_song" && canShowRequestSongTab ? (
+            <RequestSongTab
               t={t}
-              items={visibleItems}
-              totalLabel={formatCurrency(visibleTotal)}
-              formatCurrency={formatCurrency}
-              badgeColor={badgeColor}
-              displayStatus={displayStatus}
-              pmLabel={pmLabel}
+              requests={songRequests}
+              songName={songRequestName}
+              onSongNameChange={setSongRequestName}
+              onSubmit={handleSongRequestSubmit}
+              submitting={songRequestSubmitting}
             />
-          ) : null}
+          ) : (
+            <>
+              <OrderProgressStepper
+                t={t}
+                currentStepIndex={getCurrentStepIndex()}
+                isCancelled={isCancelledFlow}
+              />
 
-          {showPaymentRequiredNotice ? (
-            <section className="rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
-              <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                {t("Payment required before Close or Check Out.")}
-              </div>
-            </section>
-          ) : null}
+              <OrderSummaryCard
+                t={t}
+                title={titleLine || t("Your Order")}
+                statusLabel={isCancelledFlow ? t("Cancelled") : displayStatus(effectiveOrderStatus)}
+                statusToneClass={badgeColor(effectiveOrderStatus)}
+                secondaryStatusLabel={secondaryStatusLabel}
+                secondaryStatusToneClass={effectiveSuborderStatus ? badgeColor(effectiveSuborderStatus) : ""}
+                headerActionLabel={shouldShowFollowOrder ? t("Follow my order") : ""}
+                onHeaderAction={shouldShowFollowOrder ? () => setIsTrackingOpen(true) : null}
+                driverMessage={driverMessage}
+                timerLabel={isCancelledFlow ? t("—") : `${timer}`}
+                paymentLabel={effectivePaymentLabel}
+                createdAtLabel={createdAtLabel}
+                reservedAtLabel={reservedAtLabel}
+                reservationGuestsLabel={reservationGuestsLabel}
+                totalLabel={formatCurrency(isReservedOrderContext ? visibleTotal : total)}
+                cancelReason={cancelReason}
+                isCancelled={isCancelledFlow}
+              />
 
-          {showCheckoutButton ? (
-            <InlineBottomActions
-              t={t}
-              primaryLabel={checkoutPending ? t("Checking Out...") : t("Check Out")}
-              secondaryLabel={typeof onClose === "function" ? t("Close") : undefined}
-              onPrimary={checkoutPending ? null : onCheckout}
-              onSecondary={
-                checkoutPending
-                  ? null
-                  : typeof onCheckout === "function"
-                    ? onCheckout
-                    : typeof onClose === "function"
-                      ? () => onClose?.({ allowForceClose: true })
-                      : undefined
-              }
-            />
-          ) : null}
+              {isReservedOrderContext ? <ReservationPendingBadge t={t} /> : null}
 
-          {!showCheckoutButton && showCloseButton ? (
-            <InlineBottomActions
-              t={t}
-              primaryLabel={t("Close")}
-              onPrimary={() => onClose?.({ allowForceClose: true })}
-            />
-          ) : null}
+              {!isReservedOrderContext ? (
+                <OrderItemsList
+                  t={t}
+                  items={visibleItems}
+                  totalLabel={formatCurrency(visibleTotal)}
+                  formatCurrency={formatCurrency}
+                  badgeColor={badgeColor}
+                  displayStatus={displayStatus}
+                  pmLabel={pmLabel}
+                />
+              ) : null}
 
+              {showPaymentRequiredNotice ? (
+                <section className="rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+                  <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                    {t("Payment required before Close or Check Out.")}
+                  </div>
+                </section>
+              ) : null}
+
+              {showCheckoutButton ? (
+                <InlineBottomActions
+                  t={t}
+                  primaryLabel={checkoutPending ? t("Checking Out...") : t("Check Out")}
+                  secondaryLabel={typeof onClose === "function" ? t("Close") : undefined}
+                  onPrimary={checkoutPending ? null : onCheckout}
+                  onSecondary={
+                    checkoutPending
+                      ? null
+                      : typeof onCheckout === "function"
+                        ? onCheckout
+                        : typeof onClose === "function"
+                          ? () => onClose?.({ allowForceClose: true })
+                          : undefined
+                  }
+                />
+              ) : null}
+
+              {!showCheckoutButton && showCloseButton ? (
+                <InlineBottomActions
+                  t={t}
+                  primaryLabel={t("Close")}
+                  onPrimary={() => onClose?.({ allowForceClose: true })}
+                />
+              ) : null}
+            </>
+          )}
         </div>
       </main>
 

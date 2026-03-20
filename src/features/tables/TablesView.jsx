@@ -1,7 +1,9 @@
 import React from "react";
+import { Phone } from "lucide-react";
 import { useTableTimers } from "./hooks/useTableTimers";
 import TableCard from "./TableCard";
 import VirtualTablesGrid from "./VirtualTablesGrid";
+import SongRequestsAdminTab from "../songRequests/SongRequestsAdminTab";
 import {
   RenderCounter,
   createProfilerOnRender,
@@ -21,6 +23,7 @@ const AREA_FILTER_UNPAID = "__UNPAID__";
 const AREA_FILTER_PAID = "__PAID__";
 const AREA_FILTER_FREE = "__FREE__";
 const AREA_FILTER_VIEW_BOOKING = "__VIEW_BOOKING__";
+const AREA_FILTER_SONG_REQUEST = "__SONG_REQUEST__";
 const formatDateInputValue = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
@@ -57,8 +60,20 @@ const normalizeBookingDate = (booking) => {
   return Number.isFinite(parsed.getTime()) ? formatDateInputValue(parsed) : "";
 };
 
+const getBookingStatusToneClass = (status) => {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (["confirmed", "checked_in", "checked-in"].includes(normalized)) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (["cancelled", "canceled"].includes(normalized)) {
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+  return "border-amber-200 bg-amber-50 text-amber-700";
+};
+
 function TablesView({
   showAreaTabs,
+  showStandardAreaTabs = true,
   activeArea,
   setActiveArea,
   groupedTables,
@@ -78,6 +93,13 @@ function TablesView({
   onReservationBookingUpdateStatus,
   onClearBookings,
   clearingBookings = false,
+  showSongRequestTab = false,
+  songRequests = [],
+  songRequestsLoading = false,
+  songRequestUpdatingId = null,
+  onApproveSongRequest,
+  onCompleteSongRequest,
+  onCancelSongRequest,
 }) {
   const renderCount = useRenderCount("TableList", { logEvery: 1 });
   const onTableListProfileRender = React.useMemo(() => createProfilerOnRender("TableList"), []);
@@ -174,14 +196,10 @@ function TablesView({
           );
         }
         if (activeArea === AREA_FILTER_UNPAID) {
-          return allTables.filter(
-            (table) => Boolean(table?.hasUnpaidItems) && !Boolean(table?.isFreeTable)
-          );
+          return allTables.filter((table) => table?.hasUnpaidItems && !table?.isFreeTable);
         }
         if (activeArea === AREA_FILTER_PAID) {
-          return allTables.filter(
-            (table) => Boolean(table?.isFullyPaid) && !Boolean(table?.isFreeTable)
-          );
+          return allTables.filter((table) => table?.isFullyPaid && !table?.isFreeTable);
         }
         if (activeArea === AREA_FILTER_FREE) {
           return allTables.filter(
@@ -189,6 +207,9 @@ function TablesView({
           );
         }
         if (activeArea === AREA_FILTER_VIEW_BOOKING) {
+          return [];
+        }
+        if (activeArea === AREA_FILTER_SONG_REQUEST) {
           return [];
         }
         return groupedTables[activeArea] || [];
@@ -216,16 +237,14 @@ function TablesView({
   const unpaidTablesCount = React.useMemo(
     () =>
       Array.isArray(tables)
-        ? tables.filter((table) => Boolean(table?.hasUnpaidItems) && !Boolean(table?.isFreeTable))
-            .length
+        ? tables.filter((table) => table?.hasUnpaidItems && !table?.isFreeTable).length
         : 0,
     [tables]
   );
   const paidTablesCount = React.useMemo(
     () =>
       Array.isArray(tables)
-        ? tables.filter((table) => Boolean(table?.isFullyPaid) && !Boolean(table?.isFreeTable))
-            .length
+        ? tables.filter((table) => table?.isFullyPaid && !table?.isFreeTable).length
         : 0,
     [tables]
   );
@@ -279,81 +298,85 @@ function TablesView({
         )}
       {showAreaTabs && (
         <div className="flex justify-center gap-3 flex-wrap mt-4 mb-10">
-          <button
-            onClick={() => handleAreaSelect(AREA_FILTER_ALL)}
-            className={getAreaTabClassName(
-              activeArea === AREA_FILTER_ALL,
-              "bg-indigo-600 text-white scale-[1.03] shadow-lg",
-              "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"
-            )}
-          >
-            {t("All Areas")}
-          </button>
+          {showStandardAreaTabs ? (
+            <>
+              <button
+                onClick={() => handleAreaSelect(AREA_FILTER_ALL)}
+                className={getAreaTabClassName(
+                  activeArea === AREA_FILTER_ALL,
+                  "bg-indigo-600 text-white scale-[1.03] shadow-lg",
+                  "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"
+                )}
+              >
+                {t("All Areas")}
+              </button>
 
-          {Object.keys(groupedTables).map((area) => (
-            <button
-              key={area}
-              onClick={() => handleAreaSelect(area)}
-              className={getAreaTabClassName(
-                activeArea === area,
-                "bg-blue-600 text-white scale-[1.03] shadow-lg",
-                "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"
-              )}
-            >
-              {area === "Hall"
-                ? ""
-                : area === "Main Hall"
-                ? ""
-                : area === "Terrace"
-                ? ""
-                : area === "Garden"
-                ? ""
-                : area === "VIP"
-                ? ""
-              : ""}{" "}
-              {formatAreaLabel(area)}
-            </button>
-          ))}
-          <button
-            onClick={() => handleAreaSelect(AREA_FILTER_RESERVED)}
-            className={getAreaTabClassName(
-              activeArea === AREA_FILTER_RESERVED,
-              "bg-amber-600 text-white scale-[1.03] shadow-lg",
-              "bg-white text-gray-700 border border-gray-300 hover:bg-amber-50"
-            )}
-          >
-            {t("Reserved")} ({reservedTablesCount})
-          </button>
-          <button
-            onClick={() => handleAreaSelect(AREA_FILTER_UNPAID)}
-            className={getAreaTabClassName(
-              activeArea === AREA_FILTER_UNPAID,
-              "bg-red-600 text-white scale-[1.03] shadow-lg",
-              "bg-white text-gray-700 border border-gray-300 hover:bg-red-50"
-            )}
-          >
-            {t("Unpaid")} ({unpaidTablesCount})
-          </button>
-          <button
-            onClick={() => handleAreaSelect(AREA_FILTER_PAID)}
-            className={getAreaTabClassName(
-              activeArea === AREA_FILTER_PAID,
-              "bg-emerald-600 text-white scale-[1.03] shadow-lg",
-              "bg-white text-gray-700 border border-gray-300 hover:bg-emerald-50"
-            )}
-          >
-            {t("Paid")} ({paidTablesCount})
-          </button>
-          <button
-            onClick={() => handleAreaSelect(AREA_FILTER_FREE)}
-            className={getAreaTabClassName(
-              activeArea === AREA_FILTER_FREE,
-              "bg-sky-600 text-white scale-[1.03] shadow-lg",
-              "bg-white text-gray-700 border border-gray-300 hover:bg-sky-50"
-            )}
-          >
-            {t("Free")} ({freeTablesCount})
-          </button>
+              {Object.keys(groupedTables).map((area) => (
+                <button
+                  key={area}
+                  onClick={() => handleAreaSelect(area)}
+                  className={getAreaTabClassName(
+                    activeArea === area,
+                    "bg-blue-600 text-white scale-[1.03] shadow-lg",
+                    "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"
+                  )}
+                >
+                  {area === "Hall"
+                    ? ""
+                    : area === "Main Hall"
+                    ? ""
+                    : area === "Terrace"
+                    ? ""
+                    : area === "Garden"
+                    ? ""
+                    : area === "VIP"
+                    ? ""
+                  : ""}{" "}
+                  {formatAreaLabel(area)}
+                </button>
+              ))}
+              <button
+                onClick={() => handleAreaSelect(AREA_FILTER_RESERVED)}
+                className={getAreaTabClassName(
+                  activeArea === AREA_FILTER_RESERVED,
+                  "bg-amber-600 text-white scale-[1.03] shadow-lg",
+                  "bg-white text-gray-700 border border-gray-300 hover:bg-amber-50"
+                )}
+              >
+                {t("Reserved")} ({reservedTablesCount})
+              </button>
+              <button
+                onClick={() => handleAreaSelect(AREA_FILTER_UNPAID)}
+                className={getAreaTabClassName(
+                  activeArea === AREA_FILTER_UNPAID,
+                  "bg-red-600 text-white scale-[1.03] shadow-lg",
+                  "bg-white text-gray-700 border border-gray-300 hover:bg-red-50"
+                )}
+              >
+                {t("Unpaid")} ({unpaidTablesCount})
+              </button>
+              <button
+                onClick={() => handleAreaSelect(AREA_FILTER_PAID)}
+                className={getAreaTabClassName(
+                  activeArea === AREA_FILTER_PAID,
+                  "bg-emerald-600 text-white scale-[1.03] shadow-lg",
+                  "bg-white text-gray-700 border border-gray-300 hover:bg-emerald-50"
+                )}
+              >
+                {t("Paid")} ({paidTablesCount})
+              </button>
+              <button
+                onClick={() => handleAreaSelect(AREA_FILTER_FREE)}
+                className={getAreaTabClassName(
+                  activeArea === AREA_FILTER_FREE,
+                  "bg-sky-600 text-white scale-[1.03] shadow-lg",
+                  "bg-white text-gray-700 border border-gray-300 hover:bg-sky-50"
+                )}
+              >
+                {t("Free")} ({freeTablesCount})
+              </button>
+            </>
+          ) : null}
           {showViewBookingTab ? (
             <button
               onClick={() => handleAreaSelect(AREA_FILTER_VIEW_BOOKING)}
@@ -364,6 +387,18 @@ function TablesView({
               )}
             >
               {t("View Booking")} ({rangeBookingCount})
+            </button>
+          ) : null}
+          {showSongRequestTab ? (
+            <button
+              onClick={() => handleAreaSelect(AREA_FILTER_SONG_REQUEST)}
+              className={getAreaTabClassName(
+                activeArea === AREA_FILTER_SONG_REQUEST,
+                "bg-fuchsia-600 text-white scale-[1.03] shadow-lg",
+                "bg-white text-gray-700 border border-gray-300 hover:bg-fuchsia-50"
+              )}
+            >
+              {t("Song Request")} ({Array.isArray(songRequests) ? songRequests.length : 0})
             </button>
           ) : null}
         </div>
@@ -407,7 +442,7 @@ function TablesView({
             {concertBookingsLoading ? (
               <div className="mt-3 text-sm text-gray-500">{t("Loading...")}</div>
             ) : filteredBookings.length > 0 ? (
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {filteredBookings.map((booking) => {
                   const source = String(booking?.booking_source || "").toLowerCase();
                   const isConcertBooking = source === "concert";
@@ -419,117 +454,194 @@ function TablesView({
                   const freeConcertTitle = reservationNotes.toLowerCase().startsWith("concert:")
                     ? reservationNotes.slice(8).trim()
                     : reservationNotes;
+                  const customerPhone = String(
+                    booking.customer_phone ?? booking.customerPhone ?? ""
+                  ).trim();
+                  const customerPhoneHref = customerPhone.replace(/[^\d+]/g, "");
+                  const bookingGuests = Number(
+                    booking.guests_count ??
+                      booking.guestsCount ??
+                      booking.reservation_clients ??
+                      0
+                  );
+                  const guestsLabel = Number.isFinite(bookingGuests) && bookingGuests > 0
+                    ? bookingGuests
+                    : Number(booking.quantity || 0) || 0;
+                  const bookingUnitPrice = Number(
+                    booking.unit_price ?? booking.unitPrice ?? 0
+                  );
+                  const bookingTotal = Number(
+                    booking.total_amount ?? booking.totalAmount ?? 0
+                  );
+                  const normalizedBookingType = String(
+                    booking.booking_type ?? booking.bookingType ?? ""
+                  ).toLowerCase();
+                  const derivedTotal =
+                    normalizedBookingType === "table" &&
+                    Number.isFinite(bookingUnitPrice) &&
+                    bookingUnitPrice > 0 &&
+                    Number.isFinite(guestsLabel) &&
+                    guestsLabel > 0
+                      ? bookingUnitPrice * guestsLabel
+                      : bookingTotal;
+                  const totalForDisplay = Number.isFinite(derivedTotal)
+                    ? derivedTotal
+                    : bookingTotal;
+                  const totalLabel = Number.isFinite(totalForDisplay)
+                    ? totalForDisplay.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    : "0.00";
+                  const reservationStatus = String(
+                    booking.status ?? booking.reservation_status ?? booking.reservationStatus ?? ""
+                  )
+                    .trim()
+                    .toLowerCase();
+                  const bookingStatusLabel = isConcertBooking
+                    ? String(booking.payment_status || "").trim().toLowerCase()
+                    : reservationStatus;
+                  const sourceLabel = isConcertLikeBooking
+                    ? booking.event_title || booking.artist_name || freeConcertTitle || t("Concert")
+                    : t("Reservation");
+                  const bookingDateLabel = String(
+                    booking.event_date || booking.reservation_date || ""
+                  )
+                    .trim()
+                    .slice(0, 10);
+                  const bookingTimeLabel = String(
+                    booking.event_time || booking.reservation_time || ""
+                  )
+                    .trim()
+                    .slice(0, 5);
+                  const tableLabel =
+                    booking.reserved_table_number || booking.table_number || null;
+                  const detailLabel = isConcertLikeBooking
+                    ? `${booking.booking_type || t("Reservation")} • ${
+                        Number(booking.quantity || 0) > 0
+                          ? booking.quantity
+                          : `${t("Guests")} ${guestsLabel}`
+                      }`
+                    : `${t("Reserved")} • ${t("Guests")} ${guestsLabel}`;
+                  const bookingKey =
+                    booking.booking_source === "reservation"
+                      ? `reservation-${
+                          booking.id ??
+                          booking.order_id ??
+                          booking.orderId ??
+                          `${booking.table_number ?? booking.tableNumber ?? "x"}-${
+                            booking.reservation_date ?? booking.reservationDate ?? "na"
+                          }-${booking.reservation_time ?? booking.reservationTime ?? "na"}`
+                        }`
+                      : `concert-${booking.id}`;
 
                   return (
-                  <div
-                    key={
-                      booking.booking_source === "reservation"
-                        ? `reservation-${
-                            booking.id ??
-                            booking.order_id ??
-                            booking.orderId ??
-                            `${booking.table_number ?? booking.tableNumber ?? "x"}-${
-                              booking.reservation_date ?? booking.reservationDate ?? "na"
-                            }-${booking.reservation_time ?? booking.reservationTime ?? "na"}`
-                          }`
-                        : `concert-${booking.id}`
-                    }
-                    className="rounded-xl border border-gray-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3"
-                  >
-                    <div className="min-w-[240px]">
-                      {(() => {
-                        const bookingGuests = Number(
-                          booking.guests_count ??
-                            booking.guestsCount ??
-                            booking.reservation_clients ??
-                            0
-                        );
-                        const guestsLabel = Number.isFinite(bookingGuests) && bookingGuests > 0
-                          ? bookingGuests
-                          : Number(booking.quantity || 0) || 0;
-                        const bookingUnitPrice = Number(
-                          booking.unit_price ?? booking.unitPrice ?? 0
-                        );
-                        const bookingTotal = Number(
-                          booking.total_amount ?? booking.totalAmount ?? 0
-                        );
-                        const normalizedBookingType = String(
-                          booking.booking_type ?? booking.bookingType ?? ""
-                        ).toLowerCase();
-                        const derivedTotal =
-                          normalizedBookingType === "table" &&
-                          Number.isFinite(bookingUnitPrice) &&
-                          bookingUnitPrice > 0 &&
-                          Number.isFinite(guestsLabel) &&
-                          guestsLabel > 0
-                            ? bookingUnitPrice * guestsLabel
-                            : bookingTotal;
-                        const totalForDisplay = Number.isFinite(derivedTotal)
-                          ? derivedTotal
-                          : bookingTotal;
-                        const totalLabel = Number.isFinite(totalForDisplay)
-                          ? totalForDisplay.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })
-                          : "0.00";
-                        const reservationStatus = String(
-                          booking.status ?? booking.reservation_status ?? booking.reservationStatus ?? ""
-                        )
-                          .trim()
-                          .toLowerCase();
-                        return (
-                          <>
-                      <div className="text-sm font-semibold text-slate-900">
-                        {booking.customer_name || "Guest"}
-                        {booking.customer_phone ? ` • ${booking.customer_phone}` : ""}
+                    <div
+                      key={bookingKey}
+                      className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-lg"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {sourceLabel}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+                            {booking.customer_name || "Guest"}
+                          </div>
+                          {customerPhone ? (
+                            <div className="mt-1 flex items-center gap-2 text-sm font-medium text-slate-600">
+                              <span>{customerPhone}</span>
+                              <a
+                                href={`tel:${customerPhoneHref || customerPhone}`}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+                                title={t("Call")}
+                                aria-label={`${t("Call")} ${customerPhone}`}
+                              >
+                                <Phone className="h-4 w-4" />
+                              </a>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {t("Table")}
+                          </div>
+                          <div className="mt-1 text-2xl font-bold text-slate-900">
+                            {tableLabel || "—"}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-600">
-                        {isConcertLikeBooking
-                          ? (booking.event_title || booking.artist_name || freeConcertTitle || t("Concert"))
-                          : t("Reservation")}
-                        {(booking.event_date || booking.reservation_date)
-                          ? ` • ${String(booking.event_date || booking.reservation_date).slice(0, 10)}`
-                          : ""}
-                        {(booking.event_time || booking.reservation_time)
-                          ? ` ${String(booking.event_time || booking.reservation_time).slice(0, 5)}`
-                          : ""}
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getBookingStatusToneClass(
+                            bookingStatusLabel
+                          )}`}
+                        >
+                          {t(bookingStatusLabel || "pending")}
+                        </span>
+                        <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                          {detailLabel}
+                        </span>
+                        {isConcertBooking ? (
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {t("Total")} {totalLabel}
+                          </span>
+                        ) : null}
+                        {booking.ticket_type_name ? (
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {booking.ticket_type_name}
+                          </span>
+                        ) : null}
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {isConcertLikeBooking
-                          ? `${booking.booking_type || t("Reservation")} • ${
-                              Number(booking.quantity || 0) > 0
-                                ? booking.quantity
-                                : `${t("Guests")} ${guestsLabel}`
-                            }`
-                          : `${t("Reserved")} • ${t("Guests")} ${guestsLabel}`}
-                        {isConcertBooking ? ` • ${t("Total")} ${totalLabel}` : ""}
-                        {booking.ticket_type_name ? ` • ${booking.ticket_type_name}` : ""}
-                        {(booking.reserved_table_number || booking.table_number)
-                          ? ` • ${t("Table")} ${booking.reserved_table_number || booking.table_number}`
-                          : ""}
-                        {isConcertBooking
-                          ? (booking.payment_status ? ` • ${booking.payment_status}` : "")
-                          : (reservationStatus ? ` • ${reservationStatus}` : "")}
-                      </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          booking.booking_source === "concert"
-                            ? onConcertBookingUpdateStatus?.(booking.id, "confirmed")
-                            : onReservationBookingUpdateStatus?.(booking, "confirmed")
-                        }
-                        disabled={
-                          booking.booking_source === "concert"
-                            ? concertBookingUpdatingId === booking.id ||
-                              String(booking.payment_status || "").toLowerCase() === "confirmed"
-                            : reservationAlreadyConfirmed ||
-                              reservationBookingUpdatingKey ===
+
+                      {(bookingDateLabel || bookingTimeLabel) ? (
+                        <div className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-500">
+                          <div>
+                            {bookingDateLabel}
+                            {bookingTimeLabel ? ` • ${bookingTimeLabel}` : ""}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="mt-5 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            booking.booking_source === "concert"
+                              ? onConcertBookingUpdateStatus?.(booking.id, "confirmed")
+                              : onReservationBookingUpdateStatus?.(booking, "confirmed")
+                          }
+                          disabled={
+                            booking.booking_source === "concert"
+                              ? concertBookingUpdatingId === booking.id ||
+                                String(booking.payment_status || "").toLowerCase() === "confirmed"
+                              : reservationAlreadyConfirmed ||
+                                reservationBookingUpdatingKey ===
+                                  String(
+                                    booking.id ??
+                                      booking.order_id ??
+                                      booking.orderId ??
+                                      booking.table_number ??
+                                      booking.tableNumber
+                                  )
+                          }
+                          className="inline-flex h-10 flex-1 items-center justify-center rounded-2xl bg-emerald-600 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {t("Confirm")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            booking.booking_source === "concert"
+                              ? onConcertBookingUpdateStatus?.(booking.id, "cancelled")
+                              : onReservationBookingUpdateStatus?.(booking, "cancelled")
+                          }
+                          disabled={
+                            booking.booking_source === "concert"
+                              ? concertBookingUpdatingId === booking.id ||
+                                String(booking.payment_status || "").toLowerCase() === "cancelled"
+                              : reservationBookingUpdatingKey ===
                                 String(
                                   booking.id ??
                                     booking.order_id ??
@@ -537,38 +649,15 @@ function TablesView({
                                     booking.table_number ??
                                     booking.tableNumber
                                 )
-                        }
-                        className="px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 text-xs font-semibold hover:bg-emerald-50 disabled:opacity-60"
-                      >
-                        {t("Confirm")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          booking.booking_source === "concert"
-                            ? onConcertBookingUpdateStatus?.(booking.id, "cancelled")
-                            : onReservationBookingUpdateStatus?.(booking, "cancelled")
-                        }
-                        disabled={
-                          booking.booking_source === "concert"
-                            ? concertBookingUpdatingId === booking.id ||
-                              String(booking.payment_status || "").toLowerCase() === "cancelled"
-                            : reservationBookingUpdatingKey ===
-                              String(
-                                booking.id ??
-                                  booking.order_id ??
-                                  booking.orderId ??
-                                  booking.table_number ??
-                                  booking.tableNumber
-                              )
-                        }
-                        className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs font-semibold hover:bg-rose-50 disabled:opacity-60"
-                      >
-                        {t("Cancel")}
-                      </button>
+                          }
+                          className="inline-flex h-10 flex-1 items-center justify-center rounded-2xl bg-rose-600 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {t("Cancel")}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )})}
+                  );
+                })}
               </div>
             ) : (
               <div className="mt-3 text-sm text-gray-500">
@@ -579,14 +668,31 @@ function TablesView({
         </div>
       ) : null}
 
-      <VirtualTablesGrid
-        items={visibleTables}
-        renderItem={renderTable}
-        itemKey={getTableKey}
-        estimatedItemHeight={300}
-        overscan={6}
-        className="w-full flex justify-center px-4 sm:px-8"
-      />
+      {activeArea === AREA_FILTER_SONG_REQUEST ? (
+        <div className="w-full max-w-7xl px-4 sm:px-8 pb-4">
+          <SongRequestsAdminTab
+            t={t}
+            requests={songRequests}
+            tables={tables}
+            loading={songRequestsLoading}
+            updatingId={songRequestUpdatingId}
+            onApprove={onApproveSongRequest}
+            onComplete={onCompleteSongRequest}
+            onCancel={onCancelSongRequest}
+          />
+        </div>
+      ) : null}
+
+      {activeArea !== AREA_FILTER_VIEW_BOOKING && activeArea !== AREA_FILTER_SONG_REQUEST ? (
+        <VirtualTablesGrid
+          items={visibleTables}
+          renderItem={renderTable}
+          itemKey={getTableKey}
+          estimatedItemHeight={300}
+          overscan={6}
+          className="w-full flex justify-center px-4 sm:px-8"
+        />
+      ) : null}
       </div>
     </React.Profiler>
   );
@@ -595,6 +701,7 @@ function TablesView({
 const areTablesViewPropsEqual = (prevProps, nextProps) => {
   const isEqual =
     prevProps.showAreaTabs === nextProps.showAreaTabs &&
+    prevProps.showStandardAreaTabs === nextProps.showStandardAreaTabs &&
     prevProps.activeArea === nextProps.activeArea &&
     prevProps.setActiveArea === nextProps.setActiveArea &&
     prevProps.groupedTables === nextProps.groupedTables &&
@@ -613,7 +720,14 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
     prevProps.onConcertBookingUpdateStatus === nextProps.onConcertBookingUpdateStatus &&
     prevProps.onReservationBookingUpdateStatus === nextProps.onReservationBookingUpdateStatus &&
     prevProps.onClearBookings === nextProps.onClearBookings &&
-    prevProps.clearingBookings === nextProps.clearingBookings;
+    prevProps.clearingBookings === nextProps.clearingBookings &&
+    prevProps.showSongRequestTab === nextProps.showSongRequestTab &&
+    prevProps.songRequests === nextProps.songRequests &&
+    prevProps.songRequestsLoading === nextProps.songRequestsLoading &&
+    prevProps.songRequestUpdatingId === nextProps.songRequestUpdatingId &&
+    prevProps.onApproveSongRequest === nextProps.onApproveSongRequest &&
+    prevProps.onCompleteSongRequest === nextProps.onCompleteSongRequest &&
+    prevProps.onCancelSongRequest === nextProps.onCancelSongRequest;
 
   if (!isEqual) {
     logMemoDiff({
@@ -622,6 +736,7 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
       nextProps,
       watchedProps: [
         "showAreaTabs",
+        "showStandardAreaTabs",
         "activeArea",
         "setActiveArea",
         "groupedTables",
@@ -641,6 +756,13 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
         "onReservationBookingUpdateStatus",
         "onClearBookings",
         "clearingBookings",
+        "showSongRequestTab",
+        "songRequests",
+        "songRequestsLoading",
+        "songRequestUpdatingId",
+        "onApproveSongRequest",
+        "onCompleteSongRequest",
+        "onCancelSongRequest",
       ],
     });
   }

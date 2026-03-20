@@ -10,6 +10,7 @@ function Header({
   reservationEnabled = true,
   tableEnabled = true,
   deliveryEnabled = true,
+  requestSongEnabled = false,
   activeOrderType = "takeaway",
   statusShortcutCount = 0,
   statusShortcutEnabled = false,
@@ -49,6 +50,7 @@ function Header({
             reservationEnabled={reservationEnabled}
             tableEnabled={tableEnabled}
             deliveryEnabled={deliveryEnabled}
+            requestSongEnabled={requestSongEnabled}
             activeOrderType={activeOrderType}
             statusShortcutCount={statusShortcutCount}
             statusShortcutEnabled={statusShortcutEnabled}

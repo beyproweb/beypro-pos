@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import OrderStatusScreen, { useSocketIO as useOrderSocket } from "../components/OrderStatusScreen";
 import ModernTableSelector from "../components/ModernTableSelector";
 import MenuProductsSection from "../features/qrmenu/components/MenuProductsSection";
+import RequestSongTab from "../features/qrmenu/components/RequestSongTab";
 import ProductModal from "../features/qrmenu/components/modals/ProductModal";
 import CartModal from "../features/qrmenu/components/modals/CartModal";
 import CheckoutModal from "../features/qrmenu/components/modals/CheckoutModal";
@@ -1229,6 +1230,18 @@ const DICT = {
     "Cash at Table": "Cash at Table",
     "Clear New Items": "Clear New Items",
     "Link copied.": "Link copied.",
+    "Request Song": "Request Song",
+    "Add a song to the queue": "Add a song to the queue",
+    "Enter a song name and follow its queue number and live status updates here.": "Enter a song name and follow its queue number and live status updates here.",
+    "Song name": "Song name",
+    "Enter song name": "Enter song name",
+    "Send Request": "Send Request",
+    "Sending...": "Sending...",
+    "Song request controls will appear here for checked-in guests.": "Song request controls will appear here for checked-in guests.",
+    "Requests": "Requests",
+    "No song requests yet.": "No song requests yet.",
+    "Unknown song": "Unknown song",
+    "Queue": "Queue",
     // ✅ Added translations
     "Share QR Menu": "Share QR Menu",
     "Save QR Menu to Phone": "Save QR Menu to Phone",
@@ -1531,6 +1544,18 @@ const DICT = {
     "Cash at Table": "Masada Nakit",
     "Clear New Items": "Yeni Ürünleri Temizle",
     "Link copied.": "Bağlantı kopyalandı.",
+    "Request Song": "Şarkı İste",
+    "Add a song to the queue": "Sıraya bir şarkı ekle",
+    "Enter a song name and follow its queue number and live status updates here.": "Bir şarkı adı girin, sıra numarasını ve canlı durum güncellemelerini buradan takip edin.",
+    "Song name": "Şarkı adı",
+    "Enter song name": "Şarkı adını girin",
+    "Send Request": "İsteği Gönder",
+    "Sending...": "Gönderiliyor...",
+    "Song request controls will appear here for checked-in guests.": "Şarkı istek kontrolleri check-in yapan misafirler için burada görünecek.",
+    "Requests": "İstekler",
+    "No song requests yet.": "Henüz şarkı isteği yok.",
+    "Unknown song": "Bilinmeyen şarkı",
+    "Queue": "Sıra",
     // ✅ Added translations
     "Share QR Menu": "QR Menüyü Paylaş",
     "Save QR Menu to Phone": "QR Menüyü Telefona Kaydet",
@@ -1844,6 +1869,18 @@ const DICT = {
     "Unable to load live tracking right now.": "Die Live-Verfolgung kann derzeit nicht geladen werden.",
     "Live route": "Live-Route",
     "Loading live tracking...": "Live-Verfolgung wird geladen...",
+    "Request Song": "Song wünschen",
+    "Add a song to the queue": "Einen Song zur Warteschlange hinzufügen",
+    "Enter a song name and follow its queue number and live status updates here.": "Gib einen Songnamen ein und verfolge hier seine Warteschlangennummer und Live-Statusupdates.",
+    "Song name": "Songname",
+    "Enter song name": "Songnamen eingeben",
+    "Send Request": "Anfrage senden",
+    "Sending...": "Wird gesendet...",
+    "Song request controls will appear here for checked-in guests.": "Die Songwunsch-Steuerung erscheint hier für eingecheckte Gäste.",
+    "Requests": "Anfragen",
+    "No song requests yet.": "Noch keine Songwünsche.",
+    "Unknown song": "Unbekannter Song",
+    "Queue": "Warteschlange",
     "Your destination": "Ihr Zielort",
     "We are preparing the tracking view. Status and ETA will keep updating here.": "Wir bereiten die Tracking-Ansicht vor. Status und ETA werden hier weiter aktualisiert.",
     "Route progress": "Routenfortschritt",
@@ -2045,6 +2082,18 @@ const DICT = {
     "Unable to load live tracking right now.": "Impossible de charger le suivi en direct pour le moment.",
     "Live route": "Itinéraire en direct",
     "Loading live tracking...": "Chargement du suivi en direct...",
+    "Request Song": "Demander une chanson",
+    "Add a song to the queue": "Ajouter une chanson à la file",
+    "Enter a song name and follow its queue number and live status updates here.": "Saisissez un nom de chanson et suivez ici son numéro dans la file ainsi que les mises à jour en direct.",
+    "Song name": "Nom de la chanson",
+    "Enter song name": "Saisir le nom de la chanson",
+    "Send Request": "Envoyer la demande",
+    "Sending...": "Envoi...",
+    "Song request controls will appear here for checked-in guests.": "Les commandes de demande de chanson apparaîtront ici pour les clients enregistrés.",
+    "Requests": "Demandes",
+    "No song requests yet.": "Aucune demande de chanson pour le moment.",
+    "Unknown song": "Chanson inconnue",
+    "Queue": "File",
     "Your destination": "Votre destination",
     "We are preparing the tracking view. Status and ETA will keep updating here.": "Nous préparons l'affichage du suivi. Le statut et l'heure estimée continueront de se mettre à jour ici.",
     "Route progress": "Progression de l'itinéraire",
@@ -6036,10 +6085,29 @@ export default function QrMenu() {
     isReservationPendingCheckIn(activeOrder, normalizedActiveOrderStatus) &&
     Number.isFinite(resolvedTableForActions) &&
     resolvedTableForActions > 0;
+  const requestSongEnabled =
+    resolvedOrderTypeForActions === "table" &&
+    Number.isFinite(resolvedTableForActions) &&
+    resolvedTableForActions > 0 &&
+    (
+      activeOrder?.checked_in === true ||
+      activeOrder?.reservation?.checked_in === true ||
+      isCheckedInReservationStatus(orderScreenStatus) ||
+      isCheckedInReservationStatus(activeOrder?.status) ||
+      isCheckedInReservationStatus(activeOrder?.reservation?.status) ||
+      isCheckedInReservationStatus(activeOrder?.reservation_status) ||
+      isCheckedInReservationStatus(activeOrder?.reservationStatus)
+    );
+  const [isRequestSongViewOpen, setIsRequestSongViewOpen] = useState(false);
   const reservationPendingCheckInMessage = t("Items can be added after check-in.");
   const showReservationPendingCheckInMessage = useCallback(() => {
     alert(reservationPendingCheckInMessage);
   }, [reservationPendingCheckInMessage]);
+
+  useEffect(() => {
+    if (requestSongEnabled) return;
+    setIsRequestSongViewOpen(false);
+  }, [requestSongEnabled]);
 
   const showCallWaiterButton =
     (!showHome || showStatus) &&
@@ -6259,19 +6327,26 @@ export default function QrMenu() {
     };
   }, [isDarkMain, storage]);
   const sharedHeaderOrderType = useMemo(() => {
+    if (isRequestSongViewOpen && requestSongEnabled) return "request_song";
     const normalized = String(orderType || "").toLowerCase();
     if (normalized === "table") return "table";
     if (normalized === "online") return "online";
     return "takeaway";
-  }, [orderType]);
+  }, [isRequestSongViewOpen, orderType, requestSongEnabled]);
   const shouldShowTableOrderHeader = !showStatus && sharedHeaderOrderType === "table";
   const shouldShowInnerOrderHeader = !showStatus && sharedHeaderOrderType !== "table";
   const handleSharedHeaderOrderTypeSelect = useCallback(
     (nextType) => {
       if (!nextType) return;
+      if (nextType === "request_song") {
+        if (!requestSongEnabled) return;
+        setIsRequestSongViewOpen(true);
+        return;
+      }
+      setIsRequestSongViewOpen(false);
       triggerOrderType(nextType);
     },
-    [triggerOrderType]
+    [requestSongEnabled, triggerOrderType]
   );
   const handleEditCartItem = useCallback(
     (item) => {
@@ -6360,6 +6435,7 @@ export default function QrMenu() {
     setEditingCartItemId(null);
     setSelectedProduct(null);
     setQrVoiceModalOpen(false);
+    setIsRequestSongViewOpen(false);
     setForceHome(true);
     handleCloseAppHeaderDrawer();
     if (typeof window !== "undefined") {
@@ -6385,6 +6461,7 @@ export default function QrMenu() {
     // Ensure status overlay is dismissed before opening cart to avoid open/close flicker.
     setShowStatus(false);
     storage.setItem("qr_show_status", "0");
+    setIsRequestSongViewOpen(false);
     // Rehydrate when there are no pending new items; locked-only cart can be stale
     // right after sub-order submit and must be refreshed from server.
     if (cartNewItemsCount === 0 && hasActiveOrder) {
@@ -7386,6 +7463,7 @@ export default function QrMenu() {
                   reservationEnabled={shopIsOpen && !hasActiveDeliveryLock}
                   tableEnabled={shopIsOpen && !hasActiveDeliveryLock && allowTableOrder}
                   deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true) && shopIsOpen}
+                  requestSongEnabled={requestSongEnabled}
                   activeOrderType={sharedHeaderOrderType}
                   statusShortcutCount={statusShortcutCount}
                   statusShortcutEnabled={statusShortcutEnabled}
@@ -7457,23 +7535,27 @@ export default function QrMenu() {
                   </aside>
                 )}
 
-                <MenuProductsSection
-                  categories={hideAllQrProducts ? [] : categories}
-                  activeCategory={activeCategory}
-                  categoryImages={categoryImages}
-                  products={hideAllQrProducts ? [] : productsForGrid}
-                  onSelectCategory={handleMenuCategorySelect}
-                  onCategoryClick={handleMenuCategoryClick}
-                  onOpenProduct={(product) => {
-                    if (reservationPendingCheckIn) {
-                      showReservationPendingCheckInMessage();
-                      return;
-                    }
-                    handleMenuProductOpen(product);
-                  }}
-                  t={t}
-                  apiUrl={API_URL}
-                />
+                {isRequestSongViewOpen && requestSongEnabled ? (
+                  <RequestSongTab t={t} />
+                ) : (
+                  <MenuProductsSection
+                    categories={hideAllQrProducts ? [] : categories}
+                    activeCategory={activeCategory}
+                    categoryImages={categoryImages}
+                    products={hideAllQrProducts ? [] : productsForGrid}
+                    onSelectCategory={handleMenuCategorySelect}
+                    onCategoryClick={handleMenuCategoryClick}
+                    onOpenProduct={(product) => {
+                      if (reservationPendingCheckIn) {
+                        showReservationPendingCheckInMessage();
+                        return;
+                      }
+                      handleMenuProductOpen(product);
+                    }}
+                    t={t}
+                    apiUrl={API_URL}
+                  />
+                )}
               </div>
             </div>
           </div>

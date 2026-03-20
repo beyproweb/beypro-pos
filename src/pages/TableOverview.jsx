@@ -237,6 +237,19 @@ const TAB_LIST = [
   { id: "register", label: "Register", icon: "💵" },
 ];
 
+const AREA_FILTER_ALL = "ALL";
+const AREA_FILTER_VIEW_BOOKING = "__VIEW_BOOKING__";
+const AREA_FILTER_SONG_REQUEST = "__SONG_REQUEST__";
+
+const isSpecialTableArea = (value) =>
+  value === AREA_FILTER_VIEW_BOOKING || value === AREA_FILTER_SONG_REQUEST;
+
+const getTableOverviewAreaFromSearch = (search = "") => {
+  const params = new URLSearchParams(search);
+  const requested = String(params.get("area") || "");
+  return isSpecialTableArea(requested) ? requested : AREA_FILTER_ALL;
+};
+
 const getRestaurantScopedCacheKey = (suffix) => {
   const restaurantId =
     (typeof window !== "undefined" && window?.localStorage?.getItem("restaurant_id")) ||
@@ -407,6 +420,10 @@ export default function TableOverview() {
     const params = new window.URLSearchParams(location.search);
     return String(params.get("tab") || "tables").toLowerCase();
   }, [location.search]);
+  const requestedAreaFromUrl = React.useMemo(
+    () => getTableOverviewAreaFromSearch(location.search),
+    [location.search]
+  );
 
   const activeTab = tabFromUrl;
   const [useStressData, setUseStressData] = useState(false);
@@ -448,14 +465,18 @@ export default function TableOverview() {
   const { setHeader } = useHeader();
   const { customerCalls, acknowledgeCustomerCall, resolveCustomerCall } = useNotifications();
   // compute permissions once at top level (avoid calling hooks inside loops)
-  const canSeeTablesTab = useHasPermission("tables");
+  const canSeeTablesGrid = useHasPermission("tables");
+  const canSeeViewBookingTab = useHasPermission("view-booking");
+  const canSeeSongRequestTab = useHasPermission("song-request");
+  const canSeeTablesTab =
+    canSeeTablesGrid || canSeeViewBookingTab || canSeeSongRequestTab;
   const canSeeKitchenTab = useHasPermission("kitchen");
   const canSeeHistoryTab = useHasPermission("history");
 const canSeePacketTab = useHasPermission("packet-orders");
   const canSeePhoneTab = useHasPermission("phone-orders");
   const canSeeRegisterTab = useHasPermission("register");
   const canSeeTakeawayTab = useHasPermission("takeaway");
-const [activeArea, setActiveArea] = useState("ALL");
+const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
   const [hasUpcomingConcerts, setHasUpcomingConcerts] = useState(false);
   const [concertBookings, setConcertBookings] = useState([]);
   const [concertBookingsLoading, setConcertBookingsLoading] = useState(false);
@@ -465,6 +486,9 @@ const [activeArea, setActiveArea] = useState("ALL");
   const [reservationBookingsOverview, setReservationBookingsOverview] = useState([]);
   const [reservationBookingsLoading, setReservationBookingsLoading] = useState(false);
   const [reservationBookingUpdatingKey, setReservationBookingUpdatingKey] = useState(null);
+  const [songRequests, setSongRequests] = useState([]);
+  const [songRequestsLoading, setSongRequestsLoading] = useState(false);
+  const [songRequestUpdatingId, setSongRequestUpdatingId] = useState(null);
   const {
     ordersByTable: ordersByTableRaw,
     setOrders,
@@ -499,10 +523,6 @@ const [activeArea, setActiveArea] = useState("ALL");
       ),
     [reservationBookingsOverview, suppressedBookingKeys]
   );
-  const showBookingTab =
-    visibleConcertBookingsOverview.length > 0 ||
-    visibleReservationBookingsOverview.length > 0;
-
   const handleLoadStressData = useCallback(() => {
     const generated = generateTableOverviewStressData(DEFAULT_STRESS_CONFIG);
     setStressDataset(generated);
@@ -1939,6 +1959,33 @@ const handleCheckinReservation = useCallback(
     [location.search, navigate]
   );
 
+  const syncTableAreaInUrl = useCallback(
+    (nextArea, options = {}) => {
+      const replace = options?.replace === true;
+      const params = new window.URLSearchParams(location.search);
+      if (isSpecialTableArea(nextArea)) {
+        params.set("area", nextArea);
+      } else {
+        params.delete("area");
+      }
+      const nextSearch = params.toString();
+      const currentSearch = location.search.startsWith("?")
+        ? location.search.slice(1)
+        : location.search;
+      if (nextSearch === currentSearch) return;
+      navigate(`/tableoverview${nextSearch ? `?${nextSearch}` : ""}`, { replace });
+    },
+    [location.search, navigate]
+  );
+
+  const handleAreaSelect = useCallback(
+    (nextArea, options = {}) => {
+      setActiveArea(nextArea);
+      syncTableAreaInUrl(nextArea, options);
+    },
+    [syncTableAreaInUrl]
+  );
+
   useEffect(() => {
     if (!location.pathname.includes("tableoverview")) return;
     if (visibleTabs.length === 0) return;
@@ -1965,6 +2012,48 @@ const getRestaurantIdForBatch = useCallback(() => {
     return "";
   }
 }, []);
+
+const fetchSongRequests = useCallback(async () => {
+  const restaurantId = getRestaurantIdForBatch();
+  if (!restaurantId) {
+    setSongRequests([]);
+    return;
+  }
+
+  setSongRequestsLoading(true);
+  try {
+    const data = await secureFetch(`/song-requests?restaurant_id=${encodeURIComponent(restaurantId)}`);
+    const rows = Array.isArray(data) ? data : Array.isArray(data?.requests) ? data.requests : [];
+    setSongRequests(rows);
+  } catch (err) {
+    console.error("❌ Failed to fetch song requests:", err);
+    setSongRequests([]);
+  } finally {
+    setSongRequestsLoading(false);
+  }
+}, [getRestaurantIdForBatch]);
+
+const updateSongRequestStatus = useCallback(
+  async (request, status) => {
+    const requestId = Number(request?.id);
+    if (!Number.isFinite(requestId) || requestId <= 0) return;
+
+    setSongRequestUpdatingId(requestId);
+    try {
+      await secureFetch(`/song-requests/${requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      await fetchSongRequests();
+    } catch (err) {
+      console.error(`❌ Failed to ${status} song request:`, err);
+      toast.error(t("Failed to update song request"));
+    } finally {
+      setSongRequestUpdatingId(null);
+    }
+  },
+  [fetchSongRequests, t]
+);
 
 const normalizeOpenOrderItem = useCallback((item) => {
   if (!item || typeof item !== "object") return item;
@@ -2940,16 +3029,74 @@ useEffect(() => {
   ]);
 
   useEffect(() => {
-    if (tableSettings.showAreas !== false) return;
-    if (activeArea !== "ALL") setActiveArea("ALL");
-  }, [tableSettings.showAreas, activeArea]);
+    if (activeTab !== "tables") return;
+    const limitedAreas = [
+      ...(canSeeViewBookingTab ? [AREA_FILTER_VIEW_BOOKING] : []),
+      ...(canSeeSongRequestTab ? [AREA_FILTER_SONG_REQUEST] : []),
+    ];
+
+    if (!canSeeTablesGrid && limitedAreas.length > 0) {
+      const nextArea = limitedAreas.includes(requestedAreaFromUrl)
+        ? requestedAreaFromUrl
+        : limitedAreas[0];
+      if (activeArea !== nextArea) {
+        setActiveArea(nextArea);
+      }
+      if (requestedAreaFromUrl !== nextArea) {
+        syncTableAreaInUrl(nextArea, { replace: true });
+      }
+      return;
+    }
+
+    if (isSpecialTableArea(requestedAreaFromUrl) && activeArea !== requestedAreaFromUrl) {
+      setActiveArea(requestedAreaFromUrl);
+      return;
+    }
+
+    if (requestedAreaFromUrl === AREA_FILTER_ALL && isSpecialTableArea(activeArea)) {
+      setActiveArea(AREA_FILTER_ALL);
+    }
+  }, [
+    activeArea,
+    activeTab,
+    canSeeSongRequestTab,
+    canSeeTablesGrid,
+    canSeeViewBookingTab,
+    requestedAreaFromUrl,
+    syncTableAreaInUrl,
+  ]);
 
   useEffect(() => {
-    if (showBookingTab) return;
-    if (activeArea === "__VIEW_BOOKING__") {
-      setActiveArea("ALL");
+    if (tableSettings.showAreas !== false || !canSeeTablesGrid) return;
+    if (activeArea === AREA_FILTER_ALL || isSpecialTableArea(activeArea)) return;
+    handleAreaSelect(AREA_FILTER_ALL, { replace: true });
+  }, [tableSettings.showAreas, canSeeTablesGrid, activeArea, handleAreaSelect]);
+
+  useEffect(() => {
+    if (activeArea === AREA_FILTER_VIEW_BOOKING && !canSeeViewBookingTab) {
+      handleAreaSelect(
+        !canSeeTablesGrid && canSeeSongRequestTab
+          ? AREA_FILTER_SONG_REQUEST
+          : AREA_FILTER_ALL,
+        { replace: true }
+      );
+      return;
     }
-  }, [activeArea, showBookingTab]);
+    if (activeArea === AREA_FILTER_SONG_REQUEST && !canSeeSongRequestTab) {
+      handleAreaSelect(
+        !canSeeTablesGrid && canSeeViewBookingTab
+          ? AREA_FILTER_VIEW_BOOKING
+          : AREA_FILTER_ALL,
+        { replace: true }
+      );
+    }
+  }, [
+    activeArea,
+    canSeeSongRequestTab,
+    canSeeTablesGrid,
+    canSeeViewBookingTab,
+    handleAreaSelect,
+  ]);
 
   // If the app stays open across midnight, refresh tables so reservations appear on their day.
   useEffect(() => {
@@ -3080,6 +3227,7 @@ const handleGuestsChange = useCallback(
       const fastTablesOnly = options?.fastTablesOnly === true;
       if (tab === "tables") {
         fetchOrders(fastTablesOnly ? { skipHydration: true } : undefined);
+        fetchSongRequests();
         if (!fastTablesOnly) {
           fetchTableConfigs();
         }
@@ -3104,6 +3252,7 @@ const handleGuestsChange = useCallback(
       fetchKitchenOpenOrders,
       fetchOrders,
       fetchPacketOrders,
+      fetchSongRequests,
       fetchTableConfigs,
       fetchTakeawayOrders,
     ]
@@ -3519,6 +3668,7 @@ useEffect(() => {
   socket.on("payment_made", onPaymentMadeSocket);
   socket.on("order_cancelled", onOrderCancelledSocket);
   socket.on("reservation_checked_out", onReservationCheckedOutSocket);
+  socket.on("song_request_updated", fetchSongRequests);
   // ⚡ Immediate local refreshes (dispatched from TransactionScreen)
   const handleLocalRefresh = (event) => {
     const didPatch = applyLocalOrderStatusPatch(event?.detail);
@@ -3545,11 +3695,13 @@ useEffect(() => {
     socket.off("payment_made", onPaymentMadeSocket);
     socket.off("order_cancelled", onOrderCancelledSocket);
     socket.off("reservation_checked_out", onReservationCheckedOutSocket);
+    socket.off("song_request_updated", fetchSongRequests);
     window.removeEventListener("beypro:orders-local-refresh", handleLocalRefresh);
   };
 }, [
   activeTab,
   effectiveReservationsToday,
+  fetchSongRequests,
   loadConcertBookingsForOverview,
   loadDataForTab,
   loadReservationBookingsForOverview,
@@ -3844,11 +3996,11 @@ const handleTableClick = useCallback(async (table) => {
   const normalizedOpenStatus = normalizeOrderStatus(table.order?.status);
   const isClosedOrPaidNoUnpaid =
     (normalizedOpenStatus === "closed" || normalizedOpenStatus === "paid") &&
-    !Boolean(table?.hasUnpaidItems);
+    !table?.hasUnpaidItems;
   const isClosedReservationCarryover =
     Boolean(reservationFallback) &&
     Boolean(table?.order) &&
-    !Boolean(table?.hasUnpaidItems) &&
+    !table?.hasUnpaidItems &&
     normalizedOpenStatus === "closed";
   const hasExistingOrderId =
     table?.order?.id !== null &&
@@ -3949,7 +4101,8 @@ const handleTableClick = useCallback(async (table) => {
   // const groupedByTable = orders.reduce(...) // ❌ REMOVED DUPLICATE
 
 const areaKeys = React.useMemo(() => Object.keys(groupedTables), [groupedTables]);
-const showAreaTabs = tableSettings.showAreas !== false && areaKeys.length > 0;
+const showStandardAreaTabs = canSeeTablesGrid && tableSettings.showAreas !== false && areaKeys.length > 0;
+const showAreaTabs = showStandardAreaTabs || canSeeViewBookingTab || canSeeSongRequestTab;
 
 const formatAreaLabel = useCallback((area) => {
   const raw = area || "Main Hall";
@@ -3991,13 +4144,13 @@ const handleResolveWaiterCall = useCallback(
 );
 
 const handleOpenViewBooking = useCallback(() => {
-  setActiveArea("__VIEW_BOOKING__");
-}, [setActiveArea]);
+  handleAreaSelect(AREA_FILTER_VIEW_BOOKING);
+}, [handleAreaSelect]);
 
 const tableCardProps = React.useMemo(
   () => ({
     tableLabelText,
-    showAreas: tableSettings.showAreas !== false,
+    showAreas: canSeeTablesGrid && tableSettings.showAreas !== false,
     formatAreaLabel,
     t,
     formatCurrency,
@@ -4013,6 +4166,7 @@ const tableCardProps = React.useMemo(
   }),
   [
     tableLabelText,
+    canSeeTablesGrid,
     tableSettings.showAreas,
     formatAreaLabel,
     t,
@@ -4122,6 +4276,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
 	      )}
 
       {activeTab === "tables" &&
+        canSeeTablesGrid &&
         !transactionSettings.disableTableOverviewGuestsFloatingButton && (
         <div className="fixed bottom-6 left-6 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20">
           <span className="font-semibold">{t("Guests")}</span>
@@ -4133,8 +4288,9 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
   {activeTab === "tables" && (
     <TablesView
       showAreaTabs={showAreaTabs}
+      showStandardAreaTabs={showStandardAreaTabs}
       activeArea={activeArea}
-      setActiveArea={setActiveArea}
+      setActiveArea={handleAreaSelect}
       groupedTables={groupedTables}
       tables={tables}
       ordersByTable={effectiveOrdersByTableRaw}
@@ -4142,7 +4298,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       formatAreaLabel={formatAreaLabel}
       t={t}
       cardProps={tableCardProps}
-      showViewBookingTab={showBookingTab}
+      showViewBookingTab={canSeeViewBookingTab}
       concertBookings={visibleConcertBookingsOverview}
       reservationBookings={visibleReservationBookingsOverview}
       concertBookingsLoading={concertBookingsLoading || reservationBookingsLoading}
@@ -4152,6 +4308,13 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       onReservationBookingUpdateStatus={updateReservationBookingStatusFromOverview}
       onClearBookings={handleClearOldFulfilledBookings}
       clearingBookings={clearingBookings}
+      showSongRequestTab={canSeeSongRequestTab}
+      songRequests={songRequests}
+      songRequestsLoading={songRequestsLoading}
+      songRequestUpdatingId={songRequestUpdatingId}
+      onApproveSongRequest={(request) => updateSongRequestStatus(request, "approved")}
+      onCompleteSongRequest={(request) => updateSongRequestStatus(request, "completed")}
+      onCancelSongRequest={(request) => updateSongRequestStatus(request, "cancelled")}
     />
   )}
 

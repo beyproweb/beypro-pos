@@ -42,10 +42,12 @@ export function hasPermission(perm, currentUser) {
 
   const role = currentUser.role.toLowerCase();
   const permissions = expandPermissionAliases(normalizePermissionList(currentUser.permissions));
-  const target = normalizePermissionKey(perm);
+  const targets = (Array.isArray(perm) ? perm : [perm])
+    .map((entry) => normalizePermissionKey(entry))
+    .filter(Boolean);
 
   // ✅ Admin bypass (case-insensitive)
   if (role === "admin" || permissions.includes("all")) return true;
 
-  return permissions.includes(target);
+  return targets.some((target) => permissions.includes(target));
 }

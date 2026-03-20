@@ -24,22 +24,22 @@ const CHECKIN_REGRESSION_STATUSES = new Set([
   "in_progress",
 ]);
 
-const CARD_RADIUS_CLASS = "rounded-xl";
+const CARD_RADIUS_CLASS = "rounded-[28px]";
 const BADGE_BASE_CLASS =
-  "inline-flex h-6 items-center justify-center rounded-md border px-2.5 text-xs font-semibold leading-none whitespace-nowrap";
+  "inline-flex h-7 items-center justify-center rounded-2xl border border-transparent px-3 text-xs font-semibold leading-none whitespace-nowrap shadow-[0_6px_18px_rgba(15,23,42,0.08)] backdrop-blur-sm";
 const PANEL_BASE_CLASS =
-  "rounded-lg border bg-white p-2 shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
+  "rounded-[24px] border bg-white/90 p-3 shadow-[0_12px_32px_rgba(15,23,42,0.08)] backdrop-blur-sm";
 const ACTION_BUTTON_BASE_CLASS =
-  "inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium leading-none shadow-sm transition duration-150 hover:brightness-95 active:scale-[0.99]";
+  "inline-flex h-10 items-center justify-center rounded-2xl border-0 px-3.5 text-sm font-semibold leading-none text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)] transition duration-150 hover:brightness-95 active:scale-[0.99]";
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
 
 const getKitchenStatusToneClass = (status) => {
-  if (status === "new") return "bg-blue-600 text-white border-blue-700";
-  if (status === "preparing") return "bg-amber-600 text-white border-amber-700";
-  if (status === "ready") return "bg-indigo-700 text-white border-indigo-800";
-  if (status === "delivered") return "bg-indigo-600 text-white border-indigo-700";
-  return "bg-slate-700 text-white border-slate-800";
+  if (status === "new") return "border-sky-200 bg-sky-500 text-white";
+  if (status === "preparing") return "border-amber-200 bg-amber-500 text-white";
+  if (status === "ready") return "border-violet-200 bg-violet-600 text-white";
+  if (status === "delivered") return "border-indigo-200 bg-indigo-600 text-white";
+  return "border-slate-200 bg-slate-700 text-white";
 };
 
 const getPhoneHref = (phone) => {
@@ -207,16 +207,25 @@ function TableCard({
   const hasCheckedInVisualTone =
     normalizedOrderStatus === "checked_in" || fallbackReservationToneStatus === "checked_in";
   const cardToneClass = hasUnpaidItems
-      ? "bg-red-100 border-red-500"
+      ? "border-rose-400 bg-rose-200"
       : normalizedOrderStatus === "confirmed"
-        ? "bg-red-100 border-red-500"
+        ? "border-rose-400 bg-rose-200"
         : hasReservedVisualTone
-          ? "bg-blue-100 border-blue-500"
+          ? "border-sky-400 bg-sky-200"
           : hasCheckedInVisualTone
-            ? "bg-emerald-100 border-emerald-500"
+            ? "border-emerald-400 bg-emerald-200"
             : isPaidTable
-              ? "bg-emerald-100 border-emerald-500"
-              : "bg-slate-100 border-slate-400";
+              ? "border-emerald-400 bg-emerald-200"
+              : "border-slate-400 bg-slate-200";
+  const cardAccentGlowClass = hasUnpaidItems
+    ? "bg-rose-300/85"
+    : normalizedOrderStatus === "confirmed"
+      ? "bg-rose-300/85"
+      : hasReservedVisualTone
+        ? "bg-sky-300/85"
+        : hasCheckedInVisualTone || isPaidTable
+          ? "bg-emerald-300/85"
+          : "bg-slate-300/85";
   const hasPreparingItems = tableItems.some((i) => i.kitchen_status === "preparing");
   const isKitchenDelivered =
     Boolean(tableOrder?.kitchen_delivered_at) ||
@@ -511,13 +520,13 @@ function TableCard({
   );
 
   const tableStatusToneClass = React.useMemo(() => {
-    if (normalizedOrderStatus === "confirmed") return "bg-red-700 text-white border-red-800";
-    if (normalizedOrderStatus === "reserved") return "bg-blue-700 text-white border-blue-800";
-    if (normalizedOrderStatus === "checked_in") return "bg-emerald-700 text-white border-emerald-800";
-    if (normalizedOrderStatus === "paid") return "bg-emerald-700 text-white border-emerald-800";
-    if (normalizedOrderStatus === "draft") return "bg-slate-600 text-white border-slate-700";
-    if (hasUnpaidItems) return "bg-red-700 text-white border-red-800";
-    return "bg-slate-700 text-white border-slate-800";
+    if (normalizedOrderStatus === "confirmed") return "border-rose-200 bg-rose-600 text-white";
+    if (normalizedOrderStatus === "reserved") return "border-amber-200 bg-amber-500 text-white";
+    if (normalizedOrderStatus === "checked_in") return "border-emerald-200 bg-emerald-600 text-white";
+    if (normalizedOrderStatus === "paid") return "border-emerald-200 bg-emerald-600 text-white";
+    if (normalizedOrderStatus === "draft") return "border-slate-200 bg-slate-600 text-white";
+    if (hasUnpaidItems) return "border-rose-200 bg-rose-600 text-white";
+    return "border-slate-200 bg-slate-700 text-white";
   }, [hasUnpaidItems, normalizedOrderStatus]);
 
   const tableStatusClassName = React.useMemo(
@@ -565,10 +574,10 @@ function TableCard({
     !isPaidTable &&
     (!shouldShowReservedBadge || hasPendingReservationActiveStatus);
   const reservationPanelClassName = isCheckedOutReservation
-    ? cx(PANEL_BASE_CLASS, "border-slate-200 bg-slate-50/80")
+    ? cx(PANEL_BASE_CLASS, "border-slate-200 bg-slate-50/90")
     : isCheckedInReservation
-      ? cx(PANEL_BASE_CLASS, "border-emerald-200 bg-emerald-50/70")
-      : cx(PANEL_BASE_CLASS, "border-sky-200 bg-sky-50/70");
+      ? cx(PANEL_BASE_CLASS, "border-emerald-200 bg-emerald-50/90")
+      : cx(PANEL_BASE_CLASS, "border-sky-200 bg-sky-50/90");
   const reservationCompactStateLabel = isCheckedOutReservation
     ? t("Checked out")
     : `${t("Reserved")}!`;
@@ -583,15 +592,21 @@ function TableCard({
     [reservationCustomerPhone]
   );
   const reservationControlClass =
-    "flex h-7 min-h-7 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-xs font-medium leading-none text-ellipsis whitespace-nowrap sm:h-8 sm:min-h-8 sm:w-[120px] sm:min-w-[120px] sm:px-3 sm:text-sm";
+    "flex h-7 min-h-7 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-2xl border px-2.5 text-center text-[11px] font-semibold leading-none text-ellipsis whitespace-nowrap shadow-[0_8px_20px_rgba(15,23,42,0.1)] sm:h-9 sm:min-h-9 sm:w-[120px] sm:min-w-[120px] sm:px-4 sm:text-sm";
   const reservationDetailsFrameClass =
-    "order-1 flex min-h-[58px] w-full min-w-0 max-w-full flex-col justify-center gap-2 rounded-lg border border-slate-200 bg-white/70 px-3 text-left shadow-none sm:order-none sm:row-span-2 sm:h-[68px] sm:min-h-[68px] sm:w-[120px] sm:min-w-[120px]";
-  const reservationCompactBadgeToneClass = isCheckedOutReservation
-    ? cx(reservationControlClass, "border-slate-700 bg-slate-700 text-white")
-    : cx(reservationControlClass, "border-amber-300 bg-amber-500 tracking-wide text-white");
+    "order-1 flex min-h-[50px] w-full min-w-0 max-w-full flex-col justify-center gap-1 rounded-2xl border border-slate-200 bg-white/70 px-3 text-left shadow-none sm:order-none sm:row-span-2 sm:h-[68px] sm:min-h-[68px] sm:w-[120px] sm:min-w-[120px] sm:gap-2";
+      const reservationCompactBadgeToneClass = isCheckedOutReservation
+    ? cx(
+        reservationControlClass,
+        "border-slate-200 bg-slate-700 text-white sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
+      )
+    : cx(
+        reservationControlClass,
+        "border-amber-200 bg-amber-500 tracking-wide text-white sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
+      );
   const reservationPrimaryActionClass = cx(
     reservationControlClass,
-    "bg-blue-600 text-white hover:bg-blue-700"
+    "border-slate-200 bg-slate-900 text-white hover:bg-slate-800 sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
   );
 
   return (
@@ -599,16 +614,28 @@ function TableCard({
       key={table.tableNumber}
       onClick={handleCardClick}
       className={cx(
-        "group relative flex h-[264px] w-full max-w-[380px] self-start cursor-pointer flex-col justify-between overflow-hidden border-2 shadow-sm transition-all duration-150 hover:shadow-md",
+        "group relative flex h-[276px] w-full max-w-[380px] self-start cursor-pointer flex-col justify-between overflow-hidden border shadow-[0_20px_55px_rgba(15,23,42,0.08)] backdrop-blur-sm transition-all duration-150 hover:shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:h-[264px]",
         CARD_RADIUS_CLASS,
         cardToneClass,
         isCallingWaiter && "ring-2 ring-red-500/80 animate-[pulse_2.4s_ease-in-out_infinite]"
       )}
     >
+      <div
+        className={cx(
+          "pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full blur-3xl",
+          cardAccentGlowClass
+        )}
+      />
+      <div
+        className={cx(
+          "pointer-events-none absolute -bottom-20 left-0 h-44 w-44 rounded-full blur-3xl",
+          cardAccentGlowClass
+        )}
+      />
       {isCallingWaiter && (
         <div className="pointer-events-none absolute inset-0 bg-red-500/10 animate-pulse" />
       )}
-      <div className="relative flex h-full flex-col p-3">
+      <div className="relative flex h-full flex-col p-3 sm:p-4">
         {showRenderCounter && (
           <div className="mb-2 flex justify-end">
             <RenderCounter label={`Card ${table.tableNumber}`} value={renderCount} />
@@ -625,12 +652,12 @@ function TableCard({
           <div className="flex min-w-0 flex-1 items-center">
             {shouldLeftAlignHeaderLabel ? (
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="min-w-0 text-sm font-semibold tracking-tight text-slate-700 sm:text-[17px]">
+                <span className="min-w-0 text-sm font-semibold tracking-tight text-slate-900 sm:text-[17px]">
                   {tableDisplayLabel}
                 </span>
               </div>
             ) : isFreeDisplay ? (
-              <Pill className="border-slate-400 bg-slate-100 text-slate-700 shadow-none">
+              <Pill className="border-slate-200 bg-white/80 text-slate-700">
                 {t("Free")}
               </Pill>
             ) : null}
@@ -646,7 +673,7 @@ function TableCard({
 
           <div className="flex min-w-0 shrink-0 justify-end">
             <div className="flex shrink-0 items-center gap-2">
-              <div className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300/80 bg-white/75 px-3 py-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)] backdrop-blur-sm">
+              <div className="inline-flex min-h-9 items-center justify-center rounded-2xl border border-slate-200 bg-white/90 px-3 py-1.5 shadow-[0_8px_20px_rgba(15,23,42,0.08)] backdrop-blur-sm">
                 <div className="text-[13px] font-semibold leading-none tracking-tight text-slate-700">
                   {displayTotal}
                 </div>
@@ -656,14 +683,14 @@ function TableCard({
         </div>
 
         {table.label && (
-          <Pill className="mt-2 max-w-full justify-start truncate border-slate-300 bg-slate-100 text-slate-600 shadow-none">
+          <Pill className="mt-2 max-w-full justify-start truncate border-slate-200 bg-white/80 text-slate-600">
             {table.label}
           </Pill>
         )}
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {table.seats && (
-            <Pill className="border-slate-300 bg-slate-100 text-slate-700 shadow-none">
+            <Pill className="border-slate-200 bg-white/80 text-slate-700">
               {table.seats} {t("Seats")}
             </Pill>
           )}
@@ -672,7 +699,7 @@ function TableCard({
             <div
               className={cx(
                 BADGE_BASE_CLASS,
-                "gap-2 border-slate-400 bg-slate-100 pr-1.5 text-slate-700 shadow-none"
+                "gap-2 border-slate-200 bg-white/80 pr-1.5 text-slate-700"
               )}
               onClick={stopPropagation}
             >
@@ -722,7 +749,7 @@ function TableCard({
             <div
               className={cx(
                 reservationPanelClassName,
-                "grid w-full max-w-full grid-cols-1 justify-items-start gap-2 overflow-hidden sm:grid-cols-[120px_120px] sm:grid-rows-[32px_32px] sm:items-start sm:justify-start sm:gap-x-3 sm:gap-y-1"
+                "grid w-full max-w-full grid-cols-1 justify-items-start gap-1.5 overflow-hidden p-2 sm:grid-cols-[120px_120px] sm:grid-rows-[36px_36px] sm:items-center sm:justify-center sm:gap-x-4 sm:gap-y-0.5 sm:px-4 sm:pt-3 sm:pb-5"
               )}
             >
               <div className={reservationDetailsFrameClass}>
@@ -747,7 +774,7 @@ function TableCard({
                   )
                 ) : null}
               </div>
-              <div className="order-2 grid w-full min-w-0 grid-cols-2 gap-2 sm:contents">
+              <div className="order-2 grid w-full min-w-0 grid-cols-2 gap-1.5 sm:contents">
                 <span className={reservationCompactBadgeToneClass}>
                   {reservationCompactStateLabel}
                 </span>
@@ -778,7 +805,7 @@ function TableCard({
         (shouldShowConfirmedTimer || showReadyAt) ? (
           <div className="mt-2 flex min-h-6 items-center justify-end gap-2">
             {shouldShowConfirmedTimer ? (
-              <Pill className="border-indigo-900 bg-indigo-900 px-2 font-mono text-white">
+              <Pill className="border-slate-200 bg-slate-900 px-2 font-mono text-white">
                 <ElapsedTimer startTime={confirmedStartTime} />
               </Pill>
             ) : null}
@@ -797,9 +824,9 @@ function TableCard({
           </div>
         ) : null}
 
-        <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200 pt-2">
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2 sm:pt-3">
           {showAreas ? (
-            <Pill className="h-6 max-w-[55%] justify-start truncate border-slate-300 bg-slate-100 px-2 text-xs font-semibold text-slate-700 shadow-none">
+            <Pill className="max-w-[55%] justify-start truncate border-slate-200 bg-white/80 px-2.5 text-slate-700">
               {formatAreaLabel(table.area)}
             </Pill>
           ) : (
@@ -808,19 +835,19 @@ function TableCard({
 
           <div className="ml-auto flex items-center justify-end gap-2 flex-nowrap">
             {isFreeDisplay && !shouldShowReservedBadge && (
-              <Pill className="border-slate-400 bg-slate-100 text-slate-700 shadow-none">
+              <Pill className="border-slate-200 bg-white/80 text-slate-700">
                 {t("Free")}
               </Pill>
             )}
 
             {isCallingWaiter && (
               <div className="flex items-center justify-end gap-2 flex-nowrap">
-                <Pill className="border-red-700 bg-red-600 text-white animate-pulse">
+                <Pill className="border-rose-200 bg-rose-600 text-white animate-pulse">
                   🔴 {t("Calling")}
                 </Pill>
                 <ActionButton
                   onClick={handleResolvedClick}
-                  className="border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800"
+                  className="bg-emerald-600 hover:bg-emerald-700"
                 >
                   {t("Resolved")}
                 </ActionButton>
@@ -830,12 +857,12 @@ function TableCard({
             {hasOrderActivity && (
               <div className="flex items-center justify-end gap-2 flex-nowrap">
                 {hasUnpaidItems ? (
-                  <Pill className="border-red-700 bg-red-600 text-white shadow-none">
+                  <Pill className="border-rose-200 bg-rose-600 text-white">
                     {paidStatusLabel}
                   </Pill>
                 ) : isPaidTable ? (
                   <div className="flex items-center gap-2 flex-nowrap">
-                    <Pill className="h-6 border-emerald-700 bg-emerald-700 text-white shadow-none">
+                    <Pill className="border-emerald-200 bg-emerald-600 text-white">
                       {fullyPaidStatusLabel}
                     </Pill>
                     <button
@@ -843,7 +870,7 @@ function TableCard({
                       onClick={handleCloseClick}
                       className={cx(
                         BADGE_BASE_CLASS,
-                        "border-indigo-900 bg-indigo-900 text-white shadow-none transition duration-150 hover:bg-indigo-950 active:scale-[0.99]"
+                        "border-slate-200 bg-slate-900 text-white transition duration-150 hover:bg-slate-800 active:scale-[0.99]"
                       )}
                     >
                       {t("Close")}
@@ -852,7 +879,7 @@ function TableCard({
                 ) : (
                   <ActionButton
                     onClick={handleCloseClick}
-                    className="h-6 border-indigo-900 bg-indigo-900 px-2 text-xs font-semibold text-white hover:bg-indigo-950"
+                    className="h-8 rounded-2xl bg-slate-900 px-3 text-xs font-semibold hover:bg-slate-800"
                   >
                     {t("Close")}
                   </ActionButton>

@@ -13,16 +13,18 @@ export function useHasPermission(perm) {
   }
 
   const perms = expandPermissionAliases(normalizePermissionList(currentUser.permissions));
-  const target = normalizePermissionKey(perm);
+  const targets = (Array.isArray(perm) ? perm : [perm])
+    .map((entry) => normalizePermissionKey(entry))
+    .filter(Boolean);
 
   // 🔥 "all" = full access for superusers & admins
   if (perms.includes("all")) return true;
 
   // Special rule: packet always allowed if explicitly given
-  if (target === "packet-orders" && perms.includes("packet-orders")) {
+  if (targets.includes("packet-orders") && perms.includes("packet-orders")) {
     return true;
   }
 
   // Default check
-  return perms.includes(target);
+  return targets.some((target) => perms.includes(target));
 }

@@ -1,5 +1,5 @@
 import React from "react";
-import { ShoppingCart } from "lucide-react";
+import { Music2, ShoppingCart } from "lucide-react";
 import DrawerButton from "./DrawerButton";
 
 function HeaderTabs({
@@ -10,6 +10,7 @@ function HeaderTabs({
   reservationEnabled = true,
   tableEnabled = true,
   deliveryEnabled = true,
+  requestSongEnabled = false,
   activeOrderType = "takeaway",
   statusShortcutCount = 0,
   statusShortcutEnabled = false,
@@ -50,6 +51,12 @@ function HeaderTabs({
       label: t("Delivery"),
       enabled: deliveryEnabled,
     },
+    {
+      key: "request_song",
+      label: t("Request Song"),
+      enabled: requestSongEnabled,
+      icon: Music2,
+    },
   ];
   const visibleSegments = segments.filter((segment) => segment.enabled);
   const hasVisibleSegments = visibleSegments.length > 0;
@@ -71,6 +78,7 @@ function HeaderTabs({
             {visibleSegments.map((segment) => {
               const isActive = activeOrderType === segment.key;
               const nextClass = isActive ? activeTabClass : inactiveTabClass;
+              const SegmentIcon = segment.icon;
 
               return (
                 <button
@@ -79,7 +87,10 @@ function HeaderTabs({
                   onClick={() => onSelect?.(segment.key)}
                   className={`${baseTabClass} ${nextClass}`}
                 >
-                  {segment.label}
+                  <span className="inline-flex max-w-full items-center justify-center gap-2 truncate">
+                    {SegmentIcon ? <SegmentIcon className="h-4 w-4 shrink-0" /> : null}
+                    <span className="truncate">{segment.label}</span>
+                  </span>
                 </button>
               );
             })}
