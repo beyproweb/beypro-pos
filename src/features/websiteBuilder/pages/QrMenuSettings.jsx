@@ -92,6 +92,21 @@ const makeEmptyConcertTicketType = () => ({
   is_table_package: false,
 });
 
+const CONCERT_GUEST_COMPOSITION_FIELD_MODES = [
+  { value: "hidden", label: "Hidden" },
+  { value: "optional", label: "Optional" },
+  { value: "required", label: "Required" },
+];
+
+const CONCERT_GUEST_COMPOSITION_RESTRICTION_RULES = [
+  { value: "no_restriction", label: "No restriction" },
+  { value: "male_only_groups_not_allowed", label: "Male-only groups not allowed" },
+  { value: "female_only_groups_not_allowed", label: "Female-only groups not allowed" },
+  { value: "at_least_1_female_required", label: "At least 1 female required" },
+  { value: "couple_only", label: "Couple only" },
+  { value: "custom_rule_later", label: "Custom rule later" },
+];
+
 const makeEmptyConcertForm = () => ({
   artist_name: "",
   event_title: "",
@@ -106,6 +121,10 @@ const makeEmptyConcertForm = () => ({
   bank_transfer_instructions: "",
   status: "active",
   free_concert: false,
+  guest_composition_enabled: false,
+  guest_composition_field_mode: "optional",
+  guest_composition_restriction_rule: "no_restriction",
+  guest_composition_validation_message: "",
   area_allocations: [makeEmptyConcertAreaAllocation()],
   ticket_types: [makeEmptyConcertTicketType()],
 });
@@ -194,6 +213,10 @@ export default function QrMenuSettings() {
   social_website: "",
   delivery_enabled: true,
   reservation_pickup_enabled: true,
+  reservation_guest_composition_enabled: false,
+  reservation_guest_composition_field_mode: "optional",
+  reservation_guest_composition_restriction_rule: "no_restriction",
+  reservation_guest_composition_validation_message: "",
   table_order_enabled: true,
   disable_all_products: false,
   reservation_tab_enabled: true,
@@ -866,6 +889,16 @@ async function saveAllCustomization() {
     bank_transfer_instructions: String(source?.bank_transfer_instructions || "").trim(),
     status: String(source?.status || "active").toLowerCase(),
     free_concert: Boolean(source?.free_concert),
+    guest_composition_enabled: Boolean(source?.guest_composition_enabled),
+    guest_composition_field_mode: String(
+      source?.guest_composition_field_mode || "optional"
+    ).toLowerCase(),
+    guest_composition_restriction_rule: String(
+      source?.guest_composition_restriction_rule || "no_restriction"
+    ).toLowerCase(),
+    guest_composition_validation_message: String(
+      source?.guest_composition_validation_message || ""
+    ).trim(),
     area_allocations: (Array.isArray(source?.area_allocations) ? source.area_allocations : [])
       .map((row) => ({
         area_name: String(row?.area_name || "").trim(),
@@ -906,6 +939,17 @@ async function saveAllCustomization() {
 
   const updateConcertFormField = (key, value) => {
     setConcertForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateConcertGuestCompositionEnabled = (value) => {
+    setConcertForm((prev) => ({
+      ...prev,
+      guest_composition_enabled: value,
+      guest_composition_field_mode:
+        value && prev.guest_composition_field_mode === "hidden"
+          ? "optional"
+          : prev.guest_composition_field_mode,
+    }));
   };
 
   const addConcertAreaAllocation = () => {
@@ -970,6 +1014,12 @@ async function saveAllCustomization() {
       bank_transfer_instructions: event.bank_transfer_instructions || "",
       status: event.status || "active",
       free_concert: Boolean(event.free_concert),
+      guest_composition_enabled: Boolean(event.guest_composition_enabled),
+      guest_composition_field_mode: event.guest_composition_field_mode || "optional",
+      guest_composition_restriction_rule:
+        event.guest_composition_restriction_rule || "no_restriction",
+      guest_composition_validation_message:
+        event.guest_composition_validation_message || "",
       area_allocations:
         Array.isArray(event.area_allocations) && event.area_allocations.length > 0
           ? event.area_allocations.map((row) => ({
@@ -1031,10 +1081,26 @@ async function saveAllCustomization() {
         ? `/concerts/events/${editingConcertId}`
         : "/concerts/events";
       const method = editingConcertId ? "PUT" : "POST";
+      const mirroredReservationRules = {
+        reservation_guest_composition_enabled: payload.guest_composition_enabled,
+        reservation_guest_composition_field_mode: payload.guest_composition_field_mode,
+        reservation_guest_composition_restriction_rule:
+          payload.guest_composition_restriction_rule,
+        reservation_guest_composition_validation_message:
+          payload.guest_composition_validation_message,
+      };
       await secureFetch(endpoint, {
         method,
         body: JSON.stringify(payload),
       });
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify(mirroredReservationRules),
+      });
+      setSettings((prev) => ({
+        ...prev,
+        ...mirroredReservationRules,
+      }));
       toast.success(t("Saved successfully!"));
       resetConcertEditor();
       await loadConcerts();
@@ -2735,6 +2801,87 @@ async function saveAllCustomization() {
               placeholder={t("Share account details and transfer note here")}
               className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none"
             />
+          </div>
+
+          <div className="mt-6 rounded-2xl border bg-white dark:bg-zinc-900 p-4">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Guest composition rules
+            </h4>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              Configure whether concert table reservations must include a guest composition split and how it should be validated.
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="font-semibold">Enable guest composition field</label>
+                <select
+                  value={concertForm.guest_composition_enabled ? "on" : "off"}
+                  onChange={(e) =>
+                    updateConcertGuestCompositionEnabled(e.target.value === "on")
+                  }
+                  className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                >
+                  <option value="off">Off</option>
+                  <option value="on">On</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold">Field mode</label>
+                <select
+                  value={concertForm.guest_composition_field_mode}
+                  onChange={(e) =>
+                    updateConcertFormField("guest_composition_field_mode", e.target.value)
+                  }
+                  disabled={!concertForm.guest_composition_enabled}
+                  className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 disabled:opacity-60"
+                >
+                  {CONCERT_GUEST_COMPOSITION_FIELD_MODES.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {t(option.label)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="font-semibold">Restriction rule</label>
+                <select
+                  value={concertForm.guest_composition_restriction_rule}
+                  onChange={(e) =>
+                    updateConcertFormField(
+                      "guest_composition_restriction_rule",
+                      e.target.value
+                    )
+                  }
+                  disabled={!concertForm.guest_composition_enabled}
+                  className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 disabled:opacity-60"
+                >
+                  {CONCERT_GUEST_COMPOSITION_RESTRICTION_RULES.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {t(option.label)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="font-semibold">Validation message</label>
+                <textarea
+                  rows={3}
+                  value={concertForm.guest_composition_validation_message}
+                  onChange={(e) =>
+                    updateConcertFormField(
+                      "guest_composition_validation_message",
+                      e.target.value
+                    )
+                  }
+                  disabled={!concertForm.guest_composition_enabled}
+                  placeholder="Apollo policy does not allow reservations for male-only groups."
+                  className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none disabled:opacity-60"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="mt-6">

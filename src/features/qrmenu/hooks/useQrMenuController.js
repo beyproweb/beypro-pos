@@ -9,6 +9,62 @@ import useQrMenuCheckout from "./useQrMenuCheckout";
 import useQrMenuStorage from "./useQrMenuStorage";
 import { hasConcertBookingContext } from "../../../utils/reservationStatus";
 
+const QR_MENU_BRANDING_CACHE_PREFIX = "qr-menu-branding-cache:";
+const DEFAULT_QR_MENU_BRANDING = {
+  delivery_enabled: true,
+  reservation_pickup_enabled: true,
+  reservation_guest_composition_enabled: false,
+  reservation_guest_composition_field_mode: "optional",
+  reservation_guest_composition_restriction_rule: "no_restriction",
+  reservation_guest_composition_validation_message: "",
+  table_order_enabled: true,
+  disable_all_products: false,
+  table_geo_enabled: false,
+  table_geo_radius_meters: 150,
+  pwa_primary_color: "#4F46E5",
+  pwa_background_color: "#FFFFFF",
+  app_icon: "",
+  app_icon_192: "",
+  app_icon_512: "",
+  apple_touch_icon: "",
+  splash_logo: "",
+  main_title_logo: "",
+  app_display_name: "",
+  qrmenu_font_family: "gotham",
+};
+
+function getQrMenuBrandingCacheKey(identifier) {
+  const value = String(identifier || "").trim();
+  return value ? `${QR_MENU_BRANDING_CACHE_PREFIX}${value}` : "";
+}
+
+function readCachedQrMenuBranding(identifier) {
+  if (typeof window === "undefined") return null;
+  const key = getQrMenuBrandingCacheKey(identifier);
+  if (!key) return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedQrMenuBranding(identifier, customization) {
+  if (typeof window === "undefined") return;
+  const key = getQrMenuBrandingCacheKey(identifier);
+  if (!key || !customization || typeof customization !== "object") return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(customization));
+  } catch {
+    // Ignore storage quota/privacy errors and keep runtime state only.
+  }
+}
+
 export function useQrMenuController({
   slug,
   id,
@@ -180,6 +236,7 @@ if (!restaurantIdentifier && typeof window !== "undefined") {
 }
 
   const restaurantIdentifierResolved = restaurantIdentifier;
+  const cachedBranding = readCachedQrMenuBranding(restaurantIdentifierResolved);
 
   // QR entry mode: "table" (scanned at a table) or "delivery" (generic menu link)
   const [qrMode] = useState(() => getQrModeFromLocation());
@@ -484,7 +541,13 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     appendIdentifier,
   });
 
-  const [brandName, setBrandName] = useState("");
+  const [brandName, setBrandName] = useState(
+    () =>
+      cachedBranding?.app_display_name ||
+      cachedBranding?.title ||
+      cachedBranding?.main_title ||
+      ""
+  );
 
   const [table, setTable] = useState(() => {
     // Prefer explicit table number from QR link, else start empty
@@ -517,24 +580,6 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
   });
   const { cart, setCart, safeCart } = useQrMenuCart({ storage, toArray });
 
-  // Load public customization to extract the brand title for header
-  useEffect(() => {
-    if (!restaurantIdentifier) return;
-    (async () => {
-      try {
-        const res = await secureFetch(`/public/qr-menu-customization/${encodeURIComponent(restaurantIdentifier)}`);
-        const c = res?.customization || {};
-        setBrandName(c.app_display_name || c.title || c.main_title || "");
-        setOrderSelectCustomization((prev) => ({ ...prev, ...c }));
-        try {
-          const mode = String(c.qr_theme || "auto").toLowerCase();
-          storage.setItem("qr_theme", mode);
-        } catch {}
-      } catch (err) {
-        // ignore, fallback handled in QrHeader
-      }
-    })();
-  }, [restaurantIdentifier]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [occupiedTables, setOccupiedTables] = useState([]);
@@ -623,24 +668,52 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     return null;
   });
   const [showTakeawayForm, setShowTakeawayForm] = useState(false);
-  const [orderSelectCustomization, setOrderSelectCustomization] = useState({
-    delivery_enabled: true,
-    reservation_pickup_enabled: true,
-    table_order_enabled: true,
-    disable_all_products: false,
-    table_geo_enabled: false,
-    table_geo_radius_meters: 150,
-    pwa_primary_color: "#4F46E5",
-    pwa_background_color: "#FFFFFF",
-    app_icon: "",
-    app_icon_192: "",
-    app_icon_512: "",
-    apple_touch_icon: "",
-    splash_logo: "",
-    main_title_logo: "",
-    app_display_name: "",
-    qrmenu_font_family: "gotham",
-  });
+  const [orderSelectCustomization, setOrderSelectCustomization] = useState(() => ({
+    ...DEFAULT_QR_MENU_BRANDING,
+    ...(cachedBranding || {}),
+  }));
+
+  // Load public customization to extract the brand title for header.
+  useEffect(() => {
+    if (!restaurantIdentifier) {
+      setBrandName("");
+      setOrderSelectCustomization({ ...DEFAULT_QR_MENU_BRANDING });
+      return;
+    }
+
+    const cachedCustomization = readCachedQrMenuBranding(restaurantIdentifier);
+    setBrandName(
+      cachedCustomization?.app_display_name ||
+        cachedCustomization?.title ||
+        cachedCustomization?.main_title ||
+        ""
+    );
+    setOrderSelectCustomization({
+      ...DEFAULT_QR_MENU_BRANDING,
+      ...(cachedCustomization || {}),
+    });
+
+    try {
+      const mode = String(cachedCustomization?.qr_theme || "auto").toLowerCase();
+      storage.setItem("qr_theme", mode);
+    } catch {}
+
+    (async () => {
+      try {
+        const res = await secureFetch(`/public/qr-menu-customization/${encodeURIComponent(restaurantIdentifier)}`);
+        const c = res?.customization || {};
+        writeCachedQrMenuBranding(restaurantIdentifier, c);
+        setBrandName(c.app_display_name || c.title || c.main_title || "");
+        setOrderSelectCustomization((prev) => ({ ...prev, ...c }));
+        try {
+          const mode = String(c.qr_theme || "auto").toLowerCase();
+          storage.setItem("qr_theme", mode);
+        } catch {}
+      } catch (err) {
+        // Ignore network failures and keep the cached brand if we have one.
+      }
+    })();
+  }, [restaurantIdentifier, storage]);
 
   // Apply QR theme to the transaction/menu (mobile-first) area.
   useEffect(() => {

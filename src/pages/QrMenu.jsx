@@ -80,6 +80,215 @@ function formatQrPhoneForInput(value) {
   return normalized;
 }
 
+function parseGuestCompositionCount(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function buildReservationGuestComposition(totalGuests, menGuests, womenGuests) {
+  const total = parseGuestCompositionCount(totalGuests);
+  if (total <= 0) {
+    return {
+      reservation_men: "",
+      reservation_women: "",
+    };
+  }
+
+  const men = parseGuestCompositionCount(menGuests);
+  const women = parseGuestCompositionCount(womenGuests);
+  if (men + women === total) {
+    return {
+      reservation_men: String(men),
+      reservation_women: String(women),
+    };
+  }
+
+  const balancedMen = Math.ceil(total / 2);
+  return {
+    reservation_men: String(balancedMen),
+    reservation_women: String(total - balancedMen),
+  };
+}
+
+function buildGuestComposition(totalGuests, menGuests, womenGuests, keys = {}) {
+  const menKey = keys.menKey || "men";
+  const womenKey = keys.womenKey || "women";
+  const total = parseGuestCompositionCount(totalGuests);
+  if (total <= 0) {
+    return {
+      [menKey]: "",
+      [womenKey]: "",
+    };
+  }
+
+  const men = parseGuestCompositionCount(menGuests);
+  const women = parseGuestCompositionCount(womenGuests);
+  if (men + women === total) {
+    return {
+      [menKey]: String(men),
+      [womenKey]: String(women),
+    };
+  }
+
+  const balancedMen = Math.ceil(total / 2);
+  return {
+    [menKey]: String(balancedMen),
+    [womenKey]: String(total - balancedMen),
+  };
+}
+
+function hasGuestCompositionValue(value) {
+  return value !== undefined && value !== null && String(value).trim() !== "";
+}
+
+function normalizeGuestCompositionFieldMode(value, fallback = "hidden") {
+  const normalized = String(value || fallback).trim().toLowerCase();
+  return ["hidden", "optional", "required"].includes(normalized) ? normalized : fallback;
+}
+
+function normalizeGuestCompositionRestrictionRule(value, fallback = "no_restriction") {
+  const normalized = String(value || fallback).trim().toLowerCase();
+  return [
+    "no_restriction",
+    "male_only_groups_not_allowed",
+    "female_only_groups_not_allowed",
+    "at_least_1_female_required",
+    "couple_only",
+    "custom_rule_later",
+  ].includes(normalized)
+    ? normalized
+    : fallback;
+}
+
+function getDefaultGuestCompositionRestrictionMessage(rule) {
+  switch (normalizeGuestCompositionRestrictionRule(rule)) {
+    case "male_only_groups_not_allowed":
+      return "Male-only groups are not allowed for this reservation.";
+    case "female_only_groups_not_allowed":
+      return "Female-only groups are not allowed for this reservation.";
+    case "at_least_1_female_required":
+      return "At least 1 female guest is required for this reservation.";
+    case "couple_only":
+      return "Only mixed couples with equal men and women are allowed for this reservation.";
+    default:
+      return "Guest composition does not match the reservation policy.";
+  }
+}
+
+function resolveGuestCompositionPolicyMessage(message, fallbackRule, translate) {
+  const t = typeof translate === "function" ? translate : (value) => value;
+  const trimmedMessage = String(message || "").trim();
+  if (trimmedMessage) return t(trimmedMessage);
+  return t(getDefaultGuestCompositionRestrictionMessage(fallbackRule));
+}
+
+function buildGuestCountOptions(maxGuests, evenOnly = false) {
+  const limit = Math.max(0, Math.floor(Number(maxGuests) || 0));
+  const options = [];
+  for (let count = 1; count <= limit; count += 1) {
+    if (evenOnly && count % 2 !== 0) continue;
+    options.push(count);
+  }
+  return options;
+}
+
+function normalizeGuestCountSelection(value, options = []) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return "";
+  if (options.includes(parsed)) return String(parsed);
+  for (let index = options.length - 1; index >= 0; index -= 1) {
+    if (options[index] <= parsed) return String(options[index]);
+  }
+  return options.length > 0 ? String(options[0]) : "";
+}
+
+function guestCompositionRuleRequiresInput(rule) {
+  const normalizedRule = normalizeGuestCompositionRestrictionRule(
+    rule,
+    "no_restriction"
+  );
+  return [
+    "male_only_groups_not_allowed",
+    "female_only_groups_not_allowed",
+    "at_least_1_female_required",
+    "couple_only",
+  ].includes(normalizedRule);
+}
+
+function getGuestCompositionValidationError({
+  enabled,
+  fieldMode,
+  restrictionRule,
+  validationMessage,
+  totalGuests,
+  menGuests,
+  womenGuests,
+  translate,
+}) {
+  if (!enabled) return "";
+  const t = typeof translate === "function" ? translate : (value) => value;
+
+  const normalizedRule = normalizeGuestCompositionRestrictionRule(
+    restrictionRule,
+    "no_restriction"
+  );
+  const normalizedMode = normalizeGuestCompositionFieldMode(fieldMode, "hidden");
+  const effectiveMode = guestCompositionRuleRequiresInput(normalizedRule)
+    ? "required"
+    : normalizedMode;
+  if (effectiveMode === "hidden") return "";
+
+  const total = parseGuestCompositionCount(totalGuests);
+  if (total <= 0) return "";
+
+  const policyMessage =
+    String(validationMessage || "").trim() ||
+    t(getDefaultGuestCompositionRestrictionMessage(normalizedRule));
+  if (normalizedRule === "couple_only" && total % 2 !== 0) {
+    return policyMessage;
+  }
+
+  const hasInput = hasGuestCompositionValue(menGuests) || hasGuestCompositionValue(womenGuests);
+  if (effectiveMode === "optional" && !hasInput) return "";
+  if (!hasInput) {
+    return guestCompositionRuleRequiresInput(normalizedRule)
+      ? policyMessage
+      : t("Please complete guest composition to continue.");
+  }
+
+  const men = parseGuestCompositionCount(menGuests);
+  const women = parseGuestCompositionCount(womenGuests);
+  if (men + women !== total) {
+    return t("Guest composition must match guest count.");
+  }
+
+  let blocked = false;
+  switch (normalizedRule) {
+    case "male_only_groups_not_allowed":
+      blocked = men > 0 && women === 0;
+      break;
+    case "female_only_groups_not_allowed":
+      blocked = women > 0 && men === 0;
+      break;
+    case "at_least_1_female_required":
+      blocked = women < 1;
+      break;
+    case "couple_only":
+      blocked = total % 2 !== 0 || men !== women || men < 1 || women < 1;
+      break;
+    case "custom_rule_later":
+    case "no_restriction":
+    default:
+      blocked = false;
+      break;
+  }
+
+  if (!blocked) return "";
+  return policyMessage;
+}
+
 function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
   const raw = String(value || "").trim();
   if (!raw) return fallback;
@@ -94,6 +303,40 @@ function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
   }
 
   return candidate;
+}
+
+const QR_MENU_BRANDING_CACHE_PREFIX = "qr-menu-branding-cache:";
+
+function getQrMenuBrandingCacheKey(identifier) {
+  const value = String(identifier || "").trim();
+  return value ? `${QR_MENU_BRANDING_CACHE_PREFIX}${value}` : "";
+}
+
+function readCachedQrMenuBranding(identifier) {
+  if (typeof window === "undefined") return null;
+  const key = getQrMenuBrandingCacheKey(identifier);
+  if (!key) return null;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedQrMenuBranding(identifier, customization) {
+  if (typeof window === "undefined") return;
+  const key = getQrMenuBrandingCacheKey(identifier);
+  if (!key || !customization || typeof customization !== "object") return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(customization));
+  } catch {
+    // Ignore storage quota/privacy errors and continue with in-memory state.
+  }
 }
 
 const apiUrl = (path) =>
@@ -1115,6 +1358,16 @@ const DICT = {
     Delivered: "Delivered",
     Time: "Time",
     Guests: "Guests",
+    "Guest composition": "Guest composition",
+    "Male-only groups are not allowed for this reservation.": "Male-only groups are not allowed for this reservation.",
+    "Female-only groups are not allowed for this reservation.": "Female-only groups are not allowed for this reservation.",
+    "At least 1 female guest is required for this reservation.": "At least 1 female guest is required for this reservation.",
+    "Only mixed couples with equal men and women are allowed for this reservation.": "Only mixed couples with equal men and women are allowed for this reservation.",
+    "Guest composition does not match the reservation policy.": "Guest composition does not match the reservation policy.",
+    "Please complete guest composition to continue.": "Please complete guest composition to continue.",
+    "Guest composition must match guest count.": "Guest composition must match guest count.",
+    Men: "Men",
+    Women: "Women",
     "Select Guests": "Select Guests",
     "Select guests": "Select guests",
     "Select guests first": "Select guests first",
@@ -1431,6 +1684,16 @@ const DICT = {
     Delivered: "Teslim Edildi",
     Time: "Süre",
     Guests: "Misafir",
+    "Guest composition": "Misafir dağılımı",
+    "Male-only groups are not allowed for this reservation.": "Sadece erkeklerden oluşan gruplara bu rezervasyon için izin verilmez.",
+    "Female-only groups are not allowed for this reservation.": "Sadece kadınlardan oluşan gruplara bu rezervasyon için izin verilmez.",
+    "At least 1 female guest is required for this reservation.": "Bu rezervasyon için grupta en az 1 kadın misafir bulunmalıdır.",
+    "Only mixed couples with equal men and women are allowed for this reservation.": "Bu rezervasyon için yalnızca eşit sayıda kadın ve erkekten oluşan çift gruplarına izin verilir.",
+    "Guest composition does not match the reservation policy.": "Misafir dağılımı rezervasyon politikasına uymuyor.",
+    "Please complete guest composition to continue.": "Devam etmek için misafir dağılımını tamamlayın.",
+    "Guest composition must match guest count.": "Misafir dağılımı toplam misafir sayısıyla eşleşmelidir.",
+    Men: "Erkek",
+    Women: "Kadın",
     "Select Guests": "Misafir Seçin",
     "Select guests": "Misafir seçin",
     "Select guests first": "Önce misafir seçin",
@@ -1754,6 +2017,16 @@ const DICT = {
     Home: "Startseite",
     Time: "Zeit",
     Guests: "Gäste",
+    "Guest composition": "Gästeverteilung",
+    "Male-only groups are not allowed for this reservation.": "Reine Männergruppen sind für diese Reservierung nicht erlaubt.",
+    "Female-only groups are not allowed for this reservation.": "Reine Frauengruppen sind für diese Reservierung nicht erlaubt.",
+    "At least 1 female guest is required for this reservation.": "Für diese Reservierung ist mindestens 1 weiblicher Gast erforderlich.",
+    "Only mixed couples with equal men and women are allowed for this reservation.": "Für diese Reservierung sind nur gemischte Paare mit gleicher Anzahl von Männern und Frauen erlaubt.",
+    "Guest composition does not match the reservation policy.": "Die Gästeverteilung entspricht nicht der Reservierungsrichtlinie.",
+    "Please complete guest composition to continue.": "Bitte vervollständigen Sie die Gästeverteilung, um fortzufahren.",
+    "Guest composition must match guest count.": "Die Gästeverteilung muss mit der Gästeanzahl übereinstimmen.",
+    Men: "Männer",
+    Women: "Frauen",
     "Select Guests": "Gäste wählen",
     "Select guests": "Gäste wählen",
     "Select guests first": "Zuerst Gäste wählen",
@@ -1973,6 +2246,16 @@ const DICT = {
     Home: "Accueil",
     Time: "Temps",
     Guests: "Invités",
+    "Guest composition": "Répartition des invités",
+    "Male-only groups are not allowed for this reservation.": "Les groupes composés uniquement d'hommes ne sont pas autorisés pour cette réservation.",
+    "Female-only groups are not allowed for this reservation.": "Les groupes composés uniquement de femmes ne sont pas autorisés pour cette réservation.",
+    "At least 1 female guest is required for this reservation.": "Au moins 1 invitée est requise pour cette réservation.",
+    "Only mixed couples with equal men and women are allowed for this reservation.": "Seuls les couples mixtes avec un nombre égal d'hommes et de femmes sont autorisés pour cette réservation.",
+    "Guest composition does not match the reservation policy.": "La répartition des invités ne correspond pas à la politique de réservation.",
+    "Please complete guest composition to continue.": "Veuillez compléter la répartition des invités pour continuer.",
+    "Guest composition must match guest count.": "La répartition des invités doit correspondre au nombre d'invités.",
+    Men: "Hommes",
+    Women: "Femmes",
     "Select Guests": "Choisir des invités",
     "Select guests": "Choisir des invités",
     "Select guests first": "Choisissez d'abord les invités",
@@ -2633,14 +2916,20 @@ function OrderTypeSelect({
   /* ============================================================
      1) Load Custom QR Menu Website Settings from Backend
      ============================================================ */
-  const [custom, setCustom] = React.useState(null);
+  const [custom, setCustom] = React.useState(() => readCachedQrMenuBranding(identifier));
   const onCustomizationLoadedRef = React.useRef(onCustomizationLoaded);
   React.useEffect(() => {
     onCustomizationLoadedRef.current = onCustomizationLoaded;
   }, [onCustomizationLoaded]);
 
   React.useEffect(() => {
-    if (!identifier) return;
+    if (!identifier) {
+      setCustom({});
+      return;
+    }
+
+    const cachedCustomization = readCachedQrMenuBranding(identifier);
+    setCustom(cachedCustomization);
 
 async function load() {
   try {
@@ -2653,12 +2942,14 @@ async function load() {
 
 	    const raw = await res.text();
 	    const data = raw ? JSON.parse(raw) : {};
-	    setCustom(data.customization || {});
-	    onCustomizationLoadedRef.current?.(data.customization || {});
+      const customization = data.customization || {};
+      writeCachedQrMenuBranding(identifier, customization);
+	    setCustom(customization);
 	  } catch (err) {
 	    console.error("❌ Failed to load QR customization:", err);
-	    setCustom({}); // allow component to render with defaults
-	    onCustomizationLoadedRef.current?.({});
+      if (!cachedCustomization) {
+	      setCustom({}); // allow component to render with defaults
+      }
 	  }
 	}
 
@@ -3142,6 +3433,8 @@ async function load() {
     table_number: "",
     quantity: "1",
     guests_count: "2",
+    male_guests_count: "",
+    female_guests_count: "",
     customer_name: "",
     customer_phone: "",
     customer_email: "",
@@ -3209,6 +3502,8 @@ async function load() {
       table_number: "",
       quantity: nextBookingType === "table" ? "1" : "1",
       guests_count: "2",
+      male_guests_count: "",
+      female_guests_count: "",
       customer_name: customerPrefill?.name || "",
       customer_phone: customerPrefill?.phone || "",
       customer_email: customerPrefill?.email || "",
@@ -3284,7 +3579,62 @@ async function load() {
     }
     return selectedConcertMaxGuests;
   }, [selectedConcertMaxGuests, selectedConcertTablePackageTicketAvailable]);
-  const selectedConcertGuests = Math.max(1, Number(concertForm.guests_count) || 1);
+  const concertGuestCompositionEnabled =
+    concertMode === "table" &&
+    boolish(concertModalEvent?.guest_composition_enabled, false);
+  const concertGuestCompositionFieldMode = normalizeGuestCompositionFieldMode(
+    concertModalEvent?.guest_composition_field_mode,
+    "hidden"
+  );
+  const concertGuestCompositionRestrictionRule = normalizeGuestCompositionRestrictionRule(
+    concertModalEvent?.guest_composition_restriction_rule,
+    "no_restriction"
+  );
+  const concertGuestCompositionRequiresInput = guestCompositionRuleRequiresInput(
+    concertGuestCompositionRestrictionRule
+  );
+  const concertGuestCompositionEffectiveFieldMode =
+    concertGuestCompositionRequiresInput ? "required" : concertGuestCompositionFieldMode;
+  const concertGuestCompositionVisible =
+    concertGuestCompositionEnabled &&
+    concertGuestCompositionEffectiveFieldMode !== "hidden";
+  const concertRequiresEvenGuestCount =
+    concertGuestCompositionVisible &&
+    concertGuestCompositionRestrictionRule === "couple_only";
+  const concertGuestCompositionLocked = concertRequiresEvenGuestCount;
+  const concertGuestOptions = React.useMemo(
+    () => buildGuestCountOptions(selectedConcertGuestCap, concertRequiresEvenGuestCount),
+    [selectedConcertGuestCap, concertRequiresEvenGuestCount]
+  );
+  const selectedConcertGuests =
+    Number(normalizeGuestCountSelection(concertForm.guests_count, concertGuestOptions)) ||
+    0;
+  const concertMaleGuestsCount = parseGuestCompositionCount(concertForm.male_guests_count);
+  const concertFemaleGuestsCount = parseGuestCompositionCount(concertForm.female_guests_count);
+  const hasConcertGuestCompositionInput =
+    hasGuestCompositionValue(concertForm.male_guests_count) ||
+    hasGuestCompositionValue(concertForm.female_guests_count);
+  const concertGuestCompositionPolicyMessage =
+    concertGuestCompositionVisible &&
+    concertGuestCompositionRestrictionRule !== "no_restriction"
+      ? resolveGuestCompositionPolicyMessage(
+          concertModalEvent?.guest_composition_validation_message,
+          concertGuestCompositionRestrictionRule,
+          t
+        )
+      : "";
+  const concertGuestCompositionError = getGuestCompositionValidationError({
+    enabled: concertGuestCompositionEnabled,
+    fieldMode: concertGuestCompositionEffectiveFieldMode,
+    restrictionRule: concertGuestCompositionRestrictionRule,
+    validationMessage: concertGuestCompositionPolicyMessage,
+    totalGuests: selectedConcertGuests,
+    menGuests: concertForm.male_guests_count,
+    womenGuests: concertForm.female_guests_count,
+    translate: t,
+  });
+  const concertGuestCountValid =
+    concertMode !== "table" || concertGuestOptions.includes(selectedConcertGuests);
   const selectedConcertQuantity = concertMode === "table" ? 1 : Math.max(1, Number(concertForm.quantity) || 1);
   const selectedConcertTotal =
     selectedConcertUnitPrice * (concertMode === "table" ? selectedConcertGuests : selectedConcertQuantity);
@@ -3327,13 +3677,101 @@ async function load() {
   React.useEffect(() => {
     if (concertMode !== "table") return;
     setConcertForm((prev) => {
-      const currentGuests = Number(prev.guests_count) || 1;
-      const clampedGuests = Math.min(selectedConcertGuestCap, Math.max(1, currentGuests));
-      const nextGuests = String(clampedGuests);
+      const nextGuests =
+        normalizeGuestCountSelection(prev.guests_count, concertGuestOptions) ||
+        (concertGuestOptions.length > 0 ? String(concertGuestOptions[0]) : "");
       if (prev.guests_count === nextGuests) return prev;
       return { ...prev, guests_count: nextGuests };
     });
-  }, [concertMode, selectedConcertGuestCap]);
+  }, [concertMode, concertGuestOptions]);
+
+  React.useEffect(() => {
+    if (concertMode !== "table" || !concertGuestCompositionVisible) {
+      setConcertForm((prev) => {
+        if (!prev.male_guests_count && !prev.female_guests_count) return prev;
+        return {
+          ...prev,
+          male_guests_count: "",
+          female_guests_count: "",
+        };
+      });
+      return;
+    }
+
+    setConcertForm((prev) => {
+      const hasInput =
+        hasGuestCompositionValue(prev.male_guests_count) ||
+        hasGuestCompositionValue(prev.female_guests_count);
+      if (concertGuestCompositionEffectiveFieldMode === "optional" && !hasInput) {
+        return prev;
+      }
+      const nextComposition = buildGuestComposition(
+        prev.guests_count,
+        prev.male_guests_count,
+        prev.female_guests_count,
+        {
+          menKey: "male_guests_count",
+          womenKey: "female_guests_count",
+        }
+      );
+      if (
+        prev.male_guests_count === nextComposition.male_guests_count &&
+        prev.female_guests_count === nextComposition.female_guests_count
+      ) {
+        return prev;
+      }
+      return { ...prev, ...nextComposition };
+    });
+  }, [
+    concertMode,
+    concertGuestCompositionVisible,
+    concertGuestCompositionEffectiveFieldMode,
+    concertForm.guests_count,
+  ]);
+
+  const handleConcertGuestCompositionChange = React.useCallback((field, delta) => {
+    setConcertForm((prev) => {
+      if (concertGuestCompositionLocked) return prev;
+      const totalGuests = parseGuestCompositionCount(prev.guests_count);
+      if (totalGuests <= 0) return prev;
+
+      const hasInput =
+        hasGuestCompositionValue(prev.male_guests_count) ||
+        hasGuestCompositionValue(prev.female_guests_count);
+      const currentMaleGuests = hasInput
+        ? parseGuestCompositionCount(prev.male_guests_count)
+        : field === "male_guests_count"
+          ? 0
+          : totalGuests;
+      const currentFemaleGuests = hasInput
+        ? parseGuestCompositionCount(prev.female_guests_count)
+        : field === "female_guests_count"
+          ? 0
+          : totalGuests;
+      const currentValue =
+        field === "male_guests_count" ? currentMaleGuests : currentFemaleGuests;
+      const nextValue = Math.min(totalGuests, Math.max(0, currentValue + delta));
+      const nextMaleGuests =
+        field === "male_guests_count" ? nextValue : totalGuests - nextValue;
+      const nextFemaleGuests =
+        field === "female_guests_count" ? nextValue : totalGuests - nextValue;
+      const nextMaleValue = String(nextMaleGuests);
+      const nextFemaleValue = String(nextFemaleGuests);
+
+      if (
+        prev.male_guests_count === nextMaleValue &&
+        prev.female_guests_count === nextFemaleValue
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        male_guests_count: nextMaleValue,
+        female_guests_count: nextFemaleValue,
+      };
+    });
+  }, [concertGuestCompositionLocked]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -3434,6 +3872,13 @@ async function load() {
         alert(t("Please select an available table."));
         return;
       }
+      if (!concertGuestOptions.includes(selectedConcertGuests)) {
+        alert(
+          concertGuestCompositionPolicyMessage ||
+            t("Please select a valid guest count.")
+        );
+        return;
+      }
       const availableTableStock = Number(selectedConcertTableStockAvailable);
       if (Number.isFinite(availableTableStock) && availableTableStock <= 0) {
         const packageTickets = Number(selectedConcertTablePackageTicketAvailable);
@@ -3444,6 +3889,10 @@ async function load() {
       const availablePackageTickets = Number(selectedConcertTablePackageTicketAvailable);
       if (Number.isFinite(availablePackageTickets) && selectedConcertGuests > availablePackageTickets) {
         alert(`Only ${availablePackageTickets} table-package ticket(s) available for ${selectedConcertGuests} guest(s).`);
+        return;
+      }
+      if (concertGuestCompositionError) {
+        alert(concertGuestCompositionError);
         return;
       }
     }
@@ -3468,6 +3917,14 @@ async function load() {
           : null,
       quantity,
       guests_count: concertMode === "table" ? selectedConcertGuests : null,
+      male_guests_count:
+        concertMode === "table" && concertGuestCompositionVisible && hasConcertGuestCompositionInput
+          ? concertMaleGuestsCount
+          : null,
+      female_guests_count:
+        concertMode === "table" && concertGuestCompositionVisible && hasConcertGuestCompositionInput
+          ? concertFemaleGuestsCount
+          : null,
       customer_name: concertForm.customer_name.trim(),
       customer_phone: concertForm.customer_phone.trim(),
       customer_email: customerEmail || null,
@@ -3580,6 +4037,11 @@ async function load() {
     concertModalEvent,
     concertMode,
     selectedConcertGuests,
+    concertGuestCompositionError,
+    concertGuestCompositionVisible,
+    concertMaleGuestsCount,
+    concertFemaleGuestsCount,
+    hasConcertGuestCompositionInput,
     onConcertReservationSuccess,
     identifier,
     loadConcertEvents,
@@ -4653,23 +5115,27 @@ async function load() {
                   <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Guests")}</label>
                   <input
                     type="number"
-                    min="1"
-                    max={selectedConcertGuestCap}
+                    min={concertRequiresEvenGuestCount ? 2 : 1}
+                    max={concertGuestOptions.length > 0 ? concertGuestOptions[concertGuestOptions.length - 1] : selectedConcertGuestCap}
+                    step={concertRequiresEvenGuestCount ? 2 : 1}
                     value={concertForm.guests_count}
                     onChange={(e) => {
                       const raw = Number(e.target.value);
+                      const normalizedInput =
+                        Number.isFinite(raw) && raw > 0 ? String(Math.floor(raw)) : "";
                       const next =
-                        Number.isFinite(raw) && raw > 0
-                          ? Math.min(selectedConcertGuestCap, Math.max(1, Math.floor(raw)))
-                          : 1;
+                        normalizeGuestCountSelection(normalizedInput, concertGuestOptions) ||
+                        (concertGuestOptions.length > 0 ? String(concertGuestOptions[0]) : "");
                       setConcertForm((prev) => ({ ...prev, guests_count: String(next) }));
                     }}
-                    disabled={!concertForm.table_number}
+                    disabled={!concertForm.table_number || concertGuestOptions.length === 0}
                     className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
                   />
                   {concertForm.table_number ? (
                     <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
-                      {`Max ${selectedConcertGuestCap} ${t("Guests")}`}
+                      {concertRequiresEvenGuestCount
+                        ? concertGuestCompositionPolicyMessage
+                        : `Max ${selectedConcertGuestCap} ${t("Guests")}`}
                     </p>
                   ) : null}
                 </div>
@@ -4708,6 +5174,101 @@ async function load() {
                 </div>
               </div>
             </div>
+
+            {concertMode === "table" && concertGuestCompositionVisible ? (
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                      {t("Guest composition")}
+                    </p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {hasConcertGuestCompositionInput
+                        ? `${concertMaleGuestsCount + concertFemaleGuestsCount}/${selectedConcertGuests} ${t("Guests")}`
+                        : concertGuestCompositionEffectiveFieldMode === "required"
+                          ? `${selectedConcertGuests} ${t("Guests")}`
+                          : t("Select Guests")}
+                    </p>
+                  </div>
+                  <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-neutral-700 shadow-sm ring-1 ring-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 dark:ring-neutral-800">
+                    {selectedConcertGuests}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {[
+                    {
+                      key: "male_guests_count",
+                      label: t("Men"),
+                      value: concertMaleGuestsCount,
+                    },
+                    {
+                      key: "female_guests_count",
+                      label: t("Women"),
+                      value: concertFemaleGuestsCount,
+                    },
+                  ].map(({ key, label, value }) => {
+                    const decreaseDisabled = concertGuestCompositionLocked
+                      ? true
+                      : concertGuestCompositionEffectiveFieldMode === "optional" &&
+                        !hasConcertGuestCompositionInput
+                        ? value <= 0
+                        : value <= 0;
+                    const increaseDisabled =
+                      concertGuestCompositionLocked || value >= selectedConcertGuests;
+
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between rounded-2xl bg-white px-3 py-2.5 ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800"
+                      >
+                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                          {label}
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleConcertGuestCompositionChange(key, -1)}
+                            disabled={decreaseDisabled}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-base font-semibold text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                            aria-label={`${label} -`}
+                          >
+                            -
+                          </button>
+                          <div className="min-w-[2.5rem] text-center text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                            {value}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleConcertGuestCompositionChange(key, 1)}
+                            disabled={increaseDisabled}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-base font-semibold text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                            aria-label={`${label} +`}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {concertGuestCompositionPolicyMessage &&
+                !concertGuestCompositionError &&
+                !concertRequiresEvenGuestCount ? (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                    {concertGuestCompositionPolicyMessage}
+                  </div>
+                ) : null}
+
+                {concertGuestCompositionError ? (
+                  <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+                    {concertGuestCompositionError}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="grid grid-cols-1 gap-3">
               <input
@@ -4766,7 +5327,11 @@ async function load() {
             <button
               type="button"
               onClick={submitConcertBooking}
-              disabled={concertSubmitting}
+              disabled={
+                concertSubmitting ||
+                !concertGuestCountValid ||
+                !!concertGuestCompositionError
+              }
               className="w-full rounded-xl border border-neutral-800 dark:border-neutral-500 bg-neutral-900 text-white px-4 py-3 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-55"
             >
               {concertSubmitting ? t("Please wait...") : t("Buy Ticket")}
@@ -4801,28 +5366,65 @@ function TakeawayOrderForm({
   occupiedTables = [],
   reservedTables = [],
   pickupEnabled = true,
+  guestCompositionSettings = null,
   paymentMethod,
   setPaymentMethod,
   formatTableName,
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const paymentMethods = usePaymentMethods();
+  const guestCompositionEnabledSetting = Boolean(guestCompositionSettings?.enabled);
+  const guestCompositionFieldModeSetting = guestCompositionSettings?.fieldMode;
   const normalizedInitialValues = useMemo(
-    () => ({
-      name: initialValues?.name || "",
-      phone: formatQrPhoneForInput(initialValues?.phone || ""),
-      email: initialValues?.email || "",
-      pickup_date: initialValues?.pickup_date || "",
-      pickup_time: initialValues?.pickup_time || "",
-      mode: pickupEnabled
-        ? (initialValues?.mode || "reservation")
-        : "reservation",
-      table_number: initialValues?.table_number || "",
-      reservation_clients: initialValues?.reservation_clients || "",
-      notes: initialValues?.notes || "",
-      payment_method: initialValues?.payment_method || "",
-    }),
-    [initialValues, pickupEnabled]
+    () => {
+      const initialFieldMode = normalizeGuestCompositionFieldMode(
+        guestCompositionFieldModeSetting,
+        "hidden"
+      );
+      const initialGuestCompositionEnabled =
+        guestCompositionEnabledSetting && initialFieldMode !== "hidden";
+      const hasInitialGuestCompositionInput =
+        hasGuestCompositionValue(initialValues?.reservation_men) ||
+        hasGuestCompositionValue(initialValues?.reservation_women);
+      const guestComposition =
+        initialGuestCompositionEnabled &&
+        (initialFieldMode === "required" || hasInitialGuestCompositionInput)
+          ? buildGuestComposition(
+              initialValues?.reservation_clients,
+              initialValues?.reservation_men,
+              initialValues?.reservation_women,
+              {
+                menKey: "reservation_men",
+                womenKey: "reservation_women",
+              }
+            )
+          : {
+              reservation_men: initialValues?.reservation_men || "",
+              reservation_women: initialValues?.reservation_women || "",
+            };
+
+      return {
+        name: initialValues?.name || "",
+        phone: formatQrPhoneForInput(initialValues?.phone || ""),
+        email: initialValues?.email || "",
+        pickup_date: initialValues?.pickup_date || "",
+        pickup_time: initialValues?.pickup_time || "",
+        mode: pickupEnabled
+          ? (initialValues?.mode || "reservation")
+          : "reservation",
+        table_number: initialValues?.table_number || "",
+        reservation_clients: initialValues?.reservation_clients || "",
+        ...guestComposition,
+        notes: initialValues?.notes || "",
+        payment_method: initialValues?.payment_method || "",
+      };
+    },
+    [
+      initialValues,
+      pickupEnabled,
+      guestCompositionEnabledSetting,
+      guestCompositionFieldModeSetting,
+    ]
   );
   const [form, setForm] = useState({
     ...normalizedInitialValues,
@@ -4885,16 +5487,62 @@ function TakeawayOrderForm({
     if (Number.isFinite(seats) && seats > 0) return Math.min(20, Math.max(1, Math.floor(seats)));
     return 12;
   })();
-  const guestOptions = useMemo(
-    () => Array.from({ length: maxGuestsForSelectedTable }, (_, i) => i + 1),
-    [maxGuestsForSelectedTable]
-  );
   const reservationClientsCount = Number(form.reservation_clients);
+  const reservationGuestCompositionEnabled =
+    requiresReservationTable && Boolean(guestCompositionSettings?.enabled);
+  const reservationGuestCompositionFieldMode = normalizeGuestCompositionFieldMode(
+    guestCompositionSettings?.fieldMode,
+    "hidden"
+  );
+  const reservationGuestCompositionRestrictionRule = normalizeGuestCompositionRestrictionRule(
+    guestCompositionSettings?.restrictionRule,
+    "no_restriction"
+  );
+  const reservationGuestCompositionRequiresInput = guestCompositionRuleRequiresInput(
+    reservationGuestCompositionRestrictionRule
+  );
+  const reservationGuestCompositionEffectiveFieldMode =
+    reservationGuestCompositionRequiresInput
+      ? "required"
+      : reservationGuestCompositionFieldMode;
+  const reservationGuestCompositionVisible =
+    reservationGuestCompositionEnabled &&
+    reservationGuestCompositionEffectiveFieldMode !== "hidden";
+  const reservationRequiresEvenGuestCount =
+    reservationGuestCompositionVisible &&
+    reservationGuestCompositionRestrictionRule === "couple_only";
+  const reservationGuestCompositionLocked = reservationRequiresEvenGuestCount;
+  const guestOptions = useMemo(
+    () => buildGuestCountOptions(maxGuestsForSelectedTable, reservationRequiresEvenGuestCount),
+    [maxGuestsForSelectedTable, reservationRequiresEvenGuestCount]
+  );
+  const reservationMenCount = parseGuestCompositionCount(form.reservation_men);
+  const reservationWomenCount = parseGuestCompositionCount(form.reservation_women);
+  const hasReservationGuestCompositionInput =
+    hasGuestCompositionValue(form.reservation_men) ||
+    hasGuestCompositionValue(form.reservation_women);
   const hasReservationClients =
     requiresReservationTable &&
-    Number.isFinite(reservationClientsCount) &&
-    reservationClientsCount > 0 &&
-    reservationClientsCount <= maxGuestsForSelectedTable;
+    guestOptions.includes(reservationClientsCount);
+  const reservationGuestCompositionPolicyMessage =
+    reservationGuestCompositionVisible &&
+    reservationGuestCompositionRestrictionRule !== "no_restriction"
+      ? resolveGuestCompositionPolicyMessage(
+          guestCompositionSettings?.validationMessage,
+          reservationGuestCompositionRestrictionRule,
+          t
+        )
+      : "";
+  const reservationGuestCompositionError = getGuestCompositionValidationError({
+    enabled: reservationGuestCompositionEnabled,
+    fieldMode: reservationGuestCompositionEffectiveFieldMode,
+    restrictionRule: reservationGuestCompositionRestrictionRule,
+    validationMessage: reservationGuestCompositionPolicyMessage,
+    totalGuests: reservationClientsCount,
+    menGuests: form.reservation_men,
+    womenGuests: form.reservation_women,
+    translate: t,
+  });
   const hasReservationTable =
     requiresReservationTable &&
     Number.isFinite(selectedTableNumber) &&
@@ -4906,24 +5554,65 @@ function TakeawayOrderForm({
     emailValid &&
     form.pickup_date &&
     form.pickup_time &&
-    (!requiresReservationTable || (hasReservationTable && hasReservationClients)) &&
+    (!requiresReservationTable ||
+      (hasReservationTable && hasReservationClients && !reservationGuestCompositionError)) &&
     (!requiresPayment || !!form.payment_method);
+  const reservationSubmitDisabled =
+    submitting ||
+    (form.mode === "reservation" && !valid);
 
   useEffect(() => {
     if (!requiresReservationTable) return;
     if (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0) return;
     setForm((prev) => {
-      if (!prev.reservation_clients) return prev;
-      const current = Number(prev.reservation_clients);
-      const nextValue = Number.isFinite(current) && current > 0
-        ? Math.min(current, maxGuestsForSelectedTable)
-        : "";
-      if (nextValue === "") return { ...prev, reservation_clients: "" };
-      const next = String(Math.max(1, nextValue));
+      const next = normalizeGuestCountSelection(prev.reservation_clients, guestOptions);
       if (prev.reservation_clients === next) return prev;
       return { ...prev, reservation_clients: next };
     });
-  }, [requiresReservationTable, selectedTableNumber, maxGuestsForSelectedTable]);
+  }, [requiresReservationTable, selectedTableNumber, guestOptions]);
+
+  useEffect(() => {
+    if (!requiresReservationTable || !reservationGuestCompositionVisible) {
+      setForm((prev) => {
+        if (!prev.reservation_men && !prev.reservation_women) return prev;
+        return {
+          ...prev,
+          reservation_men: "",
+          reservation_women: "",
+        };
+      });
+      return;
+    }
+    setForm((prev) => {
+      const hasInput =
+        hasGuestCompositionValue(prev.reservation_men) ||
+        hasGuestCompositionValue(prev.reservation_women);
+      if (reservationGuestCompositionEffectiveFieldMode === "optional" && !hasInput) {
+        return prev;
+      }
+      const nextComposition = buildGuestComposition(
+        prev.reservation_clients,
+        prev.reservation_men,
+        prev.reservation_women,
+        {
+          menKey: "reservation_men",
+          womenKey: "reservation_women",
+        }
+      );
+      if (
+        prev.reservation_men === nextComposition.reservation_men &&
+        prev.reservation_women === nextComposition.reservation_women
+      ) {
+        return prev;
+      }
+      return { ...prev, ...nextComposition };
+    });
+  }, [
+    requiresReservationTable,
+    reservationGuestCompositionVisible,
+    reservationGuestCompositionEffectiveFieldMode,
+    form.reservation_clients,
+  ]);
 
   useEffect(() => {
     if (pickupEnabled) return;
@@ -4944,6 +5633,50 @@ function TakeawayOrderForm({
       setPaymentMethod(value);
     }
   };
+
+  const handleGuestCompositionChange = useCallback((field, delta) => {
+    setForm((prev) => {
+      if (reservationGuestCompositionLocked) return prev;
+      const totalGuests = parseGuestCompositionCount(prev.reservation_clients);
+      if (totalGuests <= 0) return prev;
+
+      const hasInput =
+        hasGuestCompositionValue(prev.reservation_men) ||
+        hasGuestCompositionValue(prev.reservation_women);
+      const currentMen = hasInput
+        ? parseGuestCompositionCount(prev.reservation_men)
+        : field === "reservation_men"
+          ? 0
+          : totalGuests;
+      const currentWomen = hasInput
+        ? parseGuestCompositionCount(prev.reservation_women)
+        : field === "reservation_women"
+          ? 0
+          : totalGuests;
+      const currentValue = field === "reservation_men" ? currentMen : currentWomen;
+      const nextValue = Math.min(totalGuests, Math.max(0, currentValue + delta));
+
+      const nextMen =
+        field === "reservation_men" ? nextValue : totalGuests - nextValue;
+      const nextWomen =
+        field === "reservation_women" ? nextValue : totalGuests - nextValue;
+      const nextMenValue = String(nextMen);
+      const nextWomenValue = String(nextWomen);
+
+      if (
+        prev.reservation_men === nextMenValue &&
+        prev.reservation_women === nextWomenValue
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        reservation_men: nextMenValue,
+        reservation_women: nextWomenValue,
+      };
+    });
+  }, [reservationGuestCompositionLocked]);
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -5142,7 +5875,7 @@ function TakeawayOrderForm({
                   }`}
                   value={form.reservation_clients}
                   onChange={(e) => setForm((f) => ({ ...f, reservation_clients: e.target.value }))}
-                  disabled={!hasReservationTable}
+                  disabled={!hasReservationTable || guestOptions.length === 0}
                 >
                   <option value="">{t("Select Guests")}</option>
                   {guestOptions.map((count) => (
@@ -5156,7 +5889,113 @@ function TakeawayOrderForm({
                     {t("Select Guests")}
                   </p>
                 )}
+                {reservationRequiresEvenGuestCount ? (
+                  <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    {reservationGuestCompositionPolicyMessage}
+                  </p>
+                ) : null}
               </div>
+            </div>
+          )}
+
+          {form.mode === "reservation" && reservationGuestCompositionVisible && (
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                    {t("Guest composition")}
+                  </p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {hasReservationGuestCompositionInput
+                      ? `${reservationMenCount + reservationWomenCount}/${reservationClientsCount} ${t("Guests")}`
+                      : reservationGuestCompositionEffectiveFieldMode === "required"
+                        ? `${reservationClientsCount || 0} ${t("Guests")}`
+                        : t("Select Guests")}
+                  </p>
+                </div>
+                <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-neutral-700 shadow-sm ring-1 ring-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 dark:ring-neutral-800">
+                  {hasReservationClients ? reservationClientsCount : 0}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {[
+                  {
+                    key: "reservation_men",
+                    label: t("Men"),
+                    value: reservationMenCount,
+                  },
+                  {
+                    key: "reservation_women",
+                    label: t("Women"),
+                    value: reservationWomenCount,
+                  },
+                ].map(({ key, label, value }) => {
+                  const decreaseDisabled =
+                    reservationGuestCompositionLocked ||
+                    !hasReservationClients ||
+                    value <= 0;
+                  const increaseDisabled =
+                    reservationGuestCompositionLocked ||
+                    !hasReservationClients ||
+                    value >= reservationClientsCount;
+
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between rounded-2xl bg-white px-3 py-2.5 ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800"
+                    >
+                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                        {label}
+                      </span>
+
+                      {reservationGuestCompositionLocked ? (
+                        <div className="min-w-[2.5rem] rounded-full bg-neutral-100 px-3 py-1 text-center text-sm font-semibold text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100">
+                          {value}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleGuestCompositionChange(key, -1)}
+                            disabled={decreaseDisabled}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-base font-semibold text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                            aria-label={`${label} -`}
+                          >
+                            -
+                          </button>
+                          <div className="min-w-[2.5rem] text-center text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                            {value}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleGuestCompositionChange(key, 1)}
+                            disabled={increaseDisabled}
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-base font-semibold text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                            aria-label={`${label} +`}
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {reservationGuestCompositionPolicyMessage &&
+              !reservationGuestCompositionError &&
+              !reservationRequiresEvenGuestCount ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                  {reservationGuestCompositionPolicyMessage}
+                </div>
+              ) : null}
+
+              {reservationGuestCompositionError ? (
+                <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+                  {reservationGuestCompositionError}
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -5200,7 +6039,7 @@ function TakeawayOrderForm({
           {/* Submit */}
           <button
             type="submit"
-            disabled={submitting}
+            disabled={reservationSubmitDisabled}
             className="w-full rounded-xl bg-neutral-900 text-white px-4 py-3 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-55"
           >
             {submitting
@@ -6065,8 +6904,18 @@ export default function QrMenu() {
     if (typeof window === "undefined") return undefined;
     const standalone =
       window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator?.standalone;
-    const splashLogo = resolveBrandingAsset(orderSelectCustomization?.splash_logo || "", "");
-    if (!standalone || !splashLogo) {
+    const splashLogo = resolveBrandingAsset(
+      orderSelectCustomization?.splash_logo ||
+        orderSelectCustomization?.main_title_logo ||
+        orderSelectCustomization?.app_icon ||
+        "",
+      ""
+    );
+    const splashName = normalizeRestaurantDisplayName(
+      orderSelectCustomization?.app_display_name || brandName || restaurantIdentifier,
+      ""
+    );
+    if (!standalone || (!splashLogo && !splashName)) {
       setShowStandaloneSplash(false);
       return undefined;
     }
@@ -6075,7 +6924,26 @@ export default function QrMenu() {
       setShowStandaloneSplash(false);
     }, 1200);
     return () => window.clearTimeout(timerId);
-  }, [orderSelectCustomization?.splash_logo]);
+  }, [
+    brandName,
+    orderSelectCustomization?.app_display_name,
+    orderSelectCustomization?.app_icon,
+    orderSelectCustomization?.main_title_logo,
+    orderSelectCustomization?.splash_logo,
+    restaurantIdentifier,
+  ]);
+
+  const standaloneSplashLogo = resolveBrandingAsset(
+    orderSelectCustomization?.splash_logo ||
+      orderSelectCustomization?.main_title_logo ||
+      orderSelectCustomization?.app_icon ||
+      "",
+    ""
+  );
+  const standaloneSplashName = normalizeRestaurantDisplayName(
+    orderSelectCustomization?.app_display_name || brandName || restaurantIdentifier,
+    t("QR Menu")
+  );
 
   const resolvedTableForActions =
     Number(table) ||
@@ -6767,6 +7635,25 @@ export default function QrMenu() {
     }),
     [savedCustomerPrefill, takeaway]
   );
+  const reservationGuestCompositionSettings = useMemo(
+    () => ({
+      enabled: boolish(
+        orderSelectCustomization?.reservation_guest_composition_enabled,
+        false
+      ),
+      fieldMode: orderSelectCustomization?.reservation_guest_composition_field_mode,
+      restrictionRule:
+        orderSelectCustomization?.reservation_guest_composition_restriction_rule,
+      validationMessage:
+        orderSelectCustomization?.reservation_guest_composition_validation_message,
+    }),
+    [
+      orderSelectCustomization?.reservation_guest_composition_enabled,
+      orderSelectCustomization?.reservation_guest_composition_field_mode,
+      orderSelectCustomization?.reservation_guest_composition_restriction_rule,
+      orderSelectCustomization?.reservation_guest_composition_validation_message,
+    ]
+  );
 
   useEffect(() => {
     if (allowTableOrder) return;
@@ -6998,6 +7885,8 @@ export default function QrMenu() {
         mode: "reservation",
         table_number: "",
         reservation_clients: "",
+        reservation_men: "",
+        reservation_women: "",
         notes: eventLabel ? `Concert: ${eventLabel}` : "",
         payment_method: "",
       });
@@ -7320,11 +8209,27 @@ export default function QrMenu() {
             ),
           }}
         >
-          <img
-            src={resolveBrandingAsset(orderSelectCustomization?.splash_logo || "", "/Beylogo.svg")}
-            alt={t("Splash Logo")}
-            className="w-36 h-36 object-contain"
-          />
+          <div className="flex flex-col items-center gap-4 px-6 text-center">
+            {standaloneSplashLogo ? (
+              <img
+                src={standaloneSplashLogo}
+                alt={standaloneSplashName}
+                className="h-36 w-36 object-contain"
+              />
+            ) : null}
+            <div
+              className="text-2xl font-semibold tracking-tight"
+              style={{
+                color: normalizeHexColor(
+                  orderSelectCustomization?.pwa_primary_color ||
+                    orderSelectCustomization?.primary_color,
+                  "#111827"
+                ),
+              }}
+            >
+              {standaloneSplashName}
+            </div>
+          </div>
         </div>
       ) : null}
       <InstallHelpModal
@@ -7953,6 +8858,7 @@ export default function QrMenu() {
           occupiedTables={occupiedTables}
           reservedTables={safeReservedTables}
           pickupEnabled={allowReservationPickup}
+          guestCompositionSettings={reservationGuestCompositionSettings}
           formatTableName={formatTableName}
           onClose={() => {
             setShowTakeawayForm(false);
@@ -7977,6 +8883,8 @@ export default function QrMenu() {
                 mode: "reservation",
                 table_number: "",
                 reservation_clients: "",
+                reservation_men: "",
+                reservation_women: "",
                 notes: "",
                 payment_method: "",
               });
@@ -8005,6 +8913,12 @@ export default function QrMenu() {
                     reservation_date: form.pickup_date,
                     reservation_time: form.pickup_time,
                     reservation_clients: Number(form.reservation_clients) || 1,
+                    reservation_men: hasGuestCompositionValue(form.reservation_men)
+                      ? Number(form.reservation_men) || 0
+                      : null,
+                    reservation_women: hasGuestCompositionValue(form.reservation_women)
+                      ? Number(form.reservation_women) || 0
+                      : null,
                     reservation_notes: form.notes || "",
                     customer_name: form.name || null,
                     customer_phone: form.phone || null,

@@ -16,6 +16,7 @@ import {
   hasConcertBookingContext,
   isReservationConfirmedForCheckin,
 } from "../../utils/reservationStatus";
+import { normalizeOrderStatus } from "./tableVisuals";
 
 const AREA_FILTER_ALL = "ALL";
 const AREA_FILTER_RESERVED = "__RESERVED__";
@@ -71,6 +72,24 @@ const getBookingStatusToneClass = (status) => {
   return "border-amber-200 bg-amber-50 text-amber-700";
 };
 
+const hasBookingGuestCompositionValue = (value) =>
+  value !== undefined && value !== null && String(value).trim() !== "";
+
+const getViewBookingActionKey = (booking = {}) => {
+  const source = String(booking?.booking_source || "").toLowerCase();
+  if (source === "concert") {
+    return `concert-${String(booking?.id ?? booking?.reservation_order_id ?? booking?.reservationOrderId ?? "")}`;
+  }
+  return `reservation-${String(
+    booking?.id ??
+      booking?.order_id ??
+      booking?.orderId ??
+      booking?.table_number ??
+      booking?.tableNumber ??
+      ""
+  )}`;
+};
+
 function TablesView({
   showAreaTabs,
   showStandardAreaTabs = true,
@@ -108,6 +127,7 @@ function TablesView({
   const [bookingSearch, setBookingSearch] = React.useState("");
   const [bookingDateFrom, setBookingDateFrom] = React.useState(() => formatDateInputValue(new Date()));
   const [bookingDateTo, setBookingDateTo] = React.useState(() => formatDateInputValue(new Date()));
+  const [bookingActionSubmittingKey, setBookingActionSubmittingKey] = React.useState("");
   const isActiveReservationFallback = React.useCallback((table) => {
     const fallback = table?.reservationFallback;
     if (!fallback || typeof fallback !== "object") return false;
@@ -174,12 +194,165 @@ function TablesView({
       );
     });
   }, [bookingDateFrom, bookingDateTo, combinedBookings, normalizedBookingSearch]);
+  const tablesByNumber = React.useMemo(() => {
+    const map = new Map();
+    (Array.isArray(tables) ? tables : []).forEach((table) => {
+      const tableNumber = Number(table?.tableNumber ?? table?.table_number);
+      if (Number.isFinite(tableNumber) && tableNumber > 0) {
+        map.set(tableNumber, table);
+      }
+    });
+    return map;
+  }, [tables]);
   const isConcertBookedTable = React.useCallback(
     (table) => {
       const tableNumber = Number(table?.tableNumber);
       return Number.isFinite(tableNumber) && concertBookedTableNumbers.has(tableNumber);
     },
     [concertBookedTableNumbers]
+  );
+  const resolveBookingActionContext = React.useCallback(
+    (booking) => {
+      const tableNumber = Number(
+        booking?.reserved_table_number ??
+          booking?.reservedTableNumber ??
+          booking?.table_number ??
+          booking?.tableNumber
+      );
+      const tableFromGrid =
+        Number.isFinite(tableNumber) && tableNumber > 0 ? tablesByNumber.get(tableNumber) || null : null;
+      let tableOrder = tableFromGrid?.order || null;
+      if (!tableOrder && Number.isFinite(tableNumber) && tableNumber > 0 && ordersByTable instanceof Map) {
+        const raw = ordersByTable.get(tableNumber);
+        tableOrder = Array.isArray(raw) ? raw[0] || null : raw || null;
+      }
+
+      const normalizedStatus = String(
+        booking?.reservation_order_status ??
+          booking?.reservationOrderStatus ??
+          booking?.status ??
+          booking?.reservation_status ??
+          booking?.reservationStatus ??
+          booking?.payment_status ??
+          booking?.paymentStatus ??
+          tableFromGrid?.reservationFallback?.status ??
+          tableOrder?.reservation?.status ??
+          tableOrder?.status ??
+          ""
+      )
+        .trim()
+        .toLowerCase();
+      const resolvedOrderId =
+        booking?.order_id ??
+        booking?.orderId ??
+        booking?.reservation_order_id ??
+        booking?.reservationOrderId ??
+        tableFromGrid?.reservationFallback?.order_id ??
+        tableFromGrid?.reservationFallback?.orderId ??
+        tableOrder?.reservation?.order_id ??
+        tableOrder?.reservation?.orderId ??
+        tableOrder?.id ??
+        null;
+      const reservationInfo = {
+        ...(tableFromGrid?.reservationFallback && typeof tableFromGrid.reservationFallback === "object"
+          ? tableFromGrid.reservationFallback
+          : {}),
+        ...booking,
+        status: normalizedStatus || booking?.status || null,
+        reservation_status:
+          booking?.reservation_status ??
+          booking?.reservationStatus ??
+          normalizedStatus ??
+          null,
+        reservationStatus:
+          booking?.reservationStatus ??
+          booking?.reservation_status ??
+          normalizedStatus ??
+          null,
+        order_id: resolvedOrderId,
+        orderId: resolvedOrderId,
+        table_number: Number.isFinite(tableNumber) ? tableNumber : booking?.table_number ?? null,
+        tableNumber: Number.isFinite(tableNumber) ? tableNumber : booking?.tableNumber ?? null,
+      };
+
+      const tableContext = tableFromGrid
+        ? {
+            ...tableFromGrid,
+            order: tableOrder || null,
+            reservationFallback: {
+              ...(tableFromGrid?.reservationFallback && typeof tableFromGrid.reservationFallback === "object"
+                ? tableFromGrid.reservationFallback
+                : {}),
+              ...reservationInfo,
+            },
+          }
+        : {
+            tableNumber: Number.isFinite(tableNumber) ? tableNumber : null,
+            table_number: Number.isFinite(tableNumber) ? tableNumber : null,
+            order: tableOrder || null,
+            reservationFallback: reservationInfo,
+            hasUnpaidItems: false,
+            isReservedTable: true,
+            isFreeTable: false,
+          };
+
+      return {
+        table: tableContext,
+        reservationInfo,
+        tableNumber,
+      };
+    },
+    [ordersByTable, tablesByNumber]
+  );
+  const handleBookingCheckin = React.useCallback(
+    async (booking) => {
+      if (typeof cardProps?.handleCheckinReservation !== "function") return;
+      const actionKey = getViewBookingActionKey(booking);
+      const context = resolveBookingActionContext(booking);
+      if (!context?.table) return;
+      setBookingActionSubmittingKey(actionKey);
+      try {
+        await cardProps.handleCheckinReservation(context.table, context.reservationInfo);
+      } finally {
+        setBookingActionSubmittingKey((current) => (current === actionKey ? "" : current));
+      }
+    },
+    [cardProps, resolveBookingActionContext]
+  );
+  const handleBookingCheckout = React.useCallback(
+    async (booking) => {
+      if (typeof cardProps?.handleCloseTable !== "function") return;
+      const actionKey = getViewBookingActionKey(booking);
+      const context = resolveBookingActionContext(booking);
+      const reservationInfo = context?.reservationInfo || null;
+      const table = context?.table || null;
+      const reservationOrderId = Number(reservationInfo?.order_id ?? reservationInfo?.orderId);
+      const activeOrderId = Number(table?.order?.id);
+      const checkoutTarget =
+        Number.isFinite(reservationOrderId) && reservationOrderId > 0
+          ? reservationOrderId
+          : Number.isFinite(activeOrderId) && activeOrderId > 0
+            ? activeOrderId
+            : table?.order ||
+              reservationInfo?.order_id ||
+              reservationInfo?.orderId ||
+              reservationInfo?.id;
+      if (!checkoutTarget) return;
+
+      setBookingActionSubmittingKey(actionKey);
+      try {
+        await cardProps.handleCloseTable(checkoutTarget, {
+          preserveReservationShadow: false,
+          requirePaid: true,
+          isReservationCheckout: true,
+          tableNumber: table?.tableNumber ?? table?.table_number ?? null,
+          reservationId: reservationInfo?.id ?? null,
+        });
+      } finally {
+        setBookingActionSubmittingKey((current) => (current === actionKey ? "" : current));
+      }
+    },
+    [cardProps, resolveBookingActionContext]
   );
 
   const visibleTables = React.useMemo(
@@ -447,6 +620,8 @@ function TablesView({
                   const source = String(booking?.booking_source || "").toLowerCase();
                   const isConcertBooking = source === "concert";
                   const isConcertLikeBooking = isConcertBooking || hasConcertBookingContext(booking);
+                  const bookingActionKey = getViewBookingActionKey(booking);
+                  const bookingActionPending = bookingActionSubmittingKey === bookingActionKey;
                   const reservationAlreadyConfirmed = isReservationConfirmedForCheckin(booking);
                   const reservationNotes = String(
                     booking?.reservation_notes ?? booking?.reservationNotes ?? ""
@@ -464,6 +639,37 @@ function TablesView({
                       booking.reservation_clients ??
                       0
                   );
+                  const hasGuestComposition =
+                    hasBookingGuestCompositionValue(
+                      booking.male_guests_count ??
+                        booking.maleGuestsCount ??
+                        booking.reservation_men ??
+                        booking.reservationMen
+                    ) ||
+                    hasBookingGuestCompositionValue(
+                      booking.female_guests_count ??
+                        booking.femaleGuestsCount ??
+                        booking.reservation_women ??
+                        booking.reservationWomen
+                    );
+                  const bookingMenCount = hasGuestComposition
+                    ? Number(
+                        booking.male_guests_count ??
+                          booking.maleGuestsCount ??
+                          booking.reservation_men ??
+                          booking.reservationMen ??
+                          0
+                      )
+                    : null;
+                  const bookingWomenCount = hasGuestComposition
+                    ? Number(
+                        booking.female_guests_count ??
+                          booking.femaleGuestsCount ??
+                          booking.reservation_women ??
+                          booking.reservationWomen ??
+                          0
+                      )
+                    : null;
                   const guestsLabel = Number.isFinite(bookingGuests) && bookingGuests > 0
                     ? bookingGuests
                     : Number(booking.quantity || 0) || 0;
@@ -501,6 +707,66 @@ function TablesView({
                   const bookingStatusLabel = isConcertBooking
                     ? String(booking.payment_status || "").trim().toLowerCase()
                     : reservationStatus;
+                  const bookingLifecycleStatus = String(
+                    booking?.reservation_order_status ??
+                      booking?.reservationOrderStatus ??
+                      booking?.status ??
+                      booking?.reservation_status ??
+                      booking?.reservationStatus ??
+                      booking?.payment_status ??
+                      booking?.paymentStatus ??
+                      ""
+                  )
+                    .trim()
+                    .toLowerCase();
+                  const isCheckedInBooking = bookingLifecycleStatus === "checked_in";
+                  const isCheckedOutBooking = bookingLifecycleStatus === "checked_out";
+                  const isCancelledBooking =
+                    ["cancelled", "canceled", "deleted", "void"].includes(bookingLifecycleStatus) ||
+                    ["cancelled", "canceled"].includes(
+                      String(booking?.payment_status ?? booking?.paymentStatus ?? "")
+                        .trim()
+                        .toLowerCase()
+                    );
+                  const needsBookingConfirmation =
+                    bookingLifecycleStatus !== "confirmed" &&
+                    bookingLifecycleStatus !== "checked_in" &&
+                    bookingLifecycleStatus !== "checked_out";
+                  const bookingActionContext = resolveBookingActionContext(booking);
+                  const bookingTable = bookingActionContext?.table || null;
+                  const bookingOrder = bookingTable?.order || null;
+                  const bookingItems = Array.isArray(bookingOrder?.items) ? bookingOrder.items : [];
+                  const bookingSuborders = Array.isArray(bookingOrder?.suborders)
+                    ? bookingOrder.suborders
+                    : [];
+                  const bookingHasOrderItems = bookingItems.length > 0;
+                  const bookingHasSuborderItems = bookingSuborders.some(
+                    (suborder) => Array.isArray(suborder?.items) && suborder.items.length > 0
+                  );
+                  const bookingHasReceiptHistory =
+                    bookingOrder?.receipt_id != null ||
+                    bookingOrder?.receiptId != null ||
+                    (Array.isArray(bookingOrder?.receiptMethods) &&
+                      bookingOrder.receiptMethods.length > 0);
+                  const bookingPaymentStatus = normalizeOrderStatus(
+                    bookingOrder?.payment_status ?? bookingOrder?.paymentStatus
+                  );
+                  const bookingHasOrderActivity =
+                    bookingHasOrderItems ||
+                    bookingHasSuborderItems ||
+                    bookingHasReceiptHistory ||
+                    Number(bookingOrder?.total || 0) > 0 ||
+                    bookingPaymentStatus === "paid" ||
+                    Boolean(bookingTable?.isFullyPaid);
+                  const hasBookingTableTarget =
+                    Number.isFinite(Number(bookingActionContext?.tableNumber)) &&
+                    Number(bookingActionContext?.tableNumber) > 0;
+                  const canShowBookingAction =
+                    !isCancelledBooking && !isCheckedOutBooking && hasBookingTableTarget;
+                  const shouldDisableBookingCheckin =
+                    bookingActionPending ||
+                    needsBookingConfirmation ||
+                    (!isCheckedInBooking && bookingHasOrderActivity);
                   const sourceLabel = isConcertLikeBooking
                     ? booking.event_title || booking.artist_name || freeConcertTitle || t("Concert")
                     : t("Reservation");
@@ -546,7 +812,7 @@ function TablesView({
                             {sourceLabel}
                           </div>
                           <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-                            {booking.customer_name || "Guest"}
+                            {booking.customer_name || t("Guest")}
                           </div>
                           {customerPhone ? (
                             <div className="mt-1 flex items-center gap-2 text-sm font-medium text-slate-600">
@@ -604,6 +870,17 @@ function TablesView({
                         </div>
                       ) : null}
 
+                      {hasGuestComposition ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {`${t("Men")} ${Number.isFinite(bookingMenCount) ? bookingMenCount : 0}`}
+                          </span>
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {`${t("Women")} ${Number.isFinite(bookingWomenCount) ? bookingWomenCount : 0}`}
+                          </span>
+                        </div>
+                      ) : null}
+
                       <div className="mt-5 flex gap-2">
                         <button
                           type="button"
@@ -655,6 +932,26 @@ function TablesView({
                           {t("Cancel")}
                         </button>
                       </div>
+                      {canShowBookingAction ? (
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              isCheckedInBooking
+                                ? void handleBookingCheckout(booking)
+                                : void handleBookingCheckin(booking)
+                            }
+                            disabled={isCheckedInBooking ? bookingActionPending : shouldDisableBookingCheckin}
+                            className="inline-flex h-10 w-full items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {bookingActionPending
+                              ? t("Loading...")
+                              : isCheckedInBooking
+                                ? t("Check Out")
+                                : t("Checkin")}
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

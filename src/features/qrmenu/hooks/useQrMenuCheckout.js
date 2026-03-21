@@ -544,6 +544,18 @@ export function useQrMenuCheckout({
             reservation_date: takeaway.pickup_date,
             reservation_time: takeaway.pickup_time,
             reservation_clients: Number(takeaway?.reservation_clients) || Number(storage.getItem("qr_table_guests")) || 1,
+            reservation_men:
+              takeaway?.reservation_men !== undefined &&
+              takeaway?.reservation_men !== null &&
+              String(takeaway?.reservation_men).trim() !== ""
+                ? Number(takeaway?.reservation_men) || 0
+                : null,
+            reservation_women:
+              takeaway?.reservation_women !== undefined &&
+              takeaway?.reservation_women !== null &&
+              String(takeaway?.reservation_women).trim() !== ""
+                ? Number(takeaway?.reservation_women) || 0
+                : null,
             reservation_notes: takeaway?.notes || null,
             customer_name: takeaway?.name || null,
             customer_phone: takeaway?.phone || null,
@@ -644,6 +656,18 @@ export function useQrMenuCheckout({
           reservation_date: takeaway.pickup_date,
           reservation_time: takeaway.pickup_time,
           reservation_clients: Number(takeaway?.reservation_clients) || Number(storage.getItem("qr_table_guests")) || 1,
+          reservation_men:
+            takeaway?.reservation_men !== undefined &&
+            takeaway?.reservation_men !== null &&
+            String(takeaway?.reservation_men).trim() !== ""
+              ? Number(takeaway?.reservation_men) || 0
+              : null,
+          reservation_women:
+            takeaway?.reservation_women !== undefined &&
+            takeaway?.reservation_women !== null &&
+            String(takeaway?.reservation_women).trim() !== ""
+              ? Number(takeaway?.reservation_women) || 0
+              : null,
           reservation_notes: takeaway?.notes || null,
           customer_name: takeaway?.name || null,
           customer_phone: takeaway?.phone || null,
@@ -727,7 +751,7 @@ export function useQrMenuCheckout({
       setShowStatus(true);
     } catch (e) {
       console.error("Order submit failed:", e);
-      setLastError(e.message || "Order failed");
+      setLastError(t(e.message || "Order failed"));
       setOrderStatus("fail");
       setShowStatus(true);
     } finally {
