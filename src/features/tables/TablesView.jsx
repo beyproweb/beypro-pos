@@ -75,6 +75,128 @@ const getBookingStatusToneClass = (status) => {
 const hasBookingGuestCompositionValue = (value) =>
   value !== undefined && value !== null && String(value).trim() !== "";
 
+const bookingHasGuestComposition = (booking = {}) =>
+  hasBookingGuestCompositionValue(
+    booking?.male_guests_count ??
+      booking?.maleGuestsCount ??
+      booking?.reservation_men ??
+      booking?.reservationMen
+  ) ||
+  hasBookingGuestCompositionValue(
+    booking?.female_guests_count ??
+      booking?.femaleGuestsCount ??
+      booking?.reservation_women ??
+      booking?.reservationWomen
+  );
+
+const normalizeBookingMatchText = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const getConcertDuplicateFallbackKey = (booking = {}) => {
+  const tableNumber = Number(
+    booking?.reserved_table_number ??
+      booking?.reservedTableNumber ??
+      booking?.table_number ??
+      booking?.tableNumber
+  );
+  const bookingDate = normalizeBookingMatchText(
+    booking?.event_date ??
+      booking?.eventDate ??
+      booking?.reservation_date ??
+      booking?.reservationDate
+  );
+  const bookingTime = normalizeBookingMatchText(
+    booking?.event_time ??
+      booking?.eventTime ??
+      booking?.reservation_time ??
+      booking?.reservationTime
+  ).slice(0, 5);
+  const customerPhone = normalizeBookingMatchText(
+    booking?.customer_phone ?? booking?.customerPhone
+  ).replace(/[^\d+]/g, "");
+  const customerName = normalizeBookingMatchText(
+    booking?.customer_name ?? booking?.customerName
+  );
+
+  const identity = customerPhone || customerName;
+  if (!identity || !bookingDate || !bookingTime) return "";
+
+  return `concert-fallback:${
+    Number.isFinite(tableNumber) && tableNumber > 0 ? tableNumber : "na"
+  }:${bookingDate}:${bookingTime}:${identity}`;
+};
+
+const getConcertDuplicateGroupKey = (booking = {}) => {
+  const source = String(booking?.booking_source || "").toLowerCase();
+  const concertLike = source === "concert" || hasConcertBookingContext(booking);
+  if (!concertLike) return "";
+
+  const concertBookingId = Number(
+    booking?.concert_booking_id ??
+      booking?.concertBookingId ??
+      booking?.id ??
+      booking?.booking_id ??
+      booking?.bookingId
+  );
+  const reservationOrderId = Number(
+    booking?.reservation_order_id ??
+      booking?.reservationOrderId ??
+      booking?.order_id ??
+      booking?.orderId ??
+      booking?.reservation_id ??
+      booking?.reservationId ??
+      booking?.id
+  );
+
+  if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
+    return `concert-order:${reservationOrderId}`;
+  }
+  if (Number.isFinite(concertBookingId) && concertBookingId > 0) {
+    return `concert-booking:${concertBookingId}`;
+  }
+  return getConcertDuplicateFallbackKey(booking);
+};
+
+const mergeBookingRecords = (preferred = {}, secondary = {}) => ({
+  ...secondary,
+  ...preferred,
+  booking_source: preferred?.booking_source ?? secondary?.booking_source,
+  id: preferred?.id ?? secondary?.id,
+  order_id: preferred?.order_id ?? secondary?.order_id,
+  orderId: preferred?.orderId ?? secondary?.orderId,
+  reservation_order_id:
+    preferred?.reservation_order_id ?? secondary?.reservation_order_id,
+  reservationOrderId:
+    preferred?.reservationOrderId ?? secondary?.reservationOrderId,
+  concert_booking_id:
+    preferred?.concert_booking_id ?? secondary?.concert_booking_id ?? secondary?.id,
+  concertBookingId:
+    preferred?.concertBookingId ?? secondary?.concertBookingId ?? secondary?.id,
+});
+
+const pickPreferredBooking = (current = {}, candidate = {}) => {
+  const currentHasComposition = bookingHasGuestComposition(current);
+  const candidateHasComposition = bookingHasGuestComposition(candidate);
+  if (candidateHasComposition !== currentHasComposition) {
+    return candidateHasComposition ? candidate : current;
+  }
+
+  const currentSource = String(current?.booking_source || "").toLowerCase();
+  const candidateSource = String(candidate?.booking_source || "").toLowerCase();
+  if (candidateSource !== currentSource) {
+    if (candidateSource === "concert") return candidate;
+    if (currentSource === "concert") return current;
+  }
+
+  const currentUpdated = Number(current?.updated_at ? new Date(current.updated_at).getTime() : 0) || 0;
+  const candidateUpdated =
+    Number(candidate?.updated_at ? new Date(candidate.updated_at).getTime() : 0) || 0;
+  return candidateUpdated > currentUpdated ? candidate : current;
+};
+
 const getViewBookingActionKey = (booking = {}) => {
   const source = String(booking?.booking_source || "").toLowerCase();
   if (source === "concert") {
@@ -166,7 +288,29 @@ function TablesView({
     const reservationRows = Array.isArray(reservationBookings)
       ? reservationBookings.map((booking) => ({ ...booking, booking_source: "reservation" }))
       : [];
-    return [...concertRows, ...reservationRows];
+    const mergedRows = [...concertRows, ...reservationRows];
+    const deduped = [];
+    const concertLikeByGroup = new Map();
+
+    mergedRows.forEach((booking) => {
+      const groupKey = getConcertDuplicateGroupKey(booking);
+      if (!groupKey) {
+        deduped.push(booking);
+        return;
+      }
+
+      const existing = concertLikeByGroup.get(groupKey);
+      if (!existing) {
+        concertLikeByGroup.set(groupKey, booking);
+        return;
+      }
+
+      const preferred = pickPreferredBooking(existing, booking);
+      const secondary = preferred === existing ? booking : existing;
+      concertLikeByGroup.set(groupKey, mergeBookingRecords(preferred, secondary));
+    });
+
+    return [...deduped, ...Array.from(concertLikeByGroup.values())];
   }, [concertBookings, reservationBookings]);
   const rangeBookingCount = React.useMemo(() => {
     return combinedBookings.filter((booking) => {
