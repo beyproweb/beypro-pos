@@ -592,7 +592,7 @@ function TableCard({
     [reservationCustomerPhone]
   );
   const reservationControlClass =
-    "flex h-7 min-h-7 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-2xl border px-2.5 text-center text-[11px] font-semibold leading-none text-ellipsis whitespace-nowrap shadow-[0_8px_20px_rgba(15,23,42,0.1)] sm:h-9 sm:min-h-9 sm:w-[120px] sm:min-w-[120px] sm:px-4 sm:text-sm";
+    "flex h-7 min-h-7 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-2xl border px-2 text-center text-[10px] font-semibold leading-none tracking-tight text-ellipsis whitespace-nowrap shadow-[0_8px_20px_rgba(15,23,42,0.1)] sm:h-9 sm:min-h-9 sm:w-[120px] sm:min-w-[120px] sm:px-4 sm:text-sm";
   const reservationDetailsFrameClass =
     "order-1 flex min-h-[50px] w-full min-w-0 max-w-full flex-col justify-center gap-1 rounded-2xl border border-slate-200 bg-white/70 px-3 text-left shadow-none sm:order-none sm:row-span-2 sm:h-[68px] sm:min-h-[68px] sm:w-[120px] sm:min-w-[120px] sm:gap-2";
       const reservationCompactBadgeToneClass = isCheckedOutReservation

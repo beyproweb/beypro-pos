@@ -1405,6 +1405,7 @@ const DICT = {
     Available: "Available",
     Pickup: "Pickup",
     Home: "Home",
+    Waiter: "Waiter",
     "Call Us": "Call Us",
     "Call Waiter": "Call Waiter",
     "Calling Waiter...": "Calling Waiter...",
@@ -1731,6 +1732,7 @@ const DICT = {
     Available: "Uygun",
     Pickup: "Gel Al",
     Home: "Ana Sayfa",
+    Waiter: "Garson",
     "Call Us": "Bizi Ara",
     "Call Waiter": "Garson Çağır",
     "Calling Waiter...": "Garson Çağırılıyor...",
@@ -2015,6 +2017,7 @@ const DICT = {
     Pickup: "Abholung",
     Delivery: "Lieferung",
     Home: "Startseite",
+    Waiter: "Kellner",
     Time: "Zeit",
     Guests: "Gäste",
     "Guest composition": "Gästeverteilung",
@@ -2244,6 +2247,7 @@ const DICT = {
     Pickup: "À emporter",
     Delivery: "Livraison",
     Home: "Accueil",
+    Waiter: "Serveur",
     Time: "Temps",
     Guests: "Invités",
     "Guest composition": "Répartition des invités",
@@ -6992,7 +6996,7 @@ export default function QrMenu() {
     resolvedTableForActions > 0;
   const callWaiterButtonDisabledBase = callingWaiter || callWaiterCooldownSeconds > 0;
   const homeLabel = t("Home");
-  const callWaiterLabel = t("Call Waiter");
+  const callWaiterLabel = t("Waiter");
   const reOrderLabel = "Re-Order";
   const aiOrderLabel = t("AI Order");
   const cartLabel = t("Your Order");
