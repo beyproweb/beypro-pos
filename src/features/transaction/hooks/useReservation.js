@@ -689,6 +689,12 @@ export const useReservation = ({
         reservationSource?.reservation_time ?? reservationSource?.reservationTime ?? ""
       ).trim();
       if (!reservationDate || !reservationTime) return null;
+      const sourceOrderId = Number(
+        reservationSource?.order_id ??
+          reservationSource?.orderId ??
+          order?.id ??
+          0
+      );
       return {
         table_number:
           resolvedTableNumber ??
@@ -696,6 +702,9 @@ export const useReservation = ({
           order?.tableNumber ??
           tableId ??
           null,
+        ...(Number.isFinite(sourceOrderId) && sourceOrderId > 0
+          ? { order_id: sourceOrderId }
+          : {}),
         reservation_date: reservationDate,
         reservation_time: reservationTime,
         reservation_clients:
@@ -714,6 +723,20 @@ export const useReservation = ({
           reservationSource?.customer_phone ??
           reservationSource?.customerPhone ??
           "",
+        ...(reservationSource?.reservation_men != null || reservationSource?.reservationMen != null
+          ? {
+              reservation_men:
+                reservationSource?.reservation_men ?? reservationSource?.reservationMen ?? null,
+            }
+          : {}),
+        ...(reservationSource?.reservation_women != null || reservationSource?.reservationWomen != null
+          ? {
+              reservation_women:
+                reservationSource?.reservation_women ?? reservationSource?.reservationWomen ?? null,
+            }
+          : {}),
+        skip_guest_composition_validation: true,
+        restore_existing_reservation: true,
       };
     };
     const restoreReservationAndGetTarget = async () => {

@@ -322,6 +322,23 @@ export default function TransactionsTab() {
             </div>
           </div>
         </label>
+
+        <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+          <input
+            type="checkbox"
+            checked={!!settings.enableManualTableLock}
+            onChange={() => toggle("enableManualTableLock")}
+            className="mt-1 h-5 w-5 accent-indigo-500"
+          />
+          <div>
+            <div className="font-semibold text-sm">
+              {t("Enable manual table lock in Table Overview")}
+            </div>
+            <div className="text-xs text-slate-500">
+              {t("Shows a lock button next to the table area so staff can manually mark a table occupied/unavailable.")}
+            </div>
+          </div>
+        </label>
       </div>
 
       <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 space-y-4">

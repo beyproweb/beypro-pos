@@ -4,6 +4,10 @@ import {
   isCheckedOutReservationStatus,
   normalizeOrderStatus,
 } from "./tableVisuals";
+import {
+  isConcertBookingConfirmed,
+  isReservationConfirmedForCheckin,
+} from "../../utils/reservationStatus";
 import ElapsedTimer from "./components/ElapsedTimer";
 import {
   RenderCounter,
@@ -73,6 +77,7 @@ function TableCard({
   t,
   formatCurrency,
   handleTableClick,
+  handleToggleTableLock,
   handleGuestsChange,
   handleCloseTable,
   handleCheckinReservation,
@@ -80,6 +85,7 @@ function TableCard({
   getTablePrepMeta,
   waiterCallsByTable,
   handleResolveWaiterCall,
+  showManualTableLock,
 }) {
   const renderCount = useRenderCount("TableCard", {
     id: table?.tableNumber,
@@ -158,6 +164,7 @@ function TableCard({
 
   const isReservedTable = Boolean(table.isReservedTable);
   const isFreeTable = Boolean(table.isFreeTable);
+  const isLockedTable = Boolean(table.isLocked);
   const normalizedPaymentStatus = normalizeOrderStatus(
     tableOrder?.payment_status ?? tableOrder?.paymentStatus
   );
@@ -208,6 +215,8 @@ function TableCard({
     normalizedOrderStatus === "checked_in" || fallbackReservationToneStatus === "checked_in";
   const cardToneClass = hasUnpaidItems
       ? "border-rose-400 bg-rose-200"
+      : isLockedTable && !hasOrderActivity
+        ? "border-slate-500 bg-slate-300"
       : normalizedOrderStatus === "confirmed"
         ? "border-rose-400 bg-rose-200"
         : hasReservedVisualTone
@@ -219,6 +228,8 @@ function TableCard({
               : "border-slate-400 bg-slate-200";
   const cardAccentGlowClass = hasUnpaidItems
     ? "bg-rose-300/85"
+    : isLockedTable && !hasOrderActivity
+      ? "bg-slate-400/85"
     : normalizedOrderStatus === "confirmed"
       ? "bg-rose-300/85"
       : hasReservedVisualTone
@@ -327,7 +338,9 @@ function TableCard({
     if (normalizedReservationStatus === "checked_in") return "checked_in";
 
     const fallbackStatus = normalizeOrderStatus(table?.reservationFallback?.status);
-    if (fallbackStatus !== "checked_in") return normalizedReservationStatus;
+    if (fallbackStatus !== "checked_in" && fallbackStatus !== "confirmed") {
+      return normalizedReservationStatus;
+    }
     if (!CHECKIN_REGRESSION_STATUSES.has(normalizedReservationStatus)) {
       return normalizedReservationStatus;
     }
@@ -352,9 +365,13 @@ function TableCard({
       Number.isFinite(currentReservationId) &&
       fallbackReservationId === currentReservationId;
 
-    return fallbackMatchesCurrentOrder || fallbackMatchesCurrentReservation
-      ? "checked_in"
-      : normalizedReservationStatus;
+    if (!(fallbackMatchesCurrentOrder || fallbackMatchesCurrentReservation)) {
+      return normalizedReservationStatus;
+    }
+
+    if (fallbackStatus === "checked_in") return "checked_in";
+    if (fallbackStatus === "confirmed") return "confirmed";
+    return normalizedReservationStatus;
   }, [reservationInfo?.id, reservationInfo?.status, table?.reservationFallback, tableOrder]);
   const isCheckedInReservation = isCheckedInReservationStatus(reservationStatus);
   const isCheckedOutReservation = isCheckedOutReservationStatus(reservationStatus);
@@ -417,19 +434,13 @@ function TableCard({
     },
     [handleCloseTable, reservationInfo, table, tableOrder]
   );
-  const reservationActionLifecycleStatus = normalizeOrderStatus(
-    tableOrder?.reservation?.reservation_status ??
-      tableOrder?.reservation?.reservationStatus ??
-      tableOrder?.reservation?.status ??
-      tableOrder?.reservation_status ??
-      tableOrder?.reservationStatus ??
-      reservationInfo?.status ??
-      table?.reservationFallback?.reservation_status ??
-      table?.reservationFallback?.reservationStatus ??
-      table?.reservationFallback?.status
-  );
+  const reservationActionLifecycleStatus = reservationStatus;
+  const canProceedToReservationCheckin =
+    reservationActionLifecycleStatus === "confirmed" ||
+    isReservationConfirmedForCheckin(tableOrder, reservationInfo, table?.reservationFallback) ||
+    isConcertBookingConfirmed(tableOrder, reservationInfo, table?.reservationFallback);
   const needsReservationConfirmation =
-    reservationActionLifecycleStatus !== "confirmed" &&
+    !canProceedToReservationCheckin &&
     reservationActionLifecycleStatus !== "checked_in" &&
     reservationActionLifecycleStatus !== "checked_out";
   const shouldDisableReservationCheckin =
@@ -437,6 +448,10 @@ function TableCard({
     !isCheckedInReservation &&
     !isCheckedOutReservation &&
     hasOrderActivity;
+  const isConfirmedReservation =
+    !needsReservationConfirmation &&
+    !isCheckedInReservation &&
+    !isCheckedOutReservation;
   const reservationPrimaryActionLabel = needsReservationConfirmation
     ? t("Confirm")
     : t("Checkin");
@@ -547,9 +562,10 @@ function TableCard({
     tableItems.length === 0 &&
     Number(tableOrder?.total || 0) <= 0;
   const isFreeDisplay =
-    isFreeTable ||
+    (!isLockedTable && isFreeTable) ||
     (!isCheckedInReservation &&
       !isCheckedOutReservation &&
+      !isLockedTable &&
       hasZeroValueTableState &&
       (Boolean(reservationInfo) ||
         normalizedOrderStatus === "" ||
@@ -577,9 +593,13 @@ function TableCard({
     ? cx(PANEL_BASE_CLASS, "border-slate-200 bg-slate-50/90")
     : isCheckedInReservation
       ? cx(PANEL_BASE_CLASS, "border-emerald-200 bg-emerald-50/90")
+      : isConfirmedReservation
+        ? cx(PANEL_BASE_CLASS, "border-rose-200 bg-rose-50/90")
       : cx(PANEL_BASE_CLASS, "border-sky-200 bg-sky-50/90");
   const reservationCompactStateLabel = isCheckedOutReservation
     ? t("Checked out")
+    : isConfirmedReservation
+      ? t("Confirmed")
     : `${t("Reserved")}!`;
   const reservationCustomerName = String(
     reservationInfo?.customer_name ?? reservationInfo?.customerName ?? ""
@@ -600,6 +620,11 @@ function TableCard({
         reservationControlClass,
         "border-slate-200 bg-slate-700 text-white sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
       )
+    : isConfirmedReservation
+      ? cx(
+          reservationControlClass,
+          "border-rose-200 bg-rose-600 tracking-wide text-white sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
+        )
     : cx(
         reservationControlClass,
         "border-amber-200 bg-amber-500 tracking-wide text-white sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
@@ -607,6 +632,13 @@ function TableCard({
   const reservationPrimaryActionClass = cx(
     reservationControlClass,
     "border-slate-200 bg-slate-900 text-white hover:bg-slate-800 sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
+  );
+  const handleToggleLockClick = React.useCallback(
+    (e) => {
+      e.stopPropagation();
+      handleToggleTableLock?.(table.tableNumber, !isLockedTable);
+    },
+    [handleToggleTableLock, isLockedTable, table.tableNumber]
   );
 
   return (
@@ -825,18 +857,46 @@ function TableCard({
         ) : null}
 
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2 sm:pt-3">
-          {showAreas ? (
-            <Pill className="max-w-[55%] justify-start truncate border-slate-200 bg-white/80 px-2.5 text-slate-700">
-              {formatAreaLabel(table.area)}
-            </Pill>
-          ) : (
-            <span />
-          )}
+          <div className="flex min-w-0 items-center gap-2">
+            {showAreas ? (
+              <Pill className="max-w-[55%] justify-start truncate border-slate-200 bg-white/80 px-2.5 text-slate-700">
+                {formatAreaLabel(table.area)}
+              </Pill>
+            ) : (
+              <span />
+            )}
+            {showManualTableLock ? (
+              <button
+                type="button"
+                onClick={handleToggleLockClick}
+                title={isLockedTable ? t("Unlock table") : t("Mark table occupied")}
+                className={cx(
+                  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white/85 text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:bg-white active:scale-[0.98]",
+                  isLockedTable && "border-yellow-200 bg-yellow-400 text-slate-900 hover:bg-yellow-400"
+                )}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="5" y="11" width="14" height="10" rx="2" ry="2" />
+                  {isLockedTable ? (
+                    <path d="M8 11V8a4 4 0 1 1 8 0v3" />
+                  ) : (
+                    <path d="M8 11V8a4 4 0 0 1 7.2-2.4" />
+                  )}
+                </svg>
+              </button>
+            ) : null}
+          </div>
 
           <div className="ml-auto flex items-center justify-end gap-2 flex-nowrap">
             {isFreeDisplay && !shouldShowReservedBadge && (
               <Pill className="border-slate-200 bg-white/80 text-slate-700">
                 {t("Free")}
+              </Pill>
+            )}
+
+            {isLockedTable && !hasOrderActivity && (
+              <Pill className="border-amber-200 bg-amber-500 text-white">
+                {t("Occupied")}
               </Pill>
             )}
 
@@ -902,13 +962,15 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
     prevProps.t === nextProps.t &&
     prevProps.formatCurrency === nextProps.formatCurrency &&
     prevProps.handleTableClick === nextProps.handleTableClick &&
+    prevProps.handleToggleTableLock === nextProps.handleToggleTableLock &&
     prevProps.handleGuestsChange === nextProps.handleGuestsChange &&
     prevProps.handleCloseTable === nextProps.handleCloseTable &&
     prevProps.handleCheckinReservation === nextProps.handleCheckinReservation &&
     prevProps.handleOpenViewBooking === nextProps.handleOpenViewBooking &&
     prevProps.getTablePrepMeta === nextProps.getTablePrepMeta &&
     prevProps.waiterCallsByTable === nextProps.waiterCallsByTable &&
-    prevProps.handleResolveWaiterCall === nextProps.handleResolveWaiterCall;
+    prevProps.handleResolveWaiterCall === nextProps.handleResolveWaiterCall &&
+    prevProps.showManualTableLock === nextProps.showManualTableLock;
 
   if (!isEqual) {
     logMemoDiff({
@@ -924,6 +986,7 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
         "t",
         "formatCurrency",
         "handleTableClick",
+        "handleToggleTableLock",
         "handleGuestsChange",
         "handleCloseTable",
         "handleCheckinReservation",
@@ -931,6 +994,7 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
         "getTablePrepMeta",
         "waiterCallsByTable",
         "handleResolveWaiterCall",
+        "showManualTableLock",
       ],
     });
   }

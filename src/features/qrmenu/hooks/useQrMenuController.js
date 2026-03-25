@@ -1178,6 +1178,9 @@ const loadTables = async () => {
           : Number(r.guests),
       label: r.label || "",
       color: r.color || "",
+      isLocked: Boolean(
+        r.locked ?? r.is_locked ?? r.isLocked ?? r.occupied ?? r.unavailable
+      ),
       active: r.active ?? true,
     }));
 
@@ -1868,6 +1871,23 @@ if (savedTable) {
     try {
       if (restaurantIdentifier) {
         try {
+          const tableRows = await secureFetch(
+            appendIdentifier(`/tables?active=true&identifier=${encodeURIComponent(restaurantIdentifier)}`)
+          );
+          const normalizedRows = Array.isArray(tableRows) ? tableRows : tableRows?.data || [];
+          const lockedTableNumbers = normalizedRows
+            .filter((row) => Boolean(row?.locked ?? row?.is_locked ?? row?.isLocked ?? row?.occupied ?? row?.unavailable))
+            .map((row) => Number(row?.number ?? row?.tableNumber ?? row?.table_number))
+            .filter((n) => Number.isFinite(n) && n > 0);
+          addNumbers(nextOccupiedSet, lockedTableNumbers);
+          hasAnySource = hasAnySource || lockedTableNumbers.length > 0;
+        } catch (lockErr) {
+          console.warn("⚠️ Locked tables fetch failed:", lockErr);
+        }
+      }
+
+      if (restaurantIdentifier) {
+        try {
           const token = getStoredToken();
           const authOpts = token
             ? {
@@ -2009,6 +2029,40 @@ if (savedTable) {
       // Preserve previous known state on transient errors.
     }
   }, [appendIdentifier, getStoredToken, restaurantIdentifier, sFetch, toArray]);
+
+  useEffect(() => {
+    const handleTableLockUpdated = (event) => {
+      const tableNumber = Number(event?.detail?.table_number);
+      const locked = Boolean(event?.detail?.locked);
+      if (!Number.isFinite(tableNumber) || tableNumber <= 0) return;
+
+      setTables((prev) =>
+        toArray(prev).map((table) =>
+          Number(table?.tableNumber) === tableNumber ? { ...table, isLocked: locked } : table
+        )
+      );
+      setOccupiedTables((prev) => {
+        const next = new Set(toArray(prev).map(Number));
+        if (locked) next.add(tableNumber);
+        else next.delete(tableNumber);
+        return Array.from(next);
+      });
+      window.setTimeout(() => refreshOccupiedTablesRef.current?.(), 30);
+    };
+
+    const handleTableConfigsStorage = (event) => {
+      if (!event?.key || !String(event.key).endsWith(":tableConfigs.v1")) return;
+      refreshOccupiedTablesRef.current?.();
+      loadTables();
+    };
+
+    window.addEventListener("beypro:table-lock-updated", handleTableLockUpdated);
+    window.addEventListener("storage", handleTableConfigsStorage);
+    return () => {
+      window.removeEventListener("beypro:table-lock-updated", handleTableLockUpdated);
+      window.removeEventListener("storage", handleTableConfigsStorage);
+    };
+  }, [loadTables, toArray]);
 
   useEffect(() => {
     activeOrderRef.current = activeOrder;
@@ -2580,7 +2634,17 @@ const myTable =
   null;
 
 
-const filteredOccupied = safeOccupiedTables;
+const filteredOccupied = useMemo(() => {
+  const next = new Set(toArray(safeOccupiedTables).map((value) => Number(value)).filter((n) => Number.isFinite(n) && n > 0));
+  toArray(tables).forEach((table) => {
+    if (!Boolean(table?.isLocked)) return;
+    const tableNumber = Number(table?.tableNumber ?? table?.number ?? table?.table_number);
+    if (Number.isFinite(tableNumber) && tableNumber > 0) {
+      next.add(tableNumber);
+    }
+  });
+  return Array.from(next);
+}, [safeOccupiedTables, tables, toArray]);
 const filteredReserved = safeReservedTables;
 const showTableSelector = !forceHome && orderType === "table" && !table;
 

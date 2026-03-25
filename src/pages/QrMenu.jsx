@@ -5448,8 +5448,13 @@ function TakeawayOrderForm({
       const n = Number(value);
       if (Number.isFinite(n) && n > 0) set.add(n);
     });
+    safeTables.forEach((table) => {
+      if (!Boolean(table?.isLocked)) return;
+      const tableNumber = Number(table?.tableNumber ?? table?.number ?? table?.table_number);
+      if (Number.isFinite(tableNumber) && tableNumber > 0) set.add(tableNumber);
+    });
     return set;
-  }, [occupiedTables]);
+  }, [occupiedTables, safeTables]);
   const reservedTableSet = useMemo(() => {
     const set = new Set();
     (Array.isArray(reservedTables) ? reservedTables : []).forEach((value) => {

@@ -99,8 +99,9 @@ export default function ModernTableSelector({
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5 pb-20">
         {visibleTables.map((tbl) => {
           const isOcc = occupiedSet.has(Number(tbl.tableNumber));
+          const isLocked = Boolean(tbl?.isLocked);
           const isReserved = reservedSet.has(Number(tbl.tableNumber));
-          const isDisabled = isOcc || isReserved;
+          const isDisabled = isOcc || isReserved || isLocked;
           const tableTitle =
             typeof formatTableName === "function"
               ? formatTableName(tbl)

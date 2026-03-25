@@ -151,6 +151,7 @@ export const isEffectivelyFreeOrder = (order) => {
 
   const status = normalizeOrderStatus(order.status);
   if (status === "closed") return true;
+  if (isOrderPaid(order)) return false;
 
   const hasSignal = hasReservationSignal(order);
   if ((status === "reserved" || order.order_type === "reservation") && hasSignal) {
@@ -257,7 +258,12 @@ export const getDisplayTotal = (order) => {
   const items = Array.isArray(order.items) ? order.items : [];
   const suborders = Array.isArray(order.suborders) ? order.suborders : [];
   const hasLineData = items.length > 0 || suborders.length > 0;
-  if (isOrderPaid(order) && !hasLineData) return 0;
+  if (isOrderPaid(order) && !hasLineData) {
+    if (order.receiptMethods?.length > 0) {
+      return order.receiptMethods.reduce((sum, m) => sum + parseFloat(m.amount || 0), 0);
+    }
+    return parseFloat(order.total || 0);
+  }
 
   const computeLineTotal = (item) => {
     if (!item || typeof item !== "object") return 0;
@@ -351,4 +357,49 @@ export const getMemoizedTableDerivedFields = (order) => {
 
   tableDerivedFieldsCache.set(order, derived);
   return derived;
+};
+
+// Shared resolver for table visual state. Accepts a table-like object which may
+// include `order` and/or `reservationFallback`. If no order is available but a
+// previous derived snapshot is provided, the previous snapshot is returned to
+// avoid temporary visual regression while data is reloading.
+export const resolveTableVisualState = (tableLike = {}, prevDerived = null) => {
+  try {
+    const order = tableLike && typeof tableLike === "object" ? tableLike.order ?? tableLike : tableLike;
+    const fallback = tableLike && typeof tableLike === "object" ? tableLike.reservationFallback ?? null : null;
+    const source = order || fallback || null;
+
+    if (!source) {
+      if (prevDerived) {
+        if (import.meta.env.DEV) console.log("[tableVisuals] resolve: using prevDerived (no source)", { prevDerived });
+        return prevDerived;
+      }
+      return EMPTY_TABLE_DERIVED_FIELDS;
+    }
+
+    const resolved = getMemoizedTableDerivedFields(source);
+    // Heuristic: when incoming source appears partial (no items, no timestamps)
+    // prefer previous derived snapshot to avoid flicker caused by interim
+    // responses or cached payloads that lack line-item details.
+    const looksPartial =
+      (!Array.isArray(source.items) || source.items.length === 0) &&
+      !source?.updated_at &&
+      !source?.created_at &&
+      !source?.receiptMethods;
+
+    if (prevDerived && looksPartial) {
+      // Avoid flipping from having unpaid to free or paid -> free while data hydrates.
+      if ((prevDerived.unpaidTotal > 0 && resolved.unpaidTotal === 0) ||
+          (prevDerived.isFullyPaid && !resolved.isFullyPaid)) {
+        if (import.meta.env.DEV)
+          console.log("[tableVisuals] resolve: preferring prevDerived due to partial source", { tableNumber: tableLike?.tableNumber, prevDerived, resolved });
+        return prevDerived;
+      }
+    }
+    if (import.meta.env.DEV) console.log("[tableVisuals] resolve: derived", { tableNumber: tableLike?.tableNumber, resolved });
+    return resolved;
+  } catch (err) {
+    if (import.meta.env.DEV) console.error("[tableVisuals] resolveTableVisualState error", err);
+    return EMPTY_TABLE_DERIVED_FIELDS;
+  }
 };

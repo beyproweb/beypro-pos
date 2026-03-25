@@ -1,21 +1,32 @@
-import React, { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LogIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { useSessionLock } from "../context/SessionLockContext";
 import { normalizeUser } from "../utils/normalizeUser";
 import { BASE_URL } from "../utils/secureFetch";
 import { useTranslation } from "react-i18next";
 import { requestDriverLocationPermission } from "../utils/driverLocationPermission";
+
+const REMEMBER_ME_PREFERENCE_KEY = "beyproRememberMe";
+
+function getInitialRememberMe() {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(REMEMBER_ME_PREFERENCE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(getInitialRememberMe);
+  const passwordInputRef = useRef(null);
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
-  const { lock } = useSessionLock();
   const { t, i18n } = useTranslation();
 
   const supportedLanguages = [
@@ -28,6 +39,21 @@ export default function LoginScreen() {
   const resolvedLanguage = supportedLanguages.some((l) => l.code === i18n.language)
     ? i18n.language
     : "en";
+
+  useEffect(() => {
+    if (rememberMe) return undefined;
+
+    const clearPasswordField = () => {
+      setPassword("");
+      if (passwordInputRef.current) {
+        passwordInputRef.current.value = "";
+      }
+    };
+
+    clearPasswordField();
+    const timer = window.setTimeout(clearPasswordField, 50);
+    return () => window.clearTimeout(timer);
+  }, [rememberMe]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -79,7 +105,18 @@ export default function LoginScreen() {
       try {
         otherStorage.removeItem("token");
         otherStorage.removeItem("beyproUser");
-      } catch {}
+      } catch {
+        // ignore storage errors
+      }
+
+      try {
+        window.localStorage.setItem(
+          REMEMBER_ME_PREFERENCE_KEY,
+          rememberMe ? "true" : "false"
+        );
+      } catch {
+        // ignore storage errors
+      }
 
       authStorage.setItem("token", data.token);
       try {
@@ -96,13 +133,8 @@ export default function LoginScreen() {
       authStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
       setCurrentUser(normalizedUser);
       requestDriverLocationPermission(normalizedUser);
-      
-      // Lock session immediately for admin users to require password re-entry
-      if (normalizedUser.role === "admin" || normalizedUser.role === "Admin") {
-        lock("manual");
-      }
-      
-      navigate("/tables");
+
+      navigate("/tableoverview?tab=tables", { replace: true });
     } catch (err) {
       console.error("❌ Login failed:", err);
       setError(err.message || t("Login failed"));
@@ -172,7 +204,11 @@ export default function LoginScreen() {
               </h2>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-4 lg:space-y-5">
+            <form
+              onSubmit={handleLogin}
+              autoComplete={rememberMe ? "on" : "off"}
+              className="space-y-4 lg:space-y-5"
+            >
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                   {t("Email")}
@@ -181,6 +217,7 @@ export default function LoginScreen() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="username"
                   placeholder={t("you@example.com")}
                   className="w-full px-3 lg:p-3 py-2.5 lg:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition text-sm lg:text-base"
                   required
@@ -192,9 +229,11 @@ export default function LoginScreen() {
                   {t("Password")}
                 </label>
                 <input
+                  ref={passwordInputRef}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={rememberMe ? "current-password" : "new-password"}
                   placeholder="••••••••"
                   className="w-full px-3 lg:p-3 py-2.5 lg:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition text-sm lg:text-base"
                   required
@@ -206,7 +245,18 @@ export default function LoginScreen() {
                   <input
                     type="checkbox"
                     checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setRememberMe(checked);
+                      try {
+                        window.localStorage.setItem(
+                          REMEMBER_ME_PREFERENCE_KEY,
+                          checked ? "true" : "false"
+                        );
+                      } catch {
+                        // ignore storage errors
+                      }
+                    }}
                     className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                   />
                   <span className="font-semibold">{t("Keep me logged in")}</span>
@@ -225,7 +275,9 @@ export default function LoginScreen() {
                       try {
                         localStorage.setItem("beyproLanguage", next);
                         localStorage.setItem("beyproGuestLanguage", next);
-                      } catch {}
+                      } catch {
+                        // ignore storage errors
+                      }
                     }}
                     className="h-9 rounded-xl px-3 bg-gray-50 text-gray-800 text-xs lg:text-sm font-semibold border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
                     title={t("Language")}

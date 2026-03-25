@@ -132,15 +132,6 @@ const getConcertDuplicateFallbackKey = (booking = {}) => {
 const getConcertDuplicateGroupKey = (booking = {}) => {
   const source = String(booking?.booking_source || "").toLowerCase();
   const concertLike = source === "concert" || hasConcertBookingContext(booking);
-  if (!concertLike) return "";
-
-  const concertBookingId = Number(
-    booking?.concert_booking_id ??
-      booking?.concertBookingId ??
-      booking?.id ??
-      booking?.booking_id ??
-      booking?.bookingId
-  );
   const reservationOrderId = Number(
     booking?.reservation_order_id ??
       booking?.reservationOrderId ??
@@ -152,30 +143,80 @@ const getConcertDuplicateGroupKey = (booking = {}) => {
   );
 
   if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
-    return `concert-order:${reservationOrderId}`;
+    return `booking-order:${reservationOrderId}`;
   }
+
+  if (!concertLike) return "";
+
+  const concertBookingId = Number(
+    booking?.concert_booking_id ??
+      booking?.concertBookingId ??
+      booking?.id ??
+      booking?.booking_id ??
+      booking?.bookingId
+  );
   if (Number.isFinite(concertBookingId) && concertBookingId > 0) {
     return `concert-booking:${concertBookingId}`;
   }
   return getConcertDuplicateFallbackKey(booking);
 };
 
-const mergeBookingRecords = (preferred = {}, secondary = {}) => ({
-  ...secondary,
-  ...preferred,
-  booking_source: preferred?.booking_source ?? secondary?.booking_source,
-  id: preferred?.id ?? secondary?.id,
-  order_id: preferred?.order_id ?? secondary?.order_id,
-  orderId: preferred?.orderId ?? secondary?.orderId,
-  reservation_order_id:
-    preferred?.reservation_order_id ?? secondary?.reservation_order_id,
-  reservationOrderId:
-    preferred?.reservationOrderId ?? secondary?.reservationOrderId,
-  concert_booking_id:
-    preferred?.concert_booking_id ?? secondary?.concert_booking_id ?? secondary?.id,
-  concertBookingId:
-    preferred?.concertBookingId ?? secondary?.concertBookingId ?? secondary?.id,
-});
+const mergeBookingRecords = (preferred = {}, secondary = {}) => {
+  const pickLifecycleValue = (...values) => {
+    const normalized = values
+      .map((value) => String(value ?? "").trim().toLowerCase())
+      .filter(Boolean);
+    if (normalized.includes("checked_out")) return "checked_out";
+    if (normalized.includes("checked_in")) return "checked_in";
+    if (normalized.includes("confirmed")) return "confirmed";
+    return values.find((value) => String(value ?? "").trim() !== "") ?? null;
+  };
+
+  const mergedStatus = pickLifecycleValue(
+    preferred?.status,
+    preferred?.reservation_status,
+    preferred?.reservationStatus,
+    preferred?.reservation_order_status,
+    preferred?.reservationOrderStatus,
+    secondary?.status,
+    secondary?.reservation_status,
+    secondary?.reservationStatus,
+    secondary?.reservation_order_status,
+    secondary?.reservationOrderStatus
+  );
+  const mergedReservationOrderStatus = pickLifecycleValue(
+    preferred?.reservation_order_status,
+    preferred?.reservationOrderStatus,
+    secondary?.reservation_order_status,
+    secondary?.reservationOrderStatus,
+    preferred?.status,
+    secondary?.status
+  );
+
+  return {
+    ...secondary,
+    ...preferred,
+    booking_source: preferred?.booking_source ?? secondary?.booking_source,
+    id: preferred?.id ?? secondary?.id,
+    order_id: preferred?.order_id ?? secondary?.order_id,
+    orderId: preferred?.orderId ?? secondary?.orderId,
+    reservation_order_id:
+      preferred?.reservation_order_id ?? secondary?.reservation_order_id,
+    reservationOrderId:
+      preferred?.reservationOrderId ?? secondary?.reservationOrderId,
+    concert_booking_id:
+      preferred?.concert_booking_id ?? secondary?.concert_booking_id ?? secondary?.id,
+    concertBookingId:
+      preferred?.concertBookingId ?? secondary?.concertBookingId ?? secondary?.id,
+    status: mergedStatus,
+    reservation_status:
+      preferred?.reservation_status ?? secondary?.reservation_status ?? mergedStatus,
+    reservationStatus:
+      preferred?.reservationStatus ?? secondary?.reservationStatus ?? mergedStatus,
+    reservation_order_status: mergedReservationOrderStatus,
+    reservationOrderStatus: mergedReservationOrderStatus,
+  };
+};
 
 const pickPreferredBooking = (current = {}, candidate = {}) => {
   const currentHasComposition = bookingHasGuestComposition(current);
@@ -851,18 +892,31 @@ function TablesView({
                   const bookingStatusLabel = isConcertBooking
                     ? String(booking.payment_status || "").trim().toLowerCase()
                     : reservationStatus;
-                  const bookingLifecycleStatus = String(
-                    booking?.reservation_order_status ??
-                      booking?.reservationOrderStatus ??
-                      booking?.status ??
-                      booking?.reservation_status ??
-                      booking?.reservationStatus ??
-                      booking?.payment_status ??
-                      booking?.paymentStatus ??
-                      ""
-                  )
-                    .trim()
-                    .toLowerCase();
+                    const concertPaymentStatus = String(
+                      booking?.payment_status ?? booking?.paymentStatus ?? ""
+                    )
+                      .trim()
+                      .toLowerCase();
+                    const concertBookingStatus = String(
+                      booking?.booking_status ?? booking?.bookingStatus ?? booking?.status ?? ""
+                    )
+                      .trim()
+                      .toLowerCase();
+                    const reservationOrderStatus = String(
+                      booking?.reservation_order_status ??
+                        booking?.reservationOrderStatus ??
+                        booking?.reservation_status ??
+                        booking?.reservationStatus ??
+                        booking?.status ??
+                        ""
+                    )
+                      .trim()
+                      .toLowerCase();
+                    const bookingLifecycleStatus = isConcertBooking
+                      ? ["checked_in", "checked_out"].includes(reservationOrderStatus)
+                        ? reservationOrderStatus
+                        : concertPaymentStatus || concertBookingStatus || reservationOrderStatus
+                      : reservationOrderStatus;
                   const isCheckedInBooking = bookingLifecycleStatus === "checked_in";
                   const isCheckedOutBooking = bookingLifecycleStatus === "checked_out";
                   const isCancelledBooking =
@@ -910,7 +964,7 @@ function TablesView({
                   const shouldDisableBookingCheckin =
                     bookingActionPending ||
                     needsBookingConfirmation ||
-                    (!isCheckedInBooking && bookingHasOrderActivity);
+                    (!isCheckedInBooking && bookingHasOrderActivity && !isConcertLikeBooking);
                   const sourceLabel = isConcertLikeBooking
                     ? booking.event_title || booking.artist_name || freeConcertTitle || t("Concert")
                     : t("Reservation");

@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import {
   getMemoizedTableDerivedFields,
+  resolveTableVisualState,
 } from "../tableVisuals";
 import { isTablePerfDebugEnabled, withPerfTimer } from "../dev/perfDebug";
 import { isPendingReservationOnlyOrder } from "../../../utils/reservationStatus";
@@ -58,24 +59,45 @@ const shouldPreferReservation = (nextReservation, currentReservation) => {
 
 const canReuseTableModel = (prev, next) => {
   if (!prev || !next) return false;
-  return (
-    prev.tableNumber === next.tableNumber &&
-    prev.seats === next.seats &&
-    prev.guests === next.guests &&
-    prev.area === next.area &&
-    prev.label === next.label &&
-    prev.color === next.color &&
-    prev.order === next.order &&
+  // Fast checks for static table config fields
+  if (
+    prev.tableNumber !== next.tableNumber ||
+    prev.seats !== next.seats ||
+    prev.guests !== next.guests ||
+    prev.area !== next.area ||
+    prev.label !== next.label ||
+    prev.color !== next.color ||
+    prev.isLocked !== next.isLocked
+  ) {
+    return false;
+  }
+
+  // Compare derived visual/order fields using memoized resolver to avoid
+  // replacing the table model when order object identity changes but
+  // visual state remains the same (prevents flicker on refresh).
+  const prevDerived = getMemoizedTableDerivedFields(prev.order);
+  const nextDerived = getMemoizedTableDerivedFields(next.order);
+
+  const sameDerived =
     prev.reservationFallback === next.reservationFallback &&
-    prev.tableStatus === next.tableStatus &&
-    prev.tableColor === next.tableColor &&
-    prev.unpaidTotal === next.unpaidTotal &&
-    prev.activeOrderCount === next.activeOrderCount &&
-    prev.hasUnpaidItems === next.hasUnpaidItems &&
-    prev.isFullyPaid === next.isFullyPaid &&
-    prev.isFreeTable === next.isFreeTable &&
-    prev.isReservedTable === next.isReservedTable
-  );
+    prevDerived.tableStatus === nextDerived.tableStatus &&
+    prevDerived.tableColor === nextDerived.tableColor &&
+    prevDerived.unpaidTotal === nextDerived.unpaidTotal &&
+    prevDerived.activeOrderCount === nextDerived.activeOrderCount &&
+    prevDerived.hasUnpaidItems === nextDerived.hasUnpaidItems &&
+    prevDerived.isFullyPaid === nextDerived.isFullyPaid &&
+    prevDerived.isFreeTable === nextDerived.isFreeTable &&
+    prevDerived.isReservedTable === nextDerived.isReservedTable;
+
+  if (!sameDerived && isTablePerfDebugEnabled()) {
+    console.log("[perf][useTablesModel] derived change detected", {
+      tableNumber: prev.tableNumber,
+      prevDerived,
+      nextDerived,
+    });
+  }
+
+  return sameDerived;
 };
 
 export default function useTablesModel({ tableConfigs, ordersByTable, reservationsToday }) {
@@ -115,7 +137,28 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
 
         const order = orderRaw && isPendingReservationOnlyOrder(orderRaw) ? null : orderRaw;
 
-        const derived = getMemoizedTableDerivedFields(order);
+        // Build previous derived snapshot (if available) so resolver can
+        // prefer it when incoming order is transient/missing details.
+        // BUT: If there's no order at all, don't pass prevDerived - table should be free!
+        const prevDerivedSnapshot = prevTable && order
+          ? {
+              tableStatus: prevTable.tableStatus,
+              tableColor: prevTable.tableColor,
+              unpaidTotal: prevTable.unpaidTotal,
+              activeOrderCount: prevTable.activeOrderCount,
+              hasUnpaidItems: prevTable.hasUnpaidItems,
+              isFullyPaid: prevTable.isFullyPaid,
+              isFreeTable: prevTable.isFreeTable,
+              isReservedTable: prevTable.isReservedTable,
+            }
+          : null;
+
+        // Derive visual fields using shared resolver which can consider
+        // reservationFallback and previous derived state to avoid flicker.
+        const derived = resolveTableVisualState(
+          { order, reservationFallback: reservationFallback, tableNumber: parsedCfgNumber },
+          prevDerivedSnapshot
+        );
 
         const nextTable = {
           tableNumber: cfg?.number,
@@ -124,6 +167,9 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
           area: cfg?.area || "Main Hall",
           label: cfg?.label || "",
           color: cfg?.color || null,
+          isLocked: Boolean(
+            cfg?.locked ?? cfg?.is_locked ?? cfg?.isLocked ?? cfg?.occupied ?? cfg?.unavailable
+          ),
           order,
           reservationFallback,
           tableStatus: derived.tableStatus,

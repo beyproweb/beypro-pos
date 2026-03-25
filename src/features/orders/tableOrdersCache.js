@@ -47,6 +47,125 @@ export const writeTableOrdersCache = (orders) => {
   }
 };
 
+const getKitchenItemIdentitySet = (itemIds) =>
+  new Set(
+    (Array.isArray(itemIds) ? itemIds : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value))
+  );
+
+const patchKitchenItemCollection = (items, itemIdSet, status, timestamp) => {
+  if (!Array.isArray(items) || itemIdSet.size === 0) {
+    return { items: Array.isArray(items) ? items : [], changed: false };
+  }
+
+  let changed = false;
+  const nextItems = items.map((item) => {
+    const itemId = Number(item?.item_id ?? item?.id ?? item?.order_item_id);
+    if (!Number.isFinite(itemId) || !itemIdSet.has(itemId)) return item;
+    changed = true;
+    return {
+      ...item,
+      kitchen_status: status,
+      kitchen_status_updated_at: timestamp,
+      ...(status === "preparing"
+        ? {
+            prep_started_at: item?.prep_started_at ?? item?.prepStartedAt ?? timestamp,
+            prepStartedAt: item?.prepStartedAt ?? item?.prep_started_at ?? timestamp,
+          }
+        : null),
+    };
+  });
+
+  return { items: nextItems, changed };
+};
+
+export const patchTableOrdersKitchenStatusInCache = ({ itemIds, status, timestamp } = {}) => {
+  const itemIdSet = getKitchenItemIdentitySet(itemIds);
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  const patchTimestamp = timestamp || new Date().toISOString();
+
+  if (itemIdSet.size === 0 || !normalizedStatus) {
+    return { orders: [], tables: [] };
+  }
+
+  const cachedOrders = readInitialTableOrders();
+  if (!Array.isArray(cachedOrders) || cachedOrders.length === 0) {
+    return { orders: [], tables: [] };
+  }
+
+  const touchedOrderIds = new Set();
+  const touchedTables = new Set();
+
+  const nextOrders = cachedOrders.map((order) => {
+    const mainItemsResult = patchKitchenItemCollection(
+      Array.isArray(order?.items) ? order.items : [],
+      itemIdSet,
+      normalizedStatus,
+      patchTimestamp
+    );
+
+    let subordersChanged = false;
+    const nextSuborders = Array.isArray(order?.suborders)
+      ? order.suborders.map((suborder) => {
+          const subResult = patchKitchenItemCollection(
+            Array.isArray(suborder?.items) ? suborder.items : [],
+            itemIdSet,
+            normalizedStatus,
+            patchTimestamp
+          );
+          if (!subResult.changed) return suborder;
+          subordersChanged = true;
+          return {
+            ...suborder,
+            items: subResult.items,
+          };
+        })
+      : order?.suborders;
+
+    if (!mainItemsResult.changed && !subordersChanged) return order;
+
+    const allItems = [
+      ...mainItemsResult.items,
+      ...(Array.isArray(nextSuborders)
+        ? nextSuborders.flatMap((suborder) => (Array.isArray(suborder?.items) ? suborder.items : []))
+        : []),
+    ];
+    const allDelivered = allItems.length > 0 && allItems.every((item) => item?.kitchen_status === "delivered");
+
+    const orderId = Number(order?.id);
+    const tableNumber = Number(order?.table_number ?? order?.tableNumber ?? order?.table);
+    if (Number.isFinite(orderId)) touchedOrderIds.add(orderId);
+    if (Number.isFinite(tableNumber)) touchedTables.add(tableNumber);
+
+    return {
+      ...order,
+      items: mainItemsResult.items,
+      ...(Array.isArray(nextSuborders) ? { suborders: nextSuborders } : null),
+      kitchen_status_updated_at: patchTimestamp,
+      ...(normalizedStatus === "preparing"
+        ? {
+            prep_started_at: order?.prep_started_at ?? order?.prepStartedAt ?? patchTimestamp,
+            prepStartedAt: order?.prepStartedAt ?? order?.prep_started_at ?? patchTimestamp,
+            kitchen_delivered_at: null,
+          }
+        : null),
+      ...(normalizedStatus === "delivered"
+        ? {
+            kitchen_delivered_at: allDelivered ? patchTimestamp : order?.kitchen_delivered_at ?? null,
+          }
+        : null),
+    };
+  });
+
+  writeTableOrdersCache(nextOrders);
+
+  return {
+    orders: Array.from(touchedOrderIds),
+    tables: Array.from(touchedTables),
+  };
+};
+
 export const readReservationShadows = () => {
   const cached = safeParseJson(
     typeof window !== "undefined"

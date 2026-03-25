@@ -1,13 +1,25 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { normalizeUser } from "../../utils/normalizeUser";
 import { BASE_URL } from "../../utils/secureFetch";
 
+const REMEMBER_ME_PREFERENCE_KEY = "beyproRememberMe";
+
+function getInitialRememberMe() {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(REMEMBER_ME_PREFERENCE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 export default function StandaloneLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(getInitialRememberMe);
+  const passwordInputRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
@@ -15,10 +27,29 @@ export default function StandaloneLogin() {
 
   useEffect(() => {
     try {
-      const existing = localStorage.getItem("token") || sessionStorage.getItem("token");
+      const existing =
+        window.localStorage.getItem("token") ||
+        window.sessionStorage.getItem("token");
       if (existing) navigate("/standalone/app", { replace: true });
-    } catch {}
+    } catch {
+      // ignore storage errors
+    }
   }, [navigate]);
+
+  useEffect(() => {
+    if (rememberMe) return undefined;
+
+    const clearPasswordField = () => {
+      setPassword("");
+      if (passwordInputRef.current) {
+        passwordInputRef.current.value = "";
+      }
+    };
+
+    clearPasswordField();
+    const timer = window.setTimeout(clearPasswordField, 50);
+    return () => window.clearTimeout(timer);
+  }, [rememberMe]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -51,7 +82,18 @@ export default function StandaloneLogin() {
         otherStorage.removeItem("token");
         otherStorage.removeItem("beyproUser");
         otherStorage.removeItem("standaloneToken");
-      } catch {}
+      } catch {
+        // ignore storage errors
+      }
+
+      try {
+        window.localStorage.setItem(
+          REMEMBER_ME_PREFERENCE_KEY,
+          rememberMe ? "true" : "false"
+        );
+      } catch {
+        // ignore storage errors
+      }
 
       authStorage.setItem("token", data.token);
       authStorage.setItem("standaloneToken", data.token);
@@ -109,13 +151,18 @@ export default function StandaloneLogin() {
             <p className="text-sm text-slate-500 mt-1">Sign in to your standalone portal</p>
           </div>
 
-          <form onSubmit={handleLogin} className="mt-6 space-y-5">
+          <form
+            onSubmit={handleLogin}
+            autoComplete={rememberMe ? "on" : "off"}
+            className="mt-6 space-y-5"
+          >
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
                 className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                 required
               />
@@ -123,9 +170,11 @@ export default function StandaloneLogin() {
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Password</label>
               <input
+                ref={passwordInputRef}
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete={rememberMe ? "current-password" : "new-password"}
                 className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                 required
               />
@@ -135,7 +184,18 @@ export default function StandaloneLogin() {
                 <input
                   type="checkbox"
                   checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setRememberMe(checked);
+                    try {
+                      window.localStorage.setItem(
+                        REMEMBER_ME_PREFERENCE_KEY,
+                        checked ? "true" : "false"
+                      );
+                    } catch {
+                      // ignore storage errors
+                    }
+                  }}
                   className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                 />
                 Keep me logged in

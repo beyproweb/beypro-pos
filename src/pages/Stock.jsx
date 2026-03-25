@@ -410,34 +410,44 @@ useEffect(() => {
     [t]
   );
 
-  const handleCriticalChange = (index, rawValue) => {
-    const item = groupedData[index];
-    if (!item?.stock_id) return;
+  const updateStockThresholdField = (item, field, rawValue) => {
+    const stockId = item?.stock_id;
+    if (!stockId) return;
 
-    setEditValuesByStockId((prev) => {
-      const next = {
-        ...prev,
-        [item.stock_id]: {
-          ...(prev[item.stock_id] || {}),
-          critical_quantity: rawValue,
-        },
-      };
-      editValuesRef.current = next;
-      return next;
-    });
+    const nextEditValues = {
+      ...editValuesRef.current,
+      [stockId]: {
+        ...(editValuesRef.current[stockId] || {}),
+        [field]: rawValue,
+      },
+    };
 
-    const updated = [...groupedData];
-    updated[index] = { ...item, critical_quantity: rawValue };
-    setGroupedData(updated);
+    editValuesRef.current = nextEditValues;
+    setEditValuesByStockId(nextEditValues);
 
-    const critical = toNumInput(rawValue) ?? 0;
-    const reorder = toNumInput(
-      editValuesRef.current[item.stock_id]?.reorder_quantity ?? item.reorder_quantity
-    ) ?? 0;
-    scheduleStockPatch(item.stock_id, {
+    setGroupedData((prev) =>
+      prev.map((entry) =>
+        entry?.stock_id === stockId ? { ...entry, [field]: rawValue } : entry
+      )
+    );
+
+    const critical =
+      toNumInput(
+        nextEditValues[stockId]?.critical_quantity ?? item?.critical_quantity
+      ) ?? 0;
+    const reorder =
+      toNumInput(
+        nextEditValues[stockId]?.reorder_quantity ?? item?.reorder_quantity
+      ) ?? 0;
+
+    scheduleStockPatch(stockId, {
       critical_quantity: critical,
       reorder_quantity: reorder,
     });
+  };
+
+  const handleCriticalChange = (item, rawValue) => {
+    updateStockThresholdField(item, "critical_quantity", rawValue);
   };
 
   const handleDeleteStock = async (item) => {
@@ -470,34 +480,8 @@ useEffect(() => {
     }
   };
 
-  const handleReorderChange = (index, rawValue) => {
-    const item = groupedData[index];
-    if (!item?.stock_id) return;
-
-    setEditValuesByStockId((prev) => {
-      const next = {
-        ...prev,
-        [item.stock_id]: {
-          ...(prev[item.stock_id] || {}),
-          reorder_quantity: rawValue,
-        },
-      };
-      editValuesRef.current = next;
-      return next;
-    });
-
-    const updated = [...groupedData];
-    updated[index] = { ...item, reorder_quantity: rawValue };
-    setGroupedData(updated);
-
-    const reorder = toNumInput(rawValue) ?? 0;
-    const critical = toNumInput(
-      editValuesRef.current[item.stock_id]?.critical_quantity ?? item.critical_quantity
-    ) ?? 0;
-    scheduleStockPatch(item.stock_id, {
-      critical_quantity: critical,
-      reorder_quantity: reorder,
-    });
+  const handleReorderChange = (item, rawValue) => {
+    updateStockThresholdField(item, "reorder_quantity", rawValue);
   };
 useEffect(() => {
   const refreshSuppliers = () => {
@@ -1003,7 +987,7 @@ const suppliersList = Array.from(
                                 item.critical_quantity ??
                                 ""
                               }
-                              onChange={(e) => handleCriticalChange(index, e.target.value)}
+                              onChange={(e) => handleCriticalChange(item, e.target.value)}
                               disabled={!item?.stock_id}
                               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                               placeholder="—"
@@ -1020,7 +1004,7 @@ const suppliersList = Array.from(
                                 item.reorder_quantity ??
                                 ""
                               }
-                              onChange={(e) => handleReorderChange(index, e.target.value)}
+                              onChange={(e) => handleReorderChange(item, e.target.value)}
                               disabled={!item?.stock_id}
                               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                               placeholder="1"

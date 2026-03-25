@@ -4,6 +4,7 @@ import socket from "../utils/socket";
 import secureFetch from "../utils/secureFetch";
 import { useHeader } from "../context/HeaderContext";
 import KitchenSettingsModal from "../modals/KitchenSettingsModal";
+import { patchTableOrdersKitchenStatusInCache } from "../features/orders/tableOrdersCache";
 
 const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v2";
 
@@ -358,6 +359,24 @@ export default function KitchenNew() {
         method: "PUT",
         body: JSON.stringify({ ids: itemIds, status }),
       });
+
+      const patched = patchTableOrdersKitchenStatusInCache({
+        itemIds,
+        status,
+      });
+      if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(
+          new CustomEvent("beypro:orders-local-refresh", {
+            detail: {
+              kind: "kitchen_status_update",
+              item_ids: itemIds,
+              status,
+              order_ids: patched.orders,
+              table_numbers: patched.tables,
+            },
+          })
+        );
+      }
 
       if (status === "preparing") {
         setActiveTab("cooking");

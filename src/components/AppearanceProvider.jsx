@@ -68,6 +68,7 @@ useEffect(() => {
 
     const accentMap = {
       default: { solid: "79 70 229", from: "79 70 229", to: "99 102 241" }, // indigo-600 -> indigo-500
+      black: { solid: "0 0 0", from: "0 0 0", to: "38 38 38" }, // black -> neutral-800
       "emerald-500": { solid: "16 185 129", from: "16 185 129", to: "20 184 166" }, // emerald -> teal
       "rose-500": { solid: "244 63 94", from: "244 63 94", to: "236 72 153" }, // rose -> pink
       "amber-500": { solid: "245 158 11", from: "245 158 11", to: "249 115 22" }, // amber -> orange

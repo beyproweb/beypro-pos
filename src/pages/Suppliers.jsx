@@ -27,6 +27,7 @@ import ReceiptPreview from "../features/suppliers/receiptImport/ReceiptPreview";
 import OcrTextEditor from "../features/suppliers/receiptImport/OcrTextEditor";
 import JsonPreview from "../features/suppliers/receiptImport/JsonPreview";
 import ReceiptEditor from "../features/suppliers/receiptImport/ReceiptEditor";
+import ReceiptItemRowsEditor from "../features/suppliers/receiptImport/ReceiptItemRowsEditor";
 import ValidationSummary from "../features/suppliers/receiptImport/ValidationSummary";
 
 const SUPPLIER_UNIT_MAP = {
@@ -68,6 +69,11 @@ const formatBytes = (bytes) => {
 };
 
 const cloneReceipt = (value) => JSON.parse(JSON.stringify(value || {}));
+
+const createClientTempId = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `tmp-${Math.random().toString(36).slice(2)}`;
 
 const OCR_DIGIT_SWAPS = {
   O: "0",
@@ -572,6 +578,7 @@ const computeInvoiceTotals = (lines = []) => {
 };
 
 const createEmptyTransactionRow = () => ({
+  tempId: createClientTempId(),
   ingredient_select: "__add_new__",
   ingredient: "",
   quantity: "",
@@ -3472,6 +3479,81 @@ feedback_history.map((entry) => ({
     }
   };
 
+  const manualEntryItems = useMemo(() => {
+    const rows = Array.isArray(newTransaction?.rows) ? newTransaction.rows : [];
+    return rows.map((row) => {
+      const quantityValue = String(row?.quantity ?? "").trim();
+      const totalValue = String(row?.total_cost ?? "").trim();
+      const quantityNum = parseOcrNumber(quantityValue) || 0;
+      const totalNum = parseOcrNumber(totalValue) || 0;
+      const unitPriceValue =
+        quantityNum > 0 && totalNum > 0 ? String(Number((totalNum / quantityNum).toFixed(4))) : "";
+
+      return {
+        tempId: row?.tempId || createClientTempId(),
+        name: row?.ingredient || "",
+        qty_units: quantityValue,
+        qty_cases: row?.koli ?? "",
+        amount_per_koli: row?.amount_per_koli ?? "",
+        unit: normalizeUnit(row?.unit || "pcs") || "pcs",
+        unit_price_ex_vat: unitPriceValue,
+        line_total_inc_vat: totalValue,
+        total_locked: true,
+        discount_rate: row?.discount_rate ?? "",
+        discount_amount: row?.discount_amount ?? "",
+        vat_rate: row?.tax ?? "",
+        expiry_date: row?.expiry_date ?? "",
+        is_cleaning_supply: Boolean(row?.is_cleaning_supply),
+        counted_stock: row?.counted_stock ?? "",
+      };
+    });
+  }, [newTransaction?.rows]);
+
+  const handleManualItemsChange = (items) => {
+    setNewTransaction((prev) => {
+      const prevRows = Array.isArray(prev?.rows) ? prev.rows : [];
+      const prevByTempId = new Map(
+        prevRows
+          .filter((row) => row?.tempId)
+          .map((row) => [row.tempId, row])
+      );
+
+      const nextRows = (Array.isArray(items) ? items : []).map((item) => {
+        const prevRow = prevByTempId.get(item?.tempId) || {};
+        const qtyCases = item?.qty_cases ?? "";
+        const amountPerKoli = item?.amount_per_koli ?? item?.units_per_case ?? "";
+        const explicitQty = String(item?.qty_units ?? "").trim();
+        const quantityValue = explicitQty || deriveQuantityFromKoli(qtyCases, amountPerKoli);
+        const unitValue = normalizeUnit(item?.unit || item?.unit_meta || prevRow?.unit || "pcs") || "pcs";
+
+        return {
+          ...createEmptyTransactionRow(),
+          ...prevRow,
+          tempId: item?.tempId || prevRow?.tempId || createClientTempId(),
+          ingredient_select: "__add_new__",
+          ingredient: item?.name || "",
+          quantity: quantityValue,
+          koli: qtyCases,
+          amount_per_koli: amountPerKoli,
+          unit: unitValue,
+          discount_rate: item?.discount_rate ?? "",
+          discount_amount: item?.discount_amount ?? "",
+          tax: item?.vat_rate ?? "",
+          tax_included: prevRow?.tax_included ?? "",
+          total_cost: item?.line_total_inc_vat ?? "",
+          expiry_date: item?.expiry_date || prevRow?.expiry_date || "",
+          is_cleaning_supply: Boolean(item?.is_cleaning_supply),
+          counted_stock: item?.counted_stock ?? "",
+        };
+      });
+
+      return {
+        ...prev,
+        rows: nextRows,
+      };
+    });
+  };
+
   const supplierIngredientOptions = useMemo(() => {
     const normalize = (value) =>
       typeof value === "string" ? value.trim() : "";
@@ -3913,6 +3995,7 @@ feedback_history.map((entry) => ({
 
       if (match?.name && match?.unit) {
         return {
+          tempId: createClientTempId(),
           ingredient_select: JSON.stringify({
             name: match.name,
             unit: match.unit,
@@ -3935,6 +4018,7 @@ feedback_history.map((entry) => ({
       }
 
       return {
+        tempId: createClientTempId(),
         ingredient_select: "__add_new__",
         ingredient: item?.name || "",
         quantity: quantityValue ? String(quantityValue) : "",
@@ -6031,6 +6115,26 @@ id}`, {
                           </div>
                         </div>
                       </div>
+                    </section>
+                  )}
+
+                  {selectedSupplier && (
+                    <section className="mb-4">
+                      <ReceiptItemRowsEditor
+                        t={t}
+                        items={manualEntryItems}
+                        onChangeItems={handleManualItemsChange}
+                        supplierId={selectedSupplier?.id}
+                        supplierIngredients={supplierIngredients}
+                        title={t("Manual item entry")}
+                        description={t("Add supplier items manually using the same row editor as Corrections.")}
+                        emptyMessage={t("No manual items yet. Add one to start the order.")}
+                        confirmLabel={t("Confirm Order")}
+                        onConfirm={handleAddTransaction}
+                        confirmDisabled={!manualEntryItems.some((item) => String(item?.name || "").trim())}
+                        addRowLabel={t("Add item row")}
+                        showFooterTotal
+                      />
                     </section>
                   )}
 

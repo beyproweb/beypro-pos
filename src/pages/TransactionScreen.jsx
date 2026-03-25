@@ -1189,10 +1189,12 @@ const matchExtraPrice = useCallback((product, modifierValue) => {
   }, [cartItems]);
 
   useEffect(() => {
+    // Avoid toggling during data load to prevent visual blink on refresh
+    if (loading) return;
     if (unpaidCartItems.length === 0 && paidCartItems.length > 0) {
       setShowPaidCartItems(true);
     }
-  }, [paidCartItems.length, unpaidCartItems.length]);
+  }, [paidCartItems.length, unpaidCartItems.length, loading]);
  
 // --- New split payment state ---
 const [splits, setSplits] = useState({});

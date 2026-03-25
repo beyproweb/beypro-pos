@@ -621,7 +621,7 @@ export default function useTableOrdersData() {
             table_number: Number.isFinite(tableNumber) ? tableNumber : null,
             status,
             is_paid: order?.is_paid,
-            total: status === "paid" ? 0 : parseFloat(order.total || 0),
+            total: parseFloat(order.total || 0),
           };
         });
 

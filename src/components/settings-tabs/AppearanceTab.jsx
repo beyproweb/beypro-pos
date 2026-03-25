@@ -14,6 +14,7 @@ const themes = [
 // Accent previews (solid + gradients)
 const accentOptions = [
   { label: "Default", value: "default", preview: "#4f46e5" }, // indigo-600
+  { label: "Black", value: "black", preview: "#000000" },
   { label: "Emerald", value: "emerald-500", preview: "#10b981" },
   { label: "Rose", value: "rose-500", preview: "#f43f5e" },
   { label: "Amber", value: "amber-500", preview: "#f59e0b" },

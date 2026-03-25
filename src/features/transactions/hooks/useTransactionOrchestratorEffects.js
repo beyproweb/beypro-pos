@@ -48,9 +48,7 @@ export function useTransactionOrchestratorEffects({
               status: "paid",
               payment_status: "paid",
               is_paid: true,
-              total: 0,
-              items: [],
-              suborders: [],
+              total: parseFloat(order?.total || 0),
             }
           : {
               status: nextStatus,

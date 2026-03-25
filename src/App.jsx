@@ -1,7 +1,7 @@
 // src/App.jsx
 
 import { Routes, Route, Navigate, useLocation, useParams, useNavigate } from "react-router-dom";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
 import { SessionLockProvider } from "./context/SessionLockContext";
@@ -70,6 +70,8 @@ const SETTINGS_TAB_PERMISSIONS = {
   inventory: "settings-inventory",
   appearance: "settings-appearance",
 };
+
+const DEFAULT_AUTHENTICATED_ROUTE = "/tableoverview?tab=tables";
 
 function SettingsRouteWrapper() {
   const { tabKey } = useParams();
@@ -250,13 +252,25 @@ function AppShell() {
             {/* PUBLIC: Login */}
             <Route
               path="/login"
-              element={isAuthenticated() ? <Navigate to="/" /> : <LoginScreenWrapper />}
+              element={
+                isAuthenticated() ? (
+                  <Navigate to={DEFAULT_AUTHENTICATED_ROUTE} replace />
+                ) : (
+                  <LoginScreenWrapper />
+                )
+              }
             />
 
             {/* PUBLIC: Staff PIN Login */}
             <Route
               path="/staff-login"
-              element={isAuthenticated() ? <Navigate to="/" /> : <StaffPINLogin />}
+              element={
+                isAuthenticated() ? (
+                  <Navigate to={DEFAULT_AUTHENTICATED_ROUTE} replace />
+                ) : (
+                  <StaffPINLogin />
+                )
+              }
             />
 
             {/* PROTECTED: All POS routes */}
@@ -286,7 +300,7 @@ function AppShell() {
                 )
               }
             >
-              <Route index element={<Navigate to="/tableoverview?tab=tables" replace />} />
+              <Route index element={<Navigate to={DEFAULT_AUTHENTICATED_ROUTE} replace />} />
               <Route path="dashboard" element={<ProtectedRoute permission="dashboard" moduleKey="page.dashboard"><Dashboard /></ProtectedRoute>} />
               <Route
                 path="customer-insights"

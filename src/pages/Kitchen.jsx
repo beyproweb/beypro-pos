@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import socket from "../utils/socket"; // adjust path as needed!
 import secureFetch from "../utils/secureFetch";
 import { useHeader } from "../context/HeaderContext";
+import { patchTableOrdersKitchenStatusInCache } from "../features/orders/tableOrdersCache";
 
 const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v1";
 const ONLINE_SOURCE_DISPLAY_NAMES = {
@@ -583,6 +584,25 @@ const res = await secureFetch("/order-items/kitchen-status", {
   method: "PUT",
   body: JSON.stringify({ ids: idsToUpdate, status }),
 });
+
+
+    const patched = patchTableOrdersKitchenStatusInCache({
+      itemIds: idsToUpdate,
+      status,
+    });
+    if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(
+        new CustomEvent("beypro:orders-local-refresh", {
+          detail: {
+            kind: "kitchen_status_update",
+            item_ids: idsToUpdate,
+            status,
+            order_ids: patched.orders,
+            table_numbers: patched.tables,
+          },
+        })
+      );
+    }
 
 
 
