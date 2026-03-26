@@ -322,6 +322,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
       hasPermission("settings", currentUser)
     );
   }, [currentUser]);
+  const canShowLanguageSelector = useMemo(() => isLoggedIn, [isLoggedIn]);
 
   const [sidebarLanguage, setSidebarLanguage] = useState("en");
   const [sidebarCurrency, setSidebarCurrency] = useState(currencyKey || "₺ TRY");
@@ -329,7 +330,23 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
   const autoSaveTimerRef = useRef(null);
 
   useEffect(() => {
-    if (!canSeeLocalization) return undefined;
+    if (!canShowLanguageSelector) return undefined;
+
+    if (!canSeeLocalization) {
+      const storedLanguage = readStoredLanguage();
+      const currentLanguage = normalizeLanguageCode(i18n.language);
+      const nextLanguage = storedLanguage || currentLanguage || "en";
+
+      setSidebarLanguage(nextLanguage);
+      if (normalizeLanguageCode(i18n.language) !== nextLanguage) {
+        i18n.changeLanguage(nextLanguage);
+      }
+
+      if (currencyKey) {
+        setSidebarCurrency(currencyKey);
+      }
+      return undefined;
+    }
 
     let active = true;
     secureFetch("/settings/localization")
@@ -362,7 +379,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
     return () => {
       active = false;
     };
-  }, [canSeeLocalization, i18n, setCurrencyKey]);
+  }, [canSeeLocalization, canShowLanguageSelector, currencyKey, i18n, setCurrencyKey]);
 
   useEffect(() => {
     if (!currencyKey) return;
@@ -739,7 +756,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
 
       </nav>
 
-      {canSeeLocalization && (
+      {canShowLanguageSelector && (
         <div className="w-full px-2 mt-2">
           <div className="mx-2 my-2 h-px bg-white/15" />
           {isOpen ? (
