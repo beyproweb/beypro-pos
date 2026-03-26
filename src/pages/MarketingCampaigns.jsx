@@ -7,6 +7,7 @@ import { useHeader } from "../context/HeaderContext";
 
 const STATS_POLL_MS = 5000;   // poll every 5s
 const STATS_POLL_MAX = 12;    // for up to 60s
+const MESSAGE_MAX_LENGTH = 600;
 function rate(n, d) {
   // percent with 1 decimal (e.g. 12.3%)
   if (!d || d <= 0) return null;         // return null so UI can show "—"
@@ -381,7 +382,7 @@ async function sendCampaign() {
       method: "POST",
       body: JSON.stringify({
         subject,
-        body: message,
+        body: message.slice(0, MESSAGE_MAX_LENGTH),
         primary_url: primaryUrl || undefined,
       }),
     });
@@ -392,7 +393,7 @@ async function sendCampaign() {
         date: new Date().toISOString().slice(0, 10),
         type: "Email",
         subject,
-        message,
+        message: message.slice(0, MESSAGE_MAX_LENGTH),
         openRate: 0,
         clickRate: 0,
         _id: data?.campaignId || undefined,
@@ -588,16 +589,19 @@ async function sendWhatsAppCampaign() {
           />
 
           <textarea
-            className="w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 mb-3 shadow focus:ring-2 focus:ring-orange-400 font-semibold transition resize-none"
-            rows={3}
+            className="min-h-[120px] w-full max-w-full rounded-xl border border-orange-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2.5 mb-1 shadow focus:ring-2 focus:ring-orange-400 font-semibold transition resize-y text-sm leading-5 sm:text-base [overflow-wrap:anywhere] break-words"
+            rows={4}
             value={message}
             placeholder={t(
               "Type your campaign message… (links inside your message are also tracked)"
             )}
-            onChange={e => setMessage(e.target.value)}
+            onChange={e => setMessage(e.target.value.slice(0, MESSAGE_MAX_LENGTH))}
             disabled={sending}
-            maxLength={400}
+            maxLength={MESSAGE_MAX_LENGTH}
           />
+          <div className="mb-3 text-right text-xs text-gray-500 dark:text-gray-400">
+            {message.length}/{MESSAGE_MAX_LENGTH}
+          </div>
 
           {/* WhatsApp Customer Selector */}
           <div className="mb-3">
@@ -633,9 +637,9 @@ async function sendWhatsAppCampaign() {
             </div>
           </div>
 
-          <div className="flex gap-3 items-center">
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
             <button
-              className="px-6 py-2.5 rounded-xl bg-orange-600 text-white font-bold shadow hover:bg-orange-700 transition disabled:opacity-70"
+              className="w-full px-6 py-2.5 rounded-xl bg-orange-600 text-white font-bold shadow hover:bg-orange-700 transition disabled:opacity-70 sm:w-auto"
               disabled={sending || !message || !subject}
               onClick={sendCampaign}
             >
@@ -643,14 +647,14 @@ async function sendWhatsAppCampaign() {
               {sending ? t("Sending…") : t("Send Email")}
             </button>
             <button
-              className="px-6 py-2.5 rounded-xl bg-green-600 text-white font-bold shadow hover:bg-green-700 transition disabled:opacity-70"
+              className="w-full px-6 py-2.5 rounded-xl bg-green-600 text-white font-bold shadow hover:bg-green-700 transition disabled:opacity-70 sm:w-auto"
               disabled={sending || !message || selectedPhones.length === 0}
               onClick={sendWhatsAppCampaign}
             >
               <Send className="inline w-5 h-5 mr-1 -mt-1" />{" "}
               {sending ? t("Sending…") : t("Send WhatsApp")}
             </button>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-xs text-gray-500 dark:text-gray-400 sm:ml-1">
               {t("Will send to all checked customers with WhatsApp.")}
             </span>
           </div>

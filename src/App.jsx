@@ -346,6 +346,14 @@ function AppShell() {
               <Route path="production" element={<ProtectedRoute permission="production" moduleKey="page.production"><Production /></ProtectedRoute>} />
               <Route path="tables" element={<TablesRedirect />} />
               <Route path="tableoverview" element={<TableOverviewRouteWrapper />} />
+              <Route
+                path="view-booking"
+                element={
+                  <ProtectedRoute permission="view-booking" moduleKey="page.tables">
+                    <TableOverview />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="transaction/:tableId" element={<TransactionScreen />} />
               <Route path="transaction/phone/:orderId" element={<TransactionScreen />} />
               <Route path="reports" element={<ProtectedRoute permission="reports" moduleKey="page.reports"><Reports /></ProtectedRoute>} />

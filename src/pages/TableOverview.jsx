@@ -379,6 +379,22 @@ const readInitialTableSettings = () => {
   }
 };
 
+const readInitialTransactionSettings = () => {
+  try {
+    if (typeof window === "undefined") return DEFAULT_TRANSACTION_SETTINGS;
+    const cached = safeParseJson(
+      window?.localStorage?.getItem(getSettingCacheKey("transactions"))
+    );
+    if (!cached || typeof cached !== "object") return DEFAULT_TRANSACTION_SETTINGS;
+    return {
+      ...DEFAULT_TRANSACTION_SETTINGS,
+      ...cached,
+    };
+  } catch {
+    return DEFAULT_TRANSACTION_SETTINGS;
+  }
+};
+
 const readInitialTableConfigs = () => {
   // Prefer last known full configs (fastest + keeps areas/seats stable).
   const cachedConfigs = safeParseJson(
@@ -465,14 +481,19 @@ export default function TableOverview() {
   const { formatCurrency } = useCurrency();
   const navigate = useNavigate();
   const location = useLocation();
+  const isDedicatedViewBookingPage = location.pathname === "/view-booking";
   const lastDayKeyRef = useRef(formatLocalYmd(new Date()));
   const tabFromUrl = React.useMemo(() => {
+    if (isDedicatedViewBookingPage) return "tables";
     const params = new window.URLSearchParams(location.search);
     return String(params.get("tab") || "tables").toLowerCase();
-  }, [location.search]);
+  }, [isDedicatedViewBookingPage, location.search]);
   const requestedAreaFromUrl = React.useMemo(
-    () => getTableOverviewAreaFromSearch(location.search),
-    [location.search]
+    () =>
+      isDedicatedViewBookingPage
+        ? AREA_FILTER_VIEW_BOOKING
+        : getTableOverviewAreaFromSearch(location.search),
+    [isDedicatedViewBookingPage, location.search]
   );
 
   const activeTab = tabFromUrl;
@@ -485,8 +506,8 @@ export default function TableOverview() {
     return new Date().toISOString().slice(0, 10);
   });
   const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [transactionSettings, setTransactionSettings] = useState(
-    DEFAULT_TRANSACTION_SETTINGS
+  const [transactionSettings, setTransactionSettings] = useState(() =>
+    readInitialTransactionSettings()
   );
   useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
   const [tableSettings, setTableSettings] = useState(() => readInitialTableSettings());
@@ -2358,32 +2379,41 @@ const handleCheckinReservation = useCallback(
   const handleTabSelect = useCallback(
     (tabId, options = {}) => {
       if (!tabId) return;
-      const basePath = "/tableoverview";
+      const basePath = isDedicatedViewBookingPage ? "/view-booking" : "/tableoverview";
       const replace = options?.replace === true;
       const params = new window.URLSearchParams(location.search);
-      params.set("tab", tabId);
+      if (isDedicatedViewBookingPage && tabId === "tables") {
+        params.delete("tab");
+        params.set("area", AREA_FILTER_VIEW_BOOKING);
+      } else {
+        params.set("tab", tabId);
+      }
       navigate(`${basePath}?${params.toString()}`, { replace });
     },
-    [location.search, navigate]
+    [isDedicatedViewBookingPage, location.search, navigate]
   );
 
   const syncTableAreaInUrl = useCallback(
     (nextArea, options = {}) => {
       const replace = options?.replace === true;
       const params = new window.URLSearchParams(location.search);
+      const basePath = isDedicatedViewBookingPage ? "/view-booking" : "/tableoverview";
       if (nextArea && nextArea !== AREA_FILTER_ALL) {
         params.set("area", nextArea);
       } else {
         params.delete("area");
+      }
+      if (isDedicatedViewBookingPage) {
+        params.delete("tab");
       }
       const nextSearch = params.toString();
       const currentSearch = location.search.startsWith("?")
         ? location.search.slice(1)
         : location.search;
       if (nextSearch === currentSearch) return;
-      navigate(`/tableoverview${nextSearch ? `?${nextSearch}` : ""}`, { replace });
+      navigate(`${basePath}${nextSearch ? `?${nextSearch}` : ""}`, { replace });
     },
-    [location.search, navigate]
+    [isDedicatedViewBookingPage, location.search, navigate]
   );
 
   const handleAreaSelect = useCallback(
@@ -4655,15 +4685,16 @@ useEffect(() => {
     phone: t("Phone"),
     register: t("Register"),
   };
-  const headerTitle = titlesByTab[activeTab] || t("Orders");
+  const headerTitle = isDedicatedViewBookingPage ? t("View Booking") : titlesByTab[activeTab] || t("Orders");
   setHeader((prev) => ({
     ...prev,
     title: headerTitle,
     subtitle: undefined,
     tableNav: null,
-    tableStats: activeTab === "tables" ? { freeTables: freeTablesCount } : undefined,
+    tableStats:
+      activeTab === "tables" && !isDedicatedViewBookingPage ? { freeTables: freeTablesCount } : undefined,
   }));
-}, [activeTab, t, setHeader, freeTablesCount]);
+}, [activeTab, isDedicatedViewBookingPage, t, setHeader, freeTablesCount]);
 
 
 
@@ -4851,8 +4882,14 @@ const handleTableClick = useCallback(async (table) => {
   // const groupedByTable = orders.reduce(...) // ❌ REMOVED DUPLICATE
 
 const areaKeys = React.useMemo(() => Object.keys(groupedTables), [groupedTables]);
-const showStandardAreaTabs = canSeeTablesGrid && tableSettings.showAreas !== false && areaKeys.length > 0;
-const showAreaTabs = showStandardAreaTabs || canSeeViewBookingTab || canSeeSongRequestTab;
+const showStandardAreaTabs =
+  !isDedicatedViewBookingPage &&
+  canSeeTablesGrid &&
+  tableSettings.showAreas !== false &&
+  areaKeys.length > 0;
+const showAreaTabs = isDedicatedViewBookingPage
+  ? canSeeViewBookingTab
+  : showStandardAreaTabs || canSeeViewBookingTab || canSeeSongRequestTab;
 
 const formatAreaLabel = useCallback((area) => {
   const raw = area || "Main Hall";

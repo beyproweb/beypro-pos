@@ -13,7 +13,7 @@ import {
   PieChart, ClipboardList, TrendingUp, FileText, Factory, Bot,
   UserCheck, Megaphone, Wrench, Star, AlertTriangle, CreditCard,
   Clock, ChevronRight, ArrowUpRight, ArrowDownRight, ChefHat,
-  UserCog, Bell, Printer, Plug, Video
+  UserCog, Bell, Printer, Plug, Video, ShoppingCart, CalendarDays
 } from 'lucide-react';
 import axios from "axios";
 // adjust path as needed!
@@ -38,6 +38,17 @@ const QUICK_ACCESS_CONFIG = [
     iconColor: "text-rose-600",
     iconRing: "ring-rose-400/40",
     icon: "ClipboardList",
+  },
+  {
+    id: "view-booking",
+    labelKey: "View Booking",
+    defaultLabel: "View Booking",
+    path: "/view-booking",
+    color: "bg-gradient-to-r from-violet-500 to-fuchsia-500",
+    iconColor: "text-violet-700",
+    iconRing: "ring-violet-400/40",
+    icon: "CalendarDays",
+    permission: "view-booking",
   },
   {
     id: "packet",
@@ -92,6 +103,16 @@ const QUICK_ACCESS_CONFIG = [
     icon: "Package",
   },
   {
+    id: "supplier-cart",
+    labelKey: "Supplier Cart",
+    defaultLabel: "Supplier Cart",
+    path: "/suppliers?view=cart",
+    color: "bg-gradient-to-r from-emerald-500 to-lime-500",
+    iconColor: "text-lime-700",
+    iconRing: "ring-lime-400/40",
+    icon: "ShoppingCart",
+  },
+  {
     id: "stock",
     labelKey: "Stock",
     defaultLabel: "Stock",
@@ -120,6 +141,17 @@ const QUICK_ACCESS_CONFIG = [
     iconColor: "text-cyan-600",
     iconRing: "ring-cyan-400/40",
     icon: "Users",
+  },
+  {
+    id: "staff-checkin",
+    labelKey: "Check-In",
+    defaultLabel: "Check-In",
+    path: "/staff?tab=checkin",
+    color: "bg-gradient-to-r from-teal-500 to-emerald-500",
+    iconColor: "text-emerald-600",
+    iconRing: "ring-emerald-400/40",
+    icon: "UserCheck",
+    permission: "staff-checkin",
   },
   {
     id: "payroll",
@@ -224,8 +256,8 @@ const QUICK_ACCESS_CONFIG = [
   },
   {
     id: "marketing-campaigns",
-    labelKey: "Marketing Campaigns",
-    defaultLabel: "Marketing Campaigns",
+    labelKey: "Marketing",
+    defaultLabel: "Marketing",
     path: "/marketing-campaigns",
     color: "bg-gradient-to-r from-amber-400 to-orange-600",
     iconColor: "text-orange-600",
@@ -647,6 +679,8 @@ const fetchSummaryStats = useCallback(async () => {
       case 'Bell': return <Bell size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
       case 'Printer': return <Printer size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
       case 'Plug': return <Plug size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'ShoppingCart': return <ShoppingCart size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'CalendarDays': return <CalendarDays size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
       default: return <Home size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
     }
   };
@@ -656,6 +690,7 @@ const fetchSummaryStats = useCallback(async () => {
     // Default dashboard order for first login / fresh browser (matches design screenshot)
     const preferred = [
       "suppliers",
+      "supplier-cart",
       "stock",
       "products",
       "production",
@@ -665,10 +700,12 @@ const fetchSummaryStats = useCallback(async () => {
       "cash-history",
       "ingredient-prices",
       "history",
+      "view-booking",
       "expenses",
       "integrations",
       "qr-menu",
       "staff",
+      "staff-checkin",
       "payroll",
       "orders",
       "packet",
@@ -846,7 +883,7 @@ const fetchSummaryStats = useCallback(async () => {
           onDrop={handleNavDrop}
         >
           <div className="w-full max-w-7xl px-0 py-5 rounded-[2rem] bg-transparent border border-transparent">
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-x-6 sm:gap-x-8 gap-y-6 place-items-center">
+            <div className="grid grid-cols-3 lg:grid-cols-9 gap-x-3 sm:gap-x-4 lg:gap-x-5 gap-y-6 place-items-center">
               {allowedAccess.map((item) => {
                 const label = t(item.labelKey, {
                   defaultValue: item.defaultLabel ?? item.labelKey,
@@ -1590,7 +1627,7 @@ function LiveCamerasSection({ cameras = [], loading = false, onNavigate, t }) {
               {camera.enabled && (
                 <div className="absolute top-2 right-2 flex items-center gap-1 bg-red-500 text-white px-2 py-1 rounded-full text-xs font-bold z-20">
                   <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                  LIVE
+                  {t("Live", "Live")}
                 </div>
               )}
             </div>
@@ -1598,12 +1635,12 @@ function LiveCamerasSection({ cameras = [], loading = false, onNavigate, t }) {
             {/* Camera Info */}
             <div className="p-4">
               <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-1 truncate">
-                {camera.name}
+                {t(camera.name, camera.name)}
               </h3>
               
               {camera.location && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate">
-                  📍 {camera.location}
+                  📍 {t(camera.location, camera.location)}
                 </p>
               )}
 
@@ -1611,7 +1648,7 @@ function LiveCamerasSection({ cameras = [], loading = false, onNavigate, t }) {
               <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                 {camera.resolution && (
                   <div className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded">
-                    <span className="text-gray-600 dark:text-gray-400">Resolution</span>
+                    <span className="text-gray-600 dark:text-gray-400">{t("Resolution", "Resolution")}</span>
                     <div className="font-mono text-gray-900 dark:text-white">
                       {camera.resolution}
                     </div>
@@ -1619,7 +1656,7 @@ function LiveCamerasSection({ cameras = [], loading = false, onNavigate, t }) {
                 )}
                 {camera.bitrate && (
                   <div className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded">
-                    <span className="text-gray-600 dark:text-gray-400">Bitrate</span>
+                    <span className="text-gray-600 dark:text-gray-400">{t("Bitrate", "Bitrate")}</span>
                     <div className="font-mono text-gray-900 dark:text-white">
                       {camera.bitrate}
                     </div>
@@ -1641,7 +1678,7 @@ function LiveCamerasSection({ cameras = [], loading = false, onNavigate, t }) {
                       : "text-gray-500 dark:text-gray-400"
                   }`}
                 >
-                  {camera.enabled ? "Active" : "Inactive"}
+                  {camera.enabled ? t("Active", "Active") : t("Inactive", "Inactive")}
                 </span>
               </div>
             </div>

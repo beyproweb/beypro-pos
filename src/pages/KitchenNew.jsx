@@ -174,7 +174,7 @@ export default function KitchenNew() {
 
   const headerNav = useMemo(
     () => (
-      <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-center gap-1 sm:gap-2 max-w-full rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+      <div className="grid w-full grid-cols-2 items-stretch gap-1 rounded-2xl border border-slate-200/60 bg-slate-50/70 p-1 backdrop-blur sm:w-auto sm:grid-cols-4 dark:border-slate-700/60 dark:bg-zinc-800/30">
         {headerTabs.map((tab) => (
           <HeaderTabButton
             key={tab.id}
@@ -818,17 +818,17 @@ function HeaderTabButton({ label, active, onClick }) {
       type="button"
       onClick={onClick}
       className={[
-        "w-auto min-w-[64px] sm:min-w-[80px] md:min-w-[96px] text-center",
-        "inline-flex items-center justify-center gap-2",
-        "rounded-full border border-slate-200/80 dark:border-slate-700/80 px-2 py-1.5 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-[12px] md:text-[13px] lg:text-sm font-semibold leading-tight",
+        "min-w-0 w-full h-full min-h-[40px] sm:min-h-[42px] text-center",
+        "inline-flex items-center justify-center",
+        "rounded-full border px-2 py-1.5 sm:px-3 text-[11px] sm:text-[12px] md:text-[13px] font-semibold leading-tight",
         "transition-all duration-150 hover:shadow-sm active:scale-[0.98]",
         "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
         active
-          ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-sm shadow-emerald-500/20 ring-1 ring-white/50"
-          : "bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
+          ? "border-emerald-500 bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-sm shadow-emerald-500/20 ring-1 ring-white/50"
+          : "border-slate-200/80 bg-white/70 text-slate-700 hover:bg-slate-100 hover:border-slate-300 dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800",
       ].join(" ")}
     >
-      {label}
+      <span className="block whitespace-normal break-words text-center">{label}</span>
     </button>
   );
 }

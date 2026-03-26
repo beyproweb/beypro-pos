@@ -228,6 +228,7 @@ export default function Layout({
     "/dashboard": "Dashboard",
     "/tables": "Orders",
     "/tableoverview": "Orders",
+    "/view-booking": "View Booking",
     "/orders": "Orders",
     "/payments": "Payments",
     "/transaction": "Transaction",
