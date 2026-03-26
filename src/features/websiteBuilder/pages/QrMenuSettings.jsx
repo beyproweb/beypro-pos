@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { toast } from "react-toastify";
 import secureFetch from "../../../utils/secureFetch";
-import { Eye, EyeOff, Search, Copy, Download, Printer, QrCode, Trash2, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, Search, Copy, Download, Printer, Trash2, ChevronDown } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 import { API_ORIGIN } from "../../../utils/api";
@@ -142,6 +142,7 @@ export default function QrMenuSettings() {
   const [savingTableOrder, setSavingTableOrder] = useState(false);
   const [savingReservationTab, setSavingReservationTab] = useState(false);
   const [savingDisableAllProducts, setSavingDisableAllProducts] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState("qr");
   const [tables, setTables] = useState([]);
   const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
   const [tableCount, setTableCount] = useState("");
@@ -1550,128 +1551,68 @@ async function saveAllCustomization() {
   }, []);
  return (
   <div className="max-w-5xl mx-auto px-4 py-10">
-    <h1 className="text-3xl font-extrabold mb-6 flex items-center gap-3 bg-gradient-to-r from-blue-600 via-fuchsia-500 to-indigo-600 text-transparent bg-clip-text tracking-tight drop-shadow">
-      <QrCode className="w-9 h-9" />
-      {t("QR Menu Settings")}
-    </h1>
-
-    {/* QR section */}
-    <div className="flex flex-col md:flex-row items-center gap-8 mb-10 bg-gradient-to-br from-white/80 via-blue-50 to-indigo-100 dark:from-zinc-900/80 dark:via-blue-950/90 dark:to-indigo-950/90 rounded-3xl shadow-2xl p-7 border border-white/30 backdrop-blur-xl">
-      <div
-        ref={qrRef}
-        className="bg-white dark:bg-zinc-950 rounded-2xl p-4 shadow-xl border border-blue-100 dark:border-blue-800 flex flex-col items-center"
-      >
-        {loadingLink ? (
-          <div className="w-[180px] h-[180px] flex items-center justify-center text-gray-400">
-            {t("Generating QR...")}
-          </div>
-        ) : (
-          <QRCodeCanvas id="qrCanvas" value={qrUrl || ""} size={180} />
-        )}
-        <div className="mt-3 w-full flex items-center justify-center" ref={shopHoursDropdownRef}>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowShopHoursDropdown((v) => !v)}
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-extrabold shadow-sm transition ${
-                openStatus.isOpen
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                  : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-              }`}
-              title={t("Shop Hours")}
-            >
-              <span>{openStatus.label}</span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showShopHoursDropdown ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {showShopHoursDropdown && (
-              <div className="absolute left-1/2 top-[calc(100%+10px)] w-[320px] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white shadow-2xl p-3 z-10 dark:border-slate-800 dark:bg-zinc-950">
-                <div className="flex items-center justify-between gap-2 px-1 pb-2">
-                  <div className="text-sm font-extrabold text-slate-800 dark:text-slate-100">
-                    {t("Shop Hours")}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowShopHoursDropdown(false)}
-                    className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-lg leading-none"
-                    aria-label={t("Close")}
-                  >
-                    ×
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 gap-1">
-                  {days.map((day) => {
-                    const isToday = day === todayName;
-                    const open = shopHours?.[day]?.open || "";
-                    const close = shopHours?.[day]?.close || "";
-                    const enabled = shopHours?.[day]?.enabled !== false;
-                    const has = enabled && !!(open && close);
-                    return (
-                      <div
-                        key={day}
-                        className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${
-                          isToday
-                            ? "bg-indigo-50 text-indigo-800 border border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/30 dark:text-indigo-200"
-                            : "bg-slate-50 text-slate-700 dark:bg-zinc-900/40 dark:text-slate-200"
-                        }`}
-                      >
-                        <span className="font-semibold">{t(day)}</span>
-                        <span className="font-mono text-xs">
-                          {has ? `${open} - ${close}` : "—"}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="font-mono text-xs text-gray-500 mt-3 text-center break-all max-w-xs">
-          {qrUrl || t("QR link not available yet")}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3 w-full md:w-auto">
+    <div className="mb-8 flex justify-center">
+      <div className="inline-flex rounded-2xl border border-blue-100 bg-white/90 p-1.5 shadow-lg dark:border-zinc-800 dark:bg-zinc-950/80">
         <button
-          onClick={copyLink}
-          disabled={!qrUrl}
-          className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg hover:scale-105 transition"
+          type="button"
+          onClick={() => setActiveSettingsTab("qr")}
+          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
+            activeSettingsTab === "qr"
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
+              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
+          }`}
         >
-          <Copy className="w-4 h-4" /> {t("Copy Link")}
+          {t("QR Settings")}
         </button>
-
         <button
-          onClick={() => {
-            if (!qrUrl) return;
-            window.open(qrUrl, "_blank", "noopener,noreferrer");
-          }}
-          disabled={!qrUrl}
-          className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg hover:scale-105 transition"
+          type="button"
+          onClick={() => setActiveSettingsTab("app")}
+          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
+            activeSettingsTab === "app"
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
+              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
+          }`}
         >
-          <Eye className="w-4 h-4" /> {t("Navigate")}
+          {t("App Settings")}
         </button>
-
         <button
-          onClick={downloadQR}
-          disabled={!qrUrl}
-          className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow-lg hover:scale-105 transition"
+          type="button"
+          onClick={() => setActiveSettingsTab("concert")}
+          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
+            activeSettingsTab === "concert"
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
+              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
+          }`}
         >
-          <Download className="w-4 h-4" /> {t("Download QR")}
+          {t("Concert Tickets")}
         </button>
-
         <button
-          onClick={printQR}
-          disabled={!qrUrl}
-          className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-slate-400 to-gray-700 text-white shadow-lg hover:scale-105 transition"
+          type="button"
+          onClick={() => setActiveSettingsTab("controls")}
+          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
+            activeSettingsTab === "controls"
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
+              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
+          }`}
         >
-          <Printer className="w-4 h-4" /> {t("Print QR")}
+          {t("Order Settings")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSettingsTab("generate-qr")}
+          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
+            activeSettingsTab === "generate-qr"
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
+              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
+          }`}
+        >
+          {t("Generate Qr")}
         </button>
       </div>
     </div>
 
+    {activeSettingsTab === "qr" && (
+      <>
     {/* Shop Hours */}
     <div className="mb-10 bg-white/90 dark:bg-zinc-950/80 rounded-3xl shadow-xl border border-blue-100 dark:border-blue-800 overflow-hidden">
       <div className="p-5 border-b border-blue-100 dark:border-zinc-800">
@@ -1862,15 +1803,554 @@ async function saveAllCustomization() {
 	          </ul>
 	        )}
 	      </div>
+      </div>
 
-      {/* --------------------------------------------------------------------------------
-         QR MENU WEBSITE BUILDER 
-      -------------------------------------------------------------------------------- */}
-      <div className="mt-12 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
-        <h2 className="text-3xl font-extrabold mb-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-transparent bg-clip-text">
-          🛠️ {t("QR Menu Website Builder")}
-        </h2>
+        {/* QUICK SETUP */}
+        <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+            <h3 className="text-xl font-bold mb-3 text-indigo-600">
+              {t("Tables")}
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+              {t("Set the total number of tables for QR codes.")}
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min="0"
+                value={tableCount}
+                onChange={(e) => setTableCount(e.target.value)}
+                className="w-32 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+              <button
+                type="button"
+                onClick={saveTableCount}
+                disabled={savingTableCount}
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
+              >
+                {savingTableCount ? t("Please wait...") : t("Save")}
+              </button>
+            </div>
+          </div>
 
+          <div className="bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+            <h3 className="text-xl font-bold mb-3 text-indigo-600">
+              {t("Add Product")}
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                value={newProduct.name}
+                onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
+                placeholder={t("Product Name")}
+                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={newProduct.price}
+                onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
+                placeholder={t("Price")}
+                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
+              />
+              <input
+                value={newProduct.category}
+                onChange={(e) => setNewProduct((p) => ({ ...p, category: e.target.value }))}
+                placeholder={t("Category")}
+                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
+              />
+
+              <div className="sm:col-span-2">
+                <label className="font-semibold block mb-2">{t("Category Image")}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={categoryImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0] || null;
+                      setCategoryImageFileName(file?.name || "");
+                      if (!file) return;
+                      await uploadCategoryImage(file);
+                      try {
+                        e.target.value = "";
+                      } catch {}
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => categoryImageInputRef.current?.click()}
+                    disabled={uploadingCategoryImage}
+                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+                  >
+                    {uploadingCategoryImage ? t("Please wait...") : t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+                    {categoryImageFileName ? categoryImageFileName : t("No file chosen")}
+                  </span>
+                </div>
+                {categoryImagePreview ? (
+                  <div className="mt-2 flex items-center gap-3">
+                    <img
+                      src={categoryImagePreview}
+                      alt={t("Category")}
+                      className="w-16 h-16 rounded-xl object-cover border bg-white"
+                    />
+                    <span className="text-sm text-gray-500 dark:text-gray-300">
+                      {t("Category Preview")}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="font-semibold block mb-2">{t("Product Image")}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={productImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      if (!file) return;
+                      setNewProductImageFile(file);
+                      try {
+                        e.target.value = "";
+                      } catch {}
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => productImageInputRef.current?.click()}
+                    disabled={uploadingNewProductImage}
+                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+                  >
+                    {uploadingNewProductImage ? t("Please wait...") : t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+                    {newProductImageFile?.name ? newProductImageFile.name : t("No file chosen")}
+                  </span>
+                </div>
+                {newProductImagePreview ? (
+                  <img
+                    src={newProductImagePreview}
+                    alt={t("Product Image")}
+                    className="mt-2 w-24 h-24 rounded-xl object-cover border bg-white"
+                  />
+                ) : null}
+              </div>
+
+              <textarea
+                value={newProduct.description}
+                onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))}
+                placeholder={t("Description")}
+                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
+                rows={3}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={saveNewProduct}
+              disabled={savingProduct || uploadingNewProductImage || uploadingCategoryImage}
+              className="mt-3 px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
+            >
+              {savingProduct ? t("Please wait...") : t("Save")}
+            </button>
+          </div>
+        </div>
+      </>
+    )}
+
+    {(activeSettingsTab === "app" || activeSettingsTab === "concert" || activeSettingsTab === "controls" || activeSettingsTab === "generate-qr") && (
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
+        {activeSettingsTab === "generate-qr" && (
+          <div className="space-y-10">
+            <div className="rounded-[28px] border border-blue-100 bg-gradient-to-br from-white/80 via-blue-50 to-indigo-100 p-7 shadow-2xl dark:border-zinc-700 dark:from-zinc-900/80 dark:via-blue-950/80 dark:to-indigo-950/80">
+              <div className="flex flex-col items-center gap-8 md:flex-row">
+                <div
+                  ref={qrRef}
+                  className="flex flex-col items-center rounded-2xl border border-blue-100 bg-white p-4 shadow-xl dark:border-blue-800 dark:bg-zinc-950"
+                >
+                  {loadingLink ? (
+                    <div className="flex h-[180px] w-[180px] items-center justify-center text-gray-400">
+                      {t("Generating QR...")}
+                    </div>
+                  ) : (
+                    <QRCodeCanvas id="qrCanvas" value={qrUrl || ""} size={180} />
+                  )}
+                  <div className="mt-3 flex w-full items-center justify-center" ref={shopHoursDropdownRef}>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowShopHoursDropdown((v) => !v)}
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-extrabold shadow-sm transition ${
+                          openStatus.isOpen
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                        }`}
+                        title={t("Shop Hours")}
+                      >
+                        <span>{openStatus.label}</span>
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform ${showShopHoursDropdown ? "rotate-180" : ""}`}
+                        />
+                      </button>
+
+                      {showShopHoursDropdown && (
+                        <div className="absolute left-1/2 top-[calc(100%+10px)] z-10 w-[320px] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-800 dark:bg-zinc-950">
+                          <div className="flex items-center justify-between gap-2 px-1 pb-2">
+                            <div className="text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                              {t("Shop Hours")}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowShopHoursDropdown(false)}
+                              className="text-lg leading-none text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                              aria-label={t("Close")}
+                            >
+                              ×
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 gap-1">
+                            {days.map((day) => {
+                              const isToday = day === todayName;
+                              const open = shopHours?.[day]?.open || "";
+                              const close = shopHours?.[day]?.close || "";
+                              const enabled = shopHours?.[day]?.enabled !== false;
+                              const has = enabled && !!(open && close);
+                              return (
+                                <div
+                                  key={day}
+                                  className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${
+                                    isToday
+                                      ? "border border-indigo-100 bg-indigo-50 text-indigo-800 dark:border-indigo-900/30 dark:bg-indigo-950/30 dark:text-indigo-200"
+                                      : "bg-slate-50 text-slate-700 dark:bg-zinc-900/40 dark:text-slate-200"
+                                  }`}
+                                >
+                                  <span className="font-semibold">{t(day)}</span>
+                                  <span className="font-mono text-xs">
+                                    {has ? `${open} - ${close}` : "—"}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 max-w-xs break-all text-center font-mono text-xs text-gray-500">
+                    {qrUrl || t("QR link not available yet")}
+                  </div>
+                </div>
+
+                <div className="flex w-full max-w-[320px] flex-col gap-3">
+                  <button
+                    onClick={copyLink}
+                    disabled={!qrUrl}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 font-bold text-white shadow-lg transition hover:scale-105 disabled:opacity-50"
+                  >
+                    <Copy className="w-4 h-4" /> {t("Copy Link")}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (!qrUrl) return;
+                      window.open(qrUrl, "_blank", "noopener,noreferrer");
+                    }}
+                    disabled={!qrUrl}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 font-bold text-white shadow-lg transition hover:scale-105 disabled:opacity-50"
+                  >
+                    <Eye className="w-4 h-4" /> {t("Navigate")}
+                  </button>
+
+                  <button
+                    onClick={downloadQR}
+                    disabled={!qrUrl}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 px-6 py-3 font-bold text-white shadow-lg transition hover:scale-105 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" /> {t("Download QR")}
+                  </button>
+
+                  <button
+                    onClick={printQR}
+                    disabled={!qrUrl}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-slate-400 to-gray-700 px-6 py-3 font-bold text-white shadow-lg transition hover:scale-105 disabled:opacity-50"
+                  >
+                    <Printer className="w-4 h-4" /> {t("Print QR")}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+              <h3 className="text-xl font-bold mb-3 text-indigo-600">
+                {t("Table QR Codes")}
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                {t("Generate QR codes that open the menu directly for a specific table.")}
+              </p>
+              {tables.length === 0 ? (
+                <div className="text-gray-400 text-sm">
+                  {t("No tables configured yet. Go to the Tables page to add tables.")}
+                </div>
+              ) : (
+                <div className="max-h-[360px] overflow-y-auto pr-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {tables.map((tbl) => {
+                      const n = tbl.number || tbl.tableNumber;
+                      const key = String(n);
+                      const info = tableQr[key] || {};
+                      const canvasId = `table-qr-${key}`;
+                      return (
+                        <div
+                          key={key}
+                          className="flex gap-4 rounded-2xl border border-blue-100 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900"
+                        >
+                          <div className="flex w-[122px] shrink-0 flex-col items-center">
+                            {info.url ? (
+                              <QRCodeCanvas
+                                id={canvasId}
+                                value={info.url}
+                                size={110}
+                              />
+                            ) : (
+                              <div className="w-[110px] h-[110px] flex items-center justify-center text-xs text-gray-400 border border-dashed rounded-xl">
+                                {t("No QR yet")}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => (info.url ? printTableQr(key, canvasId) : loadTableQr(key))}
+                              className="mt-3 rounded-full px-4 py-2 text-xs font-semibold bg-indigo-500 text-white hover:bg-indigo-600 transition disabled:opacity-60"
+                              disabled={info.loading}
+                            >
+                              {info.loading
+                                ? t("Please wait...")
+                                : info.url
+                                ? t("Print")
+                                : t("Generate QR")}
+                            </button>
+                          </div>
+                          <div className="flex-1 pt-2 min-w-0">
+                            <div className="font-semibold text-sm">
+                              {t("Table")} {n}
+                              {tbl.label ? ` – ${tbl.label}` : ""}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1 break-all">
+                              {info.url || t("QR link will appear here")}
+                            </div>
+                            {info.url && (
+                              <button
+                                type="button"
+                                onClick={() => copyTableQr(key)}
+                                className="mt-2 inline-flex items-center text-xs font-semibold text-blue-600 hover:text-blue-800"
+                              >
+                                {t("Copy link")}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeSettingsTab === "app" && (
+          <h2 className="text-xl font-extrabold mb-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-transparent bg-clip-text">
+            {t("Menu Website Builder")}
+          </h2>
+        )}
+
+        {activeSettingsTab === "controls" && (
+          <div className="space-y-8">
+            <div>
+              <div className="text-xl font-extrabold text-slate-900 dark:text-slate-100">
+                {t("Order Settings")}
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Delivery Ordering")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.delivery_enabled
+                        ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                        : "border border-rose-200 bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {settings.delivery_enabled ? t("Delivery is open") : t("Delivery is closed")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleDelivery}
+                    disabled={savingDelivery}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {settings.delivery_enabled ? t("Close Delivery") : t("Open Delivery")}
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("Toggle whether delivery/online ordering appears in the QR menu order picker.")}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Reservation Modal Pickup")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.reservation_pickup_enabled
+                        ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                        : "border border-rose-200 bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {settings.reservation_pickup_enabled ? t("Pickup is open") : t("Pickup is closed")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleReservationPickup}
+                    disabled={savingReservationPickup}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {settings.reservation_pickup_enabled ? t("Close Pickup") : t("Open Pickup")}
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("Toggle pickup option inside the reservation modal (Pickup / Reservation).")}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Table Order")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.table_order_enabled
+                        ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                        : "border border-rose-200 bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {settings.table_order_enabled ? t("Table order is open") : t("Table order is closed")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleTableOrder}
+                    disabled={savingTableOrder}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {settings.table_order_enabled ? t("Close Table Order") : t("Open Table Order")}
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("Toggle whether table order appears in QR menu order type options.")}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Reservation Header Tab")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.reservation_tab_enabled
+                        ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                        : "border border-rose-200 bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {settings.reservation_tab_enabled ? t("Reservation tab is open") : t("Reservation tab is closed")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleReservationTab}
+                    disabled={savingReservationTab}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {settings.reservation_tab_enabled ? t("Close Reservation Tab") : t("Open Reservation Tab")}
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("This only controls the Reservation tab in the QR header. Concert reservations stay active.")}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("All Product Visibility")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.disable_all_products
+                        ? "border border-rose-200 bg-rose-100 text-rose-700"
+                        : "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                    }`}
+                  >
+                    {settings.disable_all_products ? t("All products are hidden") : t("All products are visible")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleDisableAllProducts}
+                    disabled={savingDisableAllProducts}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {settings.disable_all_products ? t("Enable All Products") : t("Disable All Products")}
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("When enabled, categories and products are hidden on QR home and in all QR menu product lists.")}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Table Order Location Check")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.table_geo_enabled
+                        ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                        : "border border-rose-200 bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {settings.table_geo_enabled ? t("Location check enabled") : t("Location check disabled")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => updateField("table_geo_enabled", !settings.table_geo_enabled)}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
+                  >
+                    {settings.table_geo_enabled ? t("Disable Location Check") : t("Enable Location Check")}
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min="25"
+                      max="1000"
+                      step="5"
+                      value={settings.table_geo_radius_meters ?? 150}
+                      onChange={(e) =>
+                        updateField("table_geo_radius_meters", Number(e.target.value) || 0)
+                      }
+                      className="w-24 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    />
+                    <span className="text-sm text-slate-600 dark:text-slate-300">{t("meters")}</span>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("Require table orders to be within this distance of the restaurant.")}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSettingsTab === "app" && (
+          <>
         {/* Main Info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
@@ -1911,201 +2391,6 @@ async function saveAllCustomization() {
               onChange={(e) => updateField("phone", e.target.value)}
               className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-800"
             />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="font-semibold">{t("Delivery Ordering")}</label>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <span
-                className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  settings.delivery_enabled
-                    ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                    : "bg-rose-100 text-rose-700 border border-rose-200"
-                }`}
-              >
-                {settings.delivery_enabled
-                  ? t("Delivery is open")
-                  : t("Delivery is closed")}
-              </span>
-              <button
-                className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
-                onClick={toggleDelivery}
-                disabled={savingDelivery}
-              >
-                {settings.delivery_enabled
-                  ? t("Close Delivery")
-                  : t("Open Delivery")}
-              </button>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              {t(
-                "Toggle whether delivery/online ordering appears in the QR menu order picker."
-              )}
-            </p>
-            <div className="mt-4">
-              <label className="font-semibold">{t("Reservation Modal Pickup")}</label>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    settings.reservation_pickup_enabled
-                      ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                      : "bg-rose-100 text-rose-700 border border-rose-200"
-                  }`}
-                >
-                  {settings.reservation_pickup_enabled
-                    ? t("Pickup is open")
-                    : t("Pickup is closed")}
-                </span>
-                <button
-                  type="button"
-                  className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
-                  onClick={toggleReservationPickup}
-                  disabled={savingReservationPickup}
-                >
-                  {settings.reservation_pickup_enabled
-                    ? t("Close Pickup")
-                    : t("Open Pickup")}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {t("Toggle pickup option inside the reservation modal (Pickup / Reservation).")}
-              </p>
-            </div>
-            <div className="mt-4">
-              <label className="font-semibold">{t("Table Order")}</label>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    settings.table_order_enabled
-                      ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                      : "bg-rose-100 text-rose-700 border border-rose-200"
-                  }`}
-                >
-                  {settings.table_order_enabled
-                    ? t("Table order is open")
-                    : t("Table order is closed")}
-                </span>
-                <button
-                  type="button"
-                  className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
-                  onClick={toggleTableOrder}
-                  disabled={savingTableOrder}
-                >
-                  {settings.table_order_enabled
-                    ? t("Close Table Order")
-                    : t("Open Table Order")}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {t("Toggle whether table order appears in QR menu order type options.")}
-              </p>
-            </div>
-            <div className="mt-4">
-              <label className="font-semibold">{t("Reservation Header Tab")}</label>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    settings.reservation_tab_enabled
-                      ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                      : "bg-rose-100 text-rose-700 border border-rose-200"
-                  }`}
-                >
-                  {settings.reservation_tab_enabled
-                    ? t("Reservation tab is open")
-                    : t("Reservation tab is closed")}
-                </span>
-                <button
-                  type="button"
-                  className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
-                  onClick={toggleReservationTab}
-                  disabled={savingReservationTab}
-                >
-                  {settings.reservation_tab_enabled
-                    ? t("Close Reservation Tab")
-                    : t("Open Reservation Tab")}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {t(
-                  "This only controls the Reservation tab in the QR header. Concert reservations stay active."
-                )}
-              </p>
-            </div>
-
-            <div className="mt-4">
-              <label className="font-semibold">{t("All Product Visibility")}</label>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    settings.disable_all_products
-                      ? "bg-rose-100 text-rose-700 border border-rose-200"
-                      : "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                  }`}
-                >
-                  {settings.disable_all_products
-                    ? t("All products are hidden")
-                    : t("All products are visible")}
-                </span>
-                <button
-                  type="button"
-                  className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition disabled:opacity-50 disabled:hover:bg-blue-500/10"
-                  onClick={toggleDisableAllProducts}
-                  disabled={savingDisableAllProducts}
-                >
-                  {settings.disable_all_products
-                    ? t("Enable All Products")
-                    : t("Disable All Products")}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {t(
-                  "When enabled, categories and products are hidden on QR home and in all QR menu product lists."
-                )}
-              </p>
-            </div>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="font-semibold">{t("Table Order Location Check")}</label>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <span
-                className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  settings.table_geo_enabled
-                    ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                    : "bg-rose-100 text-rose-700 border border-rose-200"
-                }`}
-              >
-                {settings.table_geo_enabled
-                  ? t("Location check enabled")
-                  : t("Location check disabled")}
-              </span>
-              <button
-                type="button"
-                className="px-5 py-2 rounded-full border border-blue-500 bg-blue-500/10 text-blue-600 font-semibold hover:bg-blue-500/20 transition"
-                onClick={() => updateField("table_geo_enabled", !settings.table_geo_enabled)}
-              >
-                {settings.table_geo_enabled
-                  ? t("Disable Location Check")
-                  : t("Enable Location Check")}
-              </button>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="25"
-                  max="1000"
-                  step="5"
-                  value={settings.table_geo_radius_meters ?? 150}
-                  onChange={(e) =>
-                    updateField("table_geo_radius_meters", Number(e.target.value) || 0)
-                  }
-                  className="w-24 p-2 rounded-xl border bg-white dark:bg-zinc-800"
-                />
-                <span className="text-sm text-gray-600">{t("meters")}</span>
-              </div>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              {t("Require table orders to be within this distance of the restaurant.")}
-            </p>
           </div>
 
           <div className="md:col-span-2 rounded-2xl border border-indigo-100 dark:border-zinc-700 bg-indigo-50/50 dark:bg-zinc-800/40 p-4">
@@ -2409,241 +2694,11 @@ async function saveAllCustomization() {
             </select>
           </div>
         </div>
+          </>
+        )}
 
-        {/* QUICK SETUP */}
-        <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
-            <h3 className="text-xl font-bold mb-3 text-indigo-600">
-              {t("Tables")}
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-              {t("Set the total number of tables for QR codes.")}
-            </p>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min="0"
-                value={tableCount}
-                onChange={(e) => setTableCount(e.target.value)}
-                className="w-32 p-3 rounded-xl border bg-white dark:bg-zinc-900"
-              />
-              <button
-                type="button"
-                onClick={saveTableCount}
-                disabled={savingTableCount}
-                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
-              >
-                {savingTableCount ? t("Please wait...") : t("Save")}
-              </button>
-            </div>
-          </div>
-
-	          <div className="bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
-	            <h3 className="text-xl font-bold mb-3 text-indigo-600">
-	              {t("Add Product")}
-	            </h3>
-	            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-	              <input
-	                value={newProduct.name}
-	                onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
-	                placeholder={t("Product Name")}
-	                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
-	              />
-	              <input
-	                type="number"
-	                min="0"
-	                step="0.01"
-	                value={newProduct.price}
-	                onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
-	                placeholder={t("Price")}
-	                className="p-3 rounded-xl border bg-white dark:bg-zinc-900"
-	              />
-	              <input
-	                value={newProduct.category}
-	                onChange={(e) => setNewProduct((p) => ({ ...p, category: e.target.value }))}
-	                placeholder={t("Category")}
-	                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
-	              />
-
-	              {/* Category Image (same flow as ProductForm modal) */}
-	              <div className="sm:col-span-2">
-                <label className="font-semibold block mb-2">{t("Category Image")}</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    ref={categoryImageInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0] || null;
-                      setCategoryImageFileName(file?.name || "");
-                      if (!file) return;
-                      await uploadCategoryImage(file);
-                      try {
-                        e.target.value = "";
-                      } catch {}
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => categoryImageInputRef.current?.click()}
-                    disabled={uploadingCategoryImage}
-                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
-                  >
-                    {uploadingCategoryImage ? t("Please wait...") : t("Choose file")}
-                  </button>
-                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
-                    {categoryImageFileName ? categoryImageFileName : t("No file chosen")}
-                  </span>
-                </div>
-                {categoryImagePreview ? (
-	                  <div className="mt-2 flex items-center gap-3">
-	                    <img
-	                      src={categoryImagePreview}
-	                      alt={t("Category")}
-	                      className="w-16 h-16 rounded-xl object-cover border bg-white"
-	                    />
-	                    <span className="text-sm text-gray-500 dark:text-gray-300">
-	                      {t("Category Preview")}
-	                    </span>
-	                  </div>
-	                ) : null}
-	              </div>
-
-	              {/* Product Image (same flow as ProductForm modal) */}
-	              <div className="sm:col-span-2">
-                <label className="font-semibold block mb-2">{t("Product Image")}</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    ref={productImageInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null;
-                      if (!file) return;
-                      setNewProductImageFile(file);
-                      try {
-                        e.target.value = "";
-                      } catch {}
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => productImageInputRef.current?.click()}
-                    disabled={uploadingNewProductImage}
-                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
-                  >
-                    {uploadingNewProductImage ? t("Please wait...") : t("Choose file")}
-                  </button>
-                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
-                    {newProductImageFile?.name ? newProductImageFile.name : t("No file chosen")}
-                  </span>
-                </div>
-                {newProductImagePreview ? (
-	                  <img
-	                    src={newProductImagePreview}
-	                    alt={t("Product Image")}
-	                    className="mt-2 w-24 h-24 rounded-xl object-cover border bg-white"
-	                  />
-	                ) : null}
-	              </div>
-
-	              <textarea
-	                value={newProduct.description}
-	                onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))}
-	                placeholder={t("Description")}
-	                className="p-3 rounded-xl border bg-white dark:bg-zinc-900 sm:col-span-2"
-	                rows={3}
-	              />
-	            </div>
-	            <button
-	              type="button"
-	              onClick={saveNewProduct}
-	              disabled={savingProduct || uploadingNewProductImage || uploadingCategoryImage}
-	              className="mt-3 px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-60"
-	            >
-	              {savingProduct ? t("Please wait...") : t("Save")}
-	            </button>
-	          </div>
-        </div>
-
-        {/* TABLE-SPECIFIC QR CODES */}
-        <div className="mt-10 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
-          <h3 className="text-xl font-bold mb-3 text-indigo-600">
-            {t("Table QR Codes")}
-          </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-            {t("Generate QR codes that open the menu directly for a specific table.")}
-          </p>
-          {tables.length === 0 ? (
-            <div className="text-gray-400 text-sm">
-              {t("No tables configured yet. Go to the Tables page to add tables.")}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[360px] overflow-y-auto">
-              {tables.map((tbl) => {
-                const n = tbl.number || tbl.tableNumber;
-                const key = String(n);
-                const info = tableQr[key] || {};
-                const canvasId = `table-qr-${key}`;
-                return (
-                  <div
-                    key={key}
-                    className="flex gap-4 items-center bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-blue-100 dark:border-zinc-700"
-                  >
-                    <div className="flex flex-col items-center">
-                      {info.url ? (
-                        <QRCodeCanvas
-                          id={canvasId}
-                          value={info.url}
-                          size={110}
-                        />
-                      ) : (
-                        <div className="w-[110px] h-[110px] flex items-center justify-center text-xs text-gray-400 border border-dashed rounded-xl">
-                          {t("No QR yet")}
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => (info.url ? printTableQr(key, canvasId) : loadTableQr(key))}
-                        className="mt-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-indigo-500 text-white hover:bg-indigo-600 transition disabled:opacity-60"
-                        disabled={info.loading}
-                      >
-                        {info.loading
-                          ? t("Please wait...")
-                          : info.url
-                          ? t("Print")
-                          : t("Generate QR")}
-                      </button>
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-sm">
-                        {t("Table")} {n}
-                        {tbl.label ? ` – ${tbl.label}` : ""}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1 break-all">
-                        {info.url || t("QR link will appear here")}
-                      </div>
-                      {info.url && (
-                        <button
-                          type="button"
-                          onClick={() => copyTableQr(key)}
-                          className="mt-2 inline-flex items-center text-xs font-semibold text-blue-600 hover:text-blue-800"
-                        >
-                          {t("Copy link")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* CONCERT TICKETS */}
-        <div className="mt-10 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+        {activeSettingsTab === "concert" && (
+        <div className="mt-2 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-xl font-bold text-indigo-600">{t("Concert Tickets")}</h3>
             <span className="text-xs px-3 py-1 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700">
@@ -3219,7 +3274,10 @@ async function saveAllCustomization() {
             )}
           </div>
         </div>
+        )}
 
+        {activeSettingsTab === "app" && (
+          <>
         {/* LOYALTY PROGRAM */}
         <div className="mt-10 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
           <h3 className="text-xl font-bold mb-3 text-indigo-600">{t("Loyalty Program")}</h3>
@@ -3584,8 +3642,10 @@ async function saveAllCustomization() {
             💾 {t("Save All Changes")}
           </button>
         </div>
+          </>
+        )}
       </div>
-    </div>
+    )}
   </div>
 );
 

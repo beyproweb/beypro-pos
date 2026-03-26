@@ -488,13 +488,11 @@ export default function TableOverview() {
     const params = new window.URLSearchParams(location.search);
     return String(params.get("tab") || "tables").toLowerCase();
   }, [isDedicatedViewBookingPage, location.search]);
-  const requestedAreaFromUrl = React.useMemo(
-    () =>
-      isDedicatedViewBookingPage
-        ? AREA_FILTER_VIEW_BOOKING
-        : getTableOverviewAreaFromSearch(location.search),
-    [isDedicatedViewBookingPage, location.search]
-  );
+  const requestedAreaFromUrl = React.useMemo(() => {
+    const requestedArea = getTableOverviewAreaFromSearch(location.search);
+    if (!isDedicatedViewBookingPage) return requestedArea;
+    return requestedArea === AREA_FILTER_ALL ? AREA_FILTER_VIEW_BOOKING : requestedArea;
+  }, [isDedicatedViewBookingPage, location.search]);
 
   const activeTab = tabFromUrl;
   const [useStressData, setUseStressData] = useState(false);

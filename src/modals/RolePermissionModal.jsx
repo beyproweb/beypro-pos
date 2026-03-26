@@ -8,7 +8,7 @@ const PERMISSION_LABELS = {
   dashboard: "📊 Dashboard",
   "business-snapshot": "📊 Business Snapshot",
   "table-overview": "🍽 Table Overview",
-  "view-booking": "📖 View Booking",
+  "view-booking": "📅 View Booking",
   "song-request": "🎵 Song Request",
   orders: "📋 Orders",
   kitchen: "🍳 Kitchen",
