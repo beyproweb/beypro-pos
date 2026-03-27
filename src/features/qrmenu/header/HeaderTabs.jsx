@@ -16,6 +16,9 @@ function HeaderTabs({
   statusShortcutEnabled = false,
   statusShortcutOpen = false,
   onStatusShortcutClick,
+  restaurantName,
+  mainTitleLogo,
+  showCompactBranding = false,
   t,
 }) {
   const containerClass = isDark
@@ -60,11 +63,13 @@ function HeaderTabs({
   ];
   const visibleSegments = segments.filter((segment) => segment.enabled);
   const hasVisibleSegments = visibleSegments.length > 0;
+  const compactLogoSrc = String(mainTitleLogo || "").trim();
+  const showCompactBrandSlot = !hasVisibleSegments && showCompactBranding;
 
   return (
     <div
-      className={`flex w-full items-center min-w-0 ${
-        hasVisibleSegments ? "gap-6" : "justify-between"
+      className={`flex w-full min-w-0 items-center ${
+        hasVisibleSegments ? "gap-6" : "gap-3"
       }`}
     >
       <DrawerButton onClick={onOpenDrawer} isDark={isDark} isOpen={isDrawerOpen} />
@@ -96,7 +101,30 @@ function HeaderTabs({
             })}
           </div>
         </div>
-      ) : null}
+      ) : showCompactBrandSlot ? (
+        <div className="min-w-0 flex-1 px-1">
+          <div className="flex h-10 sm:h-11 items-center justify-center overflow-hidden">
+            {compactLogoSrc ? (
+              <img
+                src={compactLogoSrc}
+                alt={restaurantName || t("Restaurant")}
+                className="block h-auto max-h-[22px] sm:max-h-[24px] w-auto max-w-[170px] sm:max-w-[220px] object-contain"
+                loading="lazy"
+              />
+            ) : (
+              <div
+                className={`truncate text-center text-sm sm:text-[15px] font-semibold ${
+                  isDark ? "text-white/92" : "text-slate-900"
+                }`}
+              >
+                {restaurantName || t("Restaurant")}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1" />
+      )}
 
       {statusShortcutEnabled ? (
         <button

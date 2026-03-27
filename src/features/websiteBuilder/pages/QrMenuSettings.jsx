@@ -3049,15 +3049,15 @@ async function saveAllCustomization() {
 
           <div className="mt-6 rounded-2xl border bg-white dark:bg-zinc-900 p-4">
             <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Guest composition rules
+              {t("Guest composition rules")}
             </h4>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Configure whether concert table reservations must include a guest composition split and how it should be validated.
+              {t("Configure whether concert table reservations must include a guest composition split and how it should be validated.")}
             </p>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="font-semibold">Enable guest composition field</label>
+                <label className="font-semibold">{t("Enable guest composition field")}</label>
                 <select
                   value={concertForm.guest_composition_enabled ? "on" : "off"}
                   onChange={(e) =>
@@ -3065,13 +3065,13 @@ async function saveAllCustomization() {
                   }
                   className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
                 >
-                  <option value="off">Off</option>
-                  <option value="on">On</option>
+                  <option value="off">{t("Off")}</option>
+                  <option value="on">{t("On")}</option>
                 </select>
               </div>
 
               <div>
-                <label className="font-semibold">Field mode</label>
+                <label className="font-semibold">{t("Field mode")}</label>
                 <select
                   value={concertForm.guest_composition_field_mode}
                   onChange={(e) =>
@@ -3089,7 +3089,7 @@ async function saveAllCustomization() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="font-semibold">Restriction rule</label>
+                <label className="font-semibold">{t("Restriction rule")}</label>
                 <select
                   value={concertForm.guest_composition_restriction_rule}
                   onChange={(e) =>
@@ -3110,7 +3110,7 @@ async function saveAllCustomization() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="font-semibold">Validation message</label>
+                <label className="font-semibold">{t("Validation message")}</label>
                 <textarea
                   rows={3}
                   value={concertForm.guest_composition_validation_message}
@@ -3121,7 +3121,7 @@ async function saveAllCustomization() {
                     )
                   }
                   disabled={!concertForm.guest_composition_enabled}
-                  placeholder="Apollo policy does not allow reservations for male-only groups."
+                  placeholder={t("This policy does not allow reservations for male-only groups.")}
                   className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none disabled:opacity-60"
                 />
               </div>

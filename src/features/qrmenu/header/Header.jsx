@@ -32,6 +32,22 @@ function Header({
   languageControl,
   showInfo = true,
 }) {
+  const [showCompactBranding, setShowCompactBranding] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleScroll = () => {
+      setShowCompactBranding(window.scrollY > 28);
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
   return (
     <>
       <header
@@ -56,6 +72,9 @@ function Header({
             statusShortcutEnabled={statusShortcutEnabled}
             statusShortcutOpen={statusShortcutOpen}
             onStatusShortcutClick={onStatusShortcutClick}
+            restaurantName={restaurantName}
+            mainTitleLogo={mainTitleLogo}
+            showCompactBranding={showCompactBranding}
             t={t}
           />
         </div>
