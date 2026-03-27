@@ -7043,6 +7043,10 @@ export default function QrMenu() {
       "",
     ""
   );
+  const takeawaySubmitButtonColor = normalizeHexColor(
+    orderSelectCustomization?.concert_reservation_button_color,
+    "#111827"
+  );
 
   const resolvedTableForActions =
     Number(table) ||
@@ -8944,7 +8948,7 @@ export default function QrMenu() {
         <TakeawayOrderForm
           submitting={submitting}
           t={t}
-          submitButtonColor={concertReservationButtonColor}
+          submitButtonColor={takeawaySubmitButtonColor}
           initialValues={takeawayInitialValues}
           tables={tables}
           occupiedTables={occupiedTables}
