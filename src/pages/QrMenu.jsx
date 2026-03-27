@@ -2982,6 +2982,7 @@ async function load() {
   const allowDelivery = boolish(c.delivery_enabled, true);
   const reservationTabEnabled = boolish(c.reservation_tab_enabled, true);
   const hideAllProducts = boolish(c.disable_all_products, false);
+  const qrDownloadPopupEnabled = boolish(c.qr_download_popup_enabled, true);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
   const logoUrl = c.splash_logo || c.logo || c.app_icon || "/Beylogo.svg";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
@@ -8126,12 +8127,12 @@ export default function QrMenu() {
   }, []);
 
   const openDownloadQrModal = useCallback(() => {
-    if (c?.qr_download_popup_enabled === false) {
+    if (!qrDownloadPopupEnabled) {
       handleDownloadQrImage();
       return;
     }
     setDownloadQrModalOpen(true);
-  }, [c?.qr_download_popup_enabled, handleDownloadQrImage]);
+  }, [handleDownloadQrImage, qrDownloadPopupEnabled]);
 
   const handleShareFromModal = useCallback(() => {
     shareCurrentMenu();
