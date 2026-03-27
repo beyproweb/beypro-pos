@@ -602,6 +602,13 @@ function addReview() {
   }));
 }
 
+function removeReview(index) {
+  setSettings((prev) => ({
+    ...prev,
+    reviews: prev.reviews.filter((_, reviewIndex) => reviewIndex !== index),
+  }));
+}
+
 
 
 async function saveAllCustomization() {
@@ -3687,6 +3694,16 @@ async function saveAllCustomization() {
 
           {settings.reviews.map((rev, index) => (
             <div key={index} className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl mb-3">
+              <div className="mb-3 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => removeReview(index)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900/40 dark:hover:bg-red-950/30"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t("Remove")}
+                </button>
+              </div>
               <input
                 type="text"
                 className="w-full p-2 rounded-xl border"
@@ -3754,11 +3771,13 @@ async function saveAllCustomization() {
           </div>
         </div>
 
+        <div className="h-24" aria-hidden="true" />
+
         {/* SAVE BUTTON */}
-        <div className="flex justify-end mt-10">
+        <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 flex justify-center px-4">
           <button
             onClick={saveAllCustomization}
-            className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:brightness-110 text-white rounded-xl shadow-lg font-bold"
+            className="pointer-events-auto inline-flex min-h-[52px] w-full max-w-xs items-center justify-center rounded-2xl border border-slate-900 bg-slate-900/95 px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(15,23,42,0.22)] backdrop-blur-md transition hover:bg-slate-800 sm:w-auto dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
           >
             💾 {t("Save All Changes")}
           </button>

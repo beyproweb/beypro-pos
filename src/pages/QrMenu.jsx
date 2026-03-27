@@ -8126,12 +8126,12 @@ export default function QrMenu() {
   }, []);
 
   const openDownloadQrModal = useCallback(() => {
-    if (!boolish(custom?.qr_download_popup_enabled, true)) {
+    if (!boolish(orderSelectCustomization?.qr_download_popup_enabled, true)) {
       handleDownloadQrImage();
       return;
     }
     setDownloadQrModalOpen(true);
-  }, [custom?.qr_download_popup_enabled, handleDownloadQrImage]);
+  }, [handleDownloadQrImage, orderSelectCustomization?.qr_download_popup_enabled]);
 
   const handleShareFromModal = useCallback(() => {
     shareCurrentMenu();
