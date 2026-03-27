@@ -22,6 +22,21 @@ const extractIdentifierFromQrUrl = (value) => {
   }
 };
 
+const writeQrMenuBrandingCache = (identifier, customization) => {
+  if (typeof window === "undefined") return;
+  const normalizedIdentifier = String(identifier || "").trim();
+  if (!normalizedIdentifier || !customization || typeof customization !== "object") return;
+
+  try {
+    window.localStorage.setItem(
+      `qr-menu-branding-cache:${normalizedIdentifier}`,
+      JSON.stringify(customization)
+    );
+  } catch {
+    // Ignore storage quota/privacy errors.
+  }
+};
+
 const resolveYouTubeEmbedUrl = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -150,6 +165,7 @@ export default function QrMenuSettings() {
   const [savingTableOrder, setSavingTableOrder] = useState(false);
   const [savingReservationTab, setSavingReservationTab] = useState(false);
   const [savingDisableAllProducts, setSavingDisableAllProducts] = useState(false);
+  const [savingConcertReservationButtonColor, setSavingConcertReservationButtonColor] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState("qr");
   const [tables, setTables] = useState([]);
   const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
@@ -199,6 +215,7 @@ export default function QrMenuSettings() {
   tagline: "",
   phone: "",
   primary_color: "#4F46E5",
+  concert_reservation_button_color: "#111827",
   // New customization defaults
   enable_popular: true,
   qr_download_popup_enabled: true,
@@ -617,17 +634,19 @@ async function saveAllCustomization() {
     const storyVideoYoutubeUrls = normalizeStoryVideoUrls(settings)
       .map((item) => String(item || "").trim())
       .filter(Boolean);
+    const payload = {
+      ...settings,
+      story_enabled: settings.story_enabled !== false,
+      story_images: storyImages,
+      story_image: storyImages[0] || "",
+      story_video_youtube_urls: storyVideoYoutubeUrls,
+      story_video_youtube_url: storyVideoYoutubeUrls[0] || "",
+    };
     await secureFetch("/settings/qr-menu-customization", {
       method: "POST",
-      body: JSON.stringify({
-        ...settings,
-        story_enabled: settings.story_enabled !== false,
-        story_images: storyImages,
-        story_image: storyImages[0] || "",
-        story_video_youtube_urls: storyVideoYoutubeUrls,
-        story_video_youtube_url: storyVideoYoutubeUrls[0] || "",
-      }),
+      body: JSON.stringify(payload),
     });
+    writeQrMenuBrandingCache(extractIdentifierFromQrUrl(qrUrl), payload);
     toast.success(t("Saved!"));
   } catch {
     toast.error(t("Save failed"));
@@ -970,6 +989,30 @@ async function saveAllCustomization() {
       updateField("disable_all_products", !nextValue);
     } finally {
       setSavingDisableAllProducts(false);
+    }
+  };
+
+  const saveConcertReservationButtonColor = async () => {
+    setSavingConcertReservationButtonColor(true);
+    try {
+      const payload = {
+        concert_reservation_button_color:
+          String(settings.concert_reservation_button_color || "").trim() || "#111827",
+      };
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      writeQrMenuBrandingCache(extractIdentifierFromQrUrl(qrUrl), {
+        ...settings,
+        ...payload,
+      });
+      toast.success(t("Saved successfully!"));
+    } catch (err) {
+      console.error("❌ Failed to save concert reservation button color:", err);
+      toast.error(t("Save failed"));
+    } finally {
+      setSavingConcertReservationButtonColor(false);
     }
   };
 
@@ -2804,6 +2847,41 @@ async function saveAllCustomization() {
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
             {t("Create events, ticket packages, and table reservations synced with QR table reservations.")}
           </p>
+
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="font-semibold">{t("Concert Reservation Button Color")}</label>
+              <div className="mt-1 flex items-center gap-3 rounded-2xl border bg-white p-3 dark:bg-zinc-900">
+                <input
+                  type="color"
+                  value={settings.concert_reservation_button_color || "#111827"}
+                  onChange={(e) =>
+                    updateField("concert_reservation_button_color", e.target.value)
+                  }
+                  className="h-11 w-16 rounded-xl border bg-transparent"
+                />
+                <input
+                  type="text"
+                  value={settings.concert_reservation_button_color || "#111827"}
+                  onChange={(e) =>
+                    updateField("concert_reservation_button_color", e.target.value)
+                  }
+                  className="flex-1 rounded-xl border bg-white px-3 py-2.5 text-sm dark:bg-zinc-900"
+                />
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
+                {t("Used for the concert booking and reservation buttons on the QR page.")}
+              </p>
+              <button
+                type="button"
+                onClick={saveConcertReservationButtonColor}
+                disabled={savingConcertReservationButtonColor}
+                className="mt-3 inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+              >
+                {savingConcertReservationButtonColor ? t("Please wait...") : t("Save")}
+              </button>
+            </div>
+          </div>
 
           <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

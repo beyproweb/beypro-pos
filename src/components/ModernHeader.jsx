@@ -7,6 +7,7 @@ import { useSetting } from "./hooks/useSetting";
 import { useHasPermission } from "./hooks/useHasPermission";
 import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { useAuth } from "../context/AuthContext";
+import { isPublicShellPath } from "../utils/routeScope";
 
 /**
  * Prevents flicker of customer name / address (subtitle)
@@ -164,6 +165,7 @@ export default function ModernHeader({
 
   const isTableOverviewRoute =
     location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
+  const isPublicShellRoute = isPublicShellPath(location.pathname);
   const isTransactionRoute = location.pathname.includes("/transaction");
   const isDashboardRoute = location.pathname.includes("/dashboard");
   const isOrdersRoute = location.pathname.includes("/orders");
@@ -1181,7 +1183,7 @@ export default function ModernHeader({
             >
               <Home className="h-4.5 w-4.5" />
             </button>
-            {currentUser && onLockClick && (
+            {!isPublicShellRoute && currentUser && onLockClick && (
               <button
                 type="button"
                 onClick={onLockClick}

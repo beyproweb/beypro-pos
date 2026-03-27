@@ -2983,6 +2983,10 @@ async function load() {
   const reservationTabEnabled = boolish(c.reservation_tab_enabled, true);
   const hideAllProducts = boolish(c.disable_all_products, false);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
+  const concertReservationButtonColor = normalizeHexColor(
+    c.concert_reservation_button_color,
+    "#111827"
+  );
   const logoUrl = c.splash_logo || c.logo || c.app_icon || "/Beylogo.svg";
   const themeMode = (c.qr_theme || "auto").toLowerCase();
   const {
@@ -4561,7 +4565,11 @@ async function load() {
                                       : normalTicketType?.id || tableTicketType?.id) || "",
                                 });
                               }}
-                              className="rounded-xl border border-neutral-800 dark:border-neutral-500 bg-neutral-900 text-white px-3 py-2 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-45 disabled:cursor-not-allowed"
+                              className="rounded-xl border px-3 py-2 text-sm font-semibold text-white transition disabled:opacity-45 disabled:cursor-not-allowed"
+                              style={{
+                                backgroundColor: concertReservationButtonColor,
+                                borderColor: concertReservationButtonColor,
+                              }}
                             >
                               {isFreeConcert ? t("Reservation") : t("Buy Ticket")}
                             </button>
@@ -4853,17 +4861,13 @@ async function load() {
 	      </section>
       )}
 
-	    {/* === REVIEWS === */}
+      {reviews.length > 0 ? (
 	    <section id="reviews-section" className="max-w-6xl mx-auto px-4 pt-2 pb-16">
 	      <h2 className="text-3xl font-serif font-bold text-gray-900 dark:text-neutral-50 mb-4">
 	        {t("Reviews")}
 	      </h2>
 
 	      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-	        {reviews.length === 0 && (
-	          <p className="text-neutral-500 dark:text-neutral-400 text-sm">{t("No reviews yet.")}</p>
-	        )}
-
 	        {reviews.map((r, idx) => (
 	          <div
 	            key={idx}
@@ -4883,6 +4887,7 @@ async function load() {
 	        ))}
 	      </div>
 	    </section>
+      ) : null}
 
       {/* === BOTTOM ACTIONS === */}
       <section className="max-w-6xl mx-auto px-4 pb-6">
@@ -5377,7 +5382,11 @@ async function load() {
                 !concertGuestCountValid ||
                 !!concertGuestCompositionError
               }
-              className="w-full rounded-xl border border-neutral-800 dark:border-neutral-500 bg-neutral-900 text-white px-4 py-3 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-55"
+              className="w-full rounded-xl border px-4 py-3 text-sm font-semibold text-white disabled:opacity-55"
+              style={{
+                backgroundColor: concertReservationButtonColor,
+                borderColor: concertReservationButtonColor,
+              }}
             >
               {concertSubmitting ? t("Please wait...") : t("Buy Ticket")}
             </button>
@@ -5415,6 +5424,7 @@ function TakeawayOrderForm({
   paymentMethod,
   setPaymentMethod,
   formatTableName,
+  submitButtonColor = "#111827",
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const paymentMethods = usePaymentMethods();
@@ -6090,7 +6100,11 @@ function TakeawayOrderForm({
           <button
             type="submit"
             disabled={reservationSubmitDisabled}
-            className="w-full rounded-xl bg-neutral-900 text-white px-4 py-3 text-sm font-semibold hover:bg-neutral-800 disabled:opacity-55"
+            className="w-full rounded-xl border px-4 py-3 text-sm font-semibold text-white disabled:opacity-55"
+            style={{
+              backgroundColor: submitButtonColor,
+              borderColor: submitButtonColor,
+            }}
           >
             {submitting
               ? t("Please wait...")
@@ -6961,11 +6975,7 @@ export default function QrMenu() {
         "",
       ""
     );
-    const splashName = normalizeRestaurantDisplayName(
-      orderSelectCustomization?.app_display_name || brandName || restaurantIdentifier,
-      ""
-    );
-    if (!standalone || (!splashLogo && !splashName)) {
+    if (!standalone || !splashLogo) {
       setShowStandaloneSplash(false);
       return undefined;
     }
@@ -6989,10 +6999,6 @@ export default function QrMenu() {
       orderSelectCustomization?.app_icon ||
       "",
     ""
-  );
-  const standaloneSplashName = normalizeRestaurantDisplayName(
-    orderSelectCustomization?.app_display_name || brandName || restaurantIdentifier,
-    t("QR Menu")
   );
 
   const resolvedTableForActions =
@@ -8267,22 +8273,10 @@ export default function QrMenu() {
             {standaloneSplashLogo ? (
               <img
                 src={standaloneSplashLogo}
-                alt={standaloneSplashName}
+                alt={t("QR Menu")}
                 className="h-36 w-36 object-contain"
               />
             ) : null}
-            <div
-              className="text-2xl font-semibold tracking-tight"
-              style={{
-                color: normalizeHexColor(
-                  orderSelectCustomization?.pwa_primary_color ||
-                    orderSelectCustomization?.primary_color,
-                  "#111827"
-                ),
-              }}
-            >
-              {standaloneSplashName}
-            </div>
           </div>
         </div>
       ) : null}
@@ -8907,6 +8901,7 @@ export default function QrMenu() {
         <TakeawayOrderForm
           submitting={submitting}
           t={t}
+          submitButtonColor={concertReservationButtonColor}
           initialValues={takeawayInitialValues}
           tables={tables}
           occupiedTables={occupiedTables}

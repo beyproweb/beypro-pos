@@ -31,6 +31,7 @@ const DEFAULT_QR_MENU_BRANDING = {
   main_title_logo: "",
   app_display_name: "",
   qrmenu_font_family: "gotham",
+  concert_reservation_button_color: "#111827",
 };
 
 function getQrMenuBrandingCacheKey(identifier) {

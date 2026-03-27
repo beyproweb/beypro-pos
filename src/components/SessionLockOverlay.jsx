@@ -1,19 +1,24 @@
 // src/components/SessionLockOverlay.jsx
 import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { useSessionLock } from "../context/SessionLockContext";
 import { useAuth } from "../context/AuthContext";
 import PINKeypad from "./PINKeypad";
 import "./SessionLockOverlay.css";
 import secureFetch from "../utils/secureFetch";
 import { normalizeUser } from "../utils/normalizeUser";
+import { isPublicShellPath, isStandalonePath } from "../utils/routeScope";
 
 export default function SessionLockOverlay() {
   const { isLocked, lockReason, unlock } = useSessionLock();
   const { currentUser, setCurrentUser } = useAuth();
+  const location = useLocation();
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showShake, setShowShake] = useState(false);
+  const hideOnPublicRoute =
+    isStandalonePath(location.pathname) || isPublicShellPath(location.pathname);
 
   // Reset state when lock opens
   useEffect(() => {
@@ -24,7 +29,7 @@ export default function SessionLockOverlay() {
     }
   }, [isLocked]);
 
-  if (!isLocked) return null;
+  if (hideOnPublicRoute || !isLocked) return null;
 
   const handleNumberClick = (num) => {
     if (pin.length >= 6) return;
