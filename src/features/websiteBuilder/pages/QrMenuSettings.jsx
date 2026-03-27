@@ -395,6 +395,13 @@ function updateHeroSlide(index, key, value) {
   setSettings((p) => ({ ...p, hero_slides: updated }));
 }
 
+function removeHeroSlide(index) {
+  setSettings((prev) => ({
+    ...prev,
+    hero_slides: prev.hero_slides.filter((_, slideIndex) => slideIndex !== index),
+  }));
+}
+
 async function uploadHeroImage(e, index) {
   const file = e.target.files[0];
   if (!file) return;
@@ -2630,6 +2637,19 @@ async function saveAllCustomization() {
               key={index}
               className="bg-white dark:bg-zinc-800 border rounded-2xl p-4 mb-4 shadow-md"
             >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {t("Slide")} {index + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeHeroSlide(index)}
+                  className="inline-flex items-center rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                >
+                  {t("Remove")}
+                </button>
+              </div>
+
               <label className="font-semibold">{t("Slide Image")}</label>
               <input type="file" onChange={(e) => uploadHeroImage(e, index)} className="w-full mt-1" />
               {slide.image ? (
