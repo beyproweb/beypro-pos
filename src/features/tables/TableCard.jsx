@@ -524,7 +524,10 @@ function TableCard({
         badges.push(
           <Pill
             key={`header-${status}`}
-            className={cx("h-4 shrink-0 px-1 text-[9px] shadow-none", getKitchenStatusToneClass(status))}
+            className={cx(
+              "min-h-8 shrink-0 rounded-2xl px-2.5 py-1 text-[10px] shadow-[0_8px_20px_rgba(15,23,42,0.08)] sm:min-h-9 sm:px-3 sm:py-1.5 sm:text-[13px]",
+              getKitchenStatusToneClass(status)
+            )}
           >
             {count} {t(status === "new" ? "New" : status)}
           </Pill>
@@ -579,7 +582,6 @@ function TableCard({
   const isOrderDelayed = tablePrepMeta.isDelayed;
   const displayTotal = formatCurrency(Number(table.unpaidTotal || 0));
   const tableDisplayLabel = `${tableLabelText} ${String(table.tableNumber).padStart(2, "0")}`;
-  const shouldLeftAlignHeaderLabel = true;
   const paidStatusLabel = t("Unpaid");
   const fullyPaidStatusLabel = t("Paid");
   const orderStatusLabel = isCheckedInReservationStatus(normalizedOrderStatus)
@@ -674,34 +676,26 @@ function TableCard({
           </div>
         )}
 
-        <div
-          className={
-            shouldLeftAlignHeaderLabel
-              ? "flex items-center justify-between gap-2"
-              : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2"
-          }
-        >
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
           <div className="flex min-w-0 flex-1 items-center">
-            {shouldLeftAlignHeaderLabel ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="min-w-0 text-sm font-semibold tracking-tight text-slate-900 sm:text-[17px]">
-                  {tableDisplayLabel}
-                </span>
+            {shouldShowKitchenStatusSlot ? (
+              <div className="hidden min-w-0 flex-wrap items-center gap-1 overflow-hidden sm:flex">
+                {compactKitchenStatusBadges.length > 0 ? (
+                  compactKitchenStatusBadges
+                ) : (
+                  <span className="invisible inline-flex min-h-8 items-center rounded-2xl px-2.5 py-1 text-[10px] font-semibold sm:min-h-9 sm:px-3 sm:py-1.5 sm:text-[13px]">
+                    1 New
+                  </span>
+                )}
               </div>
             ) : isFreeDisplay ? (
-              <Pill className="border-slate-200 bg-white/80 text-slate-700">
+              <Pill className="min-h-8 rounded-2xl border-slate-200 bg-white/90 px-2.5 py-1 text-[10px] text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)] sm:min-h-9 sm:px-3 sm:py-1.5 sm:text-[13px]">
                 {t("Free")}
               </Pill>
             ) : null}
           </div>
 
-          <div className="min-w-0 self-center text-center">
-            {!shouldLeftAlignHeaderLabel && (
-              <span className="block truncate text-sm font-bold tracking-tight text-slate-800 sm:text-[15px]">
-                {tableDisplayLabel}
-              </span>
-            )}
-          </div>
+          <div className="min-w-0 self-center text-center" />
 
           <div className="flex min-w-0 shrink-0 justify-end">
             <div className="flex shrink-0 items-center gap-2">
@@ -714,15 +708,29 @@ function TableCard({
           </div>
         </div>
 
+        {shouldShowKitchenStatusSlot ? (
+          <div className="pointer-events-none absolute right-3 top-[3.6rem] z-0 flex max-w-[55%] justify-end sm:hidden">
+            <div className="flex max-w-full flex-wrap justify-end gap-1">
+              {compactKitchenStatusBadges}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 z-0 flex -translate-y-1/2 justify-center px-4">
+          <span className="inline-flex max-w-full items-center justify-center rounded-2xl bg-white/55 px-4 py-2 text-[15px] font-bold tracking-tight text-slate-900 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm sm:px-5 sm:py-2.5 sm:text-[19px]">
+            <span className="truncate">{tableDisplayLabel}</span>
+          </span>
+        </div>
+
         {table.label && (
-          <Pill className="mt-2 max-w-full justify-start truncate border-slate-200 bg-white/80 text-slate-600">
+          <Pill className="relative z-10 mt-2 max-w-full justify-start truncate border-slate-200 bg-white/80 text-slate-600">
             {table.label}
           </Pill>
         )}
 
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="relative z-10 mt-2 flex flex-wrap items-center gap-2">
           {table.seats && (
-            <Pill className="border-slate-200 bg-white/80 text-slate-700">
+            <Pill className="min-h-8 border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] text-slate-700 sm:min-h-7 sm:px-3 sm:text-xs">
               {table.seats} {t("Seats")}
             </Pill>
           )}
@@ -731,7 +739,7 @@ function TableCard({
             <div
               className={cx(
                 BADGE_BASE_CLASS,
-                "gap-2 border-slate-200 bg-white/80 pr-1.5 text-slate-700"
+                "h-8 min-h-8 gap-2 border-slate-200 bg-white/80 pr-1.5 text-[10px] text-slate-700 sm:h-7 sm:min-h-7 sm:text-xs"
               )}
               onClick={stopPropagation}
             >
@@ -750,19 +758,8 @@ function TableCard({
           )}
         </div>
 
-        <div className="mt-2 flex min-h-6 items-center gap-2">
+        <div className="relative z-10 mt-2 flex min-h-6 items-center gap-2">
           <div className="min-w-0 flex flex-1 items-center gap-2 overflow-hidden">
-            {shouldShowKitchenStatusSlot ? (
-              <div className="flex min-w-[64px] items-center gap-1 overflow-hidden">
-                {compactKitchenStatusBadges.length > 0 ? (
-                  compactKitchenStatusBadges
-                ) : (
-                  <span className="invisible inline-flex h-4 items-center px-2 text-[9px] font-semibold">
-                    1 New
-                  </span>
-                )}
-              </div>
-            ) : null}
             {!isFreeDisplay && !shouldShowReservedBadge && showOrderStatusBadge ? (
               <span className={tableStatusClassName}>{orderStatusLabel}</span>
             ) : null}
@@ -771,7 +768,7 @@ function TableCard({
 
         <div
           className={cx(
-            "relative flex min-h-0 flex-1 flex-col",
+            "relative z-10 flex min-h-0 flex-1 flex-col",
             shouldShowReservedBadge ? "mt-2 gap-1" : isFreeDisplay ? "mt-0 gap-1" : "mt-2 gap-2"
           )}
         >
@@ -835,9 +832,9 @@ function TableCard({
         {!isFreeDisplay &&
         !shouldShowReservedBadge &&
         (shouldShowConfirmedTimer || showReadyAt) ? (
-          <div className="mt-2 flex min-h-6 items-center justify-end gap-2">
+          <div className="mt-2 hidden min-h-6 items-center justify-end gap-2 sm:flex">
             {shouldShowConfirmedTimer ? (
-              <Pill className="border-slate-200 bg-slate-900 px-2 font-mono text-white">
+              <Pill className="min-h-8 border-slate-200 bg-slate-900 px-2 py-1 text-[8px] font-mono text-white sm:min-h-7 sm:py-0 sm:text-xs">
                 <ElapsedTimer startTime={confirmedStartTime} />
               </Pill>
             ) : null}
@@ -856,16 +853,63 @@ function TableCard({
           </div>
         ) : null}
 
+        {hasOrderActivity && (hasUnpaidItems || isPaidTable) ? (
+          <div className="absolute bottom-[3.65rem] left-3 sm:hidden">
+            {hasUnpaidItems ? (
+              <Pill className="min-h-8 border-rose-200 bg-rose-600 px-2.5 py-1 text-[10px] text-white sm:min-h-7 sm:px-3 sm:text-xs">
+                {paidStatusLabel}
+              </Pill>
+            ) : isPaidTable ? (
+              <Pill className="min-h-8 border-emerald-200 bg-emerald-600 px-2.5 py-1 text-[10px] text-white sm:min-h-7 sm:px-3 sm:text-xs">
+                {fullyPaidStatusLabel}
+              </Pill>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2 sm:pt-3">
           <div className="flex min-w-0 items-center gap-2">
             {showAreas ? (
-              <Pill className="max-w-[55%] justify-start truncate border-slate-200 bg-white/80 px-2.5 text-slate-700">
+              <Pill className="min-h-8 max-w-[82%] justify-start whitespace-nowrap border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] text-slate-700 sm:min-h-7 sm:max-w-none sm:py-0 sm:text-xs">
                 {formatAreaLabel(table.area)}
               </Pill>
             ) : (
               <span />
             )}
-            {showManualTableLock ? (
+          </div>
+
+          <div className="ml-auto flex items-center justify-end gap-2 flex-nowrap">
+            {!isFreeDisplay &&
+            !shouldShowReservedBadge &&
+            (shouldShowConfirmedTimer || showReadyAt) ? (
+              <div className="flex min-h-6 items-center justify-end gap-2 sm:hidden">
+                {shouldShowConfirmedTimer ? (
+                  <Pill className="min-h-8 border-slate-200 bg-slate-900 px-2 py-1 text-[8px] font-mono text-white sm:min-h-7 sm:py-0 sm:text-xs">
+                    <ElapsedTimer startTime={confirmedStartTime} />
+                  </Pill>
+                ) : null}
+                {showReadyAt ? (
+                  <Pill
+                    className={cx(
+                      "max-w-full font-bold",
+                      isOrderDelayed
+                        ? "border-amber-700 bg-amber-600 text-white"
+                        : "border-amber-600 bg-amber-500 text-white"
+                    )}
+                  >
+                    {t("Ready at")} {readyAtLabel}
+                  </Pill>
+                ) : null}
+              </div>
+            ) : null}
+
+            {isLockedTable && !hasOrderActivity && (
+              <Pill className="min-h-8 border-amber-200 bg-amber-500 px-2.5 py-1 text-[10px] text-white sm:min-h-7 sm:px-3 sm:text-xs">
+                {t("Occupied")}
+              </Pill>
+            )}
+
+            {showManualTableLock && isFreeDisplay ? (
               <button
                 type="button"
                 onClick={handleToggleLockClick}
@@ -885,24 +929,10 @@ function TableCard({
                 </svg>
               </button>
             ) : null}
-          </div>
-
-          <div className="ml-auto flex items-center justify-end gap-2 flex-nowrap">
-            {isFreeDisplay && !shouldShowReservedBadge && (
-              <Pill className="border-slate-200 bg-white/80 text-slate-700">
-                {t("Free")}
-              </Pill>
-            )}
-
-            {isLockedTable && !hasOrderActivity && (
-              <Pill className="border-amber-200 bg-amber-500 text-white">
-                {t("Occupied")}
-              </Pill>
-            )}
 
             {isCallingWaiter && (
               <div className="flex items-center justify-end gap-2 flex-nowrap">
-                <Pill className="border-rose-200 bg-rose-600 text-white animate-pulse">
+                <Pill className="min-h-8 border-rose-200 bg-rose-600 px-2.5 py-1 text-[10px] text-white animate-pulse sm:min-h-7 sm:px-3 sm:text-xs">
                   🔴 {t("Calling")}
                 </Pill>
                 <ActionButton
@@ -917,12 +947,12 @@ function TableCard({
             {hasOrderActivity && (
               <div className="flex items-center justify-end gap-2 flex-nowrap">
                 {hasUnpaidItems ? (
-                  <Pill className="border-rose-200 bg-rose-600 text-white">
+                  <Pill className="hidden sm:inline-flex border-rose-200 bg-rose-600 text-white">
                     {paidStatusLabel}
                   </Pill>
                 ) : isPaidTable ? (
                   <div className="flex items-center gap-2 flex-nowrap">
-                    <Pill className="border-emerald-200 bg-emerald-600 text-white">
+                    <Pill className="hidden sm:inline-flex border-emerald-200 bg-emerald-600 text-white">
                       {fullyPaidStatusLabel}
                     </Pill>
                     <button

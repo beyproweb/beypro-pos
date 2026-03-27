@@ -38,7 +38,7 @@ function TransactionHeader({
               </button>
             )}
           </div>
-          <span className="shrink-0 rounded-full bg-indigo-50/90 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm dark:bg-indigo-950/35 dark:text-indigo-200 dark:ring-1 dark:ring-indigo-500/20">
+          <span className="hidden shrink-0 rounded-full bg-indigo-50/90 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm dark:bg-indigo-950/35 dark:text-indigo-200 dark:ring-1 dark:ring-indigo-500/20 sm:inline-flex">
             {visibleCount} {t("Products")}
           </span>
           {onVoiceStart && (

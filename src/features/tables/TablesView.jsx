@@ -286,6 +286,8 @@ function TablesView({
   const renderCount = useRenderCount("TableList", { logEvery: 1 });
   const onTableListProfileRender = React.useMemo(() => createProfilerOnRender("TableList"), []);
   const showRenderCounter = isTablePerfDebugEnabled();
+  const areaTabsRailRef = React.useRef(null);
+  const areaTabRefs = React.useRef(new Map());
   const tableTimers = useTableTimers({ ordersByTable, productPrepById });
   const [bookingSearch, setBookingSearch] = React.useState("");
   const [bookingDateFrom, setBookingDateFrom] = React.useState(() => formatDateInputValue(new Date()));
@@ -630,10 +632,36 @@ function TablesView({
     },
     [setActiveArea]
   );
+  const scrollAreaTabIntoView = React.useCallback((area) => {
+    const rail = areaTabsRailRef.current;
+    const tab = areaTabRefs.current.get(area);
+    if (!rail || !tab) return;
+
+    if (window.innerWidth >= 640) return;
+
+    const tabRect = tab.getBoundingClientRect();
+    const railRect = rail.getBoundingClientRect();
+    const offset =
+      tabRect.left -
+      railRect.left -
+      railRect.width / 2 +
+      tabRect.width / 2;
+
+    rail.scrollBy({ left: offset, behavior: "smooth" });
+  }, []);
+  const handleAreaTabClick = React.useCallback(
+    (area) => {
+      handleAreaSelect(area);
+      requestAnimationFrame(() => {
+        scrollAreaTabIntoView(area);
+      });
+    },
+    [handleAreaSelect, scrollAreaTabIntoView]
+  );
   const getAreaTabClassName = React.useCallback(
     (isActive, activeClassName, inactiveClassName) =>
       [
-        "px-5 py-2 rounded-full font-semibold shadow transition-all duration-150 text-xs",
+        "shrink-0 whitespace-nowrap px-5 py-2 rounded-full font-semibold shadow transition-all duration-150 text-xs",
         isActive ? activeClassName : inactiveClassName,
       ].join(" "),
     []
@@ -646,6 +674,10 @@ function TablesView({
 
   const getTableKey = React.useCallback((table) => table.tableNumber, []);
 
+  React.useEffect(() => {
+    scrollAreaTabIntoView(activeArea);
+  }, [activeArea, scrollAreaTabIntoView]);
+
   return (
     <React.Profiler id="TableList" onRender={onTableListProfileRender}>
       <div className="w-full flex flex-col items-center">
@@ -655,11 +687,19 @@ function TablesView({
           </div>
         )}
       {showAreaTabs && (
-        <div className="flex justify-center gap-3 flex-wrap mt-4 mb-10">
+        <div className="mt-4 mb-8 w-full px-4 sm:mb-10 sm:px-8">
+          <div
+            ref={areaTabsRailRef}
+            className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide px-0.5 sm:flex-wrap sm:justify-center sm:overflow-visible"
+          >
           {showStandardAreaTabs ? (
             <>
               <button
-                onClick={() => handleAreaSelect(AREA_FILTER_ALL)}
+                ref={(node) => {
+                  if (node) areaTabRefs.current.set(AREA_FILTER_ALL, node);
+                  else areaTabRefs.current.delete(AREA_FILTER_ALL);
+                }}
+                onClick={() => handleAreaTabClick(AREA_FILTER_ALL)}
                 className={getAreaTabClassName(
                   activeArea === AREA_FILTER_ALL,
                   "bg-indigo-600 text-white scale-[1.03] shadow-lg",
@@ -672,7 +712,11 @@ function TablesView({
               {Object.keys(groupedTables).map((area) => (
                 <button
                   key={area}
-                  onClick={() => handleAreaSelect(area)}
+                  ref={(node) => {
+                    if (node) areaTabRefs.current.set(area, node);
+                    else areaTabRefs.current.delete(area);
+                  }}
+                  onClick={() => handleAreaTabClick(area)}
                   className={getAreaTabClassName(
                     activeArea === area,
                     "bg-blue-600 text-white scale-[1.03] shadow-lg",
@@ -694,7 +738,11 @@ function TablesView({
                 </button>
               ))}
               <button
-                onClick={() => handleAreaSelect(AREA_FILTER_RESERVED)}
+                ref={(node) => {
+                  if (node) areaTabRefs.current.set(AREA_FILTER_RESERVED, node);
+                  else areaTabRefs.current.delete(AREA_FILTER_RESERVED);
+                }}
+                onClick={() => handleAreaTabClick(AREA_FILTER_RESERVED)}
                 className={getAreaTabClassName(
                   activeArea === AREA_FILTER_RESERVED,
                   "bg-amber-600 text-white scale-[1.03] shadow-lg",
@@ -704,7 +752,11 @@ function TablesView({
                 {t("Reserved")} ({reservedTablesCount})
               </button>
               <button
-                onClick={() => handleAreaSelect(AREA_FILTER_UNPAID)}
+                ref={(node) => {
+                  if (node) areaTabRefs.current.set(AREA_FILTER_UNPAID, node);
+                  else areaTabRefs.current.delete(AREA_FILTER_UNPAID);
+                }}
+                onClick={() => handleAreaTabClick(AREA_FILTER_UNPAID)}
                 className={getAreaTabClassName(
                   activeArea === AREA_FILTER_UNPAID,
                   "bg-red-600 text-white scale-[1.03] shadow-lg",
@@ -714,7 +766,11 @@ function TablesView({
                 {t("Unpaid")} ({unpaidTablesCount})
               </button>
               <button
-                onClick={() => handleAreaSelect(AREA_FILTER_PAID)}
+                ref={(node) => {
+                  if (node) areaTabRefs.current.set(AREA_FILTER_PAID, node);
+                  else areaTabRefs.current.delete(AREA_FILTER_PAID);
+                }}
+                onClick={() => handleAreaTabClick(AREA_FILTER_PAID)}
                 className={getAreaTabClassName(
                   activeArea === AREA_FILTER_PAID,
                   "bg-emerald-600 text-white scale-[1.03] shadow-lg",
@@ -724,7 +780,11 @@ function TablesView({
                 {t("Paid")} ({paidTablesCount})
               </button>
               <button
-                onClick={() => handleAreaSelect(AREA_FILTER_FREE)}
+                ref={(node) => {
+                  if (node) areaTabRefs.current.set(AREA_FILTER_FREE, node);
+                  else areaTabRefs.current.delete(AREA_FILTER_FREE);
+                }}
+                onClick={() => handleAreaTabClick(AREA_FILTER_FREE)}
                 className={getAreaTabClassName(
                   activeArea === AREA_FILTER_FREE,
                   "bg-sky-600 text-white scale-[1.03] shadow-lg",
@@ -737,7 +797,11 @@ function TablesView({
           ) : null}
           {showViewBookingTab ? (
             <button
-              onClick={() => handleAreaSelect(AREA_FILTER_VIEW_BOOKING)}
+              ref={(node) => {
+                if (node) areaTabRefs.current.set(AREA_FILTER_VIEW_BOOKING, node);
+                else areaTabRefs.current.delete(AREA_FILTER_VIEW_BOOKING);
+              }}
+              onClick={() => handleAreaTabClick(AREA_FILTER_VIEW_BOOKING)}
             className={getAreaTabClassName(
                 activeArea === AREA_FILTER_VIEW_BOOKING,
                 "bg-violet-600 text-white scale-[1.03] shadow-lg",
@@ -749,7 +813,11 @@ function TablesView({
           ) : null}
           {showSongRequestTab ? (
             <button
-              onClick={() => handleAreaSelect(AREA_FILTER_SONG_REQUEST)}
+              ref={(node) => {
+                if (node) areaTabRefs.current.set(AREA_FILTER_SONG_REQUEST, node);
+                else areaTabRefs.current.delete(AREA_FILTER_SONG_REQUEST);
+              }}
+              onClick={() => handleAreaTabClick(AREA_FILTER_SONG_REQUEST)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_SONG_REQUEST,
                 "bg-fuchsia-600 text-white scale-[1.03] shadow-lg",
@@ -759,6 +827,7 @@ function TablesView({
               {t("Song Request")} ({Array.isArray(songRequests) ? songRequests.length : 0})
             </button>
           ) : null}
+          </div>
         </div>
       )}
 

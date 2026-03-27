@@ -1125,7 +1125,9 @@ export default function ModernHeader({
 
       {/* Center: sticky subtitle (no flicker) */}
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4 gap-2">
-        <StickySubtitle text={subtitle} />
+        <div className={isTransactionRoute ? "hidden md:block" : ""}>
+          <StickySubtitle text={subtitle} />
+        </div>
         <div ref={searchRef} className="relative w-full max-w-2xl">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
@@ -1193,10 +1195,10 @@ export default function ModernHeader({
           </div>
 
           {searchOpen && (
-            <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+            <div className="absolute left-1/2 top-[calc(100%+0.5rem)] z-50 w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-2xl backdrop-blur md:left-0 md:right-0 md:w-auto md:max-w-none md:translate-x-0 dark:border-slate-700 dark:bg-slate-900/95">
               {searchQuery.trim() ? (
                 visibleSearchItems.length > 0 ? (
-                  <div className="p-2">
+                  <div className="max-h-[min(70vh,32rem)] overflow-y-auto p-2">
                     {visibleSearchItems.map((item, index) => (
                       <div
                         key={item.id}
@@ -1264,8 +1266,8 @@ export default function ModernHeader({
                   </div>
                 )
               ) : (
-                <div className="grid gap-4 p-4 md:grid-cols-3">
-                  <div className="space-y-2">
+                <div className="grid max-h-[min(68vh,30rem)] gap-3 overflow-y-auto p-3 md:grid-cols-3 md:gap-4 md:p-4">
+                  <div className="min-w-0 space-y-2">
                     <div className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">
                       <Star className="h-3.5 w-3.5" fill="currentColor" />
                       {t("Favorites")}
@@ -1307,12 +1309,12 @@ export default function ModernHeader({
                         </div>
                       ))
                     ) : (
-                      <div className="text-sm text-slate-500 dark:text-slate-400">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 md:text-sm">
                         {t("No favorites pinned yet.")}
                       </div>
                     )}
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
                         {t("Recent")}
                       </div>
@@ -1349,7 +1351,7 @@ export default function ModernHeader({
                         </div>
                       )}
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
                         {t("Suggested")}
                       </div>
@@ -1536,7 +1538,7 @@ export default function ModernHeader({
         {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
 
         {title && (
-          <div className="flex items-center gap-3">
+          <div className="hidden items-center gap-3 md:flex">
             {isTableOverviewRoute && freeTablesCount !== null && (
               <span className="inline-flex items-center px-3 py-1 rounded-full border border-indigo-600 bg-gradient-to-r from-indigo-600 to-blue-500 text-sm font-semibold text-white shadow-lg shadow-indigo-500/40">
                 {freeTablesCount} {t("Free")}
