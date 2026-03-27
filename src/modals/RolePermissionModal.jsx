@@ -67,7 +67,7 @@ const PERMISSION_LABELS = {
   // === SETTINGS SUB-SECTIONS ===
   settings: "⚙️ Settings",
   "qr-menu-settings": "🔗 QR Menu Settings",
-  "qr-menu-settings-qr": "🔗 QR Settings Tab",
+  "qr-menu-settings-qr": "🔗 Menu Setup Tab",
   "qr-menu-settings-app": "📱 App Settings Tab",
   "qr-menu-settings-concert": "🎟 Concert Tickets Tab",
   "qr-menu-settings-controls": "🧾 Order Settings Tab",

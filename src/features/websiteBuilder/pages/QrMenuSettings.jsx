@@ -258,7 +258,7 @@ export default function QrMenuSettings() {
   const settingsTabs = useMemo(
     () =>
       [
-        { id: "qr", label: t("QR Settings"), allowed: canAccessQrSettingsTab },
+        { id: "qr", label: t("Menu Setup"), allowed: canAccessQrSettingsTab },
         { id: "app", label: t("App Settings"), allowed: canAccessAppSettingsTab },
         { id: "concert", label: t("Concert Tickets"), allowed: canAccessConcertTicketsTab },
         { id: "controls", label: t("Order Settings"), allowed: canAccessOrderSettingsTab },
