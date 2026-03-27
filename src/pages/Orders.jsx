@@ -1,4 +1,5 @@
-import { useDeferredValue, useState, useMemo, useCallback, useReducer } from "react";
+import { useDeferredValue, useState, useMemo, useCallback, useReducer, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { geocodeAddress } from "../utils/geocode";
 import socket from "../utils/socket";
 import { useTranslation } from "react-i18next";
@@ -51,6 +52,8 @@ function uiReducer(state, action) {
 }
 
 export default function Orders({ orders: propOrders }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const paymentMethods = usePaymentMethods();
   const methodOptionSource = useMemo(
     () => (paymentMethods.length ? paymentMethods : DEFAULT_PAYMENT_METHODS),
@@ -276,6 +279,51 @@ export default function Orders({ orders: propOrders }) {
       toggleDriverReport,
     ]
   );
+
+  useMemo(() => null, []);
+
+  const clearOrdersPanelQuery = useCallback(() => {
+    const params = new URLSearchParams(location.search || "");
+    if (!params.has("panel")) return;
+    params.delete("panel");
+    const next = params.toString();
+    navigate(next ? `${location.pathname}?${next}` : location.pathname, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const panel = String(params.get("panel") || "").trim().toLowerCase();
+    if (!panel) return;
+
+    if (panel === "checklist") {
+      openDrinkModal();
+      clearOrdersPanelQuery();
+      return;
+    }
+
+    if (panel === "driver-report") {
+      if (!showDriverReport) {
+        toggleDriverReport();
+      } else {
+        clearOrdersPanelQuery();
+      }
+      return;
+    }
+
+    if (panel === "live-route") {
+      Promise.resolve(openRouteForDriver(selectedDriverId)).finally(() => {
+        clearOrdersPanelQuery();
+      });
+    }
+  }, [
+    clearOrdersPanelQuery,
+    location.search,
+    openDrinkModal,
+    openRouteForDriver,
+    selectedDriverId,
+    showDriverReport,
+    toggleDriverReport,
+  ]);
 
   const drinkModal = useMemo(
     () => ({

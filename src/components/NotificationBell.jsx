@@ -20,18 +20,16 @@ export default function NotificationBell({ unread = 0, onClick }) {
   return (
     <button
       className={clsx(
-        "flex items-center justify-center",
-        "bg-gradient-to-br from-white to-indigo-100 dark:from-indigo-800 dark:to-gray-900",
-        "rounded-full shadow-2xl hover:scale-105 transition-all",
-        "w-10 h-10 md:w-9 md:h-9 ring-2 ring-indigo-400/10"
+        "inline-flex h-[42px] w-[42px] items-center justify-center rounded-2xl border border-slate-200/80 bg-white/95 text-slate-600 shadow-sm transition",
+        "hover:border-indigo-300 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30",
+        "dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300"
       )}
-      style={{ boxShadow: "0 8px 30px rgba(85,80,255,0.14)" }}
       onClick={onClick}
       aria-label="Show Notifications"
       type="button"
     >
       <span className={clsx("relative", animate && "animate-bounce-slow")}>
-        <Bell size={28} className="text-indigo-600 dark:text-indigo-300" />
+        <Bell size={20} className="text-current" />
         {/* Badge */}
         {unread > 0 && (
           <span className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold border-2 border-white shadow">

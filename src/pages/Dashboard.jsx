@@ -1,5 +1,5 @@
 // src/pages/Dashboard.jsx
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import secureFetch from "../utils/secureFetch";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import { useAuth } from "../context/AuthContext";
@@ -13,7 +13,8 @@ import {
   PieChart, ClipboardList, TrendingUp, FileText, Factory, Bot,
   UserCheck, Megaphone, Wrench, Star, AlertTriangle, CreditCard,
   Clock, ChevronRight, ArrowUpRight, ArrowDownRight, ChefHat,
-  UserCog, Bell, Printer, Plug, Video, ShoppingCart, CalendarDays
+  UserCog, Bell, Printer, Plug, Video, ShoppingCart, CalendarDays,
+  Search, ChevronDown, ChevronUp
 } from 'lucide-react';
 import axios from "axios";
 // adjust path as needed!
@@ -33,6 +34,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "orders",
     labelKey: "Orders",
     defaultLabel: "Orders",
+    group: "operations",
     path: "/tableoverview?tab=tables",
     color: "bg-gradient-to-r from-rose-400 to-pink-500",
     iconColor: "text-rose-600",
@@ -43,6 +45,8 @@ const QUICK_ACCESS_CONFIG = [
     id: "view-booking",
     labelKey: "View Booking",
     defaultLabel: "View Booking",
+    group: "operations",
+    searchTerms: ["booking", "reservation", "reserve", "table booking"],
     path: "/view-booking",
     color: "bg-gradient-to-r from-violet-500 to-fuchsia-500",
     iconColor: "text-violet-700",
@@ -76,6 +80,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "kitchen",
     labelKey: "Kitchen",
     defaultLabel: "Kitchen",
+    group: "operations",
     path: "/kitchen",
     color: "bg-gradient-to-r from-purple-500 to-violet-600",
     iconColor: "text-violet-600",
@@ -96,6 +101,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "suppliers",
     labelKey: "Suppliers",
     defaultLabel: "Suppliers",
+    group: "inventory",
     path: "/suppliers",
     color: "bg-gradient-to-r from-green-500 to-teal-500",
     iconColor: "text-emerald-600",
@@ -106,6 +112,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "supplier-cart",
     labelKey: "Supplier Cart",
     defaultLabel: "Supplier Cart",
+    group: "inventory",
     path: "/suppliers?view=cart",
     color: "bg-gradient-to-r from-emerald-500 to-lime-500",
     iconColor: "text-lime-700",
@@ -116,6 +123,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "stock",
     labelKey: "Stock",
     defaultLabel: "Stock",
+    group: "inventory",
     path: "/stock",
     color: "bg-gradient-to-r from-yellow-500 to-amber-500",
     iconColor: "text-amber-600",
@@ -136,6 +144,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "staff",
     labelKey: "Staff",
     defaultLabel: "Staff",
+    group: "operations",
     path: "/staff",
     color: "bg-gradient-to-r from-sky-500 to-cyan-500",
     iconColor: "text-cyan-600",
@@ -154,9 +163,21 @@ const QUICK_ACCESS_CONFIG = [
     permission: "staff-checkin",
   },
   {
+    id: "staff-schedule",
+    labelKey: "Staff Schedule",
+    defaultLabel: "Staff Schedule",
+    path: "/staff?tab=schedule",
+    color: "bg-gradient-to-r from-cyan-500 to-blue-500",
+    iconColor: "text-cyan-600",
+    iconRing: "ring-cyan-400/40",
+    icon: "CalendarDays",
+    permission: "staff-schedule",
+  },
+  {
     id: "payroll",
     labelKey: "Payroll",
     defaultLabel: "Payroll",
+    group: "finance",
     path: "/staff?tab=payroll",
     color: "bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500",
     iconColor: "text-emerald-600",
@@ -178,6 +199,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "reports",
     labelKey: "Reports",
     defaultLabel: "Reports",
+    group: "finance",
     path: "/reports",
     color: "bg-gradient-to-r from-orange-500 to-yellow-600",
     iconColor: "text-orange-600",
@@ -188,6 +210,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "expenses",
     labelKey: "Expenses",
     defaultLabel: "Expenses",
+    group: "finance",
     path: "/expenses",
     color: "bg-gradient-to-r from-red-500 to-rose-500",
     iconColor: "text-rose-600",
@@ -198,6 +221,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "ingredient-prices",
     labelKey: "Ingredient Prices",
     defaultLabel: "Ingredient Prices",
+    group: "inventory",
     path: "/ingredient-prices",
     color: "bg-gradient-to-r from-lime-500 to-green-600",
     iconColor: "text-lime-600",
@@ -208,6 +232,8 @@ const QUICK_ACCESS_CONFIG = [
     id: "cash-history",
     labelKey: "Cash History",
     defaultLabel: "Cash History",
+    group: "finance",
+    searchTerms: ["cash", "register", "money", "cash register"],
     path: "/cash-register-history",
     color: "bg-accent",
     iconColor: "text-indigo-600",
@@ -218,6 +244,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "integrations",
     labelKey: "Integrations",
     defaultLabel: "Integrations",
+    group: "system",
     path: "/integrations",
     color: "bg-accent",
     iconColor: "text-sky-600",
@@ -228,6 +255,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "settings",
     labelKey: "Settings",
     defaultLabel: "Settings",
+    group: "system",
     path: "/settings",
     color: "bg-gradient-to-r from-gray-700 to-gray-900",
     iconColor: "text-slate-700 dark:text-slate-200",
@@ -238,6 +266,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "qr-menu",
     labelKey: "QR Menu",
     defaultLabel: "QR Menu",
+    group: "operations",
     path: "/qr-menu-settings",
     color: "bg-gradient-to-r from-indigo-500 to-blue-700",
     iconColor: "text-indigo-600",
@@ -268,6 +297,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "maintenance",
     labelKey: "Maintenance",
     defaultLabel: "Maintenance",
+    group: "system",
     path: "/maintenance",
     color: "bg-gradient-to-r from-gray-400 to-gray-700",
     iconColor: "text-slate-600 dark:text-slate-200",
@@ -300,6 +330,8 @@ const QUICK_ACCESS_CONFIG = [
     id: "printers",
     labelKey: "Printers",
     defaultLabel: "Printers",
+    group: "system",
+    searchTerms: ["printer", "print", "receipt printer"],
     path: "/printers",
     color: "bg-gradient-to-r from-slate-600 to-slate-800",
     iconColor: "text-slate-700 dark:text-slate-200",
@@ -805,6 +837,13 @@ const fetchSummaryStats = useCallback(async () => {
 
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+  const [commandPaletteIndex, setCommandPaletteIndex] = useState(0);
+  const [activeGroupKey, setActiveGroupKey] = useState("operations");
+  const [isLiveCamerasExpanded, setIsLiveCamerasExpanded] = useState(false);
+  const [isBusinessSnapshotExpanded, setIsBusinessSnapshotExpanded] = useState(false);
+  const commandInputRef = useRef(null);
 
   const handleDragStart = (item, label) => (event) => {
     event.dataTransfer.setData("text/plain", item.id);
@@ -870,8 +909,284 @@ const fetchSummaryStats = useCallback(async () => {
     });
   };
 
+  const commandPaletteItems = useMemo(() => {
+    const query = String(commandQuery || "").trim().toLowerCase();
+    const items = allowedAccess.map((item) => {
+      const translatedLabel = t(item.labelKey, {
+        defaultValue: item.defaultLabel ?? item.labelKey,
+      });
+      const haystack = [
+        item.id,
+        item.labelKey,
+        item.defaultLabel,
+        translatedLabel,
+        item.path,
+        ...(Array.isArray(item.searchTerms) ? item.searchTerms : []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        ...item,
+        translatedLabel,
+        haystack,
+      };
+    });
+
+    if (!query) return items.slice(0, 12);
+    return items.filter((item) => item.haystack.includes(query)).slice(0, 12);
+  }, [allowedAccess, commandQuery, t]);
+
+  const groupedAccessSections = useMemo(() => {
+    const sectionDefs = [
+      {
+        key: "operations",
+        title: "Operations",
+        icon: "ClipboardList",
+        activeClass:
+          "border-sky-500 bg-gradient-to-br from-sky-500 via-sky-500 to-cyan-500 text-white shadow-lg shadow-sky-500/30 ring-1 ring-sky-200/70 dark:border-sky-400 dark:text-white dark:ring-sky-300/20",
+        inactiveClass:
+          "border-sky-200/90 bg-white text-sky-800 shadow-sm shadow-sky-100/60 hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-50 hover:shadow-md hover:shadow-sky-100/70 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100 dark:hover:border-sky-700 dark:hover:bg-sky-500/20 dark:hover:shadow-none",
+        inactiveMetaClass: "text-sky-600/80 dark:text-sky-300/80",
+        tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
+        ids: ["orders", "packet", "history", "kitchen", "view-booking", "qr-menu", "task"],
+      },
+      {
+        key: "team",
+        title: "Team",
+        icon: "Users",
+        activeClass:
+          "border-violet-500 bg-gradient-to-br from-violet-500 via-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/30 ring-1 ring-violet-200/70 dark:border-violet-400 dark:text-white dark:ring-violet-300/20",
+        inactiveClass:
+          "border-violet-200/90 bg-white text-violet-800 shadow-sm shadow-violet-100/60 hover:-translate-y-0.5 hover:border-violet-300 hover:bg-violet-50 hover:shadow-md hover:shadow-violet-100/70 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-100 dark:hover:border-violet-700 dark:hover:bg-violet-500/20 dark:hover:shadow-none",
+        inactiveMetaClass: "text-violet-600/80 dark:text-violet-300/80",
+        tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
+        ids: ["staff", "staff-checkin", "staff-schedule", "payroll", "user-management"],
+      },
+      {
+        key: "inventory",
+        title: "Inventory",
+        icon: "Package",
+        activeClass:
+          "border-emerald-500 bg-gradient-to-br from-emerald-500 via-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-200/70 dark:border-emerald-400 dark:text-white dark:ring-emerald-300/20",
+        inactiveClass:
+          "border-emerald-200/90 bg-white text-emerald-800 shadow-sm shadow-emerald-100/60 hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-50 hover:shadow-md hover:shadow-emerald-100/70 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100 dark:hover:border-emerald-700 dark:hover:bg-emerald-500/20 dark:hover:shadow-none",
+        inactiveMetaClass: "text-emerald-600/80 dark:text-emerald-300/80",
+        tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
+        ids: ["products", "stock", "suppliers", "supplier-cart", "ingredient-prices", "production"],
+      },
+      {
+        key: "finance",
+        title: "Finance",
+        icon: "CreditCard",
+        activeClass:
+          "border-amber-500 bg-gradient-to-br from-amber-500 via-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 ring-1 ring-amber-200/70 dark:border-amber-400 dark:text-white dark:ring-amber-300/20",
+        inactiveClass:
+          "border-amber-200/90 bg-white text-amber-900 shadow-sm shadow-amber-100/60 hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50 hover:shadow-md hover:shadow-amber-100/70 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:border-amber-700 dark:hover:bg-amber-500/20 dark:hover:shadow-none",
+        inactiveMetaClass: "text-amber-700/80 dark:text-amber-300/80",
+        tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
+        ids: ["reports", "expenses", "cash-history"],
+      },
+      {
+        key: "growth",
+        title: "Growth",
+        icon: "TrendingUp",
+        activeClass:
+          "border-pink-500 bg-gradient-to-br from-pink-500 via-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30 ring-1 ring-pink-200/70 dark:border-pink-400 dark:text-white dark:ring-pink-300/20",
+        inactiveClass:
+          "border-pink-200/90 bg-white text-pink-800 shadow-sm shadow-pink-100/60 hover:-translate-y-0.5 hover:border-pink-300 hover:bg-pink-50 hover:shadow-md hover:shadow-pink-100/70 dark:border-pink-900/60 dark:bg-pink-950/20 dark:text-pink-100 dark:hover:border-pink-700 dark:hover:bg-pink-500/20 dark:hover:shadow-none",
+        inactiveMetaClass: "text-pink-600/80 dark:text-pink-300/80",
+        tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
+        ids: ["customer-insights", "marketing-campaigns"],
+      },
+      {
+        key: "system",
+        title: "System",
+        icon: "Settings",
+        activeClass:
+          "border-slate-700 bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 text-white shadow-lg shadow-slate-500/30 ring-1 ring-slate-300/70 dark:border-slate-500 dark:text-white dark:ring-slate-400/20",
+        inactiveClass:
+          "border-slate-200/90 bg-white text-slate-800 shadow-sm shadow-slate-200/70 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:shadow-slate-200/80 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800",
+        inactiveMetaClass: "text-slate-500 dark:text-slate-400",
+        tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
+        ids: ["settings", "integrations", "notifications", "printers", "maintenance"],
+      },
+    ];
+    const byId = new Map(allowedAccess.map((item) => [item.id, item]));
+    const baseSections = sectionDefs
+      .map((section) => ({
+        ...section,
+        items: section.ids.map((id) => byId.get(id)).filter(Boolean),
+      }))
+      .filter((section) => section.items.length > 0);
+
+    const usedIds = new Set(baseSections.flatMap((section) => section.items.map((item) => item.id)));
+    const remainingItems = allowedAccess.filter((item) => !usedIds.has(item.id));
+
+      if (remainingItems.length > 0) {
+      baseSections.push({
+        key: "more",
+        title: "More",
+        icon: "Star",
+        items: remainingItems,
+      });
+    }
+
+    return baseSections;
+  }, [allowedAccess]);
+
+  useEffect(() => {
+    if (groupedAccessSections.length === 0) return;
+    if (!groupedAccessSections.some((section) => section.key === activeGroupKey)) {
+      setActiveGroupKey(groupedAccessSections[0].key);
+    }
+  }, [activeGroupKey, groupedAccessSections]);
+
+  const activeGroupSection = useMemo(() => {
+    if (groupedAccessSections.length === 0) return null;
+    return (
+      groupedAccessSections.find((section) => section.key === activeGroupKey) ||
+      groupedAccessSections[0]
+    );
+  }, [activeGroupKey, groupedAccessSections]);
+
+  useEffect(() => {
+    setCommandPaletteIndex(0);
+  }, [commandQuery]);
+
+  useEffect(() => {
+    if (!isCommandPaletteOpen) return;
+    commandInputRef.current?.focus();
+    commandInputRef.current?.select?.();
+  }, [isCommandPaletteOpen]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const key = String(event.key || "").toLowerCase();
+      const isMetaShortcut = (event.metaKey || event.ctrlKey) && key === "k";
+
+      if (isMetaShortcut) {
+        event.preventDefault();
+        setIsCommandPaletteOpen(true);
+        return;
+      }
+
+      if (!isCommandPaletteOpen) return;
+
+      if (key === "escape") {
+        event.preventDefault();
+        setIsCommandPaletteOpen(false);
+        return;
+      }
+
+      if (key === "arrowdown") {
+        event.preventDefault();
+        setCommandPaletteIndex((prev) =>
+          commandPaletteItems.length === 0 ? 0 : Math.min(prev + 1, commandPaletteItems.length - 1)
+        );
+        return;
+      }
+
+      if (key === "arrowup") {
+        event.preventDefault();
+        setCommandPaletteIndex((prev) =>
+          commandPaletteItems.length === 0 ? 0 : Math.max(prev - 1, 0)
+        );
+        return;
+      }
+
+      if (key === "enter") {
+        const selectedItem = commandPaletteItems[commandPaletteIndex];
+        if (!selectedItem) return;
+        event.preventDefault();
+        setIsCommandPaletteOpen(false);
+        setCommandQuery("");
+        navigate(selectedItem.path);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [commandPaletteIndex, commandPaletteItems, isCommandPaletteOpen, navigate]);
+
   return (
-    <div className="min-h-screen px-3 md:px-6 py-8 space-y-8">
+    <div className="min-h-screen px-3 md:px-6 py-4 space-y-6">
+      {isCommandPaletteOpen && (
+        <div className="fixed inset-0 z-[1200] flex items-start justify-center bg-slate-950/45 px-4 pt-24 backdrop-blur-sm">
+          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-2xl dark:border-slate-800 dark:bg-slate-900/95">
+            <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <Search className="h-5 w-5 text-slate-400" />
+              <input
+                ref={commandInputRef}
+                type="text"
+                value={commandQuery}
+                onChange={(event) => setCommandQuery(event.target.value || "")}
+                placeholder={t("Type to navigate: stock, reservation, printer, cash")}
+                className="w-full bg-transparent text-base font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-slate-100"
+              />
+              <button
+                type="button"
+                onClick={() => setIsCommandPaletteOpen(false)}
+                className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Esc
+              </button>
+            </div>
+
+            <div className="max-h-[420px] overflow-y-auto p-3">
+              {commandPaletteItems.length > 0 ? (
+                <div className="space-y-2">
+                  {commandPaletteItems.map((item, index) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onMouseEnter={() => setCommandPaletteIndex(index)}
+                      onClick={() => {
+                        setIsCommandPaletteOpen(false);
+                        setCommandQuery("");
+                        navigate(item.path);
+                      }}
+                      className={`flex w-full items-center gap-4 rounded-2xl border px-4 py-3 text-left transition ${
+                        commandPaletteIndex === index
+                          ? "border-indigo-300 bg-indigo-50 shadow-sm dark:border-indigo-500/50 dark:bg-indigo-500/10"
+                          : "border-transparent bg-slate-50 hover:border-slate-200 hover:bg-white dark:bg-slate-800/60 dark:hover:border-slate-700 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <div
+                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                          item.color || "bg-gradient-to-r from-indigo-500 to-blue-600"
+                        } text-white shadow-md`}
+                      >
+                        {getIcon(item.icon, 20)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {item.translatedLabel}
+                        </div>
+                        <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                          {item.path}
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  {t("No matching destination found.")}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <span>{t("Use Cmd/Ctrl + K to open anytime on Dashboard")}</span>
+              <span>{t("Enter to open")}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quick Access Grid (Filtered by permissions) */}
       {allowedAccess.length > 0 ? (
         <div
@@ -882,9 +1197,54 @@ const fetchSummaryStats = useCallback(async () => {
           }}
           onDrop={handleNavDrop}
         >
-          <div className="w-full max-w-7xl px-0 py-5 rounded-[2rem] bg-transparent border border-transparent">
-            <div className="grid grid-cols-3 lg:grid-cols-9 gap-x-3 sm:gap-x-4 lg:gap-x-5 gap-y-6 place-items-center">
-              {allowedAccess.map((item) => {
+          <div className="w-full max-w-7xl px-0 py-2.5 rounded-[2rem] bg-transparent border border-transparent">
+            <section className="space-y-4 rounded-[1.9rem] border border-slate-200/70 bg-white/70 p-3 shadow-sm backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/40 sm:p-4">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+                {groupedAccessSections.map((section) => {
+                  const isActive = activeGroupSection?.key === section.key;
+                  return (
+                    <button
+                      key={section.key}
+                      type="button"
+                      onClick={() => setActiveGroupKey(section.key)}
+                      className={`group rounded-2xl border px-4 py-3 text-center transition-all duration-200 ${
+                        isActive
+                          ? section.activeClass
+                          : section.inactiveClass
+                      }`}
+                    >
+                      <div className="flex items-center justify-center gap-2.5">
+                        <span
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition ${
+                            isActive
+                              ? "border-white/20 bg-white/15 text-white shadow-inner"
+                              : "border-current/10 bg-black/[0.03] text-current group-hover:bg-black/[0.05] dark:bg-white/[0.04] dark:group-hover:bg-white/[0.08]"
+                          }`}
+                        >
+                          {getIcon(section.icon, 18)}
+                        </span>
+                        <span className="text-[0.95rem] font-semibold tracking-[0.01em]">
+                          {section.title}
+                        </span>
+                      </div>
+                      <div
+                        className={`mt-1.5 text-center text-xs ${
+                          isActive
+                            ? "text-white/80"
+                            : section.inactiveMetaClass || "text-slate-500 dark:text-slate-400"
+                        }`}
+                      >
+                        {section.items.length} {t("modules")}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeGroupSection ? (
+                <div className="rounded-[1.6rem] border border-slate-200/80 bg-white/90 px-4 py-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/55 sm:px-5">
+                  <div className="grid grid-cols-3 gap-x-3 gap-y-6 place-items-center sm:grid-cols-4 sm:gap-x-4 lg:grid-cols-6 lg:gap-x-4 xl:grid-cols-7 2xl:grid-cols-8">
+                    {activeGroupSection.items.map((item) => {
                 const label = t(item.labelKey, {
                   defaultValue: item.defaultLabel ?? item.labelKey,
                 });
@@ -913,7 +1273,7 @@ const fetchSummaryStats = useCallback(async () => {
                     <div className="flex flex-col items-center justify-end gap-2">
                       <div
                         className={`w-[4.25rem] h-[4.25rem] sm:w-[4.75rem] sm:h-[4.75rem] rounded-2xl shadow-lg ring-1 ring-black/10 dark:ring-white/10 flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${
-                          item.color || "bg-gradient-to-br from-indigo-400 to-indigo-600"
+                          activeGroupSection.tileClass || item.color || "bg-gradient-to-br from-indigo-400 to-indigo-600"
                         }`}
                       >
                         <div className="text-white drop-shadow-sm">
@@ -926,8 +1286,11 @@ const fetchSummaryStats = useCallback(async () => {
                     </div>
                   </button>
                 );
-              })}
-            </div>
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </section>
           </div>
         </div>
       ) : (
@@ -940,7 +1303,14 @@ const fetchSummaryStats = useCallback(async () => {
 	    {hasCameraAccess && (camerasLoading || cameras.length > 0) && (
         <div className="w-full flex justify-center">
           <div className="w-full max-w-7xl">
-	          <LiveCamerasSection cameras={cameras} loading={camerasLoading} onNavigate={() => navigate("/settings/cameras")} t={t} />
+	          <LiveCamerasSection
+              cameras={cameras}
+              loading={camerasLoading}
+              expanded={isLiveCamerasExpanded}
+              onToggleExpanded={() => setIsLiveCamerasExpanded((prev) => !prev)}
+              onNavigate={() => navigate("/settings/cameras")}
+              t={t}
+            />
           </div>
         </div>
 	    )}
@@ -949,7 +1319,12 @@ const fetchSummaryStats = useCallback(async () => {
 	    {canSeeBusinessSnapshot && (
         <div className="w-full flex justify-center">
           <div className="w-full max-w-7xl">
-	          <BusinessSnapshot summary={summary} onRefresh={fetchSummaryStats} />
+	          <BusinessSnapshot
+              summary={summary}
+              expanded={isBusinessSnapshotExpanded}
+              onToggleExpanded={() => setIsBusinessSnapshotExpanded((prev) => !prev)}
+              onRefresh={fetchSummaryStats}
+            />
           </div>
         </div>
 	    )}
@@ -960,7 +1335,7 @@ const fetchSummaryStats = useCallback(async () => {
 }
 
 // ---- Business Snapshot Section ----
-function BusinessSnapshot({ summary = {}, onRefresh }) {
+function BusinessSnapshot({ summary = {}, expanded = false, onToggleExpanded, onRefresh }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
@@ -1149,22 +1524,60 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
   }, [paymentMix.methods, paymentStyles]);
 
   return (
-    <section className="mb-10">
-      <div className="flex items-center gap-4 mb-4">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-          {t("Business Snapshot")}
-        </h2>
-        {onRefresh && (
+    <section>
+      <div className="rounded-[1.6rem] border border-slate-200/80 bg-white/85 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/55">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
-            onClick={onRefresh}
-            className="ml-2 px-3 py-1 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-200 font-semibold hover:bg-blue-200 hover:scale-105 transition"
+            type="button"
+            onClick={onToggleExpanded}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl text-left transition hover:bg-slate-50/70 dark:hover:bg-slate-900/60"
           >
-            {t("Refresh")}
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20">
+              <BarChart className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-lg font-semibold text-gray-900 dark:text-white">
+                  {t("Business Snapshot")}
+                </h2>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 dark:text-slate-400">
+                <span>
+                  {t("Sales today")}:{" "}
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {formatCurrency(snap.dailySales)}
+                  </span>
+                </span>
+                <span>
+                  {t("Open Orders", "Open Orders")}:{" "}
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {snap.openOrders}
+                  </span>
+                </span>
+                <span>
+                  {t("Stock Alerts")}:{" "}
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {snap.lowStockCount}
+                  </span>
+                </span>
+              </div>
+            </div>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
           </button>
-        )}
-      </div>
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              className="inline-flex min-w-[104px] items-center justify-center rounded-lg border border-accent/20 bg-accent px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:scale-105 hover:brightness-110"
+            >
+              {t("Refresh")}
+            </button>
+          )}
+        </div>
 
-      {/* Main metrics */}
+        {expanded ? (
+          <div className="mt-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-4">
         <SnapshotCard>
           <div className="flex items-center gap-3">
@@ -1533,6 +1946,9 @@ function BusinessSnapshot({ summary = {}, onRefresh }) {
           })()}
         </MiniCard>
       </div>
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -1563,25 +1979,39 @@ function MiniCard({ children, className }) {
 }
 
 // ---- Live Cameras Section ----
-function LiveCamerasSection({ cameras = [], loading = false, onNavigate, t }) {
+function LiveCamerasSection({
+  cameras = [],
+  loading = false,
+  expanded = false,
+  onToggleExpanded,
+  onNavigate,
+  t,
+}) {
   if (loading) {
     return (
-      <section className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Video className="w-6 h-6 text-red-500" />
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              {t("Live Cameras", "Live Cameras")}
-            </h2>
+      <section>
+        <div className="rounded-[1.6rem] border border-slate-200/80 bg-white/85 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/55">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50 text-red-500 ring-1 ring-red-100 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/20">
+              <Video className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {t("Live Cameras", "Live Cameras")}
+              </h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {t("Loading camera feeds...", "Loading camera feeds...")}
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="bg-white dark:bg-zinc-900 rounded-xl h-40 animate-pulse border border-gray-100 dark:border-zinc-800"
-            />
-          ))}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="h-40 animate-pulse rounded-xl border border-gray-100 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+              />
+            ))}
+          </div>
         </div>
       </section>
     );
@@ -1592,98 +2022,115 @@ function LiveCamerasSection({ cameras = [], loading = false, onNavigate, t }) {
   }
 
   return (
-    <section className="mb-8">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Video className="w-6 h-6 text-red-500" />
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-            {t("Live Cameras", "Live Cameras")}
-          </h2>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            ({cameras.length})
-          </span>
-        </div>
-        <button
-          onClick={onNavigate}
-          className="flex items-center gap-1 px-3 py-1 text-sm rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-200 font-semibold hover:bg-blue-200 hover:scale-105 transition"
-        >
-          {t("View All", "View All")}
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {cameras.map((camera) => (
-          <div
-            key={camera.id}
-            className="group bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-gray-100 dark:border-zinc-800 shadow-md hover:shadow-xl transition"
+    <section>
+      <div className="rounded-[1.6rem] border border-slate-200/80 bg-white/85 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/55">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            onClick={onToggleExpanded}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl text-left transition hover:bg-slate-50/70 dark:hover:bg-slate-900/60"
           >
-            {/* Camera Placeholder/Status */}
-            <div className="w-full h-40 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-zinc-800 dark:to-zinc-700 flex items-center justify-center relative overflow-hidden">
-              <div className="absolute inset-0 bg-black/5 dark:bg-black/20" />
-              <Video className="w-16 h-16 text-gray-400 dark:text-gray-500 relative z-10" />
-              
-              {/* Live Badge */}
-              {camera.enabled && (
-                <div className="absolute top-2 right-2 flex items-center gap-1 bg-red-500 text-white px-2 py-1 rounded-full text-xs font-bold z-20">
-                  <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                  {t("Live", "Live")}
-                </div>
-              )}
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-500 ring-1 ring-red-100 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/20">
+              <Video className="h-5 w-5" />
             </div>
-
-            {/* Camera Info */}
-            <div className="p-4">
-              <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-1 truncate">
-                {t(camera.name, camera.name)}
-              </h3>
-              
-              {camera.location && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate">
-                  📍 {t(camera.location, camera.location)}
-                </p>
-              )}
-
-              {/* Camera Details */}
-              <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                {camera.resolution && (
-                  <div className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded">
-                    <span className="text-gray-600 dark:text-gray-400">{t("Resolution", "Resolution")}</span>
-                    <div className="font-mono text-gray-900 dark:text-white">
-                      {camera.resolution}
-                    </div>
-                  </div>
-                )}
-                {camera.bitrate && (
-                  <div className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded">
-                    <span className="text-gray-600 dark:text-gray-400">{t("Bitrate", "Bitrate")}</span>
-                    <div className="font-mono text-gray-900 dark:text-white">
-                      {camera.bitrate}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Status Badge */}
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    camera.enabled ? "bg-green-500 animate-pulse" : "bg-gray-400"
-                  }`}
-                />
-                <span
-                  className={`text-xs font-medium ${
-                    camera.enabled
-                      ? "text-green-600 dark:text-green-400"
-                      : "text-gray-500 dark:text-gray-400"
-                  }`}
-                >
-                  {camera.enabled ? t("Active", "Active") : t("Inactive", "Inactive")}
+                <h2 className="truncate text-lg font-semibold text-gray-900 dark:text-white">
+                  {t("Live Cameras", "Live Cameras")}
+                </h2>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {cameras.length}
                 </span>
               </div>
+              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                {expanded
+                  ? t("Hide camera feeds", "Hide camera feeds")
+                  : t("Tap to preview camera feeds", "Tap to preview camera feeds")}
+              </p>
             </div>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </button>
+          <button
+            onClick={onNavigate}
+            className="inline-flex min-w-[104px] items-center justify-center gap-1 rounded-lg border border-accent/20 bg-accent px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:scale-105 hover:brightness-110"
+          >
+            {t("View All", "View All")}
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {expanded ? (
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            {cameras.map((camera) => (
+              <div
+                key={camera.id}
+                className="group overflow-hidden rounded-xl border border-gray-100 bg-white shadow-md transition hover:shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+              >
+                <div className="relative flex h-40 w-full items-center justify-center overflow-hidden bg-gradient-to-br from-gray-200 to-gray-300 dark:from-zinc-800 dark:to-zinc-700">
+                  <div className="absolute inset-0 bg-black/5 dark:bg-black/20" />
+                  <Video className="relative z-10 h-16 w-16 text-gray-400 dark:text-gray-500" />
+
+                  {camera.enabled && (
+                    <div className="absolute top-2 right-2 z-20 flex items-center gap-1 rounded-full bg-red-500 px-2 py-1 text-xs font-bold text-white">
+                      <div className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                      {t("Live", "Live")}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4">
+                  <h3 className="mb-1 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                    {t(camera.name, camera.name)}
+                  </h3>
+
+                  {camera.location && (
+                    <p className="mb-2 truncate text-xs text-gray-500 dark:text-gray-400">
+                      📍 {t(camera.location, camera.location)}
+                    </p>
+                  )}
+
+                  <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
+                    {camera.resolution && (
+                      <div className="rounded bg-gray-100 px-2 py-1 dark:bg-zinc-800">
+                        <span className="text-gray-600 dark:text-gray-400">{t("Resolution", "Resolution")}</span>
+                        <div className="font-mono text-gray-900 dark:text-white">
+                          {camera.resolution}
+                        </div>
+                      </div>
+                    )}
+                    {camera.bitrate && (
+                      <div className="rounded bg-gray-100 px-2 py-1 dark:bg-zinc-800">
+                        <span className="text-gray-600 dark:text-gray-400">{t("Bitrate", "Bitrate")}</span>
+                        <div className="font-mono text-gray-900 dark:text-white">
+                          {camera.bitrate}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`h-2 w-2 rounded-full ${
+                        camera.enabled ? "bg-green-500 animate-pulse" : "bg-gray-400"
+                      }`}
+                    />
+                    <span
+                      className={`text-xs font-medium ${
+                        camera.enabled
+                          ? "text-green-600 dark:text-green-400"
+                          : "text-gray-500 dark:text-gray-400"
+                      }`}
+                    >
+                      {camera.enabled ? t("Active", "Active") : t("Inactive", "Inactive")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : null}
       </div>
     </section>
   );

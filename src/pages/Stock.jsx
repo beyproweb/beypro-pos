@@ -34,6 +34,10 @@ export default function Stock() {
   });
   const [selectedSupplier, setSelectedSupplier] = useState("__all__");
   const [stockTypeFilter, setStockTypeFilter] = useState("all"); // all | production
+  const [stockFocus, setStockFocus] = useState(() => {
+    const params = new URLSearchParams(location.search || "");
+    return params.get("focus") === "low-stock" ? "low-stock" : "all";
+  });
   const [productionProductNames, setProductionProductNames] = useState([]);
   const [productionLoading, setProductionLoading] = useState(false);
   const [productionRecipes, setProductionRecipes] = useState([]);
@@ -52,12 +56,24 @@ export default function Stock() {
     const params = new URLSearchParams(location.search || "");
     const next = params.get("tab") === "waste" ? "waste" : "inventory";
     setActiveTab(next);
+    setStockFocus(params.get("focus") === "low-stock" ? "low-stock" : "all");
   }, [location.search]);
 
   const handleTabChange = (tabKey) => {
     setActiveTab(tabKey);
     const params = new URLSearchParams(location.search || "");
     params.set("tab", tabKey);
+    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+  };
+
+  const handleStockFocusChange = (focus) => {
+    setStockFocus(focus);
+    const params = new URLSearchParams(location.search || "");
+    if (focus === "low-stock") {
+      params.set("focus", "low-stock");
+    } else {
+      params.delete("focus");
+    }
     navigate(`${location.pathname}?${params.toString()}`, { replace: true });
   };
   
@@ -673,6 +689,15 @@ const suppliersList = Array.from(
     );
   }
 
+  if (stockFocus === "low-stock") {
+    filtered = filtered.filter(
+      (item) =>
+        item?.critical_quantity !== null &&
+        item?.critical_quantity !== undefined &&
+        Number(item.quantity ?? 0) <= Number(item.critical_quantity ?? 0)
+    );
+  }
+
   const showLoadingPlaceholder = loading && groupedData.length === 0;
 
   return (
@@ -849,6 +874,35 @@ const suppliersList = Array.from(
                           : `${productionProductNames.length.toLocaleString()} ${t("products")}`}
                       </div>
                     )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                      {t("Stock Focus")}
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleStockFocusChange("all")}
+                        className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                          stockFocus === "all"
+                            ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
+                            : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                        }`}
+                      >
+                        {t("All Items")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStockFocusChange("low-stock")}
+                        className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                          stockFocus === "low-stock"
+                            ? "border-rose-600 bg-rose-600 text-white"
+                            : "border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                        }`}
+                      >
+                        {t("Low Stock")}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-col justify-center gap-3 rounded-xl border border-dashed border-slate-300/70 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 shadow-inner dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">

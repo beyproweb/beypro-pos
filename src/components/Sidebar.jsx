@@ -604,12 +604,15 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
       className={`
         fixed top-0 left-0 z-50 h-screen
         transition-all duration-300 ease-in-out
-        bg-gradient-to-br from-blue-800/90 via-blue-700/80 to-blue-900/90
         shadow-2xl border-r border-white/15
         backdrop-blur-2xl
         flex flex-col items-center md:items-stretch py-3 px-0
       `}
-      style={{ width: `${sidebarWidth}px` }}
+      style={{
+        width: `${sidebarWidth}px`,
+        background:
+          "linear-gradient(160deg, rgb(var(--accent-from) / 0.88), rgb(var(--accent-to) / 0.8) 52%, rgb(15 23 42 / 0.96))",
+      }}
     >
 
       {/* Logo */}
@@ -625,7 +628,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
           })}
           className={`
             relative flex flex-col items-center justify-center
-            rounded-lg outline-none focus:ring-2 focus:ring-fuchsia-400
+            rounded-lg outline-none focus:ring-2 focus:ring-accent/60
             transition-transform duration-200
             ${isOpen ? "w-8 h-8 md:w-14 md:h-14" : "w-10 h-10"}
             bg-white/5 hover:bg-white/10 border border-white/20 shadow-lg
@@ -703,8 +706,8 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
           key={item.labelKey}
           onClick={handleLogout}
           className={`group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1
-            text-white hover:bg-white/10 hover:text-fuchsia-300 transition shadow-lg relative
-            ${active ? "bg-white/20 shadow-2xl" : ""}
+            text-white hover:bg-white/10 hover:text-white transition shadow-lg relative
+            ${active ? "bg-white/20 shadow-2xl ring-2 ring-accent/60" : ""}
           `}
         >
           <Icon size={24} />
@@ -715,9 +718,9 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
       <NavLink
         key={item.labelKey}
         to={item.path}
-        className={`group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-white/10 hover:text-fuchsia-300 transition shadow-lg relative ${
+        className={`group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-white/10 hover:text-white transition shadow-lg relative ${
           active
-            ? "bg-gradient-to-r from-fuchsia-400/30 via-indigo-400/20 to-blue-600/40 ring-2 ring-fuchsia-300"
+            ? "bg-accent ring-2 ring-white/60"
             : ""
         } ${isDragOver ? "ring-2 ring-white/70" : ""}`}
         title={label}
@@ -779,7 +782,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
                     } catch {}
                   }}
                   title={t("Language", { defaultValue: "Language" })}
-                  className="h-8 w-[68px] rounded-lg px-2 bg-white/10 text-white text-xs font-bold border border-white/15 focus:ring-2 focus:ring-fuchsia-300/60 outline-none"
+                  className="h-8 w-[68px] rounded-lg px-2 bg-white/10 text-white text-xs font-bold border border-white/15 focus:ring-2 focus:ring-accent/60 outline-none"
                 >
                   {languageOptions.map((opt) => (
                     <option key={opt.code} value={opt.code} className="text-slate-900">
@@ -795,7 +798,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
                     setCurrencyKey?.(e.target.value);
                   }}
                   title={t("Currency", { defaultValue: "Currency" })}
-                  className="ml-auto h-8 w-[118px] rounded-lg px-2 bg-white/10 text-white text-[11px] font-bold border border-white/15 focus:ring-2 focus:ring-fuchsia-300/60 outline-none"
+                  className="ml-auto h-8 w-[118px] rounded-lg px-2 bg-white/10 text-white text-[11px] font-bold border border-white/15 focus:ring-2 focus:ring-accent/60 outline-none"
                 >
                   {CURRENCY_KEYS.map((cur) => (
                     <option key={cur} value={cur} className="text-slate-900">
@@ -809,7 +812,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
             <button
               type="button"
               onClick={() => setIsOpen?.(true)}
-              className="group flex items-center justify-center w-full px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-white/10 hover:text-fuchsia-300 transition shadow-lg relative"
+              className="group flex items-center justify-center w-full px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-white/10 hover:text-white transition shadow-lg relative"
               title={t("Language & Localization", {
                 defaultValue: "Language & Localization",
               })}
@@ -833,7 +836,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
         )}
         <NavLink
           to="/dashboard"
-          className="flex items-center justify-center rounded-lg focus:outline-none focus:ring-2 focus:ring-fuchsia-400"
+          className="flex items-center justify-center rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/60"
           aria-label="Go to dashboard"
           onClick={() => setIsOpen?.(false)}
         >

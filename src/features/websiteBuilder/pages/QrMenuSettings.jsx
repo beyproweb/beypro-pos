@@ -5,6 +5,8 @@ import { Eye, EyeOff, Search, Copy, Download, Printer, Trash2, ChevronDown } fro
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 import { API_ORIGIN } from "../../../utils/api";
+import { useHeader } from "../../../context/HeaderContext";
+import { useNavigate } from "react-router-dom";
 
 const extractIdentifierFromQrUrl = (value) => {
   const raw = String(value || "").trim();
@@ -131,6 +133,8 @@ const makeEmptyConcertForm = () => ({
 
 export default function QrMenuSettings() {
   const { t } = useTranslation();
+  const { setHeader } = useHeader();
+  const navigate = useNavigate();
   const [qrUrl, setQrUrl] = useState("");
   const [products, setProducts] = useState([]);
   const [disabledIds, setDisabledIds] = useState([]);
@@ -1549,68 +1553,63 @@ async function saveAllCustomization() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
+
+  useEffect(() => {
+    const settingsTabsNav = (
+      <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
+        {[
+          { id: "dashboard", label: t("Dashboard") },
+          { id: "qr", label: t("QR Settings") },
+          { id: "app", label: t("App Settings") },
+          { id: "concert", label: t("Concert Tickets") },
+          { id: "controls", label: t("Order Settings") },
+          { id: "generate-qr", label: t("Generate Qr") },
+        ].map((tab) => {
+          const isActive = tab.id === "dashboard" ? false : activeSettingsTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                if (tab.id === "dashboard") {
+                  navigate("/dashboard");
+                  return;
+                }
+                setActiveSettingsTab(tab.id);
+              }}
+              className={[
+                "shrink-0 w-24 sm:w-28 truncate",
+                "inline-flex items-center justify-center gap-2",
+                "rounded-xl border border-slate-300/60 dark:border-slate-700/60 px-3 py-2 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                "shadow-md transition-all duration-150 hover:shadow-lg active:scale-[0.98]",
+                "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
+                isActive
+                  ? "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white"
+                  : "bg-white/80 text-slate-800 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70",
+              ].join(" ")}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+
+    setHeader((prev) => ({
+      ...prev,
+      centerNav: settingsTabsNav,
+      tableNav: null,
+    }));
+
+    return () =>
+      setHeader((prev) => ({
+        ...prev,
+        centerNav: null,
+      }));
+  }, [activeSettingsTab, navigate, setHeader, t]);
+
  return (
   <div className="max-w-5xl mx-auto px-4 py-10">
-    <div className="mb-8 flex justify-center">
-      <div className="inline-flex rounded-2xl border border-blue-100 bg-white/90 p-1.5 shadow-lg dark:border-zinc-800 dark:bg-zinc-950/80">
-        <button
-          type="button"
-          onClick={() => setActiveSettingsTab("qr")}
-          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
-            activeSettingsTab === "qr"
-              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
-              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
-          }`}
-        >
-          {t("QR Settings")}
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveSettingsTab("app")}
-          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
-            activeSettingsTab === "app"
-              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
-              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
-          }`}
-        >
-          {t("App Settings")}
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveSettingsTab("concert")}
-          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
-            activeSettingsTab === "concert"
-              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
-              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
-          }`}
-        >
-          {t("Concert Tickets")}
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveSettingsTab("controls")}
-          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
-            activeSettingsTab === "controls"
-              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
-              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
-          }`}
-        >
-          {t("Order Settings")}
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveSettingsTab("generate-qr")}
-          className={`rounded-xl px-6 py-2.5 text-sm font-bold transition ${
-            activeSettingsTab === "generate-qr"
-              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow"
-              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
-          }`}
-        >
-          {t("Generate Qr")}
-        </button>
-      </div>
-    </div>
-
     {activeSettingsTab === "qr" && (
       <>
     {/* Shop Hours */}
