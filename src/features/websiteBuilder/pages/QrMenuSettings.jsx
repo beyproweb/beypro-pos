@@ -201,6 +201,7 @@ export default function QrMenuSettings() {
   primary_color: "#4F46E5",
   // New customization defaults
   enable_popular: true,
+  qr_download_popup_enabled: true,
   qr_theme: "auto", // auto | light | dark
   loyalty_enabled: false,
   loyalty_goal: 10,
@@ -2751,6 +2752,20 @@ async function saveAllCustomization() {
               />
               <span className="text-sm text-gray-600 dark:text-gray-300">
                 {t("Automatically shows trending products based on orders.")}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-zinc-800 p-4 rounded-2xl border">
+            <label className="font-semibold block mb-2">{t("QR Download Popup")}</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={settings.qr_download_popup_enabled !== false}
+                onChange={(e) => updateField("qr_download_popup_enabled", e.target.checked)}
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-300">
+                {t("Show a popup before downloading the QR code.")}
               </span>
             </div>
           </div>

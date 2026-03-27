@@ -8126,8 +8126,12 @@ export default function QrMenu() {
   }, []);
 
   const openDownloadQrModal = useCallback(() => {
+    if (c?.qr_download_popup_enabled === false) {
+      handleDownloadQrImage();
+      return;
+    }
     setDownloadQrModalOpen(true);
-  }, []);
+  }, [c?.qr_download_popup_enabled, handleDownloadQrImage]);
 
   const handleShareFromModal = useCallback(() => {
     shareCurrentMenu();
