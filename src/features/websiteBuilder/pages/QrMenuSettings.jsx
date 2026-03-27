@@ -22,6 +22,8 @@ const extractIdentifierFromQrUrl = (value) => {
   }
 };
 
+const QR_MENU_BRANDING_UPDATED_EVENT = "qr:branding-cache-updated";
+
 const writeQrMenuBrandingCache = (identifier, customization) => {
   if (typeof window === "undefined") return;
   const normalizedIdentifier = String(identifier || "").trim();
@@ -34,6 +36,19 @@ const writeQrMenuBrandingCache = (identifier, customization) => {
     );
   } catch {
     // Ignore storage quota/privacy errors.
+  }
+
+  try {
+    window.dispatchEvent(
+      new CustomEvent(QR_MENU_BRANDING_UPDATED_EVENT, {
+        detail: {
+          identifier: normalizedIdentifier,
+          customization,
+        },
+      })
+    );
+  } catch {
+    // Ignore custom event failures and keep the saved cache value.
   }
 };
 

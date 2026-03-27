@@ -306,6 +306,7 @@ function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
 }
 
 const QR_MENU_BRANDING_CACHE_PREFIX = "qr-menu-branding-cache:";
+const QR_MENU_BRANDING_UPDATED_EVENT = "qr:branding-cache-updated";
 
 function getQrMenuBrandingCacheKey(identifier) {
   const value = String(identifier || "").trim();
@@ -329,13 +330,27 @@ function readCachedQrMenuBranding(identifier) {
 
 function writeCachedQrMenuBranding(identifier, customization) {
   if (typeof window === "undefined") return;
-  const key = getQrMenuBrandingCacheKey(identifier);
+  const normalizedIdentifier = String(identifier || "").trim();
+  const key = getQrMenuBrandingCacheKey(normalizedIdentifier);
   if (!key || !customization || typeof customization !== "object") return;
 
   try {
     window.localStorage.setItem(key, JSON.stringify(customization));
   } catch {
     // Ignore storage quota/privacy errors and continue with in-memory state.
+  }
+
+  try {
+    window.dispatchEvent(
+      new CustomEvent(QR_MENU_BRANDING_UPDATED_EVENT, {
+        detail: {
+          identifier: normalizedIdentifier,
+          customization,
+        },
+      })
+    );
+  } catch {
+    // Ignore custom event failures and continue with in-memory state.
   }
 }
 
@@ -2932,8 +2947,14 @@ function OrderTypeSelect({
       return;
     }
 
+    const applyCustomization = (nextCustomization) => {
+      const customization =
+        nextCustomization && typeof nextCustomization === "object" ? nextCustomization : {};
+      setCustom(customization);
+    };
+
     const cachedCustomization = readCachedQrMenuBranding(identifier);
-    setCustom(cachedCustomization);
+    applyCustomization(cachedCustomization);
 
 async function load() {
   try {
@@ -2948,17 +2969,39 @@ async function load() {
 	    const data = raw ? JSON.parse(raw) : {};
       const customization = data.customization || {};
       writeCachedQrMenuBranding(identifier, customization);
-	    setCustom(customization);
+	    applyCustomization(customization);
 	  } catch (err) {
 	    console.error("❌ Failed to load QR customization:", err);
       if (!cachedCustomization) {
-	      setCustom({}); // allow component to render with defaults
+	      applyCustomization({}); // allow component to render with defaults
       }
 	  }
 	}
 
 
     load();
+
+    if (typeof window === "undefined") return undefined;
+    const cacheKey = getQrMenuBrandingCacheKey(identifier);
+
+    const handleStorage = (event) => {
+      if (event.key !== cacheKey) return;
+      applyCustomization(readCachedQrMenuBranding(identifier));
+    };
+
+    const handleBrandingUpdate = (event) => {
+      const eventIdentifier = String(event?.detail?.identifier || "").trim();
+      if (eventIdentifier !== String(identifier || "").trim()) return;
+      applyCustomization(event?.detail?.customization || readCachedQrMenuBranding(identifier));
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(QR_MENU_BRANDING_UPDATED_EVENT, handleBrandingUpdate);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(QR_MENU_BRANDING_UPDATED_EVENT, handleBrandingUpdate);
+    };
   }, [identifier]);
 
   // Keep hooks order stable; render with placeholders until loaded
@@ -4432,7 +4475,7 @@ async function load() {
       />
 		
 	    {/* === HERO SECTION === */}
-		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-8 pb-4 space-y-10">
+		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-[30px] pb-4 space-y-10">
 
 	      <div className="max-w-4xl mx-auto">
               {/* CONCERT TICKETS */}

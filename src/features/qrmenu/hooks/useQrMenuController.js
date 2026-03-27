@@ -10,6 +10,7 @@ import useQrMenuStorage from "./useQrMenuStorage";
 import { hasConcertBookingContext } from "../../../utils/reservationStatus";
 
 const QR_MENU_BRANDING_CACHE_PREFIX = "qr-menu-branding-cache:";
+const QR_MENU_BRANDING_UPDATED_EVENT = "qr:branding-cache-updated";
 const DEFAULT_QR_MENU_BRANDING = {
   delivery_enabled: true,
   reservation_pickup_enabled: true,
@@ -56,13 +57,27 @@ function readCachedQrMenuBranding(identifier) {
 
 function writeCachedQrMenuBranding(identifier, customization) {
   if (typeof window === "undefined") return;
-  const key = getQrMenuBrandingCacheKey(identifier);
+  const normalizedIdentifier = String(identifier || "").trim();
+  const key = getQrMenuBrandingCacheKey(normalizedIdentifier);
   if (!key || !customization || typeof customization !== "object") return;
 
   try {
     window.localStorage.setItem(key, JSON.stringify(customization));
   } catch {
     // Ignore storage quota/privacy errors and keep runtime state only.
+  }
+
+  try {
+    window.dispatchEvent(
+      new CustomEvent(QR_MENU_BRANDING_UPDATED_EVENT, {
+        detail: {
+          identifier: normalizedIdentifier,
+          customization,
+        },
+      })
+    );
+  } catch {
+    // Ignore custom event failures and keep runtime state only.
   }
 }
 
@@ -682,38 +697,65 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
       return;
     }
 
-    const cachedCustomization = readCachedQrMenuBranding(restaurantIdentifier);
-    setBrandName(
-      cachedCustomization?.app_display_name ||
-        cachedCustomization?.title ||
-        cachedCustomization?.main_title ||
-        ""
-    );
-    setOrderSelectCustomization({
-      ...DEFAULT_QR_MENU_BRANDING,
-      ...(cachedCustomization || {}),
-    });
+    const applyCustomization = (nextCustomization) => {
+      const customization =
+        nextCustomization && typeof nextCustomization === "object" ? nextCustomization : {};
 
-    try {
-      const mode = String(cachedCustomization?.qr_theme || "auto").toLowerCase();
-      storage.setItem("qr_theme", mode);
-    } catch {}
+      setBrandName(
+        customization?.app_display_name ||
+          customization?.title ||
+          customization?.main_title ||
+          ""
+      );
+      setOrderSelectCustomization((prev) => ({
+        ...DEFAULT_QR_MENU_BRANDING,
+        ...prev,
+        ...customization,
+      }));
+
+      try {
+        const mode = String(customization?.qr_theme || "auto").toLowerCase();
+        storage.setItem("qr_theme", mode);
+      } catch {}
+    };
+
+    const cachedCustomization = readCachedQrMenuBranding(restaurantIdentifier);
+    applyCustomization(cachedCustomization);
 
     (async () => {
       try {
         const res = await secureFetch(`/public/qr-menu-customization/${encodeURIComponent(restaurantIdentifier)}`);
         const c = res?.customization || {};
         writeCachedQrMenuBranding(restaurantIdentifier, c);
-        setBrandName(c.app_display_name || c.title || c.main_title || "");
-        setOrderSelectCustomization((prev) => ({ ...prev, ...c }));
-        try {
-          const mode = String(c.qr_theme || "auto").toLowerCase();
-          storage.setItem("qr_theme", mode);
-        } catch {}
+        applyCustomization(c);
       } catch (err) {
         // Ignore network failures and keep the cached brand if we have one.
       }
     })();
+
+    if (typeof window === "undefined") return undefined;
+    const cacheKey = getQrMenuBrandingCacheKey(restaurantIdentifier);
+
+    const handleStorage = (event) => {
+      if (event.key !== cacheKey) return;
+      applyCustomization(readCachedQrMenuBranding(restaurantIdentifier));
+    };
+
+    const handleBrandingUpdate = (event) => {
+      const eventIdentifier = String(event?.detail?.identifier || "").trim();
+      if (eventIdentifier !== String(restaurantIdentifier || "").trim()) return;
+      applyCustomization(
+        event?.detail?.customization || readCachedQrMenuBranding(restaurantIdentifier)
+      );
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(QR_MENU_BRANDING_UPDATED_EVENT, handleBrandingUpdate);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(QR_MENU_BRANDING_UPDATED_EVENT, handleBrandingUpdate);
+    };
   }, [restaurantIdentifier, storage]);
 
   // Apply QR theme to the transaction/menu (mobile-first) area.

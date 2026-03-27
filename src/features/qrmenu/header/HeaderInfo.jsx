@@ -9,7 +9,7 @@ function HeaderInfo({
   const logoSrc = String(mainTitleLogo || "").trim();
 
   return (
-    <div className="max-w-4xl mx-auto px-4 pt-8">
+    <div className="max-w-4xl mx-auto px-4 pt-[30px]">
       <div className="text-center">
         {logoSrc ? (
           <>
