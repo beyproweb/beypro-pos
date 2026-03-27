@@ -108,7 +108,7 @@ function HeaderTabs({
               <img
                 src={compactLogoSrc}
                 alt={restaurantName || t("Restaurant")}
-                className="block h-auto max-h-[22px] sm:max-h-[24px] w-auto max-w-[170px] sm:max-w-[220px] object-contain"
+                className="block h-auto max-h-[28px] sm:max-h-[30px] w-auto max-w-[212px] sm:max-w-[275px] object-contain"
                 loading="lazy"
               />
             ) : (
