@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import secureFetch from "../../../utils/secureFetch";
 import { Eye, EyeOff, Search, Copy, Download, Printer, Trash2, ChevronDown } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 import { API_ORIGIN } from "../../../utils/api";
-import { useHeader } from "../../../context/HeaderContext";
+import { useHasPermission } from "../../../components/hooks/useHasPermission";
 import { useNavigate } from "react-router-dom";
 
 const extractIdentifierFromQrUrl = (value) => {
@@ -133,8 +133,12 @@ const makeEmptyConcertForm = () => ({
 
 export default function QrMenuSettings() {
   const { t } = useTranslation();
-  const { setHeader } = useHeader();
   const navigate = useNavigate();
+  const canAccessQrSettingsTab = useHasPermission(["qr-menu-settings", "qr-menu-settings-qr"]);
+  const canAccessAppSettingsTab = useHasPermission(["qr-menu-settings", "qr-menu-settings-app"]);
+  const canAccessConcertTicketsTab = useHasPermission(["qr-menu-settings", "qr-menu-settings-concert"]);
+  const canAccessOrderSettingsTab = useHasPermission(["qr-menu-settings", "qr-menu-settings-controls"]);
+  const canAccessGenerateQrTab = useHasPermission(["qr-menu-settings", "qr-menu-settings-generate-qr"]);
   const [qrUrl, setQrUrl] = useState("");
   const [products, setProducts] = useState([]);
   const [disabledIds, setDisabledIds] = useState([]);
@@ -250,6 +254,32 @@ export default function QrMenuSettings() {
   const [concertBookingsByEvent, setConcertBookingsByEvent] = useState({});
   const [loadingConcertBookingsEventId, setLoadingConcertBookingsEventId] = useState(null);
   const [updatingConcertBookingId, setUpdatingConcertBookingId] = useState(null);
+
+  const settingsTabs = useMemo(
+    () =>
+      [
+        { id: "qr", label: t("QR Settings"), allowed: canAccessQrSettingsTab },
+        { id: "app", label: t("App Settings"), allowed: canAccessAppSettingsTab },
+        { id: "concert", label: t("Concert Tickets"), allowed: canAccessConcertTicketsTab },
+        { id: "controls", label: t("Order Settings"), allowed: canAccessOrderSettingsTab },
+        { id: "generate-qr", label: t("Generate Qr"), allowed: canAccessGenerateQrTab },
+      ].filter((tab) => tab.allowed),
+    [
+      canAccessAppSettingsTab,
+      canAccessConcertTicketsTab,
+      canAccessGenerateQrTab,
+      canAccessOrderSettingsTab,
+      canAccessQrSettingsTab,
+      t,
+    ]
+  );
+
+  useEffect(() => {
+    if (settingsTabs.length === 0) return;
+    if (!settingsTabs.some((tab) => tab.id === activeSettingsTab)) {
+      setActiveSettingsTab(settingsTabs[0].id);
+    }
+  }, [activeSettingsTab, settingsTabs]);
 
   const uploadsBaseUrl = API_ORIGIN || "";
 
@@ -1554,62 +1584,34 @@ async function saveAllCustomization() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  useEffect(() => {
-    const settingsTabsNav = (
-      <div className="flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 border border-slate-200/60 dark:border-slate-700/60 p-1 backdrop-blur">
-        {[
-          { id: "dashboard", label: t("Dashboard") },
-          { id: "qr", label: t("QR Settings") },
-          { id: "app", label: t("App Settings") },
-          { id: "concert", label: t("Concert Tickets") },
-          { id: "controls", label: t("Order Settings") },
-          { id: "generate-qr", label: t("Generate Qr") },
-        ].map((tab) => {
-          const isActive = tab.id === "dashboard" ? false : activeSettingsTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                if (tab.id === "dashboard") {
-                  navigate("/dashboard");
-                  return;
-                }
-                setActiveSettingsTab(tab.id);
-              }}
-              className={[
-                "shrink-0 w-24 sm:w-28 truncate",
-                "inline-flex items-center justify-center gap-2",
-                "rounded-xl border border-slate-300/60 dark:border-slate-700/60 px-3 py-2 text-[12px] md:text-[13px] lg:text-sm font-semibold",
-                "shadow-md transition-all duration-150 hover:shadow-lg active:scale-[0.98]",
-                "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
-                isActive
-                  ? "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white"
-                  : "bg-white/80 text-slate-800 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70",
-              ].join(" ")}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-    );
-
-    setHeader((prev) => ({
-      ...prev,
-      centerNav: settingsTabsNav,
-      tableNav: null,
-    }));
-
-    return () =>
-      setHeader((prev) => ({
-        ...prev,
-        centerNav: null,
-      }));
-  }, [activeSettingsTab, navigate, setHeader, t]);
-
- return (
+  return (
   <div className="max-w-5xl mx-auto px-4 py-10">
+    <div className="mb-6 flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap rounded-2xl border border-slate-200/60 bg-slate-50/70 p-1 backdrop-blur dark:border-slate-700/60 dark:bg-zinc-800/30">
+      {settingsTabs.map((tab) => {
+        const isActive = activeSettingsTab === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => {
+              setActiveSettingsTab(tab.id);
+            }}
+            className={[
+              "shrink-0 w-24 sm:w-28 truncate",
+              "inline-flex items-center justify-center gap-2",
+              "rounded-xl border border-slate-300/60 dark:border-slate-700/60 px-3 py-2 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+              "shadow-md transition-all duration-150 hover:shadow-lg active:scale-[0.98]",
+              "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
+              isActive
+                ? "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white"
+                : "bg-white/80 text-slate-800 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70",
+            ].join(" ")}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
     {activeSettingsTab === "qr" && (
       <>
     {/* Shop Hours */}

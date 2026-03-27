@@ -942,7 +942,7 @@ const fetchSummaryStats = useCallback(async () => {
     const sectionDefs = [
       {
         key: "operations",
-        title: "Operations",
+        title: t("Operations"),
         icon: "ClipboardList",
         activeClass:
           "border-sky-500 bg-gradient-to-br from-sky-500 via-sky-500 to-cyan-500 text-white shadow-lg shadow-sky-500/30 ring-1 ring-sky-200/70 dark:border-sky-400 dark:text-white dark:ring-sky-300/20",
@@ -954,7 +954,7 @@ const fetchSummaryStats = useCallback(async () => {
       },
       {
         key: "team",
-        title: "Team",
+        title: t("Team"),
         icon: "Users",
         activeClass:
           "border-violet-500 bg-gradient-to-br from-violet-500 via-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/30 ring-1 ring-violet-200/70 dark:border-violet-400 dark:text-white dark:ring-violet-300/20",
@@ -966,7 +966,7 @@ const fetchSummaryStats = useCallback(async () => {
       },
       {
         key: "inventory",
-        title: "Inventory",
+        title: t("Inventory"),
         icon: "Package",
         activeClass:
           "border-emerald-500 bg-gradient-to-br from-emerald-500 via-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-200/70 dark:border-emerald-400 dark:text-white dark:ring-emerald-300/20",
@@ -978,7 +978,7 @@ const fetchSummaryStats = useCallback(async () => {
       },
       {
         key: "finance",
-        title: "Finance",
+        title: t("Finance"),
         icon: "CreditCard",
         activeClass:
           "border-amber-500 bg-gradient-to-br from-amber-500 via-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 ring-1 ring-amber-200/70 dark:border-amber-400 dark:text-white dark:ring-amber-300/20",
@@ -990,7 +990,7 @@ const fetchSummaryStats = useCallback(async () => {
       },
       {
         key: "growth",
-        title: "Growth",
+        title: t("Growth"),
         icon: "TrendingUp",
         activeClass:
           "border-pink-500 bg-gradient-to-br from-pink-500 via-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30 ring-1 ring-pink-200/70 dark:border-pink-400 dark:text-white dark:ring-pink-300/20",
@@ -1002,7 +1002,7 @@ const fetchSummaryStats = useCallback(async () => {
       },
       {
         key: "system",
-        title: "System",
+        title: t("System"),
         icon: "Settings",
         activeClass:
           "border-slate-700 bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 text-white shadow-lg shadow-slate-500/30 ring-1 ring-slate-300/70 dark:border-slate-500 dark:text-white dark:ring-slate-400/20",
@@ -1027,14 +1027,14 @@ const fetchSummaryStats = useCallback(async () => {
       if (remainingItems.length > 0) {
       baseSections.push({
         key: "more",
-        title: "More",
+        title: t("More"),
         icon: "Star",
         items: remainingItems,
       });
     }
 
     return baseSections;
-  }, [allowedAccess]);
+  }, [allowedAccess, t]);
 
   useEffect(() => {
     if (groupedAccessSections.length === 0) return;

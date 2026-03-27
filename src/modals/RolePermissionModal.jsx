@@ -67,6 +67,11 @@ const PERMISSION_LABELS = {
   // === SETTINGS SUB-SECTIONS ===
   settings: "⚙️ Settings",
   "qr-menu-settings": "🔗 QR Menu Settings",
+  "qr-menu-settings-qr": "🔗 QR Settings Tab",
+  "qr-menu-settings-app": "📱 App Settings Tab",
+  "qr-menu-settings-concert": "🎟 Concert Tickets Tab",
+  "qr-menu-settings-controls": "🧾 Order Settings Tab",
+  "qr-menu-settings-generate-qr": "🧩 Generate Qr Tab",
   "settings-appearance": "🎨 Appearance",
   "settings-localization": "🌍 Localization",
   "settings-notifications": "🔔 Notifications",
