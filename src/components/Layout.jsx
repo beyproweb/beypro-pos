@@ -496,18 +496,18 @@ export default function Layout({
   ">
     {/* Header */}
     <div className="flex items-center justify-between p-4 border-b border-blue-900/30 bg-blue-950/60">
-      <div className="flex flex-col">
+        <div className="flex flex-col">
         <h2 className="text-xl font-extrabold text-blue-200 flex items-center gap-2">
-          Notifications
+          {t("Notifications")}
         </h2>
         <div className="text-xs text-blue-300/80 font-semibold">
-          {unread > 0 ? `${unread} unread` : "All caught up"}
+          {unread > 0 ? t("{{count}} unread", { count: unread }) : t("All caught up")}
         </div>
       </div>
    <button
   onClick={onCloseModal}
   className="p-2 rounded-full hover:bg-blue-900/30 focus:ring-2 focus:ring-blue-400 outline-none transition"
-  title="Close"
+  title={t("Close")}
 >
   <X className="w-5 h-5 text-white" />
 </button>
@@ -523,27 +523,27 @@ export default function Layout({
         onChange={e => setFilter(e.target.value)}
         className="rounded px-3 py-1.5 bg-blue-900/30 text-blue-100 border border-blue-800 focus:ring-2 focus:ring-blue-500 outline-none font-semibold shadow"
       >
-        <option value="all">All</option>
-        <option value="stock">Stock</option>
-        <option value="ingredient">Ingredient</option>
-        <option value="order">Order</option>
-        <option value="payment">Payment</option>
-        <option value="driver">Driver</option>
-        <option value="task">Task</option>
-        <option value="maintenance">Maintenance</option>
-        <option value="register">Register</option>
-        <option value="other">Other</option>
+        <option value="all">{t("All")}</option>
+        <option value="stock">{t("Stock")}</option>
+        <option value="ingredient">{t("Ingredient")}</option>
+        <option value="order">{t("Order")}</option>
+        <option value="payment">{t("Payment")}</option>
+        <option value="driver">{t("Driver")}</option>
+        <option value="task">{t("Task")}</option>
+        <option value="maintenance">{t("Maintenance")}</option>
+        <option value="register">{t("Register")}</option>
+        <option value="other">{t("Other")}</option>
       </select>
 
       <button
         type="button"
         onClick={() => setSortNewestFirst((value) => !value)}
         className="inline-flex items-center gap-1 rounded px-2 py-1.5 bg-blue-900/40 hover:bg-blue-800/50 text-blue-100 font-bold shadow transition-all border border-blue-800"
-        title={sortNewestFirst ? "Sort: newest first" : "Sort: oldest first"}
-        aria-label="Toggle notification sort order"
+        title={sortNewestFirst ? t("Sort: newest first") : t("Sort: oldest first")}
+        aria-label={t("Toggle notification sort order")}
       >
         <ArrowUpDown className="h-4 w-4" />
-        <span className="text-xs">{sortNewestFirst ? "Latest" : "Oldest"}</span>
+        <span className="text-xs">{sortNewestFirst ? t("Latest") : t("Oldest")}</span>
       </button>
 
       <label className="ml-auto flex items-center gap-2 text-xs text-blue-200 font-bold select-none">
@@ -553,14 +553,14 @@ export default function Layout({
           onChange={(e) => setUnreadOnly(e.target.checked)}
           className="accent-blue-500"
         />
-        Unread
+        {t("Unread")}
       </label>
       </div>
 
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search notifications..."
+        placeholder={t("Search notifications...")}
         className="w-full rounded px-3 py-2 bg-blue-900/25 text-blue-100 border border-blue-800 focus:ring-2 focus:ring-blue-500 outline-none font-semibold shadow"
       />
 
@@ -570,21 +570,21 @@ export default function Layout({
           onClick={onRefreshNotifications}
           type="button"
         >
-          Refresh
+          {t("Refresh")}
         </button>
         <button
           className="px-3 py-1.5 rounded bg-blue-900/40 hover:bg-blue-800/50 text-blue-100 font-bold shadow transition-all border border-blue-800"
           onClick={onMarkAllRead}
           type="button"
         >
-          Mark read
+          {t("Mark read")}
         </button>
         <button
           className="ml-auto px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold shadow transition-all"
           onClick={onClearNotifications}
           type="button"
         >
-          Clear all
+          {t("Clear all")}
         </button>
       </div>
     </div>
@@ -596,9 +596,9 @@ export default function Layout({
           type="button"
           onClick={() => { onCloseModal?.(); navigate("/stock"); }}
           className="px-3 py-1.5 rounded-full bg-red-500/15 text-red-200 border border-red-400/30 hover:bg-red-500/25 transition"
-          title="Open Stock"
+          title={t("Open Stock")}
         >
-          Critical stock: {notificationSummaries.criticalStock}
+          {t("Critical stock")}: {notificationSummaries.criticalStock}
         </button>
       )}
       {Number.isFinite(notificationSummaries?.openMaintenance) && notificationSummaries.openMaintenance > 0 && (
@@ -606,9 +606,9 @@ export default function Layout({
           type="button"
           onClick={() => { onCloseModal?.(); navigate("/maintenance"); }}
           className="px-3 py-1.5 rounded-full bg-amber-500/15 text-amber-200 border border-amber-400/30 hover:bg-amber-500/25 transition"
-          title="Open Maintenance"
+          title={t("Open Maintenance")}
         >
-          Open maintenance: {notificationSummaries.openMaintenance}
+          {t("Open maintenance")}: {notificationSummaries.openMaintenance}
         </button>
       )}
       {Number.isFinite(notificationSummaries?.inProgressTasks) && notificationSummaries.inProgressTasks > 0 && (
@@ -616,9 +616,9 @@ export default function Layout({
           type="button"
           onClick={() => { onCloseModal?.(); navigate("/task"); }}
           className="px-3 py-1.5 rounded-full bg-sky-500/15 text-sky-200 border border-sky-400/30 hover:bg-sky-500/25 transition"
-          title="Open Tasks"
+          title={t("Open Tasks")}
         >
-          In-progress tasks: {notificationSummaries.inProgressTasks}
+          {t("In-progress tasks")}: {notificationSummaries.inProgressTasks}
         </button>
       )}
     </div>
@@ -680,13 +680,13 @@ export default function Layout({
             isUnread ? "border-blue-300/60" : "border-blue-800",
             clickable ? "cursor-pointer hover:bg-blue-900/65 transition" : "",
           ].join(" ")}
-          title={clickable ? "Open related page" : undefined}
+          title={clickable ? t("Open related page") : undefined}
         >
           <span className="flex-1">
             <span className="block leading-snug">{message}</span>
             <span className="block text-xs text-blue-300/80 font-bold mt-0.5">
               {type.replace(/_/g, " ")}
-              {isUnread ? " • new" : ""}
+              {isUnread ? ` • ${t("new")}` : ""}
             </span>
           </span>
           <span className="ml-auto text-xs text-blue-300 font-bold">{timeLabel}</span>

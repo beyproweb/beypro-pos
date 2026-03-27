@@ -3,8 +3,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export default function NotificationBell({ unread = 0, onClick }) {
+  const { t } = useTranslation();
   const [animate, setAnimate] = useState(false);
   const prevUnread = useRef(unread);
 
@@ -25,7 +27,7 @@ export default function NotificationBell({ unread = 0, onClick }) {
         "dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300"
       )}
       onClick={onClick}
-      aria-label="Show Notifications"
+      aria-label={t("Show Notifications")}
       type="button"
     >
       <span className={clsx("relative", animate && "animate-bounce-slow")}>
