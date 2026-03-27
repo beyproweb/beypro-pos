@@ -4273,6 +4273,13 @@ async function load() {
   const [currentStorySlide, setCurrentStorySlide] = React.useState(0);
 
   React.useEffect(() => {
+    setCurrentSlide((prev) => {
+      if (slides.length === 0) return 0;
+      return prev >= slides.length ? 0 : prev;
+    });
+  }, [slides.length]);
+
+  React.useEffect(() => {
     if (slides.length > 1) {
       const timer = setInterval(
         () => setCurrentSlide((s) => (s + 1) % slides.length),
@@ -4368,7 +4375,10 @@ async function load() {
     <div
       className="absolute inset-x-0 top-0 h-[420px] sm:h-[480px] -z-10 transition-all duration-700"
       style={{
-        backgroundImage: `url(${slides[currentSlide].src})`,
+        backgroundImage:
+          slides.length > 0 && slides[currentSlide]?.src
+            ? `url(${slides[currentSlide].src})`
+            : "none",
         backgroundSize: "cover",
         backgroundPosition: "center",
         transform: `translateY(${scrollY * 0.15}px)`,
