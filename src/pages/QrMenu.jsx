@@ -3056,7 +3056,13 @@ async function load() {
   const storyText = c.story_text || "";
   const storyVideoTitle = String(c.story_video_title || "").trim();
   const storyVideoSource = String(c.story_video_source || "").trim().toLowerCase();
-  const storyVideoYoutubeEmbed = resolveYouTubeEmbedUrl(c.story_video_youtube_url);
+  const storyVideoYoutubeEmbeds = React.useMemo(() => {
+    const ordered = Array.isArray(c.story_video_youtube_urls) ? c.story_video_youtube_urls : [];
+    const legacy = String(c.story_video_youtube_url || "").trim();
+    const urls = ordered.length > 0 ? ordered : legacy ? [legacy] : [];
+    return urls.map((item) => resolveYouTubeEmbedUrl(item)).filter(Boolean);
+  }, [c.story_video_youtube_url, c.story_video_youtube_urls]);
+  const storyVideoYoutubeEmbed = storyVideoYoutubeEmbeds[0] || "";
   const storyVideoUpload = resolveUploadedAsset(c.story_video_upload);
   const [isMobileStoryVideoViewport, setIsMobileStoryVideoViewport] = React.useState(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
@@ -3099,7 +3105,27 @@ async function load() {
       return storyVideoYoutubeEmbed;
     }
   }, [isMobileStoryVideoViewport, storyVideoYoutubeEmbed]);
-  const showStoryVideoSection = Boolean(activeStoryVideo);
+  const storyVideoYoutubePlayerUrls = React.useMemo(() => {
+    return storyVideoYoutubeEmbeds.map((embedUrl) => {
+      try {
+        const url = new URL(embedUrl);
+        url.searchParams.set("playsinline", "1");
+        url.searchParams.set("rel", "0");
+        url.searchParams.set("controls", "1");
+        if (isMobileStoryVideoViewport) {
+          url.searchParams.delete("autoplay");
+          url.searchParams.delete("mute");
+        } else {
+          url.searchParams.set("autoplay", "1");
+          url.searchParams.set("mute", "1");
+        }
+        return url.toString();
+      } catch {
+        return embedUrl;
+      }
+    });
+  }, [isMobileStoryVideoViewport, storyVideoYoutubeEmbeds]);
+  const showStoryVideoSection = Boolean(activeStoryVideo) || storyVideoYoutubeEmbeds.length > 0;
   const storyImages = React.useMemo(() => {
     const orderedImages = Array.isArray(c.story_images) ? c.story_images : [];
     const legacyImage = c.story_image ? [c.story_image] : [];
@@ -4063,13 +4089,7 @@ async function load() {
           subtitle: s.subtitle,
           src: s.image,
         }))
-      : [
-          {
-            title: "Gourmet Smash Burgers",
-            subtitle: "Crispy edges, soft brioche, secret sauce.",
-            src: "https://images.unsplash.com/photo-1606755962773-d324e0deedb1",
-          },
-        ];
+      : [];
 
 
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -4550,18 +4570,29 @@ async function load() {
                       {storyVideoTitle}
                     </h2>
                   ) : null}
-                  <div className="max-w-4xl mx-auto overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-                    <div className="aspect-video w-full bg-black">
-                      {activeStoryVideo === storyVideoYoutubeEmbed ? (
-                        <iframe
-                          src={storyVideoYoutubePlayerUrl || storyVideoYoutubeEmbed}
-                          title={t("Story Video")}
-                          className="h-full w-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          allowFullScreen
-                        />
-                      ) : (
+                  {storyVideoYoutubePlayerUrls.length > 0 ? (
+                    <div className="mx-auto max-w-4xl space-y-4">
+                      {storyVideoYoutubePlayerUrls.map((videoUrl, index) => (
+                        <div
+                          key={`story-video-${index}`}
+                          className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+                        >
+                          <div className="aspect-video w-full bg-black">
+                            <iframe
+                              src={videoUrl}
+                              title={`${t("Story Video")} ${index + 1}`}
+                              className="h-full w-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              referrerPolicy="strict-origin-when-cross-origin"
+                              allowFullScreen
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="max-w-4xl mx-auto overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+                      <div className="aspect-video w-full bg-black">
                         <video
                           src={activeStoryVideo}
                           autoPlay
@@ -4572,9 +4603,9 @@ async function load() {
                           preload="metadata"
                           className="h-full w-full object-cover"
                         />
-                      )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : null}
 

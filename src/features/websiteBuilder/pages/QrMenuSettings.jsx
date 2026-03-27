@@ -215,6 +215,7 @@ export default function QrMenuSettings() {
   story_video_title: "",
   story_video_source: "none",
   story_video_youtube_url: "",
+  story_video_youtube_urls: [""],
   story_video_upload: "",
   reviews: [],
   social_instagram: "",
@@ -302,6 +303,19 @@ export default function QrMenuSettings() {
     return legacy ? [legacy] : [];
   };
 
+  const normalizeStoryVideoUrls = (source) => {
+    const ordered = Array.isArray(source?.story_video_youtube_urls)
+      ? source.story_video_youtube_urls
+      : [];
+    const next = ordered.map((item) => String(item || "").trim());
+    if (next.some(Boolean)) {
+      return next.length > 0 ? next : [""];
+    }
+
+    const legacy = String(source?.story_video_youtube_url || "").trim();
+    return legacy ? [legacy] : [""];
+  };
+
   const updateStoryImages = (nextImages) => {
     const normalized = nextImages
       .map((item) => String(item || "").trim())
@@ -316,6 +330,37 @@ export default function QrMenuSettings() {
 
 function updateField(key, value) {
   setSettings((prev) => ({ ...prev, [key]: value }));
+}
+
+function updateStoryVideoUrl(index, value) {
+  setSettings((prev) => {
+    const nextUrls = normalizeStoryVideoUrls(prev);
+    nextUrls[index] = value;
+    return {
+      ...prev,
+      story_video_youtube_urls: nextUrls,
+      story_video_youtube_url: String(nextUrls[0] || "").trim(),
+    };
+  });
+}
+
+function addStoryVideoUrl() {
+  setSettings((prev) => ({
+    ...prev,
+    story_video_youtube_urls: [...normalizeStoryVideoUrls(prev), ""],
+  }));
+}
+
+function removeStoryVideoUrl(index) {
+  setSettings((prev) => {
+    const nextUrls = normalizeStoryVideoUrls(prev).filter((_, urlIndex) => urlIndex !== index);
+    const normalized = nextUrls.length > 0 ? nextUrls : [""];
+    return {
+      ...prev,
+      story_video_youtube_urls: normalized,
+      story_video_youtube_url: String(normalized[0] || "").trim(),
+    };
+  });
 }
 
 async function uploadBrandingAsset(field, file) {
@@ -561,6 +606,9 @@ function addReview() {
 async function saveAllCustomization() {
   try {
     const storyImages = normalizeStoryImages(settings);
+    const storyVideoYoutubeUrls = normalizeStoryVideoUrls(settings)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
     await secureFetch("/settings/qr-menu-customization", {
       method: "POST",
       body: JSON.stringify({
@@ -568,6 +616,8 @@ async function saveAllCustomization() {
         story_enabled: settings.story_enabled !== false,
         story_images: storyImages,
         story_image: storyImages[0] || "",
+        story_video_youtube_urls: storyVideoYoutubeUrls,
+        story_video_youtube_url: storyVideoYoutubeUrls[0] || "",
       }),
     });
     toast.success(t("Saved!"));
@@ -594,12 +644,15 @@ async function saveAllCustomization() {
       const customRes = await secureFetch("/settings/qr-menu-customization");
       if (customRes?.success && customRes.customization) {
         const storyImages = normalizeStoryImages(customRes.customization);
+        const storyVideoYoutubeUrls = normalizeStoryVideoUrls(customRes.customization);
         setSettings((prev) => ({
           ...prev,
           ...customRes.customization,
           story_enabled: customRes.customization.story_enabled !== false,
           story_images: storyImages,
           story_image: storyImages[0] || "",
+          story_video_youtube_urls: storyVideoYoutubeUrls,
+          story_video_youtube_url: String(storyVideoYoutubeUrls[0] || "").trim(),
         }));
       }
 
@@ -3388,17 +3441,41 @@ async function saveAllCustomization() {
             </div>
 
             {String(settings.story_video_source || "").toLowerCase() === "youtube" ? (
-              <div>
-                <label className="font-semibold">{t("YouTube Video Link")}</label>
-                <input
-                  type="url"
-                  value={settings.story_video_youtube_url || ""}
-                  onChange={(e) => updateField("story_video_youtube_url", e.target.value)}
-                  placeholder={t("YouTube Video Link")}
-                  className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
-                />
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="font-semibold">{t("YouTube Video Links")}</label>
+                  <button
+                    type="button"
+                    onClick={addStoryVideoUrl}
+                    className="inline-flex items-center rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-950/20 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                  >
+                    {t("Add Video Link")}
+                  </button>
+                </div>
+                <div className="mt-2 space-y-3">
+                  {normalizeStoryVideoUrls(settings).map((url, index) => (
+                    <div key={`story-video-url-${index}`} className="flex items-center gap-2">
+                      <input
+                        type="url"
+                        value={url}
+                        onChange={(e) => updateStoryVideoUrl(index, e.target.value)}
+                        placeholder={t("YouTube Video Link")}
+                        className="w-full min-w-0 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                      />
+                      {normalizeStoryVideoUrls(settings).length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => removeStoryVideoUrl(index)}
+                          className="inline-flex shrink-0 items-center rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                        >
+                          {t("Remove")}
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
                 <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
-                  {t("Paste a YouTube watch/share URL to show this video above the story section.")}
+                  {t("Paste one or more YouTube watch/share URLs to show videos above the story section.")}
                 </p>
               </div>
             ) : null}
@@ -3422,18 +3499,26 @@ async function saveAllCustomization() {
           </div>
 
           {String(settings.story_video_source || "").toLowerCase() === "youtube" &&
-          resolveYouTubeEmbedUrl(settings.story_video_youtube_url) ? (
-            <div className="mb-5 rounded-2xl border bg-white dark:bg-zinc-900 p-3">
-              <div className="aspect-video w-full overflow-hidden rounded-xl border border-gray-200 dark:border-zinc-700 bg-black">
-                <iframe
-                  src={resolveYouTubeEmbedUrl(settings.story_video_youtube_url)}
-                  title={t("Story Video Preview")}
-                  className="w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  referrerPolicy="strict-origin-when-cross-origin"
-                  allowFullScreen
-                />
-              </div>
+          normalizeStoryVideoUrls(settings).some((url) => resolveYouTubeEmbedUrl(url)) ? (
+            <div className="mb-5 space-y-3 rounded-2xl border bg-white dark:bg-zinc-900 p-3">
+              {normalizeStoryVideoUrls(settings)
+                .map((url) => resolveYouTubeEmbedUrl(url))
+                .filter(Boolean)
+                .map((embedUrl, index) => (
+                  <div
+                    key={`story-video-preview-${index}`}
+                    className="aspect-video w-full overflow-hidden rounded-xl border border-gray-200 dark:border-zinc-700 bg-black"
+                  >
+                    <iframe
+                      src={embedUrl}
+                      title={`${t("Story Video Preview")} ${index + 1}`}
+                      className="w-full h-full"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allowFullScreen
+                    />
+                  </div>
+                ))}
             </div>
           ) : null}
 
