@@ -229,15 +229,16 @@ function TableCard({
   const cardAccentGlowClass = hasUnpaidItems
     ? "bg-rose-300/85"
     : isLockedTable && !hasOrderActivity
-      ? "bg-slate-400/85"
-    : normalizedOrderStatus === "confirmed"
-      ? "bg-rose-300/85"
-      : hasReservedVisualTone
+      ? "bg-white/45"
+      : normalizedOrderStatus === "confirmed"
+        ? "bg-rose-300/85"
+        : hasReservedVisualTone
         ? "bg-sky-300/85"
         : hasCheckedInVisualTone || isPaidTable
           ? "bg-emerald-300/85"
           : "bg-slate-300/85";
   const hasPreparingItems = tableItems.some((i) => i.kitchen_status === "preparing");
+  const shouldRenderAccentGlow = !(isLockedTable && !hasOrderActivity);
   const isKitchenDelivered =
     Boolean(tableOrder?.kitchen_delivered_at) ||
     (tableItems.length > 0 && tableItems.every((i) => i.kitchen_status === "delivered"));
@@ -590,6 +591,7 @@ function TableCard({
   const showOrderStatusBadge =
     normalizedOrderStatus !== "confirmed" &&
     !isPaidTable &&
+    !(isLockedTable && !hasOrderActivity) &&
     (!shouldShowReservedBadge || hasPendingReservationActiveStatus);
   const reservationPanelClassName = isCheckedOutReservation
     ? cx(PANEL_BASE_CLASS, "border-slate-200 bg-slate-50/90")
@@ -614,26 +616,26 @@ function TableCard({
     [reservationCustomerPhone]
   );
   const reservationControlClass =
-    "flex h-7 min-h-7 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-2xl border px-2 text-center text-[10px] font-semibold leading-none tracking-tight text-ellipsis whitespace-nowrap shadow-[0_8px_20px_rgba(15,23,42,0.1)] sm:h-9 sm:min-h-9 sm:w-[120px] sm:min-w-[120px] sm:px-4 sm:text-sm";
+    "flex h-7 min-h-7 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-2xl border px-2 text-center text-[10px] font-semibold leading-none tracking-tight text-ellipsis whitespace-nowrap shadow-[0_8px_20px_rgba(15,23,42,0.1)] sm:h-9 sm:min-h-9 sm:w-full sm:px-4 sm:text-sm";
   const reservationDetailsFrameClass =
-    "order-1 flex min-h-[50px] w-full min-w-0 max-w-full flex-col justify-center gap-1 rounded-2xl border border-slate-200 bg-white/70 px-3 text-left shadow-none sm:order-none sm:row-span-2 sm:h-[68px] sm:min-h-[68px] sm:w-[120px] sm:min-w-[120px] sm:gap-2";
+    "order-1 flex min-h-[50px] w-full min-w-0 max-w-full flex-col justify-center gap-1 rounded-2xl border border-slate-200 bg-white/70 px-3 text-left shadow-none sm:order-none sm:row-span-2 sm:h-[68px] sm:min-h-[68px] sm:w-full sm:gap-2";
       const reservationCompactBadgeToneClass = isCheckedOutReservation
     ? cx(
         reservationControlClass,
-        "border-slate-200 bg-slate-700 text-white sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
+        "border-slate-200 bg-slate-700 text-white sm:h-7 sm:min-h-7 sm:px-2.5 sm:text-xs"
       )
     : isConfirmedReservation
       ? cx(
           reservationControlClass,
-          "border-rose-200 bg-rose-600 tracking-wide text-white sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
+          "border-rose-200 bg-rose-600 tracking-wide text-white sm:h-7 sm:min-h-7 sm:px-2.5 sm:text-xs"
         )
     : cx(
         reservationControlClass,
-        "border-amber-200 bg-amber-500 tracking-wide text-white sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
+        "border-amber-200 bg-amber-500 tracking-wide text-white sm:h-7 sm:min-h-7 sm:px-2.5 sm:text-xs"
       );
   const reservationPrimaryActionClass = cx(
     reservationControlClass,
-    "border-slate-200 bg-slate-900 text-white hover:bg-slate-800 sm:h-7 sm:min-h-7 sm:w-[94px] sm:min-w-[94px] sm:px-2.5 sm:text-xs"
+    "border-slate-200 bg-slate-900 text-white hover:bg-slate-800 sm:h-7 sm:min-h-7 sm:px-2.5 sm:text-xs"
   );
   const handleToggleLockClick = React.useCallback(
     (e) => {
@@ -654,18 +656,22 @@ function TableCard({
         isCallingWaiter && "ring-2 ring-red-500/80 animate-[pulse_2.4s_ease-in-out_infinite]"
       )}
     >
-      <div
-        className={cx(
-          "pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full blur-3xl",
-          cardAccentGlowClass
-        )}
-      />
-      <div
-        className={cx(
-          "pointer-events-none absolute -bottom-20 left-0 h-44 w-44 rounded-full blur-3xl",
-          cardAccentGlowClass
-        )}
-      />
+      {shouldRenderAccentGlow ? (
+        <div
+          className={cx(
+            "pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full blur-3xl",
+            cardAccentGlowClass
+          )}
+        />
+      ) : null}
+      {shouldRenderAccentGlow ? (
+        <div
+          className={cx(
+            "pointer-events-none absolute -bottom-20 left-0 h-44 w-44 rounded-full blur-3xl",
+            cardAccentGlowClass
+          )}
+        />
+      ) : null}
       {isCallingWaiter && (
         <div className="pointer-events-none absolute inset-0 bg-red-500/10 animate-pulse" />
       )}
@@ -676,10 +682,10 @@ function TableCard({
           </div>
         )}
 
-        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-          <div className="flex min-w-0 flex-1 items-center">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2">
+          <div className="flex min-w-0 flex-1 items-start">
             {shouldShowKitchenStatusSlot ? (
-              <div className="hidden min-w-0 flex-wrap items-center gap-1 overflow-hidden sm:flex">
+              <div className="flex min-w-0 flex-wrap items-center gap-1 overflow-hidden">
                 {compactKitchenStatusBadges.length > 0 ? (
                   compactKitchenStatusBadges
                 ) : (
@@ -688,6 +694,10 @@ function TableCard({
                   </span>
                 )}
               </div>
+            ) : isLockedTable && !hasOrderActivity ? (
+              <Pill className="min-h-9 rounded-2xl border-amber-200 bg-amber-500 px-3 py-1.5 text-[11px] text-white shadow-[0_8px_20px_rgba(15,23,42,0.08)] sm:min-h-9 sm:px-3.5 sm:py-1.5 sm:text-[13px]">
+                {t("Occupied")}
+              </Pill>
             ) : isFreeDisplay ? (
               <Pill className="min-h-8 rounded-2xl border-slate-200 bg-white/90 px-2.5 py-1 text-[10px] text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)] sm:min-h-9 sm:px-3 sm:py-1.5 sm:text-[13px]">
                 {t("Free")}
@@ -697,24 +707,27 @@ function TableCard({
 
           <div className="min-w-0 self-center text-center" />
 
-          <div className="flex min-w-0 shrink-0 justify-end">
-            <div className="flex shrink-0 items-center gap-2">
+          <div className="flex min-w-0 shrink-0 justify-end self-start">
+            <div className="flex shrink-0 flex-col items-end gap-2">
               <div className="inline-flex min-h-9 items-center justify-center rounded-2xl border border-slate-200 bg-white/90 px-3 py-1.5 shadow-[0_8px_20px_rgba(15,23,42,0.08)] backdrop-blur-sm">
                 <div className="text-[13px] font-semibold leading-none tracking-tight text-slate-700">
                   {displayTotal}
                 </div>
               </div>
+              {hasOrderActivity && (hasUnpaidItems || isPaidTable) ? (
+                hasUnpaidItems ? (
+                  <Pill className="min-h-8 border-rose-200 bg-rose-600 px-2.5 py-1 text-[10px] text-white sm:min-h-7 sm:px-3 sm:text-xs">
+                    {paidStatusLabel}
+                  </Pill>
+                ) : isPaidTable ? (
+                  <Pill className="min-h-8 border-emerald-200 bg-emerald-600 px-2.5 py-1 text-[10px] text-white sm:min-h-7 sm:px-3 sm:text-xs">
+                    {fullyPaidStatusLabel}
+                  </Pill>
+                ) : null
+              ) : null}
             </div>
           </div>
         </div>
-
-        {shouldShowKitchenStatusSlot ? (
-          <div className="pointer-events-none absolute right-3 top-[3.6rem] z-0 flex max-w-[55%] justify-end sm:hidden">
-            <div className="flex max-w-full flex-wrap justify-end gap-1">
-              {compactKitchenStatusBadges}
-            </div>
-          </div>
-        ) : null}
 
         <div className="pointer-events-none absolute inset-x-0 top-1/2 z-0 flex -translate-y-1/2 justify-center px-4">
           <span className="inline-flex max-w-full items-center justify-center rounded-2xl bg-white/55 px-4 py-2 text-[15px] font-bold tracking-tight text-slate-900 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm sm:px-5 sm:py-2.5 sm:text-[19px]">
@@ -722,41 +735,65 @@ function TableCard({
           </span>
         </div>
 
+        {shouldShowReservedBadge && (
+          <div
+            className={cx(
+              reservationPanelClassName,
+              "relative z-10 mt-2 grid w-full max-w-full grid-cols-1 justify-items-start gap-1.5 overflow-hidden p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:grid-rows-[36px_36px] sm:items-center sm:justify-center sm:gap-x-4 sm:gap-y-0.5 sm:px-4 sm:pt-3 sm:pb-5"
+            )}
+          >
+            <div className={reservationDetailsFrameClass}>
+              {reservationCustomerName ? (
+                <div className="truncate text-[13px] font-semibold leading-none text-slate-800">
+                  {reservationCustomerName}
+                </div>
+              ) : null}
+              {reservationCustomerPhone ? (
+                reservationCustomerPhoneHref ? (
+                  <a
+                    href={reservationCustomerPhoneHref}
+                    onClick={stopPropagation}
+                    className="truncate -mt-1 text-[12px] font-medium leading-none text-slate-700 underline underline-offset-2 hover:text-slate-900"
+                  >
+                    {reservationCustomerPhone}
+                  </a>
+                ) : (
+                  <div className="truncate -mt-1 text-[12px] font-medium leading-none text-slate-700">
+                    {reservationCustomerPhone}
+                  </div>
+                )
+              ) : null}
+            </div>
+            <div className="order-2 grid w-full min-w-0 grid-cols-2 gap-1.5 sm:contents">
+              <span className={reservationCompactBadgeToneClass}>
+                {reservationCompactStateLabel}
+              </span>
+              {!isCheckedOutReservation && (
+                <button
+                  type="button"
+                  disabled={shouldDisableReservationCheckin}
+                  onClick={
+                    isCheckedInReservation
+                      ? handleCheckoutReservationClick
+                      : handleReservationPrimaryActionClick
+                  }
+                  className={cx(
+                    reservationPrimaryActionClass,
+                    "disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:bg-blue-600"
+                  )}
+                >
+                  {isCheckedInReservation ? t("Check Out") : reservationPrimaryActionLabel}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {table.label && (
           <Pill className="relative z-10 mt-2 max-w-full justify-start truncate border-slate-200 bg-white/80 text-slate-600">
             {table.label}
           </Pill>
         )}
-
-        <div className="relative z-10 mt-2 flex flex-wrap items-center gap-2">
-          {table.seats && (
-            <Pill className="min-h-8 border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] text-slate-700 sm:min-h-7 sm:px-3 sm:text-xs">
-              {table.seats} {t("Seats")}
-            </Pill>
-          )}
-
-          {table.seats && (
-            <div
-              className={cx(
-                BADGE_BASE_CLASS,
-                "h-8 min-h-8 gap-2 border-slate-200 bg-white/80 pr-1.5 text-[10px] text-slate-700 sm:h-7 sm:min-h-7 sm:text-xs"
-              )}
-              onClick={stopPropagation}
-            >
-              <span className="text-[11px] leading-none">👥</span>
-              <select
-                className="min-w-[2rem] bg-transparent pr-0.5 text-[10px] sm:text-[11px] font-bold text-slate-700 outline-none"
-                value={Number.isFinite(clampedGuests) ? String(clampedGuests) : ""}
-                onChange={handleGuestsSelectChange}
-                onClick={stopPropagation}
-              >
-                <option value="">—</option>
-                {guestOptionElements}
-              </select>
-              <span className="text-slate-500">/{seats}</span>
-            </div>
-          )}
-        </div>
 
         <div className="relative z-10 mt-2 flex min-h-6 items-center gap-2">
           <div className="min-w-0 flex flex-1 items-center gap-2 overflow-hidden">
@@ -769,64 +806,10 @@ function TableCard({
         <div
           className={cx(
             "relative z-10 flex min-h-0 flex-1 flex-col",
-            shouldShowReservedBadge ? "mt-2 gap-1" : isFreeDisplay ? "mt-0 gap-1" : "mt-2 gap-2"
+            shouldShowReservedBadge ? "mt-0 gap-1" : isFreeDisplay ? "mt-0 gap-1" : "mt-2 gap-2"
           )}
         >
           {isFreeDisplay && !shouldShowReservedBadge ? <div className="min-h-0 flex-1" /> : null}
-
-          {shouldShowReservedBadge && (
-            <div
-              className={cx(
-                reservationPanelClassName,
-                "grid w-full max-w-full grid-cols-1 justify-items-start gap-1.5 overflow-hidden p-2 sm:grid-cols-[120px_120px] sm:grid-rows-[36px_36px] sm:items-center sm:justify-center sm:gap-x-4 sm:gap-y-0.5 sm:px-4 sm:pt-3 sm:pb-5"
-              )}
-            >
-              <div className={reservationDetailsFrameClass}>
-                {reservationCustomerName ? (
-                  <div className="truncate text-[13px] font-semibold leading-none text-slate-800">
-                    {reservationCustomerName}
-                  </div>
-                ) : null}
-                {reservationCustomerPhone ? (
-                  reservationCustomerPhoneHref ? (
-                    <a
-                      href={reservationCustomerPhoneHref}
-                      onClick={stopPropagation}
-                      className="truncate -mt-1 text-[12px] font-medium leading-none text-slate-700 underline underline-offset-2 hover:text-slate-900"
-                    >
-                      {reservationCustomerPhone}
-                    </a>
-                  ) : (
-                    <div className="truncate -mt-1 text-[12px] font-medium leading-none text-slate-700">
-                      {reservationCustomerPhone}
-                    </div>
-                  )
-                ) : null}
-              </div>
-              <div className="order-2 grid w-full min-w-0 grid-cols-2 gap-1.5 sm:contents">
-                <span className={reservationCompactBadgeToneClass}>
-                  {reservationCompactStateLabel}
-                </span>
-                {!isCheckedOutReservation && (
-                  <button
-                    type="button"
-                    disabled={shouldDisableReservationCheckin}
-                    onClick={
-                      isCheckedInReservation
-                        ? handleCheckoutReservationClick
-                        : handleReservationPrimaryActionClick
-                    }
-                    className={cx(
-                      reservationPrimaryActionClass,
-                      "disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:bg-blue-600"
-                    )}
-                  >
-                    {isCheckedInReservation ? t("Check Out") : reservationPrimaryActionLabel}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         {!isFreeDisplay &&
@@ -853,22 +836,8 @@ function TableCard({
           </div>
         ) : null}
 
-        {hasOrderActivity && (hasUnpaidItems || isPaidTable) ? (
-          <div className="absolute bottom-[3.65rem] left-3 sm:hidden">
-            {hasUnpaidItems ? (
-              <Pill className="min-h-8 border-rose-200 bg-rose-600 px-2.5 py-1 text-[10px] text-white sm:min-h-7 sm:px-3 sm:text-xs">
-                {paidStatusLabel}
-              </Pill>
-            ) : isPaidTable ? (
-              <Pill className="min-h-8 border-emerald-200 bg-emerald-600 px-2.5 py-1 text-[10px] text-white sm:min-h-7 sm:px-3 sm:text-xs">
-                {fullyPaidStatusLabel}
-              </Pill>
-            ) : null}
-          </div>
-        ) : null}
-
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2 sm:pt-3">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             {showAreas ? (
               <Pill className="min-h-8 max-w-[82%] justify-start whitespace-nowrap border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] text-slate-700 sm:min-h-7 sm:max-w-none sm:py-0 sm:text-xs">
                 {formatAreaLabel(table.area)}
@@ -903,23 +872,19 @@ function TableCard({
               </div>
             ) : null}
 
-            {isLockedTable && !hasOrderActivity && (
-              <Pill className="min-h-8 border-amber-200 bg-amber-500 px-2.5 py-1 text-[10px] text-white sm:min-h-7 sm:px-3 sm:text-xs">
-                {t("Occupied")}
-              </Pill>
-            )}
-
-            {showManualTableLock && isFreeDisplay ? (
+            {showManualTableLock && (isFreeDisplay || (isLockedTable && !hasOrderActivity)) ? (
               <button
                 type="button"
                 onClick={handleToggleLockClick}
                 title={isLockedTable ? t("Unlock table") : t("Mark table occupied")}
                 className={cx(
-                  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white/85 text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:bg-white active:scale-[0.98]",
-                  isLockedTable && "border-yellow-200 bg-yellow-400 text-slate-900 hover:bg-yellow-400"
+                  "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white/90 px-3 text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:bg-white active:scale-[0.98] sm:h-8",
+                  isLockedTable
+                    ? "border-yellow-200 bg-yellow-400 text-slate-900 hover:bg-yellow-400"
+                    : "w-9 sm:w-8"
                 )}
               >
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="5" y="11" width="14" height="10" rx="2" ry="2" />
                   {isLockedTable ? (
                     <path d="M8 11V8a4 4 0 1 1 8 0v3" />
@@ -927,6 +892,11 @@ function TableCard({
                     <path d="M8 11V8a4 4 0 0 1 7.2-2.4" />
                   )}
                 </svg>
+                {isLockedTable ? (
+                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
+                    {t("Unlock")}
+                  </span>
+                ) : null}
               </button>
             ) : null}
 
@@ -946,26 +916,17 @@ function TableCard({
 
             {hasOrderActivity && (
               <div className="flex items-center justify-end gap-2 flex-nowrap">
-                {hasUnpaidItems ? (
-                  <Pill className="hidden sm:inline-flex border-rose-200 bg-rose-600 text-white">
-                    {paidStatusLabel}
-                  </Pill>
-                ) : isPaidTable ? (
-                  <div className="flex items-center gap-2 flex-nowrap">
-                    <Pill className="hidden sm:inline-flex border-emerald-200 bg-emerald-600 text-white">
-                      {fullyPaidStatusLabel}
-                    </Pill>
-                    <button
-                      type="button"
-                      onClick={handleCloseClick}
-                      className={cx(
-                        BADGE_BASE_CLASS,
-                        "border-slate-200 bg-slate-900 text-white transition duration-150 hover:bg-slate-800 active:scale-[0.99]"
-                      )}
-                    >
-                      {t("Close")}
-                    </button>
-                  </div>
+                {isPaidTable ? (
+                  <button
+                    type="button"
+                    onClick={handleCloseClick}
+                    className={cx(
+                      BADGE_BASE_CLASS,
+                      "border-slate-200 bg-slate-900 text-white transition duration-150 hover:bg-slate-800 active:scale-[0.99]"
+                    )}
+                  >
+                    {t("Close")}
+                  </button>
                 ) : (
                   <ActionButton
                     onClick={handleCloseClick}
@@ -978,6 +939,31 @@ function TableCard({
             )}
           </div>
         </div>
+
+        {table.seats && !(isLockedTable && !hasOrderActivity) ? (
+          <div className="mt-2 flex justify-center border-t border-slate-200/60 pt-2">
+            <div
+              className={cx(
+                BADGE_BASE_CLASS,
+                "h-8 min-h-8 gap-1.5 border-slate-200 bg-white/90 px-3 text-[10px] text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.06)] sm:h-7 sm:min-h-7 sm:text-xs"
+              )}
+              onClick={stopPropagation}
+            >
+              <span className="text-[11px] leading-none">👥</span>
+              <span className="font-medium text-slate-500">{t("Guests")}</span>
+              <select
+                className="min-w-[2rem] bg-transparent pr-0.5 text-[10px] font-bold text-slate-900 outline-none sm:text-[11px]"
+                value={Number.isFinite(clampedGuests) ? String(clampedGuests) : ""}
+                onChange={handleGuestsSelectChange}
+                onClick={stopPropagation}
+              >
+                <option value="">—</option>
+                {guestOptionElements}
+              </select>
+              <span className="font-medium text-slate-500">/ {seats}</span>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

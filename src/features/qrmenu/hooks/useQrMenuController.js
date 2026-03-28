@@ -128,6 +128,25 @@ const isCheckedInReservationStatus = (status) => {
   const normalized = normalizeReservationStatus(status);
   return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
 };
+const formatCurrentLocalYmd = () => {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+const normalizeEntryDateYmd = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const ymdMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (ymdMatch?.[1]) return ymdMatch[1];
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
 const normalizeCancellationReason = (value) => String(value ?? "").trim();
 const resolveCancellationReason = (primary, fallback = "") =>
   normalizeCancellationReason(primary) || normalizeCancellationReason(fallback);
@@ -413,11 +432,26 @@ const isReservationLikeEntry = (entry) => {
   );
 };
 
+const getReservationSlotDateYmd = (entry) => {
+  if (!entry || typeof entry !== "object") return "";
+  const nested =
+    entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
+  return normalizeEntryDateYmd(
+    entry?.reservation_date ??
+      entry?.reservationDate ??
+      entry?.event_date ??
+      entry?.eventDate ??
+      nested?.reservation_date ??
+      nested?.reservationDate ??
+      nested?.event_date ??
+      nested?.eventDate ??
+      ""
+  );
+};
+
 const isReservationDueNow = (entry, nowMs = Date.now()) => {
   if (!isReservationLikeEntry(entry)) return false;
-  // Concert-linked reservations (including free concert reservations)
-  // must lock their table immediately, even if event time is in the future.
-  if (hasConcertBookingContext(entry, entry?.reservation)) return true;
+  if (isCheckedInReservationEntry(entry)) return true;
   const reservationDate = entry?.reservation_date ?? entry?.reservationDate ?? null;
   const reservationTime = entry?.reservation_time ?? entry?.reservationTime ?? null;
   if (!reservationDate) return true;
@@ -427,7 +461,11 @@ const isReservationDueNow = (entry, nowMs = Date.now()) => {
 };
 
 const hasActiveReservationPayload = (entry) => {
-  return isReservationLikeEntry(entry);
+  if (!isReservationLikeEntry(entry)) return false;
+  if (isCheckedInReservationEntry(entry)) return true;
+  const bookingDateYmd = getReservationSlotDateYmd(entry);
+  if (!bookingDateYmd) return true;
+  return bookingDateYmd === formatCurrentLocalYmd();
 };
 
 const resolveReservationAwareStatus = (entry, fallbackStatus = null) => {
@@ -2008,7 +2046,7 @@ if (savedTable) {
             if (!order?.table_number) return false;
             const status = String(order?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
-            if (isReservationLikeEntry(order)) return true;
+            if (isReservationLikeEntry(order)) return hasActiveReservationPayload(order);
             return true;
           })
           .map((order) => Number(order.table_number))
@@ -2017,7 +2055,7 @@ if (savedTable) {
           .filter((reservation) => {
             const status = String(reservation?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
-            return true;
+            return hasActiveReservationPayload(reservation);
           })
           .map((reservation) =>
             Number(
@@ -2030,7 +2068,7 @@ if (savedTable) {
             const status = String(order?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
             if (isCheckedInReservationStatus(status)) return false;
-            if (!isReservationLikeEntry(order)) return false;
+            if (!hasActiveReservationPayload(order)) return false;
             return true;
           })
           .map((order) => Number(order?.table_number))
@@ -2040,6 +2078,7 @@ if (savedTable) {
             const status = String(reservation?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
             if (isCheckedInReservationStatus(status)) return false;
+            if (!hasActiveReservationPayload(reservation)) return false;
             return true;
           })
           .map((reservation) =>
@@ -2234,6 +2273,7 @@ if (savedTable) {
     };
 
     const onConfirmed = (payload) => {
+      const reservationPayload = payload?.order || payload?.reservation || payload;
       const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
       const tableNoFromPayload =
         payload?.table_number ??
@@ -2249,9 +2289,16 @@ if (savedTable) {
         if (Number.isFinite(tno) && tno > 0) orderIdToTableRef.current.set(orderId, tno);
       }
       if (tableNo) {
-        upsertOccupied(tableNo);
-        if (hasActiveReservationPayload(payload?.order || payload)) {
+        const isReservationLikePayload = isReservationLikeEntry(reservationPayload);
+        if (!isReservationLikePayload || hasActiveReservationPayload(reservationPayload)) {
+          upsertOccupied(tableNo);
+        } else {
+          removeOccupied(tableNo);
+        }
+        if (hasActiveReservationPayload(reservationPayload)) {
           upsertReserved(tableNo);
+        } else if (isReservationLikePayload) {
+          removeReserved(tableNo);
         }
       }
       scheduleRefresh();
@@ -2326,19 +2373,26 @@ if (savedTable) {
     };
 
     const onReservationCreated = (payload) => {
+      const reservationPayload = payload?.order || payload?.reservation || payload;
       const tableNo =
         payload?.table_number ??
         payload?.reservation?.table_number ??
         payload?.order?.table_number ??
         null;
       if (tableNo) {
-        upsertOccupied(tableNo);
-        upsertReserved(tableNo);
+        if (hasActiveReservationPayload(reservationPayload)) {
+          upsertOccupied(tableNo);
+          upsertReserved(tableNo);
+        } else {
+          removeOccupied(tableNo);
+          removeReserved(tableNo);
+        }
       }
       scheduleRefresh();
     };
 
     const onReservationUpdated = (payload) => {
+      const reservationPayload = payload?.order || payload?.reservation || payload;
       const tableNo =
         payload?.table_number ??
         payload?.reservation?.table_number ??
@@ -2354,11 +2408,15 @@ if (savedTable) {
         isCheckedInReservationStatus(status)
       );
       if (tableNo) {
-        upsertOccupied(tableNo);
         if (isCheckedInUpdate) {
+          upsertOccupied(tableNo);
           removeReserved(tableNo);
-        } else {
+        } else if (hasActiveReservationPayload(reservationPayload)) {
+          upsertOccupied(tableNo);
           upsertReserved(tableNo);
+        } else {
+          removeOccupied(tableNo);
+          removeReserved(tableNo);
         }
       }
       if (isCheckedInUpdate && matchesActiveReservationPayload(payload, tableNo)) {

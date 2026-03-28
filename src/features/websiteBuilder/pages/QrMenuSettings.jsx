@@ -8,6 +8,7 @@ import { API_ORIGIN } from "../../../utils/api";
 import { useHasPermission } from "../../../components/hooks/useHasPermission";
 import { useNavigate } from "react-router-dom";
 import { getCustomDomainPreview } from "../../../utils/customDomain";
+import { QR_BOOKING_DEFAULTS, normalizeQrBookingSettings } from "../../../utils/qrBooking";
 
 const extractIdentifierFromQrUrl = (value) => {
   const raw = String(value || "").trim();
@@ -96,6 +97,19 @@ const syncRestaurantSlugCache = (slug) => {
   } catch {
     // Ignore malformed cached user data.
   }
+};
+
+const normalizeAssetValue = (value) => {
+  const raw = String(value || "").trim();
+  return raw || "";
+};
+
+const getAssetFileName = (value) => {
+  const raw = normalizeAssetValue(value);
+  if (!raw) return "";
+  const clean = raw.split("?")[0];
+  const parts = clean.split("/").filter(Boolean);
+  return parts[parts.length - 1] || "";
 };
 
 const resolveYouTubeEmbedUrl = (value) => {
@@ -203,9 +217,20 @@ const makeEmptyConcertForm = () => ({
   guest_composition_field_mode: "optional",
   guest_composition_restriction_rule: "no_restriction",
   guest_composition_validation_message: "",
+  guest_composition_disabled_tables: [],
   area_allocations: [makeEmptyConcertAreaAllocation()],
   ticket_types: [makeEmptyConcertTicketType()],
 });
+
+function normalizeTableNumberList(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+  ).sort((a, b) => a - b);
+}
 
 export default function QrMenuSettings() {
   const { t } = useTranslation();
@@ -225,8 +250,11 @@ export default function QrMenuSettings() {
   const [savingReservationPickup, setSavingReservationPickup] = useState(false);
   const [savingTableOrder, setSavingTableOrder] = useState(false);
   const [savingReservationTab, setSavingReservationTab] = useState(false);
+  const [savingReservationGuestComposition, setSavingReservationGuestComposition] =
+    useState(false);
   const [savingDisableAllProducts, setSavingDisableAllProducts] = useState(false);
   const [savingConcertReservationButtonColor, setSavingConcertReservationButtonColor] = useState(false);
+  const [savingBookingSettings, setSavingBookingSettings] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState("qr");
   const [tables, setTables] = useState([]);
   const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
@@ -267,6 +295,14 @@ export default function QrMenuSettings() {
   const [shopHoursSaveStatus, setShopHoursSaveStatus] = useState("idle");
   const [showShopHoursDropdown, setShowShopHoursDropdown] = useState(false);
   const shopHoursDropdownRef = useRef(null);
+  const [
+    showReservationGuestCompositionTablesDropdown,
+    setShowReservationGuestCompositionTablesDropdown,
+  ] = useState(false);
+  const reservationGuestCompositionTablesDropdownRef = useRef(null);
+  const [showGuestCompositionTablesDropdown, setShowGuestCompositionTablesDropdown] =
+    useState(false);
+  const guestCompositionTablesDropdownRef = useRef(null);
   const [uploadingStoryImages, setUploadingStoryImages] = useState(false);
   const [uploadingStoryVideo, setUploadingStoryVideo] = useState(false);
   const [draggedStoryImageIndex, setDraggedStoryImageIndex] = useState(null);
@@ -306,6 +342,8 @@ export default function QrMenuSettings() {
   reservation_guest_composition_field_mode: "optional",
   reservation_guest_composition_restriction_rule: "no_restriction",
   reservation_guest_composition_validation_message: "",
+  reservation_guest_composition_disabled_tables: [],
+  ...QR_BOOKING_DEFAULTS,
   table_order_enabled: true,
   disable_all_products: false,
   reservation_tab_enabled: true,
@@ -366,11 +404,16 @@ export default function QrMenuSettings() {
 
   const uploadsBaseUrl = API_ORIGIN || "";
 
-  const resolveUploadSrc = (raw) => {
-    const value = String(raw || "").trim();
+  const resolveUploadSrc = (raw, version = "") => {
+    const value = normalizeAssetValue(raw);
     if (!value) return "";
-    if (value.startsWith("http")) return value;
-    return `${uploadsBaseUrl}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+    const resolved = value.startsWith("http")
+      ? value
+      : `${uploadsBaseUrl}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+
+    if (!version) return resolved;
+    const separator = resolved.includes("?") ? "&" : "?";
+    return `${resolved}${separator}v=${encodeURIComponent(version)}`;
   };
 
   const normalizeStoryImages = (source) => {
@@ -397,6 +440,43 @@ export default function QrMenuSettings() {
     const legacy = String(source?.story_video_youtube_url || "").trim();
     return legacy ? [legacy] : [""];
   };
+
+  const applyLoadedCustomization = React.useCallback((customization = {}) => {
+    const normalizedCustomization = {
+      ...customization,
+      app_icon: normalizeAssetValue(customization.app_icon),
+      app_icon_192: normalizeAssetValue(customization.app_icon_192),
+      app_icon_512: normalizeAssetValue(customization.app_icon_512),
+      apple_touch_icon: normalizeAssetValue(customization.apple_touch_icon),
+      splash_logo: normalizeAssetValue(customization.splash_logo),
+      main_title_logo: normalizeAssetValue(customization.main_title_logo),
+      branding_updated_at: normalizeAssetValue(customization.branding_updated_at),
+    };
+    const storyImages = normalizeStoryImages(normalizedCustomization);
+    const storyVideoYoutubeUrls = normalizeStoryVideoUrls(normalizedCustomization);
+    const bookingSettings = normalizeQrBookingSettings(normalizedCustomization);
+
+    setSettings((prev) => ({
+      ...prev,
+      ...normalizedCustomization,
+      ...bookingSettings,
+      story_enabled: normalizedCustomization.story_enabled !== false,
+      story_images: storyImages,
+      story_image: storyImages[0] || "",
+      story_video_youtube_urls: storyVideoYoutubeUrls,
+      story_video_youtube_url: String(storyVideoYoutubeUrls[0] || "").trim(),
+    }));
+
+    setAppIconFileName(
+      getAssetFileName(
+        normalizedCustomization.app_icon_512 ||
+          normalizedCustomization.app_icon_192 ||
+          normalizedCustomization.app_icon
+      )
+    );
+    setSplashLogoFileName(getAssetFileName(normalizedCustomization.splash_logo));
+    setMainTitleLogoFileName(getAssetFileName(normalizedCustomization.main_title_logo));
+  }, []);
 
   const customDomainPreview = useMemo(
     () => getCustomDomainPreview(customDomainInput),
@@ -510,10 +590,7 @@ async function uploadBrandingAsset(field, file) {
       body: formData,
     });
     if (res?.success && res?.customization) {
-      setSettings((prev) => ({
-        ...prev,
-        ...res.customization,
-      }));
+      applyLoadedCustomization(res.customization);
       toast.success(t("Saved successfully!"));
       return;
     }
@@ -722,8 +799,10 @@ async function saveAllCustomization() {
     const storyVideoYoutubeUrls = normalizeStoryVideoUrls(settings)
       .map((item) => String(item || "").trim())
       .filter(Boolean);
+    const normalizedBookingSettings = normalizeQrBookingSettings(settings);
     const payload = {
       ...settings,
+      ...normalizedBookingSettings,
       custom_domain: String(customDomainInput || "").trim(),
       story_enabled: settings.story_enabled !== false,
       story_images: storyImages,
@@ -784,17 +863,7 @@ async function saveAllCustomization() {
       // ✅ 3) LOAD QR MENU CUSTOMIZATION (THE FIX)
       const customRes = await secureFetch("/settings/qr-menu-customization");
       if (customRes?.success && customRes.customization) {
-        const storyImages = normalizeStoryImages(customRes.customization);
-        const storyVideoYoutubeUrls = normalizeStoryVideoUrls(customRes.customization);
-        setSettings((prev) => ({
-          ...prev,
-          ...customRes.customization,
-          story_enabled: customRes.customization.story_enabled !== false,
-          story_images: storyImages,
-          story_image: storyImages[0] || "",
-          story_video_youtube_urls: storyVideoYoutubeUrls,
-          story_video_youtube_url: String(storyVideoYoutubeUrls[0] || "").trim(),
-        }));
+        applyLoadedCustomization(customRes.customization);
         setCustomDomainInput(String(customRes?.restaurant?.custom_domain || "").trim());
         setCurrentRestaurantSlug(String(customRes?.restaurant?.slug || "").trim());
         setCustomDomainError("");
@@ -825,7 +894,7 @@ async function saveAllCustomization() {
   };
 
   loadData();
-}, [t]);
+}, [applyLoadedCustomization, t]);
 
   // Load tables for per-table QR codes
   useEffect(() => {
@@ -1096,6 +1165,51 @@ async function saveAllCustomization() {
     }
   };
 
+  const updateReservationGuestCompositionField = (key, value) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateReservationGuestCompositionEnabled = (value) => {
+    setSettings((prev) => ({
+      ...prev,
+      reservation_guest_composition_enabled: value,
+      reservation_guest_composition_field_mode:
+        value && prev.reservation_guest_composition_field_mode === "hidden"
+          ? "optional"
+          : prev.reservation_guest_composition_field_mode,
+    }));
+  };
+
+  const saveReservationGuestCompositionSettings = async () => {
+    setSavingReservationGuestComposition(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({
+          reservation_guest_composition_enabled: Boolean(
+            settings.reservation_guest_composition_enabled
+          ),
+          reservation_guest_composition_field_mode:
+            settings.reservation_guest_composition_field_mode || "optional",
+          reservation_guest_composition_restriction_rule:
+            settings.reservation_guest_composition_restriction_rule || "no_restriction",
+          reservation_guest_composition_validation_message: String(
+            settings.reservation_guest_composition_validation_message || ""
+          ).trim(),
+          reservation_guest_composition_disabled_tables: normalizeTableNumberList(
+            settings.reservation_guest_composition_disabled_tables
+          ),
+        }),
+      });
+      toast.success(t("Saved successfully!"));
+    } catch (err) {
+      console.error("❌ Failed to save reservation guest composition settings:", err);
+      toast.error(t("Save failed"));
+    } finally {
+      setSavingReservationGuestComposition(false);
+    }
+  };
+
   const toggleDisableAllProducts = async () => {
     const nextValue = !settings.disable_all_products;
     updateField("disable_all_products", nextValue);
@@ -1141,6 +1255,22 @@ async function saveAllCustomization() {
     }
   };
 
+  const saveBookingSettings = async () => {
+    setSavingBookingSettings(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify(normalizeQrBookingSettings(settings)),
+      });
+      toast.success(t("Saved successfully!"));
+    } catch (err) {
+      console.error("❌ Failed to save booking settings:", err);
+      toast.error(t("Save failed"));
+    } finally {
+      setSavingBookingSettings(false);
+    }
+  };
+
   const resetConcertEditor = () => {
     setEditingConcertId(null);
     setConcertForm(makeEmptyConcertForm());
@@ -1170,6 +1300,9 @@ async function saveAllCustomization() {
     guest_composition_validation_message: String(
       source?.guest_composition_validation_message || ""
     ).trim(),
+    guest_composition_disabled_tables: normalizeTableNumberList(
+      source?.guest_composition_disabled_tables
+    ),
     area_allocations: (Array.isArray(source?.area_allocations) ? source.area_allocations : [])
       .map((row) => ({
         area_name: String(row?.area_name || "").trim(),
@@ -1291,6 +1424,9 @@ async function saveAllCustomization() {
         event.guest_composition_restriction_rule || "no_restriction",
       guest_composition_validation_message:
         event.guest_composition_validation_message || "",
+      guest_composition_disabled_tables: normalizeTableNumberList(
+        event.guest_composition_disabled_tables
+      ),
       area_allocations:
         Array.isArray(event.area_allocations) && event.area_allocations.length > 0
           ? event.area_allocations.map((row) => ({
@@ -1359,6 +1495,8 @@ async function saveAllCustomization() {
           payload.guest_composition_restriction_rule,
         reservation_guest_composition_validation_message:
           payload.guest_composition_validation_message,
+        reservation_guest_composition_disabled_tables:
+          payload.guest_composition_disabled_tables,
       };
       await secureFetch(endpoint, {
         method,
@@ -1811,10 +1949,24 @@ async function saveAllCustomization() {
 
   useEffect(() => {
     const onDown = (e) => {
-      const el = shopHoursDropdownRef.current;
-      if (!el) return;
-      if (el.contains(e.target)) return;
-      setShowShopHoursDropdown(false);
+      const shopHoursEl = shopHoursDropdownRef.current;
+      if (shopHoursEl && !shopHoursEl.contains(e.target)) {
+        setShowShopHoursDropdown(false);
+      }
+
+      const reservationGuestCompositionEl =
+        reservationGuestCompositionTablesDropdownRef.current;
+      if (
+        reservationGuestCompositionEl &&
+        !reservationGuestCompositionEl.contains(e.target)
+      ) {
+        setShowReservationGuestCompositionTablesDropdown(false);
+      }
+
+      const guestCompositionEl = guestCompositionTablesDropdownRef.current;
+      if (guestCompositionEl && !guestCompositionEl.contains(e.target)) {
+        setShowGuestCompositionTablesDropdown(false);
+      }
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -2518,6 +2670,432 @@ async function saveAllCustomization() {
                 </p>
               </div>
 
+              <div className="rounded-2xl border bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  {t("Guest composition rules")}
+                </h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {t("Configure whether concert table reservations must include a guest composition split and how it should be validated.")}
+                </p>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="font-semibold">{t("Enable guest composition field")}</label>
+                    <select
+                      value={settings.reservation_guest_composition_enabled ? "on" : "off"}
+                      onChange={(e) =>
+                        updateReservationGuestCompositionEnabled(e.target.value === "on")
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    >
+                      <option value="off">{t("Off")}</option>
+                      <option value="on">{t("On")}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold">{t("Field mode")}</label>
+                    <select
+                      value={settings.reservation_guest_composition_field_mode || "optional"}
+                      onChange={(e) =>
+                        updateReservationGuestCompositionField(
+                          "reservation_guest_composition_field_mode",
+                          e.target.value
+                        )
+                      }
+                      disabled={!settings.reservation_guest_composition_enabled}
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 disabled:opacity-60"
+                    >
+                      {CONCERT_GUEST_COMPOSITION_FIELD_MODES.map((option) => (
+                        <option key={`reservation-${option.value}`} value={option.value}>
+                          {t(option.label)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="font-semibold">{t("Restriction rule")}</label>
+                    <select
+                      value={
+                        settings.reservation_guest_composition_restriction_rule ||
+                        "no_restriction"
+                      }
+                      onChange={(e) =>
+                        updateReservationGuestCompositionField(
+                          "reservation_guest_composition_restriction_rule",
+                          e.target.value
+                        )
+                      }
+                      disabled={!settings.reservation_guest_composition_enabled}
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 disabled:opacity-60"
+                    >
+                      {CONCERT_GUEST_COMPOSITION_RESTRICTION_RULES.map((option) => (
+                        <option key={`reservation-rule-${option.value}`} value={option.value}>
+                          {t(option.label)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="font-semibold">{t("Validation message")}</label>
+                    <textarea
+                      rows={3}
+                      value={settings.reservation_guest_composition_validation_message || ""}
+                      onChange={(e) =>
+                        updateReservationGuestCompositionField(
+                          "reservation_guest_composition_validation_message",
+                          e.target.value
+                        )
+                      }
+                      disabled={!settings.reservation_guest_composition_enabled}
+                      placeholder={t(
+                        "This policy does not allow reservations for male-only groups."
+                      )}
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none disabled:opacity-60"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="font-semibold">{t("Disable for specific tables")}</label>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      {t(
+                        "Selected tables will skip guest composition requirements even when the field is enabled."
+                      )}
+                    </p>
+                    <div className="mt-3" ref={reservationGuestCompositionTablesDropdownRef}>
+                      {tables.length > 0 ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!settings.reservation_guest_composition_enabled}
+                            onClick={() =>
+                              setShowReservationGuestCompositionTablesDropdown((prev) => !prev)
+                            }
+                            className="flex w-full items-center justify-between rounded-xl border bg-white px-4 py-3 text-left text-sm text-gray-700 shadow-sm transition hover:border-indigo-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <span>
+                              {(settings.reservation_guest_composition_disabled_tables || []).length > 0
+                                ? t("{{count}} table(s) excluded", {
+                                    count:
+                                      (
+                                        settings.reservation_guest_composition_disabled_tables || []
+                                      ).length,
+                                  })
+                                : t("Select tables")}
+                            </span>
+                            <ChevronDown
+                              className={`h-4 w-4 transition-transform ${
+                                showReservationGuestCompositionTablesDropdown
+                                  ? "rotate-180"
+                                  : ""
+                              }`}
+                            />
+                          </button>
+
+                          {showReservationGuestCompositionTablesDropdown && (
+                            <div className="mt-2 max-h-56 overflow-y-auto rounded-2xl border bg-white p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-950">
+                              {tables.map((tbl) => {
+                                const tableNumber = Number(tbl?.table_number ?? tbl?.number);
+                                if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
+                                const isSelected = (
+                                  settings.reservation_guest_composition_disabled_tables || []
+                                ).includes(tableNumber);
+                                return (
+                                  <label
+                                    key={`reservation-guest-comp-table-${tableNumber}`}
+                                    className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-slate-50 dark:hover:bg-zinc-900"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      disabled={!settings.reservation_guest_composition_enabled}
+                                      onChange={() => {
+                                        const current = normalizeTableNumberList(
+                                          settings.reservation_guest_composition_disabled_tables
+                                        );
+                                        const next = current.includes(tableNumber)
+                                          ? current.filter((value) => value !== tableNumber)
+                                          : [...current, tableNumber];
+                                        updateReservationGuestCompositionField(
+                                          "reservation_guest_composition_disabled_tables",
+                                          normalizeTableNumberList(next)
+                                        );
+                                      }}
+                                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span className="font-medium">
+                                      {t("Table")} {tableNumber}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {(settings.reservation_guest_composition_disabled_tables || []).length >
+                            0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {normalizeTableNumberList(
+                                settings.reservation_guest_composition_disabled_tables
+                              ).map((tableNumber) => (
+                                <span
+                                  key={`reservation-guest-comp-selected-${tableNumber}`}
+                                  className="rounded-full border border-amber-500 bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900 dark:border-amber-400 dark:bg-amber-500/20 dark:text-amber-100"
+                                >
+                                  {t("Table")} {tableNumber}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500 dark:border-zinc-700 dark:text-zinc-400">
+                          {t("No tables configured yet. Go to the Tables page to add tables.")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={saveReservationGuestCompositionSettings}
+                    disabled={savingReservationGuestComposition}
+                    className="rounded-full border border-indigo-500 px-6 py-2.5 text-sm font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
+                  >
+                    {savingReservationGuestComposition
+                      ? t("Saving...")
+                      : t("Save Guest Composition Rules")}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  {t("Booking Settings")}
+                </h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {t("Configure slot duration, time intervals, event entry rules, and reservation timing behavior for QR bookings.")}
+                </p>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="font-semibold">{t("Default reservation duration (minutes)")}</label>
+                    <input
+                      type="number"
+                      min="15"
+                      step="15"
+                      value={settings.reservation_default_duration_minutes ?? 120}
+                      onChange={(e) =>
+                        updateField("reservation_default_duration_minutes", Number(e.target.value) || 0)
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Buffer time between reservations (minutes)")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={settings.reservation_buffer_minutes ?? 0}
+                      onChange={(e) =>
+                        updateField("reservation_buffer_minutes", Number(e.target.value) || 0)
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Maximum reservations per table per day (optional)")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={settings.reservation_max_per_table_per_day ?? ""}
+                      onChange={(e) =>
+                        updateField(
+                          "reservation_max_per_table_per_day",
+                          e.target.value === "" ? "" : Number(e.target.value) || 0
+                        )
+                      }
+                      placeholder={t("Unlimited")}
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Allow booking while table is occupied now")}</label>
+                    <select
+                      value={settings.reservation_allow_while_occupied_now ? "on" : "off"}
+                      onChange={(e) =>
+                        updateField("reservation_allow_while_occupied_now", e.target.value === "on")
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    >
+                      <option value="off">{t("Off")}</option>
+                      <option value="on">{t("On")}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Early check-in window (minutes before slot)")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={settings.reservation_early_checkin_window_minutes ?? 15}
+                      onChange={(e) =>
+                        updateField(
+                          "reservation_early_checkin_window_minutes",
+                          Number(e.target.value) || 0
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Late arrival grace period (minutes)")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={settings.reservation_late_arrival_grace_minutes ?? 15}
+                      onChange={(e) =>
+                        updateField(
+                          "reservation_late_arrival_grace_minutes",
+                          Number(e.target.value) || 0
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Auto cancel no-show after X minutes")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={settings.reservation_auto_cancel_no_show_after_minutes ?? 0}
+                      onChange={(e) =>
+                        updateField(
+                          "reservation_auto_cancel_no_show_after_minutes",
+                          Number(e.target.value) || 0
+                        )
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Time interval step (minutes)")}</label>
+                    <select
+                      value={String(settings.booking_time_interval_minutes ?? 30)}
+                      onChange={(e) =>
+                        updateField("booking_time_interval_minutes", Number(e.target.value) || 30)
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    >
+                      {[5, 10, 15, 20, 30, 45, 60].map((step) => (
+                        <option key={`booking-step-${step}`} value={String(step)}>
+                          {step}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Max booking days in advance")}</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={settings.booking_max_days_in_advance ?? 30}
+                      onChange={(e) =>
+                        updateField("booking_max_days_in_advance", Number(e.target.value) || 1)
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="font-semibold">{t("Event duration (minutes)")}</label>
+                    <input
+                      type="number"
+                      min="15"
+                      step="15"
+                      value={settings.concert_event_duration_minutes ?? 150}
+                      onChange={(e) =>
+                        updateField("concert_event_duration_minutes", Number(e.target.value) || 0)
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Event end time (optional)")}</label>
+                    <input
+                      type="time"
+                      value={settings.concert_event_end_time || ""}
+                      onChange={(e) => updateField("concert_event_end_time", e.target.value)}
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Early entry window (minutes before start)")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={settings.concert_early_entry_window_minutes ?? 30}
+                      onChange={(e) =>
+                        updateField("concert_early_entry_window_minutes", Number(e.target.value) || 0)
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Late entry cutoff (minutes after start)")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={settings.concert_late_entry_cutoff_minutes ?? 30}
+                      onChange={(e) =>
+                        updateField("concert_late_entry_cutoff_minutes", Number(e.target.value) || 0)
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold">{t("Allow re-entry")}</label>
+                    <select
+                      value={settings.concert_allow_reentry ? "on" : "off"}
+                      onChange={(e) =>
+                        updateField("concert_allow_reentry", e.target.value === "on")
+                      }
+                      className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                    >
+                      <option value="off">{t("Off")}</option>
+                      <option value="on">{t("On")}</option>
+                    </select>
+                  </div>
+                  <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-zinc-700 dark:text-zinc-400">
+                    {t("Opening hours are taken from the existing Shop Hours settings and used to build QR booking time slots.")}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={saveBookingSettings}
+                    disabled={savingBookingSettings}
+                    className="rounded-full border border-indigo-500 px-6 py-2.5 text-sm font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
+                  >
+                    {savingBookingSettings ? t("Saving...") : t("Save Booking Settings")}
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("All Product Visibility")}</label>
                 <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -2671,7 +3249,10 @@ async function saveAllCustomization() {
                 {(settings.app_icon_512 || settings.app_icon_192 || settings.app_icon) ? (
                   <div className="mt-2 flex items-center gap-3">
                     <img
-                      src={resolveUploadSrc(settings.app_icon_512 || settings.app_icon_192 || settings.app_icon)}
+                      src={resolveUploadSrc(
+                        settings.app_icon_512 || settings.app_icon_192 || settings.app_icon,
+                        settings.branding_updated_at
+                      )}
                       alt={t("Restaurant App Icon")}
                       className="w-14 h-14 rounded-2xl object-cover border bg-white"
                     />
@@ -2722,7 +3303,7 @@ async function saveAllCustomization() {
                 {settings.splash_logo ? (
                   <div className="mt-2 flex items-center gap-3">
                     <img
-                      src={resolveUploadSrc(settings.splash_logo)}
+                      src={resolveUploadSrc(settings.splash_logo, settings.branding_updated_at)}
                       alt={t("Splash Screen Logo")}
                       className="h-14 w-28 rounded-xl object-contain border bg-white px-2"
                     />
@@ -2769,7 +3350,10 @@ async function saveAllCustomization() {
                 {settings.main_title_logo ? (
                   <div className="mt-2 flex items-center gap-3">
                     <img
-                      src={resolveUploadSrc(settings.main_title_logo)}
+                      src={resolveUploadSrc(
+                        settings.main_title_logo,
+                        settings.branding_updated_at
+                      )}
                       alt={t("Main Title Logo")}
                       className="h-14 w-36 rounded-xl object-contain border bg-white px-2"
                     />
@@ -3294,6 +3878,102 @@ async function saveAllCustomization() {
                   placeholder={t("This policy does not allow reservations for male-only groups.")}
                   className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none disabled:opacity-60"
                 />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="font-semibold">{t("Disable for specific tables")}</label>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                  {t("Selected tables will skip guest composition requirements even when the field is enabled.")}
+                </p>
+                <div className="mt-3" ref={guestCompositionTablesDropdownRef}>
+                  {tables.length > 0 ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!concertForm.guest_composition_enabled}
+                        onClick={() =>
+                          setShowGuestCompositionTablesDropdown((prev) => !prev)
+                        }
+                        className="flex w-full items-center justify-between rounded-xl border bg-white px-4 py-3 text-left text-sm text-gray-700 shadow-sm transition hover:border-indigo-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <span>
+                          {(concertForm.guest_composition_disabled_tables || []).length > 0
+                            ? t("{{count}} table(s) excluded", {
+                                count: (concertForm.guest_composition_disabled_tables || []).length,
+                              })
+                            : t("Select tables")}
+                        </span>
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform ${
+                            showGuestCompositionTablesDropdown ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+
+                      {showGuestCompositionTablesDropdown && (
+                        <div className="mt-2 max-h-56 overflow-y-auto rounded-2xl border bg-white p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-950">
+                          {tables.map((tbl) => {
+                            const tableNumber = Number(tbl?.table_number ?? tbl?.number);
+                            if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
+                            const isSelected = (concertForm.guest_composition_disabled_tables || []).includes(
+                              tableNumber
+                            );
+                            return (
+                              <label
+                                key={`guest-comp-table-${tableNumber}`}
+                                className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-slate-50 dark:hover:bg-zinc-900"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  disabled={!concertForm.guest_composition_enabled}
+                                  onChange={() => {
+                                    setConcertForm((prev) => {
+                                      const current = normalizeTableNumberList(
+                                        prev.guest_composition_disabled_tables
+                                      );
+                                      const next = current.includes(tableNumber)
+                                        ? current.filter((value) => value !== tableNumber)
+                                        : [...current, tableNumber];
+                                      return {
+                                        ...prev,
+                                        guest_composition_disabled_tables:
+                                          normalizeTableNumberList(next),
+                                      };
+                                    });
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span className="font-medium">
+                                  {t("Table")} {tableNumber}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {(concertForm.guest_composition_disabled_tables || []).length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {normalizeTableNumberList(
+                            concertForm.guest_composition_disabled_tables
+                          ).map((tableNumber) => (
+                            <span
+                              key={`guest-comp-selected-${tableNumber}`}
+                              className="rounded-full border border-amber-500 bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900 dark:border-amber-400 dark:bg-amber-500/20 dark:text-amber-100"
+                            >
+                              {t("Table")} {tableNumber}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500 dark:border-zinc-700 dark:text-zinc-400">
+                      {t("No tables configured yet. Go to the Tables page to add tables.")}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

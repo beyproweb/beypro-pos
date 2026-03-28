@@ -51,6 +51,13 @@ import { io } from "socket.io-client";
 import QRCode from "qrcode";
 import { Toaster, toast } from "react-hot-toast";
 import { API_BASE as API_URL, API_ORIGIN as API_BASE, SOCKET_BASE } from "../utils/api";
+import {
+  normalizeQrBookingSettings,
+  computeReservationSlot,
+  computeConcertSlot,
+  parseLocalDateTime,
+  normalizeReservationTimeSlotOptions,
+} from "../utils/qrBooking";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const QR_PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
@@ -287,6 +294,16 @@ function getGuestCompositionValidationError({
 
   if (!blocked) return "";
   return policyMessage;
+}
+
+function normalizeQrTableNumberList(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+  );
 }
 
 function normalizeRestaurantDisplayName(value, fallback = "Restaurant") {
@@ -634,6 +651,25 @@ const isCheckedInReservationStatus = (value) => {
   const normalized = normalizeReservationStatus(value);
   return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
 };
+const formatCurrentLocalYmd = () => {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+const normalizeEntryDateYmd = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const ymdMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (ymdMatch?.[1]) return ymdMatch[1];
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
 const isCancelledLikeStatus = (status) =>
   ["canceled", "cancelled", "deleted", "void"].includes(
     String(status || "").toLowerCase()
@@ -690,6 +726,46 @@ const hasReservationPayload = (order) => {
       nested?.reservationStatus
   );
 };
+const getReservationSlotDateYmd = (order) => {
+  if (!order || typeof order !== "object") return "";
+  const nested =
+    order?.reservation && typeof order.reservation === "object" ? order.reservation : null;
+  return normalizeEntryDateYmd(
+    order?.reservation_date ??
+      order?.reservationDate ??
+      order?.event_date ??
+      order?.eventDate ??
+      nested?.reservation_date ??
+      nested?.reservationDate ??
+      nested?.event_date ??
+      nested?.eventDate ??
+      ""
+  );
+};
+const isReservationRelevantForCurrentDay = (order, fallbackStatus = null) => {
+  if (!hasReservationPayload(order)) return false;
+  const nested =
+    order?.reservation && typeof order.reservation === "object" ? order.reservation : null;
+  const fallback = normalizeReservationStatus(fallbackStatus);
+  if (
+    order?.checked_in === true ||
+    nested?.checked_in === true ||
+    [
+      order?.status,
+      order?.reservation_status,
+      order?.reservationStatus,
+      nested?.status,
+      nested?.reservation_status,
+      nested?.reservationStatus,
+      fallback,
+    ].some((value) => isCheckedInReservationStatus(value))
+  ) {
+    return true;
+  }
+  const bookingDateYmd = getReservationSlotDateYmd(order);
+  if (!bookingDateYmd) return true;
+  return bookingDateYmd === formatCurrentLocalYmd();
+};
 const isReservationPendingCheckIn = (order, fallbackStatus = null) => {
   if (!order || typeof order !== "object") return false;
   const nested =
@@ -706,6 +782,7 @@ const isReservationPendingCheckIn = (order, fallbackStatus = null) => {
   const status = directStatus || nestedStatus || flatReservationStatus || fallback;
   const hasReservationContext = hasReservationPayload(order);
   if (!hasReservationContext) return false;
+  if (!isReservationRelevantForCurrentDay(order, fallbackStatus)) return false;
   if (
     order?.checked_in === true ||
     nested?.checked_in === true ||
@@ -1413,11 +1490,23 @@ const DICT = {
     "Reservation Time": "Reservation Time",
     "Select Table": "Select Table",
     "Please select an available table.": "Please select an available table.",
+    "Please select a valid reservation time.": "Please select a valid reservation time.",
     "This table is currently occupied. Please select another table.": "This table is currently occupied. Please select another table.",
     "Reservation saved": "Reservation saved",
     "Failed to save reservation": "Failed to save reservation",
     "Table must be closed by staff first": "Table must be closed by staff first",
     Available: "Available",
+    "Limited Availability": "Limited Availability",
+    "Fully Booked": "Fully Booked",
+    "Next Available": "Next Available",
+    "Select Date": "Select Date",
+    "Select Time": "Select Time",
+    Duration: "Duration",
+    "Event Time": "Event Time",
+    "Entry Opens": "Entry Opens",
+    "Entry Closes": "Entry Closes",
+    "Auto-assign best table": "Auto-assign best table",
+    "This event has already started.": "This event has already started.",
     Pickup: "Pickup",
     Home: "Home",
     Waiter: "Waiter",
@@ -1740,11 +1829,23 @@ const DICT = {
     "Reservation Time": "Rezervasyon Saati",
     "Select Table": "Masa Seçin",
     "Please select an available table.": "Lütfen uygun bir masa seçin.",
+    "Please select a valid reservation time.": "Lütfen geçerli bir rezervasyon saati seçin.",
     "This table is currently occupied. Please select another table.": "Bu masa şu anda dolu. Lütfen başka bir masa seçin.",
     "Reservation saved": "Rezervasyon kaydedildi",
     "Failed to save reservation": "Rezervasyon kaydedilemedi",
     "Table must be closed by staff first": "Önce personel masayı kapatmalıdır",
     Available: "Uygun",
+    "Limited Availability": "Sınırlı müsaitlik",
+    "Fully Booked": "Tam dolu",
+    "Next Available": "Sonraki müsait saat",
+    "Select Date": "Tarih seçin",
+    "Select Time": "Saat seçin",
+    Duration: "Süre",
+    "Event Time": "Etkinlik saati",
+    "Entry Opens": "Giriş açılır",
+    "Entry Closes": "Giriş kapanır",
+    "Auto-assign best table": "En uygun masayı otomatik ata",
+    "This event has already started.": "Bu etkinlik zaten başladı.",
     Pickup: "Gel Al",
     Home: "Ana Sayfa",
     Waiter: "Garson",
@@ -2053,7 +2154,19 @@ const DICT = {
     "Select Your Table": "Wählen Sie Ihren Tisch",
     Seats: "Sitze",
     "Reservation Time": "Reservierungszeit",
+    "Please select a valid reservation time.": "Bitte wählen Sie eine gültige Reservierungszeit.",
     Available: "Verfügbar",
+    "Limited Availability": "Begrenzte Verfügbarkeit",
+    "Fully Booked": "Ausgebucht",
+    "Next Available": "Nächste Verfügbarkeit",
+    "Select Date": "Datum wählen",
+    "Select Time": "Uhrzeit wählen",
+    Duration: "Dauer",
+    "Event Time": "Eventzeit",
+    "Entry Opens": "Einlass ab",
+    "Entry Closes": "Einlass bis",
+    "Auto-assign best table": "Besten Tisch automatisch zuweisen",
+    "This event has already started.": "Diese Veranstaltung hat bereits begonnen.",
     Payment: "Zahlung",
     Cash: "Bar",
     Total: "Gesamt",
@@ -2283,7 +2396,19 @@ const DICT = {
     "Select Your Table": "Choisissez votre table",
     Seats: "Places",
     "Reservation Time": "Heure de réservation",
+    "Please select a valid reservation time.": "Veuillez sélectionner une heure de réservation valide.",
     Available: "Disponible",
+    "Limited Availability": "Disponibilité limitée",
+    "Fully Booked": "Complet",
+    "Next Available": "Prochaine disponibilité",
+    "Select Date": "Sélectionner la date",
+    "Select Time": "Sélectionner l'heure",
+    Duration: "Durée",
+    "Event Time": "Heure de l'événement",
+    "Entry Opens": "Entrée ouvre à",
+    "Entry Closes": "Entrée ferme à",
+    "Auto-assign best table": "Attribuer automatiquement la meilleure table",
+    "This event has already started.": "Cet événement a déjà commencé.",
     Payment: "Paiement",
     Cash: "Espèces",
     Total: "Total",
@@ -3010,6 +3135,10 @@ async function load() {
      2) Extract dynamic fields with fallbacks
      ============================================================ */
   const c = custom || {};
+  const qrBookingSettings = React.useMemo(
+    () => normalizeQrBookingSettings(c || {}),
+    [c]
+  );
   React.useEffect(() => {
     onCustomizationLoadedRef.current?.(custom || {});
   }, [custom]);
@@ -3715,6 +3844,87 @@ async function load() {
   const selectedConcertQuantity = concertMode === "table" ? 1 : Math.max(1, Number(concertForm.quantity) || 1);
   const selectedConcertTotal =
     selectedConcertUnitPrice * (concertMode === "table" ? selectedConcertGuests : selectedConcertQuantity);
+  const computedConcertSlot = React.useMemo(
+    () =>
+      computeConcertSlot({
+        eventDate: concertModalEvent?.event_date,
+        eventTime: concertModalEvent?.event_time,
+        settings: qrBookingSettings,
+      }),
+    [
+      concertModalEvent?.event_date,
+      concertModalEvent?.event_time,
+      qrBookingSettings,
+    ]
+  );
+  const concertSlotStartRaw =
+    concertModalEvent?.slot_start_datetime ||
+    computedConcertSlot?.slot_start_datetime ||
+    "";
+  const concertSlotEndRaw =
+    concertModalEvent?.slot_end_datetime ||
+    computedConcertSlot?.slot_end_datetime ||
+    "";
+  const concertEntryOpenRaw =
+    concertModalEvent?.entry_open_datetime ||
+    computedConcertSlot?.entry_open_datetime ||
+    "";
+  const concertEntryCloseRaw =
+    concertModalEvent?.entry_close_datetime ||
+    computedConcertSlot?.entry_close_datetime ||
+    "";
+  const concertSlotStartDate = React.useMemo(
+    () => parseLocalDateTime(concertSlotStartRaw),
+    [concertSlotStartRaw]
+  );
+  const concertSlotEndDate = React.useMemo(
+    () => parseLocalDateTime(concertSlotEndRaw),
+    [concertSlotEndRaw]
+  );
+  const concertEntryOpenDate = React.useMemo(
+    () => parseLocalDateTime(concertEntryOpenRaw),
+    [concertEntryOpenRaw]
+  );
+  const concertEntryCloseDate = React.useMemo(
+    () => parseLocalDateTime(concertEntryCloseRaw),
+    [concertEntryCloseRaw]
+  );
+  const concertEventHasStarted =
+    concertSlotStartDate instanceof Date &&
+    Number.isFinite(concertSlotStartDate.getTime()) &&
+    concertSlotStartDate.getTime() < Date.now();
+  const concertEventWindowLabel = React.useMemo(() => {
+    if (!concertSlotStartDate || !concertSlotEndDate) return "";
+    const startLabel = concertSlotStartDate.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const endLabel = concertSlotEndDate.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    return `${startLabel} - ${endLabel}`;
+  }, [concertSlotEndDate, concertSlotStartDate]);
+  const concertDurationMinutes = React.useMemo(() => {
+    if (!concertSlotStartDate || !concertSlotEndDate) {
+      const fallback = Number(
+        concertModalEvent?.event_duration_minutes ||
+          qrBookingSettings.concert_event_duration_minutes
+      );
+      return Number.isFinite(fallback) && fallback > 0 ? Math.floor(fallback) : null;
+    }
+    const diffMinutes = Math.round(
+      (concertSlotEndDate.getTime() - concertSlotStartDate.getTime()) / 60000
+    );
+    return Number.isFinite(diffMinutes) && diffMinutes > 0 ? diffMinutes : null;
+  }, [
+    concertModalEvent?.event_duration_minutes,
+    concertSlotEndDate,
+    concertSlotStartDate,
+    qrBookingSettings.concert_event_duration_minutes,
+  ]);
   const concertBankInstructions = React.useMemo(() => {
     return String(
       concertModalEvent?.bank_transfer_instructions ||
@@ -3927,6 +4137,7 @@ async function load() {
 
   const submitConcertBooking = React.useCallback(async () => {
     if (!concertModalEvent?.id || !identifier) return;
+    if (concertEventHasStarted) return;
     const customerEmail = concertForm.customer_email.trim().toLowerCase();
     if (!concertForm.customer_name.trim() || !concertForm.customer_phone.trim()) {
       alert(t("Please fill required fields"));
@@ -4114,6 +4325,7 @@ async function load() {
     concertForm,
     concertModalEvent,
     concertMode,
+    concertEventHasStarted,
     selectedConcertGuests,
     concertGuestCompositionError,
     concertGuestCompositionVisible,
@@ -5092,6 +5304,73 @@ async function load() {
               );
             })()}
 
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                    {t("Date")}
+                  </p>
+                  <p className="mt-1 font-semibold text-neutral-900 dark:text-neutral-100">
+                    {formatConcertDisplayDateWithoutYear(concertModalEvent?.event_date, lang)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                    {t("Event Time")}
+                  </p>
+                  <p className="mt-1 font-semibold text-neutral-900 dark:text-neutral-100">
+                    {concertEventWindowLabel || String(concertModalEvent?.event_time || "").slice(0, 5)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                    {t("Duration")}
+                  </p>
+                  <p className="mt-1 font-semibold text-neutral-900 dark:text-neutral-100">
+                    {concertDurationMinutes ? `${concertDurationMinutes} min` : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                    {t("Quantity")}
+                  </p>
+                  <p className="mt-1 font-semibold text-neutral-900 dark:text-neutral-100">
+                    {concertMode === "table" ? selectedConcertGuests || 0 : selectedConcertQuantity}
+                  </p>
+                </div>
+              </div>
+              {concertEntryOpenDate || concertEntryCloseDate ? (
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-neutral-600 dark:text-neutral-300">
+                  <div>
+                    <span className="font-semibold">{t("Entry Opens")}:</span>{" "}
+                    {concertEntryOpenDate
+                      ? concertEntryOpenDate.toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: false,
+                        })
+                      : "—"}
+                  </div>
+                  <div>
+                    <span className="font-semibold">{t("Entry Closes")}:</span>{" "}
+                    {concertEntryCloseDate
+                      ? concertEntryCloseDate.toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: false,
+                        })
+                      : "—"}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {concertEventHasStarted ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+                {t("This event has already started.")}
+              </div>
+            ) : null}
+
             {(concertModalEvent.ticket_types || []).length > 0 ? (
               <div>
                 <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
@@ -5423,6 +5702,7 @@ async function load() {
               onClick={submitConcertBooking}
               disabled={
                 concertSubmitting ||
+                concertEventHasStarted ||
                 !concertGuestCountValid ||
                 !!concertGuestCompositionError
               }
@@ -5452,6 +5732,37 @@ async function load() {
 
 
 
+function ReservationSlotSelect({
+  value,
+  onChange,
+  slots = [],
+  disabled = false,
+  invalid = false,
+  t,
+}) {
+  return (
+    <select
+      className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+        invalid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
+      }`}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+    >
+      <option value="">{t("Select Time")}</option>
+      {(Array.isArray(slots) ? slots : []).map((slot) => (
+        <option
+          key={`${slot.time}-${slot.availabilityStatus}`}
+          value={slot.time}
+          disabled={!slot.isAvailable}
+        >
+          {slot.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 /* ====================== TAKEAWAY ORDER FORM ====================== */
 function TakeawayOrderForm({
   submitting,
@@ -5469,9 +5780,16 @@ function TakeawayOrderForm({
   setPaymentMethod,
   formatTableName,
   submitButtonColor = "#111827",
+  loadReservationTimeSlots = null,
+  loadReservationAvailability = null,
+  bookingSettings = null,
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const paymentMethods = usePaymentMethods();
+  const normalizedBookingSettings = useMemo(
+    () => normalizeQrBookingSettings(bookingSettings || {}),
+    [bookingSettings]
+  );
   const guestCompositionEnabledSetting = Boolean(guestCompositionSettings?.enabled);
   const guestCompositionFieldModeSetting = guestCompositionSettings?.fieldMode;
   const normalizedInitialValues = useMemo(
@@ -5511,7 +5829,7 @@ function TakeawayOrderForm({
         mode: pickupEnabled
           ? (initialValues?.mode || "reservation")
           : "reservation",
-        table_number: initialValues?.table_number || "",
+        table_number: initialValues?.table_number ? String(initialValues.table_number) : "auto",
         reservation_clients: initialValues?.reservation_clients || "",
         ...guestComposition,
         notes: initialValues?.notes || "",
@@ -5531,33 +5849,138 @@ function TakeawayOrderForm({
   const [touched, setTouched] = useState({});
   const [paymentPrompt, setPaymentPrompt] = useState(false);
   const [shakeModal, setShakeModal] = useState(false);
+  const [reservationTimeSlotsLoading, setReservationTimeSlotsLoading] = useState(false);
+  const [reservationTimeSlots, setReservationTimeSlots] = useState([]);
+  const [dateScopedAvailability, setDateScopedAvailability] = useState(null);
+  const maxBookingDate = useMemo(() => {
+    const next = new Date();
+    next.setDate(next.getDate() + Number(normalizedBookingSettings.booking_max_days_in_advance || 30));
+    return next.toISOString().slice(0, 10);
+  }, [normalizedBookingSettings.booking_max_days_in_advance]);
 
   useEffect(() => {
     setForm(normalizedInitialValues);
   }, [normalizedInitialValues]);
 
+  useEffect(() => {
+    let active = true;
+    if (
+      form.mode !== "reservation" ||
+      !form.pickup_date ||
+      typeof loadReservationTimeSlots !== "function"
+    ) {
+      setReservationTimeSlotsLoading(false);
+      setReservationTimeSlots([]);
+      return undefined;
+    }
+
+    (async () => {
+      try {
+        if (active) setReservationTimeSlotsLoading(true);
+        const next = await loadReservationTimeSlots(
+          form.pickup_date,
+          form.reservation_clients
+        );
+        if (!active) return;
+        setReservationTimeSlots(
+          normalizeReservationTimeSlotOptions(next?.timeSlots || next?.time_slots || [], t)
+        );
+      } catch {
+        if (!active) return;
+        setReservationTimeSlots([]);
+      } finally {
+        if (active) setReservationTimeSlotsLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    form.mode,
+    form.pickup_date,
+    form.reservation_clients,
+    loadReservationTimeSlots,
+    t,
+  ]);
+
+  useEffect(() => {
+    let active = true;
+    if (
+      form.mode !== "reservation" ||
+      !form.pickup_date ||
+      !form.pickup_time ||
+      typeof loadReservationAvailability !== "function"
+    ) {
+      setDateScopedAvailability(null);
+      return undefined;
+    }
+
+    (async () => {
+      try {
+        const next = await loadReservationAvailability(
+          form.pickup_date,
+          form.pickup_time,
+          form.reservation_clients
+        );
+        if (!active) return;
+        setDateScopedAvailability(
+          next && typeof next === "object"
+            ? {
+                availableTables: Array.isArray(next.availableTables || next.available_tables)
+                  ? next.availableTables || next.available_tables
+                  : [],
+                occupiedTables: Array.isArray(next.occupiedTables) ? next.occupiedTables : [],
+                reservedTables: Array.isArray(next.reservedTables) ? next.reservedTables : [],
+                availabilityStatus: String(
+                  next.availabilityStatus || next.availability_status || ""
+                ).trim(),
+                nextAvailableTime: String(
+                  next.nextAvailableTime || next.next_available_time || ""
+                ).trim(),
+                selectedSlot: next.selectedSlot || next.selected_slot || null,
+              }
+            : {
+                availableTables: [],
+                occupiedTables: [],
+                reservedTables: [],
+                availabilityStatus: "",
+                nextAvailableTime: "",
+                selectedSlot: null,
+              }
+        );
+      } catch {
+        if (!active) return;
+        setDateScopedAvailability(null);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [form.mode, form.pickup_date, form.pickup_time, form.reservation_clients, loadReservationAvailability]);
+
   const safeTables = useMemo(() => (Array.isArray(tables) ? tables : []), [tables]);
-  const unavailableTables = useMemo(() => {
-    const set = new Set();
-    (Array.isArray(occupiedTables) ? occupiedTables : []).forEach((value) => {
-      const n = Number(value);
-      if (Number.isFinite(n) && n > 0) set.add(n);
-    });
-    safeTables.forEach((table) => {
-      if (!Boolean(table?.isLocked)) return;
-      const tableNumber = Number(table?.tableNumber ?? table?.number ?? table?.table_number);
-      if (Number.isFinite(tableNumber) && tableNumber > 0) set.add(tableNumber);
-    });
-    return set;
-  }, [occupiedTables, safeTables]);
+  const availableReservationTables = useMemo(() => {
+    if (form.mode !== "reservation") return [];
+    const scopedTables = Array.isArray(dateScopedAvailability?.availableTables)
+      ? dateScopedAvailability.availableTables
+      : [];
+    return scopedTables.map((row) => ({
+      ...row,
+      tableNumber: Number(row?.table_number ?? row?.tableNumber ?? row?.number),
+      seats: Number(row?.seats ?? row?.guest_limit ?? 0),
+    }));
+  }, [dateScopedAvailability?.availableTables, form.mode]);
   const reservedTableSet = useMemo(() => {
     const set = new Set();
-    (Array.isArray(reservedTables) ? reservedTables : []).forEach((value) => {
-      const n = Number(value);
-      if (Number.isFinite(n) && n > 0) set.add(n);
-    });
+    (Array.isArray(dateScopedAvailability?.reservedTables) ? dateScopedAvailability.reservedTables : [])
+      .forEach((value) => {
+        const n = Number(value);
+        if (Number.isFinite(n) && n > 0) set.add(n);
+      });
     return set;
-  }, [reservedTables]);
+  }, [dateScopedAvailability?.reservedTables]);
 
   useEffect(() => {
     if (form.payment_method) {
@@ -5581,19 +6004,70 @@ function TakeawayOrderForm({
   const normalizedPhone = normalizeQrPhone(form.phone);
   const phoneValid = QR_PHONE_REGEX.test(normalizedPhone);
   const emailValid = !form.email.trim() || EMAIL_REGEX.test(form.email.trim());
+  const reservationSlotPreview = useMemo(() => {
+    if (!form.pickup_date || !form.pickup_time) return null;
+    const slot =
+      dateScopedAvailability?.selectedSlot ||
+      computeReservationSlot({
+        reservationDate: form.pickup_date,
+        reservationTime: form.pickup_time,
+        settings: normalizedBookingSettings,
+      });
+    if (!slot?.slot_end_datetime) return null;
+    const start = parseLocalDateTime(slot.slot_start_datetime);
+    const end = parseLocalDateTime(slot.slot_end_datetime);
+    if (!start || !end) return null;
+    return {
+      label: `${start.toLocaleDateString(undefined, {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })} • ${start.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })} - ${end.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })}`,
+      slot,
+    };
+  }, [
+    dateScopedAvailability?.selectedSlot,
+    form.pickup_date,
+    form.pickup_time,
+    normalizedBookingSettings,
+  ]);
   const selectedTableNumber = Number(form.table_number);
-  const selectedTable = useMemo(
-    () => safeTables.find((tbl) => Number(tbl?.tableNumber) === selectedTableNumber) || null,
-    [safeTables, selectedTableNumber]
+  const selectedReservationTimeSlot = useMemo(
+    () =>
+      reservationTimeSlots.find(
+        (slot) => slot.time === String(form.pickup_time || "").slice(0, 5)
+      ) || null,
+    [form.pickup_time, reservationTimeSlots]
   );
-  const maxGuestsForSelectedTable = (() => {
-    const seats = Number(selectedTable?.seats);
-    if (Number.isFinite(seats) && seats > 0) return Math.min(20, Math.max(1, Math.floor(seats)));
-    return 12;
-  })();
+  const selectedTable = useMemo(
+    () =>
+      availableReservationTables.find(
+        (tbl) => Number(tbl?.tableNumber ?? tbl?.table_number) === selectedTableNumber
+      ) ||
+      safeTables.find((tbl) => Number(tbl?.tableNumber) === selectedTableNumber) ||
+      null,
+    [availableReservationTables, safeTables, selectedTableNumber]
+  );
   const reservationClientsCount = Number(form.reservation_clients);
+  const reservationGuestCompositionDisabledForSelectedTable =
+    requiresReservationTable &&
+    Number.isFinite(selectedTableNumber) &&
+    selectedTableNumber > 0 &&
+    normalizeQrTableNumberList(guestCompositionSettings?.disabledTables).includes(
+      selectedTableNumber
+    );
   const reservationGuestCompositionEnabled =
-    requiresReservationTable && Boolean(guestCompositionSettings?.enabled);
+    requiresReservationTable &&
+    Boolean(guestCompositionSettings?.enabled) &&
+    !reservationGuestCompositionDisabledForSelectedTable;
   const reservationGuestCompositionFieldMode = normalizeGuestCompositionFieldMode(
     guestCompositionSettings?.fieldMode,
     "hidden"
@@ -5616,9 +6090,23 @@ function TakeawayOrderForm({
     reservationGuestCompositionVisible &&
     reservationGuestCompositionRestrictionRule === "couple_only";
   const reservationGuestCompositionLocked = reservationRequiresEvenGuestCount;
+  const reservationGuestCap = useMemo(() => {
+    const selectedSeats = Number(
+      selectedTable?.seats ?? selectedTable?.guest_limit ?? selectedTable?.guests ?? 0
+    );
+    if (Number.isFinite(selectedSeats) && selectedSeats > 0) {
+      return Math.max(1, Math.floor(selectedSeats));
+    }
+    const maxAvailableSeats = availableReservationTables.reduce((maxSeats, row) => {
+      const nextSeats = Number(row?.seats ?? row?.guest_limit ?? row?.guests ?? 0);
+      if (!Number.isFinite(nextSeats) || nextSeats <= 0) return maxSeats;
+      return Math.max(maxSeats, Math.floor(nextSeats));
+    }, 0);
+    return maxAvailableSeats > 0 ? maxAvailableSeats : 20;
+  }, [availableReservationTables, selectedTable]);
   const guestOptions = useMemo(
-    () => buildGuestCountOptions(maxGuestsForSelectedTable, reservationRequiresEvenGuestCount),
-    [maxGuestsForSelectedTable, reservationRequiresEvenGuestCount]
+    () => buildGuestCountOptions(reservationGuestCap, reservationRequiresEvenGuestCount),
+    [reservationGuestCap, reservationRequiresEvenGuestCount]
   );
   const reservationMenCount = parseGuestCompositionCount(form.reservation_men);
   const reservationWomenCount = parseGuestCompositionCount(form.reservation_women);
@@ -5649,21 +6137,70 @@ function TakeawayOrderForm({
   });
   const hasReservationTable =
     requiresReservationTable &&
-    Number.isFinite(selectedTableNumber) &&
-    selectedTableNumber > 0 &&
-    !unavailableTables.has(selectedTableNumber);
+    ((String(form.table_number) === "auto" && availableReservationTables.length > 0) ||
+      (Number.isFinite(selectedTableNumber) &&
+        selectedTableNumber > 0 &&
+        availableReservationTables.some(
+          (row) => Number(row?.tableNumber ?? row?.table_number) === selectedTableNumber
+        )));
+  const hasValidReservationTimeSlot =
+    !requiresReservationTable ||
+    (!reservationTimeSlotsLoading &&
+      !!selectedReservationTimeSlot &&
+      selectedReservationTimeSlot.isAvailable);
   const valid =
     form.name &&
     phoneValid &&
     emailValid &&
     form.pickup_date &&
     form.pickup_time &&
+    hasValidReservationTimeSlot &&
     (!requiresReservationTable ||
       (hasReservationTable && hasReservationClients && !reservationGuestCompositionError)) &&
     (!requiresPayment || !!form.payment_method);
   const reservationSubmitDisabled =
     submitting ||
+    reservationTimeSlotsLoading ||
     (form.mode === "reservation" && !valid);
+  const reservationAvailabilityStatus = String(
+    dateScopedAvailability?.availabilityStatus ||
+      (form.pickup_date && form.pickup_time
+        ? availableReservationTables.length > 0
+          ? "available"
+          : "fully_booked"
+        : "")
+  )
+    .trim()
+    .toLowerCase();
+  const reservationAvailabilityBadge = useMemo(() => {
+    switch (reservationAvailabilityStatus) {
+      case "limited":
+        return {
+          label: t("Limited Availability"),
+          className:
+            "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200",
+        };
+      case "fully_booked":
+        return {
+          label: t("Fully Booked"),
+          className:
+            "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200",
+        };
+      case "available":
+        return {
+          label: t("Available"),
+          className:
+            "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200",
+        };
+      default:
+        return null;
+    }
+  }, [reservationAvailabilityStatus, t]);
+  const nextAvailableTimeLabel = useMemo(() => {
+    const raw = String(dateScopedAvailability?.nextAvailableTime || "").trim();
+    if (!raw) return "";
+    return `${t("Next Available")}: ${raw}`;
+  }, [dateScopedAvailability?.nextAvailableTime, t]);
 
   useEffect(() => {
     if (!requiresReservationTable) return;
@@ -5674,6 +6211,50 @@ function TakeawayOrderForm({
       return { ...prev, reservation_clients: next };
     });
   }, [requiresReservationTable, selectedTableNumber, guestOptions]);
+
+  useEffect(() => {
+    if (!form.pickup_date) return;
+    if (!reservationTimeSlots.length) {
+      setForm((prev) => (prev.pickup_time ? { ...prev, pickup_time: "" } : prev));
+      return;
+    }
+    const normalizedCurrentTime = String(form.pickup_time || "").slice(0, 5);
+    if (
+      !normalizedCurrentTime ||
+      reservationTimeSlots.some(
+        (slot) => slot.time === normalizedCurrentTime && slot.isAvailable
+      )
+    ) {
+      return;
+    }
+    setForm((prev) => ({ ...prev, pickup_time: "" }));
+  }, [form.pickup_date, form.pickup_time, reservationTimeSlots]);
+
+  useEffect(() => {
+    if (!requiresReservationTable) return;
+    const availableTableNumbers = new Set(
+      availableReservationTables
+        .map((row) => Number(row?.tableNumber ?? row?.table_number))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    );
+    setForm((prev) => {
+      const current = String(prev.table_number || "").trim();
+      if (!current) {
+        return availableTableNumbers.size > 0 ? { ...prev, table_number: "auto" } : prev;
+      }
+      if (current === "auto") {
+        return availableTableNumbers.size > 0 ? prev : { ...prev, table_number: "" };
+      }
+      const currentNumber = Number(current);
+      if (Number.isFinite(currentNumber) && availableTableNumbers.has(currentNumber)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        table_number: availableTableNumbers.size > 0 ? "auto" : "",
+      };
+    });
+  }, [availableReservationTables, requiresReservationTable]);
 
   useEffect(() => {
     if (!requiresReservationTable || !reservationGuestCompositionVisible) {
@@ -5795,6 +6376,9 @@ function TakeawayOrderForm({
         reservation_clients: requiresReservationTable,
         payment_method: requiresPayment,
       });
+      if (requiresReservationTable && !hasValidReservationTimeSlot) {
+        return;
+      }
       if (requiresPayment && !form.payment_method) {
         triggerPaymentError();
         return;
@@ -5829,48 +6413,16 @@ function TakeawayOrderForm({
 
         {/* Form */}
         <form onSubmit={handleFormSubmit} className="flex flex-col gap-4">
-          {/* Name */}
-          <input
-            className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
-            placeholder={t("Full Name")}
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-
-          {/* Phone */}
-          <input
-            className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
-              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
-            }`}
-            placeholder={t("Phone (+90 555 555 55 55)")}
-            value={form.phone}
-            onChange={(e) => {
-              setForm((f) => ({ ...f, phone: formatQrPhoneForInput(e.target.value) }));
-            }}
-            inputMode="tel"
-            maxLength={18}
-          />
-
-          <input
-            type="email"
-            className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
-              touched.email && !emailValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
-            }`}
-            placeholder={t("Email")}
-            value={form.email}
-            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            autoComplete="email"
-          />
-
           {/* Pickup / Reservation Date + Time */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
-                {t("Date")}
+                {t("Select Date")}
               </label>
               <input
                 type="date"
                 min={today}
+                max={maxBookingDate}
                 className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
                   touched.pickup_date && !form.pickup_date ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
                 }`}
@@ -5882,20 +6434,63 @@ function TakeawayOrderForm({
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
-                {t("Time")}
+                {t("Select Time")}
               </label>
-              <input
-                type="time"
-                className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
-                  touched.pickup_time && !form.pickup_time ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
-                }`}
+              <ReservationSlotSelect
                 value={form.pickup_time}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, pickup_time: e.target.value }))
+                onChange={(e) => setForm((f) => ({ ...f, pickup_time: e.target.value }))}
+                slots={reservationTimeSlots}
+                disabled={
+                  !form.pickup_date ||
+                  reservationTimeSlotsLoading ||
+                  reservationTimeSlots.length === 0
                 }
+                invalid={touched.pickup_time && !hasValidReservationTimeSlot}
+                t={t}
               />
+              {reservationTimeSlotsLoading ? (
+                <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                  {t("Loading...")}
+                </p>
+              ) : null}
             </div>
           </div>
+
+          {form.mode === "reservation" && (reservationSlotPreview || reservationAvailabilityBadge) ? (
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1">
+                  {reservationSlotPreview ? (
+                    <>
+                      <p className="text-[11px] uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                        {t("Reservation Time")}
+                      </p>
+                      <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                        {reservationSlotPreview.label}
+                      </p>
+                    </>
+                  ) : null}
+                  {reservationSlotPreview?.slot?.reservation_duration_minutes ? (
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {t("Duration")}: {reservationSlotPreview.slot.reservation_duration_minutes} min
+                    </p>
+                  ) : null}
+                </div>
+                {reservationAvailabilityBadge ? (
+                  <span
+                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${reservationAvailabilityBadge.className}`}
+                  >
+                    {reservationAvailabilityBadge.label}
+                  </span>
+                ) : null}
+              </div>
+              {nextAvailableTimeLabel ? (
+                <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-300">
+                  {nextAvailableTimeLabel}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Pickup / Reservation toggle */}
           {pickupEnabled ? (
@@ -5932,43 +6527,7 @@ function TakeawayOrderForm({
 
           {/* Table select (only for reservation) */}
           {form.mode === "reservation" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
-                  {t("Select Table")}
-                </label>
-                <select
-                  className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
-                    touched.table_number && !hasReservationTable ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
-                  }`}
-                  value={form.table_number}
-                  onChange={(e) => setForm((f) => ({ ...f, table_number: e.target.value }))}
-                >
-                  <option value="">{t("Select Table")}</option>
-                  {safeTables.map((tbl) => {
-                    const tableNumber = Number(tbl?.tableNumber);
-                    if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
-                    const disabled = unavailableTables.has(tableNumber);
-                    const reserved = reservedTableSet.has(tableNumber);
-                    const tableText =
-                      typeof formatTableName === "function"
-                        ? formatTableName(tbl)
-                        : `${t("Table")} ${String(tableNumber).padStart(2, "0")}`;
-                    return (
-                      <option key={tableNumber} value={String(tableNumber)} disabled={disabled}>
-                        {`${tableText}${
-                          disabled ? ` - ${reserved ? t("Reserved") : t("Occupied")}` : ""
-                        }`}
-                      </option>
-                    );
-                  })}
-                </select>
-                {touched.table_number && !hasReservationTable && (
-                  <p className="mt-1 text-xs font-semibold text-rose-600">
-                    {t("Please select an available table.")}
-                  </p>
-                )}
-              </div>
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
                   {t("Guests")}
@@ -5979,7 +6538,7 @@ function TakeawayOrderForm({
                   }`}
                   value={form.reservation_clients}
                   onChange={(e) => setForm((f) => ({ ...f, reservation_clients: e.target.value }))}
-                  disabled={!hasReservationTable || guestOptions.length === 0}
+                  disabled={!form.pickup_date || !form.pickup_time || guestOptions.length === 0}
                 >
                   <option value="">{t("Select Guests")}</option>
                   {guestOptions.map((count) => (
@@ -5999,8 +6558,115 @@ function TakeawayOrderForm({
                   </p>
                 ) : null}
               </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
+                  {t("Select Table")}
+                </label>
+                <select
+                  className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+                    touched.table_number && !hasReservationTable ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
+                  }`}
+                  value={form.table_number}
+                  onChange={(e) => setForm((f) => ({ ...f, table_number: e.target.value }))}
+                  disabled={!form.pickup_date || !form.pickup_time}
+                >
+                  <option value="">
+                    {!form.pickup_date || !form.pickup_time
+                      ? t("Select Time")
+                      : t("Select Table")}
+                  </option>
+                  {availableReservationTables.length > 0 ? (
+                    <option value="auto">{t("Auto-assign best table")}</option>
+                  ) : null}
+                  {availableReservationTables.map((tbl) => {
+                    const tableNumber = Number(tbl?.tableNumber ?? tbl?.table_number);
+                    if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
+                    const tableText =
+                      typeof formatTableName === "function"
+                        ? formatTableName({
+                            ...tbl,
+                            tableNumber,
+                          })
+                        : `${t("Table")} ${String(tableNumber).padStart(2, "0")}`;
+                    const seats = Number(tbl?.seats ?? 0);
+                    const limited = reservedTableSet.has(tableNumber);
+                    return (
+                      <option key={tableNumber} value={String(tableNumber)}>
+                        {`${tableText}${seats > 0 ? ` • ${seats} ${t("Guests")}` : ""}${
+                          limited ? ` • ${t("Limited Availability")}` : ""
+                        }`}
+                      </option>
+                    );
+                  })}
+                </select>
+                {touched.table_number && !hasReservationTable && (
+                  <p className="mt-1 text-xs font-semibold text-rose-600">
+                    {t("Please select an available table.")}
+                  </p>
+                )}
+                {String(form.table_number) === "auto" && availableReservationTables.length > 0 ? (
+                  <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    {t("Auto-assign best table")}
+                  </p>
+                ) : null}
+                {!form.pickup_date || !form.pickup_time ? null : availableReservationTables.length === 0 ? (
+                  <p className="mt-1 text-xs text-rose-600">
+                    {reservationAvailabilityBadge?.label || t("Fully Booked")}
+                  </p>
+                ) : null}
+              </div>
+              {selectedTable && String(form.table_number) !== "auto" ? (
+                <div className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+                  <div className="font-semibold text-neutral-900 dark:text-neutral-100">
+                    {typeof formatTableName === "function"
+                      ? formatTableName({
+                          ...selectedTable,
+                          tableNumber: Number(
+                            selectedTable?.tableNumber ?? selectedTable?.table_number
+                          ),
+                        })
+                      : `${t("Table")} ${String(selectedTableNumber).padStart(2, "0")}`}
+                  </div>
+                  {Number(selectedTable?.seats || 0) > 0 ? (
+                    <div className="mt-1">
+                      {selectedTable.seats} {t("Guests")}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
+
+          <input
+            className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+            placeholder={t("Full Name")}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+
+          <input
+            className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
+            }`}
+            placeholder={t("Phone (+90 555 555 55 55)")}
+            value={form.phone}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, phone: formatQrPhoneForInput(e.target.value) }));
+            }}
+            inputMode="tel"
+            maxLength={18}
+          />
+
+          <input
+            type="email"
+            className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+              touched.email && !emailValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
+            }`}
+            placeholder={t("Email")}
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            autoComplete="email"
+          />
 
           {form.mode === "reservation" && reservationGuestCompositionVisible && (
             <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
@@ -7637,7 +8303,10 @@ export default function QrMenu() {
   const canUseStatusOrderAnother =
     !shouldLockReorderForNonTableConcert &&
     !(forceStatusLockActive && !allowOrderAnotherWhenLocked);
-  const activeOrderHasReservation = hasReservationPayload(activeOrder);
+  const activeOrderHasReservation = isReservationRelevantForCurrentDay(
+    activeOrder,
+    orderScreenStatus || activeOrder?.status || null
+  );
   const activeDeliveryLockOrderId = Number(
     orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0
   );
@@ -7739,6 +8408,10 @@ export default function QrMenu() {
     }),
     [savedCustomerPrefill, takeaway]
   );
+  const qrBookingSettings = useMemo(
+    () => normalizeQrBookingSettings(orderSelectCustomization || {}),
+    [orderSelectCustomization]
+  );
   const reservationGuestCompositionSettings = useMemo(
     () => ({
       enabled: boolish(
@@ -7750,12 +8423,16 @@ export default function QrMenu() {
         orderSelectCustomization?.reservation_guest_composition_restriction_rule,
       validationMessage:
         orderSelectCustomization?.reservation_guest_composition_validation_message,
+      disabledTables: normalizeQrTableNumberList(
+        orderSelectCustomization?.reservation_guest_composition_disabled_tables
+      ),
     }),
     [
       orderSelectCustomization?.reservation_guest_composition_enabled,
       orderSelectCustomization?.reservation_guest_composition_field_mode,
       orderSelectCustomization?.reservation_guest_composition_restriction_rule,
       orderSelectCustomization?.reservation_guest_composition_validation_message,
+      orderSelectCustomization?.reservation_guest_composition_disabled_tables,
     ]
   );
 
@@ -8206,6 +8883,76 @@ export default function QrMenu() {
     await handleDownloadQrImage();
     setDownloadQrModalOpen(false);
   }, [handleDownloadQrImage]);
+
+  const loadReservationAvailability = useCallback(
+    async (reservationDate, reservationTime, guestCount) => {
+      const normalizedDate = String(reservationDate || "").trim();
+      const normalizedTime = String(reservationTime || "").trim();
+      if (
+        !restaurantIdentifier ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) ||
+        !/^\d{2}:\d{2}$/.test(normalizedTime)
+      ) {
+        return null;
+      }
+
+      const params = new URLSearchParams({
+        date: normalizedDate,
+        time: normalizedTime,
+      });
+      const safeGuestCount = Number.parseInt(String(guestCount ?? ""), 10);
+      if (Number.isFinite(safeGuestCount) && safeGuestCount > 0) {
+        params.set("guest_count", String(safeGuestCount));
+      }
+      const path = `/public/unavailable-tables/${encodeURIComponent(
+        restaurantIdentifier
+      )}?${params.toString()}`;
+      const payload = await secureFetch(appendIdentifier(path));
+
+      return {
+        occupiedTables: Array.isArray(payload?.table_numbers) ? payload.table_numbers : [],
+        reservedTables: Array.isArray(payload?.reserved_table_numbers)
+          ? payload.reserved_table_numbers
+          : [],
+        availableTables: Array.isArray(payload?.available_tables) ? payload.available_tables : [],
+        availabilityStatus: String(payload?.availability_status || "").trim(),
+        nextAvailableTime: String(payload?.next_available_time || "").trim(),
+        selectedSlot: payload?.selected_slot || null,
+      };
+    },
+    [appendIdentifier, restaurantIdentifier]
+  );
+
+  const loadReservationTimeSlots = useCallback(
+    async (reservationDate, guestCount) => {
+      const normalizedDate = String(reservationDate || "").trim();
+      if (!restaurantIdentifier || !/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+        return { timeSlots: [] };
+      }
+
+      const params = new URLSearchParams({
+        date: normalizedDate,
+        slots: "1",
+      });
+      const safeGuestCount = Number.parseInt(String(guestCount ?? ""), 10);
+      if (Number.isFinite(safeGuestCount) && safeGuestCount > 0) {
+        params.set("guest_count", String(safeGuestCount));
+      }
+
+      const payload = await secureFetch(
+        appendIdentifier(
+          `/public/unavailable-tables/${encodeURIComponent(
+            restaurantIdentifier
+          )}?${params.toString()}`
+        )
+      );
+
+      return {
+        timeSlots: Array.isArray(payload?.time_slots) ? payload.time_slots : [],
+      };
+    },
+    [appendIdentifier, restaurantIdentifier]
+  );
 
   if (showTableSelector) {
     return (
@@ -8957,6 +9704,9 @@ export default function QrMenu() {
           pickupEnabled={allowReservationPickup}
           guestCompositionSettings={reservationGuestCompositionSettings}
           formatTableName={formatTableName}
+          loadReservationTimeSlots={loadReservationTimeSlots}
+          loadReservationAvailability={loadReservationAvailability}
+          bookingSettings={qrBookingSettings}
           onClose={() => {
             setShowTakeawayForm(false);
             setOrderType(null);
@@ -8990,13 +9740,31 @@ export default function QrMenu() {
             }
 
             if (String(form?.mode || "").toLowerCase() === "reservation") {
-              const tableNumber = Number(form?.table_number);
-              if (!Number.isFinite(tableNumber) || tableNumber <= 0) {
-                alert(t("Please select an available table."));
+              const latestTimeSlots = await loadReservationTimeSlots(
+                form.pickup_date,
+                form.reservation_clients
+              );
+              const normalizedTimeSlots = normalizeReservationTimeSlotOptions(
+                latestTimeSlots?.timeSlots || latestTimeSlots?.time_slots || [],
+                t
+              );
+              const selectedTimeSlot = normalizedTimeSlots.find(
+                (slot) => slot.time === String(form?.pickup_time || "").slice(0, 5) && slot.isAvailable
+              );
+              if (!selectedTimeSlot) {
+                alert(t("Please select a valid reservation time."));
                 return;
               }
-              if (safeOccupiedTables.includes(tableNumber)) {
-                alert(t("This table is currently occupied. Please select another table."));
+
+              const selectedTableNumber =
+                String(form?.table_number || "").trim().toLowerCase() === "auto"
+                  ? null
+                  : Number(form?.table_number);
+              if (
+                selectedTableNumber != null &&
+                (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0)
+              ) {
+                alert(t("Please select an available table."));
                 return;
               }
 
@@ -9006,7 +9774,10 @@ export default function QrMenu() {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    table_number: tableNumber,
+                    table_number:
+                      Number.isFinite(selectedTableNumber) && selectedTableNumber > 0
+                        ? selectedTableNumber
+                        : null,
                     reservation_date: form.pickup_date,
                     reservation_time: form.pickup_time,
                     reservation_clients: Number(form.reservation_clients) || 1,
@@ -9024,14 +9795,25 @@ export default function QrMenu() {
                 });
 
                 const reservationOrderId = Number(response?.reservation?.id);
-                setTakeaway(form);
+                const resolvedTableNumber = Number(
+                  response?.reservation?.table_number || selectedTableNumber || 0
+                );
+                setTakeaway({
+                  ...form,
+                  table_number:
+                    Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0
+                      ? String(resolvedTableNumber)
+                      : form.table_number,
+                });
                 setShowTakeawayForm(false);
                 window.dispatchEvent(new Event("qr:voice-order-close"));
                 setQrVoiceModalOpen(false);
                 setOrderType("table");
-                setTable(tableNumber);
                 storage.setItem("qr_orderType", "table");
-                storage.setItem("qr_table", String(tableNumber));
+                if (Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0) {
+                  setTable(resolvedTableNumber);
+                  storage.setItem("qr_table", String(resolvedTableNumber));
+                }
                 storage.setItem("qr_show_status", "1");
                 setConcertBookingConfirmLabel(false);
                 setOrderStatus("success");
@@ -9045,7 +9827,10 @@ export default function QrMenu() {
                     JSON.stringify({
                       orderId: reservationOrderId,
                       orderType: "table",
-                      table: tableNumber,
+                      table:
+                        Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0
+                          ? resolvedTableNumber
+                          : null,
                     })
                   );
                 }

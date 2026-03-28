@@ -1,6 +1,16 @@
 // src/components/ModernHeader.jsx
 import React from "react";
-import { Menu, Lock, Search, ArrowRight, Star, Home, Mic } from "lucide-react";
+import {
+  Menu,
+  Lock,
+  Search,
+  ArrowRight,
+  Star,
+  Home,
+  Mic,
+  ChevronLeft,
+  ClipboardList,
+} from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useSetting } from "./hooks/useSetting";
@@ -187,6 +197,22 @@ export default function ModernHeader({
   const isIntegrationsRoute = location.pathname.includes("/integrations");
   const isSuppliersRoute = location.pathname.startsWith("/suppliers");
   const showHeaderTabs = !isSuppliersRoute;
+  const canShowBackButton =
+    !isPublicShellRoute &&
+    !isDashboardRoute &&
+    (Boolean(previousRoute) || window.history.length > 1);
+
+  const handleBackClick = React.useCallback(() => {
+    if (previousRoute) {
+      navigate(previousRoute);
+      return;
+    }
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate("/dashboard");
+  }, [navigate, previousRoute]);
 
   const canSeeDashboardTab = useHasPermission("dashboard");
   const canSeeTablesTab = useHasPermission("tables");
@@ -1109,6 +1135,17 @@ export default function ModernHeader({
     [activeSearchIndex, navigateFromSearch, visibleSearchItems]
   );
 
+  const headerIconButtonClass = React.useCallback(
+    (isActive = false) =>
+      [
+        "inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl border shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/30",
+        isActive
+          ? "border-indigo-300 bg-indigo-50 text-indigo-600 shadow-indigo-500/10 dark:border-indigo-500/50 dark:bg-indigo-500/15 dark:text-indigo-300"
+          : "border-slate-200/80 bg-white/95 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300",
+      ].join(" "),
+    []
+  );
+
   return (
     <header className="sticky top-0 z-40 w-full px-3 md:px-6 h-auto md:h-16 py-2 md:py-0 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
       {/* Left: Drawer toggle */}
@@ -1121,6 +1158,20 @@ export default function ModernHeader({
             aria-label="Toggle navigation"
           >
             <Menu className="w-5 h-5" />
+          </button>
+        )}
+        {canShowBackButton && (
+          <button
+            type="button"
+            onClick={handleBackClick}
+            className="group inline-flex h-10 items-center justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 px-3 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:text-indigo-600 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300"
+            aria-label={t("Go Back")}
+            title={t("Go Back")}
+          >
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-indigo-50 group-hover:text-indigo-600 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-indigo-500/10 dark:group-hover:text-indigo-300">
+              <ChevronLeft className="h-4 w-4" />
+            </span>
+            <span className="hidden sm:inline">{t("Back")}</span>
           </button>
         )}
       </div>
@@ -1177,17 +1228,26 @@ export default function ModernHeader({
             <button
               type="button"
               onClick={() => navigate("/dashboard")}
-              className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/95 text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300"
+              className={headerIconButtonClass(isDashboardRoute)}
               aria-label={t("Dashboard")}
               title={t("Dashboard")}
             >
               <Home className="h-4.5 w-4.5" />
             </button>
+            <button
+              type="button"
+              onClick={() => navigate("/tableoverview?tab=tables")}
+              className={headerIconButtonClass(isTableOverviewRoute || isTransactionRoute)}
+              aria-label={t("Orders")}
+              title={t("Orders")}
+            >
+              <ClipboardList className="h-4.5 w-4.5" />
+            </button>
             {!isPublicShellRoute && currentUser && onLockClick && (
               <button
                 type="button"
                 onClick={onLockClick}
-                className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/95 text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300"
+                className={headerIconButtonClass()}
                 aria-label={t("Lock Session")}
                 title={t("Lock Session")}
               >

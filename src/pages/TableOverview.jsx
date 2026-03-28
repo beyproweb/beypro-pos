@@ -162,6 +162,35 @@ const normalizeBookingDateYmd = (booking) => {
   return Number.isFinite(parsedMs) ? formatLocalYmd(new Date(parsedMs)) : "";
 };
 
+const isReservationRelevantForTableState = (reservation) => {
+  const reservationStatus = normalizeOrderStatus(
+    reservation?.status ??
+      reservation?.reservation_status ??
+      reservation?.reservationStatus ??
+      reservation?.order_status ??
+      reservation?.orderStatus ??
+      ""
+  );
+  if (reservationStatus === "checked_in") return true;
+
+  const bookingDateYmd = normalizeBookingDateYmd(reservation);
+  if (!bookingDateYmd) return true;
+
+  return bookingDateYmd === formatLocalYmd(new Date());
+};
+
+const isConcertBookingRelevantForTableState = (booking) => {
+  const reservationOrderStatus = normalizeOrderStatus(
+    booking?.reservation_order_status ?? booking?.reservationOrderStatus ?? ""
+  );
+  if (reservationOrderStatus === "checked_in") return true;
+
+  const bookingDateYmd = normalizeBookingDateYmd(booking);
+  if (!bookingDateYmd) return false;
+
+  return bookingDateYmd === formatLocalYmd(new Date());
+};
+
 const sanitizePdfText = (value) =>
   String(value ?? "")
     .replace(/[^\x20-\x7E]/g, "?")
@@ -1616,6 +1645,7 @@ const handleCheckinReservation = useCallback(
     const hasConcertBookingOnTable =
       Number.isFinite(tableNumber) &&
       (Array.isArray(concertBookings) ? concertBookings : []).some((booking) => {
+        if (!isConcertBookingRelevantForTableState(booking)) return false;
         const reservedTableNumber = Number(
           booking?.reserved_table_number ?? booking?.reservedTableNumber
         );
@@ -1630,6 +1660,7 @@ const handleCheckinReservation = useCallback(
     const hasConfirmedConcertBookingOnTable =
       Number.isFinite(tableNumber) &&
       (Array.isArray(concertBookings) ? concertBookings : []).some((booking) => {
+        if (!isConcertBookingRelevantForTableState(booking)) return false;
         const reservedTableNumber = Number(
           booking?.reserved_table_number ?? booking?.reservedTableNumber
         );
@@ -4484,6 +4515,8 @@ const reservationsForModel = React.useMemo(() => {
   };
 
   (Array.isArray(effectiveReservationsToday) ? effectiveReservationsToday : []).forEach((reservation) => {
+    if (!isReservationRelevantForTableState(reservation)) return;
+
     const tableNumber = Number(
       reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
     );
@@ -4492,6 +4525,8 @@ const reservationsForModel = React.useMemo(() => {
   });
 
   (Array.isArray(concertBookings) ? concertBookings : []).forEach((booking) => {
+    if (!isConcertBookingRelevantForTableState(booking)) return;
+
     const tableNumber = Number(
       booking?.reserved_table_number ?? booking?.reservedTableNumber ?? booking?.table_number ?? booking?.tableNumber
     );
@@ -4646,6 +4681,8 @@ const blockedConcertTableNumbers = React.useMemo(() => {
   const blocked = new Set();
   const bookings = Array.isArray(concertBookings) ? concertBookings : [];
   bookings.forEach((booking) => {
+    if (!isConcertBookingRelevantForTableState(booking)) return;
+
     const paymentStatus = String(
       booking?.payment_status ?? booking?.paymentStatus ?? ""
     )

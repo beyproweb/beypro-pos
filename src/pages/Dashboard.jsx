@@ -88,6 +88,19 @@ const QUICK_ACCESS_CONFIG = [
     icon: "ChefHat",
   },
   {
+    id: "pre-order",
+    labelKey: "Pre Order",
+    defaultLabel: "Pre Order",
+    group: "operations",
+    searchTerms: ["pre order", "preorder", "takeaway", "pickup"],
+    path: "/tableoverview?tab=takeaway",
+    color: "bg-gradient-to-r from-amber-500 to-orange-600",
+    iconColor: "text-orange-700",
+    iconRing: "ring-orange-400/40",
+    icon: "ShoppingCart",
+    permission: "takeaway",
+  },
+  {
     id: "products",
     labelKey: "Products",
     defaultLabel: "Products",
@@ -376,6 +389,7 @@ const QUICK_ACCESS_CONFIG = [
 ];
 
 const DASHBOARD_TO_SIDEBAR_TYPE = "application/x-dashboard-shortcut";
+const DASHBOARD_LAST_GROUP_KEY = "dashboard:last-group";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -875,7 +889,11 @@ const fetchSummaryStats = useCallback(async () => {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const [commandPaletteIndex, setCommandPaletteIndex] = useState(0);
-  const [activeGroupKey, setActiveGroupKey] = useState("operations");
+  const [activeGroupKey, setActiveGroupKey] = useState(() => {
+    if (typeof window === "undefined") return "operations";
+    const stored = window.sessionStorage.getItem(DASHBOARD_LAST_GROUP_KEY);
+    return stored || "operations";
+  });
   const [isLiveCamerasExpanded, setIsLiveCamerasExpanded] = useState(false);
   const [isBusinessSnapshotExpanded, setIsBusinessSnapshotExpanded] = useState(false);
   const commandInputRef = useRef(null);
@@ -985,7 +1003,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-sky-200/90 bg-white text-sky-800 shadow-sm shadow-sky-100/60 hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-50 hover:shadow-md hover:shadow-sky-100/70 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100 dark:hover:border-sky-700 dark:hover:bg-sky-500/20 dark:hover:shadow-none",
         inactiveMetaClass: "text-sky-600/80 dark:text-sky-300/80",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["orders", "packet", "history", "kitchen", "view-booking", "qr-menu", "task"],
+        ids: ["orders", "packet", "history", "kitchen", "pre-order", "view-booking", "qr-menu", "task"],
       },
       {
         key: "team",
@@ -1077,6 +1095,12 @@ const fetchSummaryStats = useCallback(async () => {
       setActiveGroupKey(groupedAccessSections[0].key);
     }
   }, [activeGroupKey, groupedAccessSections]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!activeGroupKey) return;
+    window.sessionStorage.setItem(DASHBOARD_LAST_GROUP_KEY, activeGroupKey);
+  }, [activeGroupKey]);
 
   const activeGroupSection = useMemo(() => {
     if (groupedAccessSections.length === 0) return null;
@@ -1278,7 +1302,7 @@ const fetchSummaryStats = useCallback(async () => {
 
               {activeGroupSection ? (
                 <div className="rounded-[1.6rem] border border-slate-200/80 bg-white/90 px-4 py-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/55 sm:px-5">
-                  <div className="grid grid-cols-3 gap-x-3 gap-y-6 place-items-center sm:grid-cols-4 sm:gap-x-4 lg:grid-cols-6 lg:gap-x-4 xl:grid-cols-7 2xl:grid-cols-8">
+                  <div className="grid grid-cols-3 gap-x-3 gap-y-6 place-items-center sm:grid-cols-4 sm:gap-x-4 lg:grid-cols-6 lg:gap-x-4 xl:grid-cols-8">
                     {activeGroupSection.items.map((item) => {
                 const label = t(item.labelKey, {
                   defaultValue: item.defaultLabel ?? item.labelKey,
