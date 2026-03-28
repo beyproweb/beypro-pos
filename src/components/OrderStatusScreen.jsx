@@ -14,6 +14,9 @@ const SOCKET_URL =
   (typeof window !== "undefined" ? window.location.origin : "");
 const QR_PREFIX = "qr_";
 const DELIVERY_REORDER_CONTEXT_KEY = "qr_delivery_reorder_context";
+const PUBLIC_API_BASE =
+  String(BASE_URL || "").replace(/\/api\/?$/, "") ||
+  (typeof window !== "undefined" ? window.location.origin : "");
 
 /* ---------- SOCKET.IO HOOK ---------- */
 let socket;
@@ -140,6 +143,31 @@ const parseMaybeJSON = (v) => {
   }
 };
 const normalizeComparableText = (value) => String(value || "").trim().toLowerCase();
+const normalizePublicQrUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw, PUBLIC_API_BASE || (typeof window !== "undefined" ? window.location.origin : undefined));
+    if (/localhost|127\.0\.0\.1|\[::1\]/i.test(url.hostname) && PUBLIC_API_BASE) {
+      return new URL(`${url.pathname}${url.search}${url.hash}`, PUBLIC_API_BASE).toString();
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+};
+const buildCheckInQrImageUrl = (qrUrl) => {
+  const normalized = normalizePublicQrUrl(qrUrl);
+  if (!normalized) return "";
+  try {
+    const url = new URL(normalized);
+    url.pathname = url.pathname.replace(/\/qr\/([^/?#]+)$/i, "/qr-image/$1");
+    url.searchParams.delete("format");
+    return url.toString();
+  } catch {
+    return "";
+  }
+};
 const isDeliveryLikeOrderType = (value) =>
   ["packet", "delivery", "online", "phone"].includes(normalizeComparableText(value));
 const normItem = (it) => ({
@@ -745,6 +773,45 @@ function ReservationPendingBadge({ t }) {
   );
 }
 
+function CheckInQrCard({ t, qrImageUrl, qrUrl }) {
+  if (!qrImageUrl) return null;
+
+  return (
+    <section className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-4">
+      <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+        {t("Check-in Code")}
+      </div>
+      <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+        {t("Show this QR code at the venue for fast check-in.")}
+      </div>
+      <div className="mt-4 flex justify-center">
+        <div className="rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-4 shadow-sm">
+          <img
+            src={qrImageUrl}
+            alt={t("Check-in QR Code")}
+            width="220"
+            height="220"
+            className="block h-[220px] w-[220px] rounded-2xl bg-white object-contain"
+            loading="lazy"
+          />
+        </div>
+      </div>
+      {qrUrl ? (
+        <div className="mt-4 text-center">
+          <a
+            href={qrImageUrl || qrUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-10 items-center rounded-full border border-neutral-300 dark:border-neutral-700 px-4 text-sm font-semibold text-neutral-800 dark:text-neutral-100 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+          >
+            {t("Open Check-in Code")}
+          </a>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function OrderItemsList({ t, items, totalLabel, formatCurrency, badgeColor, displayStatus, pmLabel }) {
   return (
     <section className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
@@ -1210,6 +1277,7 @@ const OrderStatusScreen = ({
     async (orderData) => {
       if (!orderData || typeof orderData !== "object") return orderData;
       if (Array.isArray(orderData.suborders) && orderData.suborders.length > 0) return orderData;
+      if (!getAuthToken()) return orderData;
 
       const orderDataId = Number(orderData?.id || 0);
       if (!Number.isFinite(orderDataId) || orderDataId <= 0) return orderData;
@@ -1530,6 +1598,15 @@ const OrderStatusScreen = ({
   const hasConcertBookingContext =
     Number(order?.concert_booking_id || order?.concertBookingId) > 0 ||
     Boolean(concertBookingPaymentStatus || concertBookingStatus);
+  const reservationQrUrl = normalizePublicQrUrl(
+    order?.concert_booking_qr_url ||
+      order?.concertBookingQrUrl ||
+      order?.qr_url ||
+      order?.qrUrl ||
+      order?.reservation?.qr_url ||
+      order?.reservation?.qrUrl
+  );
+  const reservationQrImageUrl = buildCheckInQrImageUrl(reservationQrUrl);
   const concertBookingType = String(
     order?.concert_booking_type || order?.concertBookingType || ""
   )
@@ -1690,6 +1767,13 @@ const OrderStatusScreen = ({
     isTableContextOrder &&
     !hasCheckedOutSignal &&
     !isCancelledFlow;
+  const shouldShowCheckInQrCard =
+    Boolean(reservationQrImageUrl) &&
+    !hasCheckedOutSignal &&
+    !isCancelledFlow &&
+    (effectiveOrderStatus === "confirmed" ||
+      effectiveOrderStatus === "checked_in" ||
+      hasCheckedInSignal);
 
   useEffect(() => {
     if (canShowRequestSongTab) return;
@@ -1973,6 +2057,14 @@ const OrderStatusScreen = ({
               />
 
               {isReservedOrderContext ? <ReservationPendingBadge t={t} /> : null}
+
+              {shouldShowCheckInQrCard ? (
+                <CheckInQrCard
+                  t={t}
+                  qrImageUrl={reservationQrImageUrl}
+                  qrUrl={reservationQrUrl}
+                />
+              ) : null}
 
               {!isReservedOrderContext ? (
                 <OrderItemsList
