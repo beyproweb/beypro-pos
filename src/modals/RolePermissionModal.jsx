@@ -25,6 +25,7 @@ const PERMISSION_LABELS = {
   "customer-insights": "👤 Customer Insights",
   "marketing-campaigns": "📢 Marketing Campaigns",
   maintenance: "🔧 Maintenance Tracker",
+  "scan-ticket": "📷 Scan Ticket",
   "takeaway-overview": "🥡 Takeaway Overview",
   "printers-page": "🖨 Printers Management",
   "transaction-screen": "💳 Transaction Screen",

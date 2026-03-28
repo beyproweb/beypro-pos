@@ -14,7 +14,7 @@ import {
   UserCheck, Megaphone, Wrench, Star, AlertTriangle, CreditCard,
   Clock, ChevronRight, ArrowUpRight, ArrowDownRight, ChefHat,
   UserCog, Bell, Printer, Plug, Video, ShoppingCart, CalendarDays,
-  Search, ChevronDown, ChevronUp
+  Search, ChevronDown, ChevronUp, ScanLine
 } from 'lucide-react';
 import axios from "axios";
 // adjust path as needed!
@@ -263,6 +263,18 @@ const QUICK_ACCESS_CONFIG = [
     icon: "Settings",
   },
   {
+    id: "scan-ticket",
+    labelKey: "Scan Ticket",
+    defaultLabel: "Scan Ticket",
+    group: "system",
+    path: "/scan-ticket",
+    color: "bg-gradient-to-r from-cyan-500 to-blue-600",
+    iconColor: "text-cyan-700",
+    iconRing: "ring-cyan-400/40",
+    icon: "ScanLine",
+    permission: "scan-ticket",
+  },
+  {
     id: "qr-menu",
     labelKey: "QR Menu",
     defaultLabel: "QR Menu",
@@ -312,6 +324,28 @@ const QUICK_ACCESS_CONFIG = [
     color: "bg-gradient-to-r from-blue-500 to-indigo-500",
     iconColor: "text-blue-600",
     iconRing: "ring-blue-400/40",
+    icon: "UserCog",
+    permission: "settings-users",
+  },
+  {
+    id: "role-management",
+    labelKey: "Role and Management",
+    defaultLabel: "Role and Management",
+    path: "/role-management",
+    color: "bg-gradient-to-r from-violet-500 to-indigo-600",
+    iconColor: "text-violet-700",
+    iconRing: "ring-violet-400/40",
+    icon: "UserCog",
+    permission: "settings-users",
+  },
+  {
+    id: "add-new-user",
+    labelKey: "Add New User",
+    defaultLabel: "Add New User",
+    path: "/add-new-user",
+    color: "bg-gradient-to-r from-emerald-500 to-cyan-500",
+    iconColor: "text-emerald-700",
+    iconRing: "ring-emerald-400/40",
     icon: "UserCog",
     permission: "settings-users",
   },
@@ -713,6 +747,7 @@ const fetchSummaryStats = useCallback(async () => {
       case 'Plug': return <Plug size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
       case 'ShoppingCart': return <ShoppingCart size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
       case 'CalendarDays': return <CalendarDays size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
+      case 'ScanLine': return <ScanLine size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
       default: return <Home size={size} strokeWidth={2.5} className="drop-shadow-sm" />;
     }
   };
@@ -962,7 +997,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-violet-200/90 bg-white text-violet-800 shadow-sm shadow-violet-100/60 hover:-translate-y-0.5 hover:border-violet-300 hover:bg-violet-50 hover:shadow-md hover:shadow-violet-100/70 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-100 dark:hover:border-violet-700 dark:hover:bg-violet-500/20 dark:hover:shadow-none",
         inactiveMetaClass: "text-violet-600/80 dark:text-violet-300/80",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["staff", "staff-checkin", "staff-schedule", "payroll", "user-management"],
+        ids: ["staff", "staff-checkin", "staff-schedule", "payroll", "user-management", "role-management", "add-new-user"],
       },
       {
         key: "inventory",
@@ -1010,7 +1045,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-slate-200/90 bg-white text-slate-800 shadow-sm shadow-slate-200/70 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:shadow-slate-200/80 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800",
         inactiveMetaClass: "text-slate-500 dark:text-slate-400",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["settings", "integrations", "notifications", "printers", "maintenance"],
+        ids: ["settings", "scan-ticket", "integrations", "notifications", "printers", "maintenance"],
       },
     ];
     const byId = new Map(allowedAccess.map((item) => [item.id, item]));

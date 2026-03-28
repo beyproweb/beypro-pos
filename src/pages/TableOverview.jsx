@@ -2078,11 +2078,13 @@ const handleCheckinReservation = useCallback(
           orderId,
           reservationId,
         });
-        await Promise.all([
+        void Promise.all([
           fetchOrders({ skipHydration: true }),
           loadConcertBookingsForOverview(),
           loadReservationBookingsForOverview(),
-        ]);
+        ]).catch((refreshErr) => {
+          console.warn("⚠️ Failed to refresh booking data after confirmation:", refreshErr);
+        });
         setTimeout(() => fetchOrders(), 350);
       } catch (confirmErr) {
         console.error("❌ Failed to confirm booking from table card:", confirmErr);

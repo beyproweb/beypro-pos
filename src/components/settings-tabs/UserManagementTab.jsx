@@ -9,7 +9,15 @@ import ConfirmModal from "../../modals/ConfirmModal";
 import secureFetch from "../../utils/secureFetch";
 import { useHasPermission } from "../hooks/useHasPermission";
 
-export default function UserManagementTab() {
+export default function UserManagementTab({
+  showManagementSections = true,
+  showRoleSections = true,
+  showAddUserSection = true,
+  showAddUserSectionTitle = true,
+  showHeading = true,
+  headingKey = "User Management",
+  headingEmoji = "👥",
+}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -395,10 +403,14 @@ export default function UserManagementTab() {
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-8 max-w-6xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
-      <h2 className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-300 mb-10">
-        👥 {t("User Management")}
-      </h2>
+      {showHeading && (
+        <h2 className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-300 mb-10">
+          {headingEmoji} {t(headingKey)}
+        </h2>
+      )}
 
+      {showManagementSections && (
+        <>
       {/* PIN toggle */}
       <div className="flex items-center justify-between mb-12 border-b pb-6 border-indigo-100 dark:border-indigo-800">
         <span className="text-lg font-medium text-gray-800 dark:text-white">
@@ -738,220 +750,6 @@ export default function UserManagementTab() {
         </div>
       </div>
 
-      {/* Add New Staff */}
-      <div className="mb-14">
-        <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
-          ➕ {t("Add New Staff User")}
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        {[
-          { key: "id", label: t("ID") },
-          { key: "name", label: t("Full Name") },
-          { key: "email", label: t("Email") },
-          { key: "phone", label: t("Phone") },
-          { key: "address", label: t("Address") },
-        ].map(({ key, label }) => (
-          <input
-            key={key}
-            className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-            placeholder={label}
-            value={newUser[key]}
-            onChange={(e) => setNewUser({ ...newUser, [key]: e.target.value })}
-          />
-        ))}
-        <select
-          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-          value={newUser.role}
-          onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-        >
-          {roles.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-        <input
-          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-          type="password"
-          placeholder={t("PIN")}
-          value={newUser.pin}
-          onChange={(e) => setNewUser({ ...newUser, pin: e.target.value })}
-        />
-        <input
-          className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-          placeholder={t("Salary")}
-          value={newUser.salary}
-          onChange={(e) => setNewUser({ ...newUser, salary: e.target.value })}
-        />
-      </div>
-      <div className="flex flex-col gap-3 sm:max-w-sm">
-        <div>
-          <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
-            {t("Upload Avatar")}
-          </label>
-          <div className="flex items-center gap-3">
-            <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white cursor-pointer">
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  setNewAvatarFileName(file?.name || "");
-                  if (!file) return;
-                  const formData = new FormData();
-                  formData.append("file", file);
-                  try {
-                    const res = await secureFetch("/upload", {
-                      method: "POST",
-                      body: formData,
-                    });
-                    setNewUser((prev) => ({ ...prev, avatar: res.url }));
-                    toast.success(t("Avatar uploaded successfully"));
-                  } catch (err) {
-                    toast.error(`❌ ${t("Image upload failed!")}`);
-                  }
-                }}
-              />
-              {t("Choose file")}
-            </label>
-            <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
-              {newAvatarFileName || t("No file chosen")}
-            </span>
-          </div>
-        </div>
-
-        <button
-          onClick={handleAddUser}
-          className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition self-start"
-        >
-          ➕ {t("Add User")}
-        </button>
-      </div>
-    </div>
-
-    {/* Role Creation */}
-    <div className="mb-10">
-      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">➕ {t("Create New Role")}</h3>
-      <div className="sm:max-w-md flex flex-col gap-3">
-        <input
-          type="text"
-          value={newRoleName}
-          onChange={(e) => setNewRoleName(e.target.value)}
-          placeholder={t("Role name (e.g. Kitchen, Inventory)")}
-          className="p-3 w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-400"
-        />
-        <button
-          onClick={handleCreateRole}
-          className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition"
-        >
-          {t("Create Role")}
-        </button>
-      </div>
-    </div>
-
-    {/* Delete Role */}
-    <div className="mb-10">
-      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
-        🗑️ {t("Delete Role")}
-      </h3>
-      {deletableRoles.length ? (
-        <div className="sm:max-w-md flex flex-col sm:flex-row gap-3">
-          <select
-            value={roleToDelete}
-            onChange={(e) => setRoleToDelete(e.target.value)}
-            className="p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
-          >
-            <option value="">{t("Select Role to Delete")}</option>
-            {deletableRoles.map((role) => (
-              <option key={role} value={role}>
-                {role}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={handleDeleteRole}
-            disabled={!roleToDelete}
-            className="px-5 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {t("Delete Role")}
-          </button>
-        </div>
-      ) : (
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          {t("No deletable roles available.")}
-        </p>
-      )}
-    </div>
-
-    {/* Staff Role Assignment */}
-    <div className="mb-14">
-      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">👥 {t("Assign Role to Staff")}</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <select
-            value={selectedStaffId}
-            onChange={(e) => setSelectedStaffId(e.target.value)}
-            className="p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
-        >
-          <option value="">{t("Select Staff")}</option>
-          {staffList.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.role})
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={copyFromRole}
-          onChange={(e) => setCopyFromRole(e.target.value)}
-          className="p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
-        >
-          <option value="">{t("Select Role")}</option>
-          {roles.map((r) => (
-            <option key={r} value={r}>{r}</option>
-          ))}
-        </select>
-
-          <div className="flex gap-2">
-            <button
-              disabled={!selectedStaffId || !copyFromRole}
-       onClick={async () => {
-  await secureFetch(`/staff/${selectedStaffId}/role`, {
-    method: "PUT",
-    body: JSON.stringify({ role: copyFromRole }),
-  });
-  toast.success(`✅ ${t("Assigned {{role}} to staff ID {{id}}", { role: copyFromRole, id: selectedStaffId })}`);
-  fetchStaff();
-  setSelectedStaffId("");
-  setCopyFromRole("");
-}}
-
-            className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition"
-          >
-            {t("Assign")}
-          </button>
-          <button
-            disabled={!selectedStaffId}
-            onClick={() => setShowConfirm(true)}
-            className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition"
-          >
-            {t("Delete")}
-          </button>
-          {isStandalone && (
-            <button
-              disabled={!selectedStaffId}
-              onClick={() => {
-                if (!selectedStaffId) return;
-                navigate(`/standalone/staff/checkin?staffId=${selectedStaffId}`);
-              }}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition"
-            >
-              {t("Check-In")}
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Inline Staff Editing */}
       {paginatedStaff.map((staff) => (
         <div key={staff.id} className="bg-gray-50 dark:bg-gray-800 border dark:border-gray-600 rounded-xl p-4 mb-4 shadow-sm hover:shadow-md transition">
@@ -1107,6 +905,230 @@ export default function UserManagementTab() {
           ))}
         </div>
       )}
+        </>
+      )}
+
+      {showAddUserSection && (
+        <>
+          {/* Add New Staff */}
+          <div className="mb-14">
+            {showAddUserSectionTitle && (
+              <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
+                ➕ {t("Add New Staff User")}
+              </h3>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+              {[
+                { key: "id", label: t("ID") },
+                { key: "name", label: t("Full Name") },
+                { key: "email", label: t("Email") },
+                { key: "phone", label: t("Phone") },
+                { key: "address", label: t("Address") },
+              ].map(({ key, label }) => (
+                <input
+                  key={key}
+                  className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                  placeholder={label}
+                  value={newUser[key]}
+                  onChange={(e) => setNewUser({ ...newUser, [key]: e.target.value })}
+                />
+              ))}
+              <select
+                className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                value={newUser.role}
+                onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+              >
+                {roles.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                type="password"
+                placeholder={t("PIN")}
+                value={newUser.pin}
+                onChange={(e) => setNewUser({ ...newUser, pin: e.target.value })}
+              />
+              <input
+                className="p-3 border rounded-xl dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                placeholder={t("Salary")}
+                value={newUser.salary}
+                onChange={(e) => setNewUser({ ...newUser, salary: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-3 sm:max-w-sm">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
+                  {t("Upload Avatar")}
+                </label>
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        setNewAvatarFileName(file?.name || "");
+                        if (!file) return;
+                        const formData = new FormData();
+                        formData.append("file", file);
+                        try {
+                          const res = await secureFetch("/upload", {
+                            method: "POST",
+                            body: formData,
+                          });
+                          setNewUser((prev) => ({ ...prev, avatar: res.url }));
+                          toast.success(t("Avatar uploaded successfully"));
+                        } catch (err) {
+                          toast.error(`❌ ${t("Image upload failed!")}`);
+                        }
+                      }}
+                    />
+                    {t("Choose file")}
+                  </label>
+                  <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                    {newAvatarFileName || t("No file chosen")}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleAddUser}
+                className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition self-start"
+              >
+                ➕ {t("Add User")}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+    {showRoleSections && (
+      <>
+    {/* Role Creation */}
+    <div className="mb-10">
+      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">➕ {t("Create New Role")}</h3>
+      <div className="sm:max-w-md flex flex-col gap-3">
+        <input
+          type="text"
+          value={newRoleName}
+          onChange={(e) => setNewRoleName(e.target.value)}
+          placeholder={t("Role name (e.g. Kitchen, Inventory)")}
+          className="p-3 w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-400"
+        />
+        <button
+          onClick={handleCreateRole}
+          className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold hover:brightness-110 transition"
+        >
+          {t("Create Role")}
+        </button>
+      </div>
+    </div>
+
+    {/* Delete Role */}
+    <div className="mb-10">
+      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">
+        🗑️ {t("Delete Role")}
+      </h3>
+      {deletableRoles.length ? (
+        <div className="sm:max-w-md flex flex-col sm:flex-row gap-3">
+          <select
+            value={roleToDelete}
+            onChange={(e) => setRoleToDelete(e.target.value)}
+            className="p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
+          >
+            <option value="">{t("Select Role to Delete")}</option>
+            {deletableRoles.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleDeleteRole}
+            disabled={!roleToDelete}
+            className="px-5 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {t("Delete Role")}
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          {t("No deletable roles available.")}
+        </p>
+      )}
+    </div>
+
+    {/* Staff Role Assignment */}
+    <div className="mb-14">
+      <h3 className="text-2xl font-semibold text-gray-700 dark:text-indigo-200 mb-4">👥 {t("Assign Role to Staff")}</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <select
+            value={selectedStaffId}
+            onChange={(e) => setSelectedStaffId(e.target.value)}
+            className="p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
+        >
+          <option value="">{t("Select Staff")}</option>
+          {staffList.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} ({s.role})
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={copyFromRole}
+          onChange={(e) => setCopyFromRole(e.target.value)}
+          className="p-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-xl shadow-sm"
+        >
+          <option value="">{t("Select Role")}</option>
+          {roles.map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+
+          <div className="flex gap-2">
+            <button
+              disabled={!selectedStaffId || !copyFromRole}
+       onClick={async () => {
+  await secureFetch(`/staff/${selectedStaffId}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ role: copyFromRole }),
+  });
+  toast.success(`✅ ${t("Assigned {{role}} to staff ID {{id}}", { role: copyFromRole, id: selectedStaffId })}`);
+  fetchStaff();
+  setSelectedStaffId("");
+  setCopyFromRole("");
+}}
+
+            className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition"
+          >
+            {t("Assign")}
+          </button>
+          <button
+            disabled={!selectedStaffId}
+            onClick={() => setShowConfirm(true)}
+            className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition"
+          >
+            {t("Delete")}
+          </button>
+          {isStandalone && (
+            <button
+              disabled={!selectedStaffId}
+              onClick={() => {
+                if (!selectedStaffId) return;
+                navigate(`/standalone/staff/checkin?staffId=${selectedStaffId}`);
+              }}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition"
+            >
+              {t("Check-In")}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
 
     {/* Role Permissions */}
@@ -1233,6 +1255,8 @@ try {
           }
         }}
       />
+      </>
+    )}
     </div>
   );
 }

@@ -39,9 +39,12 @@ import QrMenu from "./pages/QrMenu";
 import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
+import TicketScannerPage from "./pages/TicketScannerPage";
 import secureFetch from "./utils/secureFetch";
 import { QrMenuSettings } from "./features/websiteBuilder/index.js";
 import UserManagementPage from "./pages/UserManagementPage";
+import RoleManagementPage from "./pages/RoleManagementPage";
+import AddNewUserPage from "./pages/AddNewUserPage";
 import PrintersPage from "./pages/PrintersPage";
 import CamerasPage from "./pages/CamerasPage";
 import TakeawayOverview from "./pages/TakeawayOverview";
@@ -375,6 +378,22 @@ function AppShell() {
                 }
               />
               <Route
+                path="role-management"
+                element={
+                  <ProtectedRoute permission="settings-users" moduleKey="page.settings.users">
+                    <RoleManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="add-new-user"
+                element={
+                  <ProtectedRoute permission="settings-users" moduleKey="page.settings.users">
+                    <AddNewUserPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="printers"
                 element={
                   <ProtectedRoute permission="settings-printers" moduleKey="page.settings.printers">
@@ -387,6 +406,14 @@ function AppShell() {
                 element={
                   <ProtectedRoute permission="settings-cameras" moduleKey="page.settings.cameras">
                     <CamerasPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="scan-ticket"
+                element={
+                  <ProtectedRoute permission="scan-ticket" moduleKey="page.dashboard">
+                    <TicketScannerPage />
                   </ProtectedRoute>
                 }
               />

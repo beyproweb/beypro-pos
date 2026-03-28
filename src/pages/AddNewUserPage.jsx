@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import UserManagementTab from "../components/settings-tabs/UserManagementTab";
 
-export default function UserManagementPage() {
+export default function AddNewUserPage() {
   const { t } = useTranslation();
 
   return (
@@ -10,7 +10,7 @@ export default function UserManagementPage() {
       <div className="max-w-5xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <header className="px-6 py-5 border-b border-slate-200 dark:border-slate-800">
           <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
-            {t("User Management")}
+            {t("Add New User")}
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             {t("Manage staff roles, permissions, and access across your locations.")}
@@ -18,9 +18,13 @@ export default function UserManagementPage() {
         </header>
         <div className="p-4 sm:p-6">
           <UserManagementTab
-            showManagementSections
+            showManagementSections={false}
             showRoleSections={false}
-            showAddUserSection={false}
+            showAddUserSection
+            showAddUserSectionTitle={false}
+            showHeading={false}
+            headingKey="Add New User"
+            headingEmoji="➕"
           />
         </div>
       </div>

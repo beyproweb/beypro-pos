@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { API_ORIGIN } from "../../../utils/api";
 import { useHasPermission } from "../../../components/hooks/useHasPermission";
 import { useNavigate } from "react-router-dom";
+import { getCustomDomainPreview } from "../../../utils/customDomain";
 
 const extractIdentifierFromQrUrl = (value) => {
   const raw = String(value || "").trim();
@@ -49,6 +50,51 @@ const writeQrMenuBrandingCache = (identifier, customization) => {
     );
   } catch {
     // Ignore custom event failures and keep the saved cache value.
+  }
+};
+
+const syncRestaurantSlugCache = (slug) => {
+  if (typeof window === "undefined") return;
+  const normalizedSlug = String(slug || "").trim();
+  if (!normalizedSlug) return;
+
+  try {
+    window.localStorage.setItem("restaurant_slug", normalizedSlug);
+  } catch {
+    // Ignore storage errors.
+  }
+
+  try {
+    const rawUser = window.localStorage.getItem("beyproUser");
+    if (!rawUser) return;
+
+    const parsedUser = JSON.parse(rawUser);
+    let changed = false;
+
+    if (parsedUser && typeof parsedUser === "object") {
+      if (parsedUser.restaurant_slug !== normalizedSlug) {
+        parsedUser.restaurant_slug = normalizedSlug;
+        changed = true;
+      }
+      if (parsedUser.user && typeof parsedUser.user === "object") {
+        if (parsedUser.user.restaurant_slug !== normalizedSlug) {
+          parsedUser.user.restaurant_slug = normalizedSlug;
+          changed = true;
+        }
+        if (parsedUser.user.restaurant && typeof parsedUser.user.restaurant === "object") {
+          if (parsedUser.user.restaurant.slug !== normalizedSlug) {
+            parsedUser.user.restaurant.slug = normalizedSlug;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      window.localStorage.setItem("beyproUser", JSON.stringify(parsedUser));
+    }
+  } catch {
+    // Ignore malformed cached user data.
   }
 };
 
@@ -276,6 +322,9 @@ export default function QrMenuSettings() {
   pwa_background_color: "#FFFFFF",
   qrmenu_font_family: "gotham",
 });
+  const [customDomainInput, setCustomDomainInput] = useState("");
+  const [customDomainError, setCustomDomainError] = useState("");
+  const [currentRestaurantSlug, setCurrentRestaurantSlug] = useState("");
   const [concertEvents, setConcertEvents] = useState([]);
   const [concertAreas, setConcertAreas] = useState([]);
   const [loadingConcerts, setLoadingConcerts] = useState(false);
@@ -348,6 +397,25 @@ export default function QrMenuSettings() {
     const legacy = String(source?.story_video_youtube_url || "").trim();
     return legacy ? [legacy] : [""];
   };
+
+  const customDomainPreview = useMemo(
+    () => getCustomDomainPreview(customDomainInput),
+    [customDomainInput]
+  );
+  const fallbackRestaurantSlug = String(
+    currentRestaurantSlug || extractIdentifierFromQrUrl(qrUrl) || ""
+  ).trim();
+  const slugPreviewValue = customDomainPreview.isBlank
+    ? fallbackRestaurantSlug || "-"
+    : customDomainPreview.generatedSlug || "-";
+  const domainPreviewValue = customDomainPreview.isBlank
+    ? "pos.beypro.com"
+    : customDomainPreview.normalizedDomain || "-";
+  const customDomainInlineError =
+    customDomainError ||
+    (!customDomainPreview.isBlank && !customDomainPreview.isValid
+      ? t("Please enter a valid domain like menu.myrestaurant.com")
+      : "");
 
   const updateStoryImages = (nextImages) => {
     const normalized = nextImages
@@ -645,26 +713,57 @@ function removeReview(index) {
 
 async function saveAllCustomization() {
   try {
+    if (!customDomainPreview.isBlank && !customDomainPreview.isValid) {
+      setCustomDomainError(t("Please enter a valid domain like menu.myrestaurant.com"));
+      return;
+    }
+
     const storyImages = normalizeStoryImages(settings);
     const storyVideoYoutubeUrls = normalizeStoryVideoUrls(settings)
       .map((item) => String(item || "").trim())
       .filter(Boolean);
     const payload = {
       ...settings,
+      custom_domain: String(customDomainInput || "").trim(),
       story_enabled: settings.story_enabled !== false,
       story_images: storyImages,
       story_image: storyImages[0] || "",
       story_video_youtube_urls: storyVideoYoutubeUrls,
       story_video_youtube_url: storyVideoYoutubeUrls[0] || "",
     };
-    await secureFetch("/settings/qr-menu-customization", {
+    const saveRes = await secureFetch("/settings/qr-menu-customization", {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    writeQrMenuBrandingCache(extractIdentifierFromQrUrl(qrUrl), payload);
+    const savedSlug = String(saveRes?.restaurant?.slug || fallbackRestaurantSlug || "").trim();
+    const savedCustomDomain = String(saveRes?.restaurant?.custom_domain || "").trim();
+    setCustomDomainError("");
+    setCurrentRestaurantSlug(savedSlug);
+    setCustomDomainInput(savedCustomDomain);
+    if (savedSlug) {
+      syncRestaurantSlugCache(savedSlug);
+      writeQrMenuBrandingCache(savedSlug, saveRes?.customization || payload);
+    }
+
+    try {
+      const linkRes = await secureFetch("/settings/qr-link");
+      if (linkRes?.success && linkRes.link) {
+        setQrUrl(linkRes.link);
+      }
+      if (linkRes?.slug) {
+        setCurrentRestaurantSlug(String(linkRes.slug || "").trim());
+        syncRestaurantSlugCache(linkRes.slug);
+      }
+    } catch (linkErr) {
+      console.warn("⚠️ Failed to refresh QR link after customization save:", linkErr);
+    }
+
     toast.success(t("Saved!"));
-  } catch {
-    toast.error(t("Save failed"));
+  } catch (err) {
+    if (err?.details?.body?.field === "custom_domain") {
+      setCustomDomainError(err.message || t("Invalid custom domain"));
+    }
+    toast.error(err?.message || t("Save failed"));
   }
 }
 
@@ -696,12 +795,23 @@ async function saveAllCustomization() {
           story_video_youtube_urls: storyVideoYoutubeUrls,
           story_video_youtube_url: String(storyVideoYoutubeUrls[0] || "").trim(),
         }));
+        setCustomDomainInput(String(customRes?.restaurant?.custom_domain || "").trim());
+        setCurrentRestaurantSlug(String(customRes?.restaurant?.slug || "").trim());
+        setCustomDomainError("");
       }
 
       // 4) Load short QR link
       setLoadingLink(true);
       const linkRes = await secureFetch("/settings/qr-link");
       if (linkRes?.success && linkRes.link) setQrUrl(linkRes.link);
+      if (linkRes?.slug) {
+        const normalizedSlug = String(linkRes.slug || "").trim();
+        setCurrentRestaurantSlug(normalizedSlug);
+        syncRestaurantSlugCache(normalizedSlug);
+      }
+      if (!customRes?.restaurant?.custom_domain && linkRes?.custom_domain) {
+        setCustomDomainInput(String(linkRes.custom_domain || "").trim());
+      }
 
       // 5) Load concert/event builder data
       await loadConcerts();
@@ -2682,6 +2792,66 @@ async function saveAllCustomization() {
                   placeholder={t("Restaurant name")}
                   className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-800"
                 />
+              </div>
+
+              <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white/80 p-4 dark:border-zinc-700 dark:bg-zinc-900/70">
+                <label className="font-semibold block">{t("Custom Domain")}</label>
+                <input
+                  type="text"
+                  value={customDomainInput}
+                  onChange={(e) => {
+                    setCustomDomainInput(e.target.value);
+                    setCustomDomainError("");
+                  }}
+                  placeholder="menu.myrestaurant.com"
+                  className={`w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-800 ${
+                    customDomainInlineError
+                      ? "border-rose-400 focus:border-rose-500"
+                      : "border-slate-300 dark:border-zinc-700"
+                  }`}
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  {t("Your QR menu link can be connected to your own domain.")}
+                </p>
+                {customDomainInlineError ? (
+                  <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                    {customDomainInlineError}
+                  </p>
+                ) : null}
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/80">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                      {t("Domain preview")}
+                    </p>
+                    <p className="mt-2 break-all text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {domainPreviewValue}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {customDomainPreview.isBlank
+                        ? t("Using the default Beypro domain until a custom domain is saved.")
+                        : customDomainPreview.isValid
+                          ? `https://${domainPreviewValue}`
+                          : t("Enter a valid domain to preview your custom domain.")}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/80">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                      {t("Generated slug preview")}
+                    </p>
+                    <p className="mt-2 break-all text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {slugPreviewValue}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {customDomainPreview.isBlank
+                        ? t("Using current/default slug behavior while no custom domain is set.")
+                        : customDomainPreview.isValid
+                          ? t("Slug will be saved automatically from the custom domain.")
+                          : t("Enter a valid domain to generate the slug safely.")}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div>

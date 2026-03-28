@@ -4046,6 +4046,8 @@ async function load() {
         const reservedTableNumber = Number(
           response?.booking?.reserved_table_number || concertForm.table_number || 0
         );
+        closeConcertModal();
+        showQrCartToast(concertMode === "table" ? t("Reservation confirmed") : t("Ticket created"));
         onConcertReservationSuccess?.({
           reservationOrderId: linkedOrderId,
           reservedTableNumber:
@@ -4056,14 +4058,13 @@ async function load() {
           paymentStatus,
           instructions,
         });
-        closeConcertModal();
-        await loadConcertEvents();
+        void loadConcertEvents();
         return;
       }
 
-      alert(`${t("Booking created")}\n${t("Status")}: ${paymentStatus}\n\n${instructions}`);
       closeConcertModal();
-      await loadConcertEvents();
+      showQrCartToast(concertMode === "table" ? t("Reservation confirmed") : t("Ticket created"));
+      void loadConcertEvents();
     } catch (err) {
       const message = String(err?.message || "");
       if (concertMode === "table" && /table stock is sold out/i.test(message)) {
