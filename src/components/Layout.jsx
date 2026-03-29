@@ -322,6 +322,10 @@ export default function Layout({
     typeof computedTitle === "string" ? t(computedTitle, { defaultValue: computedTitle }) : computedTitle;
 
   const currentTitle = translatedTitle || "Beypro";
+  const headerPreviousRoute = (() => {
+    if (normalizedPath === "/scan-ticket") return "/dashboard";
+    return undefined;
+  })();
 
 
   // Right content for ModernHeader (kitchen actions, notifications, etc.)
@@ -444,6 +448,7 @@ export default function Layout({
           subtitle={subtitle}
           centerNav={centerNav}
           tableNav={tableNav}
+          previousRoute={headerPreviousRoute}
           onSidebarToggle={() => setIsSidebarOpen((v) => !v)}
           onLockClick={handleManualLock}
           rightContent={rightContent}

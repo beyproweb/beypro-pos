@@ -381,6 +381,7 @@ function TablesView({
       );
     });
   }, [bookingDateFrom, bookingDateTo, combinedBookings, normalizedBookingSearch]);
+  const hasAnyViewBookingRows = combinedBookings.length > 0;
   const tablesByNumber = React.useMemo(() => {
     const map = new Map();
     (Array.isArray(tables) ? tables : []).forEach((table) => {
@@ -406,12 +407,39 @@ function TablesView({
           booking?.table_number ??
           booking?.tableNumber
       );
+      const preferredOrderId = Number(
+        booking?.order_id ??
+          booking?.orderId ??
+          booking?.reservation_order_id ??
+          booking?.reservationOrderId
+      );
       const tableFromGrid =
         Number.isFinite(tableNumber) && tableNumber > 0 ? tablesByNumber.get(tableNumber) || null : null;
+      const rawTableOrders =
+        Number.isFinite(tableNumber) && tableNumber > 0 && ordersByTable instanceof Map
+          ? ordersByTable.get(tableNumber)
+          : null;
+      const tableOrderCandidates = Array.isArray(rawTableOrders)
+        ? rawTableOrders
+        : rawTableOrders
+          ? [rawTableOrders]
+          : [];
       let tableOrder = tableFromGrid?.order || null;
+      if (
+        Number.isFinite(preferredOrderId) &&
+        preferredOrderId > 0 &&
+        Number(tableOrder?.id) !== preferredOrderId
+      ) {
+        tableOrder =
+          tableOrderCandidates.find((order) => Number(order?.id) === preferredOrderId) || tableOrder;
+      }
       if (!tableOrder && Number.isFinite(tableNumber) && tableNumber > 0 && ordersByTable instanceof Map) {
-        const raw = ordersByTable.get(tableNumber);
-        tableOrder = Array.isArray(raw) ? raw[0] || null : raw || null;
+        tableOrder =
+          (Number.isFinite(preferredOrderId) && preferredOrderId > 0
+            ? tableOrderCandidates.find((order) => Number(order?.id) === preferredOrderId)
+            : null) ||
+          tableOrderCandidates[0] ||
+          null;
       }
 
       const normalizedStatus = String(
@@ -430,10 +458,7 @@ function TablesView({
         .trim()
         .toLowerCase();
       const resolvedOrderId =
-        booking?.order_id ??
-        booking?.orderId ??
-        booking?.reservation_order_id ??
-        booking?.reservationOrderId ??
+        (Number.isFinite(preferredOrderId) && preferredOrderId > 0 ? preferredOrderId : null) ??
         tableFromGrid?.reservationFallback?.order_id ??
         tableFromGrid?.reservationFallback?.orderId ??
         tableOrder?.reservation?.order_id ??
@@ -866,7 +891,7 @@ function TablesView({
                 </button>
               </div>
             </div>
-            {concertBookingsLoading ? (
+            {concertBookingsLoading && !hasAnyViewBookingRows ? (
               <div className="mt-3 text-sm text-gray-500">{t("Loading...")}</div>
             ) : filteredBookings.length > 0 ? (
               <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -1252,7 +1277,7 @@ function TablesView({
           items={visibleTables}
           renderItem={renderTable}
           itemKey={getTableKey}
-          estimatedItemHeight={300}
+          estimatedItemHeight={345}
           overscan={6}
           className="w-full flex justify-center px-4 sm:px-8"
         />

@@ -59,6 +59,7 @@ import {
   mutateStressDataByAction,
 } from "../features/tables/dev/stressData";
 import socket from "../utils/socket";
+import { normalizeQrBookingSettings, QR_BOOKING_DEFAULTS } from "../utils/qrBooking";
 
 const PERF_DEBUG_ENABLED = isTablePerfDebugEnabled();
 const DEFAULT_STRESS_CONFIG = Object.freeze({
@@ -66,6 +67,84 @@ const DEFAULT_STRESS_CONFIG = Object.freeze({
   orderCount: 420,
   itemCount: 2200,
 });
+
+const formatCheckinWindowDateTimeLabel = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const [datePart = "", timePart = ""] = raw.replace("T", " ").split(" ");
+  const shortTime = timePart.slice(0, 5);
+  return datePart && shortTime ? `${datePart} ${shortTime}` : raw;
+};
+
+const buildReservationCheckinWindowMessageFromError = (err) => {
+  const openDateTime = String(err?.details?.body?.checkin_open_datetime || "").trim();
+  const closeDateTime = String(err?.details?.body?.checkin_close_datetime || "").trim();
+  if (!openDateTime && !closeDateTime) return "";
+
+  const openLabel = formatCheckinWindowDateTimeLabel(openDateTime);
+  const closeLabel = formatCheckinWindowDateTimeLabel(closeDateTime);
+  if (openLabel && closeLabel) {
+    return `Check-in is allowed for this reservation between ${openLabel} and ${closeLabel}.`;
+  }
+  if (openLabel) {
+    return `Check-in is allowed for this reservation starting at ${openLabel}.`;
+  }
+  if (closeLabel) {
+    return `Check-in is allowed for this reservation until ${closeLabel}.`;
+  }
+  return "";
+};
+
+const buildReservationCheckinWindowMessage = (settings, t) => {
+  const normalizedSettings = normalizeQrBookingSettings(settings || QR_BOOKING_DEFAULTS);
+  const earlyMinutes = Math.max(
+    0,
+    Number(normalizedSettings?.reservation_early_checkin_window_minutes || 0)
+  );
+  const lateMinutes = Math.max(
+    0,
+    Number(normalizedSettings?.reservation_late_arrival_grace_minutes || 0)
+  );
+
+  if (earlyMinutes > 0 && lateMinutes > 0) {
+    return `Check-in is allowed from ${earlyMinutes} minutes before until ${lateMinutes} minutes after the reservation time.`;
+  }
+  if (earlyMinutes > 0) {
+    return `Check-in is allowed only within ${earlyMinutes} minutes before the reservation time.`;
+  }
+  if (lateMinutes > 0) {
+    return `Check-in is allowed only up to ${lateMinutes} minutes after the reservation time.`;
+  }
+  return t("Check-in is only available during the reservation check-in window.");
+};
+
+const getReservationCheckinErrorToastMessage = (err, t, settings) => {
+  const statusCode = Number(err?.details?.status);
+  const errorCode = String(err?.details?.body?.code || "")
+    .trim()
+    .toLowerCase();
+  const rawMessage = String(err?.message || "").trim();
+  const normalizedMessage = rawMessage.toLowerCase();
+  const isCheckinWindowViolation =
+    (statusCode === 400 || statusCode === 409) &&
+    (errorCode === "reservation_checkin_window_violation" ||
+      errorCode === "reservation_checkin_window_closed" ||
+      normalizedMessage.includes("outside the allowed check-in window"));
+
+  if (isCheckinWindowViolation) {
+    return {
+      level: "warning",
+      message:
+        buildReservationCheckinWindowMessageFromError(err) ||
+        buildReservationCheckinWindowMessage(settings, t),
+    };
+  }
+
+  return {
+    level: "error",
+    message: rawMessage || t("Failed to check in reservation"),
+  };
+};
 
 const getOrderPrepMinutes = (order, productPrepById = {}) => {
   const direct = Number(order?.preparation_time ?? order?.prep_time ?? order?.prepTime);
@@ -294,7 +373,7 @@ const getConcertBookingsOverviewCacheKey = () =>
   getRestaurantScopedCacheKey("tableOverview.viewBooking.concert.v1");
 const getReservationBookingsOverviewCacheKey = () =>
   getRestaurantScopedCacheKey("tableOverview.viewBooking.reservations.v1");
-const VIEW_BOOKING_CACHE_TTL_MS = 30 * 1000;
+const VIEW_BOOKING_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const safeParseJson = (raw) => {
   try {
@@ -546,6 +625,9 @@ export default function TableOverview() {
     enabled: true,
     enableToasts: true,
   });
+  const [qrBookingSettings, setQrBookingSettings] = useState(() =>
+    normalizeQrBookingSettings(QR_BOOKING_DEFAULTS)
+  );
   useSetting("notifications", setNotificationSettings, {
     enabled: true,
     enableToasts: true,
@@ -563,6 +645,24 @@ export default function TableOverview() {
   const [closedOrdersVersion, setClosedOrdersVersion] = useState(0); // Increment to force ordersByTable recompute
   const { loading: authLoading } = useAuth();
   const { t } = useTranslation();
+
+  useEffect(() => {
+    let mounted = true;
+
+    secureFetch("/settings/qr-menu-customization")
+      .then((data) => {
+        if (!mounted) return;
+        setQrBookingSettings(normalizeQrBookingSettings(data?.customization || data || {}));
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setQrBookingSettings(normalizeQrBookingSettings(QR_BOOKING_DEFAULTS));
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const { setHeader } = useHeader();
   const { customerCalls, acknowledgeCustomerCall, resolveCustomerCall } = useNotifications();
   // compute permissions once at top level (avoid calling hooks inside loops)
@@ -2378,7 +2478,12 @@ const handleCheckinReservation = useCallback(
       setTimeout(() => fetchOrders(), 350);
     } catch (err) {
       console.error("❌ Failed to check in reservation:", err);
-      toast.error(t("Failed to check in reservation"));
+      const toastConfig = getReservationCheckinErrorToastMessage(err, t, qrBookingSettings);
+      if (toastConfig.level === "warning") {
+        toast.warning(toastConfig.message);
+      } else {
+        toast.error(toastConfig.message);
+      }
     }
   },
   [
@@ -3022,7 +3127,12 @@ const handleTakeawayConcertTicketCheckIn = useCallback(
         return;
       }
       console.error("❌ Failed to check in pre-order concert ticket:", err);
-      toast.error(err?.message || t("Failed to check in reservation"));
+      const toastConfig = getReservationCheckinErrorToastMessage(err, t, qrBookingSettings);
+      if (toastConfig.level === "warning") {
+        toast.warning(toastConfig.message);
+      } else {
+        toast.error(toastConfig.message);
+      }
     } finally {
       setTakeawayCheckInSubmittingId(null);
     }
@@ -3063,10 +3173,18 @@ useEffect(() => {
       hasCachedRows && cached.savedAt > 0 && Date.now() - cached.savedAt < VIEW_BOOKING_CACHE_TTL_MS;
 
     if (!force && isFresh) {
+      setConcertBookings(cached.rows);
       if (!hasUpcomingConcerts && hasCachedRows) {
         setHasUpcomingConcerts(true);
       }
       return cached.rows;
+    }
+
+    if (hasCachedRows) {
+      setConcertBookings(cached.rows);
+      if (!hasUpcomingConcerts) {
+        setHasUpcomingConcerts(true);
+      }
     }
 
     const showLoading = !(silentIfCached && hasCachedRows);
@@ -3082,6 +3200,11 @@ useEffect(() => {
         });
 
       if (eventsForOverview.length === 0) {
+        if (hasCachedRows && !force) {
+          setHasUpcomingConcerts(true);
+          setConcertBookings(cached.rows);
+          return cached.rows;
+        }
         setHasUpcomingConcerts(false);
         setConcertBookings([]);
         return [];
@@ -3143,6 +3266,11 @@ useEffect(() => {
           const bCreated = parseLooseDateToMs(b?.created_at) || 0;
           return bCreated - aCreated;
         });
+      if (merged.length === 0 && hasCachedRows && !force) {
+        setHasUpcomingConcerts(true);
+        setConcertBookings(cached.rows);
+        return cached.rows;
+      }
       setHasUpcomingConcerts(merged.length > 0);
       setConcertBookings(merged);
       return merged;
@@ -3153,6 +3281,8 @@ useEffect(() => {
         setConcertBookings([]);
         return [];
       }
+      setHasUpcomingConcerts(true);
+      setConcertBookings(cached.rows);
       return cached.rows;
     } finally {
       if (showLoading) setConcertBookingsLoading(false);
@@ -3167,7 +3297,12 @@ useEffect(() => {
       hasCachedRows && cached.savedAt > 0 && Date.now() - cached.savedAt < VIEW_BOOKING_CACHE_TTL_MS;
 
     if (!force && isFresh) {
+      setReservationBookingsOverview(cached.rows);
       return cached.rows;
+    }
+
+    if (hasCachedRows) {
+      setReservationBookingsOverview(cached.rows);
     }
 
     const showLoading = !(silentIfCached && hasCachedRows);
@@ -3212,6 +3347,10 @@ useEffect(() => {
           const bCreated = parseLooseDateToMs(b?.created_at) || 0;
           return bCreated - aCreated;
         });
+      if (normalized.length === 0 && hasCachedRows && !force) {
+        setReservationBookingsOverview(cached.rows);
+        return cached.rows;
+      }
       setReservationBookingsOverview(normalized);
       return normalized;
     } catch (err) {
@@ -3220,6 +3359,7 @@ useEffect(() => {
         setReservationBookingsOverview([]);
         return [];
       }
+      setReservationBookingsOverview(cached.rows);
       return cached.rows;
     } finally {
       if (showLoading) setReservationBookingsLoading(false);
@@ -3310,11 +3450,18 @@ useEffect(() => {
       if (!bookingKey) return;
 
       const tableNumber = Number(booking?.table_number ?? booking?.tableNumber);
+      const preferredOrderId = Number(booking?.order_id ?? booking?.orderId ?? booking?.id);
       const tableOrder =
         effectiveOrdersByTableRaw instanceof Map && Number.isFinite(tableNumber)
           ? effectiveOrdersByTableRaw.get(tableNumber)
           : null;
-      const tableOrderSnapshot = Array.isArray(tableOrder) ? tableOrder[0] || null : tableOrder || null;
+      const tableOrderSnapshot = Array.isArray(tableOrder)
+        ? (Number.isFinite(preferredOrderId) && preferredOrderId > 0
+            ? tableOrder.find((order) => Number(order?.id) === preferredOrderId)
+            : null) ||
+          tableOrder[0] ||
+          null
+        : tableOrder || null;
       const tableLike = {
         tableNumber,
         table_number: tableNumber,

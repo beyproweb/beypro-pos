@@ -23,6 +23,7 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   "user-management",
   "printers",
   "cameras",
+  "scan-ticket",
   "settings",
   "subscription",
   "expenses",

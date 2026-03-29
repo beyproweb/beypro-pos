@@ -3,19 +3,19 @@ import TableCard from "./TableCard";
 
 function TablesGrid({ tables, cardProps }) {
   return (
-    <div className="w-full flex justify-center px-4 sm:px-8">
+    <div className="flex w-full justify-center px-4 sm:px-8">
       <div
         className="
         grid
-        grid-cols-2
-        md:grid-cols-3
+        grid-cols-1
+        sm:grid-cols-2
         xl:grid-cols-4
         2xl:grid-cols-4
-        gap-3
+        gap-4
         sm:gap-8
         place-items-stretch
         w-full
-        max-w-[1600px]
+        max-w-[1800px]
       "
       >
         {(Array.isArray(tables) ? tables : []).map((table) => (

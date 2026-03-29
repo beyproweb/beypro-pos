@@ -1177,13 +1177,16 @@ export default function ModernHeader({
       </div>
 
       {/* Center: sticky subtitle (no flicker) */}
-      <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4 gap-2">
+      <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-2 md:px-4 gap-2">
         <div className={isTransactionRoute ? "hidden md:block" : ""}>
           <StickySubtitle text={subtitle} />
         </div>
-        <div ref={searchRef} className="relative w-full max-w-2xl">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
+        <div
+          ref={searchRef}
+          className="relative flex w-full justify-end md:max-w-2xl md:justify-center"
+        >
+          <div className="flex w-auto items-center justify-end gap-2 md:w-full">
+            <div className="relative hidden flex-1 md:block">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
               <button
                 type="button"

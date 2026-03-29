@@ -20,7 +20,7 @@ import {
 } from "../features/qrmenu/header-drawer";
 import { VoiceOrderController } from "../features/voiceOrder";
 import { createPortal } from "react-dom";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
@@ -58,6 +58,10 @@ import {
   parseLocalDateTime,
   normalizeReservationTimeSlotOptions,
 } from "../utils/qrBooking";
+import {
+  buildConcertBookingPath,
+  buildReservationBookingPath,
+} from "../features/qrmenu/publicBookingRoutes";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const QR_PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
@@ -3049,6 +3053,7 @@ function OrderTypeSelect({
   onCustomizationLoaded,
   onConcertReservationSuccess,
   onFreeConcertReservationStart,
+  onConcertBookingRequest,
   statusShortcutCount = 0,
   statusShortcutEnabled = false,
   statusShortcutOpen = false,
@@ -3685,6 +3690,10 @@ async function load() {
 
   const openConcertBookingModal = React.useCallback((event, defaults = {}) => {
     if (!event) return;
+    if (typeof onConcertBookingRequest === "function") {
+      onConcertBookingRequest(event, defaults);
+      return;
+    }
     const customerPrefill = getCheckoutPrefill(storage);
     const availableTicketTypes = (Array.isArray(event.ticket_types) ? event.ticket_types : []).filter(
       (row) => Number(row?.available_count || 0) > 0
@@ -3692,21 +3701,21 @@ async function load() {
     const preferredType = defaults.ticketTypeId
       ? availableTicketTypes.find((row) => Number(row.id) === Number(defaults.ticketTypeId))
       : defaults.bookingType === "table"
-      ? availableTicketTypes.find((row) => row.is_table_package) ||
-        availableTicketTypes.find((row) => !row.is_table_package) ||
-        availableTicketTypes[0] ||
-        null
-      : availableTicketTypes.find((row) => !row.is_table_package) ||
-        availableTicketTypes.find((row) => row.is_table_package) ||
-        availableTicketTypes[0] ||
-        null;
+        ? availableTicketTypes.find((row) => row.is_table_package) ||
+          availableTicketTypes.find((row) => !row.is_table_package) ||
+          availableTicketTypes[0] ||
+          null
+        : availableTicketTypes.find((row) => !row.is_table_package) ||
+          availableTicketTypes.find((row) => row.is_table_package) ||
+          availableTicketTypes[0] ||
+          null;
     const nextBookingType = preferredType?.is_table_package ? "table" : "ticket";
     setConcertModalEvent(event);
     setConcertForm({
       booking_type: nextBookingType,
       ticket_type_id: preferredType ? String(preferredType.id) : "",
       table_number: "",
-      quantity: nextBookingType === "table" ? "1" : "1",
+      quantity: "1",
       guests_count: "2",
       male_guests_count: "",
       female_guests_count: "",
@@ -3717,7 +3726,7 @@ async function load() {
       bank_reference: "",
     });
     setConcertModalOpen(true);
-  }, []);
+  }, [onConcertBookingRequest, storage]);
 
   const closeConcertModal = React.useCallback(() => {
     setConcertModalOpen(false);
@@ -7336,6 +7345,8 @@ function OrderStatusModal({
 /* ====================== MAIN QR MENU ====================== */
 export default function QrMenu() {
   const { slug, id } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const {
     restaurantIdentifier,
     lang,
@@ -7981,6 +7992,24 @@ export default function QrMenu() {
   }, [isRequestSongViewOpen, orderType, requestSongEnabled]);
   const shouldShowTableOrderHeader = !showStatus && sharedHeaderOrderType === "table";
   const shouldShowInnerOrderHeader = !showStatus && sharedHeaderOrderType !== "table";
+  const handleBookingOrderTypeSelect = useCallback(
+    (nextType) => {
+      if (!nextType) return;
+      if (nextType === "takeaway") {
+        navigate(
+          buildReservationBookingPath({
+            pathname: location.pathname,
+            slug,
+            id,
+            search: location.search,
+          })
+        );
+        return;
+      }
+      triggerOrderType(nextType);
+    },
+    [id, location.pathname, location.search, navigate, slug, triggerOrderType]
+  );
   const handleSharedHeaderOrderTypeSelect = useCallback(
     (nextType) => {
       if (!nextType) return;
@@ -7990,9 +8019,9 @@ export default function QrMenu() {
         return;
       }
       setIsRequestSongViewOpen(false);
-      triggerOrderType(nextType);
+      handleBookingOrderTypeSelect(nextType);
     },
-    [requestSongEnabled, triggerOrderType]
+    [handleBookingOrderTypeSelect, requestSongEnabled]
   );
   const handleEditCartItem = useCallback(
     (item) => {
@@ -8645,35 +8674,46 @@ export default function QrMenu() {
     ]
   );
 
+  const handleConcertBookingRequest = useCallback(
+    (event) => {
+      if (!event?.id) return;
+      navigate(
+        buildConcertBookingPath({
+          pathname: location.pathname,
+          slug,
+          id,
+          search: location.search,
+          concertId: event.id,
+        })
+      );
+    },
+    [id, location.pathname, location.search, navigate, slug]
+  );
+
   const handleFreeConcertReservationStart = useCallback(
     (event) => {
-      const customerPrefill = getCheckoutPrefill(storage);
-      const concertDate = String(event?.event_date || "").slice(0, 10);
-      const concertTime = String(event?.event_time || "").slice(0, 5);
-      const eventLabel = [
-        String(event?.event_title || "").trim(),
-        String(event?.artist_name || "").trim(),
-      ]
-        .filter(Boolean)
-        .join(" - ");
-
-      setTakeaway({
-        name: customerPrefill?.name || "",
-        phone: customerPrefill?.phone || "",
-        email: customerPrefill?.email || "",
-        pickup_date: concertDate,
-        pickup_time: concertTime,
-        mode: "reservation",
-        table_number: "",
-        reservation_clients: "",
-        reservation_men: "",
-        reservation_women: "",
-        notes: eventLabel ? `Concert: ${eventLabel}` : "",
-        payment_method: "",
-      });
-      triggerOrderType("takeaway");
+      if (event?.id) {
+        navigate(
+          buildConcertBookingPath({
+            pathname: location.pathname,
+            slug,
+            id,
+            search: location.search,
+            concertId: event.id,
+          })
+        );
+        return;
+      }
+      navigate(
+        buildReservationBookingPath({
+          pathname: location.pathname,
+          slug,
+          id,
+          search: location.search,
+        })
+      );
     },
-    [setTakeaway, storage, triggerOrderType]
+    [id, location.pathname, location.search, navigate, slug]
   );
 
   const handleVoiceDraftAddToCart = useCallback(
@@ -9151,7 +9191,7 @@ export default function QrMenu() {
           <OrderTypeSelect
             identifier={restaurantIdentifier}
             appendIdentifier={appendIdentifier}
-            onSelect={triggerOrderType}
+            onSelect={handleBookingOrderTypeSelect}
             lang={lang}
             setLang={setLang}
             t={t}
@@ -9168,6 +9208,7 @@ export default function QrMenu() {
             }
             onConcertReservationSuccess={handleConcertReservationSuccess}
             onFreeConcertReservationStart={handleFreeConcertReservationStart}
+            onConcertBookingRequest={handleConcertBookingRequest}
             statusShortcutCount={statusShortcutCount}
             statusShortcutEnabled={statusShortcutEnabled}
             statusShortcutOpen={showStatus}
@@ -9187,7 +9228,7 @@ export default function QrMenu() {
                 setReturnHomeAfterAdd(false);
               }}
               onSelect={(type) => {
-                triggerOrderType(type);
+                handleBookingOrderTypeSelect(type);
                 setShowOrderTypePrompt(false);
               }}
               deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}

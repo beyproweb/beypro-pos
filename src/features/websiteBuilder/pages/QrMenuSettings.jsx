@@ -9,6 +9,11 @@ import { useHasPermission } from "../../../components/hooks/useHasPermission";
 import { useNavigate } from "react-router-dom";
 import { getCustomDomainPreview } from "../../../utils/customDomain";
 import { QR_BOOKING_DEFAULTS, normalizeQrBookingSettings } from "../../../utils/qrBooking";
+import FloorPlanDesigner from "../../floorPlan/components/FloorPlanDesigner";
+import {
+  buildGeneratedFloorPlan,
+  normalizeFloorPlanLayout,
+} from "../../floorPlan/utils/floorPlan";
 
 const extractIdentifierFromQrUrl = (value) => {
   const raw = String(value || "").trim();
@@ -218,6 +223,7 @@ const makeEmptyConcertForm = () => ({
   guest_composition_restriction_rule: "no_restriction",
   guest_composition_validation_message: "",
   guest_composition_disabled_tables: [],
+  floor_plan_layout: null,
   area_allocations: [makeEmptyConcertAreaAllocation()],
   ticket_types: [makeEmptyConcertTicketType()],
 });
@@ -255,6 +261,7 @@ export default function QrMenuSettings() {
   const [savingDisableAllProducts, setSavingDisableAllProducts] = useState(false);
   const [savingConcertReservationButtonColor, setSavingConcertReservationButtonColor] = useState(false);
   const [savingBookingSettings, setSavingBookingSettings] = useState(false);
+  const [savingFloorPlanLayout, setSavingFloorPlanLayout] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState("qr");
   const [tables, setTables] = useState([]);
   const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
@@ -343,6 +350,7 @@ export default function QrMenuSettings() {
   reservation_guest_composition_restriction_rule: "no_restriction",
   reservation_guest_composition_validation_message: "",
   reservation_guest_composition_disabled_tables: [],
+  qr_floor_plan_layout: null,
   ...QR_BOOKING_DEFAULTS,
   table_order_enabled: true,
   disable_all_products: false,
@@ -384,6 +392,7 @@ export default function QrMenuSettings() {
         { id: "concert", label: t("Concert Tickets"), allowed: canAccessConcertTicketsTab },
         { id: "controls", label: t("Order Settings"), allowed: canAccessOrderSettingsTab },
         { id: "generate-qr", label: t("Generate Qr"), allowed: canAccessGenerateQrTab },
+        { id: "floor-plan", label: t("Floor plan"), allowed: canAccessAppSettingsTab },
       ].filter((tab) => tab.allowed),
     [
       canAccessAppSettingsTab,
@@ -451,6 +460,7 @@ export default function QrMenuSettings() {
       splash_logo: normalizeAssetValue(customization.splash_logo),
       main_title_logo: normalizeAssetValue(customization.main_title_logo),
       branding_updated_at: normalizeAssetValue(customization.branding_updated_at),
+      qr_floor_plan_layout: normalizeFloorPlanLayout(customization.qr_floor_plan_layout),
     };
     const storyImages = normalizeStoryImages(normalizedCustomization);
     const storyVideoYoutubeUrls = normalizeStoryVideoUrls(normalizedCustomization);
@@ -496,6 +506,33 @@ export default function QrMenuSettings() {
     (!customDomainPreview.isBlank && !customDomainPreview.isValid
       ? t("Please enter a valid domain like menu.myrestaurant.com")
       : "");
+
+  const generatedVenueFloorPlan = useMemo(() => buildGeneratedFloorPlan(tables), [tables]);
+  const effectiveVenueFloorPlan =
+    normalizeFloorPlanLayout(settings.qr_floor_plan_layout) || generatedVenueFloorPlan;
+
+  const saveFloorPlanLayout = async () => {
+    setSavingFloorPlanLayout(true);
+    try {
+      const payload = {
+        qr_floor_plan_layout: normalizeFloorPlanLayout(settings.qr_floor_plan_layout),
+      };
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      writeQrMenuBrandingCache(extractIdentifierFromQrUrl(qrUrl), {
+        ...settings,
+        ...payload,
+      });
+      toast.success(t("Saved successfully!"));
+    } catch (err) {
+      console.error("❌ Failed to save floor plan layout:", err);
+      toast.error(err?.message || t("Save failed"));
+    } finally {
+      setSavingFloorPlanLayout(false);
+    }
+  };
 
   const updateStoryImages = (nextImages) => {
     const normalized = nextImages
@@ -1303,6 +1340,7 @@ async function saveAllCustomization() {
     guest_composition_disabled_tables: normalizeTableNumberList(
       source?.guest_composition_disabled_tables
     ),
+    floor_plan_layout: normalizeFloorPlanLayout(source?.floor_plan_layout),
     area_allocations: (Array.isArray(source?.area_allocations) ? source.area_allocations : [])
       .map((row) => ({
         area_name: String(row?.area_name || "").trim(),
@@ -1427,6 +1465,7 @@ async function saveAllCustomization() {
       guest_composition_disabled_tables: normalizeTableNumberList(
         event.guest_composition_disabled_tables
       ),
+      floor_plan_layout: normalizeFloorPlanLayout(event.floor_plan_layout),
       area_allocations:
         Array.isArray(event.area_allocations) && event.area_allocations.length > 0
           ? event.area_allocations.map((row) => ({
@@ -1973,7 +2012,7 @@ async function saveAllCustomization() {
   }, []);
 
   return (
-  <div className="max-w-5xl mx-auto px-4 py-10">
+  <div className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6 lg:px-8">
     <div className="mb-6 flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap rounded-2xl border border-slate-200/60 bg-slate-50/70 p-1 backdrop-blur dark:border-slate-700/60 dark:bg-zinc-800/30">
       {settingsTabs.map((tab) => {
         const isActive = activeSettingsTab === tab.id;
@@ -2352,7 +2391,7 @@ async function saveAllCustomization() {
       </>
     )}
 
-    {(activeSettingsTab === "app" || activeSettingsTab === "concert" || activeSettingsTab === "controls" || activeSettingsTab === "generate-qr") && (
+    {(activeSettingsTab === "app" || activeSettingsTab === "concert" || activeSettingsTab === "controls" || activeSettingsTab === "generate-qr" || activeSettingsTab === "floor-plan") && (
       <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
         {activeSettingsTab === "generate-qr" && (
           <div className="space-y-10">
@@ -2555,6 +2594,39 @@ async function saveAllCustomization() {
           <h2 className="text-xl font-extrabold mb-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-transparent bg-clip-text">
             {t("Menu Website Builder")}
           </h2>
+        )}
+
+        {activeSettingsTab === "floor-plan" && (
+          <div className="rounded-[32px] border border-slate-200 bg-slate-50/90 p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                  {t("Floor Plan Designer")}
+                </h3>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
+                  {t("Design the visual reservation layout used by guests when choosing tables. Drag tables into place, add venue markers, and save the exact plan used on mobile booking pages.")}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={saveFloorPlanLayout}
+                disabled={savingFloorPlanLayout}
+                className="inline-flex min-h-[44px] items-center justify-center rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+              >
+                {savingFloorPlanLayout ? t("Please wait...") : t("Save Floor Plan")}
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <FloorPlanDesigner
+                title={t("Venue Layout")}
+                description={t("Linked tables stay connected to real reservation tables, so capacities and restrictions stay in sync.")}
+                value={effectiveVenueFloorPlan}
+                tables={tables}
+                onChange={(layout) => updateField("qr_floor_plan_layout", normalizeFloorPlanLayout(layout))}
+              />
+            </div>
+          </div>
         )}
 
         {activeSettingsTab === "controls" && (
@@ -4130,6 +4202,38 @@ async function saveAllCustomization() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[28px] border border-slate-200 bg-white/80 p-5 dark:border-zinc-700 dark:bg-zinc-950/60">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  {t("Event Floor Plan Override")}
+                </h4>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {t("Use the venue layout by default, or customize a special seating and zone plan just for this event night.")}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateConcertFormField("floor_plan_layout", null)}
+                className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-slate-200 dark:hover:bg-zinc-800"
+              >
+                {t("Use Venue Layout")}
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <FloorPlanDesigner
+                title={t("Concert Layout")}
+                description={t("Add VIP tables, standing areas, stage references, or event-only table positions.")}
+                value={normalizeFloorPlanLayout(concertForm.floor_plan_layout) || effectiveVenueFloorPlan}
+                tables={tables}
+                onChange={(layout) =>
+                  updateConcertFormField("floor_plan_layout", normalizeFloorPlanLayout(layout))
+                }
+              />
             </div>
           </div>
           <datalist id="concert-area-options">

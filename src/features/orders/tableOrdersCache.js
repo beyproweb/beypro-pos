@@ -9,6 +9,8 @@ const getTableOrdersCacheKey = () => getRestaurantScopedCacheKey("tableOverview.
 const getTableOrdersCacheTsKey = () => getRestaurantScopedCacheKey("tableOverview.orders.ts");
 const getReservationShadowsCacheKey = () =>
   getRestaurantScopedCacheKey("tableOverview.reservationShadows.v1");
+const getReservationsTodayCacheKey = () =>
+  getRestaurantScopedCacheKey("tableOverview.reservationsToday.v1");
 
 const TERMINAL_RESERVATION_STATUSES = new Set([
   "checked_out",
@@ -42,6 +44,26 @@ export const writeTableOrdersCache = (orders) => {
     if (!Array.isArray(orders)) return;
     window?.localStorage?.setItem(getTableOrdersCacheKey(), JSON.stringify(orders));
     window?.localStorage?.setItem(getTableOrdersCacheTsKey(), String(Date.now()));
+  } catch {
+    // ignore cache errors
+  }
+};
+
+export const readInitialReservationsToday = () => {
+  const cachedReservations = safeParseJson(
+    typeof window !== "undefined"
+      ? window?.localStorage?.getItem(getReservationsTodayCacheKey())
+      : null
+  );
+  if (!Array.isArray(cachedReservations) || cachedReservations.length === 0) return [];
+  return cachedReservations.filter((row) => row && typeof row === "object");
+};
+
+export const writeReservationsTodayCache = (reservations) => {
+  try {
+    if (typeof window === "undefined") return;
+    if (!Array.isArray(reservations)) return;
+    window?.localStorage?.setItem(getReservationsTodayCacheKey(), JSON.stringify(reservations));
   } catch {
     // ignore cache errors
   }

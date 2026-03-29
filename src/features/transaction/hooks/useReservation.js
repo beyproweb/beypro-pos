@@ -40,6 +40,31 @@ const shouldPreserveCheckedInStatus = (incomingStatus, previousStatus) => {
   return CHECKIN_REGRESSION_STATUSES.has(incomingStatus);
 };
 
+const getReservationCheckinToastMessage = (err, t) => {
+  const statusCode = Number(err?.details?.status);
+  const errorCode = String(err?.details?.body?.code || "")
+    .trim()
+    .toLowerCase();
+  const rawMessage = String(err?.message || "").trim();
+  const normalizedMessage = rawMessage.toLowerCase();
+  const isCheckinWindowViolation =
+    (statusCode === 400 || statusCode === 409) &&
+    (errorCode === "reservation_checkin_window_violation" ||
+      errorCode === "reservation_checkin_window_closed" ||
+      normalizedMessage.includes("outside the allowed check-in window"));
+
+  if (isCheckinWindowViolation) {
+    const openDateTime = String(err?.details?.body?.checkin_open_datetime || "").trim();
+    const closeDateTime = String(err?.details?.body?.checkin_close_datetime || "").trim();
+    if (openDateTime && closeDateTime) {
+      return `Check-in is allowed for this reservation between ${openDateTime.replace("T", " ").slice(0, 16)} and ${closeDateTime.replace("T", " ").slice(0, 16)}.`;
+    }
+    return "Check-in is only allowed shortly before or after the reservation time. Please try again during the reservation window.";
+  }
+
+  return rawMessage || t("Failed to check in reservation");
+};
+
 export const useReservation = ({
   order,
   tableId,
@@ -1057,7 +1082,7 @@ export const useReservation = ({
       setShowReservationModal(false);
     } catch (err) {
       console.error("❌ Failed to check in reservation:", err);
-      showToast(err?.message || t("Failed to check in reservation"));
+      showToast(getReservationCheckinToastMessage(err, t));
     } finally {
       setReservationLoading(false);
     }

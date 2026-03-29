@@ -10,8 +10,10 @@ import {
 } from "../tables/tableVisuals";
 import {
   readInitialTableOrders,
+  readInitialReservationsToday,
   readReservationShadows,
   writeTableOrdersCache,
+  writeReservationsTodayCache,
 } from "./tableOrdersCache";
 import useConfirmedTimers from "../tables/useConfirmedTimers";
 import {
@@ -234,13 +236,17 @@ const mergeVisibleTableStatus = (...orders) => {
 export default function useTableOrdersData() {
   const [orders, setOrders] = useState(() => readInitialTableOrders());
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [reservationsToday, setReservationsToday] = useState([]);
+  const [reservationsToday, setReservationsToday] = useState(() => readInitialReservationsToday());
 
   const didInitialOrdersLoadRef = useRef(false);
   const ordersFetchSeqRef = useRef(0);
   const isMountedRef = useRef(true);
   const activeFetchControllerRef = useRef(null);
   const { getTimersSnapshot, persistTimers, getConfirmedSinceMs } = useConfirmedTimers();
+
+  useEffect(() => {
+    writeReservationsTodayCache(Array.isArray(reservationsToday) ? reservationsToday : []);
+  }, [reservationsToday]);
 
   const hydrateOrderItemsInBackground = useCallback(async (visibleTableOrders, isDev, signal) => {
     const t1 = isDev ? performance.now() : 0;
@@ -539,16 +545,19 @@ export default function useTableOrdersData() {
         return merged;
       };
 
+      const cachedReservations = readInitialReservationsToday();
+      const reservationsList =
+        reservationsRes.status === "fulfilled"
+          ? normalizeReservationList(reservationsRes.value)
+          : cachedReservations;
+
       if (isMountedRef.current) {
-        if (reservationsRes.status === "fulfilled") {
-          setReservationsToday(normalizeReservationList(reservationsRes.value));
+        if (reservationsList.length > 0 || cachedReservations.length === 0) {
+          setReservationsToday(reservationsList);
         } else {
-          setReservationsToday([]);
+          setReservationsToday(cachedReservations);
         }
       }
-
-      const reservationsList =
-        reservationsRes.status === "fulfilled" ? normalizeReservationList(reservationsRes.value) : [];
 
       const reservationsByOrderId = new Map();
       reservationsList.forEach((res) => {

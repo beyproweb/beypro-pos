@@ -4,13 +4,13 @@ import { Html5Qrcode } from "html5-qrcode";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import {
-  ArrowLeft,
   CalendarDays,
   CheckCircle2,
   Clock3,
   QrCode,
   RefreshCw,
   ScanLine,
+  Square,
   Ticket,
   UserCheck,
   UserRound,
@@ -50,6 +50,8 @@ export default function TicketScannerPage() {
   const { t } = useTranslation();
   const scannerRef = useRef(null);
   const scanLockRef = useRef(false);
+  const isActiveRef = useRef(true);
+  const startRequestIdRef = useRef(0);
 
   const [scanState, setScanState] = useState(STATE_IDLE);
   const [scanResult, setScanResult] = useState(null);
@@ -70,10 +72,42 @@ export default function TicketScannerPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const forceStopReaderMedia = useCallback(() => {
+    if (typeof document === "undefined") return;
+    const root = document.getElementById(READER_ELEMENT_ID);
+    if (!root) return;
+
+    const mediaNodes = root.querySelectorAll("video, audio");
+    mediaNodes.forEach((node) => {
+      const element = node;
+      const stream = element.srcObject;
+      if (stream && typeof stream.getTracks === "function") {
+        stream.getTracks().forEach((track) => {
+          try {
+            track.stop();
+          } catch (error) {
+            console.warn("⚠️ Failed to stop scanner media track:", error);
+          }
+        });
+      }
+      try {
+        element.pause?.();
+      } catch {}
+      try {
+        element.srcObject = null;
+      } catch {}
+    });
+  }, []);
+
   const stopScanner = useCallback(async () => {
     const scanner = scannerRef.current;
     scannerRef.current = null;
-    if (!scanner) return;
+    startRequestIdRef.current += 1;
+
+    if (!scanner) {
+      forceStopReaderMedia();
+      return;
+    }
 
     try {
       if (scanner.isScanning) {
@@ -88,7 +122,8 @@ export default function TicketScannerPage() {
     } catch (error) {
       console.warn("⚠️ Failed to clear ticket scanner:", error);
     }
-  }, []);
+    forceStopReaderMedia();
+  }, [forceStopReaderMedia]);
 
   const applyLookupError = useCallback((error) => {
     const nextState = error?.scanState || STATE_INVALID_QR;
@@ -131,6 +166,8 @@ export default function TicketScannerPage() {
 
   const startScanner = useCallback(async () => {
     await stopScanner();
+    const requestId = startRequestIdRef.current + 1;
+    startRequestIdRef.current = requestId;
     setScanResult(null);
     setStatusMessage("");
     setCameraMessage("");
@@ -156,16 +193,47 @@ export default function TicketScannerPage() {
         },
         () => {}
       );
+
+      if (!isActiveRef.current || startRequestIdRef.current !== requestId) {
+        try {
+          if (scanner.isScanning) {
+            await scanner.stop();
+          }
+        } catch {}
+        try {
+          await scanner.clear();
+        } catch {}
+        forceStopReaderMedia();
+        return;
+      }
     } catch (error) {
       console.error("❌ Failed to start ticket scanner:", error);
       setScanState(STATE_IDLE);
       setCameraMessage(error?.message || t("Invalid QR"));
     }
-  }, [handleDecodedText, stopScanner, t, viewportWidth]);
+  }, [forceStopReaderMedia, handleDecodedText, stopScanner, t, viewportWidth]);
 
   useEffect(() => {
+    isActiveRef.current = true;
     void startScanner();
+
+    const handlePageHide = () => {
+      void stopScanner();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        void stopScanner();
+      }
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
+      isActiveRef.current = false;
+      startRequestIdRef.current += 1;
+      window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       void stopScanner();
     };
   }, [startScanner, stopScanner]);
@@ -209,6 +277,21 @@ export default function TicketScannerPage() {
       setIsCheckingIn(false);
     }
   }, [isCheckingIn, scanResult, t]);
+
+  const handleStopScan = useCallback(async () => {
+    await stopScanner();
+    setScanState(STATE_IDLE);
+    setCameraMessage("");
+    setStatusMessage(t("Scan stopped"));
+  }, [stopScanner, t]);
+
+  const handleScanToggle = useCallback(async () => {
+    if (scanState === STATE_SCANNING) {
+      await handleStopScan();
+      return;
+    }
+    await startScanner();
+  }, [handleStopScan, scanState, startScanner]);
 
   const stateConfig = useMemo(() => {
     switch (scanState) {
@@ -273,53 +356,33 @@ export default function TicketScannerPage() {
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.10),_transparent_30%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)] px-3 py-3 pb-8 sm:p-6 lg:p-8 dark:bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.12),_transparent_28%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-6">
-        <div className="flex flex-col gap-4 rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/85 sm:rounded-[28px] sm:p-5 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              {t("Back")}
-            </button>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
-                {t("Scan Ticket")}
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {t("Scan reservation or concert ticket QR")}
-              </p>
-            </div>
-          </div>
-
-          <div
-            className={`inline-flex w-fit items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${stateConfig.badgeClass}`}
-          >
-            {stateConfig.icon}
-            <span>{stateConfig.label}</span>
-          </div>
-        </div>
-
         <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr] xl:gap-6">
           <section className="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/85 sm:rounded-[28px] sm:p-5">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t("Scan QR")}</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {t("Scan reservation or concert ticket QR")}
-                </p>
+            <div className="mb-4 space-y-4">
+              <div className="flex items-start justify-start gap-3">
+                <div
+                  className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-base font-semibold ${stateConfig.badgeClass}`}
+                >
+                  {stateConfig.icon}
+                  <span className="truncate">{stateConfig.label}</span>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  void startScanner();
-                }}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800 sm:w-auto"
-              >
-                <RefreshCw className="h-4 w-4" />
-                {t("Scan QR")}
-              </button>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleScanToggle();
+                  }}
+                  className={`inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:w-auto ${
+                    scanState === STATE_SCANNING
+                      ? "border-rose-200 bg-rose-50/90 text-rose-700 hover:border-rose-300 hover:text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:border-rose-500/60 dark:hover:text-rose-200"
+                      : "border-slate-200 bg-white/90 text-slate-700 hover:border-emerald-300 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-emerald-500/50 dark:hover:text-emerald-300"
+                  }`}
+                >
+                  <Square className="h-4 w-4" />
+                  {scanState === STATE_SCANNING ? t("Stop Scan") : t("Start Scan")}
+                </button>
+              </div>
             </div>
 
             <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-slate-950 shadow-inner dark:border-slate-800">
