@@ -34,9 +34,11 @@ const STATE_BOOKING_NOT_FOUND = "booking_not_found";
 function DetailRow({ label, value }) {
   if (!value) return null;
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 py-3 last:border-b-0 dark:border-slate-800/80">
-      <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</span>
-      <span className="text-right text-sm font-semibold text-slate-900 dark:text-slate-100">
+    <div className="flex flex-col items-start gap-1.5 border-b border-slate-200/70 py-3 last:border-b-0 dark:border-slate-800/80 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400 sm:text-sm sm:font-medium sm:normal-case sm:tracking-normal">
+        {label}
+      </span>
+      <span className="w-full text-left text-sm font-semibold text-slate-900 dark:text-slate-100 sm:w-auto sm:text-right">
         {value}
       </span>
     </div>
@@ -54,6 +56,19 @@ export default function TicketScannerPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [cameraMessage, setCameraMessage] = useState("");
   const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const stopScanner = useCallback(async () => {
     const scanner = scannerRef.current;
@@ -124,12 +139,16 @@ export default function TicketScannerPage() {
     try {
       const scanner = new Html5Qrcode(READER_ELEMENT_ID);
       scannerRef.current = scanner;
+      const isCompactViewport = viewportWidth < 640;
+      const mobileBoxSize = Math.max(180, Math.min(viewportWidth - 88, 260));
       await scanner.start(
         { facingMode: "environment" },
         {
           fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.3333333,
+          qrbox: isCompactViewport
+            ? { width: mobileBoxSize, height: mobileBoxSize }
+            : { width: 250, height: 250 },
+          aspectRatio: isCompactViewport ? 1 : 1.3333333,
           rememberLastUsedCamera: true,
         },
         (decodedText) => {
@@ -142,7 +161,7 @@ export default function TicketScannerPage() {
       setScanState(STATE_IDLE);
       setCameraMessage(error?.message || t("Invalid QR"));
     }
-  }, [handleDecodedText, stopScanner, t]);
+  }, [handleDecodedText, stopScanner, t, viewportWidth]);
 
   useEffect(() => {
     void startScanner();
@@ -249,11 +268,12 @@ export default function TicketScannerPage() {
   const showCheckInButton = Boolean(
     scanResult?.canCheckIn && !scanResult?.alreadyCheckedIn && scanState !== STATE_SUCCESS
   );
+  const scannerOverlaySizeClass = viewportWidth < 640 ? "h-44 w-44 rounded-[28px]" : "h-56 w-56 rounded-[36px]";
 
   return (
-    <div className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.10),_transparent_30%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)] p-4 sm:p-6 lg:p-8 dark:bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.12),_transparent_28%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <div className="flex flex-col gap-4 rounded-[28px] border border-white/70 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/85 sm:flex-row sm:items-start sm:justify-between">
+    <div className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.10),_transparent_30%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)] px-3 py-3 pb-8 sm:p-6 lg:p-8 dark:bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.12),_transparent_28%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-6">
+        <div className="flex flex-col gap-4 rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/85 sm:rounded-[28px] sm:p-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-3">
             <button
               type="button"
@@ -264,26 +284,26 @@ export default function TicketScannerPage() {
               {t("Back")}
             </button>
             <div>
-              <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white">
+              <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
                 {t("Scan Ticket")}
               </h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
                 {t("Scan reservation or concert ticket QR")}
               </p>
             </div>
           </div>
 
           <div
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${stateConfig.badgeClass}`}
+            className={`inline-flex w-fit items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${stateConfig.badgeClass}`}
           >
             {stateConfig.icon}
             <span>{stateConfig.label}</span>
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <section className="rounded-[28px] border border-white/70 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
-            <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr] xl:gap-6">
+          <section className="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/85 sm:rounded-[28px] sm:p-5">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t("Scan QR")}</h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -295,7 +315,7 @@ export default function TicketScannerPage() {
                 onClick={() => {
                   void startScanner();
                 }}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800 sm:w-auto"
               >
                 <RefreshCw className="h-4 w-4" />
                 {t("Scan QR")}
@@ -303,15 +323,17 @@ export default function TicketScannerPage() {
             </div>
 
             <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-slate-950 shadow-inner dark:border-slate-800">
-              <div id={READER_ELEMENT_ID} className="min-h-[380px] w-full" />
+              <div id={READER_ELEMENT_ID} className="min-h-[300px] w-full sm:min-h-[380px]" />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="h-56 w-56 rounded-[36px] border-2 border-white/70 shadow-[0_0_0_999px_rgba(2,6,23,0.32)]">
-                  <div className="h-full w-full animate-pulse rounded-[34px] border border-sky-300/80" />
+                <div
+                  className={`${scannerOverlaySizeClass} border-2 border-white/70 shadow-[0_0_0_999px_rgba(2,6,23,0.32)]`}
+                >
+                  <div className="h-full w-full animate-pulse rounded-[inherit] border border-sky-300/80" />
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm leading-6 text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
               {scanState === STATE_SCANNING ? t("Scanning...") : t("Scan reservation or concert ticket QR")}
             </div>
 
@@ -322,8 +344,8 @@ export default function TicketScannerPage() {
             ) : null}
           </section>
 
-          <aside className="rounded-[28px] border border-white/70 bg-white/90 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
-            <div className="flex items-center gap-3">
+          <aside className="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/85 sm:rounded-[28px] sm:p-5">
+            <div className="flex items-start gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
                 {scanState === STATE_SUCCESS ? (
                   <CheckCircle2 className="h-6 w-6" />
@@ -339,7 +361,7 @@ export default function TicketScannerPage() {
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                   {scanResult ? t("Guest Found") : t("Scan Ticket")}
                 </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
                   {statusMessage || t("Scan reservation or concert ticket QR")}
                 </p>
               </div>
@@ -348,17 +370,17 @@ export default function TicketScannerPage() {
             {scanResult ? (
               <div className="mt-6 space-y-4">
                 <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
                         <UserRound className="h-4 w-4" />
                         <span>{t("Guest Found")}</span>
                       </div>
-                      <h3 className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+                      <h3 className="mt-2 break-words text-xl font-black text-slate-950 dark:text-white sm:text-2xl">
                         {scanResult.guestName || "-"}
                       </h3>
                     </div>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                    <div className="w-fit rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
                       {t(scanResult.bookingTypeLabelKey)}
                     </div>
                   </div>
@@ -410,7 +432,7 @@ export default function TicketScannerPage() {
               </div>
             )}
 
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               {showCheckInButton ? (
                 <button
                   type="button"
@@ -418,7 +440,7 @@ export default function TicketScannerPage() {
                     void handleCheckIn();
                   }}
                   disabled={isCheckingIn}
-                  className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200 sm:w-auto"
                 >
                   <UserCheck className="h-4 w-4" />
                   {isCheckingIn ? t("Scanning...") : t("Check In")}
@@ -430,7 +452,7 @@ export default function TicketScannerPage() {
                 onClick={() => {
                   void startScanner();
                 }}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800 sm:w-auto"
               >
                 <ScanLine className="h-4 w-4" />
                 {t("Scan QR")}
