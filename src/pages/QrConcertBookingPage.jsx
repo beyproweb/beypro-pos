@@ -76,6 +76,8 @@ export default function QrConcertBookingPage() {
   const [tableStates, setTableStates] = React.useState([]);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const [invalidField, setInvalidField] = React.useState("");
+  const fieldRefs = React.useRef({});
   const [form, setForm] = React.useState({
     ticket_type_id: "",
     quantity: "1",
@@ -382,23 +384,59 @@ export default function QrConcertBookingPage() {
     });
   }, []);
 
+  const setFieldRef = React.useCallback(
+    (key) => (node) => {
+      if (node) {
+        fieldRefs.current[key] = node;
+      }
+    },
+    []
+  );
+
+  const focusInvalidField = React.useCallback(
+    (key) => {
+      setInvalidField(key);
+      const node = fieldRefs.current[key];
+      if (!node) return;
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (typeof node.animate === "function") {
+        node.animate(
+          [
+            { transform: "translateX(0)" },
+            { transform: "translateX(-8px)" },
+            { transform: "translateX(8px)" },
+            { transform: "translateX(-6px)" },
+            { transform: "translateX(6px)" },
+            { transform: "translateX(0)" },
+          ],
+          { duration: 360, easing: "ease-in-out" }
+        );
+      }
+    },
+    []
+  );
+
   const handleSubmit = React.useCallback(async () => {
     if (!canSubmit || !identifier || !concertId || !selectedTicketType) {
-      const firstError =
-        formErrors.name ||
-        formErrors.phone ||
-        formErrors.email ||
-        (!selectedTicketType ? t("Please select a ticket type.") : "") ||
-        (isTableBooking && !Number(form.table_number || 0)
-          ? t("Please choose a table from the floor plan.")
-          : "") ||
-        guestCompositionError;
-      if (firstError) {
-        window.alert(firstError);
-      }
+      const firstInvalidKey =
+        formErrors.name
+          ? "name"
+          : formErrors.phone
+            ? "phone"
+            : formErrors.email
+              ? "email"
+              : !selectedTicketType
+                ? "ticket_type"
+                : isTableBooking && !Number(form.table_number || 0)
+                  ? "table_number"
+                  : guestCompositionError
+                    ? "guest_composition"
+                    : "";
+      if (firstInvalidKey) focusInvalidField(firstInvalidKey);
       return;
     }
 
+    setInvalidField("");
     setSubmitting(true);
     try {
       const response = await secureFetch(
@@ -504,6 +542,7 @@ export default function QrConcertBookingPage() {
     storage,
     t,
     womenCount,
+    focusInvalidField,
   ]);
 
   const summaryItems = [
@@ -539,7 +578,7 @@ export default function QrConcertBookingPage() {
       onBack={handleBack}
       accentColor={accentColor}
       showHeaderIndicator={false}
-      actionLabel={submitting ? t("Saving...") : t("Buy Ticket")}
+      actionLabel={submitting ? t("Saving...") : isTableBooking ? t("Reserve Now") : t("Buy Ticket")}
       actionHelper={quantity > 0 ? `${t("Total")}: ${formatCurrency(total)}` : ""}
       onAction={handleSubmit}
       actionDisabled={!canSubmit}
@@ -576,7 +615,13 @@ export default function QrConcertBookingPage() {
         title={t("Ticket Type")}
         description={t("Choose the package or ticket you want to book.")}
       >
-        <div className="space-y-2">
+        <div
+          ref={setFieldRef("ticket_type")}
+          className={[
+            "space-y-2 rounded-[24px] transition",
+            invalidField === "ticket_type" ? "border border-rose-300 bg-rose-50/70 p-2 dark:border-rose-900/40 dark:bg-rose-950/20" : "",
+          ].join(" ")}
+        >
           {ticketTypes.map((ticketType) => {
             const selected = Number(form.ticket_type_id || 0) === Number(ticketType.id);
             const soldOut = Number(ticketType.available_count || 0) <= 0;
@@ -656,7 +701,10 @@ export default function QrConcertBookingPage() {
               })}
             </div>
             {guestCompositionVisible ? (
-              <div className="mt-4">
+              <div
+                ref={setFieldRef("guest_composition")}
+                className={invalidField === "guest_composition" ? "rounded-[24px] border border-rose-300 bg-rose-50/70 p-2 dark:border-rose-900/40 dark:bg-rose-950/20" : "mt-4"}
+              >
                 <GuestCompositionCard
                   title={t("Guest Split")}
                   description={t("Some concert tables apply guest restrictions.")}
@@ -707,7 +755,7 @@ export default function QrConcertBookingPage() {
         title={t("Table / Seat Selection")}
         description={
           isTableBooking
-            ? t("Choose your concert table from the current event layout.")
+            ? ""
             : t("This package does not require a table selection.")
         }
         rightSlot={
@@ -719,24 +767,32 @@ export default function QrConcertBookingPage() {
         }
       >
         {isTableBooking ? (
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            className="w-full rounded-[24px] border border-neutral-200 bg-white px-4 py-4 text-left transition hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950"
+          <div
+            ref={setFieldRef("table_number")}
+            className={invalidField === "table_number" ? "rounded-[28px] border border-rose-400 bg-rose-50/70 p-2 ring-4 ring-rose-100 dark:border-rose-500 dark:bg-rose-950/20 dark:ring-rose-950/40" : ""}
           >
-            <div className="text-sm font-semibold text-neutral-950 dark:text-white">
-              {selectedTableRecord || selectedTableState
-                ? formatTableLabel(selectedTableRecord || selectedTableState, t("Table"))
-                : t("Open event floor plan")}
-            </div>
-            <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              {selectedTableState?.reason
-                ? selectedTableState.reason
-                : selectedTableState?.capacity
-                  ? t("Capacity {{count}} guests", { count: selectedTableState.capacity })
-                  : t("Tap to view live table availability for this event.")}
-            </div>
-          </button>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="flex w-full items-center justify-center rounded-[24px] bg-slate-900 px-4 py-4 text-base font-semibold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.8)] transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-neutral-100"
+            >
+              {t("Choose Table")}
+            </button>
+            {selectedTableRecord || selectedTableState ? (
+              <div className="mt-3 rounded-[20px] border border-neutral-200 bg-white px-4 py-3 text-sm dark:border-neutral-800 dark:bg-neutral-950">
+                <div className="font-semibold text-neutral-950 dark:text-white">
+                  {formatTableLabel(selectedTableRecord || selectedTableState, t("Table"))}
+                </div>
+                {selectedTableState?.reason || selectedTableState?.capacity ? (
+                  <div className="mt-1 text-neutral-500 dark:text-neutral-400">
+                    {selectedTableState?.reason
+                      ? selectedTableState.reason
+                      : t("Capacity {{count}} guests", { count: selectedTableState.capacity })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         ) : (
           <div className="rounded-[24px] border border-dashed border-neutral-300 px-4 py-5 text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
             {t("General admission tickets use the selected package only. No table selection is required.")}
@@ -755,6 +811,12 @@ export default function QrConcertBookingPage() {
             phone: form.customer_phone,
             email: form.customer_email,
             notes: form.customer_note,
+          }}
+          fieldRefs={{
+            name: setFieldRef("name"),
+            phone: setFieldRef("phone"),
+            email: setFieldRef("email"),
+            notes: setFieldRef("notes"),
           }}
           onChange={(key, value) =>
             setForm((prev) => ({

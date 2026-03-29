@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import FloorPlanView from "./FloorPlanView";
 import TableDetailsSheet from "./TableDetailsSheet";
@@ -16,6 +17,7 @@ export default function FloorPlanPickerModal({
   onClose,
   onConfirm,
 }) {
+  const { t } = useTranslation();
   const elements = React.useMemo(
     () => buildFloorPlanElements(layout, tables, tableStates),
     [layout, tableStates, tables]
@@ -54,7 +56,6 @@ export default function FloorPlanPickerModal({
                 <div className="truncate text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</div>
               ) : null}
             </div>
-            <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accentColor }} />
           </div>
         </div>
 
@@ -77,7 +78,7 @@ export default function FloorPlanPickerModal({
                           : "bg-neutral-300 text-neutral-800";
                 return (
                   <div key={key} className={`rounded-2xl px-3 py-2 text-center text-xs font-semibold ${tone}`}>
-                    {label}
+                    {t(label)}
                   </div>
                 );
               })}
@@ -100,7 +101,7 @@ export default function FloorPlanPickerModal({
               setActiveTable(null);
             }}
             confirmDisabled={!canConfirm}
-            confirmLabel={canConfirm ? "Confirm table" : activeTable?.state?.reason || "Unavailable"}
+            confirmLabel={canConfirm ? t("Confirm table") : activeTable?.state?.reason || t("Unavailable")}
           />
         </div>
       </div>

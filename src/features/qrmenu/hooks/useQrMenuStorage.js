@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { getCheckoutPrefill } from "../header-drawer/services/customerService";
+import i18n from "../../../i18n";
 
 export function useQrMenuStorage({
   slug,
@@ -64,6 +65,11 @@ export function useQrMenuStorage({
   const [lang, setLang] = useState(() => storage.getItem("qr_lang") || "en");
   useEffect(() => {
     storage.setItem("qr_lang", lang);
+    storage.setItem("beyproGuestLanguage", lang);
+    storage.setItem("beyproLanguage", lang);
+    if (i18n.language !== lang) {
+      i18n.changeLanguage(lang).catch(() => {});
+    }
   }, [lang, storage]);
   const t = useMemo(() => makeT(lang), [lang, makeT]);
 

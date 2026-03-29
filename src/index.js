@@ -14,7 +14,11 @@ secureFetch('/settings/localization')
     const raw = data?.language || null;
     const fromStorage = (() => {
       try {
-        return localStorage.getItem("beyproGuestLanguage");
+        return (
+          localStorage.getItem("qr_lang") ||
+          localStorage.getItem("beyproGuestLanguage") ||
+          localStorage.getItem("beyproLanguage")
+        );
       } catch {
         return null;
       }
@@ -31,13 +35,18 @@ secureFetch('/settings/localization')
         ? "fr"
         : raw;
 
-    const lang = mapped || fromStorage || "en";
+    const lang = fromStorage || mapped || "en";
     return i18n.changeLanguage(lang);
   })
   .catch(err => {
     const fallback = (() => {
       try {
-        return localStorage.getItem("beyproGuestLanguage") || "en";
+        return (
+          localStorage.getItem("qr_lang") ||
+          localStorage.getItem("beyproGuestLanguage") ||
+          localStorage.getItem("beyproLanguage") ||
+          "en"
+        );
       } catch {
         return "en";
       }

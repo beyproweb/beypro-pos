@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 
 export default function TableDetailsSheet({
@@ -9,9 +10,10 @@ export default function TableDetailsSheet({
   confirmLabel = "Select table",
   embedded = false,
 }) {
+  const { t } = useTranslation();
   if (!tableNode) return null;
   const state = tableNode.state || {};
-  const areaLabel = state.zone || tableNode.zone || "Main floor";
+  const areaLabel = state.zone || tableNode.zone || t("Main floor");
   return (
     <div
       className={[
@@ -34,7 +36,7 @@ export default function TableDetailsSheet({
             type="button"
             onClick={onClose}
             className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 dark:border-neutral-800"
-            aria-label="Close"
+            aria-label={t("Close")}
           >
             <X className="h-5 w-5" />
           </button>
@@ -42,15 +44,15 @@ export default function TableDetailsSheet({
 
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="rounded-2xl bg-neutral-100 px-3 py-2.5 dark:bg-neutral-900">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-neutral-500">Capacity</div>
+            <div className="text-[11px] uppercase tracking-[0.16em] text-neutral-500">{t("Capacity")}</div>
             <div className="mt-1 font-semibold text-neutral-900 dark:text-neutral-50">
-              {Number(tableNode.capacity || state.capacity || 0) || "Flexible"}
+              {Number(tableNode.capacity || state.capacity || 0) || t("Flexible")}
             </div>
           </div>
           <div className="rounded-2xl bg-neutral-100 px-3 py-2.5 dark:bg-neutral-900">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-neutral-500">Type</div>
+            <div className="text-[11px] uppercase tracking-[0.16em] text-neutral-500">{t("Type")}</div>
             <div className="mt-1 font-semibold capitalize text-neutral-900 dark:text-neutral-50">
-              {String(state.table_type || tableNode.table_type || "regular").replace(/_/g, " ")}
+              {t(String(state.table_type || tableNode.table_type || "regular").replace(/_/g, " "))}
             </div>
           </div>
         </div>

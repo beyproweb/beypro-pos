@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import {
   getFloorPlanElementFrame,
   getFloorPlanRenderSize,
@@ -29,15 +30,64 @@ export default function FloorPlanView({
   interactive = true,
 }) {
   if (!layout) return null;
+  const { t } = useTranslation();
   const containerRef = React.useRef(null);
   const [containerWidth, setContainerWidth] = React.useState(0);
   const canvas = React.useMemo(() => resolveFloorPlanCanvas(layout?.canvas), [layout?.canvas]);
-  const renderSize = React.useMemo(
-    () => getFloorPlanRenderSize(layout, elements),
-    [elements, layout]
-  );
-  const width = Number(renderSize.width || canvas.width || 1200);
-  const height = Number(renderSize.height || canvas.height || 780);
+  const occupiedBounds = React.useMemo(() => {
+    if (!Array.isArray(elements) || !elements.length) {
+      const fallback = getFloorPlanRenderSize(layout, elements);
+      return {
+        minLeft: 0,
+        minTop: 0,
+        width: Number(fallback.width || canvas.width || 1200),
+        height: Number(fallback.height || canvas.height || 780),
+      };
+    }
+
+    const bounds = elements.reduce(
+      (acc, element) => {
+        const frame = getFloorPlanElementFrame(element, canvas);
+        if (element.kind === "table") {
+          const tableScale = getFloorPlanTableScale(element, canvas);
+          const scaledWidth = frame.width * tableScale.scaleX;
+          const scaledHeight = frame.height * tableScale.scaleY;
+          const visibleLeft = frame.left + (frame.width - scaledWidth) / 2;
+          const visibleTop = frame.top + (frame.height - scaledHeight) / 2;
+          const visibleRight = visibleLeft + scaledWidth;
+          const visibleBottom = visibleTop + scaledHeight;
+          return {
+            minLeft: Math.min(acc.minLeft, visibleLeft),
+            minTop: Math.min(acc.minTop, visibleTop),
+            maxRight: Math.max(acc.maxRight, visibleRight),
+            maxBottom: Math.max(acc.maxBottom, visibleBottom),
+          };
+        }
+
+        return {
+          minLeft: Math.min(acc.minLeft, frame.left),
+          minTop: Math.min(acc.minTop, frame.top),
+          maxRight: Math.max(acc.maxRight, frame.left + frame.width),
+          maxBottom: Math.max(acc.maxBottom, frame.top + frame.height),
+        };
+      },
+      {
+        minLeft: Number.POSITIVE_INFINITY,
+        minTop: Number.POSITIVE_INFINITY,
+        maxRight: 0,
+        maxBottom: 0,
+      }
+    );
+
+    return {
+      minLeft: Number.isFinite(bounds.minLeft) ? bounds.minLeft : 0,
+      minTop: Number.isFinite(bounds.minTop) ? bounds.minTop : 0,
+      width: Math.max(260, Math.ceil(bounds.maxRight - (Number.isFinite(bounds.minLeft) ? bounds.minLeft : 0))),
+      height: Math.max(220, Math.ceil(bounds.maxBottom - (Number.isFinite(bounds.minTop) ? bounds.minTop : 0))),
+    };
+  }, [canvas, elements, layout]);
+  const width = Number(occupiedBounds.width || canvas.width || 1200);
+  const height = Number(occupiedBounds.height || canvas.height || 780);
   const cellSize = Number(canvas.cellSize || canvas.gridSize || 84);
   const rowHeight = Number(canvas.rowHeight || cellSize);
   const scale =
@@ -88,10 +138,10 @@ export default function FloorPlanView({
             const tableNumberLabel =
               isTable && Number.isFinite(Number(element.table_number)) && Number(element.table_number) > 0
                 ? String(Number(element.table_number))
-                : element.displayName;
+                : t(element.displayName || "");
             const wrapperStyle = {
-              left: `${frame.left}px`,
-              top: `${frame.top}px`,
+              left: `${frame.left - occupiedBounds.minLeft}px`,
+              top: `${frame.top - occupiedBounds.minTop}px`,
               width: `${frame.width}px`,
               height: `${frame.height}px`,
               transform: isTable
@@ -111,7 +161,7 @@ export default function FloorPlanView({
                   }}
                 >
                   <span className="max-w-full overflow-hidden break-words text-[10px] leading-tight">
-                    {element.text || element.label || element.name}
+                    {t(element.text || element.label || element.name || "")}
                   </span>
                 </div>
               );
