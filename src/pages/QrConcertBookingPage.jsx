@@ -689,7 +689,13 @@ export default function QrConcertBookingPage() {
                   <button
                     key={option}
                     type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, guests_count: String(option) }))}
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        guests_count: String(option),
+                        table_number: "",
+                      }))
+                    }
                     className={[
                       "rounded-[22px] border px-3 py-3 text-sm font-semibold transition",
                       selected
@@ -754,7 +760,7 @@ export default function QrConcertBookingPage() {
 
       <BookingSection
         step={4}
-        title={t("Table / Seat Selection")}
+        title={t("Choose Table")}
         description={
           isTableBooking
             ? ""

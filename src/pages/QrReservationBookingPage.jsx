@@ -616,7 +616,11 @@ export default function QrReservationBookingPage() {
                 key={option}
                 type="button"
                 onClick={() =>
-                  setForm((prev) => ({ ...prev, reservation_clients: String(option) }))
+                  setForm((prev) => ({
+                    ...prev,
+                    reservation_clients: String(option),
+                    table_number: "",
+                  }))
                 }
                 className={[
                   "rounded-[22px] border px-3 py-3 text-sm font-semibold transition",
@@ -652,7 +656,7 @@ export default function QrReservationBookingPage() {
 
       <BookingSection
         step={4}
-        title={t("Select Table")}
+        title={t("Choose Table")}
         description={t("Pick your table from the live floor plan.")}
         rightSlot={
           floorPlanLoading ? (
