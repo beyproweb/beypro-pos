@@ -1094,7 +1094,7 @@ export default function Task() {
                   darkMode ? "bg-emerald-500/90 text-white" : "bg-emerald-500 text-white"
                 }`}
               >
-                ➕ {t("Add Task")}
+                {t("Add Task")}
               </button>
             </div>
           </div>
